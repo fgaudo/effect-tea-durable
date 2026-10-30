@@ -141,7 +141,10 @@ export interface Handle<T extends Types> {
   readonly forget: (consumer: string) => Effect.Effect<void>
   /** An operator resumes a suspended entity, perhaps with a fixed program (decision 0006). */
   readonly resume: (id: string, fixed?: Program<T>) => Effect.Effect<void>
-  /** An operator discards the message a suspended entity died on (decision 0014). */
+  /**
+   * An operator discards the inbound message a suspended entity died on (decision 0014). An internal one is not
+   * discarded, and the entity stays suspended (decisions 0041, 0044).
+   */
   readonly discard: (id: string) => Effect.Effect<void>
 }
 

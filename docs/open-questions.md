@@ -105,9 +105,10 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   operation died runs again, or delivers `unknown` if at most once. Should a suspension stop only the handling
   of messages, and let the work under way record its completions? And an operation that dies cannot be
   discarded, only resumed: one that dies on a reply stored by another entity dies again on every resume, and
-  only a new version of the program gets it out. Neither can a completion `update` dies on
-  ([decision 0041](decisions/0041-a-completion-is-not-discarded.md)), and the runtime's `discard` does not say
-  that it did nothing.
+  only a new version of the program gets it out. Neither can a completion or a firing `update` dies on
+  ([decision 0041](decisions/0041-a-completion-is-not-discarded.md),
+  [decision 0044](decisions/0044-a-firing-is-not-discarded.md)), and the runtime's `discard` does not say that it
+  did nothing.
 - **An entity the waker cannot load.** An event the runtime cannot finish crashes its entity alone
   ([decision 0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)), but the waker,
   which loads the entities whose timers are due, dies with an activation that fails, and the program's timers

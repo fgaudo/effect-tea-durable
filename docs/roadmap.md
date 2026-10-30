@@ -9,13 +9,6 @@ The first audit's findings whose fix was plain are done. A second review found t
 rule of the machine or of the runtime, so each is decided in a note, with a test that fails without it. After
 them comes one of the [open questions](open-questions.md), decided in a note.
 
-- **A discarded timer's firing fires again at once.** `discard` arms the timer again in a new incarnation, at
-  the time it had ([`src/machine.ts`](../src/machine.ts), `discard`). The state is the one before the message,
-  so `durable` returns the same timer, whose time has passed: it fires at once, and a pure `update` dies on the
-  same message. Discarding a firing gets no entity past it, and
-  [decision 0041](decisions/0041-a-completion-is-not-discarded.md) is wrong to say that a timer "does nothing
-  until its message is handled" is enough. Either a firing is not discarded either, as a completion is not, and
-  only a fixed program gets the entity past it, or a discarded timer is armed again only at a time to come.
 - **An entity that sends to a program not deployed yet is suspended.** `Entities.send` and `Entities.create` die
   when the receiver's program is not deployed in the process ([`src/runtime.ts`](../src/runtime.ts),
   `entities`), and the operation's defect suspends the sender. `deploy` starts the interrupted operations at once,

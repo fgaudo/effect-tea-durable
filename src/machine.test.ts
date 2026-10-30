@@ -360,8 +360,10 @@ const run = (commands: ReadonlyArray<Command>) => {
     const operation = runningOf(machine, 'Operation')[0]
     const firing = runningOf(machine, 'Timer')[0]
     if (stored.suspension !== null) {
-      // A discard needs a program that keeps what runs: on its failure, the next version is brought.
-      const discarding = stored.suspension.on._tag === 'Message' && trace.at(-1)?.event._tag !== 'Discard'
+      // A discard drops an inbound message with a program that keeps what runs: on its failure, or for an internal
+      // message, which is not discarded (decisions 0041, 0044), the next version is brought.
+      const discarding = stored.suspension.on._tag === 'Message' && stored.mailbox[0]?._tag === 'Inbound' &&
+        trace.at(-1)?.event._tag !== 'Discard'
       apply(discarding ? { _tag: 'Discard' } : { _tag: 'Resume', program: mend(fixes[tried++ % fixes.length] ?? program) })
     } else if (stored.mailbox.length > 0) apply({ _tag: 'Handle', at })
     else if (operation !== undefined) {
@@ -477,9 +479,7 @@ describe('the machine', () => {
 
   test('an operation leaves the state only through its completion', () =>
     property(({ trace }) => {
-      for (const { event, before, after, outputs } of trace) {
-        // An operator who discards a timer's firing ends its work by hand: a completion is not discarded.
-        if (event._tag === 'Discard') continue
+      for (const { before, after, outputs } of trace) {
         const next = Machine.workOf(after.stored)
         for (const [key, work] of Object.entries(Machine.workOf(before.stored))) {
           const incarnation = before.stored.keys[key]?.incarnation ?? -1
@@ -515,11 +515,7 @@ describe('the machine', () => {
     property(({ trace }) => {
       const started = new Map<IdempotencyKey, unknown>()
       const done = new Set<string>()
-      for (const { event, before, outputs } of trace) {
-        const head = before.stored.mailbox[0]
-        if (event._tag === 'Discard' && head?._tag === 'Internal' && outputs.length > 0) {
-          done.add(`${head.key}@${head.incarnation}`)
-        }
+      for (const { outputs } of trace) {
         for (const output of outputs) {
           if (output._tag === 'Delivered') done.add(`${output.key}@${output.incarnation}`)
           if (output._tag !== 'Started') continue
@@ -958,16 +954,38 @@ describe('discarding', () => {
     expect(after.outputs).toContainEqual({ _tag: 'Delivered', key: 'charge', incarnation: 1 })
   })
 
-  test("a timer's firing the entity died on is discarded, and the timer armed again", () => {
+  // The state before the firing holds the timer at its time, which has passed: armed again, it would fire at once.
+  test("a timer's firing the entity died on is not discarded: the timer would fire again at once", () => {
     const machine = checked(
       (message) => (message === 'rang' ? defect('broken') : message),
-      () => ({ deadline: 'timer' }),
+      (state) => (state === 'start' ? { deadline: 'timer' } : {}),
     )
     const died = handled(machine, { _tag: 'Fire', key: 'deadline', incarnation: 1 })
     expect(died.machine.stored.suspension?.on).toEqual({ _tag: 'Message' })
     const discarded = Machine.step(died.machine, { _tag: 'Discard' })
+    expect(discarded.outputs).toEqual([])
+    expect(discarded.machine).toBe(died.machine)
+  })
+
+  test('a fixed program gets the entity past the firing it died on', () => {
+    const deadline = (state: string): TinyWork => (state === 'start' ? { deadline: 'timer' } : {})
+    const machine = checked((message) => (message === 'rang' ? defect('broken') : message), deadline)
+    const died = handled(machine, { _tag: 'Fire', key: 'deadline', incarnation: 1 })
+    const resumed = Machine.step(died.machine, { _tag: 'Resume', program: tiny((message) => message, deadline) })
+    expect(resumed.machine.stored.suspension).toBeNull()
+    expect(resumed.outputs.filter((output) => output._tag === 'Armed')).toEqual([])
+    const after = Machine.step(resumed.machine, { _tag: 'Handle', at })
+    expect(after.machine.stored.state).toEqual({ last: 'rang' })
+    expect(after.outputs).toContainEqual({ _tag: 'Delivered', key: 'deadline', incarnation: 1 })
+  })
+
+  test('an inbound message the entity died on is discarded, with no reply stored', () => {
+    const machine = checked((message) => (message === 'go' ? defect('broken') : message), () => ({}))
+    const died = handled(machine, { _tag: 'Receive', requestId: 'r', message: 'go', from: nobody })
+    const discarded = Machine.step(died.machine, { _tag: 'Discard' })
     expect(discarded.machine.stored.suspension).toBeNull()
-    expect(discarded.outputs).toContainEqual(expect.objectContaining({ _tag: 'Armed', key: 'deadline', incarnation: 2 }))
+    expect(discarded.machine.stored.mailbox).toEqual([])
+    expect(discarded.machine.stored.replies).toEqual({})
   })
 })
 

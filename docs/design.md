@@ -264,11 +264,12 @@ before the message, the message stays unhandled, and nothing is delivered to it 
 discards the message ([decision 0006](decisions/0006-a-defect-suspends-the-entity.md)). A defect in an
 operation, in `durable` or `project` on a step's next state, or in a new program activating the stored state,
 suspends it too. Resuming activates it as after a
-crash; a discarded message ends its work as if it had been handled
-([decision 0014](decisions/0014-rules-the-machine-settled.md)). An operation's completion is not discarded: the
-operation acted, and the state that still holds it would run it again under another idempotency key. Only a
-program that handles it gets the entity past it
-([decision 0041](decisions/0041-a-completion-is-not-discarded.md)). A caller meanwhile is answered `Suspended`, which
+crash; a discarded inbound message stores no reply, and its caller's retry is a new message
+([decision 0014](decisions/0014-rules-the-machine-settled.md)). An internal message is not discarded: the state
+before it still holds its work, so an operation's completion would run the operation again under another
+idempotency key, and a timer's firing would fire again at once. Only a program that handles it gets the entity
+past it ([decision 0041](decisions/0041-a-completion-is-not-discarded.md),
+[decision 0044](decisions/0044-a-firing-is-not-discarded.md)). A caller meanwhile is answered `Suspended`, which
 is not stored: every caller whose message waits in the mailbox when the entity suspends, and every message that
 arrives while it is, which is not queued. `Suspended` says only that the request has no reply yet. The caller
 retries under the same request id, and gets the stored reply once the entity is resumed: the message is applied

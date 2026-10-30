@@ -150,7 +150,7 @@ export type Event<T extends Types> =
   | Readonly<{ _tag: 'Restart'; program?: Program<T> }>
   /** An operator resumes a suspended entity, perhaps with a fixed program. */
   | Readonly<{ _tag: 'Resume'; program?: Program<T> }>
-  /** An operator discards the message a suspended entity died on, and resumes it. */
+  /** An operator discards the inbound message a suspended entity died on, and resumes it. */
   | Readonly<{ _tag: 'Discard' }>
 
 export type Output<T extends Types> =
@@ -571,26 +571,20 @@ const resume = <T extends Types>(machine: Machine<T>, fixed: Program<T> | undefi
 }
 
 /**
- * Ends the message a suspended entity died on as if it had been handled, and resumes it (decision 0008). An
- * operation's completion is not discarded: the operation acted, and the state that still holds it would run it
- * again under another idempotency key. Only a program that handles it gets the entity past it (decision 0041).
+ * Drops the inbound message a suspended entity died on, storing no reply, and resumes it (decision 0014). An
+ * internal message is not discarded: the state before it still holds its work, so an operation would run again
+ * under another idempotency key, and a timer whose time has passed would fire again at once. Only a program that
+ * handles it gets the entity past it (decisions 0041, 0044).
  */
 const discard = <T extends Types>(machine: Machine<T>): Transition<T> => {
   const { stored } = machine
   const [head, ...rest] = stored.mailbox
-  if (stored.suspension?.on._tag !== 'Message' || head === undefined) return { machine, outputs: [] }
-  const renewed = head._tag === 'Internal' && holds(stored, head.key, head.incarnation) ? head.key : null
-  const held = renewed === null ? undefined : stored.keys[renewed]
-  if (held?.work !== undefined && !isTimer(held.work)) return { machine, outputs: [] }
-  // The timer whose firing is discarded is done, and armed again if its key is still in the state: it did nothing.
-  const keys = renewed === null || held === undefined
-    ? stored.keys
-    : { ...stored.keys, [renewed]: { ...held, incarnation: held.incarnation + 1 } }
+  if (stored.suspension?.on._tag !== 'Message' || head?._tag !== 'Inbound') return { machine, outputs: [] }
   return activate(
     machine,
-    { ...machine, stored: { ...stored, keys, mailbox: rest, suspension: null } },
+    { ...machine, stored: { ...stored, mailbox: rest, suspension: null } },
     machine.program,
-    (key) => key !== renewed,
+    () => true,
   )
 }
 
