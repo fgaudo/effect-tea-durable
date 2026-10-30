@@ -824,6 +824,94 @@ describe('the read model', () => {
     })))
 })
 
+describe('publishing what happened', () => {
+  const tester = { _tag: 'Tester' } as const
+
+  test('a creation, and every step that changes what callers read, publishes a row', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          // The operations hold, so nothing but the messages sent here changes the state.
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          // The key is wanted already: the state changes, since the nonce is applied, and the projection does not.
+          yield* toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'on' }, { requestId: 'on', sender: tester })
+          // A timer may be dropped in any state: what callers read falls, and the step publishes what it handled.
+          yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
+          expect(yield* toy.send(id, { _tag: 'Refuse', nonce: 'no' }, { requestId: 'no', sender: tester }))
+            .toEqual({ _tag: 'Rejected', reason: 'Refused' })
+          expect((yield* toy.published(0)).map(({ seq: _seq, ...row }) => row)).toEqual([
+            { id, kind: 'Creation', message: null, projection: 4 },
+            {
+              id,
+              kind: 'Inbound',
+              message: { _tag: 'Want', key: 't', on: false, nonce: 'off' },
+              projection: 3,
+            },
+          ])
+        }))
+    })))
+
+  test('a cursor reads what was published after it, and prune drops what every consumer has read', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          yield* Effect.sleep('60 millis')
+          yield* runtime.settled
+          const rows = yield* toy.published(0)
+          // The creation, then the completion of each operation and the firing of the timer: what callers read
+          // falls by one at each, whatever order the work came back in.
+          expect(rows.map(({ kind }) => kind)).toEqual(['Creation', 'Internal', 'Internal', 'Internal', 'Internal'])
+          expect(rows.map(({ projection }) => projection)).toEqual([4, 3, 2, 1, 0])
+          expect(rows.map(({ seq }) => seq)).toEqual([...rows.map(({ seq }) => seq)].sort((a, b) => a - b))
+          const second = rows[1]?.seq ?? 0
+          expect(yield* toy.published(second)).toEqual(rows.slice(2))
+          expect(yield* toy.published(0, 2)).toEqual(rows.slice(0, 2))
+          expect(yield* toy.prune(second)).toBe(2)
+          expect(yield* toy.published(0)).toEqual(rows.slice(2))
+        }))
+    })))
+
+  test('a step whose transaction never commits publishes nothing', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const store = storage(program, yield* SqlClient.SqlClient)
+      const crashed = yield* Deferred.make<void>()
+      let seen = 0
+      const dying = process(
+        {
+          // The creation's commit is the first the process reaches; the step that handles the message is the
+          // second, and the process dies before it.
+          at: (point) =>
+            point !== 'BeforeCommit' || ++seen !== 2
+              ? Effect.void
+              : Effect.flatMap(Deferred.succeed(crashed, undefined), () => Effect.never),
+        },
+        (runtime) =>
+          Effect.gen(function*() {
+            const { layer } = yield* hands({ holds: true })
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+            yield* Effect.forkChild(
+              toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester }),
+            )
+            yield* Effect.sleep('80 millis')
+          }),
+      )
+      yield* Effect.raceFirst(dying, Deferred.await(crashed))
+      expect(yield* Deferred.isDone(crashed)).toBe(true)
+      expect((yield* store.published(0)).map(({ kind, projection }) => ({ kind, projection })))
+        .toEqual([{ kind: 'Creation', projection: 4 }])
+    })))
+})
+
 describe('a schema that changes', () => {
   const tester = { _tag: 'Tester' } as const
 

@@ -45,6 +45,7 @@ export {
   type Criterion,
   type Due,
   type Found,
+  type Published,
   type Query,
   storage,
   type Storage,

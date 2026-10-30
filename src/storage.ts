@@ -89,6 +89,21 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       PRIMARY KEY (name, id)
     )
   `
+  // What other systems learn of the entities: one row per step that changed what callers read, written in the
+  // step's own transaction. `seq` rises with each row and is never reused, and is what a consumer reads from
+  // and deduplicates by (decision 0038).
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS outbox (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      id TEXT NOT NULL,
+      tag TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      message TEXT,
+      projection TEXT NOT NULL
+    )
+  `
+  yield* sql`CREATE INDEX IF NOT EXISTS outbox_name ON outbox (name, seq)`
   // The replies, by `requestKey`: a retry gets the one stored (decision 0015).
   yield* sql`
     CREATE TABLE IF NOT EXISTS replies (
@@ -178,6 +193,17 @@ export type Query<T extends Types> = Readonly<{
 /** An entity a query found, as a caller reads it. */
 export type Found<T extends Types> = Readonly<{ id: string; projection: T['projection'] }>
 
+/** What a step published: the message it handled, and what callers read of the entity after it (decision 0038). */
+export type Published<T extends Types> = Readonly<{
+  /** Rises with each row of the database, and is never reused: what a consumer reads from, and stores. */
+  seq: number
+  id: string
+  /** Where the message came from, or `Creation` for the row an entity's creation writes, which has none. */
+  kind: 'Inbound' | 'Internal' | 'Creation'
+  message: T['inbound'] | T['internal'] | null
+  projection: T['projection']
+}>
+
 /** An index's name is a word, so that it is a column of a query and of an index's expression. */
 const isName = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
 
@@ -202,7 +228,12 @@ export interface Storage<T extends Types> {
    * Writes what an event gave: the row of a new entity, and the state, the keys, the mailbox and the replies of
    * one that was already there. The caller wraps it in the transaction of the event (decision 0007).
    */
-  readonly write: (before: Machine.Stored<T> | null, after: Machine.Stored<T>) => Effect.Effect<void>
+  readonly write: (
+    before: Machine.Stored<T> | null,
+    after: Machine.Stored<T>,
+    /** The message the event handled, which the step publishes with the projection it leaves (decision 0038). */
+    handled?: Machine.Envelope<T> | null,
+  ) => Effect.Effect<void>
   /**
    * The entities whose state holds an operation: what a process activates when it starts, so that an operation a
    * crash interrupted runs again without waiting for a caller. A timer needs no activation of its own — its time
@@ -230,6 +261,13 @@ export interface Storage<T extends Types> {
    * was, and the step after it writes the row again.
    */
   readonly reindex: Effect.Effect<number>
+  /**
+   * What the entities of the program did, from `after` on, in the order it was written: a consumer acts on each
+   * row and then stores the `seq` it reached, which is delivery at least once (decision 0038).
+   */
+  readonly published: (after: number, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  /** Drops what was published through `through` — what every consumer has read — and gives how many rows went. */
+  readonly prune: (through: number) => Effect.Effect<number>
 }
 
 /** The storage of one program's entities, on one client, with its schemas read once. */
@@ -300,18 +338,10 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
    * The row a query reads: what callers read of the state, and the value of each index on it. Both are pure and
    * were checked by the machine before the state was stored, so neither dies here (decision 0032).
    */
-  const row = (id: string, held: T['state']) => {
-    const shown = program.project(held)
-    return sql`INSERT OR REPLACE INTO projections ${
-      sql.insert({
-        name,
-        id,
-        projection: projection.write(shown),
-        indexes: JSON.stringify(indexesOf(program, shown)),
-        version,
-      })
+  const row = (id: string, shown: T['projection'], text: string) =>
+    sql`INSERT OR REPLACE INTO projections ${
+      sql.insert({ name, id, projection: text, indexes: JSON.stringify(indexesOf(program, shown)), version })
     }`
-  }
 
   const writeWork = (held: Durable<T['operation'], T['internal']>) =>
     work.write(
@@ -406,7 +436,11 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       } satisfies Machine.Stored<T>
     }).pipe(Effect.orDie)
 
-  const write = (before: Machine.Stored<T> | null, after: Machine.Stored<T>) =>
+  const write = (
+    before: Machine.Stored<T> | null,
+    after: Machine.Stored<T>,
+    handled: Machine.Envelope<T> | null = null,
+  ) =>
     Effect.gen(function*() {
       const { id } = after
       const on = after.suspension === null ? null : suspended.write(after.suspension.on)
@@ -433,7 +467,30 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       }
       // The read model is written when the state changed, which is when the projection can have changed: a
       // projection is a function of the state alone (decision 0032).
-      if (before === null || before.state !== after.state) yield* row(id, after.state)
+      if (before === null || before.state !== after.state) {
+        const shown = program.project(after.state)
+        const text = projection.write(shown)
+        yield* row(id, shown, text)
+        // What other systems learn of the step, published when what callers read changed: a creation's row
+        // carries no message, since a creation is no message (decision 0038).
+        const was = before === null ? null : projection.write(program.project(before.state))
+        if (was !== text) {
+          yield* sql`INSERT INTO outbox ${
+            sql.insert({
+              name,
+              id,
+              tag: handled === null ? 'Creation' : handled._tag,
+              version,
+              message: handled === null
+                ? null
+                : handled._tag === 'Inbound'
+                ? inbound.write(handled.message)
+                : internal.write(handled.message),
+              projection: text,
+            })
+          }`
+        }
+      }
       // The keys and the mailbox are few, and one event may change any of them: they are written whole.
       yield* sql`DELETE FROM entity_keys WHERE name = ${name} AND id = ${id}`
       for (const [key, held] of Object.entries(after.keys)) {
@@ -574,12 +631,47 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       `
       if (rows.length === 0) return written
       for (const held of rows) {
-        yield* row(held.id, state.read(held.state, up('state', held.version)))
+        const shown = program.project(state.read(held.state, up('state', held.version)))
+        yield* row(held.id, shown, projection.write(shown))
         cursor = held.id
         written += 1
       }
     }
   }).pipe(Effect.orDie)
 
-  return { load, write, interrupted, due, indexed, query, reindex }
+  const published = (after: number, limit?: number) =>
+    Effect.gen(function*() {
+      const rows = yield* sql<{
+        seq: number
+        id: string
+        tag: string
+        version: number
+        message: string | null
+        projection: string
+      }>`
+        SELECT seq, id, tag, version, message, projection FROM outbox
+        WHERE name = ${name} AND seq > ${after} ORDER BY seq LIMIT ${limit ?? -1}
+      `
+      return rows.map((row): Published<T> => ({
+        seq: row.seq,
+        id: row.id,
+        kind: row.tag as Published<T>['kind'],
+        message: row.message === null
+          ? null
+          : row.tag === 'Inbound'
+          ? inbound.read(row.message, up('inbound', row.version))
+          : internal.read(row.message, up('internal', row.version)),
+        projection: projection.read(row.projection, up('projection', row.version)),
+      }))
+    }).pipe(Effect.orDie)
+
+  const prune = (through: number) =>
+    Effect.gen(function*() {
+      const gone = yield* sql<{ seq: number }>`
+        DELETE FROM outbox WHERE name = ${name} AND seq <= ${through} RETURNING seq
+      `
+      return gone.length
+    }).pipe(Effect.orDie)
+
+  return { load, write, interrupted, due, indexed, query, reindex, published, prune }
 }

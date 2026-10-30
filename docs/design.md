@@ -167,15 +167,18 @@ After each message the runtime stores, in one transaction:
 - the incarnations of the keys, and the work the state holds, with how each operation is delivered;
 - the message, marked as handled, with its reply for an inbound one;
 - and, when the state changed, the row a query reads: the projection, and the value of each index on it
-  ([decision 0032](decisions/0032-a-projection-is-a-row.md)).
+  ([decision 0032](decisions/0032-a-projection-is-a-row.md));
+- and, when what callers read changed with it, the row other systems learn from
+  ([decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md), see
+  [publishing](#publishing-what-happened)).
 
 It stores the state, not the messages that led to it: a fixed `update` changes what happens next, never what
 already happened ([decision 0002](decisions/0002-store-the-state-not-the-messages.md)). The messages may be
 kept as an audit, but nothing replays them.
 
-The runtime on SQLite writes all of it through the program's schemas, as JSON, in five tables — the entity, the
-keys with their incarnations and work, the mailbox in order, the replies by request, and the read model
-([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
+The runtime on SQLite writes all of it through the program's schemas, as JSON, in six tables — the entity, the
+keys with their incarnations and work, the mailbox in order, the replies by request, the read model and the
+outbox ([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
 by migrating its JSON to the program's version (see [schemas that change](#schemas-that-change)). A schema whose
 encoded side is not JSON does not compile: a time is held as `Schema.DateTimeUtcFromMillis`, not as
 `Schema.DateTimeUtc` ([decision 0030](decisions/0030-a-schema-encodes-to-json.md)).
@@ -280,6 +283,23 @@ with the values a caller reads of a single entity, and nothing is queried that a
 projections; `reindex` writes every row again from the stored states, which is what an index added or changed
 by a new version of the program needs. [`examples/order/runtime.test.ts`](../examples/order/runtime.test.ts)
 asks for the orders still awaiting their payment.
+
+## Publishing what happened
+
+A queue, an event store or another service learns what an entity did from an **outbox**: a step that changes
+what callers read writes one row in its own transaction, holding the entity's address, the message the step
+handled and the projection it left. An entity's creation writes its first projection, with no message. Nothing
+more is declared: the message names the fact, and the projection is already the public contract
+([decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md)).
+
+Each row carries a `seq`, which rises with every row and is never reused. `published(after, limit)` reads from
+a cursor and `prune(through)` drops what every consumer has read. A consumer acts on the rows and then stores
+the `seq` it reached, so a crash before it does delivers them again: at least once, deduplicated by `seq`.
+The runtime writes the log and does not deliver it — the transport, the retries and the acknowledgements are
+the consumer's.
+
+A step that changes the state without changing what callers read publishes nothing, and neither does a
+rejected message, an internal message dropped, or a step that suspends the entity.
 
 ## Testing
 

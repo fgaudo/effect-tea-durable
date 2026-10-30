@@ -62,3 +62,38 @@ test('a query finds the orders nobody paid, and leaves out the one that was', ()
     // An order against no value finds nothing, as in SQL.
     expect(yield* orders.query({ where: [{ index: 'unpaidUntil', is: '<', value: null }] })).toEqual([])
   }))))
+
+test('what an order published is what another system learns of it', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    const runtime = yield* launch()
+    const orders = yield* Effect.provide(runtime.deploy(order), world)
+
+    yield* orders.create('o-1', { order: { customer: 'ada', totalInCents: 1_000 } }, {
+      requestId: 'c-o-1',
+      sender: ada,
+    })
+    yield* orders.send('o-1', { _tag: 'PayRequested', payment: 'card-1' }, { requestId: 'p-1', sender: ada })
+    yield* runtime.settled
+
+    // One row per step that changed what callers read: the creation, the request to pay, the charge coming back,
+    // and the warehouse told — which keeps the status and makes the order cancellable, so callers read something
+    // else. Each row carries the message the step handled (decision 0038).
+    const published = yield* orders.published(0)
+    expect(
+      published.map(({ id, kind, message, projection }) =>
+        [id, kind, message?._tag ?? null, projection.status, projection.canCancel]
+      ),
+    ).toEqual([
+      ['o-1', 'Creation', null, 'AwaitingPayment', true],
+      ['o-1', 'Inbound', 'PayRequested', 'Charging', false],
+      ['o-1', 'Internal', 'ChargeSucceeded', 'Paid', false],
+      ['o-1', 'Internal', 'WarehouseTold', 'Paid', true],
+    ])
+
+    // A consumer reads from where it stopped, and prunes what it has acted on.
+    const read = published[1]?.seq ?? 0
+    const left = published.slice(2).map(({ seq }) => seq)
+    expect((yield* orders.published(read)).map(({ seq }) => seq)).toEqual(left)
+    expect(yield* orders.prune(read)).toBe(2)
+    expect((yield* orders.published(0)).map(({ seq }) => seq)).toEqual(left)
+  }))))

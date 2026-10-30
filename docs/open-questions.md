@@ -31,13 +31,16 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Storage and reading
 
-- **Publishing what happened.** Other systems (a queue, an event store, another service) need to learn what an
-  entity did. The runtime could write `(id, the accepted message, the projection after)` to an outbox in the
-  step's transaction whenever the projection changes, where it already writes the row a query reads
-  ([decision 0032](decisions/0032-a-projection-is-a-row.md)), and deliver it at least once. The message names
-  the fact (`ChargeSucceeded`), and the projection is already the public contract, so the program would declare
-  nothing more. Is that the way, and what does a consumer use to deduplicate? It is also where the history of
-  an entity that never ends (a subscription's past invoices) would go, since its state keeps only the present.
+- **What keeps the outbox.** A step that changes what callers read publishes a row, kept until `prune`
+  ([decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md)). With one consumer, it
+  prunes what it has read; with several, who decides, and what does a consumer that falls behind cost? It is
+  also where the history of an entity that never ends (a subscription's past invoices) is read from, which is a
+  retention nobody prunes.
+- **The order of what is published.** `seq` orders the outbox by the commits of one process
+  ([decision 0007](decisions/0007-one-process-first.md),
+  [decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md)). A cluster writes from
+  several, where a row with a lower `seq` may commit after one a consumer has already read. What orders the
+  log then, and what a consumer reads from, is not decided.
 - **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
   large state do: split into entities, or store a difference?
 - **Renaming a program.** A program's name is the entities' address, and a schema's migration does not move

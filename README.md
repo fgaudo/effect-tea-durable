@@ -19,10 +19,10 @@ cluster or a clock.
 - [`docs/decisions/`](docs/decisions): one note per decision, with the alternatives it rejected;
 - [`docs/open-questions.md`](docs/open-questions.md): what is not decided yet;
 - [`docs/roadmap.md`](docs/roadmap.md): the steps from this design to a library, in order;
-- [`examples/order`](examples/order): an order's lifecycle, with its scenarios as tests, and the question a
-  query across entities answers — which orders nobody paid
-  ([`examples/order/runtime.test.ts`](examples/order/runtime.test.ts)). If an example reads badly, the API is
-  wrong;
+- [`examples/order`](examples/order): an order's lifecycle, with its scenarios as tests, the question a
+  query across entities answers — which orders nobody paid — and what each of its steps publishes for other
+  systems ([`examples/order/runtime.test.ts`](examples/order/runtime.test.ts)). If an example reads badly, the
+  API is wrong;
 - [`examples/subscription`](examples/subscription): a subscription billed every month, which never ends;
 - [`examples/booking`](examples/booking): a booking that holds seats in an event's inventory, two entities
   that talk, rehearsed and also run on the runtime

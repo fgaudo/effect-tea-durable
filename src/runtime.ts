@@ -31,7 +31,7 @@ import {
   runnerOf,
   type Types,
 } from './program.ts'
-import { type Found, type Query, storage, type Storage } from './storage.ts'
+import { type Found, type Published, type Query, storage, type Storage } from './storage.ts'
 
 /**
  * What a caller is answered: the replies stored under its request id, `NotFound` for no entity, and `Suspended`,
@@ -98,6 +98,15 @@ export interface Handle<T extends Types> {
    * have its row written back as it was, and writes it again at its next step.
    */
   readonly reindex: Effect.Effect<number>
+  /**
+   * What the entities of the program did, from the `seq` of `after` on, in the order the steps committed: each
+   * row is the message an entity handled and what callers read of it afterwards, written in that step's
+   * transaction (decision 0038). A consumer acts on the rows and then stores the `seq` it reached, so a crash
+   * before it does delivers them again: at least once. `0` is where a consumer starts.
+   */
+  readonly published: (after: number, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  /** Drops what was published through `through` — what every consumer has read — and gives how many rows went. */
+  readonly prune: (through: number) => Effect.Effect<number>
   /** An operator resumes a suspended entity, perhaps with a fixed program (decision 0006). */
   readonly resume: (id: string, fixed?: Program<T>) => Effect.Effect<void>
   /** An operator discards the message a suspended entity died on (decision 0014). */
@@ -350,9 +359,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const wrote = transition.machine.stored !== before.stored
         if (wrote) {
           yield* at('BeforeCommit', entity, event as Machine.Event<never>)
-          yield* sql.withTransaction(deployed.storage.write(before.stored, transition.machine.stored)).pipe(
-            Effect.orDie,
-          )
+          // The message a step handles is the mailbox's first: what the step publishes, with the projection it
+          // leaves (decision 0038).
+          const handled = event._tag === 'Handle' ? before.stored.mailbox[0] ?? null : null
+          yield* sql.withTransaction(
+            deployed.storage.write(before.stored, transition.machine.stored, handled),
+          ).pipe(Effect.orDie)
         }
         loaded.machine = transition.machine
         // An event is observed once it is written — at once when it writes nothing — and before anything is
@@ -629,6 +641,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             }),
           query: (query) => deployed.storage.query(query),
           reindex: deployed.storage.reindex,
+          published: (after, limit) => deployed.storage.published(after, limit),
+          prune: (through) => deployed.storage.prune(through),
           resume: (id, fixed) =>
             operate(deployed, id, fixed === undefined ? { _tag: 'Resume' } : { _tag: 'Resume', program: fixed }),
           discard: (id) => operate(deployed, id, { _tag: 'Discard' }),
