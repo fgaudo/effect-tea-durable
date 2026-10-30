@@ -54,6 +54,25 @@ export const defect = (reason: string): never => {
 export type Json = string | number | boolean | null | { readonly [key: string]: Json } | ReadonlyArray<Json>
 
 /**
+ * How the JSON one version of a program wrote is read by the next, by kind of stored value: a pure function from
+ * the JSON a version wrote to the JSON the one after it reads, and a kind left out is unchanged. It works on the
+ * JSON, not on decoded values, because every schema encodes to what JSON holds (decision 0030): the types and
+ * schemas of the version before do not live on in the code (decision 0036).
+ */
+export type Migration = Readonly<{
+  state?: (json: Json) => Json
+  inbound?: (json: Json) => Json
+  internal?: (json: Json) => Json
+  operation?: (json: Json) => Json
+  rejection?: (json: Json) => Json
+  sender?: (json: Json) => Json
+  projection?: (json: Json) => Json
+}>
+
+/** A kind of stored value a migration reads: what a program's schemas write, each on its own. */
+export type Migrated = keyof Migration
+
+/**
  * What an index holds, and what a query compares it with: the scalars of JSON, which a store orders and
  * indexes. A time is its milliseconds, as a stored time is (decisions 0030, 0032).
  */
@@ -257,6 +276,33 @@ export interface Program<T extends Types> {
    * the read model is the projection, and nothing is queried that a caller cannot read (decision 0032).
    */
   readonly indexes: Indexes<T>
+  /**
+   * How the versions before this one are read, in order: the first is the step from version 1 to version 2. A
+   * program whose schemas never changed declares none, and is version 1 (decision 0036).
+   */
+  readonly migrations?: ReadonlyArray<Migration>
+}
+
+/** The version a program writes: a migration is the bump, so there is none to declare or to forget (decision 0036). */
+export const versionOf = <T extends Types>(program: Program<T>): number => (program.migrations?.length ?? 0) + 1
+
+/**
+ * How the JSON a version wrote of one kind is read at the program's version: the migrations from `from` on, of
+ * that kind, composed. A version the program does not have is not read at all — nothing of it can be decoded —
+ * and this throws, which the runtime dies on (decision 0036).
+ */
+export const migrationOf = <T extends Types>(
+  program: Program<T>,
+  of: Migrated,
+  from: number,
+): (json: Json) => Json => {
+  const migrations = program.migrations ?? []
+  const version = migrations.length + 1
+  if (!Number.isInteger(from) || from < 1 || from > version) {
+    throw new Error(`'${program.name}' is version ${version}, and has no reading of version ${from}`)
+  }
+  const steps = migrations.slice(from - 1).flatMap((migration) => migration[of] ?? [])
+  return steps.length === 0 ? (json) => json : (json) => steps.reduce((held, up) => up(held), json)
 }
 
 /** The runner of an operation, found by its tag. */
@@ -357,6 +403,8 @@ export const program = <
     operations: Operations
     project: (state: State) => Projection
     indexes: Indexes
+    /** How the versions before this one are read, in order: none for a first version (decision 0036). */
+    migrations?: ReadonlyArray<Migration>
   }>,
 ): Program<
   Inferred<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, Indexes>

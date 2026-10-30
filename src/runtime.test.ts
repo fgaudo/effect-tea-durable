@@ -6,10 +6,12 @@
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { describe, expect, test } from 'bun:test'
+import * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import fc from 'fast-check'
 import * as Schema from 'effect/Schema'
@@ -19,6 +21,7 @@ import {
   defect,
   type IdempotencyKey,
   isTimer,
+  type Json,
   noWork,
   operation,
   type Program,
@@ -817,6 +820,186 @@ describe('the read model', () => {
           expect(yield* toy.reindex).toBe(3)
           expect((yield* toy.query({ where: [{ index: 'wanted', is: '=', value: -1 }] })).map(({ id }) => id))
             .toEqual(held)
+        }))
+    })))
+})
+
+describe('a schema that changes', () => {
+  const tester = { _tag: 'Tester' } as const
+
+  /**
+   * Version 2 of the toy: `applied` is renamed, the operation `A` gains a field, and the projection becomes a
+   * struct. Nothing of version 1 is left in the code but the migration, which reads the JSON it wrote
+   * (decision 0036).
+   */
+  const State2 = Schema.Struct({
+    want: Schema.Array(Key),
+    log: Schema.Array(Schema.String),
+    since: Schema.DateTimeUtcFromMillis,
+    rings: Schema.DateTimeUtcFromMillis,
+  })
+  type State2 = typeof State2.Type
+
+  const Operation2 = Schema.Union([
+    Schema.TaggedStruct('A', { why: Schema.String }),
+    Schema.TaggedStruct('B', { key: Key }),
+    Schema.TaggedStruct('C', { key: Key }),
+  ])
+  type Operation2 = typeof Operation2.Type
+
+  const Projection2 = Schema.Struct({ wanted: Schema.Int })
+  type Projection2 = typeof Projection2.Type
+
+  const Rejection2 = Schema.Struct({ why: Schema.Literal('Refused') })
+  type Rejection2 = typeof Rejection2.Type
+
+  type T2 = {
+    state: State2
+    flags: Readonly<{ at: DateTime.Utc }>
+    inbound: Inbound
+    internal: Internal
+    operation: Operation2
+    key: Key
+    rejection: Rejection2
+    sender: Sender
+    projection: Projection2
+    index: 'wanted'
+    services: Hands
+  }
+
+  const next: Program<T2> = {
+    name: 'Toy',
+    keys,
+    schemas: {
+      ...program.schemas,
+      state: State2,
+      operation: Operation2,
+      projection: Projection2,
+      rejection: Rejection2,
+    },
+    init: (_flags, at) => ({ want: keys, log: [], since: at, rings: DateTime.addDuration(at, '40 millis') }),
+    update: (message) => (state) => {
+      switch (message._tag) {
+        case 'Want': {
+          const others = state.want.filter((key) => key !== message.key)
+          const want = message.on ? keys.filter((key) => key === message.key || others.includes(key)) : others
+          return { ...state, want, log: [...state.log, message.nonce] }
+        }
+        case 'Refuse':
+          return rejectWith({ why: 'Refused' } as const)
+        case 'Break':
+          return defect('broken')
+        default:
+          return !state.want.includes(message.key)
+            ? defect('an internal message for a key the state does not hold')
+            : { ...state, want: state.want.filter((key) => key !== message.key) }
+      }
+    },
+    durable: (state) =>
+      state.want.length === 0 ? noWork : Object.fromEntries(state.want.map((key) => [
+        key,
+        key === 'a'
+          ? { _tag: 'A', why: 'kept' } as const
+          : key === 'b'
+          ? { _tag: 'B', key } as const
+          : key === 'c'
+          ? { _tag: 'C', key } as const
+          : timer<Internal>(state.rings, { _tag: 'Rang', key: 't' }),
+      ])),
+    operations: {
+      A: operation((_operation, idempotencyKey) => acts('a', idempotencyKey)),
+      B: operation.atMostOnce(({ key }) => acts(key, null), ({ key }): Internal => ({ _tag: 'Unknown', key })),
+      C: operation.atLeastOnce(({ key }) => acts(key, null)),
+    },
+    project: (state) => ({ wanted: state.want.length }),
+    indexes: { wanted: (projection) => projection.wanted },
+    migrations: [{
+      state: (json) => {
+        const { applied, ...rest } = json as Readonly<Record<string, Json>>
+        return { ...rest, log: applied ?? [] }
+      },
+      // What the migration gives must be what `durable` computes, or the activation suspends the entity.
+      operation: (json) => {
+        const held = json as Readonly<Record<string, Json>>
+        return held._tag === 'A' ? { ...held, why: 'kept' } : held
+      },
+      projection: (json) => ({ wanted: json }),
+      // A reason is kept as long as its reply, which is for ever: a retry reads it through this.
+      rejection: (json) => ({ why: json }),
+    }],
+  }
+
+  /** The idempotency key the operation under `a` ran with: it is the same one through the migration. */
+  const charged = (acted: ReadonlyArray<string>) => acted.filter((act) => act.startsWith('a:'))
+
+  test('a deploy reads the state, the work under way and the rows through the migrations', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      // One toy with nothing left under way, whose row version 1 wrote and nothing rewrites.
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('m-1', { at }, { requestId: 'c-1', sender: tester })
+          yield* runtime.settled
+          yield* Effect.sleep('60 millis')
+          yield* runtime.settled
+          expect(yield* toy.read('m-1')).toBe(0)
+        }))
+      // And one whose operations hold, so that version 2 finds work under way stored by version 1.
+      const before: Array<string> = []
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { acted, layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('m-2', { at }, { requestId: 'c-2', sender: tester })
+          expect(yield* toy.send('m-2', { _tag: 'Refuse', nonce: 'no' }, { requestId: 'r-2', sender: tester }))
+            .toEqual({ _tag: 'Rejected', reason: 'Refused' })
+          yield* Effect.sleep('10 millis')
+          before.push(...acted)
+        }))
+      expect(charged(before)).toHaveLength(1)
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { acted, layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(next), layer)
+          // The row of 'm-1' is the one version 1 wrote, read through the migration of the projection.
+          expect(yield* toy.query({ where: [{ index: 'wanted', is: '=', value: 0 }] }))
+            .toEqual([{ id: 'm-1', projection: { wanted: 0 } }])
+          // 'm-2' was activated with the state and the operations of version 1, migrated: its at-most-once
+          // operation delivered `unknown` and its timer fired, and the two that hold run under the keys they
+          // started with.
+          yield* Effect.sleep('60 millis')
+          expect(yield* toy.read('m-2')).toEqual({ wanted: 2 })
+          expect(charged(acted)).toEqual(charged(before))
+          // The retry is answered from the reply version 1 stored, with its reason read through the migration.
+          expect(yield* toy.send('m-2', { _tag: 'Refuse', nonce: 'no' }, { requestId: 'r-2', sender: tester }))
+            .toEqual({ _tag: 'Rejected', reason: { why: 'Refused' } })
+          // The rows are version 2's once they are written again, and the index reads the struct.
+          expect(yield* toy.reindex).toBe(2)
+          expect(yield* toy.query({ where: [{ index: 'wanted', is: '=', value: 0 }] }))
+            .toEqual([{ id: 'm-1', projection: { wanted: 0 } }])
+        }))
+    })))
+
+  test('a process that has no reading of the version stored dies', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(next), layer)
+          yield* toy.create('m-3', { at }, { requestId: 'c-3', sender: tester })
+          yield* Effect.sleep('10 millis')
+        }))
+      // The entity holds an operation, which an activation starts again: the deploy reads what version 2 wrote.
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const exit = yield* Effect.exit(Effect.provide(runtime.deploy(program), layer))
+          const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+          expect(cause instanceof Error && cause.message)
+            .toBe("'Toy' is version 1, and has no reading of version 2")
         }))
     })))
 })

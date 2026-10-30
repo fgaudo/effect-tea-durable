@@ -33,6 +33,7 @@ tested by calling pure functions, crashes included.
 | `operations` | how each kind of operation runs, what it answers, and what a crash does to it                |
 | `project`    | what callers read of the state, with the actions it allows                                   |
 | `indexes`    | what a query across the program's entities filters and orders by, read off the projection    |
+| `migrations` | how the versions before this one are read, in order                                          |
 
 A program is declared in one place, `program(schemas)(…)`: the schemas first, which give every type the program
 is written in, and then what it does. Everything else is inferred from the pieces — the keys `durable` may use,
@@ -171,9 +172,37 @@ kept as an audit, but nothing replays them.
 
 The runtime on SQLite writes all of it through the program's schemas, as JSON, in five tables — the entity, the
 keys with their incarnations and work, the mailbox in order, the replies by request, and the read model
-([`src/storage.ts`](../src/storage.ts)). A schema whose encoded side is not JSON does not compile: a time is
-held as `Schema.DateTimeUtcFromMillis`, not as `Schema.DateTimeUtc`
-([decision 0030](decisions/0030-a-schema-encodes-to-json.md)).
+([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
+by migrating its JSON to the program's version (see [schemas that change](#schemas-that-change)). A schema whose
+encoded side is not JSON does not compile: a time is held as `Schema.DateTimeUtcFromMillis`, not as
+`Schema.DateTimeUtc` ([decision 0030](decisions/0030-a-schema-encodes-to-json.md)).
+
+## Schemas that change
+
+A program's schemas are what is stored, so a version of the program that changes one finds the version before it
+in the database. `migrations` is how it reads it, in order: the first is the step from version 1 to version 2,
+and **the program's version is how many migrations it carries, plus one** — a migration is the bump, and there is
+none to declare ([decision 0036](decisions/0036-a-migration-is-a-function-on-the-json.md)).
+
+A migration is a record of pure functions **from the JSON a version wrote to the JSON the next one reads**, by
+kind of stored value: `state`, `operation`, `inbound`, `internal`, `rejection`, `sender` and `projection`, and a
+kind left out is unchanged. It works on the JSON, which every schema encodes to
+([decision 0030](decisions/0030-a-schema-encodes-to-json.md)), so the types and schemas of the version before do
+not live on in the code.
+
+Every row carries the version that wrote it, and is read by migrating its JSON from that version and decoding it
+with the program's schema: the machine sees values of the program's own version only. A row is written at the
+program's version whenever it is written, so one step after a deploy the state, the keys and the mailbox are
+migrated for good; a reply and the row a query reads are migrated at every read until they are written again, and
+`reindex` writes the read model again, which a deploy that changed the projection's schema runs, as one that
+changed an index does.
+
+This is what lets a deploy change the shape of an operation under way: the stored operation, migrated, must be
+the one the new `durable` computes from the migrated state, and a migration that gives anything else suspends the
+entity at its activation, as a program that changes an operation does
+([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)). A row written by a version
+the program does not have is not read at all: the process dies on it, since one that cannot read what is stored
+must not serve it.
 
 ## Execution
 
@@ -281,6 +310,9 @@ dies:
 
 [`examples/order/scenarios.test.ts`](../examples/order/scenarios.test.ts) shows them, and
 [`src/rehearse.test.ts`](../src/rehearse.test.ts) rehearses deploys of the order.
+
+A migration is a pure function on JSON, and `rehearse` never encodes, so a rehearsed deploy does not exercise
+one: the runtime's tests deploy a version whose state, operation and projection schemas changed.
 
 The machine is tested with properties, under random orders of messages, completions, timers, crashes and
 defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime is tested against it

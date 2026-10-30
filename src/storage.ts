@@ -1,7 +1,9 @@
 /**
  * What a runtime writes: a `Stored<T>` in one SQLite database, through `SqlClient` (decisions 0007, 0019). The
  * machine says what is stored; this module says in which tables, and encodes it with the program's schemas
- * (decisions 0025, 0027). Nothing here decides anything: a caller writes a whole `Stored` in one transaction.
+ * (decisions 0025, 0027). Every row carries the version of the program that wrote it, and is read by migrating
+ * its JSON to the program's version (decision 0036). Nothing here decides anything: a caller writes a whole
+ * `Stored` in one transaction.
  */
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
@@ -13,11 +15,14 @@ import {
   indexesOf,
   isTimer,
   type Json,
+  type Migrated,
+  migrationOf,
   type Origin,
   type Program,
   type Scalar,
   timer,
   type Types,
+  versionOf,
 } from './program.ts'
 
 /**
@@ -32,6 +37,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       name TEXT NOT NULL,
       id TEXT NOT NULL,
       state TEXT NOT NULL,
+      version INTEGER NOT NULL,
       creation TEXT NOT NULL,
       suspended_on TEXT,
       suspended_cause TEXT,
@@ -47,6 +53,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       id TEXT NOT NULL,
       key TEXT NOT NULL,
       incarnation INTEGER NOT NULL,
+      version INTEGER NOT NULL,
       work TEXT,
       delivery TEXT,
       due INTEGER,
@@ -61,6 +68,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       id TEXT NOT NULL,
       seq INTEGER NOT NULL,
       tag TEXT NOT NULL,
+      version INTEGER NOT NULL,
       message TEXT NOT NULL,
       request_id TEXT,
       origin TEXT,
@@ -77,6 +85,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       id TEXT NOT NULL,
       projection TEXT NOT NULL,
       indexes TEXT NOT NULL,
+      version INTEGER NOT NULL,
       PRIMARY KEY (name, id)
     )
   `
@@ -87,6 +96,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       id TEXT NOT NULL,
       request TEXT NOT NULL,
       tag TEXT NOT NULL,
+      version INTEGER NOT NULL,
       reason TEXT,
       PRIMARY KEY (name, id, request)
     )
@@ -102,7 +112,9 @@ const json = <A>(codec: Schema.Codec<A, Json>) => {
   const decode = Schema.decodeSync(codec)
   return {
     write: (value: A): string => JSON.stringify(encode(value)),
-    read: (text: string): A => decode(JSON.parse(text) as never),
+    /** `up` is how the version that wrote the text is read at the program's, and is identity for its own. */
+    read: (text: string, up: (json: Json) => Json = (json) => json): A =>
+      decode(up(JSON.parse(text) as Json) as never),
   }
 }
 
@@ -231,6 +243,45 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const suspended = json(Suspended)
   const projection = json(program.schemas.projection)
   const { name } = program
+  const version = versionOf(program)
+
+  /** The reading of one kind of value written by `from`, composed once and kept (decision 0036). */
+  const readings = new Map<string, (json: Json) => Json>()
+  const up = (of: Migrated, from: number): (json: Json) => Json => {
+    const at = `${of}@${from}`
+    const held = readings.get(at)
+    if (held !== undefined) return held
+    const reading = migrationOf(program, of, from)
+    readings.set(at, reading)
+    return reading
+  }
+
+  /** The fields of a stored value the runtime wraps; anything else is the program's own, and is left to `up`. */
+  const fields = (held: Json): Readonly<Record<string, Json>> | null =>
+    // `Array.isArray` does not narrow a readonly array out of the union, so what is left is cast.
+    typeof held === 'object' && held !== null && !Array.isArray(held)
+      ? held as Readonly<Record<string, Json>>
+      : null
+
+  /** A key's work: the wrapper is the runtime's, the operation and the timer's message are the program's. */
+  const upWork = (from: number) => (held: Json): Json => {
+    const written = fields(held)
+    if (written === null) return held
+    return written._tag === 'Timer'
+      ? { ...written, message: up('internal', from)(written.message ?? null) }
+      : { ...written, operation: up('operation', from)(written.operation ?? null) }
+  }
+
+  /** Who a queued message came from: only a caller's sender is the program's. */
+  const upOrigin = (from: number) => (held: Json): Json => {
+    const written = fields(held)
+    return written === null || written._tag !== 'Caller'
+      ? held
+      : { ...written, sender: up('sender', from)(written.sender ?? null) }
+  }
+
+  /** The reason a reply carries, null for a bare `reject`, which no migration reads. */
+  const upReason = (from: number) => (held: Json): Json => held === null ? held : up('rejection', from)(held)
 
   /**
    * The expression that reads an index out of the row, written once: SQLite uses an index of an expression only
@@ -257,6 +308,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         id,
         projection: projection.write(shown),
         indexes: JSON.stringify(indexesOf(program, shown)),
+        version,
       })
     }`
   }
@@ -266,8 +318,8 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       isTimer(held) ? { _tag: 'Timer', at: held.at, message: held.message } : { _tag: 'Operation', operation: held },
     )
 
-  const readWork = (text: string): Durable<T['operation'], T['internal']> => {
-    const held = work.read(text)
+  const readWork = (text: string, from: number): Durable<T['operation'], T['internal']> => {
+    const held = work.read(text, upWork(from))
     return held._tag === 'Timer' ? timer(held.at, held.message) : held.operation
   }
 
@@ -275,38 +327,43 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
     Effect.gen(function*() {
       const rows = yield* sql<{
         state: string
+        version: number
         creation: string
         suspended_on: string | null
         suspended_cause: string | null
-      }>`SELECT state, creation, suspended_on, suspended_cause FROM entities WHERE name = ${name} AND id = ${id}`
+      }>`SELECT state, version, creation, suspended_on, suspended_cause
+         FROM entities WHERE name = ${name} AND id = ${id}`
       const row = rows[0]
       if (row === undefined) return null
       const held = yield* sql<{
         key: string
         incarnation: number
+        version: number
         work: string | null
         delivery: string | null
-      }>`SELECT key, incarnation, work, delivery FROM entity_keys WHERE name = ${name} AND id = ${id}`
+      }>`SELECT key, incarnation, version, work, delivery FROM entity_keys WHERE name = ${name} AND id = ${id}`
       const queued = yield* sql<{
         tag: string
+        version: number
         message: string
         request_id: string | null
         origin: string | null
         key: string | null
         incarnation: number | null
-      }>`SELECT tag, message, request_id, origin, key, incarnation FROM mailbox
+      }>`SELECT tag, version, message, request_id, origin, key, incarnation FROM mailbox
          WHERE name = ${name} AND id = ${id} ORDER BY seq`
       const answered = yield* sql<{
         request: string
         tag: string
+        version: number
         reason: string | null
-      }>`SELECT request, tag, reason FROM replies WHERE name = ${name} AND id = ${id}`
+      }>`SELECT request, tag, version, reason FROM replies WHERE name = ${name} AND id = ${id}`
 
       const keys: Record<string, Machine.Key<T>> = {}
       for (const key of held) {
         keys[key.key] = {
           incarnation: key.incarnation,
-          ...(key.work === null ? {} : { work: readWork(key.work) }),
+          ...(key.work === null ? {} : { work: readWork(key.work, key.version) }),
           ...(key.delivery === null ? {} : { delivery: key.delivery as NonNullable<Machine.Key<T>['delivery']> }),
         }
       }
@@ -315,26 +372,29 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
           ? {
             _tag: 'Inbound',
             requestId: envelope.request_id ?? '',
-            message: inbound.read(envelope.message),
-            from: origin.read(envelope.origin ?? 'null'),
+            message: inbound.read(envelope.message, up('inbound', envelope.version)),
+            from: origin.read(envelope.origin ?? 'null', upOrigin(envelope.version)),
           }
           : {
             _tag: 'Internal',
             key: envelope.key ?? '',
             incarnation: envelope.incarnation ?? 0,
-            message: internal.read(envelope.message),
+            message: internal.read(envelope.message, up('internal', envelope.version)),
           }
       )
       const replies: Record<string, Machine.StoredReply<T['rejection']>> = {}
       for (const reply of answered) {
         replies[reply.request] = reply.tag === 'Accepted'
           ? { _tag: 'Accepted' }
-          : { _tag: 'Rejected', reason: reply.reason === null ? null : reason.read(reply.reason) }
+          : {
+            _tag: 'Rejected',
+            reason: reply.reason === null ? null : reason.read(reply.reason, upReason(reply.version)),
+          }
       }
       return {
         name,
         id,
-        state: state.read(row.state),
+        state: state.read(row.state, up('state', row.version)),
         keys,
         mailbox,
         replies,
@@ -357,6 +417,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             name,
             id,
             state: state.write(after.state),
+            version,
             creation: after.creation,
             suspended_on: on,
             suspended_cause: cause,
@@ -365,7 +426,8 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       } else {
         yield* sql`
           UPDATE entities
-          SET state = ${state.write(after.state)}, suspended_on = ${on}, suspended_cause = ${cause}
+          SET state = ${state.write(after.state)}, version = ${version},
+              suspended_on = ${on}, suspended_cause = ${cause}
           WHERE name = ${name} AND id = ${id}
         `
       }
@@ -381,6 +443,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             id,
             key,
             incarnation: held.incarnation,
+            version,
             work: held.work === undefined ? null : writeWork(held.work),
             delivery: held.delivery ?? null,
             due: held.work !== undefined && isTimer(held.work) ? DateTime.toEpochMillis(held.work.at) : null,
@@ -397,6 +460,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
                 id,
                 seq,
                 tag: 'Inbound',
+                version,
                 message: inbound.write(envelope.message),
                 request_id: envelope.requestId,
                 origin: origin.write(envelope.from),
@@ -408,6 +472,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
                 id,
                 seq,
                 tag: 'Internal',
+                version,
                 message: internal.write(envelope.message),
                 request_id: null,
                 origin: null,
@@ -426,6 +491,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             id,
             request,
             tag: reply._tag,
+            version,
             reason: reply._tag === 'Rejected' ? reason.write(reply.reason) : null,
           })
         }`
@@ -487,23 +553,28 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         ? sql`id`
         : sql`${columnOf(order.index)} ${sql.literal(order.descending === true ? 'DESC' : 'ASC')}, id`
       // SQLite reads a negative limit as none.
-      const rows = yield* sql<{ id: string; projection: string }>`
-        SELECT id, projection FROM projections
+      const rows = yield* sql<{ id: string; projection: string; version: number }>`
+        SELECT id, projection, version FROM projections
         WHERE ${sql.and(clauses)} ORDER BY ${by} LIMIT ${limit ?? -1}
       `
-      return rows.map((found): Found<T> => ({ id: found.id, projection: projection.read(found.projection) }))
+      // A row the version before wrote is read through its migrations; `reindex` is what writes it again.
+      return rows.map((found): Found<T> => ({
+        id: found.id,
+        projection: projection.read(found.projection, up('projection', found.version)),
+      }))
     }).pipe(Effect.orDie)
 
   const reindex = Effect.gen(function*() {
     let cursor = ''
     let written = 0
     while (true) {
-      const rows = yield* sql<{ id: string; state: string }>`
-        SELECT id, state FROM entities WHERE name = ${name} AND id > ${cursor} ORDER BY id LIMIT ${batch}
+      const rows = yield* sql<{ id: string; state: string; version: number }>`
+        SELECT id, state, version FROM entities
+        WHERE name = ${name} AND id > ${cursor} ORDER BY id LIMIT ${batch}
       `
       if (rows.length === 0) return written
       for (const held of rows) {
-        yield* row(held.id, state.read(held.state))
+        yield* row(held.id, state.read(held.state, up('state', held.version)))
         cursor = held.id
         written += 1
       }

@@ -11,6 +11,9 @@ export {
   InvariantDefect,
   type Json,
   type Meta,
+  type Migrated,
+  type Migration,
+  migrationOf,
   noWork,
   type Runner,
   type Runners,
@@ -31,6 +34,7 @@ export {
   timer,
   type Types,
   type Update,
+  versionOf,
   type Work,
 } from './program.ts'
 export { accepted, type Pending, type Rehearsal, rehearse, rejected } from './rehearse.ts'

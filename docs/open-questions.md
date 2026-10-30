@@ -45,15 +45,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   an entity that never ends (a subscription's past invoices) would go, since its state keeps only the present.
 - **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
   large state do: split into entities, or store a difference?
-- **Schemas that change.** States, flags, messages in the mailbox and the work under way are stored in the
-  schema of the version that wrote them. How does a migration of a state's schema look, and when does it run:
-  at activation, or all at once? A stored operation is compared with the new program's by value
-  ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)): how is one read whose
-  schema changed ([decision 0025](decisions/0025-operations-and-projections-have-schemas.md))? A projection's
-  schema is a contract with callers: how does it change under them, when the row a query reads holds it in the
-  schema of the version that wrote it ([decision 0032](decisions/0032-a-projection-is-a-row.md))? And renaming
-  a program moves its entities, and the replies stored for them by others
-  ([decision 0022](decisions/0022-a-new-program-keeps-what-work-started-with.md)).
+- **Renaming a program.** A program's name is the entities' address, and a schema's migration does not move
+  what is stored under it: its entities, and the replies stored for them by other entities
+  ([decision 0022](decisions/0022-a-new-program-keeps-what-work-started-with.md)). How a rename is run, and
+  what reaches the senders that stored a reply under the old name, is not decided. A schema that changes is
+  ([decision 0036](decisions/0036-a-migration-is-a-function-on-the-json.md)).
 
 ## Running
 
