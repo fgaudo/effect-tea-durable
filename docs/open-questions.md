@@ -31,11 +31,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Storage and reading
 
-- **What keeps the outbox.** A step that changes what callers read publishes a row, kept until `prune`
-  ([decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md)). With one consumer, it
-  prunes what it has read; with several, who decides, and what does a consumer that falls behind cost? It is
-  also where the history of an entity that never ends (a subscription's past invoices) is read from, which is a
-  retention nobody prunes.
+- **A log that nobody prunes.** A consumer is a name holding a stored cursor, and the runtime never drops a row
+  a consumer has not read: one that stops acking holds the log, where `consumers` shows it
+  ([decision 0039](decisions/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). Nothing caps what that grows
+  to. A step that cannot publish cannot commit, so a cap would stop the entities: what a deployment does when
+  the disk is the limit — a warning, a refusal, a drop that says which consumer lost rows — is not decided.
 - **The order of what is published.** A cursor over the outbox skips nothing while one transaction writes at a
   time, which is what the runtime on SQLite does
   ([decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md)). Where two write at once —

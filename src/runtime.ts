@@ -31,7 +31,7 @@ import {
   runnerOf,
   type Types,
 } from './program.ts'
-import { type Found, type Published, type Query, storage, type Storage } from './storage.ts'
+import { type Consumer, type Found, type Published, type Query, storage, type Storage } from './storage.ts'
 
 /**
  * What a caller is answered: the replies stored under its request id, `NotFound` for no entity, and `Suspended`,
@@ -101,12 +101,34 @@ export interface Handle<T extends Types> {
   /**
    * What the entities of the program did, from the `seq` of `after` on, in the order the steps committed: each
    * row is the message an entity handled and what callers read of it afterwards, written in that step's
-   * transaction (decision 0038). A consumer acts on the rows and then stores the `seq` it reached, so a crash
-   * before it does delivers them again: at least once. `0` is where a consumer starts.
+   * transaction (decision 0038). The cursor is the caller's and nothing of it is stored, so a reading here —
+   * a test, an operator looking — has no say in a prune: `0` is the whole log. A consumer that keeps a cursor
+   * reads with `feed` instead (decision 0039).
    */
   readonly published: (after: number, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
-  /** Drops what was published through `through` — what every consumer has read — and gives how many rows went. */
-  readonly prune: (through: number) => Effect.Effect<number>
+  /**
+   * The same from the stored cursor of the consumer `consumer`: a consumer is a name, its first reading stores
+   * its cursor at `0`, and `ack` moves it once the rows are acted on. From its first reading the log is kept for
+   * it, so a consumer holds no state of its own (decision 0039).
+   */
+  readonly feed: (consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  /**
+   * Moves a consumer's cursor to `through`, never back, since what is behind it may be gone. An ack from a
+   * consumer that has not read stores its cursor too (decision 0039).
+   */
+  readonly ack: (consumer: string, through: number) => Effect.Effect<void>
+  /**
+   * Drops what every consumer has read — through the lowest stored cursor — and gives how many rows went. Where
+   * no consumer has read from the log, it drops nothing (decision 0039).
+   */
+  readonly prune: Effect.Effect<number>
+  /** What each consumer has read, and how many rows are past it: what keeping it costs the log. */
+  readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
+  /**
+   * Drops a consumer's cursor, so that the next prune passes what it never read: how a consumer that is gone,
+   * or a name misspelt once, stops holding the log (decision 0039).
+   */
+  readonly forget: (consumer: string) => Effect.Effect<void>
   /** An operator resumes a suspended entity, perhaps with a fixed program (decision 0006). */
   readonly resume: (id: string, fixed?: Program<T>) => Effect.Effect<void>
   /** An operator discards the message a suspended entity died on (decision 0014). */
@@ -642,7 +664,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           query: (query) => deployed.storage.query(query),
           reindex: deployed.storage.reindex,
           published: (after, limit) => deployed.storage.published(after, limit),
-          prune: (through) => deployed.storage.prune(through),
+          feed: (consumer, limit) => deployed.storage.feed(consumer, limit),
+          ack: (consumer, through) => deployed.storage.ack(consumer, through),
+          prune: deployed.storage.prune,
+          consumers: deployed.storage.consumers,
+          forget: (consumer) => deployed.storage.forget(consumer),
           resume: (id, fixed) =>
             operate(deployed, id, fixed === undefined ? { _tag: 'Resume' } : { _tag: 'Resume', program: fixed }),
           discard: (id) => operate(deployed, id, { _tag: 'Discard' }),

@@ -104,6 +104,16 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     )
   `
   yield* sql`CREATE INDEX IF NOT EXISTS outbox_name ON outbox (name, seq)`
+  // Where each consumer of the outbox has read to: a consumer stores a cursor by name, and what every one of
+  // them has read is what a prune drops (decision 0039).
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS cursors (
+      name TEXT NOT NULL,
+      consumer TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      PRIMARY KEY (name, consumer)
+    )
+  `
   // The replies, by `requestKey`: a retry gets the one stored (decision 0015).
   yield* sql`
     CREATE TABLE IF NOT EXISTS replies (
@@ -195,13 +205,22 @@ export type Found<T extends Types> = Readonly<{ id: string; projection: T['proje
 
 /** What a step published: the message it handled, and what callers read of the entity after it (decision 0038). */
 export type Published<T extends Types> = Readonly<{
-  /** Rises with each row of the database, and is never reused: what a consumer reads from, and stores. */
+  /** Rises with each row of the database, and is never reused: what a consumer acks, and deduplicates by. */
   seq: number
   id: string
   /** Where the message came from, or `Creation` for the row an entity's creation writes, which has none. */
   kind: 'Inbound' | 'Internal' | 'Creation'
   message: T['inbound'] | T['internal'] | null
   projection: T['projection']
+}>
+
+/** A consumer of the outbox, as an operator sees it: where it has read to, and what is waiting (decision 0039). */
+export type Consumer = Readonly<{
+  consumer: string
+  /** The `seq` it acked, `0` for one that has read and acked nothing yet. */
+  seq: number
+  /** How many rows are past its cursor: what it costs the log to keep it. */
+  behind: number
 }>
 
 /** An index's name is a word, so that it is a column of a query and of an index's expression. */
@@ -262,12 +281,29 @@ export interface Storage<T extends Types> {
    */
   readonly reindex: Effect.Effect<number>
   /**
-   * What the entities of the program did, from `after` on, in the order it was written: a consumer acts on each
-   * row and then stores the `seq` it reached, which is delivery at least once (decision 0038).
+   * What the entities of the program did, from `after` on, in the order it was written (decision 0038). The
+   * cursor is the caller's: nothing of it is stored, so a reading here has no say in a prune (decision 0039).
    */
   readonly published: (after: number, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
-  /** Drops what was published through `through` — what every consumer has read — and gives how many rows went. */
-  readonly prune: (through: number) => Effect.Effect<number>
+  /**
+   * The same from the stored cursor of the consumer `consumer`, which its first reading stores at `0`: from then
+   * on the consumer holds the log, acked or not, until it is forgotten (decision 0039).
+   */
+  readonly feed: (consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  /**
+   * Moves a consumer's cursor to `through`, never back, since what is behind it may be gone. An ack from a
+   * consumer that has not read stores its cursor too (decision 0039).
+   */
+  readonly ack: (consumer: string, through: number) => Effect.Effect<void>
+  /**
+   * Drops what every consumer has read — through the lowest stored cursor — and gives how many rows went. Where
+   * no consumer has stored one it drops nothing (decision 0039).
+   */
+  readonly prune: Effect.Effect<number>
+  /** Every consumer that has stored a cursor, with how many rows are past it, by name. */
+  readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
+  /** Drops a consumer's cursor, so that the next prune passes what it never read (decision 0039). */
+  readonly forget: (consumer: string) => Effect.Effect<void>
 }
 
 /** The storage of one program's entities, on one client, with its schemas read once. */
@@ -670,13 +706,54 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       }))
     }).pipe(Effect.orDie)
 
-  const prune = (through: number) =>
+  /** Stores a cursor for the consumer, and moves it to `through`, never back (decision 0039). */
+  const mark = (consumer: string, through: number) =>
+    sql`
+      INSERT INTO cursors ${sql.insert({ name, consumer, seq: through })}
+      ON CONFLICT (name, consumer) DO UPDATE SET seq = max(seq, excluded.seq)
+    `
+
+  const feed = (consumer: string, limit?: number) =>
     Effect.gen(function*() {
-      const gone = yield* sql<{ seq: number }>`
-        DELETE FROM outbox WHERE name = ${name} AND seq <= ${through} RETURNING seq
+      const held = yield* sql<{ seq: number }>`
+        SELECT seq FROM cursors WHERE name = ${name} AND consumer = ${consumer}
       `
-      return gone.length
+      const cursor = held[0]?.seq
+      // The first reading declares the consumer, and only that one writes: a consumer that polls reads.
+      if (cursor === undefined) yield* mark(consumer, 0)
+      return yield* published(cursor ?? 0, limit)
     }).pipe(Effect.orDie)
 
-  return { load, write, interrupted, due, indexed, query, reindex, published, prune }
+  const ack = (consumer: string, through: number) => Effect.asVoid(mark(consumer, through)).pipe(Effect.orDie)
+
+  // The cursors are read and the rows dropped in one transaction: a consumer whose first reading lands in the
+  // middle of a prune either holds the log, and nothing goes, or starts after the drop. Otherwise it could read
+  // rows with its cursor still at 0 and have them dropped behind it, and skip them without ever saying so.
+  const prune = sql.withTransaction(Effect.gen(function*() {
+    const read = yield* sql<{ through: number | null }>`
+      SELECT min(seq) AS through FROM cursors WHERE name = ${name}
+    `
+    const through = read[0]?.through ?? null
+    // No consumer has stored a cursor: the log is somebody's to read by hand, and nothing of it is dropped.
+    if (through === null) return 0
+    const gone = yield* sql<{ seq: number }>`
+      DELETE FROM outbox WHERE name = ${name} AND seq <= ${through} RETURNING seq
+    `
+    return gone.length
+  })).pipe(Effect.orDie)
+
+  const consumers = Effect.gen(function*() {
+    const rows = yield* sql<{ consumer: string; seq: number; behind: number }>`
+      SELECT consumer, seq, (
+        SELECT count(*) FROM outbox WHERE outbox.name = cursors.name AND outbox.seq > cursors.seq
+      ) AS behind
+      FROM cursors WHERE name = ${name} ORDER BY consumer
+    `
+    return rows.map((row): Consumer => ({ consumer: row.consumer, seq: row.seq, behind: row.behind }))
+  }).pipe(Effect.orDie)
+
+  const forget = (consumer: string) =>
+    Effect.asVoid(sql`DELETE FROM cursors WHERE name = ${name} AND consumer = ${consumer}`).pipe(Effect.orDie)
+
+  return { load, write, interrupted, due, indexed, query, reindex, published, feed, ack, prune, consumers, forget }
 }

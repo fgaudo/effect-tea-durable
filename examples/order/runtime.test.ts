@@ -90,10 +90,15 @@ test('what an order published is what another system learns of it', () =>
       ['o-1', 'Internal', 'WarehouseTold', 'Paid', true],
     ])
 
-    // A consumer reads from where it stopped, and prunes what it has acted on.
+    // A consumer is a name, and its cursor is stored: it reads from where it acked, and a prune drops what
+    // every consumer has read (decision 0039).
     const read = published[1]?.seq ?? 0
     const left = published.slice(2).map(({ seq }) => seq)
-    expect((yield* orders.published(read)).map(({ seq }) => seq)).toEqual(left)
-    expect(yield* orders.prune(read)).toBe(2)
+    expect((yield* orders.feed('warehouse')).map(({ seq }) => seq)).toEqual(published.map(({ seq }) => seq))
+    yield* orders.ack('warehouse', read)
+    expect((yield* orders.feed('warehouse')).map(({ seq }) => seq)).toEqual(left)
+    expect(yield* orders.prune).toBe(2)
     expect((yield* orders.published(0)).map(({ seq }) => seq)).toEqual(left)
+    // What the one consumer still has to act on, as an operator sees it.
+    expect(yield* orders.consumers).toEqual([{ consumer: 'warehouse', seq: read, behind: left.length }])
   }))))

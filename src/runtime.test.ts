@@ -12,6 +12,7 @@ import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import fc from 'fast-check'
 import * as Schema from 'effect/Schema'
@@ -916,7 +917,12 @@ describe('publishing what happened', () => {
           const second = rows[1]?.seq ?? 0
           expect(yield* toy.published(second)).toEqual(rows.slice(2))
           expect(yield* toy.published(0, 2)).toEqual(rows.slice(0, 2))
-          expect(yield* toy.prune(second)).toBe(2)
+          // A consumer reads from a cursor of its own, which the readings above neither moved nor stored: it
+          // starts at the beginning, and goes on from where it acked (decision 0039).
+          expect(yield* toy.feed('queue', 2)).toEqual(rows.slice(0, 2))
+          yield* toy.ack('queue', second)
+          expect(yield* toy.feed('queue')).toEqual(rows.slice(2))
+          expect(yield* toy.prune).toBe(2)
           expect(yield* toy.published(0)).toEqual(rows.slice(2))
         }))
     })))
@@ -934,8 +940,10 @@ describe('publishing what happened', () => {
           const read = yield* toy.published(0)
           expect(read.map(({ projection }) => projection)).toEqual([4, 3])
           const cursor = read[1]?.seq ?? 0
-          // The consumer acted on both rows and pruned them: the rows go, and its cursor stands.
-          expect(yield* toy.prune(cursor)).toBe(2)
+          // The consumer acted on both rows and acked them: the prune takes what it has read, and its cursor
+          // stands.
+          yield* toy.ack('queue', cursor)
+          expect(yield* toy.prune).toBe(2)
           expect(yield* toy.published(0)).toEqual([])
           yield* toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'on' }, { requestId: 'on', sender: tester })
           // What is published next is past the cursor: a seq the prune freed is never given again, or the
@@ -944,6 +952,47 @@ describe('publishing what happened', () => {
           expect(next.map(({ projection }) => projection)).toEqual([4])
           expect(next[0]?.seq ?? 0).toBeGreaterThan(cursor)
           expect(yield* toy.published(0)).toEqual(next)
+          expect(yield* toy.feed('queue')).toEqual(next)
+        }))
+    })))
+
+  test('the prune waits for the consumer behind it, and forgetting that one lets the log go', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          yield* Effect.sleep('60 millis')
+          yield* runtime.settled
+          const rows = yield* toy.published(0)
+          const last = rows[rows.length - 1]?.seq ?? 0
+          // Nobody has read the log: a prune drops nothing, since the rows are somebody's to read by hand.
+          expect(yield* toy.prune).toBe(0)
+          expect(yield* toy.consumers).toEqual([])
+          // Two consumers read it, and only one acts on what it read.
+          expect(yield* toy.feed('queue')).toEqual(rows)
+          expect(yield* toy.feed('audit')).toEqual(rows)
+          yield* toy.ack('queue', last)
+          // An ack never moves a cursor back: what is behind it may be gone.
+          yield* toy.ack('queue', rows[0]?.seq ?? 0)
+          expect(yield* toy.consumers).toEqual([
+            { consumer: 'audit', seq: 0, behind: rows.length },
+            { consumer: 'queue', seq: last, behind: 0 },
+          ])
+          // The one that is behind holds every row, however far the other has read.
+          expect(yield* toy.prune).toBe(0)
+          expect(yield* toy.published(0)).toEqual(rows)
+          // An operator sees what it costs, and forgets the consumer: the next prune passes what it never read.
+          yield* toy.forget('audit')
+          expect(yield* toy.prune).toBe(rows.length)
+          expect(yield* toy.published(0)).toEqual([])
+          // Forgotten and reading again under the same name, it starts from 0: at least once, as a crash before
+          // an ack gives (decision 0039).
+          expect(yield* toy.feed('audit')).toEqual([])
+          expect((yield* toy.consumers).map(({ consumer }) => consumer)).toEqual(['audit', 'queue'])
         }))
     })))
 
@@ -1020,6 +1069,73 @@ describe('publishing what happened', () => {
       expect(yield* Deferred.isDone(crashed)).toBe(true)
       expect((yield* store.published(0)).map(({ kind, projection }) => ({ kind, projection })))
         .toEqual([{ kind: 'Creation', projection: 4 }])
+    })))
+
+  test('a cursor is a consumer of one program, and holds no other program log', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      // The same program under another name: two programs' entities publish into one log, read apart by name.
+      const twin: Program<T> = { ...program, name: 'Twin' }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toys = yield* Effect.provide(runtime.deploy(program), layer)
+          const twins = yield* Effect.provide(runtime.deploy(twin), layer)
+          yield* toys.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* twins.create(id, { at }, { requestId: 'creation', sender: tester })
+          // Each reads the rows of its own program, under a name a consumer of each may hold.
+          const mine = yield* toys.feed('queue')
+          const theirs = yield* twins.feed('queue')
+          expect(mine.length).toBe(1)
+          expect(theirs.length).toBe(1)
+          // One sequence serves both logs, so a `seq` of the one is no cursor into the other: it is a row the
+          // other's consumer never saw, and acking it would leave its own row where it is.
+          expect(theirs[0]?.seq ?? 0).toBeGreaterThan(mine[0]?.seq ?? 0)
+          yield* twins.ack('queue', mine[0]?.seq ?? 0)
+          expect(yield* twins.prune).toBe(0)
+          // Each acks its own, and the rows of the one go while the other's consumer holds its log.
+          yield* twins.ack('queue', theirs[0]?.seq ?? 0)
+          expect(yield* twins.prune).toBe(1)
+          expect(yield* toys.prune).toBe(0)
+          expect(yield* toys.published(0)).toEqual(mine)
+          expect(yield* toys.consumers).toEqual([{ consumer: 'queue', seq: 0, behind: 1 }])
+          expect(yield* twins.consumers).toEqual([{ consumer: 'queue', seq: theirs[0]?.seq ?? 0, behind: 0 }])
+        }))
+    })))
+
+  // The premise the prune's one transaction rests on: the client leases its one connection under a semaphore of
+  // one, and a transaction holds it for its duration (decisions 0007, 0039). Two statements apart let a
+  // consumer register in between, which is what would have it read rows and have them dropped behind its cursor.
+  test('a transaction keeps a consumer from registering between its statements, two statements apart do not', () =>
+    database(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const lowest = sql<{ through: number | null }>`SELECT min(seq) AS through FROM cursors WHERE name = 'Toy'`
+      const registers = sql`INSERT INTO cursors ${sql.insert({ name: 'Toy', consumer: 'late', seq: 0 })}`
+      // The first reading is done when `opened` is, so the insert is offered where the race would be, and the
+      // pause after it leaves the insert time to land where nothing holds it out.
+      const reads = (opened: Deferred.Deferred<void>) =>
+        Effect.gen(function*() {
+          const before = yield* lowest
+          yield* Deferred.succeed(opened, undefined)
+          yield* Effect.sleep('30 millis')
+          return [before[0]?.through ?? null, (yield* lowest)[0]?.through ?? null] as const
+        })
+
+      const first = yield* Deferred.make<void>()
+      const apart = yield* Effect.forkChild(reads(first))
+      yield* Deferred.await(first)
+      yield* registers
+      // Two statements apart: the second sees a cursor the first did not, which is where rows would be dropped
+      // behind a consumer that has read them.
+      expect(yield* Fiber.join(apart)).toEqual([null, 0])
+      yield* sql`DELETE FROM cursors WHERE name = 'Toy'`
+
+      const second = yield* Deferred.make<void>()
+      const together = yield* Effect.forkChild(sql.withTransaction(reads(second)))
+      yield* Deferred.await(second)
+      // The insert waits for the permit the transaction holds, so the two readings agree and it lands after.
+      yield* registers
+      expect(yield* Fiber.join(together)).toEqual([null, null])
     })))
 })
 

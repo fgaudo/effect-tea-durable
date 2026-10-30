@@ -292,9 +292,15 @@ handled and the projection it left. An entity's creation writes its first projec
 more is declared: the message names the fact, and the projection is already the public contract
 ([decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md)).
 
-Each row carries a `seq`, which rises with every row and is never reused. `published(after, limit)` reads from
-a cursor and `prune(through)` drops what every consumer has read. A consumer acts on the rows and then stores
-the `seq` it reached, so a crash before it does delivers them again: at least once, deduplicated by `seq`.
+Each row carries a `seq`, which rises with every row and is never reused. A consumer is a name, and its cursor
+is stored: `feed(consumer, limit)` reads from it and `ack(consumer, through)` moves it once the rows are acted
+on, so a crash before the ack delivers them again — at least once, deduplicated by `seq`. `prune` drops what
+every consumer has read, through the lowest stored cursor, and drops nothing where no consumer has read from the
+log. `consumers` says where each one is and how many rows are past it, and `forget` lets the log go past one
+that is gone; `published(after, limit)` reads from a cursor the caller holds, and registers nothing
+([decision 0039](decisions/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). The log is kept for its
+consumers and is not an archive: a program whose past must stay readable keeps it where callers read it, in the
+state or in entities of its own.
 A cursor skips nothing because the runtime writes one transaction at a time, so a row's `seq` is given and
 committed in the same order; entities that step at once queue for it.
 The runtime writes the log and does not deliver it — the transport, the retries and the acknowledgements are

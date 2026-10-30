@@ -41,6 +41,7 @@ export { accepted, type Pending, type Rehearsal, rehearse, rejected } from './re
 export { type Answer, type Handle, launch, type Options, type Point, type Runtime } from './runtime.ts'
 export {
   type Comparison,
+  type Consumer,
   createTables,
   type Criterion,
   type Due,
