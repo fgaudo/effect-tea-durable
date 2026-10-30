@@ -100,8 +100,11 @@ Two kinds of work exist.
 A kept key keeps its work only if the work is the same by value: an operation equal to the one under way, a
 timer at the same time with the same message. A timer that changes is armed again, as new work. An operation
 that changes while it runs is a defect, as one dropped is: otherwise an operation restarted after a crash,
-built from the stored state, would act with other parameters under the same idempotency key. A key whose kind
-changes, from a timer to an operation, is new work
+built from the stored state, would act with other parameters under the same idempotency key. The rule holds
+until the operation's message is handled, while its completion waits in the mailbox too, although an activation
+then skips it and a crash could not rebuild it: an operation is under way from its start until `update` is
+given its message, a moment the program sees, and not until its completion is recorded, which it never sees. A
+key whose kind changes, from a timer to an operation, is new work
 ([decision 0014](decisions/0014-rules-the-machine-settled.md),
 [decision 0018](decisions/0018-operations-are-data.md)).
 
@@ -156,7 +159,10 @@ kept as an audit, but nothing replays them.
   An internal message `update` rejects is a defect, since it cannot be late
   ([decision 0014](decisions/0014-rules-the-machine-settled.md)).
 - **Passivation.** An entity with no message for a while is unloaded. A timer stays armed in storage, and wakes
-  it. An operation under way keeps it loaded.
+  it. An operation under way keeps it loaded. To the machine, a passivation is a crash the runtime chose, with
+  an empty mailbox and only timers under way: a `Restart` activates it again, and arms the same timers in the
+  same incarnations. The timers stored are the stored work's, which says each one's time: the earliest wakes
+  the entity, and nothing else needs storing.
 
 These rules are a pure state machine, [`src/machine.ts`](../src/machine.ts): its events are a message arriving,
 an operation completing or dying, a timer firing, a step, the process dying, and an operator resuming or
@@ -189,8 +195,12 @@ operation, in `durable` or `project` on a step's next state, or in a new program
 suspends it too. Resuming activates it as after a
 crash; a discarded message ends its work as if it had been handled
 ([decision 0014](decisions/0014-rules-the-machine-settled.md)). A caller meanwhile is answered `Suspended`, which
-is not stored, and retries
-([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)).
+is not stored: every caller whose message waits in the mailbox when the entity suspends, and every message that
+arrives while it is, which is not queued. `Suspended` says only that the request has no reply yet. The caller
+retries under the same request id, and gets the stored reply once the entity is resumed: the message is applied
+once, whichever retry finds it
+([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md),
+[decision 0023](decisions/0023-suspended-means-no-reply-yet.md)).
 
 ## Reading
 
@@ -222,8 +232,12 @@ dies:
 - `fire(pending)` fires a timer;
 - `restart` drops everything that is not stored, and activates the entity again: an at-most-once operation
   under way delivers its `unknown` message.
+- `deploy(program)` restarts it with a new version of the program, which keeps the work under way it returns
+  the same and starts the rest as new work. One that changes, drops or delivers otherwise an operation under way
+  fails the test, as a defect.
 
-[`examples/order/scenarios.test.ts`](../examples/order/scenarios.test.ts) shows them.
+[`examples/order/scenarios.test.ts`](../examples/order/scenarios.test.ts) shows them, and
+[`src/rehearse.test.ts`](../src/rehearse.test.ts) rehearses deploys of the order.
 
 The machine is tested with properties, under random orders of messages, completions, timers, crashes and
 defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime will be tested against it, by dying at

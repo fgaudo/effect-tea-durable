@@ -1,0 +1,102 @@
+/**
+ * Deploys, rehearsed on the order: what a new version keeps of the work under way, and what it may not change.
+ */
+import { describe, expect, test } from 'bun:test'
+import * as Cause from 'effect/Cause'
+import * as DateTime from 'effect/DateTime'
+import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
+import { order, type Sender } from '../examples/order/order.ts'
+import { InvariantDefect, isTimer, timer } from './program.ts'
+import { rehearse } from './rehearse.ts'
+
+const placedAt = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
+
+const start = { flags: { order: { customer: 'ada', totalInCents: 4_200 } }, at: placedAt }
+
+const ada: Sender = { _tag: 'Customer', id: 'ada' }
+
+// A new version that gives an hour more to pay.
+const patient: typeof order = {
+  ...order,
+  durable: (state) => {
+    const work = order.durable(state)
+    const deadline = work['payment-deadline']
+    return deadline === undefined || !isTimer(deadline)
+      ? work
+      : { ...work, 'payment-deadline': timer(DateTime.add(deadline.at, { hours: 1 }), deadline.message) }
+  },
+}
+
+// A new version that charges a cent more.
+const greedy: typeof order = {
+  ...order,
+  durable: (state) => {
+    const work = order.durable(state)
+    const charge = work['charge']
+    return charge === undefined || isTimer(charge) || charge._tag !== 'Charge'
+      ? work
+      : { ...work, charge: { ...charge, totalInCents: charge.totalInCents + 1 } }
+  },
+}
+
+describe('a deploy', () => {
+  test('keeps a charge under way it returns the same, under the same idempotency key', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        const before = yield* rehearsal.pending('charge')
+        yield* rehearsal.deploy(patient)
+        const after = yield* rehearsal.pending('charge')
+        expect(after.idempotencyKey).toBe(before.idempotencyKey)
+        expect(yield* rehearsal.answer(before, { _tag: 'ChargeSucceeded', charge: 'ch-1' })).toBe('Delivered')
+      }),
+    )))
+
+  test('arms a deadline it moves again, as new work: the old one\'s firing is dropped', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        const before = yield* rehearsal.pending('payment-deadline')
+        yield* rehearsal.deploy(patient)
+        const after = yield* rehearsal.pending('payment-deadline')
+        expect(after.incarnation).toBe(before.incarnation + 1)
+        expect(isTimer(after.work) && isTimer(before.work) && DateTime.Equivalence(
+          after.work.at,
+          DateTime.add(before.work.at, { hours: 1 }),
+        )).toBe(true)
+        expect(yield* rehearsal.fire(before)).toBe('Dropped')
+        expect(yield* rehearsal.fire(after)).toBe('Delivered')
+        expect(yield* rehearsal.state).toMatchObject({ _tag: 'Cancelled', reason: 'Unpaid' })
+      }),
+    )))
+
+  test('that changes a charge under way is a defect, which fails the scenario', async () => {
+    const exit = await Effect.runPromiseExit(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.deploy(greedy)
+      }),
+    ))
+    const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+    expect(cause instanceof InvariantDefect && cause.reason)
+      .toBe("the program changed the operation under 'charge' before its completion")
+  })
+
+  test('that changes a charge is taken once the charge has completed', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded', charge: 'ch-1' })
+        yield* rehearsal.deploy(greedy)
+        expect((yield* rehearsal.projection).status).toBe('Paid')
+      }),
+    )))
+})

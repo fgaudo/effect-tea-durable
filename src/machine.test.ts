@@ -377,7 +377,7 @@ describe('the machine', () => {
           const id = `${output.key}@${output.incarnation}`
           expect(delivered.has(id)).toBe(false)
           delivered.add(id)
-          expect(before.stored.incarnations[output.key]).toBe(output.incarnation)
+          expect(before.stored.keys[output.key]?.incarnation).toBe(output.incarnation)
         }
       }
     }))
@@ -389,16 +389,16 @@ describe('the machine', () => {
           expect(after.running).toEqual({})
           continue
         }
-        const work = after.stored.work
+        const work = Machine.workOf(after.stored)
         for (const [key, durable] of Object.entries(work)) {
-          const incarnation = after.stored.incarnations[key] ?? -1
+          const incarnation = after.stored.keys[key]?.incarnation ?? -1
           if (!queued(after, key, incarnation)) {
             expect(after.running[key]).toEqual({ kind: kindOf(durable), incarnation })
           }
         }
         for (const [key, running] of Object.entries(after.running)) {
           expect(work[key] === undefined ? undefined : kindOf(work[key])).toBe(running.kind)
-          expect(after.stored.incarnations[key]).toBe(running.incarnation)
+          expect(after.stored.keys[key]?.incarnation).toBe(running.incarnation)
         }
       }
     }))
@@ -410,7 +410,7 @@ describe('the machine', () => {
         for (const output of outputs) {
           if (output._tag === 'Armed') armedAt.set(`${output.key}@${output.incarnation}`, output.timer.at)
         }
-        const work = after.stored.work
+        const work = Machine.workOf(after.stored)
         for (const [key, running] of Object.entries(after.running)) {
           const timer = work[key]
           if (running.kind !== 'Timer' || !isTimer(timer)) continue
@@ -428,7 +428,7 @@ describe('the machine', () => {
         for (const output of outputs) {
           if (output._tag === 'Started') startedWith.set(`${output.key}@${output.incarnation}`, output.operation)
         }
-        const work = after.stored.work
+        const work = Machine.workOf(after.stored)
         for (const [key, running] of Object.entries(after.running)) {
           if (running.kind !== 'Operation') continue
           expect(Equal.equals(startedWith.get(`${key}@${running.incarnation}`), work[key])).toBe(true)
@@ -441,10 +441,10 @@ describe('the machine', () => {
       for (const { event, before, after, outputs } of trace) {
         // An operator who discards a completion ends its work by hand.
         if (event._tag === 'Discard') continue
-        const next = after.stored.work
-        for (const [key, work] of Object.entries(before.stored.work)) {
-          const incarnation = before.stored.incarnations[key] ?? -1
-          const kept = next[key] !== undefined && after.stored.incarnations[key] === incarnation
+        const next = Machine.workOf(after.stored)
+        for (const [key, work] of Object.entries(Machine.workOf(before.stored))) {
+          const incarnation = before.stored.keys[key]?.incarnation ?? -1
+          const kept = next[key] !== undefined && after.stored.keys[key]?.incarnation === incarnation
           if (isTimer(work) || kept) continue
           expect(outputs).toContainEqual({ _tag: 'Delivered', key, incarnation })
         }
@@ -576,7 +576,20 @@ describe('the machine', () => {
       }
     }))
 
-  // A request answered `Suspended` was never in the mailbox: its caller retries.
+  // So no caller waits on a suspended entity: whether its message is queued or not, it retries (decision 0023).
+  test('when the entity suspends, every caller waiting in its mailbox is answered Suspended', () =>
+    property(({ trace }) => {
+      for (const { after, outputs } of trace) {
+        if (!outputs.some((output) => output._tag === 'Suspended')) continue
+        for (const envelope of after.stored.mailbox) {
+          if (envelope._tag !== 'Inbound') continue
+          const { requestId, from } = envelope
+          expect(outputs).toContainEqual({ _tag: 'Replied', requestId, from, reply: { _tag: 'Suspended' } })
+        }
+      }
+    }))
+
+  // A request answered `Suspended` while the entity is suspended was never in the mailbox: its caller retries.
   test('once the work ends, every request that reached the mailbox is answered, and nothing is left', () =>
     property(({ machine, trace }) => {
       const waited = new Set<string>()
@@ -795,6 +808,7 @@ describe('the checks of a step', () => {
 
 describe('a suspended entity', () => {
   const caller = { _tag: 'Caller', sender: null } as const
+  const accepted = { _tag: 'Accepted' } as const
   // Accepts `ok`, and dies on `bug`.
   const suspended = () => {
     const machine = checked((message) => (message === 'bug' ? defect('bug') : message), () => ({}))
@@ -810,6 +824,35 @@ describe('a suspended entity', () => {
       .toEqual([{ _tag: 'Replied', requestId: 'third', from: caller, reply: { _tag: 'Suspended' } }])
     expect(Machine.step(machine, { _tag: 'Create', requestId: 'creation', from: caller }).outputs)
       .toEqual([{ _tag: 'Replied', requestId: 'creation', from: caller, reply: { _tag: 'Created' } }])
+  })
+
+  test('answers Suspended every caller waiting, and gives each its reply on a retry once resumed', () => {
+    const machine = checked((message) => (message === 'bug' ? defect('bug') : message), () => ({}))
+    const receive = (requestId: string, message: string) =>
+      ({ _tag: 'Receive', requestId, message, from: caller }) as const
+    const queued = Machine.step(Machine.step(machine, receive('second', 'bug')).machine, receive('third', 'ok'))
+    const died = Machine.step(queued.machine, { _tag: 'Handle', at })
+    for (const requestId of ['second', 'third']) {
+      expect(died.outputs).toContainEqual({ _tag: 'Replied', requestId, from: caller, reply: { _tag: 'Suspended' } })
+    }
+    const resumed = Machine.step(died.machine, {
+      _tag: 'Resume',
+      program: { ...machine.program, update: (message) => () => message },
+    })
+    // A retry while its message is queued waits for the reply, which handling it gives.
+    expect(Machine.step(resumed.machine, receive('third', 'ok')).outputs).toEqual([])
+    const first = Machine.step(resumed.machine, { _tag: 'Handle', at })
+    const second = Machine.step(first.machine, { _tag: 'Handle', at })
+    expect(second.outputs).toContainEqual({ _tag: 'Replied', requestId: 'third', from: caller, reply: accepted })
+    expect(Machine.step(second.machine, receive('third', 'ok')).outputs)
+      .toEqual([{ _tag: 'Replied', requestId: 'third', from: caller, reply: accepted }])
+  })
+
+  test('an operation that dies answers Suspended every caller waiting', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const queued = Machine.step(machine, { _tag: 'Receive', requestId: 'r', message: 'go', from: caller })
+    const died = Machine.step(queued.machine, { _tag: 'Die', key: 'charge', incarnation: 1, cause: 'died' })
+    expect(died.outputs).toContainEqual({ _tag: 'Replied', requestId: 'r', from: caller, reply: { _tag: 'Suspended' } })
   })
 
   test('resumed with a fixed program, handles the message it died on', () => {
@@ -842,6 +885,20 @@ describe('a suspended entity', () => {
     })
     expect(resumed.machine.stored.suspension).toEqual({ cause: broken, on: { _tag: 'Message' } })
     expect(resumed.machine.running).toEqual({})
+  })
+})
+
+// A runtime passivates an entity as a restart: its timers wait in the stored work while it is unloaded.
+describe('passivation', () => {
+  test('a restart with only timers under way arms them again, in their incarnations, and changes nothing stored', () => {
+    const machine = checked((message) => message, () => ({ deadline: 'later timer', reminder: 'timer' }))
+    const transition = Machine.step(machine, { _tag: 'Restart' })
+    expect(transition.machine.stored).toEqual(machine.stored)
+    expect(transition.machine.running).toEqual(machine.running)
+    expect(transition.outputs).toEqual([
+      { _tag: 'Armed', key: 'deadline', incarnation: 1, timer: timer(at, 'rang') },
+      { _tag: 'Armed', key: 'reminder', incarnation: 1, timer: timer(epoch, 'rang') },
+    ])
   })
 })
 
