@@ -48,7 +48,7 @@ type T = {
   flags: null
   inbound: Inbound
   internal: Internal
-  operation: Readonly<{ _tag: 'A'; tune: number }> | Readonly<{ _tag: 'B' | 'C' }>
+  operation: Readonly<{ _tag: 'A'; tune: number }> | Readonly<{ _tag: 'B' | 'C'; key: Key }>
   rejection: 'Refused'
   sender: 'caller'
   projection: number
@@ -95,15 +95,15 @@ const program: Program<T> = {
       key === 'a'
         ? { _tag: 'A', tune: state.tune } as const
         : key === 'b'
-        ? { _tag: 'B' } as const
+        ? { _tag: 'B', key } as const
         : key === 'c'
-        ? { _tag: 'C' } as const
+        ? { _tag: 'C', key } as const
         : timer<Internal>(DateTime.makeUnsafe(state.applied.length), { _tag: 'Rang', key: 't' }),
     ])),
   operations: {
     A: operation(() => Effect.succeed(done('a'))),
-    B: operation.atMostOnce(() => Effect.succeed(done('b')), (): Internal => ({ _tag: 'Unknown', key: 'b' })),
-    C: operation.atLeastOnce(() => Effect.succeed(done('c'))),
+    B: operation.atMostOnce(({ key }) => Effect.succeed(done(key)), ({ key }): Internal => ({ _tag: 'Unknown', key })),
+    C: operation.atLeastOnce(({ key }) => Effect.succeed(done(key))),
   },
   project: (state) => state.want.length,
 }
@@ -120,10 +120,20 @@ const retuned: Program<T> = {
 // A new version of the program that runs `b` at least once: a deploy that changes it while it runs is a defect.
 const redelivered: Program<T> = {
   ...program,
-  operations: { ...program.operations, B: operation.atLeastOnce(() => Effect.succeed(done('b'))) },
+  operations: { ...program.operations, B: operation.atLeastOnce(({ key }) => Effect.succeed(done(key))) },
 }
 
-const versions = { first: program, retuned, redelivered } as const
+// A new version of the program that runs `t` as an at-most-once operation instead of a timer: at an activation the
+// key is new work, which never ran, so it starts instead of delivering `unknown`.
+const retimed: Program<T> = {
+  ...program,
+  durable: (state) => {
+    const work = program.durable(state)
+    return work['t'] === undefined ? work : { ...work, t: { _tag: 'B', key: 't' } as const }
+  },
+}
+
+const versions = { first: program, retuned, redelivered, retimed } as const
 
 /** The program a restart or a resumption brings: the one running, or one of the versions. */
 type Version = 'same' | keyof typeof versions
@@ -147,7 +157,7 @@ type Command =
   | Readonly<{ _tag: 'Discard' }>
 
 const key = fc.constantFrom(...keys)
-const version = fc.constantFrom<Version>('same', 'same', 'same', 'first', 'retuned', 'redelivered')
+const version = fc.constantFrom<Version>('same', 'same', 'same', 'first', 'retuned', 'redelivered', 'retimed')
 const pick = fc.nat()
 
 const command: fc.Arbitrary<Command> = fc.oneof(
@@ -304,7 +314,7 @@ const run = (commands: ReadonlyArray<Command>) => {
   }
   // Then everything ends: bugs are discarded, operations complete, timers fire, and the mailbox is handled. A
   // suspended entity is discarded or resumed, by each version in turn, until one keeps what runs.
-  const fixes = [program, retuned, redelivered] as const
+  const fixes = [program, retuned, redelivered, retimed] as const
   let tried = 0
   for (let turn = 0; turn < 200; turn++) {
     const { stored } = machine
@@ -874,6 +884,21 @@ describe('a new program', () => {
     expect(changed.outputs.filter((output) => output._tag === 'Started')).toEqual([])
     const dropped = deployed(machine, () => ({}))
     expect(reasonOfSuspension(dropped)).toBe("the program dropped the operation under 'charge' before its completion")
+  })
+
+  test('an at-most-once operation that is new work at an activation starts: it never ran', () => {
+    const machine = checked((message) => message, () => ({ deadline: 'timer' }))
+    const program = machine.program
+    const transition = Machine.step(machine, {
+      _tag: 'Restart',
+      program: {
+        ...program,
+        durable: (state) => ({ ...program.durable(state), mail: { _tag: 'Work', size: 1 } as const }),
+        operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => '?') },
+      },
+    })
+    expect(transition.outputs).toContainEqual(expect.objectContaining({ _tag: 'Started', key: 'mail', incarnation: 1 }))
+    expect(transition.machine.stored.mailbox).toEqual([])
   })
 
   test('changing how an operation under way is delivered is a defect', () => {

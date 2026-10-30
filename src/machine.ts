@@ -234,7 +234,8 @@ const reconcile = <T extends Types>(program: Program<T>, name: string, stored: S
 /**
  * Starts what the stored state says, with nothing under way, as `program` computes it: the work under each key,
  * unless its message is already in the mailbox. An at-most-once operation that may have run before (after a
- * crash, or a suspension) may have acted, so its `unknown` is recorded instead of running it again. A defect
+ * crash, or a suspension) may have acted, so its `unknown` is recorded instead of running it again; one that is
+ * new work at this activation, in an incarnation the stored work did not hold, never ran, and starts. A defect
  * leaves the entity as it was before the event, `before`, suspended on what suspended it, or on the activation.
  */
 const activate = <T extends Types>(
@@ -258,7 +259,8 @@ const activate = <T extends Types>(
     const incarnation = stored.incarnations[key] ?? 0
     if (isQueued(stored, key, incarnation)) continue
     const runner = isTimer(work) ? null : runnerOf(program, work)
-    if (mayHaveRun(key) && runner?.delivery === 'AtMostOnce') {
+    const started = incarnation === machine.stored.incarnations[key]
+    if (started && mayHaveRun(key) && runner?.delivery === 'AtMostOnce') {
       mailbox.push({ _tag: 'Internal', key, incarnation, message: runner.unknown(work as T['operation']) })
       outputs.push({ _tag: 'Recorded', key, incarnation })
     } else {
