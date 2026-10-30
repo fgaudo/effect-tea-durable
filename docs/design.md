@@ -103,10 +103,9 @@ A kept key keeps its work only if the work is the same by value: an operation eq
 timer at the same time with the same message. A timer that changes is armed again, as new work. An operation
 that changes while it runs is a defect, as one dropped is: otherwise an operation restarted after a crash,
 built from the stored state, would act with other parameters under the same idempotency key. The rule holds
-until the operation's message is handled, while its completion waits in the mailbox too, although an activation
-then skips it and a crash could not rebuild it: an operation is under way from its start until `update` is
-given its message, a moment the program sees, and not until its completion is recorded, which it never sees. A
-key whose kind changes, from a timer to an operation, is new work
+until `update` is given the operation's message, even while its completion waits in the mailbox and a crash
+could no longer rebuild it: the program sees the step that handles the message, never the moment the completion
+is recorded. A key whose kind changes, from a timer to an operation, is new work
 ([decision 0014](decisions/0014-rules-the-machine-settled.md),
 [decision 0018](decisions/0018-operations-are-data.md)).
 

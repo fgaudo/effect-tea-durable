@@ -212,7 +212,7 @@ const isSame = <T extends Types>(
     ? isTimer(next) && DateTime.Equivalence(previous.at, next.at) && Equal.equals(previous.message, next.message)
     : !isTimer(next) && Equal.equals(previous, next))
 
-const isQueued =<T extends Types>(stored: Stored<T>, key: string, incarnation: number) =>
+const isQueued = <T extends Types>(stored: Stored<T>, key: string, incarnation: number) =>
   stored.mailbox.some((envelope) =>
     envelope._tag === 'Internal' && envelope.key === key && envelope.incarnation === incarnation
   )
