@@ -232,8 +232,12 @@ dies:
 - `fire(pending)` fires a timer;
 - `restart` drops everything that is not stored, and activates the entity again: an at-most-once operation
   under way delivers its `unknown` message.
+- `deploy(program)` restarts it with a new version of the program, which keeps the work under way it returns
+  the same and starts the rest as new work. One that changes, drops or delivers otherwise an operation under way
+  fails the test, as a defect.
 
-[`examples/order/scenarios.test.ts`](../examples/order/scenarios.test.ts) shows them.
+[`examples/order/scenarios.test.ts`](../examples/order/scenarios.test.ts) shows them, and
+[`src/rehearse.test.ts`](../src/rehearse.test.ts) rehearses deploys of the order.
 
 The machine is tested with properties, under random orders of messages, completions, timers, crashes and
 defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime will be tested against it, by dying at

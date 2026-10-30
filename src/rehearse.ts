@@ -8,7 +8,6 @@ import {
   isTimer,
   type Origin,
   type Program,
-  type Reply,
   type Types,
 } from './program.ts'
 
@@ -31,9 +30,9 @@ export interface Rehearsal<T extends Types> {
   readonly state: Effect.Effect<T['state']>
   readonly projection: Effect.Effect<T['projection']>
   /** Delivers an inbound message, with a new request id. */
-  readonly send: (message: T['inbound'], sender: T['sender']) => Effect.Effect<Reply<T['rejection']>>
+  readonly send: (message: T['inbound'], sender: T['sender']) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /** Delivers an inbound message from another entity's operation, with a new request id. */
-  readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Reply<T['rejection']>>
+  readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /** The work under way under `key`. Fails the test when there is none. */
   readonly pending: (key: string) => Effect.Effect<Pending<Durable<T['operation'], T['internal']>>>
   /** Completes an operation with `message`. It is dropped when the operation's incarnation has moved on. */
@@ -45,6 +44,12 @@ export interface Rehearsal<T extends Types> {
    * operations under way deliver their `unknown` message instead of running again.
    */
   readonly restart: Effect.Effect<void>
+  /**
+   * A deploy: the process dies, and `program`, a new version, activates the entity from what was stored. It keeps
+   * the work under way that it returns the same, and starts the rest as new work. It fails the test when the new
+   * program is a defect: one that changes, drops or delivers otherwise an operation under way, or bears another name.
+   */
+  readonly deploy: (program: Program<T>) => Effect.Effect<void>
 }
 
 /** The entity's id in a rehearsal, part of its idempotency keys. */
@@ -93,7 +98,7 @@ export const rehearse = <T extends Types, E>(
             if (output._tag !== 'Replied' || output.requestId !== requestId) continue
             const { reply } = output
             if (reply._tag === 'Accepted' || reply._tag === 'Rejected') {
-              return Effect.succeed<Reply<T['rejection']>>(reply)
+              return Effect.succeed<Machine.StoredReply<T['rejection']>>(reply)
             }
           }
           return Effect.die(`the request ${requestId} was not answered`)
@@ -111,13 +116,13 @@ export const rehearse = <T extends Types, E>(
 
     return scenario({
       state: Effect.sync(() => machine.stored.state),
-      projection: Effect.sync(() => program.project(machine.stored.state)),
+      projection: Effect.sync(() => machine.program.project(machine.stored.state)),
       send: (message, sender) => deliver(message, { _tag: 'Caller', sender }),
       sendFrom: (message, entity) => deliver(message, { _tag: 'Entity', entity }),
       pending: (key) =>
         Effect.suspend(() => {
           const running = machine.running[key]
-          const work = program.durable(machine.stored.state)[key]
+          const work = machine.stored.keys[key]?.work
           return running === undefined || work === undefined
             ? Effect.die(`no work is under way under '${key}'`)
             : Effect.succeed({
@@ -140,11 +145,12 @@ export const rehearse = <T extends Types, E>(
         Effect.suspend(() => {
           const kind = kindOf(pending)
           if (kind === 'Operation') return Effect.die(`the work under '${pending.key}' is an operation: it is answered`)
-          const work = program.durable(machine.stored.state)[pending.key]
+          const work = machine.stored.keys[pending.key]?.work
           if (kind === 'Timer' && isTimer(work)) now = DateTime.max(now, work.at)
           const { key, incarnation } = pending
           return Effect.map(apply({ _tag: 'Fire', key, incarnation }), outcome(pending))
         }),
       restart: Effect.asVoid(apply({ _tag: 'Restart' })),
+      deploy: (program) => Effect.asVoid(apply({ _tag: 'Restart', program })),
     })
   })
