@@ -126,7 +126,7 @@ export type Due = Readonly<{
   next: number | null
 }>
 
-/** How many entities one reading of `due` gives: a reading that fills it is followed by another. */
+/** How many entities one reading gives as due: a reading that fills it is followed by another. */
 const batch = 256
 
 export interface Storage<T extends Types> {

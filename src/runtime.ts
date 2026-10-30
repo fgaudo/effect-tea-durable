@@ -24,6 +24,7 @@ import {
   type Creation,
   Entities,
   type IdempotencyKey,
+  isTimer,
   type Origin,
   type Program,
   type Reply,
@@ -63,8 +64,8 @@ export interface Options {
   /** How long a `send` from another entity waits before retrying a suspended one (decision 0010). */
   readonly retry?: Readonly<{ millis: number }>
   /**
-   * How long an entity with nothing to do stays loaded. Its own clock starts again at every event, and the
-   * entity is unloaded at the first tick that finds it with nothing to do (decision 0029).
+   * How long an entity stays loaded with no event coming for it. The wait starts again at every event, and when
+   * it runs out the entity is unloaded, or waits again if it still has something to do (decision 0029).
    */
   readonly passivate?: Readonly<{ millis: number }>
 }
@@ -127,7 +128,7 @@ interface Waker {
    * been poked. While it is set, nothing is known of the stored timers, and the process is not settled.
    */
   busy: boolean
-  /** The earliest time a stored timer of an unloaded entity is due, read while the fiber was not busy. */
+  /** The earliest time a stored timer of an unloaded entity is due, as last read: to be read while `busy` is not. */
   next: number | null
   /** An entity was unloaded, and its timers may be due before the one the fiber sleeps for. */
   readonly poke: Queue.Queue<void>
@@ -352,14 +353,18 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })))
 
     /**
-     * Whether the entity has nothing to do: no event waiting, no message to handle, and only timers under way.
-     * A suspended entity holds the message it died on and runs nothing, and is unloaded with it (decision 0029).
+     * Whether the entity has nothing to do: no event waiting or being applied, no message to handle, and nothing
+     * but timers left of what its state holds (decision 0029).
      */
     const nothingToDo = <T extends Types>(loaded: Loaded<T>) => {
-      const { stored, running } = loaded.machine
+      const { stored } = loaded.machine
       if (loaded.applying || Queue.sizeUnsafe(loaded.events) > 0 || loaded.operations.size > 0) return false
-      if (Object.values(running).some((work) => work.kind !== 'Timer')) return false
-      return stored.suspension !== null || stored.mailbox.length === 0
+      // A suspended entity runs nothing and comes back suspended, with the message it died on (decision 0006).
+      if (stored.suspension !== null) return true
+      if (stored.mailbox.length > 0) return false
+      // What the state holds is what the next activation starts, so only timers may be left: an operation with
+      // nothing running for it would come back as its `unknown`, and an at-most-once one would lose its act.
+      return Object.values(stored.keys).every((key) => key.work === undefined || isTimer(key.work))
     }
 
     /**
@@ -424,8 +429,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /**
-     * Runs `held` on the entity `id` of `deployed`, loaded from storage when this process does not hold it, while
-     * the entity is held: the registry's permit is what keeps it from being unloaded meanwhile (decision 0029).
+     * Runs `found` on the entity `id` of `deployed`, loaded from storage when this process does not hold it, and
+     * while the entity is held: the registry's permit is what keeps it from being unloaded meanwhile
+     * (decision 0029).
      */
     const withEntity = <T extends Types, A>(
       deployed: Deployment<T>,
@@ -547,34 +553,32 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * entities whose time has come — arming a timer already due fires it — and sleeps until the next, or until an
      * entity is unloaded and brings an earlier one (decision 0029).
      */
-    const waking = <T extends Types>(deployed: Deployment<T>): Effect.Effect<void> => {
+    const waking = <T extends Types>(deployed: Deployment<T>) => {
       const { waker } = deployed
-      const next: Effect.Effect<void> = Effect.gen(function*() {
+      // One reading per round, and `forever` begins the next: a round that waited for itself would leave a frame
+      // behind at every timer the process ever wakes for.
+      return Effect.forever(Effect.gen(function*() {
         const now = DateTime.toEpochMillis(yield* DateTime.now)
         const due = yield* deployed.storage.due(now, [...deployed.loaded.keys()])
         waker.next = due.next
-        // The entities just activated are this process's, and the reading that follows leaves them out.
+        // The entities just activated are this process's, and the reading of the next round leaves them out.
         if (due.ready.length > 0) {
           for (const id of due.ready) yield* loads(deployed, id)
-          return yield* next
+          return
         }
-        // The reading is behind an entity unloaded meanwhile, and is made again before the fiber rests.
+        // Whether the reading stands: an entity unloaded while it was made has poked, and it is made again.
+        // Taking the poke and clearing the flag are each one step, so no reading is lost and none is stale.
         const rests = yield* Effect.sync(() => {
           if (Queue.sizeUnsafe(waker.poke) > 0) return false
           waker.busy = false
           return true
         })
-        if (!rests) {
-          yield* Queue.take(waker.poke)
-          return yield* next
-        }
+        if (!rests) return yield* Queue.take(waker.poke)
         yield* due.next === null
           ? Queue.take(waker.poke)
           : Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(`${Math.max(0, due.next - now)} millis`))
         waker.busy = true
-        return yield* next
-      })
-      return next
+      }))
     }
 
     const deploy = <T extends Types>(program: Program<T>) =>
@@ -620,8 +624,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const quiet = (now: number) => {
       for (const deployed of deployments.values()) {
         const { waker } = deployed
-        // A timer of an unloaded entity whose time has come is work the process has not activated yet.
+        // The waker has a reading to make, so nothing is known of the stored timers.
         if (waker.busy) return false
+        // A timer of an unloaded entity whose time has come is work the process has not activated yet.
         if (waker.next !== null && waker.next <= now) return false
         for (const loaded of deployed.loaded.values()) {
           const { stored } = loaded.machine
@@ -633,12 +638,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       return true
     }
 
-    const settled: Effect.Effect<void> = Effect.gen(function*() {
-      const now = DateTime.toEpochMillis(yield* DateTime.now)
-      if (quiet(now)) return
-      yield* Effect.sleep('1 millis')
-      yield* settled
-    })
+    const settled: Effect.Effect<void> = Effect.suspend(() =>
+      Effect.flatMap(DateTime.now, (now) =>
+        quiet(DateTime.toEpochMillis(now))
+          ? Effect.void
+          : Effect.flatMap(Effect.sleep('1 millis'), () => settled))
+    )
 
     return { deploy, settled }
   })

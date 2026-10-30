@@ -412,6 +412,12 @@ describe('passivation', () => {
       const since = (yield* store.load(id))?.state.since ?? at
       // There is nothing for a process to activate: a timer is not an operation a crash interrupted.
       expect(yield* store.interrupted).toEqual([])
+      // The timer is the entity's only work: it is due at the time the state holds, a reading that counts the
+      // entity among the process's own gives it neither as due nor as the next, and the time is `rings`.
+      const rings = DateTime.toEpochMillis(since) + 40
+      expect(yield* store.due(rings - 1, [])).toEqual({ ready: [], next: rings })
+      expect(yield* store.due(rings, [])).toEqual({ ready: [id], next: null })
+      expect(yield* store.due(rings, [id])).toEqual({ ready: [], next: null })
       yield* process({ observe }, (runtime) =>
         Effect.gen(function*() {
           const { layer } = yield* hands()
@@ -450,6 +456,14 @@ describe('passivation', () => {
           const stored = yield* store.load(id)
           expect(stored?.suspension?.on).toEqual({ _tag: 'Message' })
           expect(stored?.mailbox.length).toBe(1)
+          // It holds its timer still, and is left out of both readings a process makes of what has to run.
+          expect(Object.keys(stored?.keys ?? {}).filter((key) => stored?.keys[key]?.work !== undefined))
+            .toEqual(['t'])
+          expect(yield* store.interrupted).toEqual([])
+          expect(yield* store.due(DateTime.toEpochMillis(yield* DateTime.now) + 1_000, [])).toEqual({
+            ready: [],
+            next: null,
+          })
           // An operator's act loads it again, and what it holds runs.
           yield* toy.discard(id)
           yield* runtime.settled

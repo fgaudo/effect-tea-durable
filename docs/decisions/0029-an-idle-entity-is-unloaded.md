@@ -23,8 +23,8 @@ losing its message to a passivation.
   a crash during a passivation is a crash with the entity's work stored, which the table already covers.
 - **An entity is unloaded once nothing has come for it for a while.** The entity's loop already waits for an
   event when the stored mailbox holds no message, and that wait is where the entity is unloaded: the wait times
-  out, never the take, so an event taken is always applied. Nothing to do means no event waiting, no operation
-  under way and only timers under way, with either an empty mailbox or a suspension.
+  out, never the take, so an event taken is always applied. Nothing to do means no event waiting or being
+  applied, nothing under way but timers, and either an empty mailbox or a suspension.
 - **A suspended entity is unloaded with the message it died on, and no timer of its fires.** Nothing of a
   suspended entity runs until an operator resumes it
   ([decision 0006](0006-a-defect-suspends-the-entity.md)), so it is the one most worth unloading, and the one a
@@ -43,10 +43,14 @@ losing its message to a passivation.
   and it is told before the entity leaves the process: a timer is either armed here or counted among the stored
   ones, never neither. So a timer that fires in the instant before its interruption may deliver nothing, and
   costs nothing: the stored time stands, and the entity is activated for it.
-- **An unloaded entity holds no operation.** An operation under way keeps its entity loaded, and an operation
-  stored with none under way means the entity is suspended or has its completion in the mailbox — neither of
-  which is idle. So the stored timers wake everything that has to run, and an at-most-once operation never
-  delivers its `unknown` because of a passivation ([decision 0011](0011-an-operation-declares-what-a-crash-does.md)).
+- **An unloaded entity holds no operation.** What the state holds is what the next activation starts, and an
+  operation it holds with nothing running for it comes back as its `unknown`
+  ([decision 0011](0011-an-operation-declares-what-a-crash-does.md)): an at-most-once operation would lose what
+  it was going to do, to a crash nobody suffered. It follows from the other rules — an operation under way keeps
+  its entity loaded, and one stored with none under way means the entity is suspended or has its completion in
+  the mailbox, and neither is idle — but having nothing to do is read off the stored keys rather than off what
+  the process happens to be running, so a passivation cannot do it even if that reasoning is one day wrong. And
+  since nothing unloaded holds an operation, the stored timers wake everything that has to run.
 - **How long is an option of the runtime.** `passivate.millis`, thirty seconds by default. A large one is a
   process that holds what it loads, as before this decision. A passivation is no event, so it is not seen
   through `observe`: a hook of its own (`unloaded`) is called with every entity unloaded, which is what the
@@ -72,8 +76,12 @@ losing its message to a passivation.
   stored times; [`src/storage.ts`](../../src/storage.ts) answers `interrupted` (the entities holding an
   operation) and `due` (the entities an unloaded timer is due for, and the next time one is).
   [`src/machine.ts`](../../src/machine.ts) is untouched.
-- `settled` waits for the timers of unloaded entities whose time has come, as it waits for what the process
-  holds: a test that sleeps past a timer sees it handled.
+- `settled` waits for the timers of unloaded entities whose time has come, so that a test which sleeps past a
+  timer sees it handled rather than pending. It is stricter there than for what the process holds, where a timer
+  armed in the process has never counted: that one is a sleep about to deliver, where an unloaded entity's is a
+  reading nobody has made yet.
+- A reading of the earliest due gives at most a few hundred entities, and one that fills it is followed by
+  another: a time that has come for many entities at once activates them in batches, not all at once.
 - The reading of the earliest due leaves out the entities the process holds by listing them, which is the small
   set while passivation does its work.
 - An entity with no work at all is unloaded and nothing wakes it, which is right: a caller loads it.
