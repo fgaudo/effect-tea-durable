@@ -249,14 +249,11 @@ export const indexesOf = <T extends Types>(
   program: Program<T>,
   projection: T['projection'],
 ): Readonly<Record<string, Scalar>> => {
-  const values: Record<string, Scalar> = {}
   // `Indexes` has a function for every name of `T['index']`, which TypeScript cannot index by a name it holds.
-  for (
-    const [name, of] of Object.entries(
-      program.indexes as Readonly<Record<string, (projection: T['projection']) => Scalar>>,
-    )
-  ) values[name] = of(projection)
-  return values
+  const indexes = program.indexes as Readonly<Record<string, (projection: T['projection']) => Scalar>>
+  return Object.fromEntries(
+    Object.entries(indexes).map(([name, read]): readonly [string, Scalar] => [name, read(projection)]),
+  )
 }
 
 /** What creating an entity is answered. Only `Created` is stored, under the request id. */

@@ -788,6 +788,19 @@ describe('the read model', () => {
         }))
     })))
 
+  test('a deploy leaves SQLite an index of the expression the query reads', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) => Effect.asVoid(settled(runtime, at)))
+      const sql = yield* SqlClient.SqlClient
+      const plan = yield* sql.unsafe<{ detail: string }>(
+        `EXPLAIN QUERY PLAN SELECT id FROM projections
+         WHERE name = 'Toy' AND json_extract(indexes, '$.wanted') <= 0`,
+      )
+      // The index is on the expression, so it is used only where a query writes the expression the same way.
+      expect(plan.map(({ detail }) => detail).join(' ')).toContain('USING INDEX projections Toy wanted (name=? AND <expr>')
+    })))
+
   test('reindex writes the rows again for an index a new version changed', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now

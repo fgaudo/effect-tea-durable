@@ -516,8 +516,9 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
 }
 
 /**
- * Activates a suspended entity again, as after a crash, perhaps with a fixed program. A program whose `durable` or
- * `project` dies on the stored state, or that changes an operation under way, leaves it suspended, with that cause.
+ * Activates a suspended entity again, as after a crash, perhaps with a fixed program. A program whose `durable`,
+ * `project` or index dies on the stored state, or that changes an operation under way, leaves it suspended, with
+ * that cause.
  */
 const resume = <T extends Types>(machine: Machine<T>, fixed: Program<T> | undefined): Transition<T> => {
   if (machine.stored.suspension === null) return { machine, outputs: [] }

@@ -64,6 +64,9 @@ had to be invented; what was missing was where it is written and what a query ma
   function of the state alone.
 - A query reads what is committed. An entity loaded in this process has its row written in the same transaction
   as its state, so a query never sees a projection the entity has moved past.
+- `reindex` reads each state and writes its row, one by one and outside the step's transaction: an entity that
+  takes a step in between has its row written back as it was, and writes it again at its next step. An operator
+  runs it on a deploy, and nothing of the runtime depends on it.
 - How a projection's schema changes under its callers is still open
   ([schemas that change](../open-questions.md#storage-and-reading)); the row holds the projection in the schema
   of the version that wrote it, and `reindex` is what rewrites it.

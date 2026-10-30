@@ -57,4 +57,8 @@ test('a query finds the orders nobody paid, and leaves out the one that was', ()
     expect(yield* orders.query({ where: [{ index: 'unpaidUntil', is: '<=', value: now }] })).toEqual([])
     expect((yield* orders.query({ where: [{ index: 'unpaidUntil', is: '=', value: null }] })).map(({ id }) => id))
       .toEqual(['o-2'])
+    expect((yield* orders.query({ where: [{ index: 'unpaidUntil', is: '<>', value: null }] })).map(({ id }) => id))
+      .toEqual(['o-1', 'o-3'])
+    // An order against no value finds nothing, as in SQL.
+    expect(yield* orders.query({ where: [{ index: 'unpaidUntil', is: '<', value: null }] })).toEqual([])
   }))))

@@ -151,14 +151,13 @@ After each message the runtime stores, in one transaction:
 
 - the new state;
 - the incarnations of the keys, and the work the state holds, with how each operation is delivered;
-- the message, marked as handled, with its reply for an inbound one.
+- the message, marked as handled, with its reply for an inbound one;
+- and, when the state changed, the row a query reads: the projection, and the value of each index on it
+  ([decision 0032](decisions/0032-a-projection-is-a-row.md)).
 
 It stores the state, not the messages that led to it: a fixed `update` changes what happens next, never what
 already happened ([decision 0002](decisions/0002-store-the-state-not-the-messages.md)). The messages may be
 kept as an audit, but nothing replays them.
-
-and, when the state changed, the row a query reads: the projection, and the value of each index on it
-  ([decision 0032](decisions/0032-a-projection-is-a-row.md)).
 
 The runtime on SQLite writes all of it through the program's schemas, as JSON, in five tables — the entity, the
 keys with their incarnations and work, the mailbox in order, the replies by request, and the read model

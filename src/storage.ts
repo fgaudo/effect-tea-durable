@@ -159,7 +159,7 @@ export type Query<T extends Types> = Readonly<{
   where?: ReadonlyArray<Criterion<T>>
   /** The index they are ordered by, ascending unless `descending`. Entities whose index is null come first. */
   order?: Readonly<{ index: T['index']; descending?: boolean }>
-  /** How many at most, in that order. */
+  /** How many at most, in that order; all of them when it is left out. */
   limit?: number
 }>
 
@@ -213,7 +213,9 @@ export interface Storage<T extends Types> {
   /**
    * Writes the row of every entity of the program again, from its stored state: what an index added or changed
    * by a new version of the program needs, since a row is only written when its entity takes a step. Each row is
-   * its own write, so a crash leaves the rest to the next run, and gives how many were written.
+   * its own write, so a crash leaves the rest to the next run, and gives how many were written. An entity that
+   * takes a step between the reading of its state and the writing of its row has that row written back as it
+   * was, and the step after it writes the row again.
    */
   readonly reindex: Effect.Effect<number>
 }
@@ -227,29 +229,34 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const work = json(workOf(program))
   const reason = json(reasonOf(program.schemas.rejection))
   const suspended = json(Suspended)
-  const shown = json(program.schemas.projection)
+  const projection = json(program.schemas.projection)
   const { name } = program
 
-  /** The expression a query reads an index by, which its own index is on: the name is a word, so it is safe. */
-  const column = (index: string) => {
-    if (!(index in program.indexes) || !isName(index)) {
+  /**
+   * The expression that reads an index out of the row, written once: SQLite uses an index of an expression only
+   * where the query writes the expression the same way, so the index created and the query must share this.
+   */
+  const expression = (index: string) => {
+    if (!Object.hasOwn(program.indexes, index) || !isName(index)) {
       throw new Error(`'${index}' is no index of the program '${name}'`)
     }
-    return sql.literal(`json_extract(indexes, '$.${index}')`)
+    return `json_extract(indexes, '$.${index}')`
   }
+
+  const columnOf = (index: string) => sql.literal(expression(index))
 
   /**
    * The row a query reads: what callers read of the state, and the value of each index on it. Both are pure and
    * were checked by the machine before the state was stored, so neither dies here (decision 0032).
    */
   const row = (id: string, held: T['state']) => {
-    const projection = program.project(held)
+    const shown = program.project(held)
     return sql`INSERT OR REPLACE INTO projections ${
       sql.insert({
         name,
         id,
-        projection: shown.write(projection),
-        indexes: JSON.stringify(indexesOf(program, projection)),
+        projection: projection.write(shown),
+        indexes: JSON.stringify(indexesOf(program, shown)),
       })
     }`
   }
@@ -456,14 +463,8 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
 
   const indexed = Effect.gen(function*() {
     for (const index of Object.keys(program.indexes)) {
-      if (!isName(index)) throw new Error(`'${index}' is no name for an index of the program '${name}'`)
-      // An index of an expression is used only where the query's expression is written the same way.
-      yield* sql.unsafe(
-        `CREATE INDEX IF NOT EXISTS ${quoted(`projections ${name} ${index}`)} ON projections (name, ${
-          `json_extract(indexes, '$.${index}')`
-        })`,
-        [],
-      )
+      const on = `projections (name, ${expression(index)})`
+      yield* sql.unsafe(`CREATE INDEX IF NOT EXISTS ${quoted(`projections ${name} ${index}`)} ON ${on}`)
     }
   }).pipe(Effect.orDie)
 
@@ -472,22 +473,25 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       const clauses = [sql`name = ${name}`]
       for (const { index, is, value } of where) {
         if (!comparisons.includes(is)) throw new Error(`'${is}' is no comparison`)
-        const of = column(index)
+        const column = columnOf(index)
         clauses.push(
-          // Nothing but `=` and `<>` says anything of an index that holds no value, as in SQL.
+          // Nothing but `=` and `<>` says anything of an index that holds no value, as in SQL, where a
+          // comparison with null is null: `0` is the clause no row holds.
           value === null
-            ? is === '=' ? sql`${of} IS NULL` : is === '<>' ? sql`${of} IS NOT NULL` : sql`0`
-            : sql`${of} ${sql.literal(is)} ${typeof value === 'boolean' ? (value ? 1 : 0) : value}`,
+            ? is === '=' ? sql`${column} IS NULL` : is === '<>' ? sql`${column} IS NOT NULL` : sql`0`
+            // A boolean is stored as JSON's, which `json_extract` gives as 1 or 0.
+            : sql`${column} ${sql.literal(is)} ${typeof value === 'boolean' ? (value ? 1 : 0) : value}`,
         )
       }
       const by = order === undefined
         ? sql`id`
-        : sql`${column(order.index)} ${sql.literal(order.descending === true ? 'DESC' : 'ASC')}, id`
+        : sql`${columnOf(order.index)} ${sql.literal(order.descending === true ? 'DESC' : 'ASC')}, id`
+      // SQLite reads a negative limit as none.
       const rows = yield* sql<{ id: string; projection: string }>`
         SELECT id, projection FROM projections
         WHERE ${sql.and(clauses)} ORDER BY ${by} LIMIT ${limit ?? -1}
       `
-      return rows.map((row): Found<T> => ({ id: row.id, projection: shown.read(row.projection) }))
+      return rows.map((found): Found<T> => ({ id: found.id, projection: projection.read(found.projection) }))
     }).pipe(Effect.orDie)
 
   const reindex = Effect.gen(function*() {
@@ -501,7 +505,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       for (const held of rows) {
         yield* row(held.id, state.read(held.state))
         cursor = held.id
-        written = written + 1
+        written += 1
       }
     }
   }).pipe(Effect.orDie)
