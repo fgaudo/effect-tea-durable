@@ -5,6 +5,7 @@
     "": {
       "name": "effect-tea-durable",
       "devDependencies": {
+        "@effect/sql-sqlite-bun": "4.1.0",
         "@types/bun": "^1.4.3",
         "effect": "^4.1.0",
         "fast-check": "^4.10.2",
@@ -13,6 +14,8 @@
     },
   },
   "packages": {
+    "@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.1.0", "", { "peerDependencies": { "effect": "^4.1.0" } }, "sha512-V05HFjGmSnzIvXuxiHABw67SNf70dNbIvhUfyM7woDrgOu0JlqA8BTIhrwEPy0+GPwyvS5ALolcyNOMRgPVxyA=="],
+
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
     "@types/node": ["@types/node@26.6.6", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],

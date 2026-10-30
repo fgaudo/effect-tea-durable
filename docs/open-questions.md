@@ -33,6 +33,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   (`ChargeSucceeded`), and the projection is already the public contract, so the program would declare nothing
   more. Is that the way, and what does a consumer use to deduplicate? It is also where the history of an entity
   that never ends (a subscription's past invoices) would go, since its state keeps only the present.
+- **What a schema may encode to.** The runtime writes JSON, and `schemas` is typed `Codec<T, unknown>`: a
+  program whose encoded side is not JSON typechecks and fails when it is stored
+  ([decision 0028](decisions/0028-rules-the-runtime-settled.md)). Should the type say so, and which JSON type,
+  given that another runtime may write something else?
+
 - **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
   large state do: split into entities, or store a difference?
 - **Schemas that change.** States, flags, messages in the mailbox and the work under way are stored in the

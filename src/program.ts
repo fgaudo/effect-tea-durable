@@ -187,8 +187,8 @@ export interface Program<T extends Types> {
   readonly name: string
   /**
    * How everything that leaves the process is written: the flags and messages that arrive, the state and the
-   * operations it holds, stored with each step, the reasons of rejections, stored with the replies, and the
-   * projection, which callers read (decision 0025).
+   * operations it holds, stored with each step, the reasons of rejections, stored with the replies, the sender of
+   * a message waiting in the mailbox, and the projection, which callers read (decisions 0025, 0027).
    */
   readonly schemas: Readonly<{
     state: Schema.Codec<T['state'], unknown>
@@ -197,6 +197,7 @@ export interface Program<T extends Types> {
     internal: Schema.Codec<T['internal'], unknown>
     operation: Schema.Codec<T['operation'], unknown>
     rejection: Schema.Codec<T['rejection'], unknown>
+    sender: Schema.Codec<T['sender'], unknown>
     projection: Schema.Codec<T['projection'], unknown>
   }>
   readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state']

@@ -30,9 +30,9 @@ type Order = typeof Order.Type
 const ChargeId = Schema.String
 
 const State = Schema.Union([
-  Schema.TaggedStruct('AwaitingPayment', { order: Order, deadline: Schema.DateTimeUtc }),
+  Schema.TaggedStruct('AwaitingPayment', { order: Order, deadline: Schema.DateTimeUtcFromMillis }),
   // Only the charge's completion leaves it: a cancellation meanwhile is rejected.
-  Schema.TaggedStruct('Charging', { order: Order, deadline: Schema.DateTimeUtc, payment: Schema.String }),
+  Schema.TaggedStruct('Charging', { order: Order, deadline: Schema.DateTimeUtcFromMillis, payment: Schema.String }),
   Schema.TaggedStruct('Paid', {
     order: Order,
     charge: ChargeId,
@@ -77,9 +77,12 @@ const Internal = Schema.Union([
 ])
 type Internal = typeof Internal.Type
 
-export type Sender =
-  | Readonly<{ _tag: 'Customer'; id: string }>
-  | Readonly<{ _tag: 'Warehouse' }>
+// Who may send a message: it arrives from outside, and waits in the mailbox with it, so it has a schema.
+const Sender = Schema.Union([
+  Schema.TaggedStruct('Customer', { id: Schema.String }),
+  Schema.TaggedStruct('Warehouse', {}),
+])
+export type Sender = typeof Sender.Type
 
 // What callers read: it leaves the process, so it has a schema too.
 const Projection = Schema.Struct({
@@ -175,6 +178,7 @@ export const order: Program<{
     internal: Internal,
     operation: Operation,
     rejection: Schema.Never,
+    sender: Sender,
     projection: Projection,
   },
 

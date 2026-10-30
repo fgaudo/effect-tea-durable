@@ -29,7 +29,7 @@ const Booking = Schema.Struct({
   // The inventory's id.
   event: Schema.String,
   seats: Seats,
-  deadline: Schema.DateTimeUtc,
+  deadline: Schema.DateTimeUtcFromMillis,
 })
 type Booking = typeof Booking.Type
 
@@ -65,13 +65,14 @@ const Internal = Schema.Union([
 ])
 type Internal = typeof Internal.Type
 
-export type Sender = Readonly<{ _tag: 'Customer'; id: string }>
+const Sender = Schema.TaggedStruct('Customer', { id: Schema.String })
+export type Sender = typeof Sender.Type
 
 // What callers read: it leaves the process, with the deadline in it, so it has a schema too.
 const Projection = Schema.Struct({
   status: Schema.Literals(['Holding', 'Held', 'Confirming', 'Releasing', 'Confirmed', 'Cancelled']),
   seats: Schema.Int,
-  deadline: Schema.DateTimeUtc,
+  deadline: Schema.DateTimeUtcFromMillis,
   canConfirm: Schema.Boolean,
   canCancel: Schema.Boolean,
 })
@@ -146,6 +147,7 @@ export const booking: Program<{
     internal: Internal,
     operation: Operation,
     rejection: Schema.Never,
+    sender: Sender,
     projection: Projection,
   },
 

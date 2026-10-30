@@ -27,4 +27,6 @@ export {
   type Update,
 } from './program.ts'
 export { accepted, type Pending, type Rehearsal, rehearse, rejected } from './rehearse.ts'
+export { type Answer, type Handle, launch, type Options, type Point, type Runtime } from './runtime.ts'
+export { createTables, storage, type Storage } from './storage.ts'
 export { type Allows, type Candidate, projectionViolations, type ProjectionViolation } from './testing.ts'

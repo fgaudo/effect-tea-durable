@@ -33,7 +33,7 @@ const Account = Schema.Struct({
   creditInCents: Schema.Int,
   // Periods end on the day of the month the subscription started, counted from it: adding a month to the end
   // of the last period would move a start on the 31st to the 28th, and keep it there.
-  startedAt: Schema.DateTimeUtc,
+  startedAt: Schema.DateTimeUtcFromMillis,
   paidPeriods: Schema.Int,
   cancelAtPeriodEnd: Schema.Boolean,
 })
@@ -50,7 +50,7 @@ const State = Schema.Union([
     attempt: Schema.Int,
     charge: Schema.Struct({ payment: Schema.String, totalInCents: Schema.Int }),
   }),
-  Schema.TaggedStruct('PastDue', { account: Account, attempt: Schema.Int, retryAt: Schema.DateTimeUtc }),
+  Schema.TaggedStruct('PastDue', { account: Account, attempt: Schema.Int, retryAt: Schema.DateTimeUtcFromMillis }),
   Schema.TaggedStruct('Cancelled', { account: Account, reason: Schema.Literals(['ByCustomer', 'Unpaid']) }),
 ])
 export type State = typeof State.Type
@@ -75,15 +75,17 @@ const Internal = Schema.Union([
 ])
 type Internal = typeof Internal.Type
 
-export type Sender =
-  | Readonly<{ _tag: 'Customer'; id: string }>
-  | Readonly<{ _tag: 'Support' }>
+const Sender = Schema.Union([
+  Schema.TaggedStruct('Customer', { id: Schema.String }),
+  Schema.TaggedStruct('Support', {}),
+])
+export type Sender = typeof Sender.Type
 
 const Projection = Schema.Struct({
   status: Schema.Literals(['Active', 'Charging', 'PastDue', 'Cancelled']),
   plan: Plan,
   nextPlan: Schema.NullOr(Plan),
-  paidUntil: Schema.DateTimeUtc,
+  paidUntil: Schema.DateTimeUtcFromMillis,
   creditInCents: Schema.Int,
   canChangePlan: Schema.Boolean,
   canUpdatePayment: Schema.Boolean,
@@ -168,6 +170,7 @@ export const subscription: Program<{
     internal: Internal,
     operation: Operation,
     rejection: Schema.Never,
+    sender: Sender,
     projection: Projection,
   },
 

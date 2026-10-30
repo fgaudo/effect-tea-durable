@@ -151,6 +151,12 @@ It stores the state, not the messages that led to it: a fixed `update` changes w
 already happened ([decision 0002](decisions/0002-store-the-state-not-the-messages.md)). The messages may be
 kept as an audit, but nothing replays them.
 
+The runtime on SQLite writes all of it through the program's schemas, as JSON, in four tables — the entity, the
+keys with their incarnations and work, the mailbox in order, and the replies by request
+([`src/storage.ts`](../src/storage.ts)). A schema whose encoded side is not JSON cannot be stored: a time is
+held as `Schema.DateTimeUtcFromMillis`, not as `Schema.DateTimeUtc`
+([decision 0028](decisions/0028-rules-the-runtime-settled.md)).
+
 ## Execution
 
 - **Activation.** The runtime loads the state, the incarnations and the stored work, computes `durable(state)`,
@@ -159,7 +165,9 @@ kept as an audit, but nothing replays them.
   `project` on the next state), stores it, answers the caller, and starts or ends the work whose keys changed.
   An internal message `update` rejects is a defect, since it cannot be late
   ([decision 0014](decisions/0014-rules-the-machine-settled.md)).
-- **Passivation.** An entity with no message for a while is unloaded. A timer stays armed in storage, and wakes
+- **Passivation.** An entity with no message for a while is unloaded. The runtime on SQLite does not do this
+  yet: it activates every entity whose state holds work when the process starts, and holds it
+  ([roadmap](roadmap.md)). A timer stays armed in storage, and wakes
   it. An operation under way keeps it loaded. To the machine, a passivation is a crash the runtime chose, with
   an empty mailbox and only timers under way: a `Restart` activates it again, and arms the same timers in the
   same incarnations. The timers stored are the stored work's, which says each one's time: the earliest wakes
@@ -244,8 +252,11 @@ dies:
 [`src/rehearse.test.ts`](../src/rehearse.test.ts) rehearses deploys of the order.
 
 The machine is tested with properties, under random orders of messages, completions, timers, crashes and
-defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime will be tested against it, by dying at
-every point of the table above.
+defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime is tested against it
+([`src/runtime.test.ts`](../src/runtime.test.ts)): a scenario, and then random sequences of events, are driven
+on the real runtime with the process dying at each point of the table above, and what the database holds
+afterwards is compared with where the machine ends on the events that committed.
+[`examples/booking/runtime.test.ts`](../examples/booking/runtime.test.ts) runs two entities that talk on it.
 
 ## Where it departs from effect-tea
 
@@ -262,6 +273,11 @@ every point of the table above.
 
 ## Where it runs
 
-First on one process, with SQLite: the mailbox, the states and the timers sit in one database, so each step is
-one transaction ([decision 0007](decisions/0007-one-process-first.md)). Effect Cluster's entities, sharding and
-message storage come once the runtime survives every crash of the table on one process.
+On one process, with SQLite: the mailbox, the states and the timers sit in one database, so each step is one
+transaction ([decision 0007](decisions/0007-one-process-first.md)). `launch` gives a runtime, `deploy(program)`
+a handle to one program's entities — `create`, `send`, `read`, and `resume` and `discard` for an operator — and
+the operations of a program are run with the services it was deployed with
+([`src/runtime.ts`](../src/runtime.ts), [decision 0028](decisions/0028-rules-the-runtime-settled.md)).
+
+Effect Cluster's entities, sharding and message storage come once this runtime passivates what it holds
+([roadmap](roadmap.md)).

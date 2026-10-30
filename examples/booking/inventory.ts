@@ -36,7 +36,8 @@ const Internal = Schema.Never
 type Internal = typeof Internal.Type
 
 /** Bookings are not senders: they arrive as entities, from their operations. */
-export type Sender = Readonly<{ _tag: 'Organizer' }>
+const Sender = Schema.TaggedStruct('Organizer', {})
+export type Sender = typeof Sender.Type
 
 const Projection = Schema.Struct({ open: Schema.Boolean, available: Schema.Int, canClose: Schema.Boolean })
 export type Projection = typeof Projection.Type
@@ -71,6 +72,7 @@ export const inventory: Program<{
     internal: Internal,
     operation: Schema.Never,
     rejection: Rejection,
+    sender: Sender,
     projection: Projection,
   },
 
