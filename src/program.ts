@@ -167,6 +167,14 @@ export const isTimer = (work: unknown): work is Timer<unknown> =>
 /** The work under a key: an operation, which is the program's own data, or a timer. */
 export type Durable<Operation, Message> = Operation | Timer<Message>
 
+/**
+ * The work a state holds, by key. A program's keys are declared, so a state holds work under those and no
+ * others (decision 0033).
+ */
+export type Work<Key extends string, Operation, Message> = {
+  readonly [K in Key]?: Durable<Operation, Message>
+}
+
 export const noWork: Readonly<Record<string, never>> = Object.freeze({})
 
 export type Types = Readonly<{
@@ -176,6 +184,8 @@ export type Types = Readonly<{
   internal: unknown
   /** The operations a state may hold, as data: a union tagged by `_tag`, with its schema. */
   operation: Readonly<{ _tag: string }>
+  /** The keys the work under way is held under: a program declares them all (decision 0033). */
+  key: string
   rejection: unknown
   sender: unknown
   projection: unknown
@@ -201,26 +211,44 @@ export type Runners<T extends Types> = {
   >
 }
 
+/**
+ * How everything that leaves the process is written: the flags and messages that arrive, the state and the
+ * operations it holds, stored with each step, the reasons of rejections, stored with the replies, the sender of
+ * a message waiting in the mailbox, and the projection, which callers read (decisions 0025, 0027). Each of them
+ * encodes to what JSON holds (decision 0030).
+ */
+export type Schemas<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection> = Readonly<{
+  state: Schema.Codec<State, Json>
+  flags: Schema.Codec<Flags, Json>
+  inbound: Schema.Codec<Inbound, Json>
+  internal: Schema.Codec<Internal, Json>
+  operation: Schema.Codec<Operation, Json>
+  rejection: Schema.Codec<Rejection, Json>
+  sender: Schema.Codec<Sender, Json>
+  projection: Schema.Codec<Projection, Json>
+}>
+
 export interface Program<T extends Types> {
   /** What other entities read in `Address.name`, and the runtime stores the entity under. */
   readonly name: string
   /**
-   * How everything that leaves the process is written: the flags and messages that arrive, the state and the
-   * operations it holds, stored with each step, the reasons of rejections, stored with the replies, the sender of
-   * a message waiting in the mailbox, and the projection, which callers read (decisions 0025, 0027).
+   * Every key the program's work is held under. `program` checks `durable` against them, and a deploy that
+   * renames one is a change of the type (decision 0033).
    */
-  readonly schemas: Readonly<{
-    state: Schema.Codec<T['state'], Json>
-    flags: Schema.Codec<T['flags'], Json>
-    inbound: Schema.Codec<T['inbound'], Json>
-    internal: Schema.Codec<T['internal'], Json>
-    operation: Schema.Codec<T['operation'], Json>
-    rejection: Schema.Codec<T['rejection'], Json>
-    sender: Schema.Codec<T['sender'], Json>
-    projection: Schema.Codec<T['projection'], Json>
-  }>
+  readonly keys: ReadonlyArray<T['key']>
+  readonly schemas: Schemas<
+    T['state'],
+    T['flags'],
+    T['inbound'],
+    T['internal'],
+    T['operation'],
+    T['rejection'],
+    T['sender'],
+    T['projection']
+  >
   readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state']
   readonly update: Update<T['state'], T['inbound'] | T['internal'], T['sender'], T['rejection']>
+  /** The work each state holds, which the machine reads by key, under the keys the program declares. */
   readonly durable: (state: T['state']) => Readonly<Record<string, Durable<T['operation'], T['internal']>>>
   readonly operations: Runners<T>
   readonly project: (state: T['state']) => T['projection']
@@ -254,6 +282,94 @@ export const indexesOf = <T extends Types>(
   return Object.fromEntries(
     Object.entries(indexes).map(([name, read]): readonly [string, Scalar] => [name, read(projection)]),
   )
+}
+
+/**
+ * A runner for each kind of operation, as a program declares it: the runner says which messages the operation
+ * answers, and they are messages of the program's internal union (decision 0034).
+ */
+type Declared<Operation extends Readonly<{ _tag: string }>, Internal> = {
+  readonly [Tag in Operation['_tag']]: Runner<Extract<Operation, Readonly<{ _tag: Tag }>>, Internal, unknown>
+}
+
+/** What the runners of a declaration run in: the services they need, together. */
+type ServicesOf<Operations> = Effect.Services<
+  Operations[keyof Operations] extends Readonly<{ run: (...args: never[]) => infer Running }> ? Running : never
+>
+
+/** The types `program` reads off a declaration, which an object literal typed `Program<T>` writes out by hand. */
+type Inferred<
+  State extends object,
+  Flags,
+  Inbound,
+  Internal,
+  Operation extends Readonly<{ _tag: string }>,
+  Rejection,
+  Sender,
+  Projection,
+  Keys extends ReadonlyArray<string>,
+  Operations,
+  Indexes,
+> = Readonly<{
+  state: State
+  flags: Flags
+  inbound: Inbound
+  internal: Internal
+  operation: Operation
+  key: Keys[number]
+  rejection: Rejection
+  sender: Sender
+  projection: Projection
+  index: Extract<keyof Indexes, string>
+  services: ServicesOf<Operations>
+}>
+
+/**
+ * The one place a program is declared: its schemas, which give every type the program is written in, and then
+ * what it does (decision 0035). An object literal typed `Program<T>` names each type twice, and holds neither
+ * the keys `durable` may use nor the messages an operation answers; here the schemas say what the state, the
+ * flags, the messages, the operations, the rejections, the senders and the projection are, `keys` the space of
+ * keys the work is held under (decision 0033), each runner which messages its kind of operation answers and
+ * which services it needs (decision 0034), and `indexes` what a query filters and orders by.
+ */
+export const program = <
+  State extends object,
+  Flags,
+  Inbound,
+  Internal,
+  Operation extends Readonly<{ _tag: string }>,
+  Rejection,
+  Sender,
+  Projection,
+>(schemas: Schemas<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection>) =>
+<
+  const Keys extends ReadonlyArray<string>,
+  Operations extends Declared<Operation, Internal>,
+  Indexes extends Readonly<Record<string, (projection: Projection) => Scalar>>,
+>(
+  declaration: Readonly<{
+    name: string
+    /** Every key `durable` holds work under: work under any other key is a type error (decision 0033). */
+    keys: Keys
+    init: (flags: Flags, at: DateTime.Utc) => State
+    update: Update<State, Inbound | Internal, Sender, Rejection>
+    durable: (state: State) => Work<Keys[number], Operation, Internal>
+    operations: Operations
+    project: (state: State) => Projection
+    indexes: Indexes
+  }>,
+): Program<
+  Inferred<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, Indexes>
+> => {
+  type Of = Inferred<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, Indexes>
+  return {
+    ...declaration,
+    schemas,
+    // Work held under the declared keys is the record by key the machine reads.
+    durable: declaration.durable as Program<Of>['durable'],
+    // Each runner says which services its kind of operation needs; together they are the program's.
+    operations: declaration.operations as Runners<Of>,
+  }
 }
 
 /** What creating an entity is answered. Only `Created` is stored, under the request id. */

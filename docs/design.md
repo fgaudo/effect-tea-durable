@@ -24,14 +24,20 @@ tested by calling pure functions, crashes included.
 
 | Piece     | What it does                                                                                 |
 | --------- | -------------------------------------------------------------------------------------------- |
-| `name`    | what the runtime stores the entity under, and what other entities see it as                  |
 | `schemas` | how the state, flags, messages, operations, reasons and projection leave the process         |
+| `name`    | what the runtime stores the entity under, and what other entities see it as                  |
+| `keys`    | every key the work under way is held under                                                   |
 | `init`    | the first state, from the flags the entity is created with and the time of its creation      |
 | `update`  | `(message, meta) => (state) =>` the next state, a rejection, or a defect                     |
 | `durable`    | the work under way in each state, by key: operations, as data, and timers                    |
-| `operations` | how each kind of operation runs, and what a crash does to it                                 |
+| `operations` | how each kind of operation runs, what it answers, and what a crash does to it                |
 | `project`    | what callers read of the state, with the actions it allows                                   |
 | `indexes`    | what a query across the program's entities filters and orders by, read off the projection    |
+
+A program is declared in one place, `program(schemas)(…)`: the schemas first, which give every type the program
+is written in, and then what it does. Everything else is inferred from the pieces — the keys `durable` may use,
+the messages each kind of operation answers, the names a query may order by, and the services the operations run
+in ([decision 0035](decisions/0035-one-place-where-a-program-is-declared.md)).
 
 There are no commands. Every piece of work that must survive a crash is derived from the state by `durable`
 ([decision 0003](decisions/0003-durable-work-derived-from-state.md)). An operation is data, as effect-tea's
@@ -78,8 +84,10 @@ after. A message to an entity that does not exist is answered `NotFound`, and cr
 
 ## Durable work
 
-`durable(state)` returns a record of work by key. The runtime compares it with the previous state's, as
-effect-tea compares subscriptions:
+`durable(state)` returns the work of the state, under the keys the program declares and no others: the space of
+keys is finite, and a key a program computes is not one of them
+([decision 0033](decisions/0033-a-program-declares-its-keys.md)). The runtime compares it with the previous
+state's, as effect-tea compares subscriptions:
 
 - a new key starts its work;
 - a kept key leaves it as it is;
@@ -92,9 +100,11 @@ that returns it starts new work: that is how a timer repeats
 Two kinds of work exist.
 
 - **An operation** is a value of the program's own type, usually a `Schema.TaggedUnion`, which says what to do.
-  The program's `operations` give a runner for each tag, which turns it into an effect that ends with one
-  internal message. Expected failures become messages, as in effect-tea's commands. The runner says what a
-  crash does to it ([decision 0011](decisions/0011-an-operation-declares-what-a-crash-does.md)): an idempotent
+  The program's `operations` give a runner for each tag, which turns it into an effect that ends with one of the
+  internal messages its kind of operation answers
+  ([decision 0034](decisions/0034-an-operation-answers-the-messages-of-its-runner.md)). Expected failures become
+  messages, as in effect-tea's commands. The runner says what a crash does to it
+  ([decision 0011](decisions/0011-an-operation-declares-what-a-crash-does.md)): an idempotent
   one receives an **idempotency key** (the entity's program and id, the operation's key and its incarnation:
   [decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)), and passes it on; one that may
   act twice runs again; one that must act at most once is not run again after a crash, and delivers its
@@ -257,8 +267,8 @@ time when it fires. The test decides when each operation answers, when each time
 dies:
 
 - `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity;
-- `pending(key)` finds the work under way under a key, with its idempotency key and its value, which a test
-  asserts as it asserts a command in effect-tea;
+- `pending(key)` finds the work under way under one of the program's keys, with its idempotency key and its
+  value, which a test asserts as it asserts a command in effect-tea;
 - `answer(pending, message)` completes an operation, and says whether the message was delivered or dropped;
 - `fire(pending)` fires a timer;
 - `restart` drops everything that is not stored, and activates the entity again: an at-most-once operation

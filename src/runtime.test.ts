@@ -78,6 +78,7 @@ type T = {
   inbound: Inbound
   internal: Internal
   operation: Operation
+  key: Key
   rejection: 'Refused'
   sender: Sender
   projection: number
@@ -92,6 +93,7 @@ const acts = (key: Key, idempotencyKey: IdempotencyKey | null) =>
 
 const program: Program<T> = {
   name: 'Toy',
+  keys,
   schemas: {
     state: State,
     flags: Schema.Struct({ at: Schema.DateTimeUtcFromMillis }),

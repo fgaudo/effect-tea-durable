@@ -15,7 +15,7 @@ import {
   noWork,
   type Origin,
   operation,
-  type Program,
+  program,
   reject,
   type Rejected,
   timer,
@@ -161,30 +161,19 @@ const refund = Effect.fn('Refund')(
   },
 )
 
-export const order: Program<{
-  state: State
-  flags: Flags
-  inbound: Inbound
-  internal: Internal
-  operation: Operation
-  rejection: never
-  sender: Sender
-  projection: Projection
-  index: 'unpaidUntil'
-  services: Payments | Warehouse | Mailer
-}> = {
+export const order = program({
+  state: State,
+  flags: Flags,
+  inbound: Inbound,
+  internal: Internal,
+  operation: Operation,
+  rejection: Schema.Never,
+  sender: Sender,
+  projection: Projection,
+})({
   name: 'Order',
 
-  schemas: {
-    state: State,
-    flags: Flags,
-    inbound: Inbound,
-    internal: Internal,
-    operation: Operation,
-    rejection: Schema.Never,
-    sender: Sender,
-    projection: Projection,
-  },
+  keys: ['payment-deadline', 'charge', 'tell-warehouse', 'email-shipment', 'refund'],
 
   init: ({ order }, at) => ({
     _tag: 'AwaitingPayment',
@@ -294,4 +283,4 @@ export const order: Program<{
     unpaidUntil: ({ deadline, status }) =>
       status === 'AwaitingPayment' && deadline !== null ? DateTime.toEpochMillis(deadline) : null,
   },
-}
+})

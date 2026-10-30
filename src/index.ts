@@ -17,18 +17,21 @@ export {
   operation,
   type Origin,
   type Program,
+  program,
   reject,
   type Rejected,
   type RejectedWith,
   rejectWith,
   type Reply,
   type Scalar,
+  type Schemas,
   send,
   type Timer,
   isTimer,
   timer,
   type Types,
   type Update,
+  type Work,
 } from './program.ts'
 export { accepted, type Pending, type Rehearsal, rehearse, rejected } from './rehearse.ts'
 export { type Answer, type Handle, launch, type Options, type Point, type Runtime } from './runtime.ts'

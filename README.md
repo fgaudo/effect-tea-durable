@@ -9,8 +9,9 @@ cluster or a clock.
 
 - [`docs/design.md`](docs/design.md): what the library is for, its model of execution, and what it guarantees
   at each point where the process may die;
-- [`src/`](src): the types of a program, the runtime's semantics as a pure state machine
-  ([`src/machine.ts`](src/machine.ts)), which `rehearse` runs and property tests check, and the runtime that
+- [`src/`](src): the one place a program is declared, with its types ([`src/program.ts`](src/program.ts)), the
+  runtime's semantics as a pure state machine ([`src/machine.ts`](src/machine.ts)), which `rehearse` runs and
+  property tests check, and the runtime that
   interprets it over `SqlClient` ([`src/runtime.ts`](src/runtime.ts), [`src/storage.ts`](src/storage.ts)),
   unloading an entity that has nothing to do and waking it from its stored timers, tested by dying at each point
   of the design's crash table and comparing where it ends with the machine

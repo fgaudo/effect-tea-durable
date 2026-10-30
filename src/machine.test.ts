@@ -49,6 +49,7 @@ type T = {
   inbound: Inbound
   internal: Internal
   operation: Readonly<{ _tag: 'A'; tune: number }> | Readonly<{ _tag: 'B' | 'C'; key: Key }>
+  key: Key
   rejection: 'Refused'
   sender: 'caller'
   projection: number
@@ -64,6 +65,7 @@ const done = (key: Key): Internal => ({ _tag: 'Done', key, then: 'End' })
 
 const program: Program<T> = {
   name: 'Toy',
+  keys,
   // The machine never encodes: the schemas are the runtime's.
   schemas: {} as Program<T>['schemas'],
   init: () => ({ want: keys, applied: [], tune: 0 }),
@@ -662,6 +664,7 @@ type Tiny = {
   inbound: string
   internal: string
   operation: Readonly<{ _tag: 'Work'; size: number }>
+  key: string
   rejection: never
   sender: null
   projection: string
@@ -681,6 +684,8 @@ const tiny = (
   index: (projection: string) => string = (projection) => projection,
 ): Program<Tiny> => ({
   name,
+  // The machine reads no key from here: these tests hold work under whatever keys their `durable` returns.
+  keys: [],
   schemas: {} as never,
   init: () => ({ last: 'start' }),
   update: (message) => () => {

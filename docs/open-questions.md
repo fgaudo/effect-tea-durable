@@ -4,11 +4,15 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Programs
 
-- **A finite space of keys, and what an operation answers.** `durable` returns a `Record<string, …>`, so a
-  mistyped key is work that starts anew, and nothing stops a program from holding work under keys it computes
-  (one per line of an order), which would be an entity running as many operations at once. Is a program's space
-  of keys finite and declared? And does the message an operation answers belong to the operation's type, instead
-  of being any internal message? Both want one place where a program is declared ([roadmap](roadmap.md)).
+- **Work under many keys.** A program declares its keys, so an entity holds as many pieces of work as it has
+  keys, and no more ([decision 0033](decisions/0033-a-program-declares-its-keys.md)). A state that would hold one
+  operation per line of an order has nowhere to put them. Do such items want to be entities of their own, as a
+  large state does, or is there a kind of work held under keys a state computes?
+- **The machine and the declared keys.** The types catch a key a program never declared where the state holds
+  that key alone, and not where it holds a declared key beside a misspelt one
+  ([decision 0033](decisions/0033-a-program-declares-its-keys.md)). Should the machine check the keys of
+  `durable` against the declared ones, and suspend the entity on one it does not declare, as it suspends it on a
+  `project` that dies ([decision 0014](decisions/0014-rules-the-machine-settled.md))?
 - **Work that may be abandoned.** An operation leaves only through its completion. Is there a kind of work with
   no effect on the world (a computation, a read) that a state may drop, as effect-tea drops a subscription?
 - **Live streams.** A timer and an operation survive passivation. A stream from a socket or a feed does not.

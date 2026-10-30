@@ -3,16 +3,7 @@
 The steps from this design to a library, in order. Each one may change the ones after it. When a step is done,
 it leaves this file, and what it decided goes into the design, a decision or an example.
 
-## 1. One place where a program is declared
-
-A program is an object literal typed `Program<T>`, and two things the types could hold are lost there: the space
-of keys `durable` may use, and the message each kind of operation answers, which `Runners<T>` widens to every
-internal message and `runnerOf` recovers with a cast. A constructor that takes the pieces and infers them would
-have both, and is also where a finite space of keys would be declared — an [open question](open-questions.md) to
-decide first, since it would forbid a key a program computes. It changes how every example declares its program,
-and nothing of the machine.
-
-## 2. Later
+## Later
 
 - Effect Cluster: sharding, rolling deploys, the state recording the last message it handled.
 - The library's name, once there is code to publish.

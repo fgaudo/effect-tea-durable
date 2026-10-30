@@ -14,7 +14,7 @@ import {
   noWork,
   type Origin,
   operation,
-  type Program,
+  program,
   reject,
   type Rejected,
   timer,
@@ -150,30 +150,19 @@ const renew = (account: Account): State => {
     : charging(next, 1)
 }
 
-export const subscription: Program<{
-  state: State
-  flags: Flags
-  inbound: Inbound
-  internal: Internal
-  operation: Operation
-  rejection: never
-  sender: Sender
-  projection: Projection
-  index: never
-  services: Payments
-}> = {
+export const subscription = program({
+  state: State,
+  flags: Flags,
+  inbound: Inbound,
+  internal: Internal,
+  operation: Operation,
+  rejection: Schema.Never,
+  sender: Sender,
+  projection: Projection,
+})({
   name: 'Subscription',
 
-  schemas: {
-    state: State,
-    flags: Flags,
-    inbound: Inbound,
-    internal: Internal,
-    operation: Operation,
-    rejection: Schema.Never,
-    sender: Sender,
-    projection: Projection,
-  },
+  keys: ['renewal', 'charge', 'retry'],
 
   // The first period is charged at once.
   init: ({ customer, payment, plan }, at) =>
@@ -287,4 +276,4 @@ export const subscription: Program<{
 
   // Nothing is asked across these entities: no query, so no index (decision 0032).
   indexes: {},
-}
+})

@@ -33,8 +33,8 @@ export interface Rehearsal<T extends Types> {
   readonly send: (message: T['inbound'], sender: T['sender']) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /** Delivers an inbound message from another entity's operation, with a new request id. */
   readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Machine.StoredReply<T['rejection']>>
-  /** The work under way under `key`. Fails the test when there is none. */
-  readonly pending: (key: string) => Effect.Effect<Pending<Durable<T['operation'], T['internal']>>>
+  /** The work under way under `key`, one of the program's own (decision 0033). Fails the test when there is none. */
+  readonly pending: (key: T['key']) => Effect.Effect<Pending<Durable<T['operation'], T['internal']>>>
   /** Completes an operation with `message`. It is dropped when the operation's incarnation has moved on. */
   readonly answer: (pending: Pending, message: T['internal']) => Effect.Effect<'Delivered' | 'Dropped'>
   /** The time of a timer comes. */

@@ -4,7 +4,7 @@
  */
 import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
-import { noWork, type Origin, type Program, reject, type Rejected, rejectWith } from '../../src/index.ts'
+import { noWork, type Origin, program, reject, type Rejected, rejectWith } from '../../src/index.ts'
 
 const State = Schema.Struct({
   open: Schema.Boolean,
@@ -52,30 +52,20 @@ const bookingOf = (from: Origin<Sender>) =>
 
 const isOrganizer = (from: Origin<Sender>) => from._tag === 'Caller' && from.sender._tag === 'Organizer'
 
-export const inventory: Program<{
-  state: State
-  flags: Flags
-  inbound: Inbound
-  internal: Internal
-  operation: never
-  rejection: Rejection
-  sender: Sender
-  projection: Projection
-  index: never
-  services: never
-}> = {
+export const inventory = program({
+  state: State,
+  flags: Flags,
+  inbound: Inbound,
+  internal: Internal,
+  operation: Schema.Never,
+  rejection: Rejection,
+  sender: Sender,
+  projection: Projection,
+})({
   name: 'Inventory',
 
-  schemas: {
-    state: State,
-    flags: Flags,
-    inbound: Inbound,
-    internal: Internal,
-    operation: Schema.Never,
-    rejection: Rejection,
-    sender: Sender,
-    projection: Projection,
-  },
+  // The inventory holds no work: it has no key.
+  keys: [],
 
   init: ({ capacity }) => ({ open: true, capacity, held: {}, sold: {} }),
 
@@ -123,4 +113,4 @@ export const inventory: Program<{
 
   // Nothing is asked across these entities: no query, so no index (decision 0032).
   indexes: {},
-}
+})

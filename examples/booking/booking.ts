@@ -8,12 +8,11 @@ import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
 import {
   defect,
-  type Entities,
   type IdempotencyKey,
   noWork,
   type Origin,
   operation,
-  type Program,
+  program,
   reject,
   type Rejected,
   send,
@@ -127,30 +126,19 @@ const release = Effect.fn('Release')(
   },
 )
 
-export const booking: Program<{
-  state: State
-  flags: Flags
-  inbound: Inbound
-  internal: Internal
-  operation: Operation
-  rejection: never
-  sender: Sender
-  projection: Projection
-  index: never
-  services: Entities
-}> = {
+export const booking = program({
+  state: State,
+  flags: Flags,
+  inbound: Inbound,
+  internal: Internal,
+  operation: Operation,
+  rejection: Schema.Never,
+  sender: Sender,
+  projection: Projection,
+})({
   name: 'Booking',
 
-  schemas: {
-    state: State,
-    flags: Flags,
-    inbound: Inbound,
-    internal: Internal,
-    operation: Operation,
-    rejection: Schema.Never,
-    sender: Sender,
-    projection: Projection,
-  },
+  keys: ['hold', 'deadline', 'confirm', 'release'],
 
   // The deadline counts from the booking, not from the hold: a slow inventory shortens the customer's wait.
   init: ({ customer, event, seats }, at) => ({
@@ -229,4 +217,4 @@ export const booking: Program<{
 
   // Nothing is asked across these entities: no query, so no index (decision 0032).
   indexes: {},
-}
+})
