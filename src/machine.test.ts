@@ -108,6 +108,21 @@ const program: Program<T> = {
   project: (state) => state.want.length,
 }
 
+// A new version of the program that tunes `a` differently: a deploy that changes `a` while it runs is a defect.
+const retuned: Program<T> = {
+  ...program,
+  durable: (state) => {
+    const work = program.durable(state)
+    return work['a'] === undefined ? work : { ...work, a: { _tag: 'A', tune: state.tune + 10 } }
+  },
+}
+
+/** The program a restart or a resumption brings: the one running, the first version, or the retuned one. */
+type Version = 'same' | 'first' | 'retuned'
+
+const versionOf = (version: Version) =>
+  version === 'same' ? undefined : version === 'first' ? program : retuned
+
 type Command =
   | Readonly<{ _tag: 'Send'; kind: Inbound['_tag']; key: Key; on: boolean }>
   | Readonly<{ _tag: 'Retry'; pick: number }>
@@ -120,11 +135,12 @@ type Command =
   | Readonly<{ _tag: 'Fire'; pick: number }>
   | Readonly<{ _tag: 'Handle' }>
   | Readonly<{ _tag: 'Die'; pick: number }>
-  | Readonly<{ _tag: 'Restart' }>
-  | Readonly<{ _tag: 'Resume' }>
+  | Readonly<{ _tag: 'Restart'; version: Version }>
+  | Readonly<{ _tag: 'Resume'; version: Version }>
   | Readonly<{ _tag: 'Discard' }>
 
 const key = fc.constantFrom(...keys)
+const version = fc.constantFrom<Version>('same', 'same', 'first', 'retuned')
 const pick = fc.nat()
 
 const command: fc.Arbitrary<Command> = fc.oneof(
@@ -167,8 +183,8 @@ const command: fc.Arbitrary<Command> = fc.oneof(
   { weight: 2, arbitrary: fc.record({ _tag: fc.constant('Fire' as const), pick }) },
   { weight: 6, arbitrary: fc.constant({ _tag: 'Handle' as const }) },
   { weight: 1, arbitrary: fc.record({ _tag: fc.constant('Die' as const), pick }) },
-  { weight: 2, arbitrary: fc.constant({ _tag: 'Restart' as const }) },
-  { weight: 1, arbitrary: fc.constant({ _tag: 'Resume' as const }) },
+  { weight: 2, arbitrary: fc.record({ _tag: fc.constant('Restart' as const), version }) },
+  { weight: 1, arbitrary: fc.record({ _tag: fc.constant('Resume' as const), version }) },
   { weight: 1, arbitrary: fc.constant({ _tag: 'Discard' as const }) },
 )
 
@@ -250,6 +266,11 @@ const toEvent = (machine: Toy, command: Command, requests: Array<Receive>): Mach
         ? null
         : { _tag: 'Die', key: chosen[0], incarnation: chosen[1].incarnation, cause: 'an operation died' }
     }
+    case 'Restart':
+    case 'Resume': {
+      const fixed = versionOf(command.version)
+      return fixed === undefined ? { _tag: command._tag } : { _tag: command._tag, program: fixed }
+    }
     default:
       return command
   }
@@ -274,13 +295,19 @@ const run = (commands: ReadonlyArray<Command>) => {
   for (const command of commands) {
     for (const event of toEvents(machine, command, requests)) apply(event)
   }
-  // Then everything ends: bugs are discarded, operations complete, timers fire, and the mailbox is handled.
+  // Then everything ends: bugs are discarded, operations complete, timers fire, and the mailbox is handled. A
+  // suspended entity is tried in turn with a discard and with each version, until one keeps what runs.
   for (let turn = 0; turn < 200; turn++) {
     const { stored } = machine
     const operation = runningOf(machine, 'Operation')[0]
     const firing = runningOf(machine, 'Timer')[0]
     if (stored.suspension !== null) {
-      apply(stored.suspension.on._tag === 'Message' ? { _tag: 'Discard' } : { _tag: 'Resume' })
+      const tries: ReadonlyArray<Machine.Event<T>> = [
+        ...(stored.suspension.on._tag === 'Message' ? [{ _tag: 'Discard' } as const] : []),
+        { _tag: 'Resume', program },
+        { _tag: 'Resume', program: retuned },
+      ]
+      apply(tries[turn % tries.length]!)
     } else if (stored.mailbox.length > 0) apply({ _tag: 'Handle', at })
     else if (operation !== undefined) {
       const [key, { incarnation }] = operation
@@ -346,7 +373,7 @@ describe('the machine', () => {
           expect(after.running).toEqual({})
           continue
         }
-        const work = program.durable(after.stored.state)
+        const work = after.stored.work
         for (const [key, durable] of Object.entries(work)) {
           const incarnation = after.stored.incarnations[key] ?? -1
           if (!queued(after, key, incarnation)) {
@@ -367,7 +394,7 @@ describe('the machine', () => {
         for (const output of outputs) {
           if (output._tag === 'Armed') armedAt.set(`${output.key}@${output.incarnation}`, output.timer.at)
         }
-        const work = program.durable(after.stored.state)
+        const work = after.stored.work
         for (const [key, running] of Object.entries(after.running)) {
           const timer = work[key]
           if (running.kind !== 'Timer' || !isTimer(timer)) continue
@@ -385,7 +412,7 @@ describe('the machine', () => {
         for (const output of outputs) {
           if (output._tag === 'Started') startedWith.set(`${output.key}@${output.incarnation}`, output.operation)
         }
-        const work = program.durable(after.stored.state)
+        const work = after.stored.work
         for (const [key, running] of Object.entries(after.running)) {
           if (running.kind !== 'Operation') continue
           expect(Equal.equals(startedWith.get(`${key}@${running.incarnation}`), work[key])).toBe(true)
@@ -398,8 +425,8 @@ describe('the machine', () => {
       for (const { event, before, after, outputs } of trace) {
         // An operator who discards a completion ends its work by hand.
         if (event._tag === 'Discard') continue
-        const next = program.durable(after.stored.state)
-        for (const [key, work] of Object.entries(program.durable(before.stored.state))) {
+        const next = after.stored.work
+        for (const [key, work] of Object.entries(before.stored.work)) {
           const incarnation = before.stored.incarnations[key] ?? -1
           const kept = next[key] !== undefined && after.stored.incarnations[key] === incarnation
           if (isTimer(work) || kept) continue
@@ -422,6 +449,48 @@ describe('the machine', () => {
         }
       }
       expect(new Set(started.values()).size).toBe(started.size)
+    }))
+
+  // So a payment provider, or another entity's stored reply, never answers one operation for another.
+  test('an idempotency key is started for one operation only, and never once its work is done', () =>
+    property(({ trace }) => {
+      const started = new Map<IdempotencyKey, unknown>()
+      const done = new Set<string>()
+      for (const { event, before, outputs } of trace) {
+        const head = before.stored.mailbox[0]
+        if (event._tag === 'Discard' && head?._tag === 'Internal' && outputs.length > 0) {
+          done.add(`${head.key}@${head.incarnation}`)
+        }
+        for (const output of outputs) {
+          if (output._tag === 'Delivered') done.add(`${output.key}@${output.incarnation}`)
+          if (output._tag !== 'Started') continue
+          expect(done.has(`${output.key}@${output.incarnation}`)).toBe(false)
+          const known = started.get(output.idempotencyKey)
+          if (known !== undefined) expect(Equal.equals(known, output.operation)).toBe(true)
+          started.set(output.idempotencyKey, output.operation)
+        }
+      }
+    }))
+
+  // So the runtime may delete a reply another entity's work no longer holds: it never asks for it again.
+  test('work that is no longer held never is again, and never starts again', () =>
+    property(({ trace }) => {
+      const started = new Set<string>()
+      const ended = new Set<string>()
+      for (const { after, outputs } of trace) {
+        for (const output of outputs) {
+          if (output._tag !== 'Started') continue
+          const id = `${output.key}@${output.incarnation}`
+          expect(ended.has(id)).toBe(false)
+          started.add(id)
+        }
+        for (const id of started) {
+          const [key = '', incarnation] = id.split('@')
+          const held = Machine.holds(after.stored, key, Number(incarnation))
+          expect(held && ended.has(id)).toBe(false)
+          if (!held) ended.add(id)
+        }
+      }
     }))
 
   test('work whose message is recorded never runs again in its incarnation', () =>
@@ -455,7 +524,7 @@ describe('the machine', () => {
   test('a crash loses nothing stored, and an at-most-once operation under way delivers its unknown', () =>
     property(({ trace }) => {
       for (const { event, before, after } of trace) {
-        if (event._tag !== 'Restart' || before === after) continue
+        if (event._tag !== 'Restart' || event.program !== undefined || before === after) continue
         const { mailbox, ...stored } = after.stored
         const { mailbox: previous, ...was } = before.stored
         expect(stored).toEqual(was)
@@ -563,30 +632,33 @@ type Tiny = {
   services: never
 }
 
-const checked = (
+type TinyWork = Readonly<
+  Record<string, 'operation' | 'larger operation' | 'timer' | 'later timer' | 'other timer'>
+>
+
+const tiny = (
   update: (message: string) => string | typeof reject,
-  durable: (state: string) => Readonly<
-    Record<string, 'operation' | 'larger operation' | 'timer' | 'later timer' | 'other timer'>
-  >,
+  durable: (state: string) => TinyWork,
   project: (state: string) => string = (state) => state,
   name = 'Tiny',
-) => {
-  const tiny: Program<Tiny> = {
-    name,
-    schemas: {} as never,
-    init: () => 'start',
-    update: (message) => () => update(message),
-    durable: (state) =>
-      Object.fromEntries(Object.entries(durable(state)).map(([key, kind]) => [
-        key,
-        kind === 'operation' || kind === 'larger operation'
-          ? { _tag: 'Work', size: kind === 'operation' ? 1 : 2 } as const
-          : timer(kind === 'later timer' ? at : epoch, kind === 'other timer' ? 'rang again' : 'rang'),
-      ])),
-    operations: { Work: operation(() => Effect.succeed('done')) },
-    project: (state) => project(state),
-  }
-  const created = Machine.start(tiny, 'tiny', null, epoch, { requestId: 'creation', from: nobody })
+): Program<Tiny> => ({
+  name,
+  schemas: {} as never,
+  init: () => 'start',
+  update: (message) => () => update(message),
+  durable: (state) =>
+    Object.fromEntries(Object.entries(durable(state)).map(([key, kind]) => [
+      key,
+      kind === 'operation' || kind === 'larger operation'
+        ? { _tag: 'Work', size: kind === 'operation' ? 1 : 2 } as const
+        : timer(kind === 'later timer' ? at : epoch, kind === 'other timer' ? 'rang again' : 'rang'),
+    ])),
+  operations: { Work: operation(() => Effect.succeed('done')) },
+  project: (state) => project(state),
+})
+
+const checked = (...args: Parameters<typeof tiny>) => {
+  const created = Machine.start(tiny(...args), 'tiny', null, epoch, { requestId: 'creation', from: nobody })
   if (created._tag === 'Defect') throw created.cause
   return created.machine
 }
@@ -750,6 +822,56 @@ describe('a suspended entity', () => {
     })
     expect(resumed.machine.stored.suspension).toEqual({ cause: broken, on: { _tag: 'Message' } })
     expect(resumed.machine.running).toEqual({})
+  })
+})
+
+describe('a new program', () => {
+  /** Restarts the entity with a program whose work on each state is `durable`: a deploy. */
+  const deployed = (machine: Machine.Machine<Tiny>, durable: (state: string) => TinyWork) =>
+    Machine.step(machine, { _tag: 'Restart', program: tiny((message) => message, durable) })
+
+  test('restarts an operation it keeps equal under the same key', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const transition = deployed(machine, () => ({ charge: 'operation' }))
+    expect(transition.outputs).toContainEqual(
+      expect.objectContaining({ _tag: 'Started', key: 'charge', incarnation: 1 }),
+    )
+  })
+
+  test('returning a key whose work was delivered starts new work, under a new key', () => {
+    const machine = checked((message) => message, (state) => (state === 'start' ? { charge: 'operation' } : {}))
+    const delivered = handled(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'charged' })
+    const transition = deployed(delivered.machine, () => ({ charge: 'operation' }))
+    expect(transition.outputs).toContainEqual(
+      expect.objectContaining({ _tag: 'Started', key: 'charge', incarnation: 2 }),
+    )
+  })
+
+  test('a timer it changes is armed again, as new work', () => {
+    const machine = checked((message) => message, () => ({ deadline: 'timer' }))
+    const transition = deployed(machine, () => ({ deadline: 'later timer' }))
+    expect(transition.outputs).toContainEqual(
+      expect.objectContaining({ _tag: 'Armed', key: 'deadline', incarnation: 2, timer: timer(at, 'rang') }),
+    )
+  })
+
+  test('changing or dropping an operation under way is a defect, and the entity stays as it was', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const changed = deployed(machine, () => ({ charge: 'larger operation' }))
+    expect(reasonOfSuspension(changed)).toBe("the program changed the operation under 'charge' before its completion")
+    expect(changed.machine.stored).toEqual({ ...machine.stored, suspension: changed.machine.stored.suspension })
+    expect(changed.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
+    expect(changed.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+    const dropped = deployed(machine, () => ({}))
+    expect(reasonOfSuspension(dropped)).toBe("the program dropped the operation under 'charge' before its completion")
+  })
+
+  test('an entity it suspended is resumed by a program that keeps the operation', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const suspended = deployed(machine, () => ({ charge: 'larger operation' })).machine
+    const resumed = Machine.step(suspended, { _tag: 'Resume', program: machine.program })
+    expect(resumed.machine.stored.suspension).toBeNull()
+    expect(resumed.outputs).toContainEqual(expect.objectContaining({ _tag: 'Started', key: 'charge', incarnation: 1 }))
   })
 })
 

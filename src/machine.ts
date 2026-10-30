@@ -27,10 +27,16 @@ export type Envelope<T extends Types> =
   | Readonly<{ _tag: 'Inbound'; requestId: string; message: T['inbound']; from: Origin<T['sender']> }>
   | Readonly<{ _tag: 'Internal'; key: string; incarnation: number; message: T['internal'] }>
 
-/** Why the entity is suspended: a defect while handling the mailbox's first message, or in an operation. */
+/**
+ * Why the entity is suspended: a defect while handling the mailbox's first message, in an operation, or in
+ * activating the stored state with a new program (decision 0020).
+ */
 export type Suspension = Readonly<{
   cause: unknown
-  on: Readonly<{ _tag: 'Message' }> | Readonly<{ _tag: 'Operation'; key: string; incarnation: number }>
+  on:
+    | Readonly<{ _tag: 'Message' }>
+    | Readonly<{ _tag: 'Operation'; key: string; incarnation: number }>
+    | Readonly<{ _tag: 'Activation' }>
 }>
 
 /** The replies stored under request ids: never `NotFound`, which the runtime answers for no entity. */
@@ -48,6 +54,11 @@ export type Stored<T extends Types> = Readonly<{
   state: T['state']
   /** The incarnation of every key ever returned by `durable`, present or not. */
   incarnations: Readonly<Record<string, number>>
+  /**
+   * The work the state holds, as the program that stored it computed it: what an activation compares a new
+   * program's work with (decision 0020).
+   */
+  work: Work<T>
   mailbox: ReadonlyArray<Envelope<T>>
   /** By `requestKey`. */
   replies: Readonly<Record<string, StoredReply<T['rejection']>>>
@@ -80,8 +91,8 @@ export type Event<T extends Types> =
   | Readonly<{ _tag: 'Handle'; at: DateTime.Utc }>
   /** An operation dies with a defect. */
   | Readonly<{ _tag: 'Die'; key: string; incarnation: number; cause: unknown }>
-  /** The process dies, and the entity is activated again from what was stored. */
-  | Readonly<{ _tag: 'Restart' }>
+  /** The process dies, and the entity is activated again from what was stored, perhaps by a new program: a deploy. */
+  | Readonly<{ _tag: 'Restart'; program?: Program<T> }>
   /** An operator resumes a suspended entity, perhaps with a fixed program. */
   | Readonly<{ _tag: 'Resume'; program?: Program<T> }>
   /** An operator discards the message a suspended entity died on, and resumes it. */
@@ -113,6 +124,13 @@ export type Output<T extends Types> =
   | Readonly<{ _tag: 'Suspended'; cause: unknown }>
 
 export type Transition<T extends Types> = Readonly<{ machine: Machine<T>; outputs: ReadonlyArray<Output<T>> }>
+
+/**
+ * Whether the work under `key` in `incarnation` is stored, and not yet done. Once it is not, it never is again, and
+ * its idempotency key is never used again: a reply stored for a request it sent may be deleted (decision 0021).
+ */
+export const holds = <T extends Types>(stored: Stored<T>, key: string, incarnation: number) =>
+  stored.work[key] !== undefined && stored.incarnations[key] === incarnation
 
 export const idempotencyKeyOf = <T extends Types>(machine: Machine<T>, key: string, incarnation: number) =>
   idempotencyKey({ name: machine.program.name, id: machine.id }, key, incarnation)
@@ -156,29 +174,66 @@ const startWork = <T extends Types>(
     }
 
 /**
- * Starts what the stored state says, with nothing under way: the work under each key, unless its message is
- * already in the mailbox. An at-most-once operation that may have run before (after a crash, or a suspension)
- * may have acted, so its `unknown` is recorded instead of running it again.
+ * The work a program returns on the stored state, against the work stored with it: what is the same keeps its
+ * incarnation, and anything else is new work. An operation the program changes or drops before its completion
+ * is a defect, as in a step (decision 0020).
  */
-const activate = <T extends Types>(machine: Machine<T>, mayHaveRun: (key: string) => boolean): Transition<T> => {
-  const { stored } = machine
-  if (stored.suspension !== null) return { machine: { ...machine, running: {} }, outputs: [] }
+const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Stored<T> => {
+  const work = program.durable(stored.state)
+  program.project(stored.state)
+  const incarnations = { ...stored.incarnations }
+  for (const [key, was] of Object.entries(stored.work)) {
+    if (isTimer(was) || isSame(was, work[key])) continue
+    const next = work[key]
+    throw new InvariantDefect({
+      reason: next === undefined || isTimer(next)
+        ? `the program dropped the operation under '${key}' before its completion`
+        : `the program changed the operation under '${key}' before its completion`,
+    })
+  }
+  for (const [key, next] of Object.entries(work)) {
+    const was = stored.work[key]
+    if (was === undefined || !isSame(was, next)) incarnations[key] = (incarnations[key] ?? 0) + 1
+  }
+  return { ...stored, incarnations, work }
+}
+
+/**
+ * Starts what the stored state says, with nothing under way, as `program` computes it: the work under each key,
+ * unless its message is already in the mailbox. An at-most-once operation that may have run before (after a
+ * crash, or a suspension) may have acted, so its `unknown` is recorded instead of running it again. A defect
+ * leaves the entity as it was before the event, `before`, suspended on what suspended it, or on the activation.
+ */
+const activate = <T extends Types>(
+  before: Machine<T>,
+  machine: Machine<T>,
+  program: Program<T>,
+  mayHaveRun: (key: string) => boolean,
+): Transition<T> => {
+  if (machine.stored.suspension !== null) return { machine: { ...machine, program, running: {} }, outputs: [] }
+  let stored: Stored<T>
+  try {
+    stored = reconcile(program, machine.stored)
+  } catch (cause) {
+    return suspend({ ...before, program }, { cause, on: before.stored.suspension?.on ?? { _tag: 'Activation' } })
+  }
   const running: Record<string, Running> = {}
   const mailbox = [...stored.mailbox]
   const outputs: Array<Output<T>> = []
-  for (const [key, work] of Object.entries(machine.program.durable(stored.state))) {
+  const activated = { ...machine, program }
+  for (const [key, work] of Object.entries(stored.work)) {
     const incarnation = stored.incarnations[key] ?? 0
     if (isQueued(stored, key, incarnation)) continue
-    const runner = isTimer(work) ? null : runnerOf(machine.program, work)
+    const runner = isTimer(work) ? null : runnerOf(program, work)
     if (mayHaveRun(key) && runner?.delivery === 'AtMostOnce') {
       mailbox.push({ _tag: 'Internal', key, incarnation, message: runner.unknown(work as T['operation']) })
       outputs.push({ _tag: 'Recorded', key, incarnation })
     } else {
       running[key] = { kind: kindOf(work), incarnation }
-      outputs.push(startWork(machine, key, incarnation, work))
+      outputs.push(startWork(activated, key, incarnation, work))
     }
   }
-  return { machine: { ...machine, stored: { ...stored, mailbox }, running }, outputs }
+  return { machine: { ...activated, stored: { ...stored, mailbox }, running }, outputs }
 }
 
 export type Start<T extends Types> =
@@ -205,10 +260,11 @@ export const start = <T extends Types>(
   }
   const incarnations = Object.fromEntries(Object.keys(work).map((key) => [key, 1]))
   const creation = requestKey(request.from, request.requestId)
-  const stored: Stored<T> = { state, incarnations, mailbox: [], replies: {}, creation, suspension: null }
-  const { machine, outputs } = activate({ program, id, stored, running: {} }, () => false)
-  const created: Output<T> = { _tag: 'Replied', ...request, reply: { _tag: 'Created' } }
-  return { _tag: 'Created', machine, outputs: [created, ...outputs] }
+  const stored: Stored<T> = { state, incarnations, work, mailbox: [], replies: {}, creation, suspension: null }
+  const created: Machine<T> = { program, id, stored, running: {} }
+  const { machine, outputs } = activate(created, created, program, () => false)
+  const reply: Output<T> = { _tag: 'Replied', ...request, reply: { _tag: 'Created' } }
+  return { _tag: 'Created', machine, outputs: [reply, ...outputs] }
 }
 
 const suspend = <T extends Types>(machine: Machine<T>, suspension: Suspension): Transition<T> => ({
@@ -250,7 +306,7 @@ const record = <T extends Types>(
   message: (work: Durable<T['operation'], T['internal']>) => T['internal'],
 ): Transition<T> => {
   const running = machine.running[key]
-  const work = machine.program.durable(machine.stored.state)[key]
+  const work = machine.stored.work[key]
   if (running === undefined || running.kind !== kind || running.incarnation !== incarnation || work === undefined) {
     return { machine, outputs: [{ _tag: 'Dropped', key, incarnation }] }
   }
@@ -276,7 +332,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
   const [head, ...rest] = stored.mailbox
   if (stored.suspension !== null || head === undefined) return { machine, outputs: [] }
   try {
-    const before = program.durable(stored.state)
+    const before = stored.work
     if (
       head._tag === 'Internal' &&
       (before[head.key] === undefined || stored.incarnations[head.key] !== head.incarnation)
@@ -345,7 +401,11 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
       outputs.unshift({ _tag: 'Replied', requestId: head.requestId, from: head.from, reply: { _tag: 'Accepted' } })
     }
     return {
-      machine: { ...machine, stored: { ...stored, state, incarnations, mailbox: rest, replies }, running },
+      machine: {
+        ...machine,
+        stored: { ...stored, state, incarnations, work: after, mailbox: rest, replies },
+        running,
+      },
       outputs,
     }
   } catch (cause) {
@@ -364,35 +424,31 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
 
 /**
  * Activates a suspended entity again, as after a crash, perhaps with a fixed program. A program whose `durable` or
- * `project` dies on the stored state leaves it suspended, with that cause.
+ * `project` dies on the stored state, or that changes an operation under way, leaves it suspended, with that cause.
  */
 const resume = <T extends Types>(machine: Machine<T>, fixed: Program<T> | undefined): Transition<T> => {
-  const program = fixed ?? machine.program
-  const { suspension } = machine.stored
-  try {
-    program.durable(machine.stored.state)
-    program.project(machine.stored.state)
-  } catch (cause) {
-    return suspension === null ? { machine, outputs: [] } : suspend({ ...machine, program }, { ...suspension, cause })
-  }
-  return activate({ ...machine, program, stored: { ...machine.stored, suspension: null } }, () => true)
+  if (machine.stored.suspension === null) return { machine, outputs: [] }
+  const unsuspended = { ...machine, stored: { ...machine.stored, suspension: null } }
+  return activate(machine, unsuspended, fixed ?? machine.program, () => true)
 }
 
 /** Ends the message a suspended entity died on as if it had been handled, and resumes it (decision 0008). */
 const discard = <T extends Types>(machine: Machine<T>): Transition<T> => {
-  const { program, stored } = machine
+  const { stored } = machine
   const [head, ...rest] = stored.mailbox
   if (stored.suspension?.on._tag !== 'Message' || head === undefined) return { machine, outputs: [] }
   const incarnations = { ...stored.incarnations }
   // The work whose message is discarded is done, and new work if its key is still in the state: it never ran.
   const renewed = head._tag === 'Internal' &&
-      program.durable(stored.state)[head.key] !== undefined &&
+      stored.work[head.key] !== undefined &&
       incarnations[head.key] === head.incarnation
     ? head.key
     : null
   if (renewed !== null) incarnations[renewed] = (incarnations[renewed] ?? 0) + 1
   return activate(
+    machine,
     { ...machine, stored: { ...stored, incarnations, mailbox: rest, suspension: null } },
+    machine.program,
     (key) => key !== renewed,
   )
 }
@@ -425,9 +481,9 @@ export const step = <T extends Types>(machine: Machine<T>, event: Event<T>): Tra
         : { machine, outputs: [] }
     }
     case 'Restart':
-      return activate({ ...machine, running: {} }, () => true)
+      return activate(machine, { ...machine, running: {} }, event.program ?? machine.program, () => true)
     case 'Resume':
-      return machine.stored.suspension === null ? { machine, outputs: [] } : resume(machine, event.program)
+      return resume(machine, event.program)
     case 'Discard':
       return discard(machine)
   }

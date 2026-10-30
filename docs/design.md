@@ -106,7 +106,10 @@ changes, from a timer to an operation, is new work
 [decision 0018](decisions/0018-operations-are-data.md)).
 
 What runs is always what the state says. After a crash the runtime does not look for what was running: it
-computes `durable(state)` again.
+computes `durable(state)` again. It compares that with the work stored with the state, so that a new program,
+after a deploy, keeps the incarnations of the same work and starts anything else as new work. A new program that
+changes or drops an operation under way is a defect
+([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)).
 
 ### Incarnations
 
@@ -121,8 +124,10 @@ impossible, so that no program has to remember attempt numbers.
 ### Entities that talk
 
 An entity sends a message to another from an operation, with `send`, and the operation's idempotency key as
-the request id. A restarted operation sends the same request, and gets the receiver's stored reply. While the
-receiver is suspended, `send` waits. An operation creates an entity the same way, with `create`. `update`
+the request id. A restarted operation sends the same request, and gets the receiver's stored reply, kept while
+the work that sent it is stored
+([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). While the receiver is
+suspended, `send` waits. An operation creates an entity the same way, with `create`. `update`
 never sends: a step never waits on another entity
 ([decision 0009](decisions/0009-entities-talk-through-operations.md)).
 
@@ -134,7 +139,7 @@ the booking is cancelled or expires.
 After each message the runtime stores, in one transaction:
 
 - the new state;
-- the incarnations of the keys;
+- the incarnations of the keys, and the work the state holds;
 - the message, marked as handled, with its reply for an inbound one.
 
 It stores the state, not the messages that led to it: a fixed `update` changes what happens next, never what
@@ -143,8 +148,8 @@ kept as an audit, but nothing replays them.
 
 ## Execution
 
-- **Activation.** The runtime loads the state and the incarnations, computes `durable(state)`, starts its
-  operations and arms its timers.
+- **Activation.** The runtime loads the state, the incarnations and the stored work, computes `durable(state)`,
+  compares it with the stored work, starts its operations and arms its timers.
 - **A message.** It reads `meta.at`, calls `update`, checks the step (defects included, and `durable` and
   `project` on the next state), stores it, answers the caller, and starts or ends the work whose keys changed.
   An internal message `update` rejects is a defect, since it cannot be late
@@ -179,7 +184,8 @@ On a phone, a defect ends the app. On a server it must not end the process, and 
 would receive it again and die again, forever. So a defect **suspends** the entity: its state stays as it was
 before the message, the message stays unhandled, and nothing is delivered to it until someone resumes it or
 discards the message ([decision 0006](decisions/0006-a-defect-suspends-the-entity.md)). A defect in an
-operation, or in `durable` or `project` on a step's next state, suspends it too. Resuming activates it as after a
+operation, in `durable` or `project` on a step's next state, or in a new program activating the stored state,
+suspends it too. Resuming activates it as after a
 crash; a discarded message ends its work as if it had been handled
 ([decision 0014](decisions/0014-rules-the-machine-settled.md)). A caller meanwhile is answered `Suspended`, which
 is not stored, and retries

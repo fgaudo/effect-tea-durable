@@ -52,14 +52,14 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   of messages, and let the work under way record its completions? And an operation that dies cannot be
   discarded, only resumed: one that dies on a reply stored by another entity dies again on every resume, and
   only a new version of the program gets it out.
-- **Stored replies.** A reply is stored so that a retry gets it. A restarted operation of another entity may
-  retry long after, so a receiver cannot tell when a reply is no longer needed. How long are they kept?
+- **Callers' stored replies.** A caller's reply is stored so that a retry gets it, and is kept for ever: a time
+  after which a retry is applied again would depend on the protocol, and on who callers are
+  ([who may send what](#programs)). Replies to entities are kept while the work that asked is stored
+  ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
 - **Failing operations.** A transient failure (a timeout) is retried inside the operation, or becomes a
   message. After how many retries does it become a defect, if ever? And
   should the runtime notice work that comes back at once, turn after turn: a timer kept at a time already past,
   an operation kept on its own completion ([decision 0008](decisions/0008-delivered-work-is-done.md))?
-- **Dependence on unstable Effect modules.** Cluster, Workflow and the SQL modules are `@stability unstable`
-  in Effect 4.1.
 
 ## Naming
 
