@@ -52,7 +52,16 @@ an [open question](../open-questions.md).
 ## Consequences
 
 - A fact that changes nothing a caller can read is not published. Making it visible means putting it in the
-  projection, which is what makes the projection the contract.
+  projection, which is what makes the projection the contract. The booking's inventory is the case in the
+  flesh: a confirmation moves seats from held to sold, which leaves `available` where it was, so the inventory
+  publishes the hold and not the sale ([`examples/booking`](../../examples/booking)). An inventory whose sales
+  must be published is one that shows them to callers.
+- A `seq` is never given again, so a consumer's cursor still means what it meant after a `prune`. The outbox
+  relies on it: a sequence that filled the holes a deletion left would hand a consumer a cursor beyond rows it
+  never saw.
+- A new version that changes `project` publishes nothing by itself: the rows already written hold what the
+  version before showed, and the entity's next step publishes the new projection. `reindex` writes the read
+  model again and publishes nothing — a deploy is not something an entity did.
 - A rejected message, an internal message dropped, and a step that suspends the entity publish nothing: none of
   them changes the state.
 - The log is where the history of an entity that never ends would be read from — a subscription's past invoices

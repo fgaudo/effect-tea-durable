@@ -879,6 +879,32 @@ describe('publishing what happened', () => {
         }))
     })))
 
+  test('a seq is never given again, so a cursor holds across a prune', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          // The timer is the key a step may drop and bring back: each way changes what callers read.
+          yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
+          const read = yield* toy.published(0)
+          expect(read.map(({ projection }) => projection)).toEqual([4, 3])
+          const cursor = read[1]?.seq ?? 0
+          // The consumer acted on both rows and pruned them: the rows go, and its cursor stands.
+          expect(yield* toy.prune(cursor)).toBe(2)
+          expect(yield* toy.published(0)).toEqual([])
+          yield* toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'on' }, { requestId: 'on', sender: tester })
+          // What is published next is past the cursor: a seq the prune freed is never given again, or the
+          // consumer would read from beyond a row it never saw.
+          const next = yield* toy.published(cursor)
+          expect(next.map(({ projection }) => projection)).toEqual([4])
+          expect(next[0]?.seq ?? 0).toBeGreaterThan(cursor)
+          expect(yield* toy.published(0)).toEqual(next)
+        }))
+    })))
+
   test('entities stepping at once share one rising sequence, and nothing of theirs is lost', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now

@@ -46,6 +46,26 @@ test('a booking holds its seats in the inventory, and confirms them', () =>
     expect(yield* bookings.read('b1')).toMatchObject({ status: 'Confirmed', canConfirm: false })
     // The seats are sold, not held: the booking's confirmation moved them.
     expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
+
+    // What other systems learn: the booking's whole story, step by step (decision 0038).
+    expect(
+      (yield* bookings.published(0)).map(({ kind, message, projection }) =>
+        [kind, message?._tag ?? null, projection.status]
+      ),
+    ).toEqual([
+      ['Creation', null, 'Holding'],
+      ['Internal', 'SeatsHeld', 'Held'],
+      ['Inbound', 'ConfirmRequested', 'Confirming'],
+      ['Internal', 'SeatsConfirmed', 'Confirmed'],
+    ])
+    // Of the inventory, only the hold. Confirming the seats moves them from held to sold, which leaves
+    // `available` where it was: a fact no caller can read is not published, and an inventory whose sales must
+    // be is one that shows them.
+    expect(
+      (yield* inventories.published(0)).map(({ kind, message, projection }) =>
+        [kind, message?._tag ?? null, projection.available]
+      ),
+    ).toEqual([['Creation', null, 10], ['Inbound', 'HoldRequested', 7]])
   }))))
 
 test('a booking of more seats than are left is cancelled with the inventory’s reason', () =>

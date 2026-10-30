@@ -301,7 +301,12 @@ The runtime writes the log and does not deliver it — the transport, the retrie
 the consumer's.
 
 A step that changes the state without changing what callers read publishes nothing, and neither does a
-rejected message, an internal message dropped, or a step that suspends the entity.
+rejected message, an internal message dropped, or a step that suspends the entity. The booking's inventory
+shows what that costs: confirming seats moves them from held to sold and leaves `available` where it was, so
+the sale is not published. A program whose fact must reach other systems shows it to callers.
+
+A deploy publishes nothing of itself: a new `project` reaches the log at each entity's next step, and
+`reindex` writes the read model again without publishing.
 
 ## Testing
 
