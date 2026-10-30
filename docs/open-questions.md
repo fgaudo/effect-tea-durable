@@ -12,6 +12,13 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   difference shows in its type?
 - **Work that may be abandoned.** An operation leaves only through its completion. Is there a kind of work with
   no effect on the world (a computation, a read) that a state may drop, as effect-tea drops a subscription?
+- **Work whose parameters change.** A kept key leaves its work as it is, even when the state the work was
+  built from has changed: a subscription whose payment method is updated during a charge goes on charging the
+  old one. That is the right answer for an operation, which cannot be interrupted
+  ([decision 0005](decisions/0005-an-operation-leaves-only-by-completing.md)), but it is silent. A timer could
+  instead be armed again when its time changes, since it has done nothing yet. Should a timer compare its time,
+  and should the runtime say anything when an operation's parameters differ? An operation is a function, so the
+  runtime cannot compare it unless it carries its parameters as data.
 - **Live streams.** A timer and an operation survive passivation. A stream from a socket or a feed does not.
   Are they allowed, keeping the entity loaded while their key is present, or left out?
 - **Children inside an entity.** effect-tea composes programs into a tree. Does an entity's program compose
@@ -28,6 +35,12 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 - **Queries across entities.** "Orders unpaid for a day" cannot be asked of stored states. A pure function
   from the state to rows of a read table, written in the step's transaction, would answer it. How are those
   tables declared and migrated?
+- **Publishing what happened.** Other systems (a queue, an event store, another service) need to learn what an
+  entity did. The runtime could write `(id, the accepted message, the projection after)` to an outbox in the
+  step's transaction whenever the projection changes, and deliver it at least once. The message names the fact
+  (`ChargeSucceeded`), and the projection is already the public contract, so the program would declare nothing
+  more. Is that the way, and what does a consumer use to deduplicate? It is also where the history of an entity
+  that never ends (a subscription's past invoices) would go, since its state keeps only the present.
 - **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
   large state do: split into entities, or store a difference?
 - **Schemas that change.** States, flags and messages in the mailbox are stored in the schema of the version
@@ -41,7 +54,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 - **Suspended entities.** What does a caller of a suspended entity get? How does an operator see, resume and
   discard?
 - **Failing operations.** A transient failure (a timeout) is retried inside the operation, or becomes a
-  message. After how many retries does it become a defect, if ever?
+  message. After how many retries does it become a defect, if ever? And
+  should the runtime notice work that comes back at once, turn after turn: a timer kept at a time already past,
+  an operation kept on its own completion ([decision 0008](decisions/0008-delivered-work-is-done.md))?
 - **Dependence on unstable Effect modules.** Cluster, Workflow and the SQL modules are `@stability unstable`
   in Effect 4.1.
 

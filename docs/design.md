@@ -63,6 +63,10 @@ effect-tea compares subscriptions:
 - a kept key leaves it as it is;
 - a missing key ends it.
 
+Work ends when its message is handled. In the step that handles it, its key counts as gone, so a next state
+that returns it starts new work: that is how a timer repeats
+([decision 0008](decisions/0008-delivered-work-is-done.md)).
+
 Two kinds of work exist.
 
 - **An operation** is an effect that ends with one internal message. Expected failures become messages, as in
@@ -79,7 +83,7 @@ computes `durable(state)` again.
 ### Incarnations
 
 Each key has an incarnation, a counter stored with the state. It grows each time the key comes back after
-leaving. An internal message carries the incarnation of the work that sent it, and the runtime drops it when
+leaving, or stays after its work delivered. An internal message carries the incarnation of the work that sent it, and the runtime drops it when
 the key's incarnation has moved on.
 
 Without it, the second attempt of a payment could receive the late answer of the first. The runtime makes this

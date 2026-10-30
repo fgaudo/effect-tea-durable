@@ -3,18 +3,16 @@
 The steps from this design to a library, in order. Each one may change the ones after it. When a step is done,
 it leaves this file, and what it decided goes into the design, a decision or an example.
 
-## 1. A second and a third example
+## 1. A third example
 
-The order is a state machine that ends, and talks to no other entity. Two examples of other shapes test what it
-does not:
+The order is a state machine that ends, and the subscription one that never does; neither talks to another
+entity. An example of that shape tests what they do not:
 
-- **A subscription billed every month.** An entity that never ends, with a timer that comes back each period.
-  It tests incarnations on a key that returns forever, and whether the state stays small.
 - **A booking that holds seats in an inventory entity.** Two entities that talk. It tests the idea of an
   operation that sends a message to another entity with its idempotency key as the request id, and what the
   booking does when the inventory rejects.
 
-Each goes in `examples/<name>/`, with its scenarios, written against `examples/api.ts`. Where the API does not
+It goes in `examples/booking/`, with its scenarios, written against `examples/api.ts`. Where the API does not
 fit, change the API (and the order with it) or note the problem in [open questions](open-questions.md). An
 example that reads badly is a finding, not a failure.
 

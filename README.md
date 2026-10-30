@@ -14,7 +14,8 @@ cluster or a clock.
 - [`docs/roadmap.md`](docs/roadmap.md): the steps from this design to a library, in order;
 - [`examples/order`](examples/order): an order's lifecycle written against the imagined API
   ([`examples/api.ts`](examples/api.ts), declarations only). The typecheck tells whether the design can be
-  expressed; if the example reads badly, the API is wrong.
+  expressed; if the example reads badly, the API is wrong;
+- [`examples/subscription`](examples/subscription): a subscription billed every month, which never ends.
 
 ```sh
 bun install
