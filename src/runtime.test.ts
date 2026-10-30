@@ -465,6 +465,9 @@ describe('passivation', () => {
       expect(yield* store.due(rings - 1, [])).toEqual({ ready: [], next: rings })
       expect(yield* store.due(rings, [])).toEqual({ ready: [id], next: null })
       expect(yield* store.due(rings, [id])).toEqual({ ready: [], next: null })
+      // However many entities the process holds: they are not parameters of the query, whose number SQLite caps.
+      const many = Array.from({ length: 40_000 }, (_, n) => `loaded-${n}`)
+      expect(yield* store.due(rings, many)).toEqual({ ready: [id], next: null })
       yield* process({ observe }, (runtime) =>
         Effect.gen(function*() {
           const { layer } = yield* hands()
@@ -479,6 +482,32 @@ describe('passivation', () => {
         }))
       expect((yield* store.load(id))?.state.want).toEqual([])
       expect(shape(yield* store.load(id))).toEqual(shape(replayed(since, events)))
+    })))
+
+  test('the due timers pass over the loaded entities, page after page', () =>
+    database(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const store = storage(program, sql)
+      // 600 entities with a timer: the even ones are due at 10, the odd ones at 1_000 + n. The process holds
+      // the first 500, more than a page of either reading.
+      const ids = Array.from({ length: 600 }, (_, n) => `e-${String(n).padStart(3, '0')}`)
+      for (const [n, entity] of ids.entries()) {
+        yield* sql`INSERT INTO entity_keys ${
+          sql.insert({
+            name: program.name,
+            id: entity,
+            key: 't',
+            incarnation: 1,
+            version: 1,
+            work: '{}',
+            delivery: null,
+            due: n % 2 === 0 ? 10 : 1_000 + n,
+          })
+        }`
+      }
+      const due = yield* store.due(100, ids.slice(0, 500))
+      expect(due.ready).toEqual(ids.slice(500).filter((_, n) => n % 2 === 0))
+      expect(due.next).toBe(1_000 + 501)
     })))
 
   test('a suspended entity is unloaded, no timer of its fires, and an operator loads it again', () =>
@@ -996,6 +1025,27 @@ describe('publishing what happened', () => {
         }))
     })))
 
+  test('an ack past the last seq moves the cursor to it, and the rows written after are kept', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          // Nothing was written yet: the cursor stays at 0.
+          yield* toy.ack('queue', 1_000)
+          expect(yield* toy.consumers).toEqual([{ consumer: 'queue', seq: 0, behind: 0 }])
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          const [created] = yield* toy.published(0)
+          // A consumer that acks beyond what it read stops at the last row: the next one is past its cursor.
+          yield* toy.ack('queue', (created?.seq ?? 0) + 1_000)
+          expect(yield* toy.consumers).toEqual([{ consumer: 'queue', seq: created?.seq ?? 0, behind: 0 }])
+          yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
+          expect(yield* toy.prune).toBe(1)
+          expect((yield* toy.feed('queue')).map(({ projection }) => projection)).toEqual([3])
+        }))
+    })))
+
   test('entities stepping at once share one rising sequence, and nothing of theirs is lost', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
@@ -1297,7 +1347,7 @@ describe('a schema that changes', () => {
         }))
     })))
 
-  test('a process that has no reading of the version stored dies', () =>
+  test('a deploy that has no reading of the version stored dies', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       yield* process({}, (runtime) =>
@@ -1315,6 +1365,36 @@ describe('a schema that changes', () => {
           const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
           expect(cause instanceof Error && cause.message)
             .toBe("'Toy' is version 1, and has no reading of version 2")
+        }))
+    })))
+
+  test('a row no version reads fails the call that meets it, and the process serves the rest', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      // Each version leaves an entity with nothing under way, so that a deploy activates neither.
+      for (const [version, entity] of [[program, 'm-4'], [next, 'm-5']] as const) {
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const { layer } = yield* hands()
+            const toy = yield* Effect.provide(runtime.deploy(version as Program<T>), layer)
+            yield* toy.create(entity, { at }, { requestId: `c-${entity}`, sender: tester })
+            yield* runtime.settled
+            yield* Effect.sleep('60 millis')
+            yield* runtime.settled
+          }))
+      }
+      // Version 1 is deployed again, as a rollback: the entity version 2 wrote fails each call that loads it.
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const want = { _tag: 'Want', key: 't', on: true, nonce: 'n' } as const
+          const exit = yield* Effect.exit(toy.send('m-5', want, { requestId: 'r-5', sender: tester }))
+          const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+          expect(cause instanceof Error && cause.message)
+            .toBe("'Toy' is version 1, and has no reading of version 2")
+          expect(yield* toy.send('m-4', want, { requestId: 'r-4', sender: tester })).toEqual({ _tag: 'Accepted' })
+          expect(yield* toy.read('m-4')).toBe(1)
         }))
     })))
 })

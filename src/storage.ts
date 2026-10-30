@@ -323,8 +323,9 @@ export interface Storage<T extends Types> {
    */
   readonly feed: (consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
-   * Moves a consumer's cursor to `through`, never back, since what is behind it may be gone. An ack from a
-   * consumer that has not read stores its cursor too (decision 0039).
+   * Moves a consumer's cursor to `through`, never back, since what is behind it may be gone, and never past the
+   * last `seq` written, so that no row written later is behind it. An ack from a consumer that has not read
+   * stores its cursor too (decision 0039).
    */
   readonly ack: (consumer: string, through: number) => Effect.Effect<void>
   /**
@@ -660,21 +661,41 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
     return rows.map((row) => row.id)
   }).pipe(Effect.orDie)
 
+  // The entities this process holds are left out as the rows are read, not by the query: a query that listed them
+  // would take one parameter each, and fail past SQLite's limit on them. Each page skips at most the loaded ones.
   const due = (now: number, loaded: ReadonlyArray<string>) =>
     Effect.gen(function*() {
-      const held = sql`NOT ${sql.in('id', loaded)}`
-      const ready = yield* sql<{ id: string }>`
-        SELECT DISTINCT id FROM entity_keys
-        WHERE name = ${name} AND work IS NOT NULL AND due IS NOT NULL AND due <= ${now}
-          AND ${held} AND id NOT IN ${onHold}
-        LIMIT ${batch}
-      `
-      const rest = yield* sql<{ next: number | null }>`
-        SELECT MIN(due) AS next FROM entity_keys
-        WHERE name = ${name} AND work IS NOT NULL AND due > ${now}
-          AND ${held} AND id NOT IN ${onHold}
-      `
-      return { ready: ready.map((row) => row.id), next: rest[0]?.next ?? null } satisfies Due
+      const held = new Set(loaded)
+      const ready: Array<string> = []
+      let after = ''
+      while (ready.length < batch) {
+        const page = yield* sql<{ id: string }>`
+          SELECT DISTINCT id FROM entity_keys
+          WHERE name = ${name} AND work IS NOT NULL AND due IS NOT NULL AND due <= ${now}
+            AND id > ${after} AND id NOT IN ${onHold}
+          ORDER BY id LIMIT ${batch}
+        `
+        for (const { id } of page) if (!held.has(id) && ready.length < batch) ready.push(id)
+        if (page.length < batch) break
+        after = page[page.length - 1]?.id ?? after
+      }
+      // The earliest time of an entity this process does not hold, read in the order of the times.
+      let next: number | null = null
+      let from: Readonly<{ at: number; id: string }> | null = null
+      while (next === null) {
+        const page: ReadonlyArray<{ id: string; at: number }> = yield* sql<{ id: string; at: number }>`
+          SELECT id, MIN(due) AS at FROM entity_keys
+          WHERE name = ${name} AND work IS NOT NULL AND due > ${now} AND id NOT IN ${onHold}
+          GROUP BY id
+          ${from === null ? sql`` : sql`HAVING at > ${from.at} OR (at = ${from.at} AND id > ${from.id})`}
+          ORDER BY at, id LIMIT ${batch}
+        `
+        next = page.find((row) => !held.has(row.id))?.at ?? null
+        const last = page[page.length - 1]
+        if (page.length < batch || last === undefined) break
+        from = last
+      }
+      return { ready, next } satisfies Due
     }).pipe(Effect.orDie)
 
   const indexed = Effect.gen(function*() {
@@ -776,7 +797,14 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       return yield* published(cursor ?? 0, limit)
     }).pipe(Effect.orDie)
 
-  const ack = (consumer: string, through: number) => Effect.asVoid(mark(consumer, through)).pipe(Effect.orDie)
+  // A cursor goes no further than the last `seq` the log gave, of any program: one past it would have the rows
+  // written after it dropped by a prune before its consumer read them. `sqlite_sequence` holds that `seq` though
+  // a prune dropped its row, and has no row for the outbox until the first one is written.
+  const ack = (consumer: string, through: number) =>
+    Effect.gen(function*() {
+      const last = yield* sql<{ seq: number }>`SELECT seq FROM sqlite_sequence WHERE name = 'outbox'`
+      yield* mark(consumer, Math.min(through, last[0]?.seq ?? 0))
+    }).pipe(Effect.orDie)
 
   // The cursors are read and the rows dropped in one transaction: a consumer whose first reading lands in the
   // middle of a prune either holds the log, and nothing goes, or starts after the drop. Otherwise it could read

@@ -122,8 +122,9 @@ export interface Handle<T extends Types> {
    */
   readonly feed: (consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
-   * Moves a consumer's cursor to `through`, never back, since what is behind it may be gone. An ack from a
-   * consumer that has not read stores its cursor too (decision 0039).
+   * Moves a consumer's cursor to `through`, never back, since what is behind it may be gone, and never past the
+   * last `seq` written, so that no row written later is behind it. An ack from a consumer that has not read
+   * stores its cursor too (decision 0039).
    */
   readonly ack: (consumer: string, through: number) => Effect.Effect<void>
   /**

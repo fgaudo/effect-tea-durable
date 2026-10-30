@@ -214,8 +214,8 @@ This is what lets a deploy change the shape of an operation under way: the store
 the one the new `durable` computes from the migrated state, and a migration that gives anything else suspends the
 entity at its activation, as a program that changes an operation does
 ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)). A row written by a version
-the program does not have is not read at all: the process dies on it, since one that cannot read what is stored
-must not serve it.
+the program does not have is not read at all: the call that meets it fails, and the process serves the entities
+it can read ([decision 0043](decisions/0043-a-row-no-version-reads-fails-what-reads-it.md)).
 
 ## Execution
 
@@ -304,7 +304,7 @@ more is declared: the message names the fact, and the projection is already the 
 
 Each row carries a `seq`, which rises with every row and is never reused. A consumer is a name, and its cursor
 is stored: `feed(consumer, limit)` reads from it and `ack(consumer, through)` moves it once the rows are acted
-on, so a crash before the ack delivers them again — at least once, deduplicated by `seq`. `prune` drops what
+on, never back and never past the last `seq` written, so a crash before the ack delivers them again — at least once, deduplicated by `seq`. `prune` drops what
 every consumer has read, through the lowest stored cursor, and drops nothing where no consumer has read from the
 log. `consumers` says where each one is and how many rows are past it, and `forget` lets the log go past one
 that is gone; `published(after, limit)` reads from a cursor the caller holds, and registers nothing
