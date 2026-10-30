@@ -5,6 +5,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
 
 - All code, comments, identifiers, commit messages and `.md` files are in **English**.
 - A commit made with an AI agent ends with an `Assisted-by: <model>` trailer, never `Co-Authored-By`.
+- A commit message stays short: a subject line of at most 72 characters in the imperative, and a body only
+  where the diff cannot say it, four lines at most. Why a change was taken belongs in `docs/`, not in the message.
 - A decision gets a note in `docs/decisions/`, numbered in order and never rewritten once taken: a decision
   that changes is a new note that says which one it replaces. A question not decided yet goes in
   `docs/open-questions.md`, and leaves it when a note decides it. A step of the roadmap leaves it when done.
