@@ -3,7 +3,7 @@ import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import type * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import type * as Schema from 'effect/Schema'
+import * as Schema from 'effect/Schema'
 
 /** What `update` returns for an inbound message that does not apply in the state, with no reason given. */
 export const reject: unique symbol = Symbol.for('effect-tea-durable/Rejected')
@@ -52,6 +52,42 @@ export const defect = (reason: string): never => {
 
 /** A value JSON holds: what a schema encodes to, so that a runtime can write it (decision 0030). */
 export type Json = string | number | boolean | null | { readonly [key: string]: Json } | ReadonlyArray<Json>
+
+/**
+ * Whether a value is JSON as it is, so that `JSON.stringify` writes what is read back: the type `Json` admits
+ * `NaN` and `Infinity`, which are written `null` (decision 0040).
+ */
+const isJson = (value: unknown): boolean => {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(isJson)
+  if (typeof value !== 'object') return false
+  const prototype: unknown = Object.getPrototypeOf(value)
+  return (prototype === Object.prototype || prototype === null) && Object.values(value).every(isJson)
+}
+
+const encoders = new WeakMap<object, (value: unknown) => unknown>()
+
+/**
+ * A value encoded by its schema, as a runtime writes it: one the schema refuses, or that encodes to what JSON
+ * does not hold as it is, cannot be stored, and is a defect. `what` names it in the defect (decision 0040).
+ */
+export const encode = <A>(codec: Schema.Codec<A, Json>, value: A, what: string): Json => {
+  let encoder = encoders.get(codec)
+  if (encoder === undefined) {
+    encoder = Schema.encodeSync(codec as Schema.Codec<unknown, unknown>)
+    encoders.set(codec, encoder)
+  }
+  let encoded: unknown
+  try {
+    encoded = encoder(value)
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message.split('\n')[0] : String(cause)
+    throw new InvariantDefect({ reason: `the ${what} does not encode: ${reason}` })
+  }
+  if (!isJson(encoded)) throw new InvariantDefect({ reason: `the ${what} encodes to what JSON does not hold` })
+  return encoded as Json
+}
 
 /**
  * How the JSON one version of a program wrote is read by the next, by kind of stored value: a pure function from

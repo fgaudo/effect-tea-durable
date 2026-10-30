@@ -93,3 +93,31 @@ test('a booking for an event that does not exist is cancelled', () =>
 
     expect(yield* bookings.read('b3')).toMatchObject({ status: 'Cancelled' })
   }))))
+
+test('the inventory keeps its reply to a booking while the booking’s hold waits for it, and no longer', () =>
+  database(Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const repliesToBookings = sql<{ count: number }>`
+      SELECT count(*) AS count FROM replies WHERE name = 'Inventory' AND sender_name = 'Booking'
+    `.pipe(Effect.orDie)
+    const seen: Array<number> = []
+    yield* Effect.scoped(Effect.gen(function*() {
+      const runtime = yield* launch({
+        // Before the booking's step that handles the inventory's answer commits, the hold that asked still holds.
+        at: (point, entity, event) =>
+          point === 'BeforeCommit' && entity.name === 'Booking' && event._tag === 'Handle'
+            ? Effect.flatMap(repliesToBookings, ([row]) => Effect.sync(() => seen.push(row?.count ?? 0)))
+            : Effect.void,
+      })
+      const inventories = yield* runtime.deploy(inventory)
+      const bookings = yield* runtime.deploy(booking)
+      yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
+      yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+      yield* runtime.settled
+      expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held' })
+    }))
+    // The reply was there for the hold to read again after a crash, and went with the step that ended the hold
+    // (decision 0021).
+    expect(seen).toContain(1)
+    expect((yield* repliesToBookings)[0]?.count).toBe(0)
+  })))

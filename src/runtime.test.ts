@@ -1318,3 +1318,84 @@ describe('a schema that changes', () => {
         }))
     })))
 })
+
+describe('what the runtime cannot finish', () => {
+  const tester = { _tag: 'Tester' } as const
+  const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
+
+  test('an event it cannot finish crashes its entity alone, and the next caller finds it again', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      let dies = true
+      yield* process({
+        // The message is written, and the runtime dies before it acts on it: the hook stands for a failed write.
+        observe: (_entity, event) => {
+          if (event._tag !== 'Receive' || event.requestId !== 'r-1' || !dies) return Effect.void
+          dies = false
+          return Effect.die('the runtime failed')
+        },
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          const failed = yield* Effect.exit(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
+          expect(Exit.isFailure(failed)).toBe(true)
+          // The entity left the process: the next caller loads it, and the message stored is handled first.
+          expect(
+            yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester }).pipe(Effect.timeout('2 seconds')),
+          ).toEqual({ _tag: 'Accepted' })
+          expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
+            .toEqual({ _tag: 'Accepted' })
+          yield* runtime.settled
+        }))
+    })))
+
+  test('a runner that throws while it builds its effect suspends its entity', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const throwing: Program<T> = {
+        ...program,
+        operations: {
+          ...program.operations,
+          C: operation.atLeastOnce((): Effect.Effect<Internal, never, Hands> => {
+            throw new Error('thrown while building')
+          }),
+        },
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(throwing), layer)
+          expect(yield* toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+            .toEqual({ _tag: 'Created' })
+          yield* runtime.settled
+          expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
+            .toEqual({ _tag: 'Suspended' })
+        }))
+      const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
+      expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: 'c', incarnation: 1 })
+    })))
+
+  test('a message its schema cannot encode is its caller’s defect, and reaches no entity', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const observed: Array<string> = []
+      yield* process({ observe: (_entity, event) => Effect.sync(() => observed.push(event._tag)) }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          const wrong = { _tag: 'Want', key: 'z', on: false, nonce: 'n-1' } as unknown as Inbound
+          const exit = yield* Effect.exit(toy.send(id, wrong, { requestId: 'r-1', sender: tester }))
+          expect(Exit.isFailure(exit)).toBe(true)
+          expect(yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester }))
+            .toEqual({ _tag: 'Accepted' })
+          yield* runtime.settled
+        }))
+      // Nothing of the entity failed: it never left the process, and no activation brought it back.
+      expect(observed.filter((event) => event === 'Restart')).toEqual([])
+      const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
+      expect(stored?.state.applied).toEqual(['n-2'])
+    })))
+})

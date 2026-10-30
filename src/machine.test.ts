@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Equal from 'effect/Equal'
+import * as Schema from 'effect/Schema'
 import fc from 'fast-check'
 import * as Machine from './machine.ts'
 import {
@@ -63,11 +64,36 @@ const epoch = DateTime.makeUnsafe(0)
 
 const done = (key: Key): Internal => ({ _tag: 'Done', key, then: 'End' })
 
+const Key = Schema.Literals(keys)
+
+// The machine encodes what it would store, to check that a runtime can write it (decision 0040).
+const schemas: Program<T>['schemas'] = {
+  state: Schema.Struct({ want: Schema.Array(Key), applied: Schema.Array(Schema.String), tune: Schema.Number }),
+  flags: Schema.Null,
+  inbound: Schema.Union([
+    Schema.TaggedStruct('Want', { key: Key, on: Schema.Boolean, nonce: Schema.String }),
+    Schema.TaggedStruct('Refuse', { nonce: Schema.String }),
+    Schema.TaggedStruct('Break', { nonce: Schema.String }),
+    Schema.TaggedStruct('Retune', { nonce: Schema.String }),
+  ]),
+  internal: Schema.Union([
+    Schema.TaggedStruct('Done', { key: Key, then: Schema.Literals(['End', 'Again', 'Break']) }),
+    Schema.TaggedStruct('Unknown', { key: Key }),
+    Schema.TaggedStruct('Rang', { key: Key }),
+  ]),
+  operation: Schema.Union([
+    Schema.TaggedStruct('A', { tune: Schema.Number }),
+    Schema.Struct({ _tag: Schema.Literals(['B', 'C']), key: Key }),
+  ]),
+  rejection: Schema.Literal('Refused'),
+  sender: Schema.Literal('caller'),
+  projection: Schema.Number,
+}
+
 const program: Program<T> = {
   name: 'Toy',
   keys,
-  // The machine never encodes: the schemas are the runtime's.
-  schemas: {} as Program<T>['schemas'],
+  schemas,
   init: () => ({ want: keys, applied: [], tune: 0 }),
   update: (message) => (state) => {
     switch (message._tag) {
@@ -137,7 +163,15 @@ const retimed: Program<T> = {
   },
 }
 
-const versions = { first: program, retuned, redelivered, retimed } as const
+// A version fixed so that its `update` handles the completion it broke on: what an operator brings for a
+// completion, which is not discarded (decision 0041).
+const mend = (version: Program<T>): Program<T> => ({
+  ...version,
+  update: (message, meta) =>
+    version.update(message._tag === 'Done' && message.then === 'Break' ? { ...message, then: 'End' } : message, meta),
+})
+
+const versions = { first: program, retuned, redelivered, retimed, mended: mend(program) } as const
 
 /** The program a restart or a resumption brings: the one running, or one of the versions. */
 type Version = 'same' | keyof typeof versions
@@ -317,7 +351,8 @@ const run = (commands: ReadonlyArray<Command>) => {
     for (const event of toEvents(machine, command, requests)) apply(event)
   }
   // Then everything ends: bugs are discarded, operations complete, timers fire, and the mailbox is handled. A
-  // suspended entity is discarded or resumed, by each version in turn, until one keeps what runs.
+  // suspended entity is discarded or resumed, by each version in turn, until one keeps what runs and handles what
+  // it died on.
   const fixes = [program, retuned, redelivered, retimed] as const
   let tried = 0
   for (let turn = 0; turn < 200; turn++) {
@@ -327,7 +362,7 @@ const run = (commands: ReadonlyArray<Command>) => {
     if (stored.suspension !== null) {
       // A discard needs a program that keeps what runs: on its failure, the next version is brought.
       const discarding = stored.suspension.on._tag === 'Message' && trace.at(-1)?.event._tag !== 'Discard'
-      apply(discarding ? { _tag: 'Discard' } : { _tag: 'Resume', program: fixes[tried++ % fixes.length] ?? program })
+      apply(discarding ? { _tag: 'Discard' } : { _tag: 'Resume', program: mend(fixes[tried++ % fixes.length] ?? program) })
     } else if (stored.mailbox.length > 0) apply({ _tag: 'Handle', at })
     else if (operation !== undefined) {
       const [key, { incarnation }] = operation
@@ -443,7 +478,7 @@ describe('the machine', () => {
   test('an operation leaves the state only through its completion', () =>
     property(({ trace }) => {
       for (const { event, before, after, outputs } of trace) {
-        // An operator who discards a completion ends its work by hand.
+        // An operator who discards a timer's firing ends its work by hand: a completion is not discarded.
         if (event._tag === 'Discard') continue
         const next = Machine.workOf(after.stored)
         for (const [key, work] of Object.entries(Machine.workOf(before.stored))) {
@@ -673,7 +708,10 @@ type Tiny = {
 }
 
 type TinyWork = Readonly<
-  Record<string, 'operation' | 'larger operation' | 'timer' | 'later timer' | 'other timer'>
+  Record<
+    string,
+    'operation' | 'larger operation' | 'unmeasured operation' | 'timer' | 'later timer' | 'other timer'
+  >
 >
 
 const tiny = (
@@ -687,7 +725,16 @@ const tiny = (
   // Every key these tests hold work under: the machine checks what `durable` returns against them
   // (decision 0037).
   keys: ['charge', 'deadline', 'work', 'reminder', 'mail'],
-  schemas: {} as never,
+  schemas: {
+    state: Schema.Struct({ last: Schema.String }),
+    flags: Schema.Null,
+    inbound: Schema.String,
+    internal: Schema.String,
+    operation: Schema.TaggedStruct('Work', { size: Schema.Number }),
+    rejection: Schema.Never,
+    sender: Schema.Null,
+    projection: Schema.String,
+  },
   init: () => ({ last: 'start' }),
   update: (message) => () => {
     const next = update(message)
@@ -696,8 +743,8 @@ const tiny = (
   durable: ({ last }) =>
     Object.fromEntries(Object.entries(durable(last)).map(([key, kind]) => [
       key,
-      kind === 'operation' || kind === 'larger operation'
-        ? { _tag: 'Work', size: kind === 'operation' ? 1 : 2 } as const
+      kind === 'operation' || kind === 'larger operation' || kind === 'unmeasured operation'
+        ? { _tag: 'Work', size: kind === 'operation' ? 1 : kind === 'larger operation' ? 2 : Number.NaN } as const
         : timer(kind === 'later timer' ? at : epoch, kind === 'other timer' ? 'rang again' : 'rang'),
     ])),
   operations: { Work: operation(() => Effect.succeed('done')) },
@@ -823,6 +870,104 @@ describe('the checks of a step', () => {
         reply: { _tag: 'Suspended' },
       })
     }
+  })
+})
+
+describe('what a runtime writes', () => {
+  const inbound = { _tag: 'Receive', requestId: 'r', message: 'go', from: nobody } as const
+
+  test('a state whose projection or work does not encode to JSON is a defect, and is not stored', () => {
+    for (
+      const [machine, reason] of [
+        // A projection the schema refuses.
+        [
+          checked((message) => message, () => ({}), (state) => (state === 'go' ? 1 as never : state)),
+          'the projection does not encode',
+        ],
+        // An operation the schema takes, holding a number JSON writes as `null`.
+        [
+          checked((message) => message, (state) => (state === 'go' ? { charge: 'unmeasured operation' } : {})),
+          "the operation under 'charge' encodes to what JSON does not hold",
+        ],
+      ] as const
+    ) {
+      const transition = handled(machine, inbound)
+      expect(reasonOfSuspension(transition)).toStartWith(reason)
+      expect(transition.machine.stored.state).toEqual({ last: 'start' })
+      expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+    }
+  })
+
+  test('a first state that does not encode stores nothing', () => {
+    const created = Machine.start(
+      tiny((message) => message, () => ({ charge: 'unmeasured operation' })),
+      'tiny',
+      null,
+      epoch,
+      { requestId: 'creation', from: nobody },
+    )
+    expect(created._tag).toBe('Defect')
+  })
+
+  test('an operation whose message does not encode suspends the entity on the operation', () => {
+    const machine = checked((message) => message, (state) => (state === 'start' ? { charge: 'operation' } : {}))
+    const transition = Machine.step(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 1 as never })
+    expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Operation', key: 'charge', incarnation: 1 })
+    expect(transition.machine.stored.mailbox).toEqual([])
+  })
+
+  test('an unknown that dies at an activation suspends the entity on the activation', () => {
+    const base = tiny((message) => message, () => ({ charge: 'operation' }))
+    const program: Program<Tiny> = {
+      ...base,
+      operations: {
+        Work: operation.atMostOnce(() => Effect.succeed('done'), (): string => {
+          throw new Error('no unknown')
+        }),
+      },
+    }
+    const created = Machine.start(program, 'tiny', null, epoch, { requestId: 'creation', from: nobody })
+    if (created._tag === 'Defect') throw created.cause
+    const transition = Machine.step(created.machine, { _tag: 'Restart' })
+    expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
+    expect(transition.machine.stored.mailbox).toEqual([])
+  })
+})
+
+describe('discarding', () => {
+  const breaksOnDone = (message: string) => (message === 'done' ? defect('broken') : message)
+  const charging = (state: string): TinyWork => (state === 'start' ? { charge: 'operation' } : {})
+
+  test('a completion the entity died on is not discarded: the operation acted, and would act again', () => {
+    const machine = checked(breaksOnDone, charging)
+    const died = handled(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'done' })
+    expect(died.machine.stored.suspension?.on).toEqual({ _tag: 'Message' })
+    const discarded = Machine.step(died.machine, { _tag: 'Discard' })
+    expect(discarded.outputs).toEqual([])
+    expect(discarded.machine).toBe(died.machine)
+  })
+
+  test('a fixed program gets the entity past the completion it died on', () => {
+    const machine = checked(breaksOnDone, charging)
+    const died = handled(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'done' })
+    const resumed = Machine.step(died.machine, { _tag: 'Resume', program: tiny((message) => message, charging) })
+    expect(resumed.machine.stored.suspension).toBeNull()
+    expect(resumed.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+    const after = Machine.step(resumed.machine, { _tag: 'Handle', at })
+    expect(after.machine.stored.state).toEqual({ last: 'done' })
+    expect(after.outputs).toContainEqual({ _tag: 'Delivered', key: 'charge', incarnation: 1 })
+  })
+
+  test("a timer's firing the entity died on is discarded, and the timer armed again", () => {
+    const machine = checked(
+      (message) => (message === 'rang' ? defect('broken') : message),
+      () => ({ deadline: 'timer' }),
+    )
+    const died = handled(machine, { _tag: 'Fire', key: 'deadline', incarnation: 1 })
+    expect(died.machine.stored.suspension?.on).toEqual({ _tag: 'Message' })
+    const discarded = Machine.step(died.machine, { _tag: 'Discard' })
+    expect(discarded.machine.stored.suspension).toBeNull()
+    expect(discarded.outputs).toContainEqual(expect.objectContaining({ _tag: 'Armed', key: 'deadline', incarnation: 2 }))
   })
 })
 

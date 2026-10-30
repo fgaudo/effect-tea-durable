@@ -12,6 +12,7 @@ import { SqlClient } from 'effect/sql'
 import type * as Machine from './machine.ts'
 import {
   type Durable,
+  encode,
   indexesOf,
   isTimer,
   type Json,
@@ -114,7 +115,9 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       PRIMARY KEY (name, consumer)
     )
   `
-  // The replies, by `requestKey`: a retry gets the one stored (decision 0015).
+  // The replies, by `requestKey`: a retry gets the one stored (decision 0015). A reply to another entity holds
+  // the work that asked — its program, id, key and incarnation — and is deleted once that work no longer holds
+  // (decision 0021).
   yield* sql`
     CREATE TABLE IF NOT EXISTS replies (
       name TEXT NOT NULL,
@@ -123,20 +126,24 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       tag TEXT NOT NULL,
       version INTEGER NOT NULL,
       reason TEXT,
+      sender_name TEXT,
+      sender_id TEXT,
+      sender_key TEXT,
+      sender_incarnation INTEGER,
       PRIMARY KEY (name, id, request)
     )
   `
+  yield* sql`CREATE INDEX IF NOT EXISTS replies_sender ON replies (sender_name, sender_id)`
 }).pipe(Effect.orDie)
 
 /**
  * A value written as JSON text through its schema: what leaves the process is what a schema describes, and the
- * schema encodes it to what JSON holds (decision 0030).
+ * schema encodes it to what JSON holds, as it is, so that the text reads back as written (decisions 0030, 0040).
  */
-const json = <A>(codec: Schema.Codec<A, Json>) => {
-  const encode = Schema.encodeSync(codec)
+const json = <A>(codec: Schema.Codec<A, Json>, what: string) => {
   const decode = Schema.decodeSync(codec)
   return {
-    write: (value: A): string => JSON.stringify(encode(value)),
+    write: (value: A): string => JSON.stringify(encode(codec, value, what)),
     /** `up` is how the version that wrote the text is read at the program's, and is identity for its own. */
     read: (text: string, up: (json: Json) => Json = (json) => json): A =>
       decode(up(JSON.parse(text) as Json) as never),
@@ -223,6 +230,30 @@ export type Consumer = Readonly<{
   behind: number
 }>
 
+/** A reply storage deleted, since the work that asked for it no longer holds (decision 0021). */
+export type Forgotten = Readonly<{ name: string; id: string; request: string }>
+
+/**
+ * The work that sent a request, when another entity's operation did: its request id is the operation's
+ * idempotency key, the sender's program, id, key and incarnation (decisions 0015, 0021). Null for a caller's.
+ */
+const askedBy = (request: string) => {
+  try {
+    const held: unknown = JSON.parse(request)
+    if (!Array.isArray(held) || held.length !== 3) return null
+    const [name, id, requestId]: ReadonlyArray<unknown> = held
+    if (typeof name !== 'string' || typeof id !== 'string' || typeof requestId !== 'string') return null
+    const key: unknown = JSON.parse(requestId)
+    if (!Array.isArray(key) || key.length !== 4) return null
+    const [from, of, under, incarnation]: ReadonlyArray<unknown> = key
+    if (from !== name || of !== id || typeof under !== 'string' || !Number.isInteger(incarnation)) return null
+    return { sender_name: name, sender_id: id, sender_key: under, sender_incarnation: incarnation as number }
+  } catch {
+    // A request id another entity chose by hand, which no work holds: its reply is kept, as a caller's is.
+    return null
+  }
+}
+
 /** An index's name is a word, so that it is a column of a query and of an index's expression. */
 const isName = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
 
@@ -245,14 +276,15 @@ export interface Storage<T extends Types> {
   readonly load: (id: string) => Effect.Effect<Machine.Stored<T> | null>
   /**
    * Writes what an event gave: the row of a new entity, and the state, the keys, the mailbox and the replies of
-   * one that was already there. The caller wraps it in the transaction of the event (decision 0007).
+   * one that was already there. The caller wraps it in the transaction of the event (decision 0007). It gives the
+   * replies to other entities it deleted, of any entity, whose work that asked no longer holds (decision 0021).
    */
   readonly write: (
     before: Machine.Stored<T> | null,
     after: Machine.Stored<T>,
     /** The message the event handled, which the step publishes with the projection it leaves (decision 0038). */
     handled?: Machine.Envelope<T> | null,
-  ) => Effect.Effect<void>
+  ) => Effect.Effect<ReadonlyArray<Forgotten>>
   /**
    * The entities whose state holds an operation: what a process activates when it starts, so that an operation a
    * crash interrupted runs again without waiting for a caller. A timer needs no activation of its own — its time
@@ -308,14 +340,14 @@ export interface Storage<T extends Types> {
 
 /** The storage of one program's entities, on one client, with its schemas read once. */
 export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.SqlClient): Storage<T> => {
-  const state = json(program.schemas.state)
-  const inbound = json(program.schemas.inbound)
-  const internal = json(program.schemas.internal)
-  const origin = json(originOf(program.schemas.sender))
-  const work = json(workOf(program))
-  const reason = json(reasonOf(program.schemas.rejection))
-  const suspended = json(Suspended)
-  const projection = json(program.schemas.projection)
+  const state = json(program.schemas.state, 'state')
+  const inbound = json(program.schemas.inbound, 'inbound message')
+  const internal = json(program.schemas.internal, 'internal message')
+  const origin = json(originOf(program.schemas.sender), 'sender')
+  const work = json(workOf(program), 'work')
+  const reason = json(reasonOf(program.schemas.rejection), 'reason of the rejection')
+  const suspended = json(Suspended, 'suspension')
+  const projection = json(program.schemas.projection, 'projection')
   const { name } = program
   const version = versionOf(program)
 
@@ -591,9 +623,29 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             tag: reply._tag,
             version,
             reason: reply._tag === 'Rejected' ? reason.write(reply.reason) : null,
+            ...(askedBy(request) ??
+              { sender_name: null, sender_id: null, sender_key: null, sender_incarnation: null }),
           })
         }`
       }
+      // A reply to another entity is kept while the work that asked holds (decision 0021). It is deleted in the
+      // transaction that ends that work, which writes the sender's keys, or in the one that stores it, when the
+      // work ended while its request waited in the mailbox: an at-most-once operation that delivered `unknown`.
+      const ended = sql`NOT EXISTS (
+        SELECT 1 FROM entity_keys AS asking
+        WHERE asking.name = replies.sender_name AND asking.id = replies.sender_id
+          AND asking.key = replies.sender_key AND asking.incarnation = replies.sender_incarnation
+          AND asking.work IS NOT NULL
+      )`
+      const sent = yield* sql<Forgotten>`
+        DELETE FROM replies WHERE sender_name = ${name} AND sender_id = ${id} AND ${ended}
+        RETURNING name, id, request
+      `
+      const received = yield* sql<Forgotten>`
+        DELETE FROM replies WHERE name = ${name} AND id = ${id} AND sender_name IS NOT NULL AND ${ended}
+        RETURNING name, id, request
+      `
+      return [...sent, ...received]
     }).pipe(Effect.orDie)
 
   /** The entities of the program an operator has to resume: nothing of theirs runs, and no timer of theirs fires. */

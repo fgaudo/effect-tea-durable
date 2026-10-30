@@ -181,7 +181,14 @@ keys with their incarnations and work, the mailbox in order, the replies by requ
 outbox ([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
 by migrating its JSON to the program's version (see [schemas that change](#schemas-that-change)). A schema whose
 encoded side is not JSON does not compile: a time is held as `Schema.DateTimeUtcFromMillis`, not as
-`Schema.DateTimeUtc` ([decision 0030](decisions/0030-a-schema-encodes-to-json.md)).
+`Schema.DateTimeUtc` ([decision 0030](decisions/0030-a-schema-encodes-to-json.md)). A value its schema refuses,
+or that encodes to a number JSON does not hold (`NaN`, `Infinity`), cannot be stored: the machine encodes what a
+step would store, and such a step is a defect; an inbound message that does not encode is its caller's defect,
+and reaches no entity ([decision 0040](decisions/0040-what-is-stored-encodes-to-json-as-it-is.md)).
+
+A reply to another entity is deleted in the transaction that ends the work that asked for it, or in the one that
+stores it, if that work has already ended
+([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
 
 ## Schemas that change
 
@@ -258,7 +265,10 @@ discards the message ([decision 0006](decisions/0006-a-defect-suspends-the-entit
 operation, in `durable` or `project` on a step's next state, or in a new program activating the stored state,
 suspends it too. Resuming activates it as after a
 crash; a discarded message ends its work as if it had been handled
-([decision 0014](decisions/0014-rules-the-machine-settled.md)). A caller meanwhile is answered `Suspended`, which
+([decision 0014](decisions/0014-rules-the-machine-settled.md)). An operation's completion is not discarded: the
+operation acted, and the state that still holds it would run it again under another idempotency key. Only a
+program that handles it gets the entity past it
+([decision 0041](decisions/0041-a-completion-is-not-discarded.md)). A caller meanwhile is answered `Suspended`, which
 is not stored: every caller whose message waits in the mailbox when the entity suspends, and every message that
 arrives while it is, which is not queued. `Suspended` says only that the request has no reply yet. The caller
 retries under the same request id, and gets the stored reply once the entity is resumed: the message is applied
@@ -347,8 +357,10 @@ dies:
 [`examples/order/scenarios.test.ts`](../examples/order/scenarios.test.ts) shows them, and
 [`src/rehearse.test.ts`](../src/rehearse.test.ts) rehearses deploys of the order.
 
-A migration is a pure function on JSON, and `rehearse` never encodes, so a rehearsed deploy does not exercise
-one: the runtime's tests deploy a version whose state, operation and projection schemas changed.
+A migration is a pure function on JSON, and `rehearse` encodes what a step stores only to check it
+([decision 0040](decisions/0040-what-is-stored-encodes-to-json-as-it-is.md)) and never reads it back, so a
+rehearsed deploy does not exercise one: the runtime's tests deploy a version whose state, operation and
+projection schemas changed.
 
 The machine is tested with properties, under random orders of messages, completions, timers, crashes and
 defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime is tested against it
@@ -380,4 +392,6 @@ the operations of a program are run with the services it was deployed with
 
 An entity with nothing to do is unloaded, and the earliest of its stored timers wakes it
 ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)); how long it stays loaded is an option of the
-runtime. Effect Cluster's entities, sharding and message storage come next ([roadmap](roadmap.md)).
+runtime. An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
+process, its callers are given the defect, and the next one loads it from what is stored
+([decision 0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). Effect Cluster's entities, sharding and message storage come next ([roadmap](roadmap.md)).

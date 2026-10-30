@@ -8,6 +8,7 @@ import * as Equal from 'effect/Equal'
 import {
   type Creation,
   type Durable,
+  encode,
   type IdempotencyKey,
   idempotencyKey,
   indexesOf,
@@ -25,15 +26,6 @@ import {
 } from './program.ts'
 
 /**
- * What callers read of a state, with the indexes a query reads it by: the machine computes them only to check
- * them, since both are pure and either may die. One that dies suspends the entity, so a runtime may call them
- * again while it writes, knowing no defect escapes its transaction (decisions 0014, 0032).
- */
-const shown = <T extends Types>(program: Program<T>, state: T['state']): void => {
-  indexesOf(program, program.project(state))
-}
-
-/**
  * The work the state holds, under the keys the program declares and no others: a key it does not declare is a
  * defect, where the state holding it is read (decision 0037). The types catch a key a program never declared
  * where the state holds that key alone, and not where it holds a declared key beside a misspelt one.
@@ -45,6 +37,31 @@ const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Wor
     if (!declared.has(key)) {
       throw new InvariantDefect({ reason: `the state holds work under '${key}', which the program does not declare` })
     }
+  }
+  return work
+}
+
+/**
+ * The work of a state the machine may store, and everything a runtime writes of it checked: `durable`, what
+ * callers read, with the indexes a query reads it by, and the state, its work and its projection encoded to what
+ * JSON holds. Any of them may die, and one that does suspends the entity, so a runtime may compute and encode them
+ * again while it writes, knowing no defect escapes its transaction (decisions 0014, 0032, 0040).
+ */
+const admitted = <T extends Types>(program: Program<T>, state: T['state']): Work<T> => {
+  const work = workUnder(program, state)
+  const projection = program.project(state)
+  const indexes = indexesOf(program, projection)
+  const { schemas } = program
+  encode(schemas.state, state, 'state')
+  encode(schemas.projection, projection, 'projection')
+  for (const [name, value] of Object.entries(indexes)) {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      throw new InvariantDefect({ reason: `the index '${name}' is a number JSON does not hold` })
+    }
+  }
+  for (const [key, held] of Object.entries(work)) {
+    if (isTimer(held)) encode(schemas.internal, held.message as T['internal'], `message of the timer under '${key}'`)
+    else encode(schemas.operation, held, `operation under '${key}'`)
   }
   return work
 }
@@ -270,8 +287,7 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
       reason: `the program '${program.name}' replaces the entity's program '${stored.name}'`,
     })
   }
-  const work = workUnder(program, stored.state)
-  shown(program, stored.state)
+  const work = admitted(program, stored.state)
   const keys = renew(program, stored.keys, workOf(stored), work)
   for (const [key, { work: was, delivery }] of Object.entries(stored.keys)) {
     if (was === undefined || isTimer(was)) continue
@@ -296,8 +312,9 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
  * Starts what the stored state says, with nothing under way, as `program` computes it: the work under each key,
  * unless its message is already in the mailbox. An at-most-once operation that may have run before (after a
  * crash, or a suspension) may have acted, so its `unknown` is recorded instead of running it again; one that is
- * new work at this activation, in an incarnation the stored work did not hold, never ran, and starts. A defect
- * leaves the entity as it was before the event, `before`, suspended on what suspended it, or on the activation.
+ * new work at this activation, in an incarnation the stored work did not hold, never ran, and starts. A defect,
+ * of the program on the stored state or of an `unknown` that dies or does not encode (decision 0040), leaves the
+ * entity as it was before the event, `before`, suspended on what suspended it, or on the activation.
  *
  * A passivation is a `Restart` the runtime chooses, with an empty mailbox and only timers under way: activating
  * again arms the same timers, in the same incarnations, which the stored work holds while it is unloaded.
@@ -309,29 +326,30 @@ const activate = <T extends Types>(
   mayHaveRun: (key: string) => boolean,
 ): Transition<T> => {
   if (machine.stored.suspension !== null) return { machine: { ...machine, program, running: {} }, outputs: [] }
-  let stored: Stored<T>
   try {
-    stored = reconcile(program, machine.stored)
+    const stored = reconcile(program, machine.stored)
+    const running: Record<string, Running> = {}
+    const mailbox = [...stored.mailbox]
+    const outputs: Array<Output<T>> = []
+    const activated = { ...machine, program }
+    for (const [key, { incarnation, work }] of Object.entries(stored.keys)) {
+      if (work === undefined || isQueued(stored, key, incarnation)) continue
+      const runner = isTimer(work) ? null : runnerOf(program, work)
+      const started = incarnation === machine.stored.keys[key]?.incarnation
+      if (started && mayHaveRun(key) && runner?.delivery === 'AtMostOnce') {
+        const message = runner.unknown(work as T['operation'])
+        encode(program.schemas.internal, message, `unknown of the operation under '${key}'`)
+        mailbox.push({ _tag: 'Internal', key, incarnation, message })
+        outputs.push({ _tag: 'Recorded', key, incarnation })
+      } else {
+        running[key] = { kind: kindOf(work), incarnation }
+        outputs.push(startWork(activated, key, incarnation, work))
+      }
+    }
+    return { machine: { ...activated, stored: { ...stored, mailbox }, running }, outputs }
   } catch (cause) {
     return suspend({ ...before, program }, { cause, on: before.stored.suspension?.on ?? { _tag: 'Activation' } })
   }
-  const running: Record<string, Running> = {}
-  const mailbox = [...stored.mailbox]
-  const outputs: Array<Output<T>> = []
-  const activated = { ...machine, program }
-  for (const [key, { incarnation, work }] of Object.entries(stored.keys)) {
-    if (work === undefined || isQueued(stored, key, incarnation)) continue
-    const runner = isTimer(work) ? null : runnerOf(program, work)
-    const started = incarnation === machine.stored.keys[key]?.incarnation
-    if (started && mayHaveRun(key) && runner?.delivery === 'AtMostOnce') {
-      mailbox.push({ _tag: 'Internal', key, incarnation, message: runner.unknown(work as T['operation']) })
-      outputs.push({ _tag: 'Recorded', key, incarnation })
-    } else {
-      running[key] = { kind: kindOf(work), incarnation }
-      outputs.push(startWork(activated, key, incarnation, work))
-    }
-  }
-  return { machine: { ...activated, stored: { ...stored, mailbox }, running }, outputs }
 }
 
 export type Start<T extends Types> =
@@ -351,8 +369,7 @@ export const start = <T extends Types>(
   let work: Work<T>
   try {
     state = program.init(flags, at)
-    work = workUnder(program, state)
-    shown(program, state)
+    work = admitted(program, state)
   } catch (cause) {
     return { _tag: 'Defect', cause }
   }
@@ -414,7 +431,10 @@ const receive = <T extends Types>(
   return { machine: { ...machine, stored: { ...stored, mailbox: [...stored.mailbox, envelope] } }, outputs: [] }
 }
 
-/** Records the message of the work under way under `key` in `incarnation`, if it is the work of that kind. */
+/**
+ * Records the message of the work under way under `key` in `incarnation`, if it is the work of that kind. An
+ * operation's message that does not encode cannot be stored, and is the operation's defect (decision 0040).
+ */
 const record = <T extends Types>(
   machine: Machine<T>,
   kind: Running['kind'],
@@ -427,8 +447,16 @@ const record = <T extends Types>(
   if (running === undefined || running.kind !== kind || running.incarnation !== incarnation || work === undefined) {
     return { machine, outputs: [{ _tag: 'Dropped', key, incarnation }] }
   }
+  const recorded = message(work)
+  if (kind === 'Operation') {
+    try {
+      encode(machine.program.schemas.internal, recorded, `message of the operation under '${key}'`)
+    } catch (cause) {
+      return suspend(machine, { cause, on: { _tag: 'Operation', key, incarnation } })
+    }
+  }
   const { [key]: _, ...others } = machine.running
-  const envelope: Envelope<T> = { _tag: 'Internal', key, incarnation, message: message(work) }
+  const envelope: Envelope<T> = { _tag: 'Internal', key, incarnation, message: recorded }
   return {
     machine: {
       ...machine,
@@ -462,6 +490,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
         throw new InvariantDefect({ reason: `update rejected the message of the work under '${head.key}'` })
       }
       const reply = { _tag: 'Rejected', reason: reasonOf(result) } as const
+      if (reply.reason !== null) encode(program.schemas.rejection, reply.reason, 'reason of the rejection')
       const replies = { ...stored.replies, [requestKey(head.from, head.requestId)]: reply }
       return {
         machine: { ...machine, stored: { ...stored, mailbox: rest, replies } },
@@ -469,8 +498,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
       }
     }
     const state: T['state'] = result
-    const after = workUnder(program, state)
-    shown(program, state)
+    const after = admitted(program, state)
 
     // The work whose message is handled is done: its key counts as gone (decision 0008).
     const previous: Record<string, Durable<T['operation'], T['internal']>> = { ...workOf(stored) }
@@ -542,14 +570,19 @@ const resume = <T extends Types>(machine: Machine<T>, fixed: Program<T> | undefi
   return activate(machine, unsuspended, fixed ?? machine.program, () => true)
 }
 
-/** Ends the message a suspended entity died on as if it had been handled, and resumes it (decision 0008). */
+/**
+ * Ends the message a suspended entity died on as if it had been handled, and resumes it (decision 0008). An
+ * operation's completion is not discarded: the operation acted, and the state that still holds it would run it
+ * again under another idempotency key. Only a program that handles it gets the entity past it (decision 0041).
+ */
 const discard = <T extends Types>(machine: Machine<T>): Transition<T> => {
   const { stored } = machine
   const [head, ...rest] = stored.mailbox
   if (stored.suspension?.on._tag !== 'Message' || head === undefined) return { machine, outputs: [] }
-  // The work whose message is discarded is done, and new work if its key is still in the state: it never ran.
   const renewed = head._tag === 'Internal' && holds(stored, head.key, head.incarnation) ? head.key : null
   const held = renewed === null ? undefined : stored.keys[renewed]
+  if (held?.work !== undefined && !isTimer(held.work)) return { machine, outputs: [] }
+  // The timer whose firing is discarded is done, and armed again if its key is still in the state: it did nothing.
   const keys = renewed === null || held === undefined
     ? stored.keys
     : { ...stored.keys, [renewed]: { ...held, incarnation: held.incarnation + 1 } }

@@ -22,6 +22,7 @@ import * as Machine from './machine.ts'
 import {
   type Address,
   type Creation,
+  encode,
   Entities,
   type IdempotencyKey,
   isTimer,
@@ -31,7 +32,15 @@ import {
   runnerOf,
   type Types,
 } from './program.ts'
-import { type Consumer, type Found, type Published, type Query, storage, type Storage } from './storage.ts'
+import {
+  type Consumer,
+  type Forgotten,
+  type Found,
+  type Published,
+  type Query,
+  storage,
+  type Storage,
+} from './storage.ts'
 
 /**
  * What a caller is answered: the replies stored under its request id, `NotFound` for no entity, and `Suspended`,
@@ -205,8 +214,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     // Loading an entity, and creating one, is one at a time: two callers never build two machines for one entity.
     const registry = yield* Semaphore.make(1)
     const deployments = new Map<string, Deployment<never>>()
-    /** The callers waiting for a reply, by entity and request: a retry of a queued message waits with the first. */
-    const waiting = new Map<string, Set<Deferred.Deferred<Given>>>()
+    /**
+     * The callers waiting for a reply, by entity and then by request: a retry of a queued message waits with the
+     * first, and a crash of the entity reaches every caller of it (decision 0042).
+     */
+    const waiting = new Map<string, Map<string, Set<Deferred.Deferred<Given>>>>()
+    const addressOf = (entity: Address) => JSON.stringify([entity.name, entity.id])
     const at = options.at ?? (() => Effect.void)
     const observe = options.observe ?? (() => Effect.void)
     const unloaded = options.unloaded ?? (() => Effect.void)
@@ -218,10 +231,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
 
     const answer = (entity: Address, request: string, reply: Given) =>
       Effect.suspend(() => {
-        const key = `${entity.name}/${entity.id}/${request}`
-        const callers = waiting.get(key)
-        if (callers === undefined) return Effect.void
-        waiting.delete(key)
+        const requests = waiting.get(addressOf(entity))
+        const callers = requests?.get(request)
+        if (requests === undefined || callers === undefined) return Effect.void
+        requests.delete(request)
+        if (requests.size === 0) waiting.delete(addressOf(entity))
         return Effect.forEach(callers, (caller) => Deferred.succeed(caller, reply), { discard: true })
       })
 
@@ -242,17 +256,22 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       event: Machine.Event<T>,
     ): Effect.Effect<Asked> =>
       Effect.gen(function*() {
-        const key = `${entity.name}/${entity.id}/${request}`
+        const address = addressOf(entity)
         const caller = yield* Deferred.make<Given>()
-        const callers = waiting.get(key) ?? new Set<Deferred.Deferred<Given>>()
+        const requests = waiting.get(address) ?? new Map<string, Set<Deferred.Deferred<Given>>>()
+        const callers = requests.get(request) ?? new Set<Deferred.Deferred<Given>>()
         callers.add(caller)
-        waiting.set(key, callers)
+        requests.set(request, callers)
+        waiting.set(address, requests)
         // A caller that gives up leaves nothing behind: its message is applied once, whichever retry finds it.
         const forget = Effect.sync(() => {
-          const held = waiting.get(key)
-          if (held === undefined) return
+          const current = waiting.get(address)
+          const held = current?.get(request)
+          if (current === undefined || held === undefined) return
           held.delete(caller)
-          if (held.size === 0) waiting.delete(key)
+          if (held.size > 0) return
+          current.delete(request)
+          if (current.size === 0) waiting.delete(address)
         })
         yield* Queue.offer(loaded.events, event)
         return { caller, forget }
@@ -286,9 +305,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       Effect.gen(function*() {
         const { key, incarnation, idempotencyKey, operation } = output
         const runner = runnerOf(deployed.program, operation)
-        const run = runner.delivery === 'Idempotent'
-          ? runner.run(operation, idempotencyKey)
-          : runner.run(operation)
+        // Built in the operation's fiber: a runner that throws while it builds its effect dies as the operation,
+        // and suspends the entity, instead of the event that started it (decision 0042).
+        const run = Effect.suspend(() =>
+          runner.delivery === 'Idempotent' ? runner.run(operation, idempotencyKey) : runner.run(operation)
+        )
         const fiber = yield* Effect.forkIn(
           deployed.run(
             Effect.gen(function*() {
@@ -365,6 +386,20 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /**
+     * Takes the replies storage deleted out of the entities this process holds, so that what a loaded entity keeps
+     * grows with the work under way, as what is stored does (decision 0021). An entity whose step is applied
+     * meanwhile may keep one until it is unloaded: nothing asks for it, and it is never written again.
+     */
+    const forget = (forgotten: ReadonlyArray<Forgotten>) => {
+      for (const { name, id, request } of forgotten) {
+        const loaded = deployment(name)?.loaded.get(id)
+        if (loaded === undefined || loaded.machine.stored.replies[request] === undefined) continue
+        const { [request]: _, ...replies } = loaded.machine.stored.replies
+        loaded.machine = { ...loaded.machine, stored: { ...loaded.machine.stored, replies } }
+      }
+    }
+
+    /**
      * One event: the machine's step, written in one transaction, then acted on. A crash at any of the points
      * leaves the entity as the crash table says.
      */
@@ -379,16 +414,18 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const before = loaded.machine
         const transition = Machine.step(before, event)
         const wrote = transition.machine.stored !== before.stored
+        let forgotten: ReadonlyArray<Forgotten> = []
         if (wrote) {
           yield* at('BeforeCommit', entity, event as Machine.Event<never>)
           // The message a step handles is the mailbox's first: what the step publishes, with the projection it
           // leaves (decision 0038).
           const handled = event._tag === 'Handle' ? before.stored.mailbox[0] ?? null : null
-          yield* sql.withTransaction(
+          forgotten = yield* sql.withTransaction(
             deployed.storage.write(before.stored, transition.machine.stored, handled),
           ).pipe(Effect.orDie)
         }
         loaded.machine = transition.machine
+        forget(forgotten)
         // An event is observed once it is written — at once when it writes nothing — and before anything is
         // acted on: a crash before the commit leaves no event, and one after it an event that happened.
         yield* observe(entity, event as Machine.Event<never>)
@@ -433,11 +470,43 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       }))
 
     /**
+     * An event the runtime could not finish — a write that failed, a hook that died — is a crash of its entity
+     * alone: the entity leaves this process, its work stops, and its waiting callers are given the defect, to
+     * retry. What is stored is what its next activation starts from, as after a crash of the process. Called
+     * where the registry's permit is held, so that no caller is between finding the entity and offering its event
+     * (decision 0042).
+     */
+    const crash = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>, cause: Cause.Cause<never>) =>
+      Effect.gen(function*() {
+        const { name, id } = loaded.machine.stored
+        if (deployed.loaded.get(id) === loaded) deployed.loaded.delete(id)
+        yield* stopAll(loaded)
+        const address = addressOf({ name, id })
+        const requests = waiting.get(address)
+        waiting.delete(address)
+        for (const callers of requests?.values() ?? []) {
+          for (const caller of callers) yield* Deferred.failCause(caller, cause)
+        }
+        // Its stored timers are the waker's again.
+        yield* poke(deployed.waker)
+      })
+
+    /**
      * The entity's loop: while its mailbox holds a message, it is handled, one transaction each; otherwise the
      * loop waits for an event, and the entity is unloaded if none comes for long enough. A suspended entity only
-     * waits (decision 0006). The wait times out, never the take: an event taken is always applied.
+     * waits (decision 0006). The wait times out, never the take: an event taken is always applied. A loop that
+     * dies crashes its entity, and an interruption is the process's crash (decision 0042).
      */
-    const loop = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>): Effect.Effect<void> => {
+    const loop = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>): Effect.Effect<void> =>
+      steps(deployed, loaded).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : registry.withPermits(1)(crash(deployed, loaded, cause))
+        ),
+      )
+
+    const steps = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>): Effect.Effect<void> => {
       const next: Effect.Effect<void> = Effect.suspend(() => {
         const { stored } = loaded.machine
         if (stored.suspension === null && stored.mailbox.length > 0) {
@@ -468,8 +537,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           timers: new Map(),
         }
         deployed.loaded.set(stored.id, loaded)
-        // Before anything else: the stored state says what runs (decision 0003).
-        yield* apply(deployed, loaded, { _tag: 'Restart' })
+        // Before anything else: the stored state says what runs (decision 0003). An activation that cannot finish
+        // leaves nothing loaded, and its caller gets the defect (decision 0042).
+        yield* apply(deployed, loaded, { _tag: 'Restart' }).pipe(
+          Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
+        )
         yield* Effect.forkIn(loop(deployed, loaded), scope)
         return loaded
       })
@@ -535,7 +607,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           yield* observe(entity, creation)
           yield* at('AfterCommit', entity, creation)
           deployed.loaded.set(id, loaded)
-          yield* perform(deployed, loaded, entity, { _tag: 'Restart' }, started.outputs)
+          yield* perform(deployed, loaded, entity, { _tag: 'Restart' }, started.outputs).pipe(
+            Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
+          )
           yield* Effect.forkIn(loop(deployed, loaded), scope)
           return null
         }))
@@ -553,6 +627,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     ): Effect.Effect<Answer<T['rejection']>> =>
       Effect.gen(function*() {
         const entity: Address = { name: deployed.program.name, id }
+        // A message waits in the mailbox as its schema writes it: one that does not encode is its caller's defect,
+        // and reaches no entity (decision 0040).
+        yield* Effect.sync(() => {
+          const { schemas } = deployed.program
+          encode(schemas.inbound, message, 'inbound message')
+          if (request.from._tag === 'Caller') encode(schemas.sender, request.from.sender, 'sender')
+        })
         const requested = Machine.requestKey(request.from, request.requestId)
         const asked = yield* withEntity(deployed, id, (loaded) =>
           loaded === null ? Effect.succeed(null) : ask(loaded, entity, requested, {

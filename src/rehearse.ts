@@ -4,6 +4,7 @@ import * as Machine from './machine.ts'
 import {
   type Address,
   type Durable,
+  encode,
   type IdempotencyKey,
   isTimer,
   type Origin,
@@ -91,8 +92,13 @@ export const rehearse = <T extends Types, E>(
         return suspension === null ? Effect.succeed(outputs) : Effect.die(suspension.cause)
       })
 
+    // A message the runtime could not store fails the test, as it is the caller's defect there (decision 0040).
     const deliver = (message: T['inbound'], from: Origin<T['sender']>) =>
-      Effect.flatMap(Effect.sync(() => `request-${++requests}`), (requestId) =>
+      Effect.flatMap(Effect.sync(() => {
+        encode(program.schemas.inbound, message, 'inbound message')
+        if (from._tag === 'Caller') encode(program.schemas.sender, from.sender, 'sender')
+        return `request-${++requests}`
+      }), (requestId) =>
         Effect.flatMap(apply({ _tag: 'Receive', requestId, message, from }), (outputs) => {
           for (const output of outputs) {
             if (output._tag !== 'Replied' || output.requestId !== requestId) continue
