@@ -1,6 +1,8 @@
 /**
  * An order, from its creation to its shipment or its cancellation. The customer pays before a deadline, then
- * the warehouse is told and ships. A cancellation after the payment refunds it.
+ * the warehouse is told and ships. A cancellation after the payment refunds it. The warehouse reports a shipment
+ * before it hands the parcel over, and ships only if the order accepts the report: a cancellation that comes
+ * first wins, and nothing needs to stop the warehouse.
  */
 import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
@@ -34,7 +36,9 @@ const State = Schema.Union([
   Schema.TaggedStruct('Paid', {
     order: Order,
     charge: ChargeId,
-    // The warehouse may ship once told, so a cancellation waits for `Told`.
+    // A cancellation waits for `Told`: until then the warehouse is being told, an operation only its completion
+    // ends. Once told, the warehouse ships only if the order accepts its report, so a refund after `Told` never
+    // leaves a parcel on its way.
     warehouse: Schema.Literals(['Telling', 'Told']),
   }),
   Schema.TaggedStruct('Refunding', { order: Order, charge: ChargeId }),

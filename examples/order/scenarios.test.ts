@@ -88,6 +88,23 @@ describe('order', () => {
       }),
     )))
 
+  test('a cancellation before the shipment refunds, and the warehouse does not ship', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded', charge: 'ch-1' })
+        yield* rehearsal.answer(yield* rehearsal.pending('tell-warehouse'), { _tag: 'WarehouseTold' })
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toEqual(accepted)
+        // The warehouse hands the parcel over only on an accepted report.
+        expect(yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse))
+          .toMatchObject(rejected)
+        yield* rehearsal.answer(yield* rehearsal.pending('refund'), { _tag: 'RefundCompleted' })
+        expect(yield* rehearsal.state).toMatchObject({ _tag: 'Cancelled', reason: 'Refunded' })
+      }),
+    )))
+
   test('a cancellation is rejected while a charge is under way', () =>
     Effect.runPromise(rehearse(
       order,
