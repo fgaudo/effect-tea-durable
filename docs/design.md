@@ -148,9 +148,10 @@ impossible, so that no program has to remember attempt numbers.
 
 ### Entities that talk
 
-An entity sends a message to another from an operation, with `send`, and the operation's idempotency key as
-the request id. A restarted operation sends the same request, and gets the receiver's stored reply, kept while
-the work that sent it is stored
+An entity sends a message to another from an operation, with `send`, the operation's idempotency key and a name
+for the request, which make the request id: an operation that sends twice under one name to the same entity
+dies ([decision 0047](decisions/0047-a-request-of-an-operation-has-a-name.md)). A restarted operation sends
+the same requests, and gets the receiver's stored replies, kept while the work that sent them is stored
 ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). While the receiver is
 suspended, `send` waits, and so does an operation that reaches a program not deployed yet
 ([decision 0045](decisions/0045-an-operation-waits-for-a-program-not-deployed-yet.md)). A receiver that crashes

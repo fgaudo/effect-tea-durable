@@ -25,6 +25,7 @@ import {
   encode,
   Entities,
   type IdempotencyKey,
+  InvariantDefect,
   isTimer,
   type Origin,
   type Program,
@@ -692,15 +693,34 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         Cause.hasInterruptsOnly(cause) || Cause.hasFails(cause) ? Effect.failCause(cause) : Effect.succeed(none))
 
     /**
-     * What an operation sends with: its own entity's address, and its idempotency key as the request id, so that
-     * a restarted operation gets the stored reply (decision 0009). A suspended receiver has no reply yet, and
-     * `send` waits for one instead of giving up (decision 0010); a receiver that crashed has none either
-     * (decision 0046); `send` and `create` wait for a program not deployed yet (decision 0045).
+     * What one run of an operation sends with: its own entity's address, and its idempotency key with the name of
+     * each request as the request id, so that a restarted operation gets the stored replies (decisions 0009,
+     * 0047). A name the run already sent under to the same entity would be answered the first one's reply, and
+     * is the operation's defect. A suspended receiver has no reply yet, and `send` waits for one instead of giving
+     * up (decision 0010); a receiver that crashed has none either (decision 0046); `send` and `create` wait for a
+     * program not deployed yet (decision 0045).
      */
-    const entities = (from: Address) =>
-      Entities.of({
-        send: <T extends Types>(program: Program<T>, id: string, message: T['inbound'], requestId: IdempotencyKey) =>
-          Effect.flatMap(deployedAs(program), (deployed) => {
+    const entities = (from: Address) => {
+      const sent = new Set<string>()
+      return Entities.of({
+        send: <T extends Types>(
+          program: Program<T>,
+          id: string,
+          message: T['inbound'],
+          key: IdempotencyKey,
+          name: string,
+        ) => {
+          const requestId = JSON.stringify([key, name])
+          return Effect.suspend(() => {
+            const to = JSON.stringify([program.name, id, requestId])
+            if (sent.has(to)) {
+              return Effect.die(
+                new InvariantDefect({ reason: `the operation sent '${name}' to ${program.name} '${id}' twice` }),
+              )
+            }
+            sent.add(to)
+            return deployedAs(program)
+          }).pipe(Effect.flatMap((deployed) => {
             const request = { requestId, from: { _tag: 'Entity', entity: from } } as const
             const waits = (): Effect.Effect<Reply<T['rejection']>, Faulted> =>
               Effect.flatMap(
@@ -711,7 +731,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
                     : Effect.succeed(reply),
               )
             return faulted(waits())
-          }),
+          }))
+        },
         create: <T extends Types>(program: Program<T>, id: string, flags: T['flags'], requestId: IdempotencyKey) =>
           Effect.flatMap(deployedAs(program), (deployed) => {
             const request = { requestId, from: { _tag: 'Entity', entity: from } } as const
@@ -724,6 +745,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             return faulted(waits())
           }),
       })
+    }
 
     /**
      * The timers of the entities this process does not hold: it reads the earliest time one is due, activates the

@@ -468,7 +468,8 @@ export class Entities extends Context.Service<Entities, {
     program: Program<T>,
     id: string,
     message: T['inbound'],
-    requestId: IdempotencyKey,
+    key: IdempotencyKey,
+    name: string,
   ) => Effect.Effect<Reply<T['rejection']>>
   readonly create: <T extends Types>(
     program: Program<T>,
@@ -480,16 +481,19 @@ export class Entities extends Context.Service<Entities, {
 
 /**
  * Sends an inbound message to another entity from an operation, and waits for the reply. The request id is the
- * operation's idempotency key: a restarted operation sends the same request, and gets the stored reply. While the
- * receiver is suspended, it waits, and it sends again when the receiver crashes (decision 0046).
+ * operation's idempotency key and `name`, which names the request among those the operation makes: a restarted
+ * operation sends the same requests, and gets the stored replies, and one that sends twice under the same name to
+ * the same entity dies (decision 0047). While the receiver is suspended, it waits, and it sends again when the
+ * receiver crashes (decision 0046).
  */
 export const send = <T extends Types>(
   program: Program<T>,
   id: string,
   message: T['inbound'],
-  requestId: IdempotencyKey,
+  key: IdempotencyKey,
+  name: string,
 ): Effect.Effect<Reply<T['rejection']>, never, Entities> =>
-  Effect.flatMap(Effect.service(Entities), (entities) => entities.send(program, id, message, requestId))
+  Effect.flatMap(Effect.service(Entities), (entities) => entities.send(program, id, message, key, name))
 
 /**
  * Creates an entity from an operation, with the operation's idempotency key as the request id. A creation is

@@ -90,11 +90,11 @@ const Operation = Schema.TaggedUnion({
 })
 type Operation = typeof Operation.Type
 
-// The idempotency key is the request id: a hold restarted after a crash is answered from the stored reply, and
-// holds nothing twice.
+// The idempotency key and the request's name are the request id: a hold restarted after a crash is answered from
+// the stored reply, and holds nothing twice.
 const hold = Effect.fn('Hold')(
   function*({ event, seats }: Extract<Operation, { _tag: 'Hold' }>, idempotencyKey: IdempotencyKey) {
-    const reply = yield* send(inventory, event, { _tag: 'HoldRequested', seats }, idempotencyKey)
+    const reply = yield* send(inventory, event, { _tag: 'HoldRequested', seats }, idempotencyKey, 'hold')
     // A rejection with no reason means the two entities disagree: a booking holds once, and holds some seats.
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsHeld' } satisfies Internal
@@ -110,7 +110,7 @@ const hold = Effect.fn('Hold')(
 // two entities disagree, which no message of this program can repair: it is a defect, and suspends the booking.
 const confirm = Effect.fn('Confirm')(
   function*({ event }: Extract<Operation, { _tag: 'Confirm' }>, idempotencyKey: IdempotencyKey) {
-    const reply = yield* send(inventory, event, { _tag: 'ConfirmRequested' }, idempotencyKey)
+    const reply = yield* send(inventory, event, { _tag: 'ConfirmRequested' }, idempotencyKey, 'confirm')
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsConfirmed' } satisfies Internal
       : yield* Effect.die('the inventory did not accept the confirmation of its own hold')
@@ -119,7 +119,7 @@ const confirm = Effect.fn('Confirm')(
 
 const release = Effect.fn('Release')(
   function*({ event }: Extract<Operation, { _tag: 'Release' }>, idempotencyKey: IdempotencyKey) {
-    const reply = yield* send(inventory, event, { _tag: 'ReleaseRequested' }, idempotencyKey)
+    const reply = yield* send(inventory, event, { _tag: 'ReleaseRequested' }, idempotencyKey, 'release')
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsReleased' } satisfies Internal
       : yield* Effect.die('the inventory did not accept the release of its own hold')

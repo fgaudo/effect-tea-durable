@@ -187,7 +187,7 @@ test('a booking whose hold sends a message the inventory cannot encode is suspen
         ...booking.operations,
         Hold: operation((op: { event: string }, idempotencyKey) =>
           Effect.flatMap(
-            send(inventory, op.event, { _tag: 'HoldRequested', seats: 0.5 }, idempotencyKey),
+            send(inventory, op.event, { _tag: 'HoldRequested', seats: 0.5 }, idempotencyKey, 'hold'),
             () => Effect.succeed({ _tag: 'SeatsHeld' } as const),
           )
         ),
@@ -201,4 +201,65 @@ test('a booking whose hold sends a message the inventory cannot encode is suspen
     expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann }))
       .toEqual({ _tag: 'Suspended' })
     expect(yield* inventories.read('gig')).toMatchObject({ available: 10 })
+  }))))
+
+test('an operation that sends two requests to one inventory has both applied, each under its name', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    const runtime = yield* launch()
+    // A hold taken back at once: two messages to the same entity from one run, which their names keep apart
+    // (decision 0047).
+    const undoing = {
+      ...booking,
+      operations: {
+        ...booking.operations,
+        Hold: operation((op: { event: string; seats: number }, idempotencyKey) =>
+          Effect.flatMap(
+            send(inventory, op.event, { _tag: 'HoldRequested', seats: op.seats }, idempotencyKey, 'hold'),
+            () =>
+              Effect.as(
+                send(inventory, op.event, { _tag: 'ReleaseRequested' }, idempotencyKey, 'release'),
+                { _tag: 'SeatsHeld' } as const,
+              ),
+          )
+        ),
+      },
+    } as typeof booking
+    const inventories = yield* runtime.deploy(inventory)
+    const bookings = yield* runtime.deploy(undoing)
+    yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
+    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    yield* runtime.settled
+    expect(yield* inventories.read('gig')).toMatchObject({ available: 10 })
+  }))))
+
+test('an operation that sends twice under one name to one inventory is suspended', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    const runtime = yield* launch()
+    // The second message would be answered the first one's reply, and never applied: it is the booking's defect
+    // (decision 0047).
+    const twice = {
+      ...booking,
+      operations: {
+        ...booking.operations,
+        Hold: operation((op: { event: string; seats: number }, idempotencyKey) =>
+          Effect.flatMap(
+            send(inventory, op.event, { _tag: 'HoldRequested', seats: op.seats }, idempotencyKey, 'hold'),
+            () =>
+              Effect.as(
+                send(inventory, op.event, { _tag: 'ReleaseRequested' }, idempotencyKey, 'hold'),
+                { _tag: 'SeatsHeld' } as const,
+              ),
+          )
+        ),
+      },
+    } as typeof booking
+    const inventories = yield* runtime.deploy(inventory)
+    const bookings = yield* runtime.deploy(twice)
+    yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
+    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    yield* runtime.settled
+    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann }))
+      .toEqual({ _tag: 'Suspended' })
+    // The release reached no inventory.
+    expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
   }))))

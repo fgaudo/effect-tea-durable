@@ -235,7 +235,8 @@ export type Forgotten = Readonly<{ name: string; id: string; request: string }>
 
 /**
  * The work that sent a request, when another entity's operation did: its request id is the operation's
- * idempotency key, the sender's program, id, key and incarnation (decisions 0015, 0021). Null for a caller's.
+ * idempotency key, the sender's program, id, key and incarnation, with the request's name (decisions 0015, 0021,
+ * 0047). Null for a caller's.
  */
 const askedBy = (request: string) => {
   try {
@@ -243,7 +244,9 @@ const askedBy = (request: string) => {
     if (!Array.isArray(held) || held.length !== 3) return null
     const [name, id, requestId]: ReadonlyArray<unknown> = held
     if (typeof name !== 'string' || typeof id !== 'string' || typeof requestId !== 'string') return null
-    const key: unknown = JSON.parse(requestId)
+    const named: unknown = JSON.parse(requestId)
+    if (!Array.isArray(named) || named.length !== 2 || typeof named[0] !== 'string') return null
+    const key: unknown = JSON.parse(named[0])
     if (!Array.isArray(key) || key.length !== 4) return null
     const [from, of, under, incarnation]: ReadonlyArray<unknown> = key
     if (from !== name || of !== id || typeof under !== 'string' || !Number.isInteger(incarnation)) return null

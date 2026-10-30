@@ -9,11 +9,6 @@ The first audit's findings whose fix was plain are done. A second review found t
 rule of the machine or of the runtime, so each is decided in a note, with a test that fails without it. After
 them comes one of the [open questions](open-questions.md), decided in a note.
 
-- **An operation sends one message to an entity.** The request id of `send` is the operation's idempotency key
-  ([`src/program.ts`](../src/program.ts), `send`), so a second message from the same operation to the same
-  entity is answered with the reply stored for the first, and is never applied. Nothing fails. Either `send`
-  takes a name for each request an operation makes, from which the request id is derived, or a request id that
-  comes back with another message is a defect.
 - **Callers share their request ids.** A caller's request is stored under its request id alone
   ([`src/machine.ts`](../src/machine.ts), `requestKey`), not under its sender: a second caller that picks the
   same id is answered `Accepted` with the first one's reply, or its reason, and its message is never applied. It
