@@ -17,7 +17,7 @@ import {
   reject,
   type Rejected,
   timer,
-} from '../api.ts'
+} from '../../src/index.ts'
 
 const Order = Schema.Struct({
   customer: Schema.String,

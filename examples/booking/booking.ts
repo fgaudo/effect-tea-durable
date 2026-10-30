@@ -18,7 +18,7 @@ import {
   type Rejected,
   send,
   timer,
-} from '../api.ts'
+} from '../../src/index.ts'
 import { inventory } from './inventory.ts'
 
 // Decoded with the flags, before the booking exists: a booking holds some seats.

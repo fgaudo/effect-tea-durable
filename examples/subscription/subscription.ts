@@ -18,7 +18,7 @@ import {
   reject,
   type Rejected,
   timer,
-} from '../api.ts'
+} from '../../src/index.ts'
 
 const Plan = Schema.Struct({ name: Schema.String, priceInCents: Schema.Int })
 type Plan = typeof Plan.Type

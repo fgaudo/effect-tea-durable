@@ -13,6 +13,10 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   instead be armed again when its time changes, since it has done nothing yet. Should a timer compare its time,
   and should the runtime say anything when an operation's parameters differ? An operation is a function, so the
   runtime cannot compare it unless it carries its parameters as data.
+  The answer also changes with a crash, which [decision 0008](decisions/0008-delivered-work-is-done.md) meant to
+  rule out: activation builds the work from the stored state, so the restarted charge uses the new payment
+  method, under the idempotency key of the attempt on the old one. A provider may refuse a key reused with
+  other parameters, or answer for the first. A timer kept at an old time is armed at the new one.
 - **Live streams.** A timer and an operation survive passivation. A stream from a socket or a feed does not.
   Are they allowed, keeping the entity loaded while their key is present, or left out?
 - **Children inside an entity.** effect-tea composes programs into a tree. Does an entity's program compose
@@ -24,7 +28,8 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 - **Who may send what.** `update` reads `meta.from` and rejects what a sender may not do. Should authorization
   that is not domain (a valid token) happen before the mailbox, and what does the caller get then, or for
   flags that do not decode? And who may create an entity, since `init` sees no sender
-  ([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md))?
+  ([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md))? A defect at creation stores nothing
+  ([decision 0014](decisions/0014-rules-the-machine-settled.md)): what is its creator answered?
 
 ## Storage and reading
 

@@ -1,11 +1,10 @@
 /**
- * The order's scenarios, as tests would be written. The file is not named `*.test.ts`, since `rehearse` is
- * only declared: `bun test` would run it and fail.
+ * The order's scenarios, rehearsed.
  */
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import { accepted, rehearse, rejected } from '../api.ts'
+import { accepted, rehearse, rejected } from '../../src/index.ts'
 import { order, type Sender } from './order.ts'
 
 const placedAt = DateTime.makeUnsafe('2026-10-30T10:00:00Z')

@@ -1,11 +1,10 @@
 /**
- * The subscription's scenarios, as tests would be written. The file is not named `*.test.ts`, since `rehearse`
- * is only declared: `bun test` would run it and fail.
+ * The subscription's scenarios, rehearsed.
  */
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import { accepted, rehearse, rejected } from '../api.ts'
+import { accepted, rehearse, rejected } from '../../src/index.ts'
 import { type Sender, subscription } from './subscription.ts'
 
 const startedAt = DateTime.makeUnsafe('2026-01-31T10:00:00Z')

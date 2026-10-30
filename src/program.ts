@@ -1,16 +1,14 @@
-/**
- * The API the design imagines, as declarations only: nothing here runs. The examples are written against it,
- * so that the typecheck tells whether the design can be expressed.
- */
 import type * as Brand from 'effect/Brand'
+import * as Context from 'effect/Context'
+import * as Data from 'effect/Data'
 import type * as DateTime from 'effect/DateTime'
-import type * as Effect from 'effect/Effect'
+import * as Effect from 'effect/Effect'
 import type * as Schema from 'effect/Schema'
 
 /** What `update` returns for an inbound message that does not apply in the state, with no reason given. */
-export declare const reject: unique symbol
+export const reject: unique symbol = Symbol.for('effect-tea-durable/Rejected')
 
-declare const RejectedWithTypeId: unique symbol
+const RejectedWithTypeId: unique symbol = Symbol.for('effect-tea-durable/RejectedWith')
 
 /** A rejection with a reason the caller can act on, stored with the reply. No state can be taken for it. */
 export interface RejectedWith<Reason> {
@@ -18,12 +16,39 @@ export interface RejectedWith<Reason> {
   readonly reason: Reason
 }
 
-export declare const rejectWith: <Reason>(reason: Reason) => RejectedWith<Reason>
+export const rejectWith = <Reason>(reason: Reason): RejectedWith<Reason> => ({
+  [RejectedWithTypeId]: RejectedWithTypeId,
+  reason,
+})
 
 export type Rejected<Reason = never> = typeof reject | RejectedWith<Reason>
 
-/** Thrown by `update` on a message that cannot arrive. It suspends the entity. */
-export declare const defect: (reason: string) => never
+export const isRejected = (result: unknown): result is Rejected<unknown> =>
+  result === reject || (typeof result === 'object' && result !== null && RejectedWithTypeId in result)
+
+/** The reason of a rejection, null for a bare `reject`. */
+export const reasonOf = <Reason>(rejected: Rejected<Reason>): Reason | null =>
+  rejected === reject ? null : rejected.reason
+
+/**
+ * A rule of the program broken, which `defect` throws: a message that cannot arrive, a state that cannot be.
+ * `reason` says which rule.
+ */
+export class InvariantDefect extends Data.TaggedError('InvariantDefect')<
+  Readonly<{ reason: string; message: string }>
+> {
+  constructor({ reason }: Readonly<{ reason: string }>) {
+    super({ reason, message: reason })
+  }
+}
+
+/**
+ * Thrown by `update` on a message that cannot arrive. It suspends the entity. An expression, so that it fits a
+ * branch of a ternary or a `Match`; inside an operation, `Effect.die` is the way.
+ */
+export const defect = (reason: string): never => {
+  throw new InvariantDefect({ reason })
+}
 
 /** An entity: the name of its program and its id. */
 export type Address = Readonly<{ name: string; id: string }>
@@ -60,6 +85,9 @@ export type Update<State, Message, Sender, Reason> = (
 /** The entity's id, the work's key and its incarnation: the same when a crash restarts the work. */
 export type IdempotencyKey = string & Brand.Brand<'IdempotencyKey'>
 
+export const idempotencyKey = (id: string, key: string, incarnation: number): IdempotencyKey =>
+  JSON.stringify([id, key, incarnation]) as IdempotencyKey
+
 /** What a crash during an operation does to it, declared where it is built. */
 export type Operation<Message, R> =
   /** Runs again with the same idempotency key, which it passes on: the world recognises it. */
@@ -81,47 +109,35 @@ export interface Timer<Message> {
 
 export type Durable<Message, R> = Operation<Message, R> | Timer<Message>
 
-export declare const operation: {
+export const operation: {
   /** An idempotent operation, which passes its idempotency key on. */
   <Message, R>(run: (key: IdempotencyKey) => Effect.Effect<Message, never, R>): Operation<Message, R>
   readonly atLeastOnce: <Message, R>(run: Effect.Effect<Message, never, R>) => Operation<Message, R>
   readonly atMostOnce: <Message, R>(run: Effect.Effect<Message, never, R>, unknown: Message) => Operation<Message, R>
-}
+} = Object.assign(
+  <Message, R>(run: (key: IdempotencyKey) => Effect.Effect<Message, never, R>): Operation<Message, R> => ({
+    _tag: 'Operation',
+    delivery: 'Idempotent',
+    run,
+  }),
+  {
+    atLeastOnce: <Message, R>(run: Effect.Effect<Message, never, R>): Operation<Message, R> => ({
+      _tag: 'Operation',
+      delivery: 'AtLeastOnce',
+      run,
+    }),
+    atMostOnce: <Message, R>(run: Effect.Effect<Message, never, R>, unknown: Message): Operation<Message, R> => ({
+      _tag: 'Operation',
+      delivery: 'AtMostOnce',
+      run,
+      unknown,
+    }),
+  },
+)
 
-export declare const timer: <Message>(at: DateTime.Utc, message: Message) => Timer<Message>
+export const timer = <Message>(at: DateTime.Utc, message: Message): Timer<Message> => ({ _tag: 'Timer', at, message })
 
-export declare const noWork: Readonly<Record<string, never>>
-
-/** The service through which an operation sends messages to other entities, as its own entity. */
-export interface Entities {
-  readonly _tag: 'Entities'
-}
-
-/**
- * Sends an inbound message to another entity from an operation, and waits for the reply. The request id is the
- * operation's idempotency key: a restarted operation sends the same request, and gets the stored reply. While the
- * receiver is suspended, it waits.
- */
-export declare const send: <T extends Types>(
-  program: Program<T>,
-  id: string,
-  message: T['inbound'],
-  requestId: IdempotencyKey,
-) => Effect.Effect<Reply<T['rejection']>, never, Entities>
-
-/** What creating an entity is answered. Only `Created` is stored, under the request id. */
-export type Creation = Readonly<{ _tag: 'Created' }> | Readonly<{ _tag: 'AlreadyExists' }>
-
-/**
- * Creates an entity from an operation, with the operation's idempotency key as the request id. It counts as the
- * operation's one message to that entity.
- */
-export declare const create: <T extends Types>(
-  program: Program<T>,
-  id: string,
-  flags: T['flags'],
-  requestId: IdempotencyKey,
-) => Effect.Effect<Creation, never, Entities>
+export const noWork: Readonly<Record<string, never>> = Object.freeze({})
 
 export type Types = Readonly<{
   state: unknown
@@ -150,46 +166,49 @@ export interface Program<T extends Types> {
   readonly project: (state: T['state']) => T['projection']
 }
 
-// Testing
-
-/** The reply `Accepted`, to compare with. */
-export declare const accepted: Readonly<{ _tag: 'Accepted' }>
-
-/** Matches any rejection, whatever its reason. */
-export declare const rejected: Readonly<{ _tag: 'Rejected' }>
-
-/** Work under way under a key, in one incarnation. */
-export interface Pending {
-  readonly key: string
-  readonly idempotencyKey: IdempotencyKey
-}
-
-export interface Rehearsal<T extends Types> {
-  readonly state: Effect.Effect<T['state']>
-  readonly projection: Effect.Effect<T['projection']>
-  /** Delivers an inbound message, with a new request id. */
-  readonly send: (message: T['inbound'], sender: T['sender']) => Effect.Effect<Reply<T['rejection']>>
-  /** Delivers an inbound message from another entity's operation, with a new request id. */
-  readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Reply<T['rejection']>>
-  /** The work under way under `key`. Fails the test when there is none. */
-  readonly pending: (key: string) => Effect.Effect<Pending>
-  /** Completes an operation with `message`. It is dropped when the operation's incarnation has moved on. */
-  readonly answer: (pending: Pending, message: T['internal']) => Effect.Effect<'Delivered' | 'Dropped'>
-  /** The time of a timer comes. */
-  readonly fire: (pending: Pending) => Effect.Effect<'Delivered' | 'Dropped'>
-  /**
-   * The process dies after the last commit, and the entity is activated again from what was stored. At-most-once
-   * operations under way deliver their `unknown` message instead of running again.
-   */
-  readonly restart: Effect.Effect<void>
-}
+/** What creating an entity is answered. Only `Created` is stored, under the request id. */
+export type Creation = Readonly<{ _tag: 'Created' }> | Readonly<{ _tag: 'AlreadyExists' }>
 
 /**
- * Runs a scenario without storage, cluster or clock. Nothing happens by itself: the test answers operations,
- * fires timers and restarts the process. It fails when a defect suspends the entity.
+ * The service through which an operation sends messages to other entities, as its own entity. The runtime
+ * provides it, filling in the sender from the operation that runs.
  */
-export declare const rehearse: <T extends Types, E>(
+export class Entities extends Context.Service<Entities, {
+  readonly send: <T extends Types>(
+    program: Program<T>,
+    id: string,
+    message: T['inbound'],
+    requestId: IdempotencyKey,
+  ) => Effect.Effect<Reply<T['rejection']>>
+  readonly create: <T extends Types>(
+    program: Program<T>,
+    id: string,
+    flags: T['flags'],
+    requestId: IdempotencyKey,
+  ) => Effect.Effect<Creation>
+}>()('effect-tea-durable/Entities') {}
+
+/**
+ * Sends an inbound message to another entity from an operation, and waits for the reply. The request id is the
+ * operation's idempotency key: a restarted operation sends the same request, and gets the stored reply. While the
+ * receiver is suspended, it waits.
+ */
+export const send = <T extends Types>(
   program: Program<T>,
-  start: Readonly<{ flags: T['flags']; at: DateTime.Utc }>,
-  scenario: (rehearsal: Rehearsal<T>) => Effect.Effect<void, E>,
-) => Effect.Effect<void, E>
+  id: string,
+  message: T['inbound'],
+  requestId: IdempotencyKey,
+): Effect.Effect<Reply<T['rejection']>, never, Entities> =>
+  Effect.flatMap(Effect.service(Entities), (entities) => entities.send(program, id, message, requestId))
+
+/**
+ * Creates an entity from an operation, with the operation's idempotency key as the request id. It counts as the
+ * operation's one message to that entity.
+ */
+export const create = <T extends Types>(
+  program: Program<T>,
+  id: string,
+  flags: T['flags'],
+  requestId: IdempotencyKey,
+): Effect.Effect<Creation, never, Entities> =>
+  Effect.flatMap(Effect.service(Entities), (entities) => entities.create(program, id, flags, requestId))

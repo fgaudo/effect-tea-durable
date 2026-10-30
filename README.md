@@ -5,16 +5,18 @@ whose state survives crashes, restarts and deploys. A program is written as in
 [effect-tea](https://github.com/fgaudo/effect-tea), with a pure `update`, and tested without a database, a
 cluster or a clock.
 
-**This repository holds only a design.** Nothing here runs yet. It has:
+**This repository holds a design, and its pure core.** There is no runtime yet: programs run only in
+`rehearse`. It has:
 
 - [`docs/design.md`](docs/design.md): what the library is for, its model of execution, and what it guarantees
   at each point where the process may die;
+- [`src/`](src): the types of a program, and the runtime's semantics as a pure state machine
+  ([`src/machine.ts`](src/machine.ts)), which `rehearse` runs and property tests check;
 - [`docs/decisions/`](docs/decisions): one note per decision, with the alternatives it rejected;
 - [`docs/open-questions.md`](docs/open-questions.md): what is not decided yet;
 - [`docs/roadmap.md`](docs/roadmap.md): the steps from this design to a library, in order;
-- [`examples/order`](examples/order): an order's lifecycle written against the imagined API
-  ([`examples/api.ts`](examples/api.ts), declarations only). The typecheck tells whether the design can be
-  expressed; if the example reads badly, the API is wrong;
+- [`examples/order`](examples/order): an order's lifecycle, with its scenarios as tests. If an example reads
+  badly, the API is wrong;
 - [`examples/subscription`](examples/subscription): a subscription billed every month, which never ends;
 - [`examples/booking`](examples/booking): a booking that holds seats in an event's inventory, two entities
   that talk.
@@ -22,6 +24,7 @@ cluster or a clock.
 ```sh
 bun install
 bun run typecheck
+bun test
 ```
 
 The name is a working one. The library will be separate from effect-tea, which it shares ideas with but no

@@ -1,6 +1,5 @@
 /**
- * The booking's and the inventory's scenarios, as tests would be written. The file is not named `*.test.ts`,
- * since `rehearse` is only declared: `bun test` would run it and fail.
+ * The booking's and the inventory's scenarios, rehearsed.
  *
  * `rehearse` runs one entity. In the booking's scenarios the test answers for the inventory, and in the
  * inventory's it sends as the bookings would.
@@ -8,7 +7,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import { accepted, type Address, rehearse, rejected } from '../api.ts'
+import { accepted, type Address, rehearse, rejected } from '../../src/index.ts'
 import { booking, type Sender } from './booking.ts'
 import { inventory } from './inventory.ts'
 

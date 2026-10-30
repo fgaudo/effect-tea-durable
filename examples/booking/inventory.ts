@@ -4,7 +4,7 @@
  */
 import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
-import { noWork, type Origin, type Program, reject, type Rejected, rejectWith } from '../api.ts'
+import { noWork, type Origin, type Program, reject, type Rejected, rejectWith } from '../../src/index.ts'
 
 const State = Schema.Struct({
   open: Schema.Boolean,

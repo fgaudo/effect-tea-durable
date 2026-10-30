@@ -89,6 +89,9 @@ Two kinds of work exist.
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
   nothing yet.
 
+A key whose kind changes, from a timer to an operation, is new work
+([decision 0014](decisions/0014-rules-the-machine-settled.md)).
+
 What runs is always what the state says. After a crash the runtime does not look for what was running: it
 computes `durable(state)` again.
 
@@ -128,10 +131,16 @@ kept as an audit, but nothing replays them.
 
 - **Activation.** The runtime loads the state and the incarnations, computes `durable(state)`, starts its
   operations and arms its timers.
-- **A message.** It reads `meta.at`, calls `update`, checks the step (defects included), stores it, answers
-  the caller, and starts or ends the work whose keys changed.
+- **A message.** It reads `meta.at`, calls `update`, checks the step (defects included, and `durable` and
+  `project` on the next state), stores it, answers the caller, and starts or ends the work whose keys changed.
+  An internal message `update` rejects is a defect, since it cannot be late
+  ([decision 0014](decisions/0014-rules-the-machine-settled.md)).
 - **Passivation.** An entity with no message for a while is unloaded. A timer stays armed in storage, and wakes
   it. An operation under way keeps it loaded.
+
+These rules are a pure state machine, [`src/machine.ts`](../src/machine.ts): its events are a message arriving,
+an operation completing or dying, a timer firing, a step, the process dying, and an operator resuming or
+discarding. A runtime interprets its outputs ([decision 0013](decisions/0013-the-runtime-is-a-pure-machine.md)).
 
 ## What survives a crash
 
@@ -156,7 +165,10 @@ On a phone, a defect ends the app. On a server it must not end the process, and 
 would receive it again and die again, forever. So a defect **suspends** the entity: its state stays as it was
 before the message, the message stays unhandled, and nothing is delivered to it until someone resumes it or
 discards the message ([decision 0006](decisions/0006-a-defect-suspends-the-entity.md)). A defect in an
-operation suspends it too. A caller meanwhile is answered `Suspended`, which is not stored, and retries
+operation, or in `durable` or `project` on a step's next state, suspends it too. Resuming activates it as after a
+crash; a discarded message ends its work as if it had been handled
+([decision 0014](decisions/0014-rules-the-machine-settled.md)). A caller meanwhile is answered `Suspended`, which
+is not stored, and retries
 ([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)).
 
 ## Reading
@@ -177,8 +189,10 @@ Most of a program is pure, so most tests need no runtime:
   shown;
 - **the defects**: an internal message in a state without its key.
 
-`rehearse` runs a scenario on the program without storage, cluster or clock. The test decides when each
-operation answers, when each timer fires, and when the process dies:
+`rehearse` runs a scenario on the program without storage, cluster or clock. It is the runtime's machine, which
+handles the mailbox to its end after each act of the test. Time stands at the start's, and moves to a timer's
+time when it fires. The test decides when each operation answers, when each timer fires, and when the process
+dies:
 
 - `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity;
 - `pending(key)` finds the work under way under a key, with its idempotency key;
@@ -187,10 +201,11 @@ operation answers, when each timer fires, and when the process dies:
 - `restart` drops everything that is not stored, and activates the entity again: an at-most-once operation
   under way delivers its `unknown` message.
 
-[`examples/order/scenarios.ts`](../examples/order/scenarios.ts) shows them.
+[`examples/order/scenarios.test.ts`](../examples/order/scenarios.test.ts) shows them.
 
-The runtime itself is tested apart, by dying at every point of the table above, under random orders of
-messages, completions and timers.
+The machine is tested with properties, under random orders of messages, completions, timers, crashes and
+defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime will be tested against it, by dying at
+every point of the table above.
 
 ## Where it departs from effect-tea
 
