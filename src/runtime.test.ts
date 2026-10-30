@@ -1218,6 +1218,10 @@ describe('a schema that changes', () => {
   const Rejection2 = Schema.Struct({ why: Schema.Literal('Refused') })
   type Rejection2 = typeof Rejection2.Type
 
+  const Sender2 = Schema.TaggedStruct('Tester', { team: Schema.String })
+  type Sender2 = typeof Sender2.Type
+  const tester2: Sender2 = { _tag: 'Tester', team: 'core' }
+
   type T2 = {
     state: State2
     flags: Readonly<{ at: DateTime.Utc }>
@@ -1226,7 +1230,7 @@ describe('a schema that changes', () => {
     operation: Operation2
     key: Key
     rejection: Rejection2
-    sender: Sender
+    sender: Sender2
     projection: Projection2
     index: 'wanted'
     services: Hands
@@ -1241,6 +1245,7 @@ describe('a schema that changes', () => {
       operation: Operation2,
       projection: Projection2,
       rejection: Rejection2,
+      sender: Sender2,
     },
     init: (_flags, at) => ({ want: keys, log: [], since: at, rings: DateTime.addDuration(at, '40 millis') }),
     update: (message) => (state) => {
@@ -1291,6 +1296,8 @@ describe('a schema that changes', () => {
       projection: (json) => ({ wanted: json }),
       // A reason is kept as long as its reply, which is for ever: a retry reads it through this.
       rejection: (json) => ({ why: json }),
+      // A caller's requests are stored under its sender, so a retry finds its reply through this (decision 0048).
+      sender: (json) => ({ ...json as Readonly<Record<string, Json>>, team: 'core' }),
     }],
   }
 
@@ -1320,6 +1327,11 @@ describe('a schema that changes', () => {
           yield* toy.create('m-2', { at }, { requestId: 'c-2', sender: tester })
           expect(yield* toy.send('m-2', { _tag: 'Refuse', nonce: 'no' }, { requestId: 'r-2', sender: tester }))
             .toEqual({ _tag: 'Rejected', reason: 'Refused' })
+          // `a` is wanted already: the message is logged, and changes no work.
+          expect(yield* toy.send('m-2', { _tag: 'Want', key: 'a', on: true, nonce: 'w' }, {
+            requestId: 'w-2',
+            sender: tester,
+          })).toEqual({ _tag: 'Accepted' })
           yield* Effect.sleep('10 millis')
           before.push(...acted)
         }))
@@ -1338,8 +1350,17 @@ describe('a schema that changes', () => {
           expect(yield* toy.read('m-2')).toEqual({ wanted: 2 })
           expect(charged(acted)).toEqual(charged(before))
           // The retry is answered from the reply version 1 stored, with its reason read through the migration.
-          expect(yield* toy.send('m-2', { _tag: 'Refuse', nonce: 'no' }, { requestId: 'r-2', sender: tester }))
+          expect(yield* toy.send('m-2', { _tag: 'Refuse', nonce: 'no' }, { requestId: 'r-2', sender: tester2 }))
             .toEqual({ _tag: 'Rejected', reason: { why: 'Refused' } })
+          // The caller's requests are found under its sender as version 1 stored it, read through the migration:
+          // its creation is answered `Created`, and its message is not applied again.
+          expect(yield* toy.create('m-2', { at }, { requestId: 'c-2', sender: tester2 })).toEqual({ _tag: 'Created' })
+          expect(yield* toy.send('m-2', { _tag: 'Want', key: 'a', on: true, nonce: 'w' }, {
+            requestId: 'w-2',
+            sender: tester2,
+          })).toEqual({ _tag: 'Accepted' })
+          const stored = yield* storage(next, yield* SqlClient.SqlClient).load('m-2')
+          expect(stored?.state.log).toEqual(['w'])
           // The rows are version 2's once they are written again, and the index reads the struct.
           expect(yield* toy.reindex).toBe(2)
           expect(yield* toy.query({ where: [{ index: 'wanted', is: '=', value: 0 }] }))
@@ -1354,7 +1375,7 @@ describe('a schema that changes', () => {
         Effect.gen(function*() {
           const { layer } = yield* hands({ holds: true })
           const toy = yield* Effect.provide(runtime.deploy(next), layer)
-          yield* toy.create('m-3', { at }, { requestId: 'c-3', sender: tester })
+          yield* toy.create('m-3', { at }, { requestId: 'c-3', sender: tester2 })
           yield* Effect.sleep('10 millis')
         }))
       // The entity holds an operation, which an activation starts again: the deploy reads what version 2 wrote.
@@ -1372,12 +1393,12 @@ describe('a schema that changes', () => {
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       // Each version leaves an entity with nothing under way, so that a deploy activates neither.
-      for (const [version, entity] of [[program, 'm-4'], [next, 'm-5']] as const) {
+      for (const [version, entity, sender] of [[program, 'm-4', tester], [next, 'm-5', tester2]] as const) {
         yield* process({}, (runtime) =>
           Effect.gen(function*() {
             const { layer } = yield* hands()
             const toy = yield* Effect.provide(runtime.deploy(version as Program<T>), layer)
-            yield* toy.create(entity, { at }, { requestId: `c-${entity}`, sender: tester })
+            yield* toy.create(entity, { at }, { requestId: `c-${entity}`, sender: sender as Sender })
             yield* runtime.settled
             yield* Effect.sleep('60 millis')
             yield* runtime.settled

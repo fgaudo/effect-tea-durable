@@ -1,7 +1,8 @@
 # 0015. A request belongs to its sender, and work to its entity
 
 **Status:** accepted, 2026-10-30. Its consequence on renaming a program is replaced by
-[decision 0022](0022-a-new-program-keeps-what-work-started-with.md).
+[decision 0022](0022-a-new-program-keeps-what-work-started-with.md), and the one that callers share one space of
+request ids by [decision 0048](0048-a-callers-request-belongs-to-its-sender.md).
 
 ## Context
 

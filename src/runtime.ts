@@ -381,7 +381,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         // The callers first: a reply is what the event's commit made true (decision 0023).
         for (const output of outputs) {
           if (output._tag !== 'Replied') continue
-          yield* answer(entity, Machine.requestKey(output.from, output.requestId), output.reply)
+          yield* answer(entity, Machine.requestKey(deployed.program, output.from, output.requestId), output.reply)
         }
         yield* at('AfterReply', entity, event as Machine.Event<never>)
         for (const output of outputs) {
@@ -595,11 +595,16 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       deployed: Deployment<T>,
       id: string,
       flags: T['flags'],
-      request: Readonly<{ requestId: string; from: Origin<unknown> }>,
+      request: Readonly<{ requestId: string; from: Origin<T['sender']> }>,
     ): Effect.Effect<Creation, Faulted> =>
       Effect.gen(function*() {
         const entity: Address = { name: deployed.program.name, id }
-        const requested = Machine.requestKey(request.from, request.requestId)
+        // A caller's creation is stored under its sender, which a sender that does not encode cannot be: the
+        // caller's defect, as for a message (decisions 0040, 0048).
+        const requested = yield* Effect.try({
+          try: () => Machine.requestKey(deployed.program, request.from, request.requestId),
+          catch: (defect) => new Faulted(defect),
+        })
         const asked = yield* registry.withPermits(1)(Effect.gen(function*() {
           const held = deployed.loaded.get(id) ?? null
           // The entity was already there: the machine answers the request from what is stored (decision 0017).
@@ -658,7 +663,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           },
           catch: (defect) => new Faulted(defect),
         })
-        const requested = Machine.requestKey(request.from, request.requestId)
+        const requested = Machine.requestKey(deployed.program, request.from, request.requestId)
         const asked = yield* withEntity(deployed, id, (loaded) =>
           loaded === null ? Effect.succeed(null) : ask(loaded, entity, requested, {
             _tag: 'Receive',

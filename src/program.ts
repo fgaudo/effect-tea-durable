@@ -456,7 +456,7 @@ export const program = <
   }
 }
 
-/** What creating an entity is answered. Only `Created` is stored, under the request id. */
+/** What creating an entity is answered. Only `Created` is stored, under its sender and the request id. */
 export type Creation = Readonly<{ _tag: 'Created' }> | Readonly<{ _tag: 'AlreadyExists' }>
 
 /**

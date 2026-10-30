@@ -25,9 +25,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   that is not domain (a valid token) happen before the mailbox, and what does the caller get then, or for
   flags that do not decode? And who may create an entity, since `init` sees no sender
   ([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md))? A defect at creation stores nothing
-  ([decision 0014](decisions/0014-rules-the-machine-settled.md)): what is its creator answered? Callers share
-  one space of request ids ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)): should a
-  caller's requests be its own, once the boundary knows who it is?
+  ([decision 0014](decisions/0014-rules-the-machine-settled.md)): what is its creator answered? A caller's
+  requests are its sender's ([decision 0048](decisions/0048-a-callers-request-belongs-to-its-sender.md)), so
+  how fine a sender is says whose request ids are whose.
 
 ## Storage and reading
 

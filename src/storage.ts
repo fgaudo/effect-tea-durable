@@ -9,7 +9,7 @@ import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
-import type * as Machine from './machine.ts'
+import * as Machine from './machine.ts'
 import {
   type Durable,
   encode,
@@ -393,6 +393,22 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   /** The reason a reply carries, null for a bare `reject`, which no migration reads. */
   const upReason = (from: number) => (held: Json): Json => held === null ? held : up('rejection', from)(held)
 
+  const sender = Schema.decodeSync(program.schemas.sender)
+
+  /**
+   * A request stored by `from`, by `requestKey` as this version computes it: a caller's holds its sender as the
+   * version that stored it wrote it, which is read and written again, so that a retry after a deploy that
+   * migrates the sender finds its reply (decision 0048). An entity's request holds no value of the program's.
+   */
+  const rekey = (request: string, from: number): string => {
+    if (from === version) return request
+    const held: unknown = JSON.parse(request)
+    if (!Array.isArray(held) || held.length !== 2 || typeof held[1] !== 'string') return request
+    const [written, requestId] = held as [Json, string]
+    const caller = { _tag: 'Caller', sender: sender(up('sender', from)(written) as never) } as const
+    return Machine.requestKey(program, caller, requestId)
+  }
+
   /**
    * The expression that reads an index out of the row, written once: SQLite uses an index of an expression only
    * where the query writes the expression the same way, so the index created and the query must share this.
@@ -486,7 +502,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       )
       const replies: Record<string, Machine.StoredReply<T['rejection']>> = {}
       for (const reply of answered) {
-        replies[reply.request] = reply.tag === 'Accepted'
+        replies[rekey(reply.request, reply.version)] = reply.tag === 'Accepted'
           ? { _tag: 'Accepted' }
           : {
             _tag: 'Rejected',
@@ -500,7 +516,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         keys,
         mailbox,
         replies,
-        creation: row.creation,
+        creation: rekey(row.creation, row.version),
         // The cause is what was rendered when the entity suspended: an operator reads it, nothing acts on it.
         suspension: row.suspended_on === null
           ? null
@@ -532,7 +548,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       } else {
         yield* sql`
           UPDATE entities
-          SET state = ${state.write(after.state)}, version = ${version},
+          SET state = ${state.write(after.state)}, version = ${version}, creation = ${after.creation},
               suspended_on = ${on}, suspended_cause = ${cause}
           WHERE name = ${name} AND id = ${id}
         `

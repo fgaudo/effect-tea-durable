@@ -63,7 +63,9 @@ A message is one of two kinds, and the rule for a message that does not apply fo
   ([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)). A caller that retries with the same id
   gets the same answer, and the message is applied once. Request ids are their sender's: another entity's are
   stored under its address, apart from everyone else's
-  ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)). `meta.from` says who sent it, so that
+  ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)), and a caller's under its sender, as the
+  program's schema writes it ([decision 0048](decisions/0048-a-callers-request-belongs-to-its-sender.md)).
+  `meta.from` says who sent it, so that
   `update` decides who may do what. An inbound message may arrive in any state: a slow client, a retry, a second
   device, a malicious caller. One that does not apply is rejected.
   A caller may be another entity's operation: `meta.from` is then `Entity`, with the sender's name and id,

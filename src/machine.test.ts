@@ -52,7 +52,7 @@ type T = {
   operation: Readonly<{ _tag: 'A'; tune: number }> | Readonly<{ _tag: 'B' | 'C'; key: Key }>
   key: Key
   rejection: 'Refused'
-  sender: 'caller'
+  sender: 'ann' | 'bob'
   projection: number
   index: never
   services: never
@@ -86,7 +86,7 @@ const schemas: Program<T>['schemas'] = {
     Schema.Struct({ _tag: Schema.Literals(['B', 'C']), key: Key }),
   ]),
   rejection: Schema.Literal('Refused'),
-  sender: Schema.Literal('caller'),
+  sender: Schema.Literals(['ann', 'bob']),
   projection: Schema.Number,
 }
 
@@ -179,7 +179,8 @@ type Version = 'same' | keyof typeof versions
 const versionOf = (version: Version) => (version === 'same' ? undefined : versions[version])
 
 type Command =
-  | Readonly<{ _tag: 'Send'; kind: Inbound['_tag']; key: Key; on: boolean }>
+  /** A caller's message, under its next request id: `ann` and `bob` choose the same ones. */
+  | Readonly<{ _tag: 'Send'; kind: Inbound['_tag']; key: Key; on: boolean; sender: T['sender'] }>
   | Readonly<{ _tag: 'Retry'; pick: number }>
   /** Creates the entity again, with the request that created it or another. */
   | Readonly<{ _tag: 'Create'; again: boolean }>
@@ -213,6 +214,7 @@ const command: fc.Arbitrary<Command> = fc.oneof(
       ),
       key,
       on: fc.boolean(),
+      sender: fc.constantFrom<T['sender']>('ann', 'bob'),
     }),
   },
   { weight: 1, arbitrary: fc.record({ _tag: fc.constant('Retry' as const), pick }) },
@@ -252,16 +254,21 @@ const at = DateTime.makeUnsafe(1_000)
 
 type Receive = Extract<Machine.Event<T>, { _tag: 'Receive' }>
 
-const caller = { _tag: 'Caller', sender: 'caller' } as const
+const caller = { _tag: 'Caller', sender: 'ann' } as const
 
 const creation = { requestId: 'creation', from: caller } as const
 
-const receive = (requests: Array<Receive>, message: (nonce: string) => Inbound): Receive => {
+const receive = (
+  requests: Array<Receive>,
+  message: (nonce: string) => Inbound,
+  sender: T['sender'] = 'ann',
+): Receive => {
+  const from = { _tag: 'Caller', sender } as const
   const event: Receive = {
     _tag: 'Receive',
-    requestId: `r${requests.length}`,
+    requestId: `r${requests.filter((request) => Equal.equals(request.from, from)).length}`,
     message: message(`n${requests.length}`),
-    from: caller,
+    from,
   }
   requests.push(event)
   return event
@@ -286,7 +293,7 @@ const toEvent = (machine: Toy, command: Command, requests: Array<Receive>): Mach
       return receive(requests, (nonce) =>
         command.kind === 'Want'
           ? { _tag: 'Want', key: command.key, on: command.on, nonce }
-          : { _tag: command.kind, nonce })
+          : { _tag: command.kind, nonce }, command.sender)
     case 'Toggle':
       return null
     case 'Retry':
@@ -397,13 +404,27 @@ describe('the machine', () => {
       for (const { outputs } of trace) {
         for (const output of outputs) {
           if (output._tag !== 'Replied' || output.reply._tag === 'Suspended') continue
-          const request = Machine.requestKey(output.from, output.requestId)
+          const request = Machine.requestKey(program, output.from, output.requestId)
           const first = replies.get(request)
           if (first === undefined) replies.set(request, output.reply)
           else expect<unknown>(output.reply).toEqual(first)
         }
       }
       expect(new Set(machine.stored.state.applied).size).toBe(machine.stored.state.applied.length)
+    }))
+
+  // `ann` and `bob` choose the same request ids: each one's message is applied, and answered its own reply.
+  test("a caller's request is its own: a message accepted is applied, whoever else used its request id", () =>
+    property(({ trace, machine, requests }) => {
+      for (const { outputs } of trace) {
+        for (const output of outputs) {
+          if (output._tag !== 'Replied' || output.reply._tag !== 'Accepted') continue
+          const { from, requestId } = output
+          const request = requests.find((sent) => sent.requestId === requestId && Equal.equals(sent.from, from))
+          if (request === undefined) continue
+          expect(machine.stored.state.applied).toContain(request.message.nonce)
+        }
+      }
     }))
 
   test('update is given an internal message only while its work is in the state, once per incarnation', () =>
@@ -631,11 +652,11 @@ describe('the machine', () => {
       const discarded = new Set<string>()
       for (const { event, before, after } of trace) {
         for (const envelope of after.stored.mailbox) {
-          if (envelope._tag === 'Inbound') waited.add(Machine.requestKey(envelope.from, envelope.requestId))
+          if (envelope._tag === 'Inbound') waited.add(Machine.requestKey(program, envelope.from, envelope.requestId))
         }
         const head = before.stored.mailbox[0]
         if (event._tag === 'Discard' && head?._tag === 'Inbound') {
-          discarded.add(Machine.requestKey(head.from, head.requestId))
+          discarded.add(Machine.requestKey(program, head.from, head.requestId))
         }
       }
       expect(machine.stored.suspension).toBeNull()
@@ -1258,7 +1279,7 @@ describe('creation', () => {
 
   test('answers the request that created the entity Created, and stores nothing for the others', () => {
     const machine = checked((message) => message, () => ({}))
-    const create = (requestId: string, from: Origin<unknown>) =>
+    const create = (requestId: string, from: Origin<null>) =>
       Machine.step(machine, { _tag: 'Create', requestId, from })
     expect(create('creation', nobody).outputs)
       .toEqual([{ _tag: 'Replied', requestId: 'creation', from: nobody, reply: { _tag: 'Created' } }])

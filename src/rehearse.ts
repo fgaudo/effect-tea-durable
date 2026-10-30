@@ -72,7 +72,8 @@ export const rehearse = <T extends Types, E>(
   Effect.suspend(() => {
     const created = Machine.start(program, id, start.flags, start.at, {
       requestId: 'creation',
-      from: { _tag: 'Caller', sender: null },
+      // No one retries the rehearsal's creation, so it is stored under the entity itself: no sender is needed.
+      from: { _tag: 'Self' },
     })
     if (created._tag === 'Defect') return Effect.die(created.cause)
     let machine = created.machine
