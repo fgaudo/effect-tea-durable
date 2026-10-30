@@ -684,8 +684,9 @@ const tiny = (
   index: (projection: string) => string = (projection) => projection,
 ): Program<Tiny> => ({
   name,
-  // The machine reads no key from here: these tests hold work under whatever keys their `durable` returns.
-  keys: [],
+  // Every key these tests hold work under: the machine checks what `durable` returns against them
+  // (decision 0037).
+  keys: ['charge', 'deadline', 'work', 'reminder', 'mail'],
   schemas: {} as never,
   init: () => ({ last: 'start' }),
   update: (message) => () => {
@@ -822,6 +823,51 @@ describe('the checks of a step', () => {
         reply: { _tag: 'Suspended' },
       })
     }
+  })
+})
+
+describe('the keys a program declares', () => {
+  const inbound = { _tag: 'Receive', requestId: 'r', message: 'go', from: nobody } as const
+
+  test('a state that holds work under a key the program does not declare is a defect', () => {
+    const machine = checked((message) => message, (state) => (state === 'start' ? {} : { charg: 'operation' }))
+    const transition = handled(machine, inbound)
+    expect(reasonOfSuspension(transition)).toBe(
+      "the state holds work under 'charg', which the program does not declare",
+    )
+    expect(transition.machine.stored.state).toEqual({ last: 'start' })
+    expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+  })
+
+  test('a key it does not declare is a defect even where it holds no work', () => {
+    const machine = checked((message) => message, (state) => (state === 'start' ? {} : { charg: undefined } as never))
+    expect(reasonOfSuspension(handled(machine, inbound))).toBe(
+      "the state holds work under 'charg', which the program does not declare",
+    )
+  })
+
+  test('a first state that holds one stores nothing', () => {
+    const created = Machine.start(
+      tiny((message) => message, () => ({ charg: 'operation' })),
+      'tiny',
+      null,
+      epoch,
+      { requestId: 'creation', from: nobody },
+    )
+    expect(created._tag).toBe('Defect')
+    expect(created._tag === 'Defect' && created.cause instanceof InvariantDefect && created.cause.reason)
+      .toBe("the state holds work under 'charg', which the program does not declare")
+  })
+
+  test('a deploy that stops declaring a key the state holds leaves the entity as it was', () => {
+    const machine = checked((message) => message, () => ({ deadline: 'timer' }))
+    const transition = Machine.step(machine, { _tag: 'Restart', program: { ...machine.program, keys: [] } })
+    expect(reasonOfSuspension(transition)).toBe(
+      "the state holds work under 'deadline', which the program does not declare",
+    )
+    expect(transition.machine.stored).toEqual({ ...machine.stored, suspension: transition.machine.stored.suspension })
+    expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
+    expect(transition.outputs.filter((output) => output._tag === 'Armed')).toEqual([])
   })
 })
 

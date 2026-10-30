@@ -33,6 +33,22 @@ const shown = <T extends Types>(program: Program<T>, state: T['state']): void =>
   indexesOf(program, program.project(state))
 }
 
+/**
+ * The work the state holds, under the keys the program declares and no others: a key it does not declare is a
+ * defect, where the state holding it is read (decision 0037). The types catch a key a program never declared
+ * where the state holds that key alone, and not where it holds a declared key beside a misspelt one.
+ */
+const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Work<T> => {
+  const work = program.durable(state)
+  const declared = new Set<string>(program.keys)
+  for (const key of Object.keys(work)) {
+    if (!declared.has(key)) {
+      throw new InvariantDefect({ reason: `the state holds work under '${key}', which the program does not declare` })
+    }
+  }
+  return work
+}
+
 /** A message waiting in the mailbox: from a caller, or from the entity's own work in one incarnation. */
 export type Envelope<T extends Types> =
   | Readonly<{ _tag: 'Inbound'; requestId: string; message: T['inbound']; from: Origin<T['sender']> }>
@@ -254,7 +270,7 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
       reason: `the program '${program.name}' replaces the entity's program '${stored.name}'`,
     })
   }
-  const work = program.durable(stored.state)
+  const work = workUnder(program, stored.state)
   shown(program, stored.state)
   const keys = renew(program, stored.keys, workOf(stored), work)
   for (const [key, { work: was, delivery }] of Object.entries(stored.keys)) {
@@ -335,7 +351,7 @@ export const start = <T extends Types>(
   let work: Work<T>
   try {
     state = program.init(flags, at)
-    work = program.durable(state)
+    work = workUnder(program, state)
     shown(program, state)
   } catch (cause) {
     return { _tag: 'Defect', cause }
@@ -453,7 +469,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
       }
     }
     const state: T['state'] = result
-    const after = program.durable(state)
+    const after = workUnder(program, state)
     shown(program, state)
 
     // The work whose message is handled is done: its key counts as gone (decision 0008).

@@ -87,8 +87,11 @@ after. A message to an entity that does not exist is answered `NotFound`, and cr
 
 `durable(state)` returns the work of the state, under the keys the program declares and no others: the space of
 keys is finite, and a key a program computes is not one of them
-([decision 0033](decisions/0033-a-program-declares-its-keys.md)). The runtime compares it with the previous
-state's, as effect-tea compares subscriptions:
+([decision 0033](decisions/0033-a-program-declares-its-keys.md)). The types catch a key never declared; a
+declared key beside a misspelt one they accept, so the machine checks what `durable` returns against `keys`
+wherever it reads it, and a key the program does not declare is a defect
+([decision 0037](decisions/0037-the-machine-checks-the-declared-keys.md)). The runtime compares the work with
+the previous state's, as effect-tea compares subscriptions:
 
 - a new key starts its work;
 - a kept key leaves it as it is;
