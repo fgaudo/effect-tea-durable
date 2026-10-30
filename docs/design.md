@@ -153,7 +153,9 @@ the request id. A restarted operation sends the same request, and gets the recei
 the work that sent it is stored
 ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). While the receiver is
 suspended, `send` waits, and so does an operation that reaches a program not deployed yet
-([decision 0045](decisions/0045-an-operation-waits-for-a-program-not-deployed-yet.md)). An operation creates an
+([decision 0045](decisions/0045-an-operation-waits-for-a-program-not-deployed-yet.md)). A receiver that crashes
+has no reply yet either, and the operation sends again; only a defect of the sender's own suspends it
+([decision 0046](decisions/0046-a-receiver-that-crashes-is-sent-again.md)). An operation creates an
 entity the same way, with `create`. `update` never sends: a step never waits on another entity
 ([decision 0009](decisions/0009-entities-talk-through-operations.md)).
 

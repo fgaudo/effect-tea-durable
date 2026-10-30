@@ -8,7 +8,7 @@ import { expect, test } from 'bun:test'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import { SqlClient } from 'effect/sql'
-import { createTables, launch } from '../../src/index.ts'
+import { createTables, launch, operation, send } from '../../src/index.ts'
 import { booking } from './booking.ts'
 import { inventory } from './inventory.ts'
 
@@ -154,3 +154,51 @@ test('a booking whose hold a crash interrupted holds its seats, whichever progra
       expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
     }))
   })))
+
+test('a booking whose hold the inventory crashed on sends it again, and is not suspended', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    let crashes = true
+    const runtime = yield* launch({
+      // The hold is written, and the runtime fails before it answers: the hook stands for a failed write.
+      observe: (entity, event) => {
+        if (entity.name !== 'Inventory' || event._tag !== 'Receive' || !crashes) return Effect.void
+        crashes = false
+        return Effect.die('the runtime failed')
+      },
+    })
+    const inventories = yield* runtime.deploy(inventory)
+    const bookings = yield* runtime.deploy(booking)
+    yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
+    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    // The hold sends again, and gets the reply the inventory stored before it crashed (decision 0046).
+    yield* runtime.settled
+    expect(crashes).toBe(false)
+    expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held', canConfirm: true })
+    expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
+  }))))
+
+test('a booking whose hold sends a message the inventory cannot encode is suspended, not sent again', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    const runtime = yield* launch()
+    // Half a seat is no `Int`: the message is the booking's defect, and reaches no inventory (decision 0040).
+    const halving = {
+      ...booking,
+      operations: {
+        ...booking.operations,
+        Hold: operation((op: { event: string }, idempotencyKey) =>
+          Effect.flatMap(
+            send(inventory, op.event, { _tag: 'HoldRequested', seats: 0.5 }, idempotencyKey),
+            () => Effect.succeed({ _tag: 'SeatsHeld' } as const),
+          )
+        ),
+      },
+    } as typeof booking
+    const inventories = yield* runtime.deploy(inventory)
+    const bookings = yield* runtime.deploy(halving)
+    yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
+    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    yield* runtime.settled
+    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann }))
+      .toEqual({ _tag: 'Suspended' })
+    expect(yield* inventories.read('gig')).toMatchObject({ available: 10 })
+  }))))

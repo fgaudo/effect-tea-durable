@@ -9,13 +9,6 @@ The first audit's findings whose fix was plain are done. A second review found t
 rule of the machine or of the runtime, so each is decided in a note, with a test that fails without it. After
 them comes one of the [open questions](open-questions.md), decided in a note.
 
-- **A receiver that crashes suspends its sender.** An event the runtime cannot finish gives its waiting callers
-  the defect, for them to retry ([decision 0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)),
-  and so does a row of a version the program does not have
-  ([decision 0043](decisions/0043-a-row-no-version-reads-fails-what-reads-it.md)). An operation that sends does
-  not retry: its defect suspends the sender, which was not at fault, until an operator resumes it, even when the
-  failure was transient. `send` from an operation should take a crash of the receiver as it takes `Suspended`,
-  and send again.
 - **An operation sends one message to an entity.** The request id of `send` is the operation's idempotency key
   ([`src/program.ts`](../src/program.ts), `send`), so a second message from the same operation to the same
   entity is answered with the reply stored for the first, and is never applied. Nothing fails. Either `send`

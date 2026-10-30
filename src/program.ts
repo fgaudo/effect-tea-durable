@@ -481,7 +481,7 @@ export class Entities extends Context.Service<Entities, {
 /**
  * Sends an inbound message to another entity from an operation, and waits for the reply. The request id is the
  * operation's idempotency key: a restarted operation sends the same request, and gets the stored reply. While the
- * receiver is suspended, it waits.
+ * receiver is suspended, it waits, and it sends again when the receiver crashes (decision 0046).
  */
 export const send = <T extends Types>(
   program: Program<T>,
