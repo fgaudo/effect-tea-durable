@@ -327,6 +327,8 @@ describe('the runtime on SQLite', () => {
           yield* Effect.sleep('30 millis')
         }))
       expect(first.acted.filter((act) => act === 'b').length).toBe(1)
+      // The operations the crash interrupted are what the next process activates the entity for (decision 0029).
+      expect(yield* storage(program, yield* SqlClient.SqlClient).interrupted).toEqual([id])
       const second = yield* hands()
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
@@ -474,24 +476,38 @@ describe('passivation', () => {
   test('no caller is lost to a passivation', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()
+      const { entities, unloaded } = unloads()
       const at = yield* DateTime.now
-      // An entity unloaded as soon as it has nothing to do: every send still finds it, or loads it again.
-      yield* process({ passivate: { millis: 1 } }, (runtime) =>
+      const nonces = Array.from({ length: 24 }, (_, index) => index)
+      // An entity unloaded as soon as it has nothing to do, with the callers arriving across the moments it is:
+      // each one finds it loaded or loads it again, and none is lost to a passivation in between. The callers
+      // are spread far enough apart that the entity has time to be unloaded between them, which the count of
+      // unloads below is what checks.
+      yield* process({ unloaded, passivate: { millis: 1 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
-          for (const nth of Array.from({ length: 24 }, (_, index) => index)) {
-            // The timer is the key a step may drop: an operation leaves only by completing (decision 0005).
-            expect(yield* toy.send(id, { _tag: 'Want', key: 't', on: nth % 2 === 0, nonce: `n${nth}` }, {
-              requestId: `r${nth}`,
-              sender: { _tag: 'Tester' },
-            })).toEqual({ _tag: 'Accepted' })
-          }
+          const replies = yield* Effect.forEach(
+            nonces,
+            (nth) =>
+              Effect.flatMap(Effect.sleep(`${nth * 5} millis`), () =>
+                // The timer is the key a step may drop: an operation leaves only by completing (decision 0005).
+                toy.send(id, { _tag: 'Want', key: 't', on: nth % 2 === 0, nonce: `n${nth}` }, {
+                  requestId: `r${nth}`,
+                  sender: { _tag: 'Tester' },
+                })),
+            { concurrency: 'unbounded' },
+          )
+          // Every caller was answered: a message lost to a passivation would wait for ever.
+          expect(replies).toEqual(nonces.map(() => ({ _tag: 'Accepted' })))
           yield* runtime.settled
         }))
+      // The entity was unloaded and loaded again throughout, which is what the test is about: a run that kept
+      // it loaded would pass as well, and say nothing.
+      expect(entities.length).toBeGreaterThan(nonces.length / 2)
       const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
-      // Every message was applied once, in the order it was sent.
-      expect(stored?.state.applied).toEqual(Array.from({ length: 24 }, (_, index) => `n${index}`))
+      // Every message was applied once. The callers are concurrent, so the order is the mailbox's, not theirs.
+      expect([...(stored?.state.applied ?? [])].sort()).toEqual(nonces.map((nth) => `n${nth}`).sort())
     })))
 })
 

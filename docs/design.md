@@ -244,7 +244,9 @@ dies:
 - `answer(pending, message)` completes an operation, and says whether the message was delivered or dropped;
 - `fire(pending)` fires a timer;
 - `restart` drops everything that is not stored, and activates the entity again: an at-most-once operation
-  under way delivers its `unknown` message.
+  under way delivers its `unknown` message. It rehearses a passivation too, which is the same thing — on an
+  entity with only timers under way, where nothing delivers an `unknown`
+  ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md));
 - `deploy(program)` restarts it with a new version of the program, which keeps the work under way it returns
   the same and starts the rest as new work. One that changes, drops or delivers otherwise an operation under way
   fails the test, as a defect.
