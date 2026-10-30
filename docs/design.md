@@ -176,9 +176,9 @@ It stores the state, not the messages that led to it: a fixed `update` changes w
 already happened ([decision 0002](decisions/0002-store-the-state-not-the-messages.md)). The messages may be
 kept as an audit, but nothing replays them.
 
-The runtime on SQLite writes all of it through the program's schemas, as JSON, in six tables — the entity, the
-keys with their incarnations and work, the mailbox in order, the replies by request, the read model and the
-outbox ([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
+The runtime on SQLite writes all of it through the program's schemas, as JSON, in seven tables — the entity, the
+keys with their incarnations and work, the mailbox in order, the replies by request, the read model, the
+outbox and the cursors of its consumers ([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
 by migrating its JSON to the program's version (see [schemas that change](#schemas-that-change)). A schema whose
 encoded side is not JSON does not compile: a time is held as `Schema.DateTimeUtcFromMillis`, not as
 `Schema.DateTimeUtc` ([decision 0030](decisions/0030-a-schema-encodes-to-json.md)). A value its schema refuses,

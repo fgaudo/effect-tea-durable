@@ -52,7 +52,18 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 - **Reading with a program that dies on the state.** `read` calls `project` on the stored state outside the
   machine. A new program whose `project` dies on it gives the reader a defect, where an activation would suspend
   the entity ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)). Should a
-  read activate the entity, answer from the read model, or say that the entity is suspended?
+  read activate the entity, answer from the read model, or say that the entity is suspended? A `read` of an
+  entity this process does not hold also loads all of it, its mailbox and every reply, to read its state alone.
+- **The replies an entity holds.** The machine holds every reply stored for the entity: an activation loads them
+  all, and every step that answers a caller copies them, as every write goes through them. A caller's reply is
+  kept for ever ([callers' stored replies](#running)), so an entity that lives long, as a subscription does,
+  holds more of them in memory at each message, and each step costs more. Should the machine see only the reply
+  a request asks for, read from storage by its key, and the ones its step adds?
+- **A mailbox under a burst.** Nothing bounds a mailbox, and each event writes it whole
+  ([decision 0028](decisions/0028-rules-the-runtime-settled.md) took it to be a few rows): a burst of messages
+  writes rows in the square of their number. And an inbound message is two transactions, its `Receive` and its
+  step. Should a mailbox be written by appending, a burst be refused past a bound, and a message that finds the
+  entity idle be received and handled in one transaction?
 
 ## Running
 
@@ -75,6 +86,12 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)). Should a process unload the least recently
   used of them once it holds too many, and what does a program whose entity must stay loaded
   ([live streams](#programs)) say then?
+- **One permit for the process.** The registry's one permit keeps an entity from being unloaded between a caller
+  finding it and offering its event ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)). Every
+  `send` takes it, to an entity loaded or not, and an activation holds it while it reads the database and writes
+  its transaction: the messages of every entity of every program wait on one another there. Should an entity
+  hold its own lease — the callers between finding it and offering their event, which an unload waits for — so
+  that the permit is taken only to load?
 - **Two versions at once.** During a rolling deploy, a state written by the new version may be read by the
   old one. Is forward compatibility for one version required, or do deploys avoid it?
 - **Suspended entities.** A caller gets `Suspended`, and an operation that sends waits, keeping its own entity
