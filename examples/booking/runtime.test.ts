@@ -5,6 +5,7 @@
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
+import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import { SqlClient } from 'effect/sql'
 import { createTables, launch } from '../../src/index.ts'
@@ -120,4 +121,36 @@ test('the inventory keeps its reply to a booking while the booking’s hold wait
     // (decision 0021).
     expect(seen).toContain(1)
     expect((yield* repliesToBookings)[0]?.count).toBe(0)
+  })))
+
+test('a booking whose hold a crash interrupted holds its seats, whichever program is deployed first', () =>
+  database(Effect.gen(function*() {
+    yield* Effect.scoped(Effect.gen(function*() {
+      const crashed = yield* Deferred.make<void>()
+      const runtime = yield* launch({
+        // The booking is stored, and the process dies before its hold starts.
+        at: (point, entity) =>
+          point === 'AfterCommit' && entity.name === 'Booking'
+            ? Effect.andThen(Deferred.succeed(crashed, undefined), Effect.never)
+            : Effect.void,
+      })
+      const inventories = yield* runtime.deploy(inventory)
+      const bookings = yield* runtime.deploy(booking)
+      yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
+      yield* Effect.raceFirst(
+        bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann }),
+        Deferred.await(crashed),
+      )
+    }))
+    yield* Effect.scoped(Effect.gen(function*() {
+      const runtime = yield* launch()
+      // The booking first: its hold starts again at once, and waits for the inventory (decision 0045).
+      const bookings = yield* runtime.deploy(booking)
+      // The inventory comes later, once the hold has had the time to send.
+      yield* Effect.sleep('50 millis')
+      const inventories = yield* runtime.deploy(inventory)
+      yield* runtime.settled
+      expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held', canConfirm: true })
+      expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
+    }))
   })))

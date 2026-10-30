@@ -152,8 +152,9 @@ An entity sends a message to another from an operation, with `send`, and the ope
 the request id. A restarted operation sends the same request, and gets the receiver's stored reply, kept while
 the work that sent it is stored
 ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). While the receiver is
-suspended, `send` waits. An operation creates an entity the same way, with `create`. `update`
-never sends: a step never waits on another entity
+suspended, `send` waits, and so does an operation that reaches a program not deployed yet
+([decision 0045](decisions/0045-an-operation-waits-for-a-program-not-deployed-yet.md)). An operation creates an
+entity the same way, with `create`. `update` never sends: a step never waits on another entity
 ([decision 0009](decisions/0009-entities-talk-through-operations.md)).
 
 [`examples/booking`](../examples/booking) holds seats in an event's inventory this way, and releases them when

@@ -70,7 +70,10 @@ export interface Options {
   readonly observe?: (entity: Address, event: Machine.Event<never>) => Effect.Effect<void>
   /** Called with every entity unloaded, once its timers have stopped: a test counts passivations. */
   readonly unloaded?: (entity: Address) => Effect.Effect<void>
-  /** How long a `send` from another entity waits before retrying a suspended one (decision 0010). */
+  /**
+   * How long a `send` from another entity waits before retrying a suspended one (decision 0010), and an operation
+   * before looking again for a program not deployed yet (decision 0045).
+   */
   readonly retry?: Readonly<{ millis: number }>
   /**
    * How long an entity stays loaded with no event coming for it. The wait starts again at every event, and when
@@ -651,16 +654,28 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /**
+     * The deployment of `program`, once there is one: an operation that reaches a program not deployed yet waits
+     * for it, as for a suspended receiver, so that what runs does not depend on the order of the deploys
+     * (decision 0045).
+     */
+    const deployedAs = <T extends Types>(program: Program<T>): Effect.Effect<Deployment<T>> =>
+      Effect.suspend(() => {
+        const deployed = deployment<T>(program.name)
+        return deployed === undefined
+          ? Effect.flatMap(Effect.sleep(`${retry} millis`), () => deployedAs(program))
+          : Effect.succeed(deployed)
+      })
+
+    /**
      * What an operation sends with: its own entity's address, and its idempotency key as the request id, so that
      * a restarted operation gets the stored reply (decision 0009). A suspended receiver has no reply yet, and
-     * `send` waits for one instead of giving up (decision 0010).
+     * `send` waits for one instead of giving up (decision 0010); `send` and `create` wait for a program not
+     * deployed yet (decision 0045).
      */
     const entities = (from: Address) =>
       Entities.of({
         send: <T extends Types>(program: Program<T>, id: string, message: T['inbound'], requestId: IdempotencyKey) =>
-          Effect.suspend(() => {
-            const deployed = deployment<T>(program.name)
-            if (deployed === undefined) return Effect.die(`the program '${program.name}' is not deployed here`)
+          Effect.flatMap(deployedAs(program), (deployed) => {
             const waits = (): Effect.Effect<Reply<T['rejection']>> =>
               Effect.flatMap(
                 send(deployed, id, message, { requestId, from: { _tag: 'Entity', entity: from } }),
@@ -672,11 +687,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             return waits()
           }),
         create: <T extends Types>(program: Program<T>, id: string, flags: T['flags'], requestId: IdempotencyKey) =>
-          Effect.suspend(() => {
-            const deployed = deployment<T>(program.name)
-            if (deployed === undefined) return Effect.die(`the program '${program.name}' is not deployed here`)
-            return create(deployed, id, flags, { requestId, from: { _tag: 'Entity', entity: from } })
-          }),
+          Effect.flatMap(
+            deployedAs(program),
+            (deployed) => create(deployed, id, flags, { requestId, from: { _tag: 'Entity', entity: from } }),
+          ),
       })
 
     /**

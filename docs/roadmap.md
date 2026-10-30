@@ -9,13 +9,6 @@ The first audit's findings whose fix was plain are done. A second review found t
 rule of the machine or of the runtime, so each is decided in a note, with a test that fails without it. After
 them comes one of the [open questions](open-questions.md), decided in a note.
 
-- **An entity that sends to a program not deployed yet is suspended.** `Entities.send` and `Entities.create` die
-  when the receiver's program is not deployed in the process ([`src/runtime.ts`](../src/runtime.ts),
-  `entities`), and the operation's defect suspends the sender. `deploy` starts the interrupted operations at once,
-  so a process that deploys the booking before the inventory suspends every booking whose hold a crash
-  interrupted. What works depends on the order of the deploys, which nothing says. Either `send` waits for the
-  program as it waits for a suspended receiver, or `launch` takes every program and starts the interrupted
-  operations once all of them are deployed.
 - **A receiver that crashes suspends its sender.** An event the runtime cannot finish gives its waiting callers
   the defect, for them to retry ([decision 0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)),
   and so does a row of a version the program does not have
