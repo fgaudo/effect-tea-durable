@@ -3,7 +3,6 @@
  * the warehouse is told and ships. A cancellation after the payment refunds it.
  */
 import * as Context from 'effect/Context'
-import * as Data from 'effect/Data'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -78,11 +77,13 @@ export type Sender =
   | Readonly<{ _tag: 'Customer'; id: string }>
   | Readonly<{ _tag: 'Warehouse' }>
 
-export type Projection = Readonly<{
-  status: State['_tag']
-  canPay: boolean
-  canCancel: boolean
-}>
+// What callers read: it leaves the process, so it has a schema too.
+const Projection = Schema.Struct({
+  status: Schema.Literals(['AwaitingPayment', 'Charging', 'Paid', 'Refunding', 'Shipped', 'Cancelled']),
+  canPay: Schema.Boolean,
+  canCancel: Schema.Boolean,
+})
+export type Projection = typeof Projection.Type
 
 export class Payments extends Context.Service<Payments, {
   readonly charge: (
@@ -106,14 +107,14 @@ const isCustomer = (from: Origin<Sender>, order: Order) =>
 
 const isWarehouse = (from: Origin<Sender>) => from._tag === 'Caller' && from.sender._tag === 'Warehouse'
 
-// The work an order's states hold, as data: a test sees it without running it.
-type Operation = Data.TaggedEnum<{
-  Charge: { readonly payment: string; readonly totalInCents: number }
-  TellWarehouse: { readonly order: Order }
-  EmailShipment: { readonly to: string; readonly tracking: string }
-  Refund: { readonly charge: string }
-}>
-const Operation = Data.taggedEnum<Operation>()
+// The work an order's states hold, as data: a test sees it without running it, and the runtime stores it.
+const Operation = Schema.TaggedUnion({
+  Charge: { payment: Schema.String, totalInCents: Schema.Int },
+  TellWarehouse: { order: Order },
+  EmailShipment: { to: Schema.String, tracking: Schema.String },
+  Refund: { charge: ChargeId },
+})
+type Operation = typeof Operation.Type
 
 const charge = Effect.fn('Charge')(
   function*({ payment, totalInCents }: Extract<Operation, { _tag: 'Charge' }>, idempotencyKey: IdempotencyKey) {
@@ -163,7 +164,15 @@ export const order: Program<{
 }> = {
   name: 'Order',
 
-  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal, rejection: Schema.Never },
+  schemas: {
+    state: State,
+    flags: Flags,
+    inbound: Inbound,
+    internal: Internal,
+    operation: Operation,
+    rejection: Schema.Never,
+    projection: Projection,
+  },
 
   init: ({ order }, at) => ({
     _tag: 'AwaitingPayment',
@@ -240,14 +249,14 @@ export const order: Program<{
         'payment-deadline': timer<Internal>(deadline, { _tag: 'PaymentDeadlinePassed' }),
       }),
       Charging: ({ order, payment }) => ({
-        charge: Operation.Charge({ payment, totalInCents: order.totalInCents }),
+        charge: Operation.cases.Charge.make({ payment, totalInCents: order.totalInCents }),
       }),
       Paid: ({ order, warehouse }) =>
-        warehouse === 'Telling' ? { 'tell-warehouse': Operation.TellWarehouse({ order }) } : noWork,
-      Refunding: ({ charge }) => ({ refund: Operation.Refund({ charge }) }),
+        warehouse === 'Telling' ? { 'tell-warehouse': Operation.cases.TellWarehouse.make({ order }) } : noWork,
+      Refunding: ({ charge }) => ({ refund: Operation.cases.Refund.make({ charge }) }),
       Shipped: ({ order, tracking, email }) =>
         email === 'Sending'
-          ? { 'email-shipment': Operation.EmailShipment({ to: order.customer, tracking }) }
+          ? { 'email-shipment': Operation.cases.EmailShipment.make({ to: order.customer, tracking }) }
           : noWork,
       Cancelled: () => noWork,
     }),

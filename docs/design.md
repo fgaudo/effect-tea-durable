@@ -25,7 +25,7 @@ tested by calling pure functions, crashes included.
 | Piece     | What it does                                                                                 |
 | --------- | -------------------------------------------------------------------------------------------- |
 | `name`    | what the runtime stores the entity under, and what other entities see it as                  |
-| `schemas` | how the state, the flags, the messages and the reasons of rejections are stored              |
+| `schemas` | how the state, flags, messages, operations, reasons and projection leave the process         |
 | `init`    | the first state, from the flags the entity is created with and the time of its creation      |
 | `update`  | `(message, meta) => (state) =>` the next state, a rejection, or a defect                     |
 | `durable`    | the work under way in each state, by key: operations, as data, and timers                    |
@@ -35,7 +35,9 @@ tested by calling pure functions, crashes included.
 There are no commands. Every piece of work that must survive a crash is derived from the state by `durable`
 ([decision 0003](decisions/0003-durable-work-derived-from-state.md)). An operation is data, as effect-tea's
 commands are, and its runner sees it, never the state
-([decision 0018](decisions/0018-operations-are-data.md)).
+([decision 0018](decisions/0018-operations-are-data.md)). Everything that leaves the process has a schema: what
+is stored, and the projection callers read
+([decision 0025](decisions/0025-operations-and-projections-have-schemas.md)).
 
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
 
@@ -83,7 +85,7 @@ that returns it starts new work: that is how a timer repeats
 
 Two kinds of work exist.
 
-- **An operation** is a value of the program's own type, usually a `Data.TaggedEnum`, which says what to do.
+- **An operation** is a value of the program's own type, usually a `Schema.TaggedUnion`, which says what to do.
   The program's `operations` give a runner for each tag, which turns it into an effect that ends with one
   internal message. Expected failures become messages, as in effect-tea's commands. The runner says what a
   crash does to it ([decision 0011](decisions/0011-an-operation-declares-what-a-crash-does.md)): an idempotent

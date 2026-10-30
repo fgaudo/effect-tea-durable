@@ -39,7 +39,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   schema of the version that wrote them. How does a migration of a state's schema look, and when does it run:
   at activation, or all at once? A stored operation is compared with the new program's by value
   ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)): how is one read whose
-  schema changed? And renaming a program moves its entities, and the replies stored for them by others
+  schema changed ([decision 0025](decisions/0025-operations-and-projections-have-schemas.md))? A projection's
+  schema is a contract with callers: how does it change under them? And renaming a program moves its entities,
+  and the replies stored for them by others
   ([decision 0022](decisions/0022-a-new-program-keeps-what-work-started-with.md)).
 
 ## Running

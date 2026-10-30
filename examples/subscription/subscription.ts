@@ -4,7 +4,6 @@
  * times before the subscription is cancelled.
  */
 import * as Context from 'effect/Context'
-import * as Data from 'effect/Data'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -80,17 +79,18 @@ export type Sender =
   | Readonly<{ _tag: 'Customer'; id: string }>
   | Readonly<{ _tag: 'Support' }>
 
-export type Projection = Readonly<{
-  status: State['_tag']
-  plan: Plan
-  nextPlan: Plan | null
-  paidUntil: DateTime.Utc
-  creditInCents: number
-  canChangePlan: boolean
-  canUpdatePayment: boolean
-  canCancel: boolean
-  canResume: boolean
-}>
+const Projection = Schema.Struct({
+  status: Schema.Literals(['Active', 'Charging', 'PastDue', 'Cancelled']),
+  plan: Plan,
+  nextPlan: Schema.NullOr(Plan),
+  paidUntil: Schema.DateTimeUtc,
+  creditInCents: Schema.Int,
+  canChangePlan: Schema.Boolean,
+  canUpdatePayment: Schema.Boolean,
+  canCancel: Schema.Boolean,
+  canResume: Schema.Boolean,
+})
+export type Projection = typeof Projection.Type
 
 export class Payments extends Context.Service<Payments, {
   readonly charge: (
@@ -109,10 +109,10 @@ const isCustomer = (from: Origin<Sender>, account: Account) =>
 
 const isSupport = (from: Origin<Sender>) => from._tag === 'Caller' && from.sender._tag === 'Support'
 
-type Operation = Data.TaggedEnum<{
-  Charge: { readonly payment: string; readonly totalInCents: number }
-}>
-const Operation = Data.taggedEnum<Operation>()
+const Operation = Schema.TaggedUnion({
+  Charge: { payment: Schema.String, totalInCents: Schema.Int },
+})
+type Operation = typeof Operation.Type
 
 // A charge of the account's plan, with its payment method as they are now.
 const charging = (account: Account, attempt: number): State => ({
@@ -161,7 +161,15 @@ export const subscription: Program<{
 }> = {
   name: 'Subscription',
 
-  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal, rejection: Schema.Never },
+  schemas: {
+    state: State,
+    flags: Flags,
+    inbound: Inbound,
+    internal: Internal,
+    operation: Operation,
+    rejection: Schema.Never,
+    projection: Projection,
+  },
 
   // The first period is charged at once.
   init: ({ customer, payment, plan }, at) =>
@@ -250,7 +258,7 @@ export const subscription: Program<{
   durable: (state) =>
     Match.valueTags(state, {
       Active: ({ account }) => ({ renewal: timer<Internal>(paidUntil(account), { _tag: 'RenewalDue' }) }),
-      Charging: ({ charge }) => ({ charge: Operation.Charge(charge) }),
+      Charging: ({ charge }) => ({ charge: Operation.cases.Charge.make(charge) }),
       PastDue: ({ retryAt }) => ({ retry: timer<Internal>(retryAt, { _tag: 'RetryDue' }) }),
       Cancelled: () => noWork,
     }),

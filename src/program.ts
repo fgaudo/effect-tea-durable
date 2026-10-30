@@ -165,7 +165,7 @@ export type Types = Readonly<{
   flags: unknown
   inbound: unknown
   internal: unknown
-  /** The operations a state may hold, as data: usually a `Data.TaggedEnum`. */
+  /** The operations a state may hold, as data: a union tagged by `_tag`, with its schema. */
   operation: Readonly<{ _tag: string }>
   rejection: unknown
   sender: unknown
@@ -185,12 +185,19 @@ export type Runners<T extends Types> = {
 export interface Program<T extends Types> {
   /** What other entities read in `Address.name`, and the runtime stores the entity under. */
   readonly name: string
+  /**
+   * How everything that leaves the process is written: the flags and messages that arrive, the state and the
+   * operations it holds, stored with each step, the reasons of rejections, stored with the replies, and the
+   * projection, which callers read (decision 0025).
+   */
   readonly schemas: Readonly<{
     state: Schema.Codec<T['state'], unknown>
     flags: Schema.Codec<T['flags'], unknown>
     inbound: Schema.Codec<T['inbound'], unknown>
     internal: Schema.Codec<T['internal'], unknown>
+    operation: Schema.Codec<T['operation'], unknown>
     rejection: Schema.Codec<T['rejection'], unknown>
+    projection: Schema.Codec<T['projection'], unknown>
   }>
   readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state']
   readonly update: Update<T['state'], T['inbound'] | T['internal'], T['sender'], T['rejection']>
