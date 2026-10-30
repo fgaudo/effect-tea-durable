@@ -14,16 +14,24 @@ export type Rejected = typeof reject
 /** Thrown by `update` on a message that cannot arrive. It suspends the entity. */
 export declare const defect: (reason: string) => never
 
-/** Who sent a message: a caller, or the entity's own durable work. */
+/** An entity: the name of its program and its id. */
+export type Address = Readonly<{ name: string; id: string }>
+
+/** Who sent a message: a caller, another entity, or the entity's own durable work. */
 export type Origin<Sender> =
   | Readonly<{ _tag: 'Self' }>
   | Readonly<{ _tag: 'Caller'; sender: Sender }>
+  /** An operation of another entity. The runtime says which: an entity cannot pass for another. */
+  | Readonly<{ _tag: 'Entity'; entity: Address }>
 
 export type Meta<Sender> = Readonly<{
   /** When the runtime handles the message, read once before `update`. */
   at: DateTime.Utc
   from: Origin<Sender>
 }>
+
+/** What an inbound message is answered. */
+export type Reply = 'Accepted' | 'Rejected'
 
 export type Update<State, Message, Sender> = (
   message: Message,
@@ -54,6 +62,22 @@ export declare const timer: <Message>(at: DateTime.Utc, message: Message) => Tim
 
 export declare const noWork: Readonly<Record<string, never>>
 
+/** The service through which an operation sends messages to other entities, as its own entity. */
+export interface Entities {
+  readonly _tag: 'Entities'
+}
+
+/**
+ * Sends an inbound message to another entity from an operation, and waits for the reply. The request id is the
+ * operation's idempotency key: a restarted operation sends the same request, and gets the stored reply.
+ */
+export declare const send: <T extends Types>(
+  program: Program<T>,
+  id: string,
+  message: T['inbound'],
+  requestId: IdempotencyKey,
+) => Effect.Effect<Reply, never, Entities>
+
 export type Types = Readonly<{
   state: unknown
   flags: unknown
@@ -65,6 +89,8 @@ export type Types = Readonly<{
 }>
 
 export interface Program<T extends Types> {
+  /** What other entities read in `Address.name`, and the runtime stores the entity under. */
+  readonly name: string
   readonly schemas: Readonly<{
     state: Schema.Codec<T['state'], unknown>
     flags: Schema.Codec<T['flags'], unknown>
@@ -79,8 +105,6 @@ export interface Program<T extends Types> {
 
 // Testing
 
-export type Reply = 'Accepted' | 'Rejected'
-
 /** Work under way under a key, in one incarnation. */
 export interface Pending {
   readonly key: string
@@ -92,6 +116,8 @@ export interface Rehearsal<T extends Types> {
   readonly projection: Effect.Effect<T['projection']>
   /** Delivers an inbound message, with a new request id. */
   readonly send: (message: T['inbound'], sender: T['sender']) => Effect.Effect<Reply>
+  /** Delivers an inbound message from another entity's operation, with a new request id. */
+  readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Reply>
   /** The work under way under `key`. Fails the test when there is none. */
   readonly pending: (key: string) => Effect.Effect<Pending>
   /** Completes an operation with `message`. It is dropped when the operation's incarnation has moved on. */

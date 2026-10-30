@@ -24,6 +24,7 @@ tested by calling pure functions, crashes included.
 
 | Piece     | What it does                                                                                 |
 | --------- | -------------------------------------------------------------------------------------------- |
+| `name`    | what the runtime stores the entity under, and what other entities see it as                  |
 | `schemas` | how the state, the flags and the messages are stored                                         |
 | `init`    | the first state, from the flags the entity is created with and the time of its creation      |
 | `update`  | `(message, meta) => (state) =>` the next state, `reject`, or a defect                        |
@@ -44,6 +45,8 @@ A message is one of two kinds, and the rule for a message that does not apply fo
   applied once. `meta.from` says who sent it, so that `update` decides who may do what. An inbound message may
   arrive in any state: a slow client, a retry, a second device, a malicious caller. One that does not apply is
   rejected.
+  A caller may be another entity's operation: `meta.from` is then `Entity`, with the sender's name and id,
+  filled in by the runtime (see [entities that talk](#entities-that-talk)).
 - **Internal** messages come from the entity's own durable work: an operation's completion, a timer's firing.
   The runtime delivers one only while its key is in `durable(state)`, in the same incarnation that sent it
   ([decision 0004](decisions/0004-incarnations-guard-internal-messages.md)). So an internal message in a state
@@ -89,6 +92,16 @@ the key's incarnation has moved on.
 Without it, the second attempt of a payment could receive the late answer of the first. The runtime makes this
 impossible, so that no program has to remember attempt numbers.
 
+### Entities that talk
+
+An entity sends a message to another from an operation, with `send`, and the operation's idempotency key as
+the request id. A restarted operation sends the same request, and gets the receiver's stored reply. `update`
+never sends: a step never waits on another entity
+([decision 0009](decisions/0009-entities-talk-through-operations.md)).
+
+[`examples/booking`](../examples/booking) holds seats in an event's inventory this way, and releases them when
+the booking is cancelled or expires.
+
 ## Persistence
 
 After each message the runtime stores, in one transaction:
@@ -123,8 +136,9 @@ kept as an audit, but nothing replays them.
 
 The fourth line is the one the library cannot close. An effect on the world is at least once. A service with
 idempotency keys, such as a payment provider, makes it exactly once. One without them, such as an email, may
-act twice. The open question of how an operation says which one it is is in
-[open questions](open-questions.md).
+act twice. Another entity makes it exactly once, with its stored replies
+([decision 0009](decisions/0009-entities-talk-through-operations.md)). The open question of how an operation
+says which one it is is in [open questions](open-questions.md).
 
 ## Defects
 
@@ -155,7 +169,7 @@ Most of a program is pure, so most tests need no runtime:
 `rehearse` runs a scenario on the program without storage, cluster or clock. The test decides when each
 operation answers, when each timer fires, and when the process dies:
 
-- `send` delivers an inbound message, and returns the reply;
+- `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity;
 - `pending(key)` finds the work under way under a key, with its idempotency key;
 - `answer(pending, message)` completes an operation, and says whether the message was delivered or dropped;
 - `fire(pending)` fires a timer;

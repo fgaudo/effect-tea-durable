@@ -6,7 +6,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 - **Replies with data.** A reply says only `Accepted` or `Rejected`, and the caller reads the projection.
   Should a rejection carry a reason the caller can show ("already shipped")? Should an acceptance ever carry
-  data, or is everything a caller needs in the projection?
+  data, or is everything a caller needs in the projection? The booking shows the cost of the second answer:
+  an inventory that rejects a hold cannot say whether the event is sold out or its sales are closed, so the
+  booking tells its customer only `Unavailable`. An entity reads another's projection through no API.
 - **At-least-once operations.** An operation restarted after a crash acts on the world again. How does an
   operation declare whether it is idempotent (with the key it passes on) or accepts acting twice, so that the
   difference shows in its type?
@@ -23,10 +25,12 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   Are they allowed, keeping the entity loaded while their key is present, or left out?
 - **Children inside an entity.** effect-tea composes programs into a tree. Does an entity's program compose
   children the same way, stored as one state?
-- **Entities that talk to each other.** An operation may send a message to another entity, using its
-  idempotency key as the request id, so that a restart sends the same request. Is that enough, or does it need
-  a kind of work of its own?
-- **Creation.** Who creates an entity, with which flags? What does creating one that exists answer?
+- **Rehearsing entities together.** `rehearse` runs one entity, and the test answers for the others. A booking
+  that sends a confirmation the inventory would reject passes both rehearsals
+  ([decision 0009](decisions/0009-entities-talk-through-operations.md)). Is a rehearsal of several entities
+  needed, where `send` reaches the other program, or a check that two programs agree on their messages?
+- **Creation.** Who creates an entity, with which flags? What does creating one that exists answer? And what
+  does `send` answer for an entity that does not exist: a booking for an event that has no inventory?
 - **Who may send what.** `update` reads `meta.from` and rejects what a sender may not do. Should authorization
   that is not domain (a valid token) happen before the mailbox, and what does the caller get then?
 
@@ -51,8 +55,10 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 - **Two versions at once.** During a rolling deploy, a state written by the new version may be read by the
   old one. Is forward compatibility for one version required, or do deploys avoid it?
-- **Suspended entities.** What does a caller of a suspended entity get? How does an operator see, resume and
-  discard?
+- **Suspended entities.** What does a caller of a suspended entity get? An operation that sends to one waits,
+  and keeps its own entity waiting with it. How does an operator see, resume and discard?
+- **Stored replies.** A reply is stored so that a retry gets it. A restarted operation of another entity may
+  retry long after, so a receiver cannot tell when a reply is no longer needed. How long are they kept?
 - **Failing operations.** A transient failure (a timeout) is retried inside the operation, or becomes a
   message. After how many retries does it become a defect, if ever? And
   should the runtime notice work that comes back at once, turn after turn: a timer kept at a time already past,

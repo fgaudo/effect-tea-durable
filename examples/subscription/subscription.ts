@@ -142,6 +142,8 @@ export const subscription: Program<{
   projection: Projection
   services: Payments
 }> = {
+  name: 'Subscription',
+
   schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal },
 
   // The first period is charged at once.

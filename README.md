@@ -15,7 +15,9 @@ cluster or a clock.
 - [`examples/order`](examples/order): an order's lifecycle written against the imagined API
   ([`examples/api.ts`](examples/api.ts), declarations only). The typecheck tells whether the design can be
   expressed; if the example reads badly, the API is wrong;
-- [`examples/subscription`](examples/subscription): a subscription billed every month, which never ends.
+- [`examples/subscription`](examples/subscription): a subscription billed every month, which never ends;
+- [`examples/booking`](examples/booking): a booking that holds seats in an event's inventory, two entities
+  that talk.
 
 ```sh
 bun install

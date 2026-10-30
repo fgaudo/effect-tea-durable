@@ -1,0 +1,193 @@
+/**
+ * A booking of seats for an event. It holds them in the event's inventory at once, then waits for the customer
+ * to confirm before a deadline. A booking cancelled or expired once its seats are held releases them.
+ */
+import * as DateTime from 'effect/DateTime'
+import * as Effect from 'effect/Effect'
+import * as Match from 'effect/Match'
+import * as Schema from 'effect/Schema'
+import {
+  defect,
+  type Entities,
+  type IdempotencyKey,
+  noWork,
+  type Origin,
+  operation,
+  type Program,
+  reject,
+  type Rejected,
+  send,
+  timer,
+} from '../api.ts'
+import { inventory } from './inventory.ts'
+
+const Booking = Schema.Struct({
+  customer: Schema.String,
+  // The inventory's id.
+  event: Schema.String,
+  seats: Schema.Int,
+  deadline: Schema.DateTimeUtc,
+})
+type Booking = typeof Booking.Type
+
+const State = Schema.Union([
+  // Only the inventory's reply leaves it: a cancellation meanwhile is remembered.
+  Schema.TaggedStruct('Holding', { booking: Booking, cancelled: Schema.Boolean }),
+  Schema.TaggedStruct('Held', { booking: Booking }),
+  Schema.TaggedStruct('Confirming', { booking: Booking }),
+  Schema.TaggedStruct('Releasing', { booking: Booking, reason: Schema.Literals(['ByCustomer', 'Expired']) }),
+  Schema.TaggedStruct('Confirmed', { booking: Booking }),
+  Schema.TaggedStruct('Cancelled', {
+    booking: Booking,
+    // The inventory's rejection says nothing more: sold out and sales closed are both `Unavailable`.
+    reason: Schema.Literals(['ByCustomer', 'Expired', 'Unavailable']),
+  }),
+])
+type State = typeof State.Type
+
+const Flags = Schema.Struct({ customer: Schema.String, event: Schema.String, seats: Schema.Int })
+type Flags = typeof Flags.Type
+
+const Inbound = Schema.Union([
+  Schema.TaggedStruct('ConfirmRequested', {}),
+  Schema.TaggedStruct('CancelRequested', {}),
+])
+type Inbound = typeof Inbound.Type
+
+const Internal = Schema.Union([
+  Schema.TaggedStruct('SeatsHeld', {}),
+  Schema.TaggedStruct('SeatsUnavailable', {}),
+  Schema.TaggedStruct('SeatsConfirmed', {}),
+  Schema.TaggedStruct('SeatsReleased', {}),
+  Schema.TaggedStruct('DeadlinePassed', {}),
+])
+type Internal = typeof Internal.Type
+
+export type Sender = Readonly<{ _tag: 'Customer'; id: string }>
+
+export type Projection = Readonly<{
+  status: State['_tag']
+  seats: number
+  deadline: DateTime.Utc
+  canConfirm: boolean
+  canCancel: boolean
+}>
+
+const holdWindow = { minutes: 15 }
+
+const isCustomer = (from: Origin<Sender>, booking: Booking) =>
+  from._tag === 'Caller' && from.sender.id === booking.customer
+
+// The idempotency key is the request id: a hold restarted after a crash is answered from the stored reply, and
+// holds nothing twice.
+const hold = (booking: Booking) =>
+  operation(Effect.fn('Hold')(function*(idempotencyKey: IdempotencyKey) {
+    const request = { _tag: 'HoldRequested', seats: booking.seats } as const
+    const reply = yield* send(inventory, booking.event, request, idempotencyKey)
+    return { _tag: reply === 'Accepted' ? 'SeatsHeld' : 'SeatsUnavailable' } satisfies Internal
+  }))
+
+// The inventory confirms and releases any hold it made. A rejection means the two entities disagree, which no
+// message of this program can repair: it is a defect, and suspends the booking.
+const confirm = (booking: Booking) =>
+  operation(Effect.fn('Confirm')(function*(idempotencyKey: IdempotencyKey) {
+    const reply = yield* send(inventory, booking.event, { _tag: 'ConfirmRequested' }, idempotencyKey)
+    return reply === 'Accepted'
+      ? { _tag: 'SeatsConfirmed' } satisfies Internal
+      : yield* Effect.die('the inventory rejected the confirmation of its own hold')
+  }))
+
+const release = (booking: Booking) =>
+  operation(Effect.fn('Release')(function*(idempotencyKey: IdempotencyKey) {
+    const reply = yield* send(inventory, booking.event, { _tag: 'ReleaseRequested' }, idempotencyKey)
+    return reply === 'Accepted'
+      ? { _tag: 'SeatsReleased' } satisfies Internal
+      : yield* Effect.die('the inventory rejected the release of its own hold')
+  }))
+
+export const booking: Program<{
+  state: State
+  flags: Flags
+  inbound: Inbound
+  internal: Internal
+  sender: Sender
+  projection: Projection
+  services: Entities
+}> = {
+  name: 'Booking',
+
+  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal },
+
+  // The deadline counts from the booking, not from the hold: a slow inventory shortens the customer's wait.
+  init: ({ customer, event, seats }, at) => ({
+    _tag: 'Holding',
+    booking: { customer, event, seats, deadline: DateTime.add(at, holdWindow) },
+    cancelled: false,
+  }),
+
+  update: (message, { from }) => (state) =>
+    Match.value(message).pipe(
+      Match.withReturnType<State | Rejected>(),
+      Match.tagsExhaustive({
+        ConfirmRequested: () =>
+          state._tag === 'Held' && isCustomer(from, state.booking)
+            ? { _tag: 'Confirming', booking: state.booking }
+            : reject,
+
+        CancelRequested: () =>
+          !isCustomer(from, state.booking)
+            ? reject
+            : state._tag === 'Holding' && !state.cancelled
+            ? { ...state, cancelled: true }
+            : state._tag === 'Held'
+            ? { _tag: 'Releasing', booking: state.booking, reason: 'ByCustomer' }
+            : reject,
+
+        // The deadline may have passed meanwhile: its timer comes with `Held`, and fires at once.
+        SeatsHeld: () =>
+          state._tag !== 'Holding'
+            ? defect('seats were held while nothing was holding them')
+            : state.cancelled
+            ? { _tag: 'Releasing', booking: state.booking, reason: 'ByCustomer' }
+            : { _tag: 'Held', booking: state.booking },
+
+        SeatsUnavailable: () =>
+          state._tag === 'Holding'
+            ? { _tag: 'Cancelled', booking: state.booking, reason: state.cancelled ? 'ByCustomer' : 'Unavailable' }
+            : defect('seats were unavailable while nothing was holding them'),
+
+        SeatsConfirmed: () =>
+          state._tag === 'Confirming'
+            ? { _tag: 'Confirmed', booking: state.booking }
+            : defect('seats were confirmed while nothing was confirming them'),
+
+        SeatsReleased: () =>
+          state._tag === 'Releasing'
+            ? { _tag: 'Cancelled', booking: state.booking, reason: state.reason }
+            : defect('seats were released while nothing was releasing them'),
+
+        DeadlinePassed: () =>
+          state._tag === 'Held'
+            ? { _tag: 'Releasing', booking: state.booking, reason: 'Expired' }
+            : defect('the deadline passed while no seats were held'),
+      }),
+    ),
+
+  durable: (state) =>
+    Match.valueTags(state, {
+      Holding: ({ booking }) => ({ hold: hold(booking) }),
+      Held: ({ booking }) => ({ deadline: timer<Internal>(booking.deadline, { _tag: 'DeadlinePassed' }) }),
+      Confirming: ({ booking }) => ({ confirm: confirm(booking) }),
+      Releasing: ({ booking }) => ({ release: release(booking) }),
+      Confirmed: () => noWork,
+      Cancelled: () => noWork,
+    }),
+
+  project: (state) => ({
+    status: state._tag,
+    seats: state.booking.seats,
+    deadline: state.booking.deadline,
+    canConfirm: state._tag === 'Held',
+    canCancel: (state._tag === 'Holding' && !state.cancelled) || state._tag === 'Held',
+  }),
+}

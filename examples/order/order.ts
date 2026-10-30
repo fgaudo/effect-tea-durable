@@ -128,6 +128,8 @@ export const order: Program<{
   projection: Projection
   services: Payments | Warehouse
 }> = {
+  name: 'Order',
+
   schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal },
 
   init: ({ order }, at) => ({
