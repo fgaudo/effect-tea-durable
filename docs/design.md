@@ -25,7 +25,7 @@ tested by calling pure functions, crashes included.
 | Piece     | What it does                                                                                 |
 | --------- | -------------------------------------------------------------------------------------------- |
 | `name`    | what the runtime stores the entity under, and what other entities see it as                  |
-| `schemas` | how the state, the flags, the messages and the reasons of rejections are stored              |
+| `schemas` | how the state, flags, messages, operations, reasons and projection leave the process         |
 | `init`    | the first state, from the flags the entity is created with and the time of its creation      |
 | `update`  | `(message, meta) => (state) =>` the next state, a rejection, or a defect                     |
 | `durable`    | the work under way in each state, by key: operations, as data, and timers                    |
@@ -35,7 +35,9 @@ tested by calling pure functions, crashes included.
 There are no commands. Every piece of work that must survive a crash is derived from the state by `durable`
 ([decision 0003](decisions/0003-durable-work-derived-from-state.md)). An operation is data, as effect-tea's
 commands are, and its runner sees it, never the state
-([decision 0018](decisions/0018-operations-are-data.md)).
+([decision 0018](decisions/0018-operations-are-data.md)). Everything that leaves the process has a schema: what
+is stored, and the projection callers read
+([decision 0025](decisions/0025-operations-and-projections-have-schemas.md)).
 
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
 
@@ -83,7 +85,7 @@ that returns it starts new work: that is how a timer repeats
 
 Two kinds of work exist.
 
-- **An operation** is a value of the program's own type, usually a `Data.TaggedEnum`, which says what to do.
+- **An operation** is a value of the program's own type, usually a `Schema.TaggedUnion`, which says what to do.
   The program's `operations` give a runner for each tag, which turns it into an effect that ends with one
   internal message. Expected failures become messages, as in effect-tea's commands. The runner says what a
   crash does to it ([decision 0011](decisions/0011-an-operation-declares-what-a-crash-does.md)): an idempotent
@@ -217,7 +219,10 @@ Most of a program is pure, so most tests need no runtime:
 
 - **`update`'s rules**, one test per message, for generated states;
 - **the projection agrees with `update`**: every action it shows is accepted, and every accepted action is
-  shown;
+  shown. `projectionViolations` checks it, as effect-tea's `dispatchViolations` checks a view, for a state and
+  the messages its reader could send, once the test says which field of the projection stands for which message
+  ([decision 0026](decisions/0026-the-test-maps-a-projection-to-its-messages.md)).
+  [`examples/order/order.test.ts`](../examples/order/order.test.ts) checks it for generated states;
 - **the defects**: an internal message in a state without its key.
 
 `rehearse` runs a scenario on the program without storage, cluster or clock. It is the runtime's machine, which
@@ -250,6 +255,7 @@ every point of the table above.
 | commands, started by a step                      | none: operations are derived from the state                          | a command started before a crash would be lost                           |
 | subscriptions, by key                            | operations and timers, by key, with incarnations                     | work outlives the process, and its answers are delivered at least once   |
 | a subscription whose value changes starts anew   | an operation whose value changes while it runs is a defect           | an operation cannot be interrupted, and a crash would restart it changed |
+| an ended subscription waits for its key to leave | a key kept after its work delivered is new work                      | kept, it would not run again until a crash, which starts it anew         |
 | a model, with the messages the view sends        | a projection, with the actions it allows                             | a caller is remote: it receives data, never functions                    |
 | a defect ends the run                            | a defect suspends the entity                                         | one entity's bug must not stop the others                                |
 | one program, a tree of children                  | many entities, by id; children inside an entity are an open question | an entity is the unit of storage and of concurrency                      |

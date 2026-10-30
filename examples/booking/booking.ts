@@ -2,7 +2,6 @@
  * A booking of seats for an event. It holds them in the event's inventory at once, then waits for the customer
  * to confirm before a deadline. A booking cancelled or expired once its seats are held releases them.
  */
-import * as Data from 'effect/Data'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -46,7 +45,7 @@ const State = Schema.Union([
     reason: Schema.Literals(['ByCustomer', 'Expired', 'SoldOut', 'SalesClosed', 'NoSuchEvent']),
   }),
 ])
-type State = typeof State.Type
+export type State = typeof State.Type
 
 const Flags = Schema.Struct({ customer: Schema.String, event: Schema.String, seats: Seats })
 type Flags = typeof Flags.Type
@@ -68,13 +67,15 @@ type Internal = typeof Internal.Type
 
 export type Sender = Readonly<{ _tag: 'Customer'; id: string }>
 
-export type Projection = Readonly<{
-  status: State['_tag']
-  seats: number
-  deadline: DateTime.Utc
-  canConfirm: boolean
-  canCancel: boolean
-}>
+// What callers read: it leaves the process, with the deadline in it, so it has a schema too.
+const Projection = Schema.Struct({
+  status: Schema.Literals(['Holding', 'Held', 'Confirming', 'Releasing', 'Confirmed', 'Cancelled']),
+  seats: Schema.Int,
+  deadline: Schema.DateTimeUtc,
+  canConfirm: Schema.Boolean,
+  canCancel: Schema.Boolean,
+})
+export type Projection = typeof Projection.Type
 
 const holdWindow = { minutes: 15 }
 
@@ -82,12 +83,12 @@ const isCustomer = (from: Origin<Sender>, booking: Booking) =>
   from._tag === 'Caller' && from.sender.id === booking.customer
 
 // What the booking asks of the event's inventory, as data: a test sees it without running it.
-type Operation = Data.TaggedEnum<{
-  Hold: { readonly event: string; readonly seats: number }
-  Confirm: { readonly event: string }
-  Release: { readonly event: string }
-}>
-const Operation = Data.taggedEnum<Operation>()
+const Operation = Schema.TaggedUnion({
+  Hold: { event: Schema.String, seats: Seats },
+  Confirm: { event: Schema.String },
+  Release: { event: Schema.String },
+})
+type Operation = typeof Operation.Type
 
 // The idempotency key is the request id: a hold restarted after a crash is answered from the stored reply, and
 // holds nothing twice.
@@ -138,7 +139,15 @@ export const booking: Program<{
 }> = {
   name: 'Booking',
 
-  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal, rejection: Schema.Never },
+  schemas: {
+    state: State,
+    flags: Flags,
+    inbound: Inbound,
+    internal: Internal,
+    operation: Operation,
+    rejection: Schema.Never,
+    projection: Projection,
+  },
 
   // The deadline counts from the booking, not from the hold: a slow inventory shortens the customer's wait.
   init: ({ customer, event, seats }, at) => ({
@@ -197,10 +206,10 @@ export const booking: Program<{
 
   durable: (state) =>
     Match.valueTags(state, {
-      Holding: ({ booking }) => ({ hold: Operation.Hold({ event: booking.event, seats: booking.seats }) }),
+      Holding: ({ booking }) => ({ hold: Operation.cases.Hold.make({ event: booking.event, seats: booking.seats }) }),
       Held: ({ booking }) => ({ deadline: timer<Internal>(booking.deadline, { _tag: 'DeadlinePassed' }) }),
-      Confirming: ({ booking }) => ({ confirm: Operation.Confirm({ event: booking.event }) }),
-      Releasing: ({ booking }) => ({ release: Operation.Release({ event: booking.event }) }),
+      Confirming: ({ booking }) => ({ confirm: Operation.cases.Confirm.make({ event: booking.event }) }),
+      Releasing: ({ booking }) => ({ release: Operation.cases.Release.make({ event: booking.event }) }),
       Confirmed: () => noWork,
       Cancelled: () => noWork,
     }),

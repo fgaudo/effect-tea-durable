@@ -38,11 +38,8 @@ type Internal = typeof Internal.Type
 /** Bookings are not senders: they arrive as entities, from their operations. */
 export type Sender = Readonly<{ _tag: 'Organizer' }>
 
-export type Projection = Readonly<{
-  open: boolean
-  available: number
-  canClose: boolean
-}>
+const Projection = Schema.Struct({ open: Schema.Boolean, available: Schema.Int, canClose: Schema.Boolean })
+export type Projection = typeof Projection.Type
 
 const total = (seats: Readonly<Record<string, number>>) => Object.values(seats).reduce((a, b) => a + b, 0)
 
@@ -67,7 +64,15 @@ export const inventory: Program<{
 }> = {
   name: 'Inventory',
 
-  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal, rejection: Rejection },
+  schemas: {
+    state: State,
+    flags: Flags,
+    inbound: Inbound,
+    internal: Internal,
+    operation: Schema.Never,
+    rejection: Rejection,
+    projection: Projection,
+  },
 
   init: ({ capacity }) => ({ open: true, capacity, held: {}, sold: {} }),
 

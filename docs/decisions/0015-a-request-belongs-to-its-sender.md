@@ -1,6 +1,7 @@
 # 0015. A request belongs to its sender, and work to its entity
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its consequence on renaming a program is replaced by
+[decision 0022](0022-a-new-program-keeps-what-work-started-with.md).
 
 ## Context
 

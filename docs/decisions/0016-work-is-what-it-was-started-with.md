@@ -1,6 +1,6 @@
 # 0016. Work under a kept key is the work that started
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Superseded by [decision 0018](0018-operations-are-data.md).
 
 ## Context
 

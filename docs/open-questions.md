@@ -39,7 +39,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   schema of the version that wrote them. How does a migration of a state's schema look, and when does it run:
   at activation, or all at once? A stored operation is compared with the new program's by value
   ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)): how is one read whose
-  schema changed? And renaming a program moves its entities, and the replies stored for them by others
+  schema changed ([decision 0025](decisions/0025-operations-and-projections-have-schemas.md))? A projection's
+  schema is a contract with callers: how does it change under them? And renaming a program moves its entities,
+  and the replies stored for them by others
   ([decision 0022](decisions/0022-a-new-program-keeps-what-work-started-with.md)).
 
 ## Running
@@ -59,6 +61,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   after which a retry is applied again would depend on the protocol, and on who callers are
   ([who may send what](#programs)). Replies to entities are kept while the work that asked is stored
   ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
+- **Idempotency keys that services cap.** An idempotency key is readable JSON, the entity's program name and id,
+  the key and the incarnation ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)), and an id
+  may be long. Payment providers cap the length of a key (Stripe at 255 characters). The machine keeps the key
+  readable; should the runtime, or the runner, hash it for such services, and with what, so that it stays the
+  same across versions?
 - **Failing operations.** A transient failure (a timeout) is retried inside the operation, or becomes a
   message. After how many retries does it become a defect, if ever? And
   should the runtime notice work that comes back at once, turn after turn: a timer kept at a time already past,
