@@ -5,7 +5,9 @@
  * event, and one after it is an activation away from the work the state holds.
  *
  * What is stored lives in the database ([`storage.ts`](storage.ts)); what is running — the operations' fibers, the
- * timers' sleeps, the entities loaded — lives in this process's scope, and a crash is that scope closing.
+ * timers' sleeps, the entities loaded — lives in this process's scope, and a crash is that scope closing. An
+ * entity with nothing to do is unloaded, a crash this process chooses, and the stored time of its earliest timer
+ * is what wakes it (decision 0029).
  */
 import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
@@ -56,8 +58,15 @@ export interface Options {
   readonly at?: (point: Point, entity: Address, event: Machine.Event<never>) => Effect.Effect<void>
   /** Called with every event applied, in the order they were applied: a test replays them in the machine. */
   readonly observe?: (entity: Address, event: Machine.Event<never>) => Effect.Effect<void>
+  /** Called with every entity unloaded, once its timers have stopped: a test counts passivations. */
+  readonly unloaded?: (entity: Address) => Effect.Effect<void>
   /** How long a `send` from another entity waits before retrying a suspended one (decision 0010). */
   readonly retry?: Readonly<{ millis: number }>
+  /**
+   * How long an entity with nothing to do stays loaded. Its own clock starts again at every event, and the
+   * entity is unloaded at the first tick that finds it with nothing to do (decision 0029).
+   */
+  readonly passivate?: Readonly<{ millis: number }>
 }
 
 /** What a caller does with one program's entities. */
@@ -105,10 +114,26 @@ interface Loaded<T extends Types> {
   readonly timers: Map<string, Fiber.Fiber<void>>
 }
 
+/**
+ * What wakes the entities this process does not hold: a fiber reads the earliest time a stored timer is due,
+ * sleeps until then, and activates what the time has come for (decision 0029).
+ */
+interface Waker {
+  /** The set of unloaded entities changed, and the earliest due has to be read again. */
+  dirty: boolean
+  /** The entities a timer is due for are being activated. */
+  waking: boolean
+  /** The earliest time a stored timer of an unloaded entity is due, as it was last read. */
+  next: number | null
+  /** An entity was unloaded, and its timers may be due before the one the fiber sleeps for. */
+  readonly poke: Queue.Queue<void>
+}
+
 interface Deployment<T extends Types> {
   readonly program: Program<T>
   readonly storage: Storage<T>
   readonly loaded: Map<string, Loaded<T>>
+  readonly waker: Waker
   /** The services the program was deployed with, which its operations run in. */
   readonly run: (operation: Effect.Effect<void, never, T['services'] | Entities>) => Effect.Effect<void>
 }
@@ -126,7 +151,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const waiting = new Map<string, Set<Deferred.Deferred<Given>>>()
     const at = options.at ?? (() => Effect.void)
     const observe = options.observe ?? (() => Effect.void)
+    const unloaded = options.unloaded ?? (() => Effect.void)
     const retry = options.retry?.millis ?? 10
+    const passivate = options.passivate?.millis ?? 30_000
 
     const deployment = <T extends Types>(name: string): Deployment<T> | undefined =>
       deployments.get(name) as Deployment<T> | undefined
@@ -140,13 +167,22 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         return Effect.forEach(callers, (caller) => Deferred.succeed(caller, reply), { discard: true })
       })
 
-    /** Registers a caller, offers its event, and waits for the reply the entity stores or gives. */
+    /** A caller registered and waiting: its event is offered, and the reply comes to `caller`. */
+    interface Asked {
+      readonly caller: Deferred.Deferred<Given>
+      readonly forget: Effect.Effect<void>
+    }
+
+    /**
+     * Registers a caller and offers its event. It is done while the entity is held — the registry's permit — so
+     * that an entity is never unloaded between a caller finding it and its event being offered (decision 0029).
+     */
     const ask = <T extends Types>(
       loaded: Loaded<T>,
       entity: Address,
       request: string,
       event: Machine.Event<T>,
-    ) =>
+    ): Effect.Effect<Asked> =>
       Effect.gen(function*() {
         const key = `${entity.name}/${entity.id}/${request}`
         const caller = yield* Deferred.make<Given>()
@@ -161,8 +197,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           if (held.size === 0) waiting.delete(key)
         })
         yield* Queue.offer(loaded.events, event)
-        return yield* Effect.onExit(Deferred.await(caller), () => forget)
+        return { caller, forget }
       })
+
+    /** Waits for the reply the entity stores or gives, and leaves nothing registered. */
+    const answered = ({ caller, forget }: Asked) => Effect.onExit(Deferred.await(caller), () => forget)
 
     /** The work under a key stops: its fiber is interrupted, and nothing it would deliver is recorded. */
     const stop = (held: Map<string, Fiber.Fiber<void>>, id: string) =>
@@ -299,19 +338,58 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })))
 
     /**
-     * The entity's loop: while its mailbox holds a message, it is handled, one transaction each; otherwise the
-     * loop waits for an event. A suspended entity only waits (decision 0006).
+     * Whether the entity has nothing to do: no event waiting, no message to handle, and only timers under way.
+     * A suspended entity holds the message it died on and runs nothing, and is unloaded with it (decision 0029).
      */
-    const loop = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) =>
-      Effect.forever(
-        Effect.suspend(() => {
-          const { stored } = loaded.machine
-          if (stored.suspension === null && stored.mailbox.length > 0) {
-            return Effect.flatMap(DateTime.now, (now) => apply(deployed, loaded, { _tag: 'Handle', at: now }))
-          }
-          return Effect.flatMap(Queue.take(loaded.events), (event) => apply(deployed, loaded, event))
-        }),
-      )
+    const nothingToDo = <T extends Types>(loaded: Loaded<T>) => {
+      const { stored, running } = loaded.machine
+      if (loaded.applying || Queue.sizeUnsafe(loaded.events) > 0 || loaded.operations.size > 0) return false
+      if (Object.values(running).some((work) => work.kind !== 'Timer')) return false
+      return stored.suspension !== null || stored.mailbox.length === 0
+    }
+
+    /**
+     * Unloads the entity: its timers stop, and what the state holds is what wakes it again — to the machine a
+     * `Restart`, a crash this process chose (decision 0029). Under the registry's permit, so that no caller is
+     * between finding the entity and offering its event; it gives whether the entity is gone.
+     */
+    const unload = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) =>
+      registry.withPermits(1)(Effect.gen(function*() {
+        const { id } = loaded.machine.stored
+        if (!nothingToDo(loaded) || deployed.loaded.get(id) !== loaded) return false
+        deployed.loaded.delete(id)
+        yield* stopAll(loaded)
+        // Its timers are the process's no longer: the earliest due has to be read again.
+        deployed.waker.dirty = true
+        yield* Queue.offer(deployed.waker.poke, undefined)
+        yield* unloaded({ name: deployed.program.name, id })
+        return true
+      }))
+
+    /**
+     * The entity's loop: while its mailbox holds a message, it is handled, one transaction each; otherwise the
+     * loop waits for an event, and the entity is unloaded if none comes for long enough. A suspended entity only
+     * waits (decision 0006). The wait times out, never the take: an event taken is always applied.
+     */
+    const loop = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>): Effect.Effect<void> => {
+      const next: Effect.Effect<void> = Effect.suspend(() => {
+        const { stored } = loaded.machine
+        if (stored.suspension === null && stored.mailbox.length > 0) {
+          return DateTime.now.pipe(
+            Effect.flatMap((now) => apply(deployed, loaded, { _tag: 'Handle', at: now })),
+            Effect.flatMap(() => next),
+          )
+        }
+        return Effect.timeoutOption(Queue.take(loaded.events), `${passivate} millis`).pipe(
+          Effect.flatMap((taken) =>
+            taken._tag === 'Some'
+              ? Effect.flatMap(apply(deployed, loaded, taken.value), () => next)
+              : Effect.flatMap(unload(deployed, loaded), (gone) => (gone ? Effect.void : next))
+          ),
+        )
+      })
+      return next
+    }
 
     /** Registers an entity in this process, and activates what was stored, as after a crash. */
     const activate = <T extends Types>(deployed: Deployment<T>, stored: Machine.Stored<T>) =>
@@ -330,21 +408,24 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         return loaded
       })
 
-    /** The entity `id` of `deployed`, loaded from storage when this process does not hold it. */
-    const ensure = <T extends Types>(deployed: Deployment<T>, id: string) =>
+    /**
+     * Runs `held` on the entity `id` of `deployed`, loaded from storage when this process does not hold it, while
+     * the entity is held: the registry's permit is what keeps it from being unloaded meanwhile (decision 0029).
+     */
+    const withEntity = <T extends Types, A>(
+      deployed: Deployment<T>,
+      id: string,
+      held: (loaded: Loaded<T> | null) => Effect.Effect<A>,
+    ) =>
       registry.withPermits(1)(Effect.gen(function*() {
-        const held = deployed.loaded.get(id)
-        if (held !== undefined) return held
+        const loaded = deployed.loaded.get(id)
+        if (loaded !== undefined) return yield* held(loaded)
         const stored = yield* deployed.storage.load(id)
-        return stored === null ? null : yield* activate(deployed, stored)
+        return yield* held(stored === null ? null : yield* activate(deployed, stored))
       }))
 
     const operate = <T extends Types>(deployed: Deployment<T>, id: string, event: Machine.Event<T>) =>
-      Effect.gen(function*() {
-        const loaded = yield* ensure(deployed, id)
-        if (loaded === null) return
-        yield* Queue.offer(loaded.events, event)
-      })
+      withEntity(deployed, id, (loaded) => loaded === null ? Effect.void : Queue.offer(loaded.events, event))
 
     const create = <T extends Types>(
       deployed: Deployment<T>,
@@ -355,11 +436,15 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       Effect.gen(function*() {
         const entity: Address = { name: deployed.program.name, id }
         const requested = Machine.requestKey(request.from, request.requestId)
-        const made = yield* registry.withPermits(1)(Effect.gen(function*() {
+        const asked = yield* registry.withPermits(1)(Effect.gen(function*() {
           const held = deployed.loaded.get(id) ?? null
-          if (held !== null) return held
+          // The entity was already there: the machine answers the request from what is stored (decision 0017).
+          if (held !== null) return yield* ask(held, entity, requested, { _tag: 'Create', ...request })
           const stored = yield* deployed.storage.load(id)
-          if (stored !== null) return yield* activate(deployed, stored)
+          if (stored !== null) {
+            const loaded = yield* activate(deployed, stored)
+            return yield* ask(loaded, entity, requested, { _tag: 'Create', ...request })
+          }
           const now = yield* DateTime.now
           const started = Machine.start(deployed.program, id, flags, now, request)
           // A defect at creation stores nothing: its creator is answered nothing but the defect itself
@@ -383,9 +468,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           yield* Effect.forkIn(loop(deployed, loaded), scope)
           return null
         }))
-        // The entity was already there: the machine answers the request from what is stored (decision 0017).
-        if (made === null) return { _tag: 'Created' }
-        const reply = yield* ask(made, entity, requested, { _tag: 'Create', ...request })
+        if (asked === null) return { _tag: 'Created' }
+        const reply = yield* answered(asked)
         // `Create` is answered from what is stored: the machine gives `Created` or `AlreadyExists`, nothing else.
         return reply._tag === 'Created' || reply._tag === 'AlreadyExists' ? reply : { _tag: 'AlreadyExists' }
       })
@@ -397,17 +481,17 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       request: Readonly<{ requestId: string; from: Origin<T['sender']> }>,
     ): Effect.Effect<Answer<T['rejection']>> =>
       Effect.gen(function*() {
-        const loaded = yield* ensure(deployed, id)
-        if (loaded === null) return { _tag: 'NotFound' }
         const entity: Address = { name: deployed.program.name, id }
         const requested = Machine.requestKey(request.from, request.requestId)
-        const reply = yield* ask(loaded, entity, requested, {
-          _tag: 'Receive',
-          requestId: request.requestId,
-          message,
-          from: request.from,
-        })
-        return reply as Answer<T['rejection']>
+        const asked = yield* withEntity(deployed, id, (loaded) =>
+          loaded === null ? Effect.succeed(null) : ask(loaded, entity, requested, {
+            _tag: 'Receive',
+            requestId: request.requestId,
+            message,
+            from: request.from,
+          }))
+        if (asked === null) return { _tag: 'NotFound' }
+        return (yield* answered(asked)) as Answer<T['rejection']>
       })
 
     /**
@@ -439,6 +523,33 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           }),
       })
 
+    /**
+     * The timers of the entities this process does not hold: it reads the earliest time one is due, activates the
+     * entities whose time has come — arming a timer already due fires it — and sleeps until the next, or until an
+     * entity is unloaded and brings an earlier one (decision 0029).
+     */
+    const waking = <T extends Types>(deployed: Deployment<T>): Effect.Effect<void> => {
+      const { waker } = deployed
+      const next: Effect.Effect<void> = Effect.gen(function*() {
+        waker.dirty = false
+        const now = DateTime.toEpochMillis(yield* DateTime.now)
+        const due = yield* deployed.storage.due(now, [...deployed.loaded.keys()])
+        waker.next = due.next
+        if (due.ready.length > 0) {
+          waker.waking = true
+          for (const id of due.ready) yield* withEntity(deployed, id, () => Effect.void)
+          waker.waking = false
+          // The entities just activated are this process's, and the reading that follows leaves them out.
+          return yield* next
+        }
+        yield* due.next === null
+          ? Queue.take(waker.poke)
+          : Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(`${Math.max(0, due.next - now)} millis`))
+        return yield* next
+      })
+      return next
+    }
+
     const deploy = <T extends Types>(program: Program<T>) =>
       Effect.gen(function*() {
         const services = yield* Effect.context<Exclude<T['services'], Entities>>()
@@ -446,11 +557,14 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           program,
           storage: storage(program, sql),
           loaded: new Map(),
+          // Nothing is known of the stored timers until the waker has read them once.
+          waker: { dirty: true, waking: false, next: null, poke: yield* Queue.sliding<void>(1) },
           run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
         }
         deployments.set(program.name, deployed as unknown as Deployment<never>)
-        // What a crash left under way starts again here: one process holds every entity whose state has work.
-        for (const id of yield* deployed.storage.pending) yield* ensure(deployed, id)
+        // An operation a crash interrupted starts again here; a timer waits for its time, loaded or not.
+        for (const id of yield* deployed.storage.interrupted) yield* withEntity(deployed, id, () => Effect.void)
+        yield* Effect.forkIn(waking(deployed), scope)
         const handle: Handle<T> = {
           create: (id, flags, request) =>
             create(deployed, id, flags, {
@@ -476,8 +590,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         return handle
       })
 
-    const quiet = () => {
+    const quiet = (now: number) => {
       for (const deployed of deployments.values()) {
+        const { waker } = deployed
+        // A timer of an unloaded entity whose time has come is work the process has not activated yet.
+        if (waker.dirty || waker.waking || Queue.sizeUnsafe(waker.poke) > 0) return false
+        if (waker.next !== null && waker.next <= now) return false
         for (const loaded of deployed.loaded.values()) {
           const { stored } = loaded.machine
           if (loaded.applying || loaded.operations.size > 0) return false
@@ -488,9 +606,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       return true
     }
 
-    const settled: Effect.Effect<void> = Effect.suspend(() =>
-      quiet() ? Effect.void : Effect.flatMap(Effect.sleep('1 millis'), () => settled)
-    )
+    const settled: Effect.Effect<void> = Effect.gen(function*() {
+      const now = DateTime.toEpochMillis(yield* DateTime.now)
+      if (quiet(now)) return
+      yield* Effect.sleep('1 millis')
+      yield* settled
+    })
 
     return { deploy, settled }
   })

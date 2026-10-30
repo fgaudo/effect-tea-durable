@@ -165,13 +165,14 @@ held as `Schema.DateTimeUtcFromMillis`, not as `Schema.DateTimeUtc`
   `project` on the next state), stores it, answers the caller, and starts or ends the work whose keys changed.
   An internal message `update` rejects is a defect, since it cannot be late
   ([decision 0014](decisions/0014-rules-the-machine-settled.md)).
-- **Passivation.** An entity with no message for a while is unloaded. The runtime on SQLite does not do this
-  yet: it activates every entity whose state holds work when the process starts, and holds it
-  ([roadmap](roadmap.md)). A timer stays armed in storage, and wakes
-  it. An operation under way keeps it loaded. To the machine, a passivation is a crash the runtime chose, with
-  an empty mailbox and only timers under way: a `Restart` activates it again, and arms the same timers in the
-  same incarnations. The timers stored are the stored work's, which says each one's time: the earliest wakes
-  the entity, and nothing else needs storing.
+- **Passivation.** An entity with no message for a while is unloaded. An operation under way keeps it loaded, and
+  a suspended entity is unloaded with the message it died on. To the machine, a passivation is a crash the
+  runtime chose, with an empty mailbox and only timers under way: a `Restart` activates it again, and arms the
+  same timers in the same incarnations. The timers stored are the stored work's, which says each one's time: the
+  earliest wakes the entity, and nothing else needs storing. So a process starts with the entities whose state
+  holds an operation, which only an activation runs again, and the stored times wake the rest — except a
+  suspended entity's, which nothing of fires until an operator resumes it
+  ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)).
 
 These rules are a pure state machine, [`src/machine.ts`](../src/machine.ts): its events are a message arriving,
 an operation completing or dying, a timer firing, a step, the process dying, and an operator resuming or
@@ -279,5 +280,6 @@ a handle to one program's entities — `create`, `send`, `read`, and `resume` an
 the operations of a program are run with the services it was deployed with
 ([`src/runtime.ts`](../src/runtime.ts), [decision 0028](decisions/0028-rules-the-runtime-settled.md)).
 
-Effect Cluster's entities, sharding and message storage come once this runtime passivates what it holds
-([roadmap](roadmap.md)).
+An entity with nothing to do is unloaded, and the earliest of its stored timers wakes it
+([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)); how long it stays loaded is an option of the
+runtime. Effect Cluster's entities, sharding and message storage come next ([roadmap](roadmap.md)).

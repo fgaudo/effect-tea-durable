@@ -12,7 +12,8 @@ cluster or a clock.
 - [`src/`](src): the types of a program, the runtime's semantics as a pure state machine
   ([`src/machine.ts`](src/machine.ts)), which `rehearse` runs and property tests check, and the runtime that
   interprets it over `SqlClient` ([`src/runtime.ts`](src/runtime.ts), [`src/storage.ts`](src/storage.ts)),
-  tested by dying at each point of the design's crash table and comparing where it ends with the machine
+  unloading an entity that has nothing to do and waking it from its stored timers, tested by dying at each point
+  of the design's crash table and comparing where it ends with the machine
   ([`src/runtime.test.ts`](src/runtime.test.ts));
 - [`docs/decisions/`](docs/decisions): one note per decision, with the alternatives it rejected;
 - [`docs/open-questions.md`](docs/open-questions.md): what is not decided yet;

@@ -51,6 +51,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Running
 
+- **How many entities a process holds.** An entity is unloaded once it has had nothing to do for a while, and
+  nothing caps how many are loaded at once: a burst of callers loads them all
+  ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)). Should a process unload the least recently
+  used of them once it holds too many, and what does a program whose entity must stay loaded
+  ([live streams](#programs)) say then?
 - **Two versions at once.** During a rolling deploy, a state written by the new version may be read by the
   old one. Is forward compatibility for one version required, or do deploys avoid it?
 - **Suspended entities.** A caller gets `Suspended`, and an operation that sends waits, keeping its own entity

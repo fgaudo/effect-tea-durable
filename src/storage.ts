@@ -29,7 +29,8 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     )
   `
   // One row per key the state ever held, with its incarnation: a key that holds no work keeps its own
-  // (decision 0004). `due` is a timer's time, by which an entity nothing else holds loaded is woken.
+  // (decision 0004). `due` is a timer's time, by which an entity nothing else holds loaded is woken
+  // (decision 0029).
   yield* sql`
     CREATE TABLE IF NOT EXISTS entity_keys (
       name TEXT NOT NULL,
@@ -117,6 +118,17 @@ const Suspended = Schema.Union([
 export const render = (cause: unknown): string =>
   cause instanceof Error ? `${cause.name}: ${cause.message}` : typeof cause === 'string' ? cause : String(cause)
 
+/** The entities an unloaded timer is due for, and the next time one is (decision 0029). */
+export type Due = Readonly<{
+  /** The entities with a stored timer due at or before the time asked: each is activated, and its timer fires. */
+  ready: ReadonlyArray<string>
+  /** The earliest time a stored timer of another entity is due, by which the process sleeps, or null for none. */
+  next: number | null
+}>
+
+/** How many entities one reading of `due` gives: a reading that fills it is followed by another. */
+const batch = 256
+
 export interface Storage<T extends Types> {
   /** What is stored for the entity `id`, or null when there is none. */
   readonly load: (id: string) => Effect.Effect<Machine.Stored<T> | null>
@@ -126,10 +138,17 @@ export interface Storage<T extends Types> {
    */
   readonly write: (before: Machine.Stored<T> | null, after: Machine.Stored<T>) => Effect.Effect<void>
   /**
-   * The entities whose state holds work: what a process activates when it starts, so that an operation or a
-   * timer stored before a crash runs again without waiting for a caller.
+   * The entities whose state holds an operation: what a process activates when it starts, so that an operation a
+   * crash interrupted runs again without waiting for a caller. A timer needs no activation of its own — its time
+   * is stored, and `due` gives it — and a suspended entity runs nothing until an operator resumes it
+   * (decisions 0006, 0029).
    */
-  readonly pending: Effect.Effect<ReadonlyArray<string>>
+  readonly interrupted: Effect.Effect<ReadonlyArray<string>>
+  /**
+   * The stored timers of the entities this process does not hold: `loaded` are the ones it does, whose timers are
+   * armed in it, and a suspended entity is left out, since nothing of its runs (decision 0029).
+   */
+  readonly due: (now: number, loaded: ReadonlyArray<string>) => Effect.Effect<Due>
 }
 
 /** The storage of one program's entities, on one client, with its schemas read once. */
@@ -311,12 +330,34 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       }
     }).pipe(Effect.orDie)
 
-  const pending = Effect.gen(function*() {
+  /** The entities of the program an operator has to resume: nothing of theirs runs, and no timer of theirs fires. */
+  const onHold = sql`(SELECT id FROM entities WHERE name = ${name} AND suspended_on IS NOT NULL)`
+
+  // A key holding an operation has no `due`: the time of a timer is what that column is for.
+  const interrupted = Effect.gen(function*() {
     const rows = yield* sql<{ id: string }>`
-      SELECT DISTINCT id FROM entity_keys WHERE name = ${name} AND work IS NOT NULL
+      SELECT DISTINCT id FROM entity_keys
+      WHERE name = ${name} AND work IS NOT NULL AND due IS NULL AND id NOT IN ${onHold}
     `
     return rows.map((row) => row.id)
   }).pipe(Effect.orDie)
 
-  return { load, write, pending }
+  const due = (now: number, loaded: ReadonlyArray<string>) =>
+    Effect.gen(function*() {
+      const held = sql`NOT ${sql.in('id', loaded)}`
+      const ready = yield* sql<{ id: string }>`
+        SELECT DISTINCT id FROM entity_keys
+        WHERE name = ${name} AND work IS NOT NULL AND due IS NOT NULL AND due <= ${now}
+          AND ${held} AND id NOT IN ${onHold}
+        LIMIT ${batch}
+      `
+      const rest = yield* sql<{ next: number | null }>`
+        SELECT MIN(due) AS next FROM entity_keys
+        WHERE name = ${name} AND work IS NOT NULL AND due > ${now}
+          AND ${held} AND id NOT IN ${onHold}
+      `
+      return { ready: ready.map((row) => row.id), next: rest[0]?.next ?? null } satisfies Due
+    }).pipe(Effect.orDie)
+
+  return { load, write, interrupted, due }
 }
