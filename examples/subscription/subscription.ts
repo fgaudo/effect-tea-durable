@@ -138,13 +138,14 @@ export const subscription: Program<{
   flags: Flags
   inbound: Inbound
   internal: Internal
+  rejection: never
   sender: Sender
   projection: Projection
   services: Payments
 }> = {
   name: 'Subscription',
 
-  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal },
+  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal, rejection: Schema.Never },
 
   // The first period is charged at once.
   init: ({ customer, payment, plan }, at) => ({

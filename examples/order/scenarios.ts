@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import { rehearse } from '../api.ts'
+import { accepted, rehearse, rejected } from '../api.ts'
 import { order, type Sender } from './order.ts'
 
 const placedAt = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
@@ -25,8 +25,9 @@ describe('order', () => {
         yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
         yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded', charge: 'ch-1' })
         yield* rehearsal.answer(yield* rehearsal.pending('tell-warehouse'), { _tag: 'WarehouseTold' })
-        expect(yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse)).toBe('Accepted')
-        expect((yield* rehearsal.state)._tag).toBe('Shipped')
+        expect(yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse)).toEqual(accepted)
+        yield* rehearsal.answer(yield* rehearsal.pending('email-shipment'), { _tag: 'ShipmentEmailed' })
+        expect(yield* rehearsal.state).toMatchObject({ _tag: 'Shipped', email: 'Sent' })
       }),
     )))
 
@@ -74,6 +75,20 @@ describe('order', () => {
       }),
     )))
 
+  test('a shipment email under way when the process dies is not sent again', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded', charge: 'ch-1' })
+        yield* rehearsal.answer(yield* rehearsal.pending('tell-warehouse'), { _tag: 'WarehouseTold' })
+        yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse)
+        yield* rehearsal.restart
+        expect(yield* rehearsal.state).toMatchObject({ _tag: 'Shipped', email: 'Unsure' })
+      }),
+    )))
+
   test('a cancellation is rejected while a charge is under way', () =>
     Effect.runPromise(rehearse(
       order,
@@ -81,7 +96,7 @@ describe('order', () => {
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
         expect((yield* rehearsal.projection).canCancel).toBe(false)
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toBe('Rejected')
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toMatchObject(rejected)
       }),
     )))
 
@@ -90,8 +105,9 @@ describe('order', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { _tag: 'Customer', id: 'eve' })).toBe('Rejected')
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, warehouse)).toBe('Rejected')
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { _tag: 'Customer', id: 'eve' }))
+          .toMatchObject(rejected)
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, warehouse)).toMatchObject(rejected)
       }),
     )))
 })

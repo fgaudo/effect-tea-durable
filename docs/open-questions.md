@@ -4,14 +4,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Programs
 
-- **Replies with data.** A reply says only `Accepted` or `Rejected`, and the caller reads the projection.
-  Should a rejection carry a reason the caller can show ("already shipped")? Should an acceptance ever carry
-  data, or is everything a caller needs in the projection? The booking shows the cost of the second answer:
-  an inventory that rejects a hold cannot say whether the event is sold out or its sales are closed, so the
-  booking tells its customer only `Unavailable`. An entity reads another's projection through no API.
-- **At-least-once operations.** An operation restarted after a crash acts on the world again. How does an
-  operation declare whether it is idempotent (with the key it passes on) or accepts acting twice, so that the
-  difference shows in its type?
 - **Work that may be abandoned.** An operation leaves only through its completion. Is there a kind of work with
   no effect on the world (a computation, a read) that a state may drop, as effect-tea drops a subscription?
 - **Work whose parameters change.** A kept key leaves its work as it is, even when the state the work was
@@ -29,10 +21,10 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   that sends a confirmation the inventory would reject passes both rehearsals
   ([decision 0009](decisions/0009-entities-talk-through-operations.md)). Is a rehearsal of several entities
   needed, where `send` reaches the other program, or a check that two programs agree on their messages?
-- **Creation.** Who creates an entity, with which flags? What does creating one that exists answer? And what
-  does `send` answer for an entity that does not exist: a booking for an event that has no inventory?
 - **Who may send what.** `update` reads `meta.from` and rejects what a sender may not do. Should authorization
-  that is not domain (a valid token) happen before the mailbox, and what does the caller get then?
+  that is not domain (a valid token) happen before the mailbox, and what does the caller get then, or for
+  flags that do not decode? And who may create an entity, since `init` sees no sender
+  ([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md))?
 
 ## Storage and reading
 
@@ -55,8 +47,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 - **Two versions at once.** During a rolling deploy, a state written by the new version may be read by the
   old one. Is forward compatibility for one version required, or do deploys avoid it?
-- **Suspended entities.** What does a caller of a suspended entity get? An operation that sends to one waits,
-  and keeps its own entity waiting with it. How does an operator see, resume and discard?
+- **Suspended entities.** A caller gets `Suspended`, and an operation that sends waits, keeping its own entity
+  waiting with it ([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)). How does an operator see,
+  resume and discard? And how long may a sender wait before someone is told?
 - **Stored replies.** A reply is stored so that a retry gets it. A restarted operation of another entity may
   retry long after, so a receiver cannot tell when a reply is no longer needed. How long are they kept?
 - **Failing operations.** A transient failure (a timeout) is retried inside the operation, or becomes a

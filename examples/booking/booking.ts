@@ -21,11 +21,14 @@ import {
 } from '../api.ts'
 import { inventory } from './inventory.ts'
 
+// Decoded with the flags, before the booking exists: a booking holds some seats.
+const Seats = Schema.Int.check(Schema.isGreaterThan(0))
+
 const Booking = Schema.Struct({
   customer: Schema.String,
   // The inventory's id.
   event: Schema.String,
-  seats: Schema.Int,
+  seats: Seats,
   deadline: Schema.DateTimeUtc,
 })
 type Booking = typeof Booking.Type
@@ -39,13 +42,12 @@ const State = Schema.Union([
   Schema.TaggedStruct('Confirmed', { booking: Booking }),
   Schema.TaggedStruct('Cancelled', {
     booking: Booking,
-    // The inventory's rejection says nothing more: sold out and sales closed are both `Unavailable`.
-    reason: Schema.Literals(['ByCustomer', 'Expired', 'Unavailable']),
+    reason: Schema.Literals(['ByCustomer', 'Expired', 'SoldOut', 'SalesClosed', 'NoSuchEvent']),
   }),
 ])
 type State = typeof State.Type
 
-const Flags = Schema.Struct({ customer: Schema.String, event: Schema.String, seats: Schema.Int })
+const Flags = Schema.Struct({ customer: Schema.String, event: Schema.String, seats: Seats })
 type Flags = typeof Flags.Type
 
 const Inbound = Schema.Union([
@@ -56,7 +58,7 @@ type Inbound = typeof Inbound.Type
 
 const Internal = Schema.Union([
   Schema.TaggedStruct('SeatsHeld', {}),
-  Schema.TaggedStruct('SeatsUnavailable', {}),
+  Schema.TaggedStruct('SeatsUnavailable', { reason: Schema.Literals(['SoldOut', 'SalesClosed', 'NoSuchEvent']) }),
   Schema.TaggedStruct('SeatsConfirmed', {}),
   Schema.TaggedStruct('SeatsReleased', {}),
   Schema.TaggedStruct('DeadlinePassed', {}),
@@ -84,25 +86,32 @@ const hold = (booking: Booking) =>
   operation(Effect.fn('Hold')(function*(idempotencyKey: IdempotencyKey) {
     const request = { _tag: 'HoldRequested', seats: booking.seats } as const
     const reply = yield* send(inventory, booking.event, request, idempotencyKey)
-    return { _tag: reply === 'Accepted' ? 'SeatsHeld' : 'SeatsUnavailable' } satisfies Internal
+    // A rejection with no reason means the two entities disagree: a booking holds once, and holds some seats.
+    return reply._tag === 'Accepted'
+      ? { _tag: 'SeatsHeld' } satisfies Internal
+      : reply._tag === 'NotFound'
+      ? { _tag: 'SeatsUnavailable', reason: 'NoSuchEvent' } satisfies Internal
+      : reply.reason !== null
+      ? { _tag: 'SeatsUnavailable', reason: reply.reason } satisfies Internal
+      : yield* Effect.die('the inventory rejected a hold for no reason')
   }))
 
-// The inventory confirms and releases any hold it made. A rejection means the two entities disagree, which no
-// message of this program can repair: it is a defect, and suspends the booking.
+// The inventory confirms and releases any hold it made, and existed when it made it. Any other reply means the
+// two entities disagree, which no message of this program can repair: it is a defect, and suspends the booking.
 const confirm = (booking: Booking) =>
   operation(Effect.fn('Confirm')(function*(idempotencyKey: IdempotencyKey) {
     const reply = yield* send(inventory, booking.event, { _tag: 'ConfirmRequested' }, idempotencyKey)
-    return reply === 'Accepted'
+    return reply._tag === 'Accepted'
       ? { _tag: 'SeatsConfirmed' } satisfies Internal
-      : yield* Effect.die('the inventory rejected the confirmation of its own hold')
+      : yield* Effect.die('the inventory did not accept the confirmation of its own hold')
   }))
 
 const release = (booking: Booking) =>
   operation(Effect.fn('Release')(function*(idempotencyKey: IdempotencyKey) {
     const reply = yield* send(inventory, booking.event, { _tag: 'ReleaseRequested' }, idempotencyKey)
-    return reply === 'Accepted'
+    return reply._tag === 'Accepted'
       ? { _tag: 'SeatsReleased' } satisfies Internal
-      : yield* Effect.die('the inventory rejected the release of its own hold')
+      : yield* Effect.die('the inventory did not accept the release of its own hold')
   }))
 
 export const booking: Program<{
@@ -110,13 +119,14 @@ export const booking: Program<{
   flags: Flags
   inbound: Inbound
   internal: Internal
+  rejection: never
   sender: Sender
   projection: Projection
   services: Entities
 }> = {
   name: 'Booking',
 
-  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal },
+  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal, rejection: Schema.Never },
 
   // The deadline counts from the booking, not from the hold: a slow inventory shortens the customer's wait.
   init: ({ customer, event, seats }, at) => ({
@@ -151,9 +161,9 @@ export const booking: Program<{
             ? { _tag: 'Releasing', booking: state.booking, reason: 'ByCustomer' }
             : { _tag: 'Held', booking: state.booking },
 
-        SeatsUnavailable: () =>
+        SeatsUnavailable: ({ reason }) =>
           state._tag === 'Holding'
-            ? { _tag: 'Cancelled', booking: state.booking, reason: state.cancelled ? 'ByCustomer' : 'Unavailable' }
+            ? { _tag: 'Cancelled', booking: state.booking, reason: state.cancelled ? 'ByCustomer' : reason }
             : defect('seats were unavailable while nothing was holding them'),
 
         SeatsConfirmed: () =>

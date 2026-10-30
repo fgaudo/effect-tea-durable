@@ -4,7 +4,7 @@
  */
 import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
-import { noWork, type Origin, type Program, reject, type Rejected } from '../api.ts'
+import { noWork, type Origin, type Program, reject, type Rejected, rejectWith } from '../api.ts'
 
 const State = Schema.Struct({
   open: Schema.Boolean,
@@ -26,6 +26,10 @@ const Inbound = Schema.Union([
   Schema.TaggedStruct('CloseRequested', {}),
 ])
 type Inbound = typeof Inbound.Type
+
+// What a booking can tell its customer. The other rejections of a hold are the booking's own mistakes.
+const Rejection = Schema.Literals(['SoldOut', 'SalesClosed'])
+type Rejection = typeof Rejection.Type
 
 // The inventory has no work of its own.
 const Internal = Schema.Never
@@ -55,27 +59,31 @@ export const inventory: Program<{
   flags: Flags
   inbound: Inbound
   internal: Internal
+  rejection: Rejection
   sender: Sender
   projection: Projection
   services: never
 }> = {
   name: 'Inventory',
 
-  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal },
+  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal, rejection: Rejection },
 
   init: ({ capacity }) => ({ open: true, capacity, held: {}, sold: {} }),
 
   update: (message, { from }) => (state) => {
     const booking = bookingOf(from)
     return Match.value(message).pipe(
-      Match.withReturnType<State | Rejected>(),
+      Match.withReturnType<State | Rejected<Rejection>>(),
       Match.tagsExhaustive({
         // A booking holds once: a second hold would be a second booking under the same id.
         HoldRequested: ({ seats }) =>
-          state.open && booking !== null && !(booking in state.held) && !(booking in state.sold) && seats > 0 &&
-            seats <= available(state)
-            ? { ...state, held: { ...state.held, [booking]: seats } }
-            : reject,
+          booking === null || booking in state.held || booking in state.sold || seats <= 0
+            ? reject
+            : !state.open
+            ? rejectWith('SalesClosed')
+            : seats > available(state)
+            ? rejectWith('SoldOut')
+            : { ...state, held: { ...state.held, [booking]: seats } },
 
         ConfirmRequested: () => {
           if (booking === null) return reject

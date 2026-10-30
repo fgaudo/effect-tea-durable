@@ -25,9 +25,9 @@ tested by calling pure functions, crashes included.
 | Piece     | What it does                                                                                 |
 | --------- | -------------------------------------------------------------------------------------------- |
 | `name`    | what the runtime stores the entity under, and what other entities see it as                  |
-| `schemas` | how the state, the flags and the messages are stored                                         |
+| `schemas` | how the state, the flags, the messages and the reasons of rejections are stored              |
 | `init`    | the first state, from the flags the entity is created with and the time of its creation      |
-| `update`  | `(message, meta) => (state) =>` the next state, `reject`, or a defect                        |
+| `update`  | `(message, meta) => (state) =>` the next state, a rejection, or a defect                     |
 | `durable` | the work under way in each state, by key: operations and timers                              |
 | `project` | what callers read of the state, with the actions it allows                                   |
 
@@ -41,10 +41,11 @@ There are no commands. Every piece of work that must survive a crash is derived 
 A message is one of two kinds, and the rule for a message that does not apply follows from its kind.
 
 - **Inbound** messages come from callers. Each one carries a request id chosen by the caller, and is answered
-  `Accepted` or `Rejected`. A caller that retries with the same id gets the same answer, and the message is
-  applied once. `meta.from` says who sent it, so that `update` decides who may do what. An inbound message may
-  arrive in any state: a slow client, a retry, a second device, a malicious caller. One that does not apply is
-  rejected.
+  `Accepted` or `Rejected`, with the reason `update` gave, if any
+  ([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)). A caller that retries with the same id
+  gets the same answer, and the message is applied once. `meta.from` says who sent it, so that `update` decides
+  who may do what. An inbound message may arrive in any state: a slow client, a retry, a second device, a
+  malicious caller. One that does not apply is rejected.
   A caller may be another entity's operation: `meta.from` is then `Entity`, with the sender's name and id,
   filled in by the runtime (see [entities that talk](#entities-that-talk)).
 - **Internal** messages come from the entity's own durable work: an operation's completion, a timer's firing.
@@ -56,6 +57,10 @@ A message is one of two kinds, and the rule for a message that does not apply fo
 reads it there, and `update` stays pure. A timer's message is the fact that its time has passed: `update`
 trusts it, and never compares `meta.at` with the deadline. Another node's clock may be a few milliseconds
 behind.
+
+An entity is created by a request of its own, with its flags, answered `Created` once and `AlreadyExists`
+after. A message to an entity that does not exist is answered `NotFound`, and creates nothing
+([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md)).
 
 ## Durable work
 
@@ -73,10 +78,14 @@ that returns it starts new work: that is how a timer repeats
 Two kinds of work exist.
 
 - **An operation** is an effect that ends with one internal message. Expected failures become messages, as in
-  effect-tea's commands. It receives an **idempotency key**: the entity's id, the operation's key and its
-  incarnation. A restarted operation gets the same idempotency key. A new attempt in a later incarnation gets
-  another. An operation leaves the state only through its completion: a step whose next state drops the key of
-  an operation still running is a defect ([decision 0005](decisions/0005-an-operation-leaves-only-by-completing.md)).
+  effect-tea's commands. It says what a crash does to it
+  ([decision 0011](decisions/0011-an-operation-declares-what-a-crash-does.md)): an idempotent one receives an
+  **idempotency key** (the entity's id, the operation's key and its incarnation), and passes it on; one that may
+  act twice runs again; one that must act at most once is not run again after a crash, and delivers its
+  `unknown` message.
+  A restarted operation gets the same idempotency key. A new attempt in a later incarnation gets another. An
+  operation leaves the state only through its completion: a step whose next state drops the key of an operation
+  still running is a defect ([decision 0005](decisions/0005-an-operation-leaves-only-by-completing.md)).
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
   nothing yet.
 
@@ -95,7 +104,8 @@ impossible, so that no program has to remember attempt numbers.
 ### Entities that talk
 
 An entity sends a message to another from an operation, with `send`, and the operation's idempotency key as
-the request id. A restarted operation sends the same request, and gets the receiver's stored reply. `update`
+the request id. A restarted operation sends the same request, and gets the receiver's stored reply. While the
+receiver is suspended, `send` waits. An operation creates an entity the same way, with `create`. `update`
 never sends: a step never waits on another entity
 ([decision 0009](decisions/0009-entities-talk-through-operations.md)).
 
@@ -130,15 +140,15 @@ kept as an audit, but nothing replays them.
 | before a step's transaction commits                                    | the message is handled again, on the stored state; nothing of the step was seen   |
 | after the commit, before the reply reaches the caller                  | the caller retries with the same request id, and gets the stored reply            |
 | after the commit, before the work it started                           | activation computes `durable(state)` and starts it                                |
-| while an operation runs, its effect done in the world but not recorded | the operation runs again with the same idempotency key: the world must recognise it |
+| while an operation runs, its effect done in the world but not recorded | it runs again, with the same idempotency key, or delivers `unknown` if at most once |
 | after an operation's completion is recorded, before it is handled      | it is handled as any message in the mailbox                                       |
 | after a timer fired, before its message is handled                     | its message is still in the mailbox, or the timer fires again from the state      |
 
-The fourth line is the one the library cannot close. An effect on the world is at least once. A service with
-idempotency keys, such as a payment provider, makes it exactly once. One without them, such as an email, may
-act twice. Another entity makes it exactly once, with its stored replies
-([decision 0009](decisions/0009-entities-talk-through-operations.md)). The open question of how an operation
-says which one it is is in [open questions](open-questions.md).
+The fourth line is the one the library cannot close. An effect on the world is at least once, or at most once
+and then perhaps not at all. A service with idempotency keys, such as a payment provider, makes it exactly once.
+One without them, such as an email, may act twice, or is declared at most once, and the state says when it is
+not known ([decision 0011](decisions/0011-an-operation-declares-what-a-crash-does.md)). Another entity makes it
+exactly once, with its stored replies ([decision 0009](decisions/0009-entities-talk-through-operations.md)).
 
 ## Defects
 
@@ -146,14 +156,15 @@ On a phone, a defect ends the app. On a server it must not end the process, and 
 would receive it again and die again, forever. So a defect **suspends** the entity: its state stays as it was
 before the message, the message stays unhandled, and nothing is delivered to it until someone resumes it or
 discards the message ([decision 0006](decisions/0006-a-defect-suspends-the-entity.md)). A defect in an
-operation suspends it too.
+operation suspends it too. A caller meanwhile is answered `Suspended`, which is not stored, and retries
+([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)).
 
 ## Reading
 
 `project(state)` is what callers read of an entity: its status, and the actions it allows. It is the
 counterpart of effect-tea's model, and follows the same rule: it shows no action that `update` would reject.
-A caller learns how an operation ended by reading the projection, not from the reply, which only says whether
-the message was accepted.
+A caller learns how an operation ended by reading the projection. The reply says only whether the message was
+accepted and, for a rejection, perhaps why: an acceptance never carries data.
 
 Queries across entities ("orders unpaid for a day") are not designed yet ([open questions](open-questions.md)).
 
@@ -173,7 +184,8 @@ operation answers, when each timer fires, and when the process dies:
 - `pending(key)` finds the work under way under a key, with its idempotency key;
 - `answer(pending, message)` completes an operation, and says whether the message was delivered or dropped;
 - `fire(pending)` fires a timer;
-- `restart` drops everything that is not stored, and activates the entity again.
+- `restart` drops everything that is not stored, and activates the entity again: an at-most-once operation
+  under way delivers its `unknown` message.
 
 [`examples/order/scenarios.ts`](../examples/order/scenarios.ts) shows them.
 

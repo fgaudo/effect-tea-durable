@@ -8,7 +8,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import { type Address, rehearse } from '../api.ts'
+import { accepted, type Address, rehearse, rejected } from '../api.ts'
 import { booking, type Sender } from './booking.ts'
 import { inventory } from './inventory.ts'
 
@@ -25,7 +25,7 @@ describe('booking', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsHeld' })
-        expect(yield* rehearsal.send({ _tag: 'ConfirmRequested' }, ada)).toBe('Accepted')
+        expect(yield* rehearsal.send({ _tag: 'ConfirmRequested' }, ada)).toEqual(accepted)
         yield* rehearsal.answer(yield* rehearsal.pending('confirm'), { _tag: 'SeatsConfirmed' })
         expect((yield* rehearsal.state)._tag).toBe('Confirmed')
       }),
@@ -36,9 +36,9 @@ describe('booking', () => {
       booking,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsUnavailable' })
+        yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsUnavailable', reason: 'SoldOut' })
         expect(yield* rehearsal.projection).toMatchObject({ status: 'Cancelled', canConfirm: false })
-        expect(yield* rehearsal.state).toMatchObject({ reason: 'Unavailable' })
+        expect(yield* rehearsal.state).toMatchObject({ reason: 'SoldOut' })
       }),
     )))
 
@@ -47,7 +47,7 @@ describe('booking', () => {
       booking,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toBe('Accepted')
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toEqual(accepted)
         expect((yield* rehearsal.projection).canCancel).toBe(false)
         yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsHeld' })
         yield* rehearsal.answer(yield* rehearsal.pending('release'), { _tag: 'SeatsReleased' })
@@ -63,7 +63,7 @@ describe('booking', () => {
         yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsHeld' })
         // With no clock, firing the timer at once stands for a deadline already past when the seats were held.
         yield* rehearsal.fire(yield* rehearsal.pending('deadline'))
-        expect(yield* rehearsal.send({ _tag: 'ConfirmRequested' }, ada)).toBe('Rejected')
+        expect(yield* rehearsal.send({ _tag: 'ConfirmRequested' }, ada)).toMatchObject(rejected)
         yield* rehearsal.answer(yield* rehearsal.pending('release'), { _tag: 'SeatsReleased' })
         expect(yield* rehearsal.state).toMatchObject({ _tag: 'Cancelled', reason: 'Expired' })
       }),
@@ -87,7 +87,8 @@ describe('booking', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsHeld' })
-        expect(yield* rehearsal.send({ _tag: 'ConfirmRequested' }, { _tag: 'Customer', id: 'eve' })).toBe('Rejected')
+        expect(yield* rehearsal.send({ _tag: 'ConfirmRequested' }, { _tag: 'Customer', id: 'eve' }))
+          .toMatchObject(rejected)
       }),
     )))
 })
@@ -104,10 +105,11 @@ describe('inventory', () => {
       inventory,
       event,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 3 }, first)).toBe('Accepted')
-        expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 2 }, second)).toBe('Rejected')
-        expect(yield* rehearsal.sendFrom({ _tag: 'ReleaseRequested' }, first)).toBe('Accepted')
-        expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 2 }, second)).toBe('Accepted')
+        expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 3 }, first)).toEqual(accepted)
+        expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 2 }, second))
+          .toEqual({ _tag: 'Rejected', reason: 'SoldOut' })
+        expect(yield* rehearsal.sendFrom({ _tag: 'ReleaseRequested' }, first)).toEqual(accepted)
+        expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 2 }, second)).toEqual(accepted)
         expect((yield* rehearsal.projection).available).toBe(2)
       }),
     )))
@@ -118,9 +120,10 @@ describe('inventory', () => {
       event,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 2 }, first)
-        expect(yield* rehearsal.send({ _tag: 'CloseRequested' }, { _tag: 'Organizer' })).toBe('Accepted')
-        expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 1 }, second)).toBe('Rejected')
-        expect(yield* rehearsal.sendFrom({ _tag: 'ConfirmRequested' }, first)).toBe('Accepted')
+        expect(yield* rehearsal.send({ _tag: 'CloseRequested' }, { _tag: 'Organizer' })).toEqual(accepted)
+        expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 1 }, second))
+          .toEqual({ _tag: 'Rejected', reason: 'SalesClosed' })
+        expect(yield* rehearsal.sendFrom({ _tag: 'ConfirmRequested' }, first)).toEqual(accepted)
       }),
     )))
 
@@ -130,10 +133,10 @@ describe('inventory', () => {
       event,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 2 }, first)
-        expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 1 }, first)).toBe('Rejected')
-        expect(yield* rehearsal.sendFrom({ _tag: 'ReleaseRequested' }, second)).toBe('Rejected')
+        expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 1 }, first)).toMatchObject(rejected)
+        expect(yield* rehearsal.sendFrom({ _tag: 'ReleaseRequested' }, second)).toMatchObject(rejected)
         expect(yield* rehearsal.sendFrom({ _tag: 'HoldRequested', seats: 1 }, { name: 'Order', id: 'booking-2' }))
-          .toBe('Rejected')
+          .toMatchObject(rejected)
       }),
     )))
 })

@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import { rehearse } from '../api.ts'
+import { accepted, rehearse, rejected } from '../api.ts'
 import { type Sender, subscription } from './subscription.ts'
 
 const startedAt = DateTime.makeUnsafe('2026-01-31T10:00:00Z')
@@ -84,7 +84,7 @@ describe('subscription', () => {
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeDeclined' })
         const retry = yield* rehearsal.pending('retry')
-        expect(yield* rehearsal.send({ _tag: 'PaymentMethodUpdated', payment: 'card-2' }, ada)).toBe('Accepted')
+        expect(yield* rehearsal.send({ _tag: 'PaymentMethodUpdated', payment: 'card-2' }, ada)).toEqual(accepted)
         expect(yield* rehearsal.fire(retry)).toBe('Dropped')
         yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
         expect((yield* rehearsal.state)._tag).toBe('Active')
@@ -96,7 +96,7 @@ describe('subscription', () => {
       subscription,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toBe('Accepted')
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toEqual(accepted)
         yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
         // The period is paid: the subscription ends with it.
         expect(yield* rehearsal.projection).toMatchObject({ status: 'Active', canResume: true })
@@ -124,7 +124,7 @@ describe('subscription', () => {
       subscription,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.send({ _tag: 'CreditGranted', amountInCents: 2_000 }, ada)).toBe('Rejected')
+        expect(yield* rehearsal.send({ _tag: 'CreditGranted', amountInCents: 2_000 }, ada)).toMatchObject(rejected)
       }),
     )))
 })

@@ -38,7 +38,13 @@ const State = Schema.Union([
     warehouse: Schema.Literals(['Telling', 'Told']),
   }),
   Schema.TaggedStruct('Refunding', { order: Order, charge: ChargeId }),
-  Schema.TaggedStruct('Shipped', { order: Order, charge: ChargeId, tracking: Schema.String }),
+  Schema.TaggedStruct('Shipped', {
+    order: Order,
+    charge: ChargeId,
+    tracking: Schema.String,
+    // An email is not idempotent: after a crash while sending it, the customer may or may not have it.
+    email: Schema.Literals(['Sending', 'Sent', 'Unsure']),
+  }),
   Schema.TaggedStruct('Cancelled', {
     order: Order,
     reason: Schema.Literals(['ByCustomer', 'Unpaid', 'Refunded']),
@@ -62,6 +68,8 @@ const Internal = Schema.Union([
   Schema.TaggedStruct('WarehouseTold', {}),
   Schema.TaggedStruct('RefundCompleted', {}),
   Schema.TaggedStruct('PaymentDeadlinePassed', {}),
+  Schema.TaggedStruct('ShipmentEmailed', {}),
+  Schema.TaggedStruct('ShipmentEmailUnsure', {}),
 ])
 type Internal = typeof Internal.Type
 
@@ -85,6 +93,10 @@ export class Payments extends Context.Service<Payments, {
 export class Warehouse extends Context.Service<Warehouse, {
   readonly prepare: (request: Readonly<{ order: Order; idempotencyKey: IdempotencyKey }>) => Effect.Effect<void>
 }>()('Warehouse') {}
+
+export class Mailer extends Context.Service<Mailer, {
+  readonly send: (email: Readonly<{ to: string; subject: string }>) => Effect.Effect<void>
+}>()('Mailer') {}
 
 const paymentWindow = { minutes: 30 }
 
@@ -112,6 +124,17 @@ const tellWarehouse = (order: Order) =>
     return { _tag: 'WarehouseTold' } satisfies Internal
   }))
 
+// Sent at most once: a second email is worse than none, and the state says when it is not known.
+const emailShipment = (order: Order, tracking: string) =>
+  operation.atMostOnce<Internal, Mailer>(
+    Effect.gen(function*() {
+      const mailer = yield* Mailer
+      yield* mailer.send({ to: order.customer, subject: `Your order has shipped: ${tracking}` })
+      return { _tag: 'ShipmentEmailed' } as const
+    }).pipe(Effect.withSpan('EmailShipment')),
+    { _tag: 'ShipmentEmailUnsure' },
+  )
+
 const refund = (charge: string) =>
   operation(Effect.fn('Refund')(function*(idempotencyKey: IdempotencyKey) {
     const payments = yield* Payments
@@ -124,13 +147,14 @@ export const order: Program<{
   flags: Flags
   inbound: Inbound
   internal: Internal
+  rejection: never
   sender: Sender
   projection: Projection
-  services: Payments | Warehouse
+  services: Payments | Warehouse | Mailer
 }> = {
   name: 'Order',
 
-  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal },
+  schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal, rejection: Schema.Never },
 
   init: ({ order }, at) => ({
     _tag: 'AwaitingPayment',
@@ -160,7 +184,7 @@ export const order: Program<{
 
         ShipmentReported: ({ tracking }) =>
           state._tag === 'Paid' && state.warehouse === 'Told' && isWarehouse(from)
-            ? { _tag: 'Shipped', order: state.order, charge: state.charge, tracking }
+            ? { _tag: 'Shipped', order: state.order, charge: state.charge, tracking, email: 'Sending' }
             : reject,
 
         ChargeSucceeded: ({ charge }) =>
@@ -188,6 +212,16 @@ export const order: Program<{
           state._tag === 'AwaitingPayment'
             ? { _tag: 'Cancelled', order: state.order, reason: 'Unpaid' }
             : defect('the payment deadline passed outside its wait'),
+
+        ShipmentEmailed: () =>
+          state._tag === 'Shipped' && state.email === 'Sending'
+            ? { ...state, email: 'Sent' }
+            : defect('a shipment email was sent while nothing was sending it'),
+
+        ShipmentEmailUnsure: () =>
+          state._tag === 'Shipped' && state.email === 'Sending'
+            ? { ...state, email: 'Unsure' }
+            : defect('a shipment email was unsure while nothing was sending it'),
       }),
     ),
 
@@ -199,7 +233,8 @@ export const order: Program<{
       Charging: ({ order, payment }) => ({ charge: charge(order, payment) }),
       Paid: ({ order, warehouse }) => warehouse === 'Telling' ? { 'tell-warehouse': tellWarehouse(order) } : noWork,
       Refunding: ({ charge }) => ({ refund: refund(charge) }),
-      Shipped: () => noWork,
+      Shipped: ({ order, tracking, email }) =>
+        email === 'Sending' ? { 'email-shipment': emailShipment(order, tracking) } : noWork,
       Cancelled: () => noWork,
     }),
 
