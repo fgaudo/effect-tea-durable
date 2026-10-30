@@ -49,7 +49,26 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   what reaches the senders that stored a reply under the old name, is not decided. A schema that changes is
   ([decision 0036](decisions/0036-a-migration-is-a-function-on-the-json.md)).
 
+- **Reading with a program that dies on the state.** `read` calls `project` on the stored state outside the
+  machine. A new program whose `project` dies on it gives the reader a defect, where an activation would suspend
+  the entity ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)). Should a
+  read activate the entity, answer from the read model, or say that the entity is suspended?
+
 ## Running
+
+- **A fixed program brought by `resume`.** In the machine, `Resume` with a fixed program replaces the entity's
+  program. The runtime replaces only the program of the machine it holds: the runners and the storage are still
+  the deployed program's, so a fix with other runners or another version of its schemas is not run or written as
+  itself, and an entity unloaded after it is activated again by the deployed program, which may die where it
+  died before. Is a fixed program a deploy, or something the runtime keeps for the entity, and stores?
+- **Deploying a program twice in one process.** `deploy` of a name already deployed replaces the deployment,
+  while the entities the first one loaded keep their loops: the second activates the same entities again, and
+  two loops may step one entity. Is a second deploy refused, or is it how a new version takes over in place,
+  unloading what the first one holds?
+- **Messages a crash left in a mailbox.** An inbound message whose `Receive` committed before a crash waits in the
+  mailbox of an entity that may hold no operation and no timer. Nothing finds it at the next start — neither the
+  entities with an operation nor the stored timers — and `settled` does not wait for it: it is handled when a
+  caller loads the entity again. Should a process start the entities whose mailbox holds a message too?
 
 - **How many entities a process holds.** An entity is unloaded once it has had nothing to do for a while, and
   nothing caps how many are loaded at once: a burst of callers loads them all
@@ -60,13 +79,22 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   old one. Is forward compatibility for one version required, or do deploys avoid it?
 - **Suspended entities.** A caller gets `Suspended`, and an operation that sends waits, keeping its own entity
   waiting with it ([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)). How does an operator see,
-  resume and discard? And how long may a sender wait before someone is told?
+  resume and discard? And how long may a sender wait before someone is told? It waits by sending again every
+  few milliseconds ([decision 0028](decisions/0028-rules-the-runtime-settled.md)), for as long as the receiver
+  stays suspended, and each try takes the registry's one permit, which every lookup, load and activation of every
+  program in the process shares: should it wait for the receiver's resumption instead?
   A suspension stops every operation of the entity, and drops what they deliver meanwhile
   ([decision 0006](decisions/0006-a-defect-suspends-the-entity.md)): a charge interrupted because another
   operation died runs again, or delivers `unknown` if at most once. Should a suspension stop only the handling
   of messages, and let the work under way record its completions? And an operation that dies cannot be
   discarded, only resumed: one that dies on a reply stored by another entity dies again on every resume, and
-  only a new version of the program gets it out.
+  only a new version of the program gets it out. Neither can a completion `update` dies on
+  ([decision 0041](decisions/0041-a-completion-is-not-discarded.md)), and the runtime's `discard` does not say
+  that it did nothing.
+- **An entity the waker cannot load.** An event the runtime cannot finish crashes its entity alone
+  ([decision 0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)), but the waker,
+  which loads the entities whose timers are due, dies with an activation that fails, and the program's timers
+  stop with it. Should it skip such an entity, and when does it try it again?
 - **Callers' stored replies.** A caller's reply is stored so that a retry gets it, and is kept for ever: a time
   after which a retry is applied again would depend on the protocol, and on who callers are
   ([who may send what](#programs)). Replies to entities are kept while the work that asked is stored
