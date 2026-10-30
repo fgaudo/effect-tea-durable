@@ -471,21 +471,26 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         const shown = program.project(after.state)
         const text = projection.write(shown)
         yield* row(id, shown, text)
-        // What other systems learn of the step, published when what callers read changed: a creation's row
-        // carries no message, since a creation is no message (decision 0038).
+        // What other systems learn of the step, published when what callers read changed, compared as it is
+        // written: a creation's row carries no message, since a creation is no message (decision 0038).
         const was = before === null ? null : projection.write(program.project(before.state))
         if (was !== text) {
+          // Only a creation and a step that handled a message change the state, so the row is one or the other.
+          const published = before === null ? null : handled
+          if (before !== null && published === null) {
+            throw new Error(`the state of '${name}' '${id}' changed with no message handled`)
+          }
           yield* sql`INSERT INTO outbox ${
             sql.insert({
               name,
               id,
-              tag: handled === null ? 'Creation' : handled._tag,
+              tag: published === null ? 'Creation' : published._tag,
               version,
-              message: handled === null
+              message: published === null
                 ? null
-                : handled._tag === 'Inbound'
-                ? inbound.write(handled.message)
-                : internal.write(handled.message),
+                : published._tag === 'Inbound'
+                ? inbound.write(published.message)
+                : internal.write(published.message),
               projection: text,
             })
           }`

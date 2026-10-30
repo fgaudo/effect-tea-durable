@@ -26,8 +26,9 @@ an [open question](../open-questions.md).
   version that wrote it, read through the migrations like every other row
   ([decision 0036](0036-a-migration-is-a-function-on-the-json.md)).
 - **`seq` is what a consumer deduplicates by**: an integer of the database, rising with each row and never
-  reused, so a consumer stores the one it reached and reads from it again. Rows are read in that order, which is
-  the order the transactions committed while one process writes
+  reused, so a consumer stores the one it reached and reads from it again. A cursor skips nothing because the
+  runtime writes one transaction at a time — the SQLite client leases its one connection under a semaphore of
+  one — so a row's `seq` is given and committed in the same order
   ([decision 0007](0007-one-process-first.md)).
 - **The runtime writes the log and does not deliver it.** `published(after, limit)` reads from a cursor and
   `prune(through)` drops what every consumer has read. A consumer acts and then stores its cursor, which is
@@ -57,7 +58,10 @@ an [open question](../open-questions.md).
 - The log is where the history of an entity that never ends would be read from — a subscription's past invoices
   — for as long as it is kept. What keeps it, with more than one consumer, is an
   [open question](../open-questions.md).
-- The order of `seq` across entities is the order of commits of one process. A cluster writes from several, and
-  what is ordered then is an [open question](../open-questions.md).
-- Publishing costs one projection more per step that changes the state: the one the state before gave, compared
-  with the one after.
+- The cursor rests on writes being serialized, not on the entities being few: two transactions that write at
+  once could commit a higher `seq` before a lower one, and a consumer reading in between would step over the
+  row still in flight. A store that allows that, or a cluster, needs more than a sequence: an
+  [open question](../open-questions.md).
+- Publishing costs one projection more per step that changes the state: the one the state before gave, encoded
+  and compared with the one after. Two projections are the same when they are written the same, so a schema
+  that encodes equal values differently publishes a row that says nothing new, and never misses one.

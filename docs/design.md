@@ -295,6 +295,8 @@ more is declared: the message names the fact, and the projection is already the 
 Each row carries a `seq`, which rises with every row and is never reused. `published(after, limit)` reads from
 a cursor and `prune(through)` drops what every consumer has read. A consumer acts on the rows and then stores
 the `seq` it reached, so a crash before it does delivers them again: at least once, deduplicated by `seq`.
+A cursor skips nothing because the runtime writes one transaction at a time, so a row's `seq` is given and
+committed in the same order; entities that step at once queue for it.
 The runtime writes the log and does not deliver it — the transport, the retries and the acknowledgements are
 the consumer's.
 

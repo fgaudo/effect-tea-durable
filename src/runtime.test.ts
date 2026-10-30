@@ -879,6 +879,37 @@ describe('publishing what happened', () => {
         }))
     })))
 
+  test('entities stepping at once share one rising sequence, and nothing of theirs is lost', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const ids = ['p-1', 'p-2', 'p-3']
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* Effect.forEach(
+            ids,
+            (id) => toy.create(id, { at }, { requestId: `c-${id}`, sender: tester }),
+            { concurrency: 'unbounded' },
+          )
+          yield* runtime.settled
+          yield* Effect.sleep('60 millis')
+          yield* runtime.settled
+          const rows = yield* toy.published(0)
+          // The creation of each, and the four pieces of work each was created with: the three entities step at
+          // once, and a row of one is never written in the middle of another's step.
+          expect(rows.length).toBe(ids.length * 5)
+          const seqs = rows.map(({ seq }) => seq)
+          expect(seqs).toEqual([...seqs].sort((a, b) => a - b))
+          expect(new Set(seqs).size).toBe(seqs.length)
+          for (const id of ids) {
+            expect(rows.filter((row) => row.id === id).map(({ projection }) => projection)).toEqual([4, 3, 2, 1, 0])
+          }
+          // A consumer that read to the end is given nothing again.
+          expect(yield* toy.published(seqs[seqs.length - 1] ?? 0)).toEqual([])
+        }))
+    })))
+
   test('a step whose transaction never commits publishes nothing', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now

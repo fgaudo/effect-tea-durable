@@ -36,11 +36,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   prunes what it has read; with several, who decides, and what does a consumer that falls behind cost? It is
   also where the history of an entity that never ends (a subscription's past invoices) is read from, which is a
   retention nobody prunes.
-- **The order of what is published.** `seq` orders the outbox by the commits of one process
-  ([decision 0007](decisions/0007-one-process-first.md),
-  [decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md)). A cluster writes from
-  several, where a row with a lower `seq` may commit after one a consumer has already read. What orders the
-  log then, and what a consumer reads from, is not decided.
+- **The order of what is published.** A cursor over the outbox skips nothing while one transaction writes at a
+  time, which is what the runtime on SQLite does
+  ([decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md)). Where two write at once —
+  a cluster, or a store that allows it — a row with a lower `seq` may commit after one a consumer has read, and
+  be stepped over. What orders the log then, and what a consumer reads from, is not decided.
 - **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
   large state do: split into entities, or store a difference?
 - **Renaming a program.** A program's name is the entities' address, and a schema's migration does not move

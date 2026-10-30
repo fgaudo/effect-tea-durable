@@ -40,6 +40,9 @@ an operation would run twice, and nothing would say so. Decision 0033 left the m
 - `keys` is no longer data the machine does not read, which decision 0033 noted it was.
 - A program whose `keys` do not cover what `durable` returns is caught by a rehearsal, at the first state that
   returns the key, and never reaches a deploy.
-- A state stored by a version that declared a key the next version does not is read by a program that does not
-  declare it. If it still holds work there, the activation is a defect twice over, for the undeclared key and
-  for the dropped operation; the reason names the key, which an operator needs either way.
+- The check reads what `durable` returns, not what the stored keys hold. A new version that stops declaring a
+  key does not return it either, so the work stored under it is answered by the rules that were already there:
+  a stored timer is dropped, and a stored operation is a defect, since an operation leaves only by completing
+  ([decision 0022](0022-a-new-program-keeps-what-work-started-with.md)). Nothing of that changes here.
+- The `program` declaration constrains `durable` to the declared keys, so the check fires on the one state the
+  types accept — a declared key beside a misspelt one — and on a `Program<T>` written out by hand.
