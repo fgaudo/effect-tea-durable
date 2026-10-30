@@ -53,6 +53,12 @@ export const defect = (reason: string): never => {
 /** A value JSON holds: what a schema encodes to, so that a runtime can write it (decision 0030). */
 export type Json = string | number | boolean | null | { readonly [key: string]: Json } | ReadonlyArray<Json>
 
+/**
+ * What an index holds, and what a query compares it with: the scalars of JSON, which a store orders and
+ * indexes. A time is its milliseconds, as a stored time is (decisions 0030, 0032).
+ */
+export type Scalar = string | number | boolean | null
+
 /** An entity: the name of its program and its id. */
 export type Address = Readonly<{ name: string; id: string }>
 
@@ -173,8 +179,18 @@ export type Types = Readonly<{
   rejection: unknown
   sender: unknown
   projection: unknown
+  /** The names of the indexes a query across the program's entities filters and orders by (decision 0032). */
+  index: string
   services: unknown
 }>
+
+/**
+ * The columns a query reads the entities by: for each name of `T['index']`, a pure function from the
+ * projection to a scalar. A program asked nothing across its entities declares none (decision 0032).
+ */
+export type Indexes<T extends Types> = {
+  readonly [Name in T['index']]: (projection: T['projection']) => Scalar
+}
 
 /** A runner for each kind of operation, by its tag. */
 export type Runners<T extends Types> = {
@@ -208,6 +224,11 @@ export interface Program<T extends Types> {
   readonly durable: (state: T['state']) => Readonly<Record<string, Durable<T['operation'], T['internal']>>>
   readonly operations: Runners<T>
   readonly project: (state: T['state']) => T['projection']
+  /**
+   * What a query across the program's entities may filter and order by, each a pure function of the projection:
+   * the read model is the projection, and nothing is queried that a caller cannot read (decision 0032).
+   */
+  readonly indexes: Indexes<T>
 }
 
 /** The runner of an operation, found by its tag. */
@@ -219,6 +240,24 @@ export const runnerOf = <T extends Types>(
   (program.operations as unknown as Readonly<Record<string, Runner<T['operation'], T['internal'], T['services']>>>)[
     operation._tag
   ] as Runner<T['operation'], T['internal'], T['services']>
+
+/**
+ * The value of each index on a projection: what the machine checks and a runtime writes. An index that dies is
+ * a defect, as a `project` that dies is (decision 0032).
+ */
+export const indexesOf = <T extends Types>(
+  program: Program<T>,
+  projection: T['projection'],
+): Readonly<Record<string, Scalar>> => {
+  const values: Record<string, Scalar> = {}
+  // `Indexes` has a function for every name of `T['index']`, which TypeScript cannot index by a name it holds.
+  for (
+    const [name, of] of Object.entries(
+      program.indexes as Readonly<Record<string, (projection: T['projection']) => Scalar>>,
+    )
+  ) values[name] = of(projection)
+  return values
+}
 
 /** What creating an entity is answered. Only `Created` is stored, under the request id. */
 export type Creation = Readonly<{ _tag: 'Created' }> | Readonly<{ _tag: 'AlreadyExists' }>

@@ -159,6 +159,7 @@ export const subscription: Program<{
   rejection: never
   sender: Sender
   projection: Projection
+  index: never
   services: Payments
 }> = {
   name: 'Subscription',
@@ -283,4 +284,7 @@ export const subscription: Program<{
       canResume: renewing && state.account.cancelAtPeriodEnd,
     }
   },
+
+  // Nothing is asked across these entities: no query, so no index (decision 0032).
+  indexes: {},
 }

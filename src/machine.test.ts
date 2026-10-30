@@ -52,6 +52,7 @@ type T = {
   rejection: 'Refused'
   sender: 'caller'
   projection: number
+  index: never
   services: never
 }
 
@@ -106,6 +107,7 @@ const program: Program<T> = {
     C: operation.atLeastOnce(({ key }) => Effect.succeed(done(key))),
   },
   project: (state) => state.want.length,
+  indexes: {},
 }
 
 // A new version of the program that tunes `a` differently: a deploy that changes `a` while it runs is a defect.
@@ -663,6 +665,7 @@ type Tiny = {
   rejection: never
   sender: null
   projection: string
+  index: 'shown'
   services: never
 }
 
@@ -675,6 +678,7 @@ const tiny = (
   durable: (state: string) => TinyWork,
   project: (state: string) => string = (state) => state,
   name = 'Tiny',
+  index: (projection: string) => string = (projection) => projection,
 ): Program<Tiny> => ({
   name,
   schemas: {} as never,
@@ -692,6 +696,7 @@ const tiny = (
     ])),
   operations: { Work: operation(() => Effect.succeed('done')) },
   project: ({ last }) => project(last),
+  indexes: { shown: index },
 })
 
 const checked = (...args: Parameters<typeof tiny>) => {
@@ -783,7 +788,7 @@ describe('the checks of a step', () => {
     expect(reasonOfSuspension(transition)).toBe("update rejected the message of the work under 'charge'")
   })
 
-  test('a state that durable or project dies on is a defect, and is not stored', () => {
+  test('a state that durable, project or an index dies on is a defect, and is not stored', () => {
     const broken = new Error('broken')
     for (
       const machine of [
@@ -794,6 +799,11 @@ describe('the checks of a step', () => {
         checked((message) => message, () => ({}), (state) => {
           if (state === 'go') throw broken
           return state
+        }),
+        // An index is read where `project` is, and one that dies suspends the entity the same way.
+        checked((message) => message, () => ({}), undefined, undefined, (projection) => {
+          if (projection === 'go') throw broken
+          return projection
         }),
       ]
     ) {

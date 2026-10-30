@@ -136,6 +136,7 @@ export const booking: Program<{
   rejection: never
   sender: Sender
   projection: Projection
+  index: never
   services: Entities
 }> = {
   name: 'Booking',
@@ -225,4 +226,7 @@ export const booking: Program<{
     canConfirm: state._tag === 'Held',
     canCancel: (state._tag === 'Holding' && !state.cancelled) || state._tag === 'Held',
   }),
+
+  // Nothing is asked across these entities: no query, so no index (decision 0032).
+  indexes: {},
 }

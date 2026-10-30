@@ -6,6 +6,8 @@ export {
   type Durable,
   Entities,
   type IdempotencyKey,
+  type Indexes,
+  indexesOf,
   InvariantDefect,
   type Json,
   type Meta,
@@ -20,6 +22,7 @@ export {
   type RejectedWith,
   rejectWith,
   type Reply,
+  type Scalar,
   send,
   type Timer,
   isTimer,
@@ -29,5 +32,14 @@ export {
 } from './program.ts'
 export { accepted, type Pending, type Rehearsal, rehearse, rejected } from './rehearse.ts'
 export { type Answer, type Handle, launch, type Options, type Point, type Runtime } from './runtime.ts'
-export { createTables, type Due, storage, type Storage } from './storage.ts'
+export {
+  type Comparison,
+  createTables,
+  type Criterion,
+  type Due,
+  type Found,
+  type Query,
+  storage,
+  type Storage,
+} from './storage.ts'
 export { type Allows, type Candidate, projectionViolations, type ProjectionViolation } from './testing.ts'

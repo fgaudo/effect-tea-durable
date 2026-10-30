@@ -31,7 +31,7 @@ import {
   runnerOf,
   type Types,
 } from './program.ts'
-import { storage, type Storage } from './storage.ts'
+import { type Found, type Query, storage, type Storage } from './storage.ts'
 
 /**
  * What a caller is answered: the replies stored under its request id, `NotFound` for no entity, and `Suspended`,
@@ -86,6 +86,17 @@ export interface Handle<T extends Types> {
   ) => Effect.Effect<Answer<T['rejection']>>
   /** What callers read of the entity, or null when there is none. */
   readonly read: (id: string) => Effect.Effect<T['projection'] | null>
+  /**
+   * What callers read of the entities whose indexes match, across the program: the read model is written in each
+   * entity's own transaction, so nothing found here is a projection its entity has moved past (decision 0032).
+   */
+  readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
+  /**
+   * Writes the read model of every entity of the program again, from its stored state, and gives how many: what
+   * an index a new version of the program added or changed needs, since a row is written when its entity takes a
+   * step. An operator runs it after such a deploy (decision 0032).
+   */
+  readonly reindex: Effect.Effect<number>
   /** An operator resumes a suspended entity, perhaps with a fixed program (decision 0006). */
   readonly resume: (id: string, fixed?: Program<T>) => Effect.Effect<void>
   /** An operator discards the message a suspended entity died on (decision 0014). */
@@ -593,6 +604,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
         }
         deployments.set(program.name, deployed as unknown as Deployment<never>)
+        yield* deployed.storage.indexed
         // An operation a crash interrupted starts again here; a timer waits for its time, loaded or not.
         for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)
         yield* Effect.forkIn(waking(deployed), scope)
@@ -614,6 +626,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               const stored = yield* deployed.storage.load(id)
               return stored === null ? null : program.project(stored.state)
             }),
+          query: (query) => deployed.storage.query(query),
+          reindex: deployed.storage.reindex,
           resume: (id, fixed) =>
             operate(deployed, id, fixed === undefined ? { _tag: 'Resume' } : { _tag: 'Resume', program: fixed }),
           discard: (id) => operate(deployed, id, { _tag: 'Discard' }),

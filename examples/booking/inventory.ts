@@ -61,6 +61,7 @@ export const inventory: Program<{
   rejection: Rejection
   sender: Sender
   projection: Projection
+  index: never
   services: never
 }> = {
   name: 'Inventory',
@@ -119,4 +120,7 @@ export const inventory: Program<{
     available: available(state),
     canClose: state.open,
   }),
+
+  // Nothing is asked across these entities: no query, so no index (decision 0032).
+  indexes: {},
 }

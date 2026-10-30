@@ -87,6 +87,9 @@ export type Sender = typeof Sender.Type
 // What callers read: it leaves the process, so it has a schema too.
 const Projection = Schema.Struct({
   status: Schema.Literals(['AwaitingPayment', 'Charging', 'Paid', 'Refunding', 'Shipped', 'Cancelled']),
+  // By when the customer has to pay, while there is still something to pay: it is what a query reads to find
+  // the orders nobody paid, so what it filters by is what the customer is told (decision 0032).
+  deadline: Schema.NullOr(Schema.DateTimeUtcFromMillis),
   canPay: Schema.Boolean,
   canCancel: Schema.Boolean,
 })
@@ -167,6 +170,7 @@ export const order: Program<{
   rejection: never
   sender: Sender
   projection: Projection
+  index: 'unpaidUntil'
   services: Payments | Warehouse | Mailer
 }> = {
   name: 'Order',
@@ -279,7 +283,15 @@ export const order: Program<{
 
   project: (state) => ({
     status: state._tag,
+    deadline: state._tag === 'AwaitingPayment' || state._tag === 'Charging' ? state.deadline : null,
     canPay: state._tag === 'AwaitingPayment',
     canCancel: state._tag === 'AwaitingPayment' || (state._tag === 'Paid' && state.warehouse === 'Told'),
   }),
+
+  // "The orders nobody paid by now": the deadline of an order still awaiting its payment, in milliseconds, and
+  // nothing for an order that is being charged, paid or over (decisions 0030, 0032).
+  indexes: {
+    unpaidUntil: ({ deadline, status }) =>
+      status === 'AwaitingPayment' && deadline !== null ? DateTime.toEpochMillis(deadline) : null,
+  },
 }

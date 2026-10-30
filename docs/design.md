@@ -31,6 +31,7 @@ tested by calling pure functions, crashes included.
 | `durable`    | the work under way in each state, by key: operations, as data, and timers                    |
 | `operations` | how each kind of operation runs, and what a crash does to it                                 |
 | `project`    | what callers read of the state, with the actions it allows                                   |
+| `indexes`    | what a query across the program's entities filters and orders by, read off the projection    |
 
 There are no commands. Every piece of work that must survive a crash is derived from the state by `durable`
 ([decision 0003](decisions/0003-durable-work-derived-from-state.md)). An operation is data, as effect-tea's
@@ -156,8 +157,11 @@ It stores the state, not the messages that led to it: a fixed `update` changes w
 already happened ([decision 0002](decisions/0002-store-the-state-not-the-messages.md)). The messages may be
 kept as an audit, but nothing replays them.
 
-The runtime on SQLite writes all of it through the program's schemas, as JSON, in four tables — the entity, the
-keys with their incarnations and work, the mailbox in order, and the replies by request
+and, when the state changed, the row a query reads: the projection, and the value of each index on it
+  ([decision 0032](decisions/0032-a-projection-is-a-row.md)).
+
+The runtime on SQLite writes all of it through the program's schemas, as JSON, in five tables — the entity, the
+keys with their incarnations and work, the mailbox in order, the replies by request, and the read model
 ([`src/storage.ts`](../src/storage.ts)). A schema whose encoded side is not JSON does not compile: a time is
 held as `Schema.DateTimeUtcFromMillis`, not as `Schema.DateTimeUtc`
 ([decision 0030](decisions/0030-a-schema-encodes-to-json.md)).
@@ -166,8 +170,9 @@ held as `Schema.DateTimeUtcFromMillis`, not as `Schema.DateTimeUtc`
 
 - **Activation.** The runtime loads the state, the incarnations and the stored work, computes `durable(state)`,
   compares it with the stored work, starts its operations and arms its timers.
-- **A message.** It reads `meta.at`, calls `update`, checks the step (defects included, and `durable` and
-  `project` on the next state), stores it, answers the caller, and starts or ends the work whose keys changed.
+- **A message.** It reads `meta.at`, calls `update`, checks the step (defects included, and `durable`,
+  `project` and the indexes on the next state), stores it, answers the caller, and starts or ends the work
+  whose keys changed.
   An internal message `update` rejects is a defect, since it cannot be late
   ([decision 0014](decisions/0014-rules-the-machine-settled.md)).
 - **Passivation.** An entity with no message for a while is unloaded. An operation under way keeps it loaded; a
@@ -224,7 +229,16 @@ counterpart of effect-tea's model, and follows the same rule: it shows no action
 A caller learns how an operation ended by reading the projection. The reply says only whether the message was
 accepted and, for a rejection, perhaps why: an acceptance never carries data.
 
-Queries across entities ("orders unpaid for a day") are not designed yet ([open questions](open-questions.md)).
+Queries across entities — "the orders nobody paid" — read the same thing. The runtime keeps one row per
+entity, written in the step's transaction, holding the encoded projection; `indexes` gives, for each name, a
+pure function from the projection to a scalar, which is what a query filters and orders by. So a query answers
+with the values a caller reads of a single entity, and nothing is queried that a caller cannot read
+([decision 0032](decisions/0032-a-projection-is-a-row.md)). A time is its milliseconds, as a stored time is.
+
+`query` takes the criteria that hold, an index to order by and a limit, and gives the ids found with their
+projections; `reindex` writes every row again from the stored states, which is what an index added or changed
+by a new version of the program needs. [`examples/order/runtime.test.ts`](../examples/order/runtime.test.ts)
+asks for the orders still awaiting their payment.
 
 ## Testing
 

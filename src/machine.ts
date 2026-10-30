@@ -10,6 +10,7 @@ import {
   type Durable,
   type IdempotencyKey,
   idempotencyKey,
+  indexesOf,
   InvariantDefect,
   isRejected,
   isTimer,
@@ -22,6 +23,15 @@ import {
   type Timer,
   type Types,
 } from './program.ts'
+
+/**
+ * What callers read of a state, with the indexes a query reads it by: the machine computes them only to check
+ * them, since both are pure and either may die. One that dies suspends the entity, so a runtime may call them
+ * again while it writes, knowing no defect escapes its transaction (decisions 0014, 0032).
+ */
+const shown = <T extends Types>(program: Program<T>, state: T['state']): void => {
+  indexesOf(program, program.project(state))
+}
 
 /** A message waiting in the mailbox: from a caller, or from the entity's own work in one incarnation. */
 export type Envelope<T extends Types> =
@@ -245,7 +255,7 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
     })
   }
   const work = program.durable(stored.state)
-  program.project(stored.state)
+  shown(program, stored.state)
   const keys = renew(program, stored.keys, workOf(stored), work)
   for (const [key, { work: was, delivery }] of Object.entries(stored.keys)) {
     if (was === undefined || isTimer(was)) continue
@@ -310,7 +320,7 @@ const activate = <T extends Types>(
 
 export type Start<T extends Types> =
   | Readonly<{ _tag: 'Created' } & Transition<T>>
-  /** `init`, `durable` or `project` died on the first state: nothing is stored. */
+  /** `init`, `durable`, `project` or an index died on the first state: nothing is stored. */
   | Readonly<{ _tag: 'Defect'; cause: unknown }>
 
 /** Creates the entity `id` from its flags, answers the request `Created`, and activates it. */
@@ -326,7 +336,7 @@ export const start = <T extends Types>(
   try {
     state = program.init(flags, at)
     work = program.durable(state)
-    program.project(state)
+    shown(program, state)
   } catch (cause) {
     return { _tag: 'Defect', cause }
   }
@@ -444,7 +454,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
     }
     const state: T['state'] = result
     const after = program.durable(state)
-    program.project(state)
+    shown(program, state)
 
     // The work whose message is handled is done: its key counts as gone (decision 0008).
     const previous: Record<string, Durable<T['operation'], T['internal']>> = { ...workOf(stored) }

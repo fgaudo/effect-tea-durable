@@ -32,15 +32,13 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Storage and reading
 
-- **Queries across entities.** "Orders unpaid for a day" cannot be asked of stored states. A pure function
-  from the state to rows of a read table, written in the step's transaction, would answer it. How are those
-  tables declared and migrated?
 - **Publishing what happened.** Other systems (a queue, an event store, another service) need to learn what an
   entity did. The runtime could write `(id, the accepted message, the projection after)` to an outbox in the
-  step's transaction whenever the projection changes, and deliver it at least once. The message names the fact
-  (`ChargeSucceeded`), and the projection is already the public contract, so the program would declare nothing
-  more. Is that the way, and what does a consumer use to deduplicate? It is also where the history of an entity
-  that never ends (a subscription's past invoices) would go, since its state keeps only the present.
+  step's transaction whenever the projection changes, where it already writes the row a query reads
+  ([decision 0032](decisions/0032-a-projection-is-a-row.md)), and deliver it at least once. The message names
+  the fact (`ChargeSucceeded`), and the projection is already the public contract, so the program would declare
+  nothing more. Is that the way, and what does a consumer use to deduplicate? It is also where the history of
+  an entity that never ends (a subscription's past invoices) would go, since its state keeps only the present.
 - **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
   large state do: split into entities, or store a difference?
 - **Schemas that change.** States, flags, messages in the mailbox and the work under way are stored in the
@@ -48,8 +46,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   at activation, or all at once? A stored operation is compared with the new program's by value
   ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)): how is one read whose
   schema changed ([decision 0025](decisions/0025-operations-and-projections-have-schemas.md))? A projection's
-  schema is a contract with callers: how does it change under them? And renaming a program moves its entities,
-  and the replies stored for them by others
+  schema is a contract with callers: how does it change under them, when the row a query reads holds it in the
+  schema of the version that wrote it ([decision 0032](decisions/0032-a-projection-is-a-row.md))? And renaming
+  a program moves its entities, and the replies stored for them by others
   ([decision 0022](decisions/0022-a-new-program-keeps-what-work-started-with.md)).
 
 ## Running

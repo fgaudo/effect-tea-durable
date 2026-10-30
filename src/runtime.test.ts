@@ -81,6 +81,7 @@ type T = {
   rejection: 'Refused'
   sender: Sender
   projection: number
+  index: 'wanted'
   services: Hands
 }
 
@@ -136,6 +137,7 @@ const program: Program<T> = {
     C: operation.atLeastOnce(({ key }) => acts(key, null)),
   },
   project: (state) => state.want.length,
+  indexes: { wanted: (projection) => projection },
 }
 
 /**
@@ -724,4 +726,82 @@ describe('random sequences of events', () => {
       ),
       { numRuns: 25 },
     ), 60_000)
+})
+
+/**
+ * The read model: one row per entity, holding what callers read of it and the values of the program's indexes,
+ * written in the step's transaction, and a query across them (decision 0032).
+ */
+describe('the read model', () => {
+  const tester = { _tag: 'Tester' } as const
+  const ids = ['t-1', 't-2', 't-3']
+  const held = ['t-1', 't-3']
+  /** A later version of the program that counts the other way: its index is not the one the rows hold. */
+  const negated: Program<T> = { ...program, indexes: { wanted: (projection) => -projection } }
+
+  /** Three toys with nothing left under way: everything they were created with ran, and each reads 0. */
+  const settled = (runtime: Runtime, at: DateTime.Utc) =>
+    Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const toy = yield* Effect.provide(runtime.deploy(program), layer)
+      for (const id of ids) yield* toy.create(id, { at }, { requestId: `c-${id}`, sender: tester })
+      yield* runtime.settled
+      yield* Effect.sleep('60 millis')
+      yield* runtime.settled
+      return toy
+    })
+
+  /** Two of them given work that never comes back, so that the three do not all read the same. */
+  const working = (runtime: Runtime, of: Program<T>) =>
+    Effect.gen(function*() {
+      const { layer } = yield* hands({ holds: true })
+      const toy = yield* Effect.provide(runtime.deploy(of), layer)
+      for (const id of held) {
+        yield* toy.send(id, { _tag: 'Want', key: 'a', on: true, nonce: `on-${id}` }, {
+          requestId: `on-${id}`,
+          sender: tester,
+        })
+      }
+      return toy
+    })
+
+  test('a query finds the entities by an index, in order, and gives what callers read', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* settled(runtime, at)
+          expect(yield* toy.query({})).toEqual(ids.map((id) => ({ id, projection: 0 })))
+        }))
+      // The rows outlive the process that wrote them, and each step writes its own.
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* working(runtime, program)
+          expect(yield* toy.read('t-1')).toBe(1)
+          expect(yield* toy.query({ where: [{ index: 'wanted', is: '=', value: 0 }] }))
+            .toEqual([{ id: 't-2', projection: 0 }])
+          expect((yield* toy.query({ order: { index: 'wanted', descending: true } })).map(({ id }) => id))
+            .toEqual(['t-1', 't-3', 't-2'])
+          expect((yield* toy.query({ order: { index: 'wanted', descending: true }, limit: 2 })).map(({ id }) => id))
+            .toEqual(held)
+          expect(yield* toy.query({ where: [{ index: 'wanted', is: '>', value: 9 }] })).toEqual([])
+        }))
+    })))
+
+  test('reindex writes the rows again for an index a new version changed', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) => Effect.asVoid(settled(runtime, at)))
+      yield* process({}, (runtime) => Effect.asVoid(working(runtime, program)))
+      // The entities take no step in this process — their operations are started again, and hold — so nothing
+      // writes their rows, which hold what the version before counted.
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* working(runtime, negated)
+          expect(yield* toy.query({ where: [{ index: 'wanted', is: '<', value: 0 }] })).toEqual([])
+          expect(yield* toy.reindex).toBe(3)
+          expect((yield* toy.query({ where: [{ index: 'wanted', is: '=', value: -1 }] })).map(({ id }) => id))
+            .toEqual(held)
+        }))
+    })))
 })

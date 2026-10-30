@@ -8,7 +8,17 @@ import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import type * as Machine from './machine.ts'
-import { type Durable, isTimer, type Json, type Origin, type Program, timer, type Types } from './program.ts'
+import {
+  type Durable,
+  indexesOf,
+  isTimer,
+  type Json,
+  type Origin,
+  type Program,
+  type Scalar,
+  timer,
+  type Types,
+} from './program.ts'
 
 /**
  * The tables, created once for the database. Every entity of every program sits in them: the name of the program
@@ -57,6 +67,17 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       key TEXT,
       incarnation INTEGER,
       PRIMARY KEY (name, id, seq)
+    )
+  `
+  // What callers read of each entity, and the values of the program's indexes on it: the read model of a
+  // query across entities, written in the step's transaction (decision 0032).
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS projections (
+      name TEXT NOT NULL,
+      id TEXT NOT NULL,
+      projection TEXT NOT NULL,
+      indexes TEXT NOT NULL,
+      PRIMARY KEY (name, id)
     )
   `
   // The replies, by `requestKey`: a retry gets the one stored (decision 0015).
@@ -121,6 +142,36 @@ const Suspended = Schema.Union([
 export const render = (cause: unknown): string =>
   cause instanceof Error ? `${cause.name}: ${cause.message}` : typeof cause === 'string' ? cause : String(cause)
 
+/** How a query compares an index with a value. */
+export type Comparison = '=' | '<>' | '<' | '<=' | '>' | '>='
+
+const comparisons: ReadonlyArray<Comparison> = ['=', '<>', '<', '<=', '>', '>=']
+
+/**
+ * One thing that holds of the entities a query finds: the value of an index, compared with a value. Against
+ * `null`, `=` and `<>` ask whether the index holds one; an order against `null` finds nothing, as in SQL.
+ */
+export type Criterion<T extends Types> = Readonly<{ index: T['index']; is: Comparison; value: Scalar }>
+
+/** What a query across the entities of one program asks (decision 0032). */
+export type Query<T extends Types> = Readonly<{
+  /** Every criterion holds of the entities found; a query with none finds them all. */
+  where?: ReadonlyArray<Criterion<T>>
+  /** The index they are ordered by, ascending unless `descending`. Entities whose index is null come first. */
+  order?: Readonly<{ index: T['index']; descending?: boolean }>
+  /** How many at most, in that order. */
+  limit?: number
+}>
+
+/** An entity a query found, as a caller reads it. */
+export type Found<T extends Types> = Readonly<{ id: string; projection: T['projection'] }>
+
+/** An index's name is a word, so that it is a column of a query and of an index's expression. */
+const isName = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
+
+/** An identifier SQLite reads as written: a program's name is the author's, and is quoted, not escaped away. */
+const quoted = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`
+
 /** The entities an unloaded timer is due for, and the next time one is (decision 0029). */
 export type Due = Readonly<{
   /** The entities with a stored timer due at or before the time asked: each is activated, and its timer fires. */
@@ -152,6 +203,19 @@ export interface Storage<T extends Types> {
    * armed in it, and a suspended entity is left out, since nothing of its runs (decision 0029).
    */
   readonly due: (now: number, loaded: ReadonlyArray<string>) => Effect.Effect<Due>
+  /**
+   * Creates one expression index per index the program declares, so that a query over it is a lookup. Run once,
+   * where the program is deployed: an index the program no longer declares is left behind, and costs nothing.
+   */
+  readonly indexed: Effect.Effect<void>
+  /** The entities of the program whose indexes match, with what callers read of them (decision 0032). */
+  readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
+  /**
+   * Writes the row of every entity of the program again, from its stored state: what an index added or changed
+   * by a new version of the program needs, since a row is only written when its entity takes a step. Each row is
+   * its own write, so a crash leaves the rest to the next run, and gives how many were written.
+   */
+  readonly reindex: Effect.Effect<number>
 }
 
 /** The storage of one program's entities, on one client, with its schemas read once. */
@@ -163,7 +227,32 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const work = json(workOf(program))
   const reason = json(reasonOf(program.schemas.rejection))
   const suspended = json(Suspended)
+  const shown = json(program.schemas.projection)
   const { name } = program
+
+  /** The expression a query reads an index by, which its own index is on: the name is a word, so it is safe. */
+  const column = (index: string) => {
+    if (!(index in program.indexes) || !isName(index)) {
+      throw new Error(`'${index}' is no index of the program '${name}'`)
+    }
+    return sql.literal(`json_extract(indexes, '$.${index}')`)
+  }
+
+  /**
+   * The row a query reads: what callers read of the state, and the value of each index on it. Both are pure and
+   * were checked by the machine before the state was stored, so neither dies here (decision 0032).
+   */
+  const row = (id: string, held: T['state']) => {
+    const projection = program.project(held)
+    return sql`INSERT OR REPLACE INTO projections ${
+      sql.insert({
+        name,
+        id,
+        projection: shown.write(projection),
+        indexes: JSON.stringify(indexesOf(program, projection)),
+      })
+    }`
+  }
 
   const writeWork = (held: Durable<T['operation'], T['internal']>) =>
     work.write(
@@ -273,6 +362,9 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
           WHERE name = ${name} AND id = ${id}
         `
       }
+      // The read model is written when the state changed, which is when the projection can have changed: a
+      // projection is a function of the state alone (decision 0032).
+      if (before === null || before.state !== after.state) yield* row(id, after.state)
       // The keys and the mailbox are few, and one event may change any of them: they are written whole.
       yield* sql`DELETE FROM entity_keys WHERE name = ${name} AND id = ${id}`
       for (const [key, held] of Object.entries(after.keys)) {
@@ -362,5 +454,57 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       return { ready: ready.map((row) => row.id), next: rest[0]?.next ?? null } satisfies Due
     }).pipe(Effect.orDie)
 
-  return { load, write, interrupted, due }
+  const indexed = Effect.gen(function*() {
+    for (const index of Object.keys(program.indexes)) {
+      if (!isName(index)) throw new Error(`'${index}' is no name for an index of the program '${name}'`)
+      // An index of an expression is used only where the query's expression is written the same way.
+      yield* sql.unsafe(
+        `CREATE INDEX IF NOT EXISTS ${quoted(`projections ${name} ${index}`)} ON projections (name, ${
+          `json_extract(indexes, '$.${index}')`
+        })`,
+        [],
+      )
+    }
+  }).pipe(Effect.orDie)
+
+  const query = ({ limit, order, where = [] }: Query<T>) =>
+    Effect.gen(function*() {
+      const clauses = [sql`name = ${name}`]
+      for (const { index, is, value } of where) {
+        if (!comparisons.includes(is)) throw new Error(`'${is}' is no comparison`)
+        const of = column(index)
+        clauses.push(
+          // Nothing but `=` and `<>` says anything of an index that holds no value, as in SQL.
+          value === null
+            ? is === '=' ? sql`${of} IS NULL` : is === '<>' ? sql`${of} IS NOT NULL` : sql`0`
+            : sql`${of} ${sql.literal(is)} ${typeof value === 'boolean' ? (value ? 1 : 0) : value}`,
+        )
+      }
+      const by = order === undefined
+        ? sql`id`
+        : sql`${column(order.index)} ${sql.literal(order.descending === true ? 'DESC' : 'ASC')}, id`
+      const rows = yield* sql<{ id: string; projection: string }>`
+        SELECT id, projection FROM projections
+        WHERE ${sql.and(clauses)} ORDER BY ${by} LIMIT ${limit ?? -1}
+      `
+      return rows.map((row): Found<T> => ({ id: row.id, projection: shown.read(row.projection) }))
+    }).pipe(Effect.orDie)
+
+  const reindex = Effect.gen(function*() {
+    let cursor = ''
+    let written = 0
+    while (true) {
+      const rows = yield* sql<{ id: string; state: string }>`
+        SELECT id, state FROM entities WHERE name = ${name} AND id > ${cursor} ORDER BY id LIMIT ${batch}
+      `
+      if (rows.length === 0) return written
+      for (const held of rows) {
+        yield* row(held.id, state.read(held.state))
+        cursor = held.id
+        written = written + 1
+      }
+    }
+  }).pipe(Effect.orDie)
+
+  return { load, write, interrupted, due, indexed, query, reindex }
 }
