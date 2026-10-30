@@ -108,8 +108,9 @@ changes, from a timer to an operation, is new work
 What runs is always what the state says. After a crash the runtime does not look for what was running: it
 computes `durable(state)` again. It compares that with the work stored with the state, so that a new program,
 after a deploy, keeps the incarnations of the same work and starts anything else as new work. A new program that
-changes or drops an operation under way is a defect
-([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)).
+changes or drops an operation under way, delivers it otherwise, or bears another name is a defect
+([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md),
+[decision 0022](decisions/0022-a-new-program-keeps-what-work-started-with.md)).
 
 ### Incarnations
 
@@ -139,7 +140,7 @@ the booking is cancelled or expires.
 After each message the runtime stores, in one transaction:
 
 - the new state;
-- the incarnations of the keys, and the work the state holds;
+- the incarnations of the keys, and the work the state holds, with how each operation is delivered;
 - the message, marked as handled, with its reply for an inbound one.
 
 It stores the state, not the messages that led to it: a fixed `update` changes what happens next, never what

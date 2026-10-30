@@ -35,9 +35,12 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   that never ends (a subscription's past invoices) would go, since its state keeps only the present.
 - **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
   large state do: split into entities, or store a difference?
-- **Schemas that change.** States, flags and messages in the mailbox are stored in the schema of the version
-  that wrote them. How does a migration of a state's schema look, and when does it run: at activation, or all
-  at once?
+- **Schemas that change.** States, flags, messages in the mailbox and the work under way are stored in the
+  schema of the version that wrote them. How does a migration of a state's schema look, and when does it run:
+  at activation, or all at once? A stored operation is compared with the new program's by value
+  ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)): how is one read whose
+  schema changed? And renaming a program moves its entities, and the replies stored for them by others
+  ([decision 0022](decisions/0022-a-new-program-keeps-what-work-started-with.md)).
 
 ## Running
 

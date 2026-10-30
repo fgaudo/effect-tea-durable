@@ -117,11 +117,18 @@ const retuned: Program<T> = {
   },
 }
 
-/** The program a restart or a resumption brings: the one running, the first version, or the retuned one. */
-type Version = 'same' | 'first' | 'retuned'
+// A new version of the program that runs `b` at least once: a deploy that changes it while it runs is a defect.
+const redelivered: Program<T> = {
+  ...program,
+  operations: { ...program.operations, B: operation.atLeastOnce(() => Effect.succeed(done('b'))) },
+}
 
-const versionOf = (version: Version) =>
-  version === 'same' ? undefined : version === 'first' ? program : retuned
+const versions = { first: program, retuned, redelivered } as const
+
+/** The program a restart or a resumption brings: the one running, or one of the versions. */
+type Version = 'same' | keyof typeof versions
+
+const versionOf = (version: Version) => (version === 'same' ? undefined : versions[version])
 
 type Command =
   | Readonly<{ _tag: 'Send'; kind: Inbound['_tag']; key: Key; on: boolean }>
@@ -140,7 +147,7 @@ type Command =
   | Readonly<{ _tag: 'Discard' }>
 
 const key = fc.constantFrom(...keys)
-const version = fc.constantFrom<Version>('same', 'same', 'first', 'retuned')
+const version = fc.constantFrom<Version>('same', 'same', 'same', 'first', 'retuned', 'redelivered')
 const pick = fc.nat()
 
 const command: fc.Arbitrary<Command> = fc.oneof(
@@ -296,18 +303,17 @@ const run = (commands: ReadonlyArray<Command>) => {
     for (const event of toEvents(machine, command, requests)) apply(event)
   }
   // Then everything ends: bugs are discarded, operations complete, timers fire, and the mailbox is handled. A
-  // suspended entity is tried in turn with a discard and with each version, until one keeps what runs.
+  // suspended entity is discarded or resumed, by each version in turn, until one keeps what runs.
+  const fixes = [program, retuned, redelivered] as const
+  let tried = 0
   for (let turn = 0; turn < 200; turn++) {
     const { stored } = machine
     const operation = runningOf(machine, 'Operation')[0]
     const firing = runningOf(machine, 'Timer')[0]
     if (stored.suspension !== null) {
-      const tries: ReadonlyArray<Machine.Event<T>> = [
-        ...(stored.suspension.on._tag === 'Message' ? [{ _tag: 'Discard' } as const] : []),
-        { _tag: 'Resume', program },
-        { _tag: 'Resume', program: retuned },
-      ]
-      apply(tries[turn % tries.length]!)
+      // A discard needs a program that keeps what runs: on its failure, the next version is brought.
+      const discarding = stored.suspension.on._tag === 'Message' && trace.at(-1)?.event._tag !== 'Discard'
+      apply(discarding ? { _tag: 'Discard' } : { _tag: 'Resume', program: fixes[tried++ % fixes.length] ?? program })
     } else if (stored.mailbox.length > 0) apply({ _tag: 'Handle', at })
     else if (operation !== undefined) {
       const [key, { incarnation }] = operation
@@ -435,15 +441,19 @@ describe('the machine', () => {
       }
     }))
 
+  // At most once as the program that started it declared, whatever a later version says.
   test('an at-most-once operation is started once per incarnation, and a restarted one gets the same key', () =>
     property(({ trace }) => {
       const started = new Map<string, IdempotencyKey>()
-      for (const { outputs } of trace) {
+      const atMostOnce = new Set<string>()
+      for (const { after, outputs } of trace) {
         for (const output of outputs) {
           if (output._tag !== 'Started') continue
           const id = `${output.key}@${output.incarnation}`
           const known = started.get(id)
-          if (runnerOf(program, output.operation).delivery === 'AtMostOnce') expect(known).toBeUndefined()
+          if (known === undefined && runnerOf(after.program, output.operation).delivery === 'AtMostOnce') {
+            atMostOnce.add(id)
+          } else expect(atMostOnce.has(id)).toBe(false)
           if (known !== undefined) expect(output.idempotencyKey).toBe(known)
           started.set(id, output.idempotencyKey)
         }
@@ -864,6 +874,29 @@ describe('a new program', () => {
     expect(changed.outputs.filter((output) => output._tag === 'Started')).toEqual([])
     const dropped = deployed(machine, () => ({}))
     expect(reasonOfSuspension(dropped)).toBe("the program dropped the operation under 'charge' before its completion")
+  })
+
+  test('changing how an operation under way is delivered is a defect', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const program = machine.program
+    const transition = Machine.step(machine, {
+      _tag: 'Restart',
+      program: { ...program, operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => '?') } },
+    })
+    expect(reasonOfSuspension(transition)).toBe(
+      "the program changed how the operation under 'charge' is delivered before its completion",
+    )
+    expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+  })
+
+  test('a program of another name is a defect, even brought while the entity is suspended', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const renamed = { ...machine.program, name: 'Renamed' }
+    const reason = "the program 'Renamed' replaces the entity's program 'Tiny'"
+    expect(reasonOfSuspension(Machine.step(machine, { _tag: 'Restart', program: renamed }))).toBe(reason)
+    const suspended = deployed(machine, () => ({ charge: 'larger operation' })).machine
+    const restarted = Machine.step(suspended, { _tag: 'Restart', program: renamed }).machine
+    expect(reasonOfSuspension(Machine.step(restarted, { _tag: 'Resume' }))).toBe(reason)
   })
 
   test('an entity it suspended is resumed by a program that keeps the operation', () => {

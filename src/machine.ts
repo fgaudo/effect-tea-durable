@@ -17,6 +17,7 @@ import {
   type Program,
   reasonOf,
   type Reply,
+  type Runner,
   runnerOf,
   type Timer,
   type Types,
@@ -59,6 +60,11 @@ export type Stored<T extends Types> = Readonly<{
    * program's work with (decision 0020).
    */
   work: Work<T>
+  /**
+   * How each operation in `work` is delivered, as the program that started it declared: what an activation
+   * compares a new program's runners with (decision 0022).
+   */
+  deliveries: Readonly<Record<string, Delivery>>
   mailbox: ReadonlyArray<Envelope<T>>
   /** By `requestKey`. */
   replies: Readonly<Record<string, StoredReply<T['rejection']>>>
@@ -72,6 +78,8 @@ export type Running = Readonly<{ kind: 'Operation' | 'Timer'; incarnation: numbe
 
 export type Machine<T extends Types> = Readonly<{
   program: Program<T>
+  /** The name of the program the entity was created by: with its id, the entity's address (decision 0022). */
+  name: string
   id: string
   stored: Stored<T>
   /** What the process is doing, lost in a crash. */
@@ -133,9 +141,23 @@ export const holds = <T extends Types>(stored: Stored<T>, key: string, incarnati
   stored.work[key] !== undefined && stored.incarnations[key] === incarnation
 
 export const idempotencyKeyOf = <T extends Types>(machine: Machine<T>, key: string, incarnation: number) =>
-  idempotencyKey({ name: machine.program.name, id: machine.id }, key, incarnation)
+  idempotencyKey({ name: machine.name, id: machine.id }, key, incarnation)
 
 type Work<T extends Types> = Readonly<Record<string, Durable<T['operation'], T['internal']>>>
+
+type Delivery = Runner<unknown, unknown, unknown>['delivery']
+
+/** How `program` delivers each operation of `work`, or `undefined` for one it has no runner for. */
+const deliveriesOf = <T extends Types>(program: Program<T>, work: Work<T>): Record<string, Delivery> => {
+  const deliveries: Record<string, Delivery> = {}
+  for (const [key, durable] of Object.entries(work)) {
+    if (isTimer(durable)) continue
+    // A program a deploy brings may have no runner for an operation it finds stored.
+    const runner: Runner<T['operation'], T['internal'], T['services']> | undefined = runnerOf(program, durable)
+    if (runner !== undefined) deliveries[key] = runner.delivery
+  }
+  return deliveries
+}
 
 const kindOf = (work: unknown): Running['kind'] => (isTimer(work) ? 'Timer' : 'Operation')
 
@@ -175,27 +197,38 @@ const startWork = <T extends Types>(
 
 /**
  * The work a program returns on the stored state, against the work stored with it: what is the same keeps its
- * incarnation, and anything else is new work. An operation the program changes or drops before its completion
- * is a defect, as in a step (decision 0020).
+ * incarnation, and anything else is new work. A program of another name, or one that changes, drops or delivers
+ * otherwise an operation before its completion, is a defect, as in a step (decisions 0020, 0022).
  */
-const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Stored<T> => {
+const reconcile = <T extends Types>(program: Program<T>, name: string, stored: Stored<T>): Stored<T> => {
+  if (program.name !== name) {
+    throw new InvariantDefect({ reason: `the program '${program.name}' replaces the entity's program '${name}'` })
+  }
   const work = program.durable(stored.state)
   program.project(stored.state)
+  const deliveries = deliveriesOf(program, work)
   const incarnations = { ...stored.incarnations }
   for (const [key, was] of Object.entries(stored.work)) {
-    if (isTimer(was) || isSame(was, work[key])) continue
+    if (isTimer(was)) continue
     const next = work[key]
-    throw new InvariantDefect({
-      reason: next === undefined || isTimer(next)
-        ? `the program dropped the operation under '${key}' before its completion`
-        : `the program changed the operation under '${key}' before its completion`,
-    })
+    if (!isSame(was, next)) {
+      throw new InvariantDefect({
+        reason: next === undefined || isTimer(next)
+          ? `the program dropped the operation under '${key}' before its completion`
+          : `the program changed the operation under '${key}' before its completion`,
+      })
+    }
+    if (deliveries[key] !== stored.deliveries[key]) {
+      throw new InvariantDefect({
+        reason: `the program changed how the operation under '${key}' is delivered before its completion`,
+      })
+    }
   }
   for (const [key, next] of Object.entries(work)) {
     const was = stored.work[key]
     if (was === undefined || !isSame(was, next)) incarnations[key] = (incarnations[key] ?? 0) + 1
   }
-  return { ...stored, incarnations, work }
+  return { ...stored, incarnations, work, deliveries }
 }
 
 /**
@@ -213,7 +246,7 @@ const activate = <T extends Types>(
   if (machine.stored.suspension !== null) return { machine: { ...machine, program, running: {} }, outputs: [] }
   let stored: Stored<T>
   try {
-    stored = reconcile(program, machine.stored)
+    stored = reconcile(program, machine.name, machine.stored)
   } catch (cause) {
     return suspend({ ...before, program }, { cause, on: before.stored.suspension?.on ?? { _tag: 'Activation' } })
   }
@@ -260,8 +293,18 @@ export const start = <T extends Types>(
   }
   const incarnations = Object.fromEntries(Object.keys(work).map((key) => [key, 1]))
   const creation = requestKey(request.from, request.requestId)
-  const stored: Stored<T> = { state, incarnations, work, mailbox: [], replies: {}, creation, suspension: null }
-  const created: Machine<T> = { program, id, stored, running: {} }
+  const deliveries = deliveriesOf(program, work)
+  const stored: Stored<T> = {
+    state,
+    incarnations,
+    work,
+    deliveries,
+    mailbox: [],
+    replies: {},
+    creation,
+    suspension: null,
+  }
+  const created: Machine<T> = { program, name: program.name, id, stored, running: {} }
   const { machine, outputs } = activate(created, created, program, () => false)
   const reply: Output<T> = { _tag: 'Replied', ...request, reply: { _tag: 'Created' } }
   return { _tag: 'Created', machine, outputs: [reply, ...outputs] }
@@ -403,7 +446,15 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
     return {
       machine: {
         ...machine,
-        stored: { ...stored, state, incarnations, work: after, mailbox: rest, replies },
+        stored: {
+          ...stored,
+          state,
+          incarnations,
+          work: after,
+          deliveries: deliveriesOf(program, after),
+          mailbox: rest,
+          replies,
+        },
         running,
       },
       outputs,
