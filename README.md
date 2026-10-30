@@ -11,6 +11,7 @@ cluster or a clock.
   at each point where the process may die;
 - [`docs/decisions/`](docs/decisions): one note per decision, with the alternatives it rejected;
 - [`docs/open-questions.md`](docs/open-questions.md): what is not decided yet;
+- [`docs/roadmap.md`](docs/roadmap.md): the steps from this design to a library, in order;
 - [`examples/order`](examples/order): an order's lifecycle written against the imagined API
   ([`examples/api.ts`](examples/api.ts), declarations only). The typecheck tells whether the design can be
   expressed; if the example reads badly, the API is wrong.
