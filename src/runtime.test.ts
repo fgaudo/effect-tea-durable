@@ -221,6 +221,43 @@ const replayed = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) => 
   return machine.stored
 }
 
+/**
+ * What the committed events published, derived from the machine: the entity's creation, and every step after it
+ * that left callers reading something else (decision 0038). It is what the outbox must hold, row for row. The
+ * projection is a number here, so it is compared by value, where the runtime compares it as it is written.
+ */
+const publishedOf = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) => {
+  const [first, ...rest] = events
+  // A log without a creation is one that never committed: nothing of the entity was published either.
+  if (first === undefined || first._tag !== 'Create') return []
+  const created = Machine.start(program, id, { at }, at, { requestId: first.requestId, from: first.from })
+  if (created._tag === 'Defect') throw created.cause
+  let machine = created.machine
+  let shown = program.project(machine.stored.state)
+  type Row = Readonly<{
+    kind: 'Creation' | 'Inbound' | 'Internal'
+    message: Inbound | Internal | null
+    projection: number
+  }>
+  const rows: Array<Row> = [{ kind: 'Creation', message: null, projection: shown }]
+  for (const event of rest) {
+    // The message a step handles is the mailbox's first, read before the step takes it.
+    const head = machine.stored.mailbox[0]
+    const next = Machine.step(machine, event).machine
+    const after = program.project(next.stored.state)
+    if (next.stored.state !== machine.stored.state && after !== shown) {
+      rows.push({
+        kind: head?._tag ?? 'Creation',
+        message: head?.message ?? null,
+        projection: after,
+      })
+    }
+    machine = next
+    shown = after
+  }
+  return rows
+}
+
 /** The entities a process unloaded, in order: a passivation commits no event, and is seen only here. */
 const unloads = () => {
   const entities: Array<string> = []
@@ -590,6 +627,8 @@ describe('the crash table', () => {
           // The crash happened where the test asked: a point never reached would make the comparison vacuous.
           expect(yield* Deferred.isDone(crashed)).toBe(true)
           expect(shape(yield* store.load(id))).toEqual(shape(replayed(since, events)))
+          expect((yield* store.published(0)).map(({ kind, message, projection }) => ({ kind, message, projection })))
+            .toEqual(publishedOf(since, events))
         })))
     }
   }
@@ -727,6 +766,9 @@ describe('random sequences of events', () => {
               }))
 
             expect(shape(yield* store.load(id))).toEqual(shape(replayed(since, events)))
+            expect(
+              (yield* store.published(0)).map(({ kind, message, projection }) => ({ kind, message, projection })),
+            ).toEqual(publishedOf(since, events))
           })),
       ),
       { numRuns: 25 },
@@ -934,6 +976,18 @@ describe('publishing what happened', () => {
           // A consumer that read to the end is given nothing again.
           expect(yield* toy.published(seqs[seqs.length - 1] ?? 0)).toEqual([])
         }))
+    })))
+
+  test('a consumer reads from its cursor through an index, and never scans the log', () =>
+    database(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const plan = yield* sql.unsafe<{ detail: string }>(
+        `EXPLAIN QUERY PLAN SELECT seq, id, tag, version, message, projection FROM outbox
+         WHERE name = 'Toy' AND seq > 7 ORDER BY seq LIMIT 100`,
+      )
+      // A range over (name, seq), which is also the order read: the log grows until a consumer prunes it, and
+      // a poll must not read again what it has read.
+      expect(plan.map(({ detail }) => detail).join(' ')).toContain('USING INDEX outbox_name (name=? AND seq>?)')
     })))
 
   test('a step whose transaction never commits publishes nothing', () =>
