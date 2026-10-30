@@ -221,7 +221,12 @@ const unloads = () => {
     Effect.sync(() => {
       entities.push(entity.id)
     })
-  return { entities, unloaded }
+  /** Waits until `count` entities have been unloaded: a passivation is not an event a test can wait for. */
+  const after = (count: number): Effect.Effect<void> =>
+    Effect.suspend(() =>
+      entities.length >= count ? Effect.void : Effect.flatMap(Effect.sleep('1 millis'), () => after(count))
+    )
+  return { entities, unloaded, after }
 }
 
 /** Collects every event the runtime commits, in order. */
@@ -345,15 +350,15 @@ describe('passivation', () => {
     database(Effect.gen(function*() {
       const { layer } = yield* hands()
       const { events, observe } = log()
-      const { entities, unloaded } = unloads()
+      const { entities, unloaded, after } = unloads()
       const at = yield* DateTime.now
-      yield* process({ observe, unloaded, passivate: { millis: 15 } }, (runtime) =>
+      yield* process({ observe, unloaded, passivate: { millis: 5 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
           yield* runtime.settled
           // Only the timer is left, and nothing holds the entity loaded: it is unloaded with the timer stored.
-          yield* Effect.sleep('30 millis')
+          yield* after(1)
           expect(entities).toEqual([id])
           // What callers read of an unloaded entity is read from storage.
           expect(yield* toy.read(id)).toBe(1)
@@ -362,7 +367,7 @@ describe('passivation', () => {
           yield* runtime.settled
           expect(yield* toy.read(id)).toBe(0)
           // Nothing is left to do, so the entity is unloaded again.
-          yield* Effect.sleep('30 millis')
+          yield* after(2)
           expect(entities).toEqual([id, id])
         }))
       const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
@@ -372,15 +377,15 @@ describe('passivation', () => {
   test('a caller loads an unloaded entity again, and is answered', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()
-      const { entities, unloaded } = unloads()
+      const { entities, unloaded, after } = unloads()
       const at = yield* DateTime.now
-      yield* process({ unloaded, passivate: { millis: 15 } }, (runtime) =>
+      yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
           yield* runtime.settled
-          yield* Effect.sleep('30 millis')
-          expect(entities.length).toBeGreaterThan(0)
+          yield* after(1)
+          expect(entities).toEqual([id])
           // The entity is loaded again to handle the message, and the reply is the step's.
           expect(yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'w' }, {
             requestId: 'r1',
@@ -405,11 +410,14 @@ describe('passivation', () => {
         }))
       expect((yield* store.load(id))?.state.want).toEqual(['t'])
       const since = (yield* store.load(id))?.state.since ?? at
+      // There is nothing for a process to activate: a timer is not an operation a crash interrupted.
+      expect(yield* store.interrupted).toEqual([])
       yield* process({ observe }, (runtime) =>
         Effect.gen(function*() {
           const { layer } = yield* hands()
           yield* Effect.provide(runtime.deploy(program), layer)
-          // The deploy activated nothing: the timer is not due yet, and no caller has asked for the entity.
+          // The waker has had its turn and activated nothing: the timer's time has not come.
+          yield* Effect.sleep('10 millis')
           expect(events.filter((event) => event._tag === 'Restart').length).toBe(0)
           // Its time comes, and the entity is activated for it.
           yield* Effect.sleep('60 millis')
@@ -423,10 +431,10 @@ describe('passivation', () => {
   test('a suspended entity is unloaded, no timer of its fires, and an operator loads it again', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()
-      const { entities, unloaded } = unloads()
+      const { entities, unloaded, after } = unloads()
       const at = yield* DateTime.now
       const store = storage(program, yield* SqlClient.SqlClient)
-      yield* process({ unloaded, passivate: { millis: 15 } }, (runtime) =>
+      yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
@@ -436,8 +444,9 @@ describe('passivation', () => {
             sender: { _tag: 'Tester' },
           })).toEqual({ _tag: 'Suspended' })
           // It is unloaded with the message it died on, and its timer's time passes without firing.
+          yield* after(1)
           yield* Effect.sleep('80 millis')
-          expect(entities).toContain(id)
+          expect(entities).toEqual([id])
           const stored = yield* store.load(id)
           expect(stored?.suspension?.on).toEqual({ _tag: 'Message' })
           expect(stored?.mailbox.length).toBe(1)

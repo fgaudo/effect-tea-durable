@@ -100,7 +100,10 @@ export interface Runtime {
   readonly deploy: <T extends Types>(
     program: Program<T>,
   ) => Effect.Effect<Handle<T>, never, Exclude<T['services'], Entities>>
-  /** Waits until nothing is under way: no event waits, no mailbox holds a message, no operation runs. */
+  /**
+   * Waits until nothing is under way: no event waits, no mailbox holds a message, no operation runs, and no
+   * stored timer of an entity this process has unloaded is due (decision 0029).
+   */
   readonly settled: Effect.Effect<void>
 }
 
@@ -119,11 +122,12 @@ interface Loaded<T extends Types> {
  * sleeps until then, and activates what the time has come for (decision 0029).
  */
 interface Waker {
-  /** The set of unloaded entities changed, and the earliest due has to be read again. */
-  dirty: boolean
-  /** The entities a timer is due for are being activated. */
-  waking: boolean
-  /** The earliest time a stored timer of an unloaded entity is due, as it was last read. */
+  /**
+   * The fiber has something to do: it is reading the earliest due, activating what the time has come for, or has
+   * been poked. While it is set, nothing is known of the stored timers, and the process is not settled.
+   */
+  busy: boolean
+  /** The earliest time a stored timer of an unloaded entity is due, read while the fiber was not busy. */
   next: number | null
   /** An entity was unloaded, and its timers may be due before the one the fiber sleeps for. */
   readonly poke: Queue.Queue<void>
@@ -139,6 +143,16 @@ interface Deployment<T extends Types> {
 }
 
 const under = (key: string, incarnation: number) => `${key}@${incarnation}`
+
+/**
+ * Tells the waker that the set of unloaded entities changed. Its flag and its poke are set in one step, and the
+ * waker clears the flag in one step too, so the process is never settled with a poke nobody has taken.
+ */
+const poke = (waker: Waker) =>
+  Effect.sync(() => {
+    waker.busy = true
+    Queue.offerUnsafe(waker.poke, undefined)
+  })
 
 export const launch = (options: Options = {}): Effect.Effect<Runtime, never, SqlClient.SqlClient | Scope.Scope> =>
   Effect.gen(function*() {
@@ -357,11 +371,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       registry.withPermits(1)(Effect.gen(function*() {
         const { id } = loaded.machine.stored
         if (!nothingToDo(loaded) || deployed.loaded.get(id) !== loaded) return false
+        // The waker is told before the entity leaves this process, and holds the permit while it reads: there is
+        // no moment at which the entity's timers are neither armed here nor counted among the stored ones.
+        yield* poke(deployed.waker)
         deployed.loaded.delete(id)
+        // A timer that fires between here and its interruption delivers nothing, and the stored time stands.
         yield* stopAll(loaded)
-        // Its timers are the process's no longer: the earliest due has to be read again.
-        deployed.waker.dirty = true
-        yield* Queue.offer(deployed.waker.poke, undefined)
         yield* unloaded({ name: deployed.program.name, id })
         return true
       }))
@@ -415,14 +430,18 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const withEntity = <T extends Types, A>(
       deployed: Deployment<T>,
       id: string,
-      held: (loaded: Loaded<T> | null) => Effect.Effect<A>,
+      found: (loaded: Loaded<T> | null) => Effect.Effect<A>,
     ) =>
       registry.withPermits(1)(Effect.gen(function*() {
         const loaded = deployed.loaded.get(id)
-        if (loaded !== undefined) return yield* held(loaded)
+        if (loaded !== undefined) return yield* found(loaded)
         const stored = yield* deployed.storage.load(id)
-        return yield* held(stored === null ? null : yield* activate(deployed, stored))
+        return yield* found(stored === null ? null : yield* activate(deployed, stored))
       }))
+
+    /** Loads the entity `id` into this process, if it is stored and this process does not hold it already. */
+    const loads = <T extends Types>(deployed: Deployment<T>, id: string) =>
+      withEntity(deployed, id, () => Effect.void)
 
     const operate = <T extends Types>(deployed: Deployment<T>, id: string, event: Machine.Event<T>) =>
       withEntity(deployed, id, (loaded) => loaded === null ? Effect.void : Queue.offer(loaded.events, event))
@@ -531,20 +550,28 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const waking = <T extends Types>(deployed: Deployment<T>): Effect.Effect<void> => {
       const { waker } = deployed
       const next: Effect.Effect<void> = Effect.gen(function*() {
-        waker.dirty = false
         const now = DateTime.toEpochMillis(yield* DateTime.now)
         const due = yield* deployed.storage.due(now, [...deployed.loaded.keys()])
         waker.next = due.next
+        // The entities just activated are this process's, and the reading that follows leaves them out.
         if (due.ready.length > 0) {
-          waker.waking = true
-          for (const id of due.ready) yield* withEntity(deployed, id, () => Effect.void)
-          waker.waking = false
-          // The entities just activated are this process's, and the reading that follows leaves them out.
+          for (const id of due.ready) yield* loads(deployed, id)
+          return yield* next
+        }
+        // The reading is behind an entity unloaded meanwhile, and is made again before the fiber rests.
+        const rests = yield* Effect.sync(() => {
+          if (Queue.sizeUnsafe(waker.poke) > 0) return false
+          waker.busy = false
+          return true
+        })
+        if (!rests) {
+          yield* Queue.take(waker.poke)
           return yield* next
         }
         yield* due.next === null
           ? Queue.take(waker.poke)
           : Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(`${Math.max(0, due.next - now)} millis`))
+        waker.busy = true
         return yield* next
       })
       return next
@@ -558,12 +585,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           storage: storage(program, sql),
           loaded: new Map(),
           // Nothing is known of the stored timers until the waker has read them once.
-          waker: { dirty: true, waking: false, next: null, poke: yield* Queue.sliding<void>(1) },
+          waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1) },
           run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
         }
         deployments.set(program.name, deployed as unknown as Deployment<never>)
         // An operation a crash interrupted starts again here; a timer waits for its time, loaded or not.
-        for (const id of yield* deployed.storage.interrupted) yield* withEntity(deployed, id, () => Effect.void)
+        for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)
         yield* Effect.forkIn(waking(deployed), scope)
         const handle: Handle<T> = {
           create: (id, flags, request) =>
@@ -594,7 +621,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       for (const deployed of deployments.values()) {
         const { waker } = deployed
         // A timer of an unloaded entity whose time has come is work the process has not activated yet.
-        if (waker.dirty || waker.waking || Queue.sizeUnsafe(waker.poke) > 0) return false
+        if (waker.busy) return false
         if (waker.next !== null && waker.next <= now) return false
         for (const loaded of deployed.loaded.values()) {
           const { stored } = loaded.machine

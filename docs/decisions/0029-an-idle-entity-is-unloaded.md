@@ -6,8 +6,8 @@
 
 The design says that an entity with no message, no operation under way and only timers armed is unloaded, and
 that the earliest of those timers wakes it: to the machine a passivation is a crash the runtime chose
-([`docs/design.md`](../design.md)). The first runtime does not do it: it activates every entity whose state holds
-work when the process starts and holds it for as long as it lives
+([`docs/design.md`](../design.md)). The first runtime did not do it: it activated every entity whose state held
+work when the process started, and held it for as long as the process lived
 ([decision 0028](0028-rules-the-runtime-settled.md)). Writing it, the first step of the
 [roadmap](../roadmap.md), had to say when an entity is unloaded, what wakes it, and what keeps a caller from
 losing its message to a passivation.
@@ -19,7 +19,8 @@ losing its message to a passivation.
   Activating it again is the `Restart` of a crash, so the timers of the stored work are armed in the same
   incarnations. The runtime's tests compare the database with the pure machine replayed on the events the runtime
   committed ([decision 0013](0013-the-runtime-is-a-pure-machine.md)); a passivation commits none, and the
-  comparison is what says it lost nothing.
+  comparison is what says it lost nothing. It writes nothing, so it reaches no point of the crash table either:
+  a crash during a passivation is a crash with the entity's work stored, which the table already covers.
 - **An entity is unloaded once nothing has come for it for a while.** The entity's loop already waits for an
   event when the stored mailbox holds no message, and that wait is where the entity is unloaded: the wait times
   out, never the take, so an event taken is always applied. Nothing to do means no event waiting, no operation
@@ -32,22 +33,29 @@ losing its message to a passivation.
 - **An entity is never unloaded under a caller.** Finding the entity and offering its event is one step, under
   the permit a load already takes, and a passivation takes the same permit: a caller that has found an entity
   has offered its event before the entity can be unloaded.
-- **A process starts with the entities whose state holds an operation.** An operation a crash interrupted must
-  run again, and nothing but an activation runs it. A timer needs no activation of its own: its time is stored
+- **A process starts with the entities whose state holds an operation.** This replaces the rule of
+  [decision 0028](0028-rules-the-runtime-settled.md) that a process activates every entity whose state holds
+  work: holding them all was the counterpart of not passivating. An operation a crash interrupted must run
+  again, and nothing but an activation runs it. A timer needs no activation of its own: its time is stored
   (`entity_keys.due`), and a fiber of the process reads the earliest time a timer of an unloaded entity is due,
   sleeps until then, and activates the entities whose time has come — arming a timer already due fires it. It
-  reads again whenever an entity is unloaded, since its timers may be due before the one the fiber sleeps for.
+  reads again whenever an entity is unloaded, since its timers may be due before the one the fiber sleeps for,
+  and it is told before the entity leaves the process: a timer is either armed here or counted among the stored
+  ones, never neither. So a timer that fires in the instant before its interruption may deliver nothing, and
+  costs nothing: the stored time stands, and the entity is activated for it.
 - **An unloaded entity holds no operation.** An operation under way keeps its entity loaded, and an operation
   stored with none under way means the entity is suspended or has its completion in the mailbox — neither of
   which is idle. So the stored timers wake everything that has to run, and an at-most-once operation never
   delivers its `unknown` because of a passivation ([decision 0011](0011-an-operation-declares-what-a-crash-does.md)).
 - **How long is an option of the runtime.** `passivate.millis`, thirty seconds by default. A large one is a
-  process that holds what it loads, as before this decision.
+  process that holds what it loads, as before this decision. A passivation is no event, so it is not seen
+  through `observe`: a hook of its own (`unloaded`) is called with every entity unloaded, which is what the
+  tests count.
 
 ## Alternatives
 
 - **Holding every entity**, which is what [decision 0028](0028-rules-the-runtime-settled.md) did. One process
-  then holds every entity that has ever had work, and a million subscriptions with a monthly timer are a million
+  holds every entity that has ever had work, and a million subscriptions with a monthly timer are a million
   machines in memory for nothing.
 - **A sweeper over the loaded entities**, on a clock of its own, instead of each entity's own wait. It would have
   to interrupt a loop that may be between taking an event and applying it, and lose it.
