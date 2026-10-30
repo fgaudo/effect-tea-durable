@@ -312,9 +312,20 @@ export const start = <T extends Types>(
   return { _tag: 'Created', machine, outputs: [reply, ...outputs] }
 }
 
+/**
+ * Suspends the entity, and answers `Suspended` to every caller whose message waits in the mailbox: it has no reply
+ * yet, and gets one by retrying once the entity is resumed (decision 0023).
+ */
 const suspend = <T extends Types>(machine: Machine<T>, suspension: Suspension): Transition<T> => ({
   machine: { ...machine, stored: { ...machine.stored, suspension }, running: {} },
-  outputs: [{ _tag: 'Suspended', cause: suspension.cause }],
+  outputs: [
+    { _tag: 'Suspended', cause: suspension.cause },
+    ...machine.stored.mailbox.flatMap((envelope): ReadonlyArray<Output<T>> =>
+      envelope._tag === 'Inbound'
+        ? [{ _tag: 'Replied', requestId: envelope.requestId, from: envelope.from, reply: { _tag: 'Suspended' } }]
+        : []
+    ),
+  ],
 })
 
 const receive = <T extends Types>(
@@ -327,6 +338,7 @@ const receive = <T extends Types>(
   // A stored reply is read from storage: a suspended entity gives it too.
   const reply = stored.replies[request]
   if (reply !== undefined) return { machine, outputs: [{ _tag: 'Replied', requestId, from, reply }] }
+  // Queued or not, a message has no reply yet: its caller retries once the entity is resumed (decision 0023).
   if (stored.suspension !== null) {
     return { machine, outputs: [{ _tag: 'Replied', requestId, from, reply: { _tag: 'Suspended' } }] }
   }
@@ -462,16 +474,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
       outputs,
     }
   } catch (cause) {
-    const suspended = suspend(machine, { cause, on: { _tag: 'Message' } })
-    return head._tag === 'Inbound'
-      ? {
-        machine: suspended.machine,
-        outputs: [
-          ...suspended.outputs,
-          { _tag: 'Replied', requestId: head.requestId, from: head.from, reply: { _tag: 'Suspended' } },
-        ],
-      }
-      : suspended
+    return suspend(machine, { cause, on: { _tag: 'Message' } })
   }
 }
 

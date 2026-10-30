@@ -189,8 +189,12 @@ operation, in `durable` or `project` on a step's next state, or in a new program
 suspends it too. Resuming activates it as after a
 crash; a discarded message ends its work as if it had been handled
 ([decision 0014](decisions/0014-rules-the-machine-settled.md)). A caller meanwhile is answered `Suspended`, which
-is not stored, and retries
-([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)).
+is not stored: every caller whose message waits in the mailbox when the entity suspends, and every message that
+arrives while it is, which is not queued. `Suspended` says only that the request has no reply yet. The caller
+retries under the same request id, and gets the stored reply once the entity is resumed: the message is applied
+once, whichever retry finds it
+([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md),
+[decision 0023](decisions/0023-suspended-means-no-reply-yet.md)).
 
 ## Reading
 

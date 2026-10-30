@@ -576,7 +576,20 @@ describe('the machine', () => {
       }
     }))
 
-  // A request answered `Suspended` was never in the mailbox: its caller retries.
+  // So no caller waits on a suspended entity: whether its message is queued or not, it retries (decision 0023).
+  test('when the entity suspends, every caller waiting in its mailbox is answered Suspended', () =>
+    property(({ trace }) => {
+      for (const { after, outputs } of trace) {
+        if (!outputs.some((output) => output._tag === 'Suspended')) continue
+        for (const envelope of after.stored.mailbox) {
+          if (envelope._tag !== 'Inbound') continue
+          const { requestId, from } = envelope
+          expect(outputs).toContainEqual({ _tag: 'Replied', requestId, from, reply: { _tag: 'Suspended' } })
+        }
+      }
+    }))
+
+  // A request answered `Suspended` while the entity is suspended was never in the mailbox: its caller retries.
   test('once the work ends, every request that reached the mailbox is answered, and nothing is left', () =>
     property(({ machine, trace }) => {
       const waited = new Set<string>()
@@ -795,6 +808,7 @@ describe('the checks of a step', () => {
 
 describe('a suspended entity', () => {
   const caller = { _tag: 'Caller', sender: null } as const
+  const accepted = { _tag: 'Accepted' } as const
   // Accepts `ok`, and dies on `bug`.
   const suspended = () => {
     const machine = checked((message) => (message === 'bug' ? defect('bug') : message), () => ({}))
@@ -810,6 +824,35 @@ describe('a suspended entity', () => {
       .toEqual([{ _tag: 'Replied', requestId: 'third', from: caller, reply: { _tag: 'Suspended' } }])
     expect(Machine.step(machine, { _tag: 'Create', requestId: 'creation', from: caller }).outputs)
       .toEqual([{ _tag: 'Replied', requestId: 'creation', from: caller, reply: { _tag: 'Created' } }])
+  })
+
+  test('answers Suspended every caller waiting, and gives each its reply on a retry once resumed', () => {
+    const machine = checked((message) => (message === 'bug' ? defect('bug') : message), () => ({}))
+    const receive = (requestId: string, message: string) =>
+      ({ _tag: 'Receive', requestId, message, from: caller }) as const
+    const queued = Machine.step(Machine.step(machine, receive('second', 'bug')).machine, receive('third', 'ok'))
+    const died = Machine.step(queued.machine, { _tag: 'Handle', at })
+    for (const requestId of ['second', 'third']) {
+      expect(died.outputs).toContainEqual({ _tag: 'Replied', requestId, from: caller, reply: { _tag: 'Suspended' } })
+    }
+    const resumed = Machine.step(died.machine, {
+      _tag: 'Resume',
+      program: { ...machine.program, update: (message) => () => message },
+    })
+    // A retry while its message is queued waits for the reply, which handling it gives.
+    expect(Machine.step(resumed.machine, receive('third', 'ok')).outputs).toEqual([])
+    const first = Machine.step(resumed.machine, { _tag: 'Handle', at })
+    const second = Machine.step(first.machine, { _tag: 'Handle', at })
+    expect(second.outputs).toContainEqual({ _tag: 'Replied', requestId: 'third', from: caller, reply: accepted })
+    expect(Machine.step(second.machine, receive('third', 'ok')).outputs)
+      .toEqual([{ _tag: 'Replied', requestId: 'third', from: caller, reply: accepted }])
+  })
+
+  test('an operation that dies answers Suspended every caller waiting', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const queued = Machine.step(machine, { _tag: 'Receive', requestId: 'r', message: 'go', from: caller })
+    const died = Machine.step(queued.machine, { _tag: 'Die', key: 'charge', incarnation: 1, cause: 'died' })
+    expect(died.outputs).toContainEqual({ _tag: 'Replied', requestId: 'r', from: caller, reply: { _tag: 'Suspended' } })
   })
 
   test('resumed with a fixed program, handles the message it died on', () => {
