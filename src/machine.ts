@@ -237,6 +237,9 @@ const reconcile = <T extends Types>(program: Program<T>, name: string, stored: S
  * crash, or a suspension) may have acted, so its `unknown` is recorded instead of running it again; one that is
  * new work at this activation, in an incarnation the stored work did not hold, never ran, and starts. A defect
  * leaves the entity as it was before the event, `before`, suspended on what suspended it, or on the activation.
+ *
+ * A passivation is a `Restart` the runtime chooses, with an empty mailbox and only timers under way: activating
+ * again arms the same timers, in the same incarnations, which the stored work holds while it is unloaded.
  */
 const activate = <T extends Types>(
   before: Machine<T>,

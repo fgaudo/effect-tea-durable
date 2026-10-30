@@ -156,7 +156,10 @@ kept as an audit, but nothing replays them.
   An internal message `update` rejects is a defect, since it cannot be late
   ([decision 0014](decisions/0014-rules-the-machine-settled.md)).
 - **Passivation.** An entity with no message for a while is unloaded. A timer stays armed in storage, and wakes
-  it. An operation under way keeps it loaded.
+  it. An operation under way keeps it loaded. To the machine, a passivation is a crash the runtime chose, with
+  an empty mailbox and only timers under way: a `Restart` activates it again, and arms the same timers in the
+  same incarnations. The timers stored are the stored work's, which says each one's time: the earliest wakes
+  the entity, and nothing else needs storing.
 
 These rules are a pure state machine, [`src/machine.ts`](../src/machine.ts): its events are a message arriving,
 an operation completing or dying, a timer firing, a step, the process dying, and an operator resuming or

@@ -888,6 +888,20 @@ describe('a suspended entity', () => {
   })
 })
 
+// A runtime passivates an entity as a restart: its timers wait in the stored work while it is unloaded.
+describe('passivation', () => {
+  test('a restart with only timers under way arms them again, in their incarnations, and changes nothing stored', () => {
+    const machine = checked((message) => message, () => ({ deadline: 'later timer', reminder: 'timer' }))
+    const transition = Machine.step(machine, { _tag: 'Restart' })
+    expect(transition.machine.stored).toEqual(machine.stored)
+    expect(transition.machine.running).toEqual(machine.running)
+    expect(transition.outputs).toEqual([
+      { _tag: 'Armed', key: 'deadline', incarnation: 1, timer: timer(at, 'rang') },
+      { _tag: 'Armed', key: 'reminder', incarnation: 1, timer: timer(epoch, 'rang') },
+    ])
+  })
+})
+
 describe('a new program', () => {
   /** Restarts the entity with a program whose work on each state is `durable`: a deploy. */
   const deployed = (machine: Machine.Machine<Tiny>, durable: (state: string) => TinyWork) =>
