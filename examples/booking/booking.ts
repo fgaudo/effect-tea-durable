@@ -45,7 +45,7 @@ const State = Schema.Union([
     reason: Schema.Literals(['ByCustomer', 'Expired', 'SoldOut', 'SalesClosed', 'NoSuchEvent']),
   }),
 ])
-type State = typeof State.Type
+export type State = typeof State.Type
 
 const Flags = Schema.Struct({ customer: Schema.String, event: Schema.String, seats: Seats })
 type Flags = typeof Flags.Type

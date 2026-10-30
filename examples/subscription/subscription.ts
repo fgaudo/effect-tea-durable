@@ -53,7 +53,7 @@ const State = Schema.Union([
   Schema.TaggedStruct('PastDue', { account: Account, attempt: Schema.Int, retryAt: Schema.DateTimeUtc }),
   Schema.TaggedStruct('Cancelled', { account: Account, reason: Schema.Literals(['ByCustomer', 'Unpaid']) }),
 ])
-type State = typeof State.Type
+export type State = typeof State.Type
 
 const Flags = Schema.Struct({ customer: Schema.String, payment: Schema.String, plan: Plan })
 type Flags = typeof Flags.Type

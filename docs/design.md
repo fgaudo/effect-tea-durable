@@ -209,7 +209,10 @@ Most of a program is pure, so most tests need no runtime:
 
 - **`update`'s rules**, one test per message, for generated states;
 - **the projection agrees with `update`**: every action it shows is accepted, and every accepted action is
-  shown;
+  shown. `projectionViolations` checks it, as effect-tea's `dispatchViolations` checks a view, for a state and
+  the messages its reader could send, once the test says which field of the projection stands for which message
+  ([decision 0026](decisions/0026-the-test-maps-a-projection-to-its-messages.md)).
+  [`examples/order/order.test.ts`](../examples/order/order.test.ts) checks it for generated states;
 - **the defects**: an internal message in a state without its key.
 
 `rehearse` runs a scenario on the program without storage, cluster or clock. It is the runtime's machine, which

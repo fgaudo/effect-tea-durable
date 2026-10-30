@@ -50,7 +50,7 @@ const State = Schema.Union([
     reason: Schema.Literals(['ByCustomer', 'Unpaid', 'Refunded']),
   }),
 ])
-type State = typeof State.Type
+export type State = typeof State.Type
 
 const Flags = Schema.Struct({ order: Order })
 type Flags = typeof Flags.Type
