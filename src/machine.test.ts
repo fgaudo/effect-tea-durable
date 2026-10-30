@@ -377,7 +377,7 @@ describe('the machine', () => {
           const id = `${output.key}@${output.incarnation}`
           expect(delivered.has(id)).toBe(false)
           delivered.add(id)
-          expect(before.stored.incarnations[output.key]).toBe(output.incarnation)
+          expect(before.stored.keys[output.key]?.incarnation).toBe(output.incarnation)
         }
       }
     }))
@@ -389,16 +389,16 @@ describe('the machine', () => {
           expect(after.running).toEqual({})
           continue
         }
-        const work = after.stored.work
+        const work = Machine.workOf(after.stored)
         for (const [key, durable] of Object.entries(work)) {
-          const incarnation = after.stored.incarnations[key] ?? -1
+          const incarnation = after.stored.keys[key]?.incarnation ?? -1
           if (!queued(after, key, incarnation)) {
             expect(after.running[key]).toEqual({ kind: kindOf(durable), incarnation })
           }
         }
         for (const [key, running] of Object.entries(after.running)) {
           expect(work[key] === undefined ? undefined : kindOf(work[key])).toBe(running.kind)
-          expect(after.stored.incarnations[key]).toBe(running.incarnation)
+          expect(after.stored.keys[key]?.incarnation).toBe(running.incarnation)
         }
       }
     }))
@@ -410,7 +410,7 @@ describe('the machine', () => {
         for (const output of outputs) {
           if (output._tag === 'Armed') armedAt.set(`${output.key}@${output.incarnation}`, output.timer.at)
         }
-        const work = after.stored.work
+        const work = Machine.workOf(after.stored)
         for (const [key, running] of Object.entries(after.running)) {
           const timer = work[key]
           if (running.kind !== 'Timer' || !isTimer(timer)) continue
@@ -428,7 +428,7 @@ describe('the machine', () => {
         for (const output of outputs) {
           if (output._tag === 'Started') startedWith.set(`${output.key}@${output.incarnation}`, output.operation)
         }
-        const work = after.stored.work
+        const work = Machine.workOf(after.stored)
         for (const [key, running] of Object.entries(after.running)) {
           if (running.kind !== 'Operation') continue
           expect(Equal.equals(startedWith.get(`${key}@${running.incarnation}`), work[key])).toBe(true)
@@ -441,10 +441,10 @@ describe('the machine', () => {
       for (const { event, before, after, outputs } of trace) {
         // An operator who discards a completion ends its work by hand.
         if (event._tag === 'Discard') continue
-        const next = after.stored.work
-        for (const [key, work] of Object.entries(before.stored.work)) {
-          const incarnation = before.stored.incarnations[key] ?? -1
-          const kept = next[key] !== undefined && after.stored.incarnations[key] === incarnation
+        const next = Machine.workOf(after.stored)
+        for (const [key, work] of Object.entries(Machine.workOf(before.stored))) {
+          const incarnation = before.stored.keys[key]?.incarnation ?? -1
+          const kept = next[key] !== undefined && after.stored.keys[key]?.incarnation === incarnation
           if (isTimer(work) || kept) continue
           expect(outputs).toContainEqual({ _tag: 'Delivered', key, incarnation })
         }
