@@ -37,7 +37,12 @@ There are no commands. Every piece of work that must survive a crash is derived 
 commands are, and its runner sees it, never the state
 ([decision 0018](decisions/0018-operations-are-data.md)). Everything that leaves the process has a schema: what
 is stored, and the projection callers read
-([decision 0025](decisions/0025-operations-and-projections-have-schemas.md)).
+([decision 0025](decisions/0025-operations-and-projections-have-schemas.md)), and each of them encodes to what
+JSON holds ([decision 0030](decisions/0030-a-schema-encodes-to-json.md)).
+
+A state is an object, as in the Guide ([decision 0031](decisions/0031-a-state-is-an-object.md)). A tag is no rule
+of the types, and the Guide's one state machine per concern is how the examples are written: it is also what
+gives `durable` and `project` a case to match on.
 
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
 
@@ -153,9 +158,9 @@ kept as an audit, but nothing replays them.
 
 The runtime on SQLite writes all of it through the program's schemas, as JSON, in four tables — the entity, the
 keys with their incarnations and work, the mailbox in order, and the replies by request
-([`src/storage.ts`](../src/storage.ts)). A schema whose encoded side is not JSON cannot be stored: a time is
+([`src/storage.ts`](../src/storage.ts)). A schema whose encoded side is not JSON does not compile: a time is
 held as `Schema.DateTimeUtcFromMillis`, not as `Schema.DateTimeUtc`
-([decision 0028](decisions/0028-rules-the-runtime-settled.md)).
+([decision 0030](decisions/0030-a-schema-encodes-to-json.md)).
 
 ## Execution
 

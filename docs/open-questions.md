@@ -4,12 +4,20 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Programs
 
+- **A finite space of keys, and what an operation answers.** `durable` returns a `Record<string, …>`, so a
+  mistyped key is work that starts anew, and nothing stops a program from holding work under keys it computes
+  (one per line of an order), which would be an entity running as many operations at once. Is a program's space
+  of keys finite and declared? And does the message an operation answers belong to the operation's type, instead
+  of being any internal message? Both want one place where a program is declared ([roadmap](roadmap.md)).
 - **Work that may be abandoned.** An operation leaves only through its completion. Is there a kind of work with
   no effect on the world (a computation, a read) that a state may drop, as effect-tea drops a subscription?
 - **Live streams.** A timer and an operation survive passivation. A stream from a socket or a feed does not.
   Are they allowed, keeping the entity loaded while their key is present, or left out?
 - **Children inside an entity.** effect-tea composes programs into a tree. Does an entity's program compose
-  children the same way, stored as one state?
+  children the same way, stored as one state? The decider pattern (Jérémie Chassaing's `Decider`) has an algebra
+  for it — two state machines compose into one, with laws a test can check — and is worth reading before this is
+  designed, although it stores the events where this design stores the state
+  ([decision 0002](decisions/0002-store-the-state-not-the-messages.md)).
 - **Rehearsing entities together.** `rehearse` runs one entity, and the test answers for the others. A booking
   that sends a confirmation the inventory would reject passes both rehearsals
   ([decision 0009](decisions/0009-entities-talk-through-operations.md)). Is a rehearsal of several entities
@@ -33,11 +41,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   (`ChargeSucceeded`), and the projection is already the public contract, so the program would declare nothing
   more. Is that the way, and what does a consumer use to deduplicate? It is also where the history of an entity
   that never ends (a subscription's past invoices) would go, since its state keeps only the present.
-- **What a schema may encode to.** The runtime writes JSON, and `schemas` is typed `Codec<T, unknown>`: a
-  program whose encoded side is not JSON typechecks and fails when it is stored
-  ([decision 0028](decisions/0028-rules-the-runtime-settled.md)). Should the type say so, and which JSON type,
-  given that another runtime may write something else?
-
 - **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
   large state do: split into entities, or store a difference?
 - **Schemas that change.** States, flags, messages in the mailbox and the work under way are stored in the

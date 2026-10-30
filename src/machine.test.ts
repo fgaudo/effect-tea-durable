@@ -652,9 +652,10 @@ describe('the machine', () => {
 
 const nobody = { _tag: 'Caller', sender: null } as const
 
-// The state is the last message, and the work each state holds is given: enough to break each check of a step.
+// The state is the last message, held in an object as every state is (decision 0031), and the work each state
+// holds is given: enough to break each check of a step.
 type Tiny = {
-  state: string
+  state: Readonly<{ last: string }>
   flags: null
   inbound: string
   internal: string
@@ -677,17 +678,20 @@ const tiny = (
 ): Program<Tiny> => ({
   name,
   schemas: {} as never,
-  init: () => 'start',
-  update: (message) => () => update(message),
-  durable: (state) =>
-    Object.fromEntries(Object.entries(durable(state)).map(([key, kind]) => [
+  init: () => ({ last: 'start' }),
+  update: (message) => () => {
+    const next = update(message)
+    return next === reject ? reject : { last: next }
+  },
+  durable: ({ last }) =>
+    Object.fromEntries(Object.entries(durable(last)).map(([key, kind]) => [
       key,
       kind === 'operation' || kind === 'larger operation'
         ? { _tag: 'Work', size: kind === 'operation' ? 1 : 2 } as const
         : timer(kind === 'later timer' ? at : epoch, kind === 'other timer' ? 'rang again' : 'rang'),
     ])),
   operations: { Work: operation(() => Effect.succeed('done')) },
-  project: (state) => project(state),
+  project: ({ last }) => project(last),
 })
 
 const checked = (...args: Parameters<typeof tiny>) => {
@@ -795,7 +799,7 @@ describe('the checks of a step', () => {
     ) {
       const transition = handled(machine, inbound)
       expect(transition.machine.stored.suspension?.cause).toBe(broken)
-      expect(transition.machine.stored.state).toBe('start')
+      expect(transition.machine.stored.state).toEqual({ last: 'start' })
       expect(transition.outputs).toContainEqual({
         _tag: 'Replied',
         requestId: 'r',
@@ -837,7 +841,7 @@ describe('a suspended entity', () => {
     }
     const resumed = Machine.step(died.machine, {
       _tag: 'Resume',
-      program: { ...machine.program, update: (message) => () => message },
+      program: { ...machine.program, update: (message) => () => ({ last: message }) },
     })
     // A retry while its message is queued waits for the reply, which handling it gives.
     expect(Machine.step(resumed.machine, receive('third', 'ok')).outputs).toEqual([])
@@ -859,10 +863,10 @@ describe('a suspended entity', () => {
     const machine = suspended()
     const resumed = Machine.step(machine, {
       _tag: 'Resume',
-      program: { ...machine.program, update: (message) => () => message },
+      program: { ...machine.program, update: (message) => () => ({ last: message }) },
     })
     const transition = Machine.step(resumed.machine, { _tag: 'Handle', at })
-    expect(transition.machine.stored.state).toBe('bug')
+    expect(transition.machine.stored.state).toEqual({ last: 'bug' })
     expect(transition.outputs).toContainEqual({
       _tag: 'Replied',
       requestId: 'second',
@@ -1004,7 +1008,7 @@ describe('who a request belongs to', () => {
     expect(first.outputs).toContainEqual({ _tag: 'Replied', requestId: 'k', from: nobody, reply: rejected })
     expect(second.outputs).toContainEqual({ _tag: 'Replied', requestId: 'k', from: booking, reply: accepted })
     expect(third.outputs).toContainEqual({ _tag: 'Replied', requestId: 'k', from: waitlist, reply: accepted })
-    expect(third.machine.stored.state).toBe('go')
+    expect(third.machine.stored.state).toEqual({ last: 'go' })
   })
 
   test('entities of two programs with the same id give their work different idempotency keys', () => {
@@ -1043,6 +1047,6 @@ describe('creation', () => {
   test('a creation is not a message: its request id may be used again to send one', () => {
     const machine = checked((message) => message, () => ({}))
     const sent = handled(machine, { _tag: 'Receive', requestId: 'creation', message: 'go', from: nobody })
-    expect(sent.machine.stored.state).toBe('go')
+    expect(sent.machine.stored.state).toEqual({ last: 'go' })
   })
 })

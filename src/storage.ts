@@ -8,7 +8,7 @@ import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import type * as Machine from './machine.ts'
-import { type Durable, isTimer, type Origin, type Program, timer, type Types } from './program.ts'
+import { type Durable, isTimer, type Json, type Origin, type Program, timer, type Types } from './program.ts'
 
 /**
  * The tables, created once for the database. Every entity of every program sits in them: the name of the program
@@ -72,8 +72,11 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   `
 }).pipe(Effect.orDie)
 
-/** A value written as JSON text through its schema: what leaves the process is what a schema describes. */
-const json = <A>(codec: Schema.Codec<A, unknown>) => {
+/**
+ * A value written as JSON text through its schema: what leaves the process is what a schema describes, and the
+ * schema encodes it to what JSON holds (decision 0030).
+ */
+const json = <A>(codec: Schema.Codec<A, Json>) => {
   const encode = Schema.encodeSync(codec)
   const decode = Schema.decodeSync(codec)
   return {
@@ -85,12 +88,12 @@ const json = <A>(codec: Schema.Codec<A, unknown>) => {
 const Address = Schema.Struct({ name: Schema.String, id: Schema.String })
 
 /** Who a queued message came from: the runtime owns `Self` and an entity's address, the program the sender. */
-const originOf = <Sender>(sender: Schema.Codec<Sender, unknown>) =>
+const originOf = <Sender>(sender: Schema.Codec<Sender, Json>) =>
   Schema.Union([
     Schema.TaggedStruct('Self', {}),
     Schema.TaggedStruct('Caller', { sender }),
     Schema.TaggedStruct('Entity', { entity: Address }),
-  ]) as unknown as Schema.Codec<Origin<Sender>, unknown>
+  ]) as unknown as Schema.Codec<Origin<Sender>, Json>
 
 type Written<T extends Types> =
   | Readonly<{ _tag: 'Operation'; operation: T['operation'] }>
@@ -101,18 +104,18 @@ const workOf = <T extends Types>(program: Program<T>) =>
   Schema.Union([
     Schema.TaggedStruct('Operation', { operation: program.schemas.operation }),
     Schema.TaggedStruct('Timer', { at: Schema.DateTimeUtcFromMillis, message: program.schemas.internal }),
-  ]) as unknown as Schema.Codec<Written<T>, unknown>
+  ]) as unknown as Schema.Codec<Written<T>, Json>
 
 /** The reason a reply carries: null for a bare `reject` (decision 0010). */
-const reasonOf = <Reason>(rejection: Schema.Codec<Reason, unknown>) =>
-  Schema.NullOr(rejection) as unknown as Schema.Codec<Reason | null, unknown>
+const reasonOf = <Reason>(rejection: Schema.Codec<Reason, Json>) =>
+  Schema.NullOr(rejection) as unknown as Schema.Codec<Reason | null, Json>
 
 /** A suspension's `on`: which event the defect happened on. Its cause is rendered, not stored as a value. */
 const Suspended = Schema.Union([
   Schema.TaggedStruct('Message', {}),
   Schema.TaggedStruct('Operation', { key: Schema.String, incarnation: Schema.Int }),
   Schema.TaggedStruct('Activation', {}),
-]) as unknown as Schema.Codec<Machine.Suspension['on'], unknown>
+]) as unknown as Schema.Codec<Machine.Suspension['on'], Json>
 
 /** A defect's cause as an operator reads it: a suspension stores this, not the value (decision 0028). */
 export const render = (cause: unknown): string =>

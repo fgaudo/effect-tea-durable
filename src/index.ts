@@ -7,6 +7,7 @@ export {
   Entities,
   type IdempotencyKey,
   InvariantDefect,
+  type Json,
   type Meta,
   noWork,
   type Runner,

@@ -9,7 +9,16 @@ Queries across entities — "orders unpaid for a day" — cannot be asked of sto
 a time. A pure function from the state to rows of a read table, written in the step's transaction, would answer
 them; how those tables are declared and migrated is an [open question](open-questions.md).
 
-## 2. Later
+## 2. One place where a program is declared
+
+A program is an object literal typed `Program<T>`, and two things the types could hold are lost there: the space
+of keys `durable` may use, and the message each kind of operation answers, which `Runners<T>` widens to every
+internal message and `runnerOf` recovers with a cast. A constructor that takes the pieces and infers them would
+have both, and is also where a finite space of keys would be declared — an [open question](open-questions.md) to
+decide first, since it would forbid a key a program computes. It changes how every example declares its program,
+and nothing of the machine.
+
+## 3. Later
 
 - Effect Cluster: sharding, rolling deploys, the state recording the last message it handled.
 - The library's name, once there is code to publish.

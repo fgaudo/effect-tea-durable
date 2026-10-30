@@ -50,6 +50,9 @@ export const defect = (reason: string): never => {
   throw new InvariantDefect({ reason })
 }
 
+/** A value JSON holds: what a schema encodes to, so that a runtime can write it (decision 0030). */
+export type Json = string | number | boolean | null | { readonly [key: string]: Json } | ReadonlyArray<Json>
+
 /** An entity: the name of its program and its id. */
 export type Address = Readonly<{ name: string; id: string }>
 
@@ -161,7 +164,7 @@ export type Durable<Operation, Message> = Operation | Timer<Message>
 export const noWork: Readonly<Record<string, never>> = Object.freeze({})
 
 export type Types = Readonly<{
-  state: unknown
+  state: object
   flags: unknown
   inbound: unknown
   internal: unknown
@@ -191,14 +194,14 @@ export interface Program<T extends Types> {
    * a message waiting in the mailbox, and the projection, which callers read (decisions 0025, 0027).
    */
   readonly schemas: Readonly<{
-    state: Schema.Codec<T['state'], unknown>
-    flags: Schema.Codec<T['flags'], unknown>
-    inbound: Schema.Codec<T['inbound'], unknown>
-    internal: Schema.Codec<T['internal'], unknown>
-    operation: Schema.Codec<T['operation'], unknown>
-    rejection: Schema.Codec<T['rejection'], unknown>
-    sender: Schema.Codec<T['sender'], unknown>
-    projection: Schema.Codec<T['projection'], unknown>
+    state: Schema.Codec<T['state'], Json>
+    flags: Schema.Codec<T['flags'], Json>
+    inbound: Schema.Codec<T['inbound'], Json>
+    internal: Schema.Codec<T['internal'], Json>
+    operation: Schema.Codec<T['operation'], Json>
+    rejection: Schema.Codec<T['rejection'], Json>
+    sender: Schema.Codec<T['sender'], Json>
+    projection: Schema.Codec<T['projection'], Json>
   }>
   readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state']
   readonly update: Update<T['state'], T['inbound'] | T['internal'], T['sender'], T['rejection']>
