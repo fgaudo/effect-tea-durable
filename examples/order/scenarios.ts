@@ -1,0 +1,97 @@
+/**
+ * The order's scenarios, as tests would be written. The file is not named `*.test.ts`, since `rehearse` is
+ * only declared: `bun test` would run it and fail.
+ */
+import { describe, expect, test } from 'bun:test'
+import * as DateTime from 'effect/DateTime'
+import * as Effect from 'effect/Effect'
+import { rehearse } from '../api.ts'
+import { order, type Sender } from './order.ts'
+
+const placedAt = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
+
+const start = { flags: { order: { customer: 'ada', totalInCents: 4_200 } }, at: placedAt }
+
+const ada: Sender = { _tag: 'Customer', id: 'ada' }
+
+const warehouse: Sender = { _tag: 'Warehouse' }
+
+describe('order', () => {
+  test('a paid order is shipped', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded', charge: 'ch-1' })
+        yield* rehearsal.answer(yield* rehearsal.pending('tell-warehouse'), { _tag: 'WarehouseTold' })
+        expect(yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse)).toBe('Accepted')
+        expect((yield* rehearsal.state)._tag).toBe('Shipped')
+      }),
+    )))
+
+  test('a charge declined after the deadline cancels the order at once', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        const deadline = yield* rehearsal.pending('payment-deadline')
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        // The timer left the state with the charge: its firing is dropped.
+        expect(yield* rehearsal.fire(deadline)).toBe('Dropped')
+        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeDeclined' })
+        expect(yield* rehearsal.fire(yield* rehearsal.pending('payment-deadline'))).toBe('Delivered')
+        expect(yield* rehearsal.state).toMatchObject({ _tag: 'Cancelled', reason: 'Unpaid' })
+      }),
+    )))
+
+  test('the late answer of a first charge does not complete the second', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        const first = yield* rehearsal.pending('charge')
+        yield* rehearsal.answer(first, { _tag: 'ChargeDeclined' })
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-2' }, ada)
+        const second = yield* rehearsal.pending('charge')
+        expect(second.idempotencyKey).not.toBe(first.idempotencyKey)
+        expect(yield* rehearsal.answer(first, { _tag: 'ChargeSucceeded', charge: 'ch-1' })).toBe('Dropped')
+        expect((yield* rehearsal.state)._tag).toBe('Charging')
+      }),
+    )))
+
+  test('a charge under way when the process dies runs again with the same idempotency key', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        const before = yield* rehearsal.pending('charge')
+        yield* rehearsal.restart
+        const after = yield* rehearsal.pending('charge')
+        expect(after.idempotencyKey).toBe(before.idempotencyKey)
+      }),
+    )))
+
+  test('a cancellation is rejected while a charge is under way', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        expect((yield* rehearsal.projection).canCancel).toBe(false)
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toBe('Rejected')
+      }),
+    )))
+
+  test('only the customer cancels', () =>
+    Effect.runPromise(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { _tag: 'Customer', id: 'eve' })).toBe('Rejected')
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, warehouse)).toBe('Rejected')
+      }),
+    )))
+})

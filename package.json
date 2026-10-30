@@ -1,0 +1,16 @@
+{
+  "name": "effect-tea-durable",
+  "private": true,
+  "description": "The Elm architecture for long-lived entities on a server, on Effect v4: a design",
+  "license": "MIT",
+  "author": "Francesco Gaudenzi",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.3",
+    "effect": "^4.1.0",
+    "typescript": "^7.0.2"
+  }
+}
