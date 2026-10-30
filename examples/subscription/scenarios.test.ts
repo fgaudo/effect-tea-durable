@@ -90,6 +90,21 @@ describe('subscription', () => {
       }),
     )))
 
+  // The charge restarted after a crash is the one that started, under the same idempotency key (decision 0018).
+  test('a new payment method during a charge is used from the next one, even after a crash', () =>
+    Effect.runPromise(rehearse(
+      subscription,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        const before = yield* rehearsal.pending('charge')
+        expect(before.work).toMatchObject({ _tag: 'Charge', payment: 'card-1', totalInCents: 900 })
+        expect(yield* rehearsal.send({ _tag: 'PaymentMethodUpdated', payment: 'card-2' }, ada)).toEqual(accepted)
+        yield* rehearsal.restart
+        expect(yield* rehearsal.pending('charge')).toEqual(before)
+        expect(yield* rehearsal.projection).toMatchObject({ status: 'Charging' })
+      }),
+    )))
+
   test('a cancellation during a charge applies when the charge ends', () =>
     Effect.runPromise(rehearse(
       subscription,

@@ -28,11 +28,14 @@ tested by calling pure functions, crashes included.
 | `schemas` | how the state, the flags, the messages and the reasons of rejections are stored              |
 | `init`    | the first state, from the flags the entity is created with and the time of its creation      |
 | `update`  | `(message, meta) => (state) =>` the next state, a rejection, or a defect                     |
-| `durable` | the work under way in each state, by key: operations and timers                              |
-| `project` | what callers read of the state, with the actions it allows                                   |
+| `durable`    | the work under way in each state, by key: operations, as data, and timers                    |
+| `operations` | how each kind of operation runs, and what a crash does to it                                 |
+| `project`    | what callers read of the state, with the actions it allows                                   |
 
 There are no commands. Every piece of work that must survive a crash is derived from the state by `durable`
-([decision 0003](decisions/0003-durable-work-derived-from-state.md)).
+([decision 0003](decisions/0003-durable-work-derived-from-state.md)). An operation is data, as effect-tea's
+commands are, and its runner sees it, never the state
+([decision 0018](decisions/0018-operations-are-data.md)).
 
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
 
@@ -43,9 +46,11 @@ A message is one of two kinds, and the rule for a message that does not apply fo
 - **Inbound** messages come from callers. Each one carries a request id chosen by the caller, and is answered
   `Accepted` or `Rejected`, with the reason `update` gave, if any
   ([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)). A caller that retries with the same id
-  gets the same answer, and the message is applied once. `meta.from` says who sent it, so that `update` decides
-  who may do what. An inbound message may arrive in any state: a slow client, a retry, a second device, a
-  malicious caller. One that does not apply is rejected.
+  gets the same answer, and the message is applied once. Request ids are their sender's: another entity's are
+  stored under its address, apart from everyone else's
+  ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)). `meta.from` says who sent it, so that
+  `update` decides who may do what. An inbound message may arrive in any state: a slow client, a retry, a second
+  device, a malicious caller. One that does not apply is rejected.
   A caller may be another entity's operation: `meta.from` is then `Entity`, with the sender's name and id,
   filled in by the runtime (see [entities that talk](#entities-that-talk)).
 - **Internal** messages come from the entity's own durable work: an operation's completion, a timer's firing.
@@ -60,7 +65,8 @@ behind.
 
 An entity is created by a request of its own, with its flags, answered `Created` once and `AlreadyExists`
 after. A message to an entity that does not exist is answered `NotFound`, and creates nothing
-([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md)).
+([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md),
+[decision 0017](decisions/0017-creation-in-the-machine.md)).
 
 ## Durable work
 
@@ -77,10 +83,12 @@ that returns it starts new work: that is how a timer repeats
 
 Two kinds of work exist.
 
-- **An operation** is an effect that ends with one internal message. Expected failures become messages, as in
-  effect-tea's commands. It says what a crash does to it
-  ([decision 0011](decisions/0011-an-operation-declares-what-a-crash-does.md)): an idempotent one receives an
-  **idempotency key** (the entity's id, the operation's key and its incarnation), and passes it on; one that may
+- **An operation** is a value of the program's own type, usually a `Data.TaggedEnum`, which says what to do.
+  The program's `operations` give a runner for each tag, which turns it into an effect that ends with one
+  internal message. Expected failures become messages, as in effect-tea's commands. The runner says what a
+  crash does to it ([decision 0011](decisions/0011-an-operation-declares-what-a-crash-does.md)): an idempotent
+  one receives an **idempotency key** (the entity's program and id, the operation's key and its incarnation:
+  [decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)), and passes it on; one that may
   act twice runs again; one that must act at most once is not run again after a crash, and delivers its
   `unknown` message.
   A restarted operation gets the same idempotency key. A new attempt in a later incarnation gets another. An
@@ -89,8 +97,13 @@ Two kinds of work exist.
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
   nothing yet.
 
-A key whose kind changes, from a timer to an operation, is new work
-([decision 0014](decisions/0014-rules-the-machine-settled.md)).
+A kept key keeps its work only if the work is the same by value: an operation equal to the one under way, a
+timer at the same time with the same message. A timer that changes is armed again, as new work. An operation
+that changes while it runs is a defect, as one dropped is: otherwise an operation restarted after a crash,
+built from the stored state, would act with other parameters under the same idempotency key. A key whose kind
+changes, from a timer to an operation, is new work
+([decision 0014](decisions/0014-rules-the-machine-settled.md),
+[decision 0018](decisions/0018-operations-are-data.md)).
 
 What runs is always what the state says. After a crash the runtime does not look for what was running: it
 computes `durable(state)` again.
@@ -98,8 +111,9 @@ computes `durable(state)` again.
 ### Incarnations
 
 Each key has an incarnation, a counter stored with the state. It grows each time the key comes back after
-leaving, or stays after its work delivered. An internal message carries the incarnation of the work that sent it, and the runtime drops it when
-the key's incarnation has moved on.
+leaving, stays after its work delivered, changes kind, or keeps a timer that changed. An internal message
+carries the incarnation of the work that sent it, and the runtime drops it when the key's incarnation has moved
+on.
 
 Without it, the second attempt of a payment could receive the late answer of the first. The runtime makes this
 impossible, so that no program has to remember attempt numbers.
@@ -195,7 +209,8 @@ time when it fires. The test decides when each operation answers, when each time
 dies:
 
 - `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity;
-- `pending(key)` finds the work under way under a key, with its idempotency key;
+- `pending(key)` finds the work under way under a key, with its idempotency key and its value, which a test
+  asserts as it asserts a command in effect-tea;
 - `answer(pending, message)` completes an operation, and says whether the message was delivered or dropped;
 - `fire(pending)` fires a timer;
 - `restart` drops everything that is not stored, and activates the entity again: an at-most-once operation
@@ -213,6 +228,7 @@ every point of the table above.
 | ------------------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | commands, started by a step                      | none: operations are derived from the state                          | a command started before a crash would be lost                           |
 | subscriptions, by key                            | operations and timers, by key, with incarnations                     | work outlives the process, and its answers are delivered at least once   |
+| a subscription whose value changes starts anew   | an operation whose value changes while it runs is a defect           | an operation cannot be interrupted, and a crash would restart it changed |
 | a model, with the messages the view sends        | a projection, with the actions it allows                             | a caller is remote: it receives data, never functions                    |
 | a defect ends the run                            | a defect suspends the entity                                         | one entity's bug must not stop the others                                |
 | one program, a tree of children                  | many entities, by id; children inside an entity are an open question | an entity is the unit of storage and of concurrency                      |

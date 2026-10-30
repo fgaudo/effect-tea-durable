@@ -4,6 +4,7 @@
  * times before the subscription is cancelled.
  */
 import * as Context from 'effect/Context'
+import * as Data from 'effect/Data'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -43,7 +44,13 @@ const State = Schema.Union([
   // Paid until the end of the period.
   Schema.TaggedStruct('Active', { account: Account }),
   // Charging the next period. Only the charge's completion leaves it: a cancellation meanwhile is remembered.
-  Schema.TaggedStruct('Charging', { account: Account, attempt: Schema.Int }),
+  // What the charge uses is fixed when it starts: a charge does not change while it runs (decision 0018), so a
+  // new payment method meanwhile is used from the next one.
+  Schema.TaggedStruct('Charging', {
+    account: Account,
+    attempt: Schema.Int,
+    charge: Schema.Struct({ payment: Schema.String, totalInCents: Schema.Int }),
+  }),
   Schema.TaggedStruct('PastDue', { account: Account, attempt: Schema.Int, retryAt: Schema.DateTimeUtc }),
   Schema.TaggedStruct('Cancelled', { account: Account, reason: Schema.Literals(['ByCustomer', 'Unpaid']) }),
 ])
@@ -102,21 +109,29 @@ const isCustomer = (from: Origin<Sender>, account: Account) =>
 
 const isSupport = (from: Origin<Sender>) => from._tag === 'Caller' && from.sender._tag === 'Support'
 
-const charge = (account: Account) =>
-  operation(Effect.fn('Charge')(
-    function*(idempotencyKey: IdempotencyKey) {
-      const payments = yield* Payments
-      return yield* payments.charge({
-        payment: account.payment,
-        totalInCents: account.plan.priceInCents,
-        idempotencyKey,
-      })
-    },
-    Effect.match({
-      onSuccess: (): Internal => ({ _tag: 'ChargeSucceeded' }),
-      onFailure: (): Internal => ({ _tag: 'ChargeDeclined' }),
-    }),
-  ))
+type Operation = Data.TaggedEnum<{
+  Charge: { readonly payment: string; readonly totalInCents: number }
+}>
+const Operation = Data.taggedEnum<Operation>()
+
+// A charge of the account's plan, with its payment method as they are now.
+const charging = (account: Account, attempt: number): State => ({
+  _tag: 'Charging',
+  account,
+  attempt,
+  charge: { payment: account.payment, totalInCents: account.plan.priceInCents },
+})
+
+const charge = Effect.fn('Charge')(
+  function*({ payment, totalInCents }: Extract<Operation, { _tag: 'Charge' }>, idempotencyKey: IdempotencyKey) {
+    const payments = yield* Payments
+    return yield* payments.charge({ payment, totalInCents, idempotencyKey })
+  },
+  Effect.match({
+    onSuccess: (): Internal => ({ _tag: 'ChargeSucceeded' }),
+    onFailure: (): Internal => ({ _tag: 'ChargeDeclined' }),
+  }),
+)
 
 // The next period, from the credit when it covers the price. Staying `Active` keeps the `renewal` key: its
 // timer has fired, so it is armed again at the end of the new period (decision 0008).
@@ -130,7 +145,7 @@ const renew = (account: Account): State => {
       _tag: 'Active',
       account: { ...next, creditInCents: next.creditInCents - plan.priceInCents, paidPeriods: next.paidPeriods + 1 },
     }
-    : { _tag: 'Charging', account: next, attempt: 1 }
+    : charging(next, 1)
 }
 
 export const subscription: Program<{
@@ -138,6 +153,7 @@ export const subscription: Program<{
   flags: Flags
   inbound: Inbound
   internal: Internal
+  operation: Operation
   rejection: never
   sender: Sender
   projection: Projection
@@ -148,9 +164,8 @@ export const subscription: Program<{
   schemas: { state: State, flags: Flags, inbound: Inbound, internal: Internal, rejection: Schema.Never },
 
   // The first period is charged at once.
-  init: ({ customer, payment, plan }, at) => ({
-    _tag: 'Charging',
-    account: {
+  init: ({ customer, payment, plan }, at) =>
+    charging({
       customer,
       payment,
       plan,
@@ -159,9 +174,7 @@ export const subscription: Program<{
       startedAt: at,
       paidPeriods: 0,
       cancelAtPeriodEnd: false,
-    },
-    attempt: 1,
-  }),
+    }, 1),
 
   update: (message, { at, from }) => (state) =>
     Match.value(message).pipe(
@@ -172,12 +185,13 @@ export const subscription: Program<{
             ? { ...state, account: { ...state.account, nextPlan: plan } }
             : reject,
 
-        // A charge under way goes on with the method it started with: the new one is used from the next.
+        // A charge under way goes on with the method it started with, even after a crash: the new one is used
+        // from the next.
         PaymentMethodUpdated: ({ payment }) =>
           !isCustomer(from, state.account)
             ? reject
             : state._tag === 'PastDue'
-            ? { _tag: 'Charging', account: { ...state.account, payment }, attempt: state.attempt + 1 }
+            ? charging({ ...state.account, payment }, state.attempt + 1)
             : state._tag === 'Active' || state._tag === 'Charging'
             ? { ...state, account: { ...state.account, payment } }
             : reject,
@@ -228,7 +242,7 @@ export const subscription: Program<{
 
         RetryDue: () =>
           state._tag === 'PastDue'
-            ? { _tag: 'Charging', account: state.account, attempt: state.attempt + 1 }
+            ? charging(state.account, state.attempt + 1)
             : defect('a retry came due while nothing was past due'),
       }),
     ),
@@ -236,10 +250,12 @@ export const subscription: Program<{
   durable: (state) =>
     Match.valueTags(state, {
       Active: ({ account }) => ({ renewal: timer<Internal>(paidUntil(account), { _tag: 'RenewalDue' }) }),
-      Charging: ({ account }) => ({ charge: charge(account) }),
+      Charging: ({ charge }) => ({ charge: Operation.Charge(charge) }),
       PastDue: ({ retryAt }) => ({ retry: timer<Internal>(retryAt, { _tag: 'RetryDue' }) }),
       Cancelled: () => noWork,
     }),
+
+  operations: { Charge: operation(charge) },
 
   project: (state) => {
     const open = state._tag !== 'Cancelled'

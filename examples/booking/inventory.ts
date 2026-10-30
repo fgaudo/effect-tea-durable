@@ -59,6 +59,7 @@ export const inventory: Program<{
   flags: Flags
   inbound: Inbound
   internal: Internal
+  operation: never
   rejection: Rejection
   sender: Sender
   projection: Projection
@@ -103,6 +104,8 @@ export const inventory: Program<{
   },
 
   durable: () => noWork,
+
+  operations: {},
 
   project: (state) => ({
     open: state.open,

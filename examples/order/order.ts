@@ -3,6 +3,7 @@
  * the warehouse is told and ships. A cancellation after the payment refunds it.
  */
 import * as Context from 'effect/Context'
+import * as Data from 'effect/Data'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -105,48 +106,56 @@ const isCustomer = (from: Origin<Sender>, order: Order) =>
 
 const isWarehouse = (from: Origin<Sender>) => from._tag === 'Caller' && from.sender._tag === 'Warehouse'
 
-const charge = (order: Order, payment: string) =>
-  operation(Effect.fn('Charge')(
-    function*(idempotencyKey: IdempotencyKey) {
-      const payments = yield* Payments
-      return yield* payments.charge({ payment, totalInCents: order.totalInCents, idempotencyKey })
-    },
-    Effect.match({
-      onSuccess: (charge): Internal => ({ _tag: 'ChargeSucceeded', charge }),
-      onFailure: (): Internal => ({ _tag: 'ChargeDeclined' }),
-    }),
-  ))
+// The work an order's states hold, as data: a test sees it without running it.
+type Operation = Data.TaggedEnum<{
+  Charge: { readonly payment: string; readonly totalInCents: number }
+  TellWarehouse: { readonly order: Order }
+  EmailShipment: { readonly to: string; readonly tracking: string }
+  Refund: { readonly charge: string }
+}>
+const Operation = Data.taggedEnum<Operation>()
 
-const tellWarehouse = (order: Order) =>
-  operation(Effect.fn('TellWarehouse')(function*(idempotencyKey: IdempotencyKey) {
+const charge = Effect.fn('Charge')(
+  function*({ payment, totalInCents }: Extract<Operation, { _tag: 'Charge' }>, idempotencyKey: IdempotencyKey) {
+    const payments = yield* Payments
+    return yield* payments.charge({ payment, totalInCents, idempotencyKey })
+  },
+  Effect.match({
+    onSuccess: (charge): Internal => ({ _tag: 'ChargeSucceeded', charge }),
+    onFailure: (): Internal => ({ _tag: 'ChargeDeclined' }),
+  }),
+)
+
+const tellWarehouse = Effect.fn('TellWarehouse')(
+  function*({ order }: Extract<Operation, { _tag: 'TellWarehouse' }>, idempotencyKey: IdempotencyKey) {
     const warehouse = yield* Warehouse
     yield* warehouse.prepare({ order, idempotencyKey })
     return { _tag: 'WarehouseTold' } satisfies Internal
-  }))
+  },
+)
 
-// Sent at most once: a second email is worse than none, and the state says when it is not known.
-const emailShipment = (order: Order, tracking: string) =>
-  operation.atMostOnce<Internal, Mailer>(
-    Effect.gen(function*() {
-      const mailer = yield* Mailer
-      yield* mailer.send({ to: order.customer, subject: `Your order has shipped: ${tracking}` })
-      return { _tag: 'ShipmentEmailed' } as const
-    }).pipe(Effect.withSpan('EmailShipment')),
-    { _tag: 'ShipmentEmailUnsure' },
-  )
+const emailShipment = Effect.fn('EmailShipment')(
+  function*({ to, tracking }: Extract<Operation, { _tag: 'EmailShipment' }>) {
+    const mailer = yield* Mailer
+    yield* mailer.send({ to, subject: `Your order has shipped: ${tracking}` })
+    return { _tag: 'ShipmentEmailed' } satisfies Internal
+  },
+)
 
-const refund = (charge: string) =>
-  operation(Effect.fn('Refund')(function*(idempotencyKey: IdempotencyKey) {
+const refund = Effect.fn('Refund')(
+  function*({ charge }: Extract<Operation, { _tag: 'Refund' }>, idempotencyKey: IdempotencyKey) {
     const payments = yield* Payments
     yield* payments.refund({ charge, idempotencyKey })
     return { _tag: 'RefundCompleted' } satisfies Internal
-  }))
+  },
+)
 
 export const order: Program<{
   state: State
   flags: Flags
   inbound: Inbound
   internal: Internal
+  operation: Operation
   rejection: never
   sender: Sender
   projection: Projection
@@ -230,13 +239,26 @@ export const order: Program<{
       AwaitingPayment: ({ deadline }) => ({
         'payment-deadline': timer<Internal>(deadline, { _tag: 'PaymentDeadlinePassed' }),
       }),
-      Charging: ({ order, payment }) => ({ charge: charge(order, payment) }),
-      Paid: ({ order, warehouse }) => warehouse === 'Telling' ? { 'tell-warehouse': tellWarehouse(order) } : noWork,
-      Refunding: ({ charge }) => ({ refund: refund(charge) }),
+      Charging: ({ order, payment }) => ({
+        charge: Operation.Charge({ payment, totalInCents: order.totalInCents }),
+      }),
+      Paid: ({ order, warehouse }) =>
+        warehouse === 'Telling' ? { 'tell-warehouse': Operation.TellWarehouse({ order }) } : noWork,
+      Refunding: ({ charge }) => ({ refund: Operation.Refund({ charge }) }),
       Shipped: ({ order, tracking, email }) =>
-        email === 'Sending' ? { 'email-shipment': emailShipment(order, tracking) } : noWork,
+        email === 'Sending'
+          ? { 'email-shipment': Operation.EmailShipment({ to: order.customer, tracking }) }
+          : noWork,
       Cancelled: () => noWork,
     }),
+
+  operations: {
+    Charge: operation(charge),
+    TellWarehouse: operation(tellWarehouse),
+    // Sent at most once: a second email is worse than none, and the state says when it is not known.
+    EmailShipment: operation.atMostOnce(emailShipment, (): Internal => ({ _tag: 'ShipmentEmailUnsure' })),
+    Refund: operation(refund),
+  },
 
   project: (state) => ({
     status: state._tag,

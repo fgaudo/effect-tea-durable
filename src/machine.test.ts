@@ -5,31 +5,37 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Equal from 'effect/Equal'
 import fc from 'fast-check'
 import * as Machine from './machine.ts'
 import {
   defect,
   type IdempotencyKey,
   InvariantDefect,
+  isTimer,
   noWork,
   operation,
+  type Origin,
   type Program,
   reject,
   rejectWith,
+  runnerOf,
   timer,
 } from './program.ts'
 
 // A program whose work is chosen by its callers: `a` is idempotent, `b` at most once, `c` at least once, `t` a
-// timer. `Break` is a bug, and dropping an operation under way is a defect the machine finds.
+// timer, whose time moves with each message applied. `Break` is a bug, and dropping or changing an operation under
+// way (`Retune` changes `a`) is a defect the machine finds.
 const keys = ['a', 'b', 'c', 't'] as const
 type Key = (typeof keys)[number]
 
-type State = Readonly<{ want: ReadonlyArray<Key>; applied: ReadonlyArray<string> }>
+type State = Readonly<{ want: ReadonlyArray<Key>; applied: ReadonlyArray<string>; tune: number }>
 
 type Inbound =
   | Readonly<{ _tag: 'Want'; key: Key; on: boolean; nonce: string }>
   | Readonly<{ _tag: 'Refuse'; nonce: string }>
   | Readonly<{ _tag: 'Break'; nonce: string }>
+  | Readonly<{ _tag: 'Retune'; nonce: string }>
 
 type Internal =
   /** `Again` keeps the key, so new work starts; `Break` is a bug. */
@@ -42,6 +48,7 @@ type T = {
   flags: null
   inbound: Inbound
   internal: Internal
+  operation: Readonly<{ _tag: 'A'; tune: number }> | Readonly<{ _tag: 'B' | 'C' }>
   rejection: 'Refused'
   sender: 'caller'
   projection: number
@@ -58,14 +65,16 @@ const program: Program<T> = {
   name: 'Toy',
   // The machine never encodes: the schemas are the runtime's.
   schemas: {} as Program<T>['schemas'],
-  init: () => ({ want: keys, applied: [] }),
+  init: () => ({ want: keys, applied: [], tune: 0 }),
   update: (message) => (state) => {
     switch (message._tag) {
       case 'Want': {
         const others = state.want.filter((key) => key !== message.key)
         const want = message.on ? keys.filter((key) => key === message.key || others.includes(key)) : others
-        return { want, applied: [...state.applied, message.nonce] }
+        return { ...state, want, applied: [...state.applied, message.nonce] }
       }
+      case 'Retune':
+        return { ...state, applied: [...state.applied, message.nonce], tune: state.tune + 1 }
       case 'Refuse':
         return state.applied.length % 2 === 0 ? rejectWith('Refused') : reject
       case 'Break':
@@ -84,19 +93,26 @@ const program: Program<T> = {
     state.want.length === 0 ? noWork : Object.fromEntries(state.want.map((key) => [
       key,
       key === 'a'
-        ? operation(() => Effect.succeed(done('a')))
+        ? { _tag: 'A', tune: state.tune } as const
         : key === 'b'
-        ? operation.atMostOnce(Effect.succeed(done('b')), { _tag: 'Unknown', key: 'b' })
+        ? { _tag: 'B' } as const
         : key === 'c'
-        ? operation.atLeastOnce(Effect.succeed(done('c')))
-        : timer<Internal>(epoch, { _tag: 'Rang', key: 't' }),
+        ? { _tag: 'C' } as const
+        : timer<Internal>(DateTime.makeUnsafe(state.applied.length), { _tag: 'Rang', key: 't' }),
     ])),
+  operations: {
+    A: operation(() => Effect.succeed(done('a'))),
+    B: operation.atMostOnce(() => Effect.succeed(done('b')), (): Internal => ({ _tag: 'Unknown', key: 'b' })),
+    C: operation.atLeastOnce(() => Effect.succeed(done('c'))),
+  },
   project: (state) => state.want.length,
 }
 
 type Command =
   | Readonly<{ _tag: 'Send'; kind: Inbound['_tag']; key: Key; on: boolean }>
   | Readonly<{ _tag: 'Retry'; pick: number }>
+  /** Creates the entity again, with the request that created it or another. */
+  | Readonly<{ _tag: 'Create'; again: boolean }>
   | Readonly<{ _tag: 'Complete'; pick: number; then: 'End' | 'Again' | 'Break' }>
   | Readonly<{ _tag: 'Stale'; fire: boolean; key: Key; incarnation: number }>
   /** Drops a key and brings it back at once: a firing already in the mailbox is then stale. */
@@ -116,12 +132,20 @@ const command: fc.Arbitrary<Command> = fc.oneof(
     weight: 4,
     arbitrary: fc.record({
       _tag: fc.constant('Send' as const),
-      kind: fc.constantFrom('Want' as const, 'Want' as const, 'Want' as const, 'Refuse' as const, 'Break' as const),
+      kind: fc.constantFrom(
+        'Want' as const,
+        'Want' as const,
+        'Want' as const,
+        'Refuse' as const,
+        'Break' as const,
+        'Retune' as const,
+      ),
       key,
       on: fc.boolean(),
     }),
   },
   { weight: 1, arbitrary: fc.record({ _tag: fc.constant('Retry' as const), pick }) },
+  { weight: 1, arbitrary: fc.record({ _tag: fc.constant('Create' as const), again: fc.boolean() }) },
   {
     weight: 3,
     arbitrary: fc.record({
@@ -157,12 +181,16 @@ const at = DateTime.makeUnsafe(1_000)
 
 type Receive = Extract<Machine.Event<T>, { _tag: 'Receive' }>
 
+const caller = { _tag: 'Caller', sender: 'caller' } as const
+
+const creation = { requestId: 'creation', from: caller } as const
+
 const receive = (requests: Array<Receive>, message: (nonce: string) => Inbound): Receive => {
   const event: Receive = {
     _tag: 'Receive',
     requestId: `r${requests.length}`,
     message: message(`n${requests.length}`),
-    from: { _tag: 'Caller', sender: 'caller' },
+    from: caller,
   }
   requests.push(event)
   return event
@@ -192,6 +220,8 @@ const toEvent = (machine: Toy, command: Command, requests: Array<Receive>): Mach
       return null
     case 'Retry':
       return requests.length === 0 ? null : requests[command.pick % requests.length] ?? null
+    case 'Create':
+      return { _tag: 'Create', requestId: command.again ? creation.requestId : `c${requests.length}`, from: caller }
     case 'Complete': {
       const operations = runningOf(machine, 'Operation')
       const chosen = operations[command.pick % Math.max(operations.length, 1)]
@@ -228,7 +258,7 @@ const toEvent = (machine: Toy, command: Command, requests: Array<Receive>): Mach
 type Traced = Readonly<{ event: Machine.Event<T>; before: Toy; after: Toy; outputs: ReadonlyArray<Machine.Output<T>> }>
 
 const run = (commands: ReadonlyArray<Command>) => {
-  const created = Machine.start(program, 'toy', null, epoch)
+  const created = Machine.start(program, 'toy', null, epoch, creation)
   if (created._tag === 'Defect') throw created.cause
   let machine = created.machine
   const requests: Array<Receive> = []
@@ -269,6 +299,8 @@ const property = (check: (run: Run) => void, options?: fc.Parameters<[ReadonlyAr
     ...options,
   })
 
+const kindOf = (work: unknown): Machine.Running['kind'] => (isTimer(work) ? 'Timer' : 'Operation')
+
 const queued = (machine: Toy, key: string, incarnation: number) =>
   machine.stored.mailbox.some((envelope) =>
     envelope._tag === 'Internal' && envelope.key === key && envelope.incarnation === incarnation
@@ -277,13 +309,14 @@ const queued = (machine: Toy, key: string, incarnation: number) =>
 describe('the machine', () => {
   test('a request is answered the same each time, and applied once', () =>
     property(({ trace, machine }) => {
-      const replies = new Map<string, Machine.StoredReply<'Refused'>>()
+      const replies = new Map<string, unknown>()
       for (const { outputs } of trace) {
         for (const output of outputs) {
           if (output._tag !== 'Replied' || output.reply._tag === 'Suspended') continue
-          const first = replies.get(output.requestId)
-          if (first === undefined) replies.set(output.requestId, output.reply)
-          else expect(output.reply).toEqual(first)
+          const request = Machine.requestKey(output.from, output.requestId)
+          const first = replies.get(request)
+          if (first === undefined) replies.set(request, output.reply)
+          else expect<unknown>(output.reply).toEqual(first)
         }
       }
       expect(new Set(machine.stored.state.applied).size).toBe(machine.stored.state.applied.length)
@@ -317,12 +350,45 @@ describe('the machine', () => {
         for (const [key, durable] of Object.entries(work)) {
           const incarnation = after.stored.incarnations[key] ?? -1
           if (!queued(after, key, incarnation)) {
-            expect(after.running[key]).toEqual({ kind: durable._tag, incarnation })
+            expect(after.running[key]).toEqual({ kind: kindOf(durable), incarnation })
           }
         }
         for (const [key, running] of Object.entries(after.running)) {
-          expect(work[key]?._tag).toBe(running.kind)
+          expect(work[key] === undefined ? undefined : kindOf(work[key])).toBe(running.kind)
           expect(after.stored.incarnations[key]).toBe(running.incarnation)
+        }
+      }
+    }))
+
+  test('a timer is armed at the time the stored state says', () =>
+    property(({ trace }) => {
+      const armedAt = new Map<string, DateTime.Utc>()
+      for (const { after, outputs } of trace) {
+        for (const output of outputs) {
+          if (output._tag === 'Armed') armedAt.set(`${output.key}@${output.incarnation}`, output.timer.at)
+        }
+        const work = program.durable(after.stored.state)
+        for (const [key, running] of Object.entries(after.running)) {
+          const timer = work[key]
+          if (running.kind !== 'Timer' || !isTimer(timer)) continue
+          const armed = armedAt.get(`${key}@${running.incarnation}`)
+          expect(armed !== undefined && DateTime.Equivalence(armed, timer.at)).toBe(true)
+        }
+      }
+    }))
+
+  // So an operation restarted after a crash, rebuilt from the stored state, is the one that was running.
+  test('an operation under way is the one the stored state holds', () =>
+    property(({ trace }) => {
+      const startedWith = new Map<string, unknown>()
+      for (const { after, outputs } of trace) {
+        for (const output of outputs) {
+          if (output._tag === 'Started') startedWith.set(`${output.key}@${output.incarnation}`, output.operation)
+        }
+        const work = program.durable(after.stored.state)
+        for (const [key, running] of Object.entries(after.running)) {
+          if (running.kind !== 'Operation') continue
+          expect(Equal.equals(startedWith.get(`${key}@${running.incarnation}`), work[key])).toBe(true)
         }
       }
     }))
@@ -336,7 +402,7 @@ describe('the machine', () => {
         for (const [key, work] of Object.entries(program.durable(before.stored.state))) {
           const incarnation = before.stored.incarnations[key] ?? -1
           const kept = next[key] !== undefined && after.stored.incarnations[key] === incarnation
-          if (work._tag !== 'Operation' || kept) continue
+          if (isTimer(work) || kept) continue
           expect(outputs).toContainEqual({ _tag: 'Delivered', key, incarnation })
         }
       }
@@ -350,7 +416,7 @@ describe('the machine', () => {
           if (output._tag !== 'Started') continue
           const id = `${output.key}@${output.incarnation}`
           const known = started.get(id)
-          if (output.operation.delivery === 'AtMostOnce') expect(known).toBeUndefined()
+          if (runnerOf(program, output.operation).delivery === 'AtMostOnce') expect(known).toBeUndefined()
           if (known !== undefined) expect(output.idempotencyKey).toBe(known)
           started.set(id, output.idempotencyKey)
         }
@@ -427,15 +493,19 @@ describe('the machine', () => {
       const waited = new Set<string>()
       const discarded = new Set<string>()
       for (const { event, before, after } of trace) {
-        for (const envelope of after.stored.mailbox) if (envelope._tag === 'Inbound') waited.add(envelope.requestId)
+        for (const envelope of after.stored.mailbox) {
+          if (envelope._tag === 'Inbound') waited.add(Machine.requestKey(envelope.from, envelope.requestId))
+        }
         const head = before.stored.mailbox[0]
-        if (event._tag === 'Discard' && head?._tag === 'Inbound') discarded.add(head.requestId)
+        if (event._tag === 'Discard' && head?._tag === 'Inbound') {
+          discarded.add(Machine.requestKey(head.from, head.requestId))
+        }
       }
       expect(machine.stored.suspension).toBeNull()
       expect(machine.stored.mailbox).toEqual([])
       expect(machine.running).toEqual({})
-      for (const requestId of waited) {
-        if (!discarded.has(requestId)) expect(machine.stored.replies[requestId]).toBeDefined()
+      for (const request of waited) {
+        if (!discarded.has(request)) expect(machine.stored.replies[request]).toBeDefined()
       }
     }))
 
@@ -451,7 +521,7 @@ describe('the machine', () => {
               : output._tag === 'Replied'
               ? `Replied ${output.reply._tag}`
               : output._tag === 'Started'
-              ? `Started ${output.operation.delivery}`
+              ? `Started ${runnerOf(program, output.operation).delivery}`
               : output._tag,
           )
         }
@@ -466,6 +536,8 @@ describe('the machine', () => {
       'Dropped on Handle',
       'Recorded',
       'Replied Accepted',
+      'Replied AlreadyExists',
+      'Replied Created',
       'Replied Rejected',
       'Replied Suspended',
       'Started AtLeastOnce',
@@ -476,12 +548,15 @@ describe('the machine', () => {
   })
 })
 
+const nobody = { _tag: 'Caller', sender: null } as const
+
 // The state is the last message, and the work each state holds is given: enough to break each check of a step.
 type Tiny = {
   state: string
   flags: null
   inbound: string
   internal: string
+  operation: Readonly<{ _tag: 'Work'; size: number }>
   rejection: never
   sender: null
   projection: string
@@ -490,22 +565,28 @@ type Tiny = {
 
 const checked = (
   update: (message: string) => string | typeof reject,
-  durable: (state: string) => Readonly<Record<string, 'operation' | 'timer'>>,
+  durable: (state: string) => Readonly<
+    Record<string, 'operation' | 'larger operation' | 'timer' | 'later timer' | 'other timer'>
+  >,
   project: (state: string) => string = (state) => state,
+  name = 'Tiny',
 ) => {
   const tiny: Program<Tiny> = {
-    name: 'Tiny',
+    name,
     schemas: {} as never,
     init: () => 'start',
     update: (message) => () => update(message),
     durable: (state) =>
       Object.fromEntries(Object.entries(durable(state)).map(([key, kind]) => [
         key,
-        kind === 'operation' ? operation(() => Effect.succeed('done')) : timer(epoch, 'rang'),
+        kind === 'operation' || kind === 'larger operation'
+          ? { _tag: 'Work', size: kind === 'operation' ? 1 : 2 } as const
+          : timer(kind === 'later timer' ? at : epoch, kind === 'other timer' ? 'rang again' : 'rang'),
       ])),
+    operations: { Work: operation(() => Effect.succeed('done')) },
     project: (state) => project(state),
   }
-  const created = Machine.start(tiny, 'tiny', null, epoch)
+  const created = Machine.start(tiny, 'tiny', null, epoch, { requestId: 'creation', from: nobody })
   if (created._tag === 'Defect') throw created.cause
   return created.machine
 }
@@ -534,6 +615,47 @@ describe('the checks of a step', () => {
     const transition = handled(machine, inbound)
     expect(transition.machine.stored.suspension).toBeNull()
     expect(transition.outputs).toContainEqual({ _tag: 'Disarmed', key: 'deadline', incarnation: 1 })
+  })
+
+  test('a timer whose time changes is armed again, as new work', () => {
+    const machine = checked(
+      (message) => message,
+      (state) => (state === 'start' ? { deadline: 'timer' } : { deadline: 'later timer' }),
+    )
+    const transition = handled(machine, inbound)
+    expect(transition.outputs).toContainEqual({ _tag: 'Disarmed', key: 'deadline', incarnation: 1 })
+    expect(transition.outputs).toContainEqual(
+      expect.objectContaining({ _tag: 'Armed', key: 'deadline', incarnation: 2, timer: timer(at, 'rang') }),
+    )
+  })
+
+  test('a timer whose message changes is armed again, as new work', () => {
+    const machine = checked(
+      (message) => message,
+      (state) => (state === 'start' ? { deadline: 'timer' } : { deadline: 'other timer' }),
+    )
+    const transition = handled(machine, inbound)
+    expect(transition.outputs).toContainEqual({ _tag: 'Disarmed', key: 'deadline', incarnation: 1 })
+    expect(transition.outputs).toContainEqual(
+      expect.objectContaining({ _tag: 'Armed', key: 'deadline', incarnation: 2 }),
+    )
+  })
+
+  test('a step that changes an operation before its completion is a defect', () => {
+    const machine = checked(
+      (message) => message,
+      (state) => (state === 'start' ? { charge: 'operation' } : { charge: 'larger operation' }),
+    )
+    expect(reasonOfSuspension(handled(machine, inbound))).toBe(
+      "the step changed the operation under 'charge' before its completion",
+    )
+  })
+
+  test('a step that keeps an operation equal by value keeps it running', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const transition = handled(machine, inbound)
+    expect(transition.machine.stored.suspension).toBeNull()
+    expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
   })
 
   test('a key whose timer becomes an operation is new work', () => {
@@ -569,7 +691,12 @@ describe('the checks of a step', () => {
       const transition = handled(machine, inbound)
       expect(transition.machine.stored.suspension?.cause).toBe(broken)
       expect(transition.machine.stored.state).toBe('start')
-      expect(transition.outputs).toContainEqual({ _tag: 'Replied', requestId: 'r', reply: { _tag: 'Suspended' } })
+      expect(transition.outputs).toContainEqual({
+        _tag: 'Replied',
+        requestId: 'r',
+        from: nobody,
+        reply: { _tag: 'Suspended' },
+      })
     }
   })
 })
@@ -586,9 +713,11 @@ describe('a suspended entity', () => {
   test('gives the replies it stored, and answers anything else Suspended', () => {
     const machine = suspended()
     expect(Machine.step(machine, { _tag: 'Receive', requestId: 'first', message: 'ok', from: caller }).outputs)
-      .toEqual([{ _tag: 'Replied', requestId: 'first', reply: { _tag: 'Accepted' } }])
+      .toEqual([{ _tag: 'Replied', requestId: 'first', from: caller, reply: { _tag: 'Accepted' } }])
     expect(Machine.step(machine, { _tag: 'Receive', requestId: 'third', message: 'ok', from: caller }).outputs)
-      .toEqual([{ _tag: 'Replied', requestId: 'third', reply: { _tag: 'Suspended' } }])
+      .toEqual([{ _tag: 'Replied', requestId: 'third', from: caller, reply: { _tag: 'Suspended' } }])
+    expect(Machine.step(machine, { _tag: 'Create', requestId: 'creation', from: caller }).outputs)
+      .toEqual([{ _tag: 'Replied', requestId: 'creation', from: caller, reply: { _tag: 'Created' } }])
   })
 
   test('resumed with a fixed program, handles the message it died on', () => {
@@ -599,7 +728,12 @@ describe('a suspended entity', () => {
     })
     const transition = Machine.step(resumed.machine, { _tag: 'Handle', at })
     expect(transition.machine.stored.state).toBe('bug')
-    expect(transition.outputs).toContainEqual({ _tag: 'Replied', requestId: 'second', reply: { _tag: 'Accepted' } })
+    expect(transition.outputs).toContainEqual({
+      _tag: 'Replied',
+      requestId: 'second',
+      from: caller,
+      reply: { _tag: 'Accepted' },
+    })
   })
 
   test('stays suspended when the fixed program dies on its state', () => {
@@ -616,5 +750,62 @@ describe('a suspended entity', () => {
     })
     expect(resumed.machine.stored.suspension).toEqual({ cause: broken, on: { _tag: 'Message' } })
     expect(resumed.machine.running).toEqual({})
+  })
+})
+
+describe('who a request belongs to', () => {
+  const booking = { _tag: 'Entity', entity: { name: 'Booking', id: 'b1' } } as const
+  const waitlist = { _tag: 'Entity', entity: { name: 'Waitlist', id: 'b1' } } as const
+
+  test('the same request id from different senders is different requests, each answered its own reply', () => {
+    const machine = checked((message) => (message === 'no' ? reject : message), () => ({}))
+    const first = handled(machine, { _tag: 'Receive', requestId: 'k', message: 'no', from: nobody })
+    const second = handled(first.machine, { _tag: 'Receive', requestId: 'k', message: 'yes', from: booking })
+    const third = handled(second.machine, { _tag: 'Receive', requestId: 'k', message: 'go', from: waitlist })
+    const rejected = { _tag: 'Rejected', reason: null } as const
+    const accepted = { _tag: 'Accepted' } as const
+    expect(first.outputs).toContainEqual({ _tag: 'Replied', requestId: 'k', from: nobody, reply: rejected })
+    expect(second.outputs).toContainEqual({ _tag: 'Replied', requestId: 'k', from: booking, reply: accepted })
+    expect(third.outputs).toContainEqual({ _tag: 'Replied', requestId: 'k', from: waitlist, reply: accepted })
+    expect(third.machine.stored.state).toBe('go')
+  })
+
+  test('entities of two programs with the same id give their work different idempotency keys', () => {
+    const charging = (state: string) => (state === 'start' ? {} : { charge: 'operation' as const })
+    const started = (name: string) =>
+      handled(checked((message) => message, charging, undefined, name), {
+        _tag: 'Receive',
+        requestId: 'r',
+        message: 'go',
+        from: nobody,
+      }).outputs.find((output) => output._tag === 'Started')
+    const order = started('Order')
+    const booking = started('Booking')
+    expect(order?._tag === 'Started' && booking?._tag === 'Started').toBe(true)
+    if (order?._tag === 'Started' && booking?._tag === 'Started') {
+      expect(order.idempotencyKey).not.toBe(booking.idempotencyKey)
+    }
+  })
+})
+
+describe('creation', () => {
+  const booking = { _tag: 'Entity', entity: { name: 'Booking', id: 'b1' } } as const
+
+  test('answers the request that created the entity Created, and stores nothing for the others', () => {
+    const machine = checked((message) => message, () => ({}))
+    const create = (requestId: string, from: Origin<unknown>) =>
+      Machine.step(machine, { _tag: 'Create', requestId, from })
+    expect(create('creation', nobody).outputs)
+      .toEqual([{ _tag: 'Replied', requestId: 'creation', from: nobody, reply: { _tag: 'Created' } }])
+    // The same request id from another sender is another request.
+    expect(create('creation', booking).outputs)
+      .toEqual([{ _tag: 'Replied', requestId: 'creation', from: booking, reply: { _tag: 'AlreadyExists' } }])
+    expect(create('other', nobody).machine).toBe(machine)
+  })
+
+  test('a creation is not a message: its request id may be used again to send one', () => {
+    const machine = checked((message) => message, () => ({}))
+    const sent = handled(machine, { _tag: 'Receive', requestId: 'creation', message: 'go', from: nobody })
+    expect(sent.machine.stored.state).toBe('go')
   })
 })

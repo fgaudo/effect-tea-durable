@@ -67,7 +67,8 @@ export type Meta<Sender> = Readonly<{
 }>
 
 /**
- * What an inbound message is answered. `Accepted` and `Rejected` are stored, and a retry gets them again.
+ * What an inbound message is answered. `Accepted` and `Rejected` are stored under the sender and its request id,
+ * and a retry gets them again.
  * `NotFound` is the runtime's, and is not: a retry once the entity exists is applied. A caller outside may also
  * get `Suspended`, not stored either; `send` never does, since it waits.
  */
@@ -82,60 +83,80 @@ export type Update<State, Message, Sender, Reason> = (
   meta: Meta<Sender>,
 ) => (state: State) => State | Rejected<Reason>
 
-/** The entity's id, the work's key and its incarnation: the same when a crash restarts the work. */
+/**
+ * The entity's program and id, the work's key and its incarnation: the same when a crash restarts the work, and
+ * different for every other piece of work of every entity.
+ */
 export type IdempotencyKey = string & Brand.Brand<'IdempotencyKey'>
 
-export const idempotencyKey = (id: string, key: string, incarnation: number): IdempotencyKey =>
-  JSON.stringify([id, key, incarnation]) as IdempotencyKey
+export const idempotencyKey = (entity: Address, key: string, incarnation: number): IdempotencyKey =>
+  JSON.stringify([entity.name, entity.id, key, incarnation]) as IdempotencyKey
 
-/** What a crash during an operation does to it, declared where it is built. */
-export type Operation<Message, R> =
+/**
+ * How an operation runs, and what a crash does to it, declared for each kind of operation (decision 0011). It sees
+ * the operation, never the state: what it uses is in the operation (decision 0018).
+ */
+export type Runner<Operation, Message, R> =
   /** Runs again with the same idempotency key, which it passes on: the world recognises it. */
   | Readonly<{
-    _tag: 'Operation'
     delivery: 'Idempotent'
-    run: (key: IdempotencyKey) => Effect.Effect<Message, never, R>
+    run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>
   }>
   /** Runs again, and may act twice. */
-  | Readonly<{ _tag: 'Operation'; delivery: 'AtLeastOnce'; run: Effect.Effect<Message, never, R> }>
+  | Readonly<{ delivery: 'AtLeastOnce'; run: (operation: Operation) => Effect.Effect<Message, never, R> }>
   /** Never runs again: an activation that finds it with no completion delivers `unknown`, since it may have acted. */
-  | Readonly<{ _tag: 'Operation'; delivery: 'AtMostOnce'; run: Effect.Effect<Message, never, R>; unknown: Message }>
+  | Readonly<{
+    delivery: 'AtMostOnce'
+    run: (operation: Operation) => Effect.Effect<Message, never, R>
+    unknown: (operation: Operation) => Message
+  }>
+
+export const operation: {
+  /** An idempotent operation, which passes its idempotency key on. */
+  <Operation, Message, R>(
+    run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>,
+  ): Runner<Operation, Message, R>
+  readonly atLeastOnce: <Operation, Message, R>(
+    run: (operation: Operation) => Effect.Effect<Message, never, R>,
+  ) => Runner<Operation, Message, R>
+  readonly atMostOnce: <Operation, Message, R>(
+    run: (operation: Operation) => Effect.Effect<Message, never, R>,
+    unknown: (operation: Operation) => Message,
+  ) => Runner<Operation, Message, R>
+} = Object.assign(
+  <Operation, Message, R>(
+    run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>,
+  ): Runner<Operation, Message, R> => ({ delivery: 'Idempotent', run }),
+  {
+    atLeastOnce: <Operation, Message, R>(
+      run: (operation: Operation) => Effect.Effect<Message, never, R>,
+    ): Runner<Operation, Message, R> => ({ delivery: 'AtLeastOnce', run }),
+    atMostOnce: <Operation, Message, R>(
+      run: (operation: Operation) => Effect.Effect<Message, never, R>,
+      unknown: (operation: Operation) => Message,
+    ): Runner<Operation, Message, R> => ({ delivery: 'AtMostOnce', run, unknown }),
+  },
+)
+
+const TimerTypeId: unique symbol = Symbol.for('effect-tea-durable/Timer')
 
 export interface Timer<Message> {
-  readonly _tag: 'Timer'
+  readonly [TimerTypeId]: typeof TimerTypeId
   readonly at: DateTime.Utc
   readonly message: Message
 }
 
-export type Durable<Message, R> = Operation<Message, R> | Timer<Message>
+export const timer = <Message>(at: DateTime.Utc, message: Message): Timer<Message> => ({
+  [TimerTypeId]: TimerTypeId,
+  at,
+  message,
+})
 
-export const operation: {
-  /** An idempotent operation, which passes its idempotency key on. */
-  <Message, R>(run: (key: IdempotencyKey) => Effect.Effect<Message, never, R>): Operation<Message, R>
-  readonly atLeastOnce: <Message, R>(run: Effect.Effect<Message, never, R>) => Operation<Message, R>
-  readonly atMostOnce: <Message, R>(run: Effect.Effect<Message, never, R>, unknown: Message) => Operation<Message, R>
-} = Object.assign(
-  <Message, R>(run: (key: IdempotencyKey) => Effect.Effect<Message, never, R>): Operation<Message, R> => ({
-    _tag: 'Operation',
-    delivery: 'Idempotent',
-    run,
-  }),
-  {
-    atLeastOnce: <Message, R>(run: Effect.Effect<Message, never, R>): Operation<Message, R> => ({
-      _tag: 'Operation',
-      delivery: 'AtLeastOnce',
-      run,
-    }),
-    atMostOnce: <Message, R>(run: Effect.Effect<Message, never, R>, unknown: Message): Operation<Message, R> => ({
-      _tag: 'Operation',
-      delivery: 'AtMostOnce',
-      run,
-      unknown,
-    }),
-  },
-)
+export const isTimer = (work: unknown): work is Timer<unknown> =>
+  typeof work === 'object' && work !== null && TimerTypeId in work
 
-export const timer = <Message>(at: DateTime.Utc, message: Message): Timer<Message> => ({ _tag: 'Timer', at, message })
+/** The work under a key: an operation, which is the program's own data, or a timer. */
+export type Durable<Operation, Message> = Operation | Timer<Message>
 
 export const noWork: Readonly<Record<string, never>> = Object.freeze({})
 
@@ -144,11 +165,22 @@ export type Types = Readonly<{
   flags: unknown
   inbound: unknown
   internal: unknown
+  /** The operations a state may hold, as data: usually a `Data.TaggedEnum`. */
+  operation: Readonly<{ _tag: string }>
   rejection: unknown
   sender: unknown
   projection: unknown
   services: unknown
 }>
+
+/** A runner for each kind of operation, by its tag. */
+export type Runners<T extends Types> = {
+  readonly [Tag in T['operation']['_tag']]: Runner<
+    Extract<T['operation'], Readonly<{ _tag: Tag }>>,
+    T['internal'],
+    T['services']
+  >
+}
 
 export interface Program<T extends Types> {
   /** What other entities read in `Address.name`, and the runtime stores the entity under. */
@@ -162,9 +194,20 @@ export interface Program<T extends Types> {
   }>
   readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state']
   readonly update: Update<T['state'], T['inbound'] | T['internal'], T['sender'], T['rejection']>
-  readonly durable: (state: T['state']) => Readonly<Record<string, Durable<T['internal'], T['services']>>>
+  readonly durable: (state: T['state']) => Readonly<Record<string, Durable<T['operation'], T['internal']>>>
+  readonly operations: Runners<T>
   readonly project: (state: T['state']) => T['projection']
 }
+
+/** The runner of an operation, found by its tag. */
+export const runnerOf = <T extends Types>(
+  program: Program<T>,
+  operation: T['operation'],
+): Runner<T['operation'], T['internal'], T['services']> =>
+  // `Runners` has a runner for every tag of `T['operation']`, which TypeScript cannot index by a tag it holds.
+  (program.operations as unknown as Readonly<Record<string, Runner<T['operation'], T['internal'], T['services']>>>)[
+    operation._tag
+  ] as Runner<T['operation'], T['internal'], T['services']>
 
 /** What creating an entity is answered. Only `Created` is stored, under the request id. */
 export type Creation = Readonly<{ _tag: 'Created' }> | Readonly<{ _tag: 'AlreadyExists' }>
@@ -202,8 +245,8 @@ export const send = <T extends Types>(
   Effect.flatMap(Effect.service(Entities), (entities) => entities.send(program, id, message, requestId))
 
 /**
- * Creates an entity from an operation, with the operation's idempotency key as the request id. It counts as the
- * operation's one message to that entity.
+ * Creates an entity from an operation, with the operation's idempotency key as the request id. A creation is
+ * stored apart from messages, so the same operation may then send the entity one message (decision 0017).
  */
 export const create = <T extends Types>(
   program: Program<T>,

@@ -6,17 +6,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 - **Work that may be abandoned.** An operation leaves only through its completion. Is there a kind of work with
   no effect on the world (a computation, a read) that a state may drop, as effect-tea drops a subscription?
-- **Work whose parameters change.** A kept key leaves its work as it is, even when the state the work was
-  built from has changed: a subscription whose payment method is updated during a charge goes on charging the
-  old one. That is the right answer for an operation, which cannot be interrupted
-  ([decision 0005](decisions/0005-an-operation-leaves-only-by-completing.md)), but it is silent. A timer could
-  instead be armed again when its time changes, since it has done nothing yet. Should a timer compare its time,
-  and should the runtime say anything when an operation's parameters differ? An operation is a function, so the
-  runtime cannot compare it unless it carries its parameters as data.
-  The answer also changes with a crash, which [decision 0008](decisions/0008-delivered-work-is-done.md) meant to
-  rule out: activation builds the work from the stored state, so the restarted charge uses the new payment
-  method, under the idempotency key of the attempt on the old one. A provider may refuse a key reused with
-  other parameters, or answer for the first. A timer kept at an old time is armed at the new one.
 - **Live streams.** A timer and an operation survive passivation. A stream from a socket or a feed does not.
   Are they allowed, keeping the entity loaded while their key is present, or left out?
 - **Children inside an entity.** effect-tea composes programs into a tree. Does an entity's program compose
@@ -29,7 +18,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   that is not domain (a valid token) happen before the mailbox, and what does the caller get then, or for
   flags that do not decode? And who may create an entity, since `init` sees no sender
   ([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md))? A defect at creation stores nothing
-  ([decision 0014](decisions/0014-rules-the-machine-settled.md)): what is its creator answered?
+  ([decision 0014](decisions/0014-rules-the-machine-settled.md)): what is its creator answered? Callers share
+  one space of request ids ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)): should a
+  caller's requests be its own, once the boundary knows who it is?
 
 ## Storage and reading
 
@@ -55,6 +46,12 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 - **Suspended entities.** A caller gets `Suspended`, and an operation that sends waits, keeping its own entity
   waiting with it ([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)). How does an operator see,
   resume and discard? And how long may a sender wait before someone is told?
+  A suspension stops every operation of the entity, and drops what they deliver meanwhile
+  ([decision 0006](decisions/0006-a-defect-suspends-the-entity.md)): a charge interrupted because another
+  operation died runs again, or delivers `unknown` if at most once. Should a suspension stop only the handling
+  of messages, and let the work under way record its completions? And an operation that dies cannot be
+  discarded, only resumed: one that dies on a reply stored by another entity dies again on every resume, and
+  only a new version of the program gets it out.
 - **Stored replies.** A reply is stored so that a retry gets it. A restarted operation of another entity may
   retry long after, so a receiver cannot tell when a reply is no longer needed. How long are they kept?
 - **Failing operations.** A transient failure (a timeout) is retried inside the operation, or becomes a

@@ -1,7 +1,16 @@
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Machine from './machine.ts'
-import type { Address, IdempotencyKey, Origin, Program, Reply, Types } from './program.ts'
+import {
+  type Address,
+  type Durable,
+  type IdempotencyKey,
+  isTimer,
+  type Origin,
+  type Program,
+  type Reply,
+  type Types,
+} from './program.ts'
 
 /** The reply `Accepted`, to compare with. */
 export const accepted: Readonly<{ _tag: 'Accepted' }> = { _tag: 'Accepted' }
@@ -10,10 +19,12 @@ export const accepted: Readonly<{ _tag: 'Accepted' }> = { _tag: 'Accepted' }
 export const rejected: Readonly<{ _tag: 'Rejected' }> = { _tag: 'Rejected' }
 
 /** Work under way under a key, in one incarnation. */
-export interface Pending {
+export interface Pending<Work = unknown> {
   readonly key: string
   readonly incarnation: number
   readonly idempotencyKey: IdempotencyKey
+  /** The operation or the timer, as the stored state holds it: a test asserts it by value. */
+  readonly work: Work
 }
 
 export interface Rehearsal<T extends Types> {
@@ -24,7 +35,7 @@ export interface Rehearsal<T extends Types> {
   /** Delivers an inbound message from another entity's operation, with a new request id. */
   readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Reply<T['rejection']>>
   /** The work under way under `key`. Fails the test when there is none. */
-  readonly pending: (key: string) => Effect.Effect<Pending>
+  readonly pending: (key: string) => Effect.Effect<Pending<Durable<T['operation'], T['internal']>>>
   /** Completes an operation with `message`. It is dropped when the operation's incarnation has moved on. */
   readonly answer: (pending: Pending, message: T['internal']) => Effect.Effect<'Delivered' | 'Dropped'>
   /** The time of a timer comes. */
@@ -53,7 +64,10 @@ export const rehearse = <T extends Types, E>(
   scenario: (rehearsal: Rehearsal<T>) => Effect.Effect<void, E>,
 ): Effect.Effect<void, E> =>
   Effect.suspend(() => {
-    const created = Machine.start(program, id, start.flags, start.at)
+    const created = Machine.start(program, id, start.flags, start.at, {
+      requestId: 'creation',
+      from: { _tag: 'Caller', sender: null },
+    })
     if (created._tag === 'Defect') return Effect.die(created.cause)
     let machine = created.machine
     let now = start.at
@@ -76,8 +90,10 @@ export const rehearse = <T extends Types, E>(
       Effect.flatMap(Effect.sync(() => `request-${++requests}`), (requestId) =>
         Effect.flatMap(apply({ _tag: 'Receive', requestId, message, from }), (outputs) => {
           for (const output of outputs) {
-            if (output._tag === 'Replied' && output.requestId === requestId && output.reply._tag !== 'Suspended') {
-              return Effect.succeed<Reply<T['rejection']>>(output.reply)
+            if (output._tag !== 'Replied' || output.requestId !== requestId) continue
+            const { reply } = output
+            if (reply._tag === 'Accepted' || reply._tag === 'Rejected') {
+              return Effect.succeed<Reply<T['rejection']>>(reply)
             }
           }
           return Effect.die(`the request ${requestId} was not answered`)
@@ -101,12 +117,14 @@ export const rehearse = <T extends Types, E>(
       pending: (key) =>
         Effect.suspend(() => {
           const running = machine.running[key]
-          return running === undefined
+          const work = program.durable(machine.stored.state)[key]
+          return running === undefined || work === undefined
             ? Effect.die(`no work is under way under '${key}'`)
-            : Effect.succeed<Pending>({
+            : Effect.succeed({
               key,
               incarnation: running.incarnation,
               idempotencyKey: Machine.idempotencyKeyOf(machine, key, running.incarnation),
+              work,
             })
         }),
       answer: (pending, message) =>
@@ -123,7 +141,7 @@ export const rehearse = <T extends Types, E>(
           const kind = kindOf(pending)
           if (kind === 'Operation') return Effect.die(`the work under '${pending.key}' is an operation: it is answered`)
           const work = program.durable(machine.stored.state)[pending.key]
-          if (kind === 'Timer' && work?._tag === 'Timer') now = DateTime.max(now, work.at)
+          if (kind === 'Timer' && isTimer(work)) now = DateTime.max(now, work.at)
           const { key, incarnation } = pending
           return Effect.map(apply({ _tag: 'Fire', key, incarnation }), outcome(pending))
         }),

@@ -2,6 +2,7 @@
  * A booking of seats for an event. It holds them in the event's inventory at once, then waits for the customer
  * to confirm before a deadline. A booking cancelled or expired once its seats are held releases them.
  */
+import * as Data from 'effect/Data'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -80,12 +81,19 @@ const holdWindow = { minutes: 15 }
 const isCustomer = (from: Origin<Sender>, booking: Booking) =>
   from._tag === 'Caller' && from.sender.id === booking.customer
 
+// What the booking asks of the event's inventory, as data: a test sees it without running it.
+type Operation = Data.TaggedEnum<{
+  Hold: { readonly event: string; readonly seats: number }
+  Confirm: { readonly event: string }
+  Release: { readonly event: string }
+}>
+const Operation = Data.taggedEnum<Operation>()
+
 // The idempotency key is the request id: a hold restarted after a crash is answered from the stored reply, and
 // holds nothing twice.
-const hold = (booking: Booking) =>
-  operation(Effect.fn('Hold')(function*(idempotencyKey: IdempotencyKey) {
-    const request = { _tag: 'HoldRequested', seats: booking.seats } as const
-    const reply = yield* send(inventory, booking.event, request, idempotencyKey)
+const hold = Effect.fn('Hold')(
+  function*({ event, seats }: Extract<Operation, { _tag: 'Hold' }>, idempotencyKey: IdempotencyKey) {
+    const reply = yield* send(inventory, event, { _tag: 'HoldRequested', seats }, idempotencyKey)
     // A rejection with no reason means the two entities disagree: a booking holds once, and holds some seats.
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsHeld' } satisfies Internal
@@ -94,31 +102,35 @@ const hold = (booking: Booking) =>
       : reply.reason !== null
       ? { _tag: 'SeatsUnavailable', reason: reply.reason } satisfies Internal
       : yield* Effect.die('the inventory rejected a hold for no reason')
-  }))
+  },
+)
 
 // The inventory confirms and releases any hold it made, and existed when it made it. Any other reply means the
 // two entities disagree, which no message of this program can repair: it is a defect, and suspends the booking.
-const confirm = (booking: Booking) =>
-  operation(Effect.fn('Confirm')(function*(idempotencyKey: IdempotencyKey) {
-    const reply = yield* send(inventory, booking.event, { _tag: 'ConfirmRequested' }, idempotencyKey)
+const confirm = Effect.fn('Confirm')(
+  function*({ event }: Extract<Operation, { _tag: 'Confirm' }>, idempotencyKey: IdempotencyKey) {
+    const reply = yield* send(inventory, event, { _tag: 'ConfirmRequested' }, idempotencyKey)
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsConfirmed' } satisfies Internal
       : yield* Effect.die('the inventory did not accept the confirmation of its own hold')
-  }))
+  },
+)
 
-const release = (booking: Booking) =>
-  operation(Effect.fn('Release')(function*(idempotencyKey: IdempotencyKey) {
-    const reply = yield* send(inventory, booking.event, { _tag: 'ReleaseRequested' }, idempotencyKey)
+const release = Effect.fn('Release')(
+  function*({ event }: Extract<Operation, { _tag: 'Release' }>, idempotencyKey: IdempotencyKey) {
+    const reply = yield* send(inventory, event, { _tag: 'ReleaseRequested' }, idempotencyKey)
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsReleased' } satisfies Internal
       : yield* Effect.die('the inventory did not accept the release of its own hold')
-  }))
+  },
+)
 
 export const booking: Program<{
   state: State
   flags: Flags
   inbound: Inbound
   internal: Internal
+  operation: Operation
   rejection: never
   sender: Sender
   projection: Projection
@@ -185,13 +197,15 @@ export const booking: Program<{
 
   durable: (state) =>
     Match.valueTags(state, {
-      Holding: ({ booking }) => ({ hold: hold(booking) }),
+      Holding: ({ booking }) => ({ hold: Operation.Hold({ event: booking.event, seats: booking.seats }) }),
       Held: ({ booking }) => ({ deadline: timer<Internal>(booking.deadline, { _tag: 'DeadlinePassed' }) }),
-      Confirming: ({ booking }) => ({ confirm: confirm(booking) }),
-      Releasing: ({ booking }) => ({ release: release(booking) }),
+      Confirming: ({ booking }) => ({ confirm: Operation.Confirm({ event: booking.event }) }),
+      Releasing: ({ booking }) => ({ release: Operation.Release({ event: booking.event }) }),
       Confirmed: () => noWork,
       Cancelled: () => noWork,
     }),
+
+  operations: { Hold: operation(hold), Confirm: operation(confirm), Release: operation(release) },
 
   project: (state) => ({
     status: state._tag,
