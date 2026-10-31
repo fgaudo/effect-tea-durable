@@ -9,6 +9,8 @@ import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import { SqlClient } from 'effect/sql'
 import { create, createTables, defect, launch, operation, send } from '../../src/index.ts'
+// What the runtime did is told to a probe, which is a test's and no part of the library's surface (decision 0073).
+import { Probe } from '../../src/runtime.ts'
 import { booking } from './booking.ts'
 import { inventory } from './inventory.ts'
 
@@ -103,13 +105,12 @@ test('the inventory keeps its reply to a booking while the booking’s hold wait
     `.pipe(Effect.orDie)
     const seen: Array<number> = []
     yield* Effect.scoped(Effect.gen(function*() {
-      const runtime = yield* launch({
+      const runtime = yield* launch().pipe(Effect.provideService(Probe, (said) =>
         // Before the booking's step that handles the inventory's answer commits, the hold that asked still holds.
-        at: (point, entity, event) =>
-          point === 'BeforeCommit' && entity.name === 'Booking' && event._tag === 'Handle'
-            ? Effect.flatMap(repliesToBookings, ([row]) => Effect.sync(() => seen.push(row?.count ?? 0)))
-            : Effect.void,
-      })
+        said._tag === 'Reached' && said.point === 'BeforeCommit' && said.entity.name === 'Booking' &&
+          said.event._tag === 'Handle'
+          ? Effect.flatMap(repliesToBookings, ([row]) => Effect.sync(() => seen.push(row?.count ?? 0)))
+          : Effect.void))
       const inventories = yield* runtime.deploy(inventory)
       const bookings = yield* runtime.deploy(booking)
       yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
@@ -127,13 +128,11 @@ test('a booking whose hold a crash interrupted holds its seats, whichever progra
   database(Effect.gen(function*() {
     yield* Effect.scoped(Effect.gen(function*() {
       const crashed = yield* Deferred.make<void>()
-      const runtime = yield* launch({
+      const runtime = yield* launch().pipe(Effect.provideService(Probe, (said) =>
         // The booking is stored, and the process dies before its hold starts.
-        at: (point, entity) =>
-          point === 'AfterCommit' && entity.name === 'Booking'
-            ? Effect.andThen(Deferred.succeed(crashed, undefined), Effect.never)
-            : Effect.void,
-      })
+        said._tag === 'Reached' && said.point === 'AfterCommit' && said.entity.name === 'Booking'
+          ? Effect.andThen(Deferred.succeed(crashed, undefined), Effect.never)
+          : Effect.void))
       const inventories = yield* runtime.deploy(inventory)
       const bookings = yield* runtime.deploy(booking)
       yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
@@ -159,14 +158,14 @@ test('a booking whose hold a crash interrupted holds its seats, whichever progra
 test('a booking whose hold the inventory crashed on sends it again, and is not suspended', () =>
   database(Effect.scoped(Effect.gen(function*() {
     let crashes = true
-    const runtime = yield* launch({
-      // The hold is written, and the runtime fails before it answers: the hook stands for a failed write.
-      observe: (entity, event) => {
-        if (entity.name !== 'Inventory' || event._tag !== 'Receive' || !crashes) return Effect.void
-        crashes = false
-        return Effect.die('the runtime failed')
-      },
-    })
+    const runtime = yield* launch().pipe(Effect.provideService(Probe, (said) => {
+      // The hold is written, and the runtime fails before it answers: the probe stands for a failed write.
+      if (said._tag !== 'Applied' || said.entity.name !== 'Inventory' || said.event._tag !== 'Receive' || !crashes) {
+        return Effect.void
+      }
+      crashes = false
+      return Effect.die('the runtime failed')
+    }))
     const inventories = yield* runtime.deploy(inventory)
     const bookings = yield* runtime.deploy(booking)
     yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
@@ -190,12 +189,11 @@ test('a booking whose hold the inventory is suspended on waits for its resumptio
     }
     yield* Effect.scoped(Effect.gen(function*() {
       const suspended = yield* Deferred.make<void>()
-      const runtime = yield* launch({
-        retry,
+      const runtime = yield* launch({ retry }).pipe(Effect.provideService(Probe, (said) =>
         // The inventory's one step is the hold it dies on.
-        observe: (entity, event) =>
-          entity.name === 'Inventory' && event._tag === 'Handle' ? Deferred.succeed(suspended, undefined) : Effect.void,
-      })
+        said._tag === 'Applied' && said.entity.name === 'Inventory' && said.event._tag === 'Handle'
+          ? Deferred.succeed(suspended, undefined)
+          : Effect.void))
       const inventories = yield* runtime.deploy(breaking)
       const bookings = yield* runtime.deploy(booking)
       yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })

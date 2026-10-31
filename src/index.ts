@@ -36,7 +36,7 @@ export {
   type Work,
 } from './program.ts'
 export { accepted, type Pending, type Rehearsal, rehearse, rejected } from './rehearse.ts'
-export { type Answer, type Handle, launch, type Options, type Point, type Runtime } from './runtime.ts'
+export { type Answer, type Handle, launch, type Options, type Runtime } from './runtime.ts'
 export {
   type Comparison,
   type Consumer,

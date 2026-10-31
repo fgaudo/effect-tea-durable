@@ -10,6 +10,7 @@
  * is what wakes it (decision 0029).
  */
 import * as Cause from 'effect/Cause'
+import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
@@ -62,16 +63,26 @@ export type Point =
   /** The callers of the event are answered, and its work is not started. */
   | 'AfterReply'
 
+/**
+ * What the runtime says it did: a point of the crash table it reached with an event, an event it applied — in the
+ * order they were applied, once written — and an entity it unloaded, once its timers have stopped.
+ */
+export type Said =
+  | Readonly<{ _tag: 'Reached'; point: Point; entity: Address; event: Machine.Event<never> }>
+  | Readonly<{ _tag: 'Applied'; entity: Address; event: Machine.Event<never> }>
+  | Readonly<{ _tag: 'Unloaded'; entity: Address }>
+
+/**
+ * Told what the runtime did, and waited for before it goes on: a test replays the events in the machine, counts
+ * the passivations, or never returns at a point of the crash table, to crash the process there. The default does
+ * nothing, as Effect's tracer does; a test provides another around `launch`, which reads it once. It is no
+ * option, and no part of what a user imports (decisions 0055, 0073).
+ */
+export const Probe = Context.Reference<(said: Said) => Effect.Effect<void>>('effect-tea-durable/Probe', {
+  defaultValue: () => () => Effect.void,
+})
+
 export interface Options {
-  /**
-   * Called at each point of the crash table, before the runtime goes on. A test dies, or never returns, to crash
-   * the process there; the default returns at once.
-   */
-  readonly at?: (point: Point, entity: Address, event: Machine.Event<never>) => Effect.Effect<void>
-  /** Called with every event applied, in the order they were applied: a test replays them in the machine. */
-  readonly observe?: (entity: Address, event: Machine.Event<never>) => Effect.Effect<void>
-  /** Called with every entity unloaded, once its timers have stopped: a test counts passivations. */
-  readonly unloaded?: (entity: Address) => Effect.Effect<void>
   /**
    * How long a `send` or a `create` from another entity waits before sending again to a receiver that crashed on
    * it (decision 0046). A suspended receiver is waited for until it is resumed, and a program not deployed yet until
@@ -303,9 +314,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           }),
       )
     }
-    const at = options.at ?? (() => Effect.void)
-    const observe = options.observe ?? (() => Effect.void)
-    const unloaded = options.unloaded ?? (() => Effect.void)
+    const probe = yield* Probe
+    // An event is told of as the machine's, whatever program it is stepped by: the probe compares, and steps nothing.
+    const at = <T extends Types>(point: Point, entity: Address, event: Machine.Event<T>) =>
+      probe({ _tag: 'Reached', point, entity, event: event as Machine.Event<never> })
+    const observe = <T extends Types>(entity: Address, event: Machine.Event<T>) =>
+      probe({ _tag: 'Applied', entity, event: event as Machine.Event<never> })
     const retry = options.retry?.millis ?? 10
     const passivate = options.passivate?.millis ?? 30_000
 
@@ -520,7 +534,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             ? answer(messages, entity, request, output.reply)
             : answer(creations, entity, request, output.reply)
         }
-        yield* at('AfterReply', entity, event as Machine.Event<never>)
+        yield* at('AfterReply', entity, event)
         for (const output of outputs) {
           switch (output._tag) {
             case 'Started':
@@ -563,7 +577,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const transition = Machine.step(deployed.program, before, event)
         const { written } = transition
         if (written !== null) {
-          yield* at('BeforeCommit', entity, event as Machine.Event<never>)
+          yield* at('BeforeCommit', entity, event)
           // What the event writes is the machine's, encoded: the storage decides nothing (decision 0057).
           yield* sql.withTransaction(deployed.storage.write(entity.id, written)).pipe(Effect.orDie)
         }
@@ -573,8 +587,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         }
         // An event is observed once it is written — at once when it writes nothing — and before anything is
         // acted on: a crash before the commit leaves no event, and one after it an event that happened.
-        yield* observe(entity, event as Machine.Event<never>)
-        if (written !== null) yield* at('AfterCommit', entity, event as Machine.Event<never>)
+        yield* observe(entity, event)
+        if (written !== null) yield* at('AfterCommit', entity, event)
         yield* perform(deployed, loaded, entity, event, transition.outputs)
       }).pipe(Effect.ensuring(Effect.sync(() => {
         loaded.applying = false
@@ -624,7 +638,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         yield* leave(deployed, loaded)
         // A timer that fires between here and its interruption delivers nothing, and the stored time stands.
         yield* stopAll(loaded)
-        yield* unloaded({ name: deployed.program.name, id })
+        yield* probe({ _tag: 'Unloaded', entity: { name: deployed.program.name, id } })
         return true
       }))
 
@@ -783,11 +797,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             timers: new Map(),
           }
           const creation: Machine.Event<T> = { _tag: 'Create', request }
-          yield* at('BeforeCommit', entity, creation as Machine.Event<never>)
+          yield* at('BeforeCommit', entity, creation)
           yield* sql.withTransaction(deployed.storage.write(id, started.written)).pipe(Effect.orDie)
           // The entity exists from here: its creation is the first event committed for it.
-          yield* observe(entity, creation as Machine.Event<never>)
-          yield* at('AfterCommit', entity, creation as Machine.Event<never>)
+          yield* observe(entity, creation)
+          yield* at('AfterCommit', entity, creation)
           deployed.loaded.set(id, loaded)
           // Each point of the crash table is given the creation, its event: `AfterReply` too.
           yield* perform(deployed, loaded, entity, creation, started.outputs).pipe(

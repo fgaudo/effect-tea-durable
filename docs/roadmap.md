@@ -36,16 +36,10 @@ over the state it was computed from ([decision 0070](decisions/0070-reindex-writ
 So is the second: a process starts the entities whose mailbox holds a message
 ([decision 0071](decisions/0071-a-process-starts-the-entities-with-a-message.md)), and the third: the log shows
 what a step changed, as the program deployed computes it
-([decision 0072](decisions/0072-the-log-shows-what-a-step-changed.md)). The others come next, in this order:
+([decision 0072](decisions/0072-the-log-shows-what-a-step-changed.md)), and the fourth: what the runtime did is
+told to a probe, out of its options ([decision 0073](decisions/0073-what-the-runtime-did-is-told-to-a-probe.md)).
+The last comes next:
 
-- **The runtime's options hold the tests' seams.** `at`, `observe` and `unloaded` are in `Options` beside `retry`
-  and `passivate` ([decision 0028](decisions/0028-rules-the-runtime-settled.md)), so what an operator sets and what
-  a test dies at are one record, and three hooks do one thing: say what the runtime did. `at` and `observe` take a
-  `Machine.Event`, so the public surface names a type of the machine, which
-  [decision 0055](decisions/0055-the-public-surface-is-what-its-users-use.md) keeps out of it and lets change
-  without a note, and every call casts the event to `Event<never>`. A note decides one seam for all three, out of
-  `Options` and out of `index.ts` — a probe the tests provide with a default that does nothing, as Effect's own
-  tracer is — and the options keep what an operator sets.
 - **A note changed after it was taken.** Decisions 0029, 0032, 0037 and 0038 were edited by later commits, and
   0032's edit is what accepts the first bug above. [`AGENTS.md`](../AGENTS.md) says a note is never rewritten:
   it says too when a note counts as taken, so that a correction found later is a note of its own.

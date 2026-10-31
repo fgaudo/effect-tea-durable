@@ -22,6 +22,7 @@ import { TestClock } from 'effect/testing'
 import * as Machine from './machine.ts'
 import {
   defect,
+  type Address,
   type IdempotencyKey,
   InvariantDefect,
   isTimer,
@@ -32,7 +33,7 @@ import {
   rejectWith,
   timer,
 } from './program.ts'
-import { type Answer, launch, type Options, type Point, type Runtime } from './runtime.ts'
+import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
 import { createTables, storage } from './storage.ts'
 
 // The toy of `machine.test.ts`, with the schemas a runtime needs: `a` is idempotent, `b` at most once, `c` at
@@ -227,11 +228,36 @@ const database = <A, E>(test: Effect.Effect<A, E, SqlClient.SqlClient>) =>
     ),
   )
 
-/** One process over the database: it ends when the body does, and everything running in it is interrupted. */
+/**
+ * What a test is told of what the runtime did, each kind of it apart: `at` each point of the crash table, where it
+ * dies or never returns to crash the process, `observe` each event applied, and `unloaded` each passivation.
+ */
+type Hooks = Readonly<{
+  at?: (point: Point, entity: Address, event: Machine.Event<never>) => Effect.Effect<void>
+  observe?: (entity: Address, event: Machine.Event<never>) => Effect.Effect<void>
+  unloaded?: (entity: Address) => Effect.Effect<void>
+}>
+
+/**
+ * One process over the database: it ends when the body does, and everything running in it is interrupted. The
+ * hooks are the runtime's probe, which it reads as it launches (decision 0073).
+ */
 const process = <A, E, R>(
-  options: Options,
+  { at, observe, unloaded, ...options }: Options & Hooks,
   body: (runtime: Runtime) => Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R | SqlClient.SqlClient> => Effect.scoped(Effect.flatMap(launch(options), body))
+): Effect.Effect<A, E, R | SqlClient.SqlClient> =>
+  Effect.scoped(Effect.flatMap(launch(options), body)).pipe(
+    Effect.provideService(Probe, (said) => {
+      switch (said._tag) {
+        case 'Reached':
+          return at?.(said.point, said.entity, said.event) ?? Effect.void
+        case 'Applied':
+          return observe?.(said.entity, said.event) ?? Effect.void
+        case 'Unloaded':
+          return unloaded?.(said.entity) ?? Effect.void
+      }
+    }),
+  )
 
 /**
  * Runs `effect` in a fiber of its own until it, and everything it sets going, waits: the clock's `adjust` waits for
@@ -317,7 +343,7 @@ const publishedOf = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) 
  */
 const unloads = () => {
   const entities: Array<string> = []
-  const unloaded: Options['unloaded'] = (entity) =>
+  const unloaded: Hooks['unloaded'] = (entity) =>
     Effect.sync(() => {
       entities.push(entity.id)
     })
@@ -327,7 +353,7 @@ const unloads = () => {
 /** Collects every event the runtime commits, in order. */
 const log = () => {
   const events: Array<Machine.Event<T>> = []
-  const observe: Options['observe'] = (_entity, event) =>
+  const observe: Hooks['observe'] = (_entity, event) =>
     Effect.sync(() => {
       events.push(event as Machine.Event<T>)
     })
@@ -955,7 +981,7 @@ describe('random sequences of events', () => {
             const crashed = yield* Deferred.make<void>()
             let seen = 0
             const passivate = millis === null ? {} : { passivate: { millis } }
-            const options: Options = {
+            const options: Options & Hooks = {
               observe,
               ...passivate,
               at: (reached) =>
