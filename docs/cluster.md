@@ -106,7 +106,8 @@ what the documentation of `WithTransaction` says. It found what a defect does to
   slow does not do it. Traced with logs: the runner's read of storage delivers messages one at a time, and stops on
   the caller's `Interrupt`, which waits for the entity's handlers; each rebuild replays the message that dies and fails
   before it publishes them, so the wait lasts while the handler dies
-  ([decision 0083](decisions/0083-effect-moves-to-4-1-1.md)).
+  ([decision 0083](decisions/0083-effect-moves-to-4-1-1.md)). Reported as
+  [Effect-TS/effect#10238](https://github.com/Effect-TS/effect/issues/10238).
 
 What stays two transactions:
 
