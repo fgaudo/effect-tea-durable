@@ -287,8 +287,8 @@ export interface Program<T extends Types> {
   /** What other entities read in `Address.name`, and the runtime stores the entity under. */
   readonly name: string
   /**
-   * Every key the program's work is held under. `program` checks `durable` against them, and a deploy that
-   * renames one is a change of the type (decision 0033).
+   * Every key the program's work is held under. The machine checks `durable` against them (decision 0037), and
+   * a deploy that renames one is a change of the type (decision 0033).
    */
   readonly keys: ReadonlyArray<T['key']>
   readonly schemas: Schemas<

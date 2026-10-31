@@ -676,6 +676,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
     const rows = yield* sql<{ id: string }>`
       SELECT DISTINCT id FROM entity_keys
       WHERE name = ${name} AND work IS NOT NULL AND due IS NULL AND id NOT IN ${onHold}
+      ORDER BY id
     `
     return rows.map((row) => row.id)
   }).pipe(Effect.orDie)

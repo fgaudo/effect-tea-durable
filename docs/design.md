@@ -22,18 +22,18 @@ tested by calling pure functions, crashes included.
 
 ## A program
 
-| Piece     | What it does                                                                                 |
-| --------- | -------------------------------------------------------------------------------------------- |
-| `schemas` | how the state, flags, messages, operations, reasons and projection leave the process         |
-| `name`    | what the runtime stores the entity under, and what other entities see it as                  |
-| `keys`    | every key the work under way is held under                                                   |
-| `init`    | the first state, from the flags the entity is created with and the time of its creation      |
-| `update`  | `(message, meta) => (state) =>` the next state, a rejection, or a defect                     |
-| `durable`    | the work under way in each state, by key: operations, as data, and timers                    |
-| `operations` | how each kind of operation runs, what it answers, and what a crash does to it                |
-| `project`    | what callers read of the state, with the actions it allows                                   |
-| `indexes`    | what a query across the program's entities filters and orders by, read off the projection    |
-| `migrations` | how the versions before this one are read, in order                                          |
+| Piece        | What it does                                                                              |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| `schemas`    | how the state, flags, messages, operations, reasons and projection leave the process      |
+| `name`       | what the runtime stores the entity under, and what other entities see it as               |
+| `keys`       | every key the work under way is held under                                                |
+| `init`       | the first state, from the flags the entity is created with and the time of its creation   |
+| `update`     | `(message, meta) => (state) =>` the next state, a rejection, or a defect                  |
+| `durable`    | the work under way in each state, by key: operations, as data, and timers                 |
+| `operations` | how each kind of operation runs, what it answers, and what a crash does to it             |
+| `project`    | what callers read of the state, with the actions it allows                                |
+| `indexes`    | what a query across the program's entities filters and orders by, read off the projection |
+| `migrations` | how the versions before this one are read, in order                                       |
 
 A program is declared in one place, `program(schemas)(…)`: the schemas first, which give every type the program
 is written in, and then what it does. Everything else is inferred from the pieces — the keys `durable` may use,
@@ -51,6 +51,12 @@ JSON holds ([decision 0030](decisions/0030-a-schema-encodes-to-json.md)).
 A state is an object, as in the Guide ([decision 0031](decisions/0031-a-state-is-an-object.md)). A tag is no rule
 of the types, and the Guide's one state machine per concern is how the examples are written: it is also what
 gives `durable` and `project` a case to match on.
+
+Nothing that crosses the library is mutated: the program and its schemas, its states, flags, messages,
+operations, timers and projections, and what the library gives back. A new value is a new object, as the Guide
+says of a state. The library relies on it — a step whose next state is the same object stores nothing callers
+read, and an operation changed in place is never seen to change — and, as for purity, checks nothing of it
+([decision 0052](decisions/0052-what-crosses-the-library-is-never-mutated.md)).
 
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
 
@@ -83,7 +89,8 @@ behind.
 An entity is created by a request of its own, with its flags, answered `Created` once and `AlreadyExists`
 after. A message to an entity that does not exist is answered `NotFound`, and creates nothing
 ([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md),
-[decision 0017](decisions/0017-creation-in-the-machine.md)).
+[decision 0017](decisions/0017-creation-in-the-machine.md)). A creation and a message may share a request id,
+and each is answered apart ([decision 0050](decisions/0050-a-creation-is-answered-apart-from-a-message.md)).
 
 ## Durable work
 
@@ -403,4 +410,6 @@ An entity with nothing to do is unloaded, and the earliest of its stored timers 
 ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)); how long it stays loaded is an option of the
 runtime. An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
 process, its callers are given the defect, and the next one loads it from what is stored
-([decision 0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). Effect Cluster's entities, sharding and message storage come next ([roadmap](roadmap.md)).
+([decision 0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). Everything a
+deployment runs runs in a scope of its own: a deploy that cannot finish stops what it started, and is never
+seen by other programs ([decision 0051](decisions/0051-a-deploy-that-fails-leaves-nothing-running.md)). Effect Cluster's entities, sharding and message storage come next ([roadmap](roadmap.md)).

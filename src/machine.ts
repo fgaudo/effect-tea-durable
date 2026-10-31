@@ -169,8 +169,13 @@ export type Output<T extends Types> =
     _tag: 'Replied'
     requestId: string
     from: Origin<T['sender']>
-    reply: StoredReply<T['rejection']> | Readonly<{ _tag: 'Suspended' }> | Creation
+    reply: StoredReply<T['rejection']> | Readonly<{ _tag: 'Suspended' }>
   }>
+  /**
+   * A creation's request answered: apart from a message's, since a creation and a message share request ids
+   * (decisions 0017, 0050).
+   */
+  | Readonly<{ _tag: 'CreationReplied'; requestId: string; from: Origin<T['sender']>; reply: Creation }>
   /** A completion, a firing or an `unknown` written to the mailbox. */
   | Readonly<{ _tag: 'Recorded'; key: string; incarnation: number }>
   /** An internal message `update` handled. */
@@ -402,7 +407,7 @@ export const start = <T extends Types>(
   }
   const created: Machine<T> = { program, stored, running: {} }
   const { machine, outputs } = activate(created, created, program, () => false)
-  const reply: Output<T> = { _tag: 'Replied', ...request, reply: { _tag: 'Created' } }
+  const reply: Output<T> = { _tag: 'CreationReplied', ...request, reply: { _tag: 'Created' } }
   return { _tag: 'Created', machine, outputs: [reply, ...outputs] }
 }
 
@@ -615,7 +620,7 @@ export const step = <T extends Types>(machine: Machine<T>, event: Event<T>): Tra
       const reply: Creation = requestKey(machine.program, from, requestId) === machine.stored.creation
         ? { _tag: 'Created' }
         : { _tag: 'AlreadyExists' }
-      return { machine, outputs: [{ _tag: 'Replied', requestId, from, reply }] }
+      return { machine, outputs: [{ _tag: 'CreationReplied', requestId, from, reply }] }
     }
     case 'Complete':
       return record(machine, 'Operation', event.key, event.incarnation, () => event.message)

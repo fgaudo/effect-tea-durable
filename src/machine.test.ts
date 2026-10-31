@@ -403,8 +403,10 @@ describe('the machine', () => {
       const replies = new Map<string, unknown>()
       for (const { outputs } of trace) {
         for (const output of outputs) {
-          if (output._tag !== 'Replied' || output.reply._tag === 'Suspended') continue
-          const request = Machine.requestKey(program, output.from, output.requestId)
+          if (output._tag !== 'Replied' && output._tag !== 'CreationReplied') continue
+          if (output.reply._tag === 'Suspended') continue
+          // A creation and a message are requests apart, whose ids may be the same (decision 0050).
+          const request = `${output._tag} ${Machine.requestKey(program, output.from, output.requestId)}`
           const first = replies.get(request)
           if (first === undefined) replies.set(request, output.reply)
           else expect<unknown>(output.reply).toEqual(first)
@@ -676,8 +678,8 @@ describe('the machine', () => {
           reached.add(
             output._tag === 'Dropped'
               ? `Dropped on ${event._tag}`
-              : output._tag === 'Replied'
-              ? `Replied ${output.reply._tag}`
+              : output._tag === 'Replied' || output._tag === 'CreationReplied'
+              ? `${output._tag} ${output.reply._tag}`
               : output._tag === 'Started'
               ? `Started ${runnerOf(program, output.operation).delivery}`
               : output._tag,
@@ -687,6 +689,8 @@ describe('the machine', () => {
     }, { numRuns: 500, seed: 42 })
     expect([...reached].sort()).toEqual([
       'Armed',
+      'CreationReplied AlreadyExists',
+      'CreationReplied Created',
       'Delivered',
       'Disarmed',
       'Dropped on Complete',
@@ -694,8 +698,6 @@ describe('the machine', () => {
       'Dropped on Handle',
       'Recorded',
       'Replied Accepted',
-      'Replied AlreadyExists',
-      'Replied Created',
       'Replied Rejected',
       'Replied Suspended',
       'Started AtLeastOnce',
@@ -1090,7 +1092,7 @@ describe('a suspended entity', () => {
     expect(Machine.step(machine, { _tag: 'Receive', requestId: 'third', message: 'ok', from: caller }).outputs)
       .toEqual([{ _tag: 'Replied', requestId: 'third', from: caller, reply: { _tag: 'Suspended' } }])
     expect(Machine.step(machine, { _tag: 'Create', requestId: 'creation', from: caller }).outputs)
-      .toEqual([{ _tag: 'Replied', requestId: 'creation', from: caller, reply: { _tag: 'Created' } }])
+      .toEqual([{ _tag: 'CreationReplied', requestId: 'creation', from: caller, reply: { _tag: 'Created' } }])
   })
 
   test('answers Suspended every caller waiting, and gives each its reply on a retry once resumed', () => {
@@ -1300,11 +1302,23 @@ describe('creation', () => {
     const create = (requestId: string, from: Origin<null>) =>
       Machine.step(machine, { _tag: 'Create', requestId, from })
     expect(create('creation', nobody).outputs)
-      .toEqual([{ _tag: 'Replied', requestId: 'creation', from: nobody, reply: { _tag: 'Created' } }])
+      .toEqual([{ _tag: 'CreationReplied', requestId: 'creation', from: nobody, reply: { _tag: 'Created' } }])
     // The same request id from another sender is another request.
     expect(create('creation', booking).outputs)
-      .toEqual([{ _tag: 'Replied', requestId: 'creation', from: booking, reply: { _tag: 'AlreadyExists' } }])
+      .toEqual([
+        { _tag: 'CreationReplied', requestId: 'creation', from: booking, reply: { _tag: 'AlreadyExists' } },
+      ])
     expect(create('other', nobody).machine).toBe(machine)
+  })
+
+  // A runtime waits for each apart: a reply to the one must not reach a caller of the other (decision 0050).
+  test('a creation is answered apart from a message under the same request id', () => {
+    const machine = checked((message) => message, () => ({}))
+    expect(Machine.step(machine, { _tag: 'Create', requestId: 'creation', from: nobody }).outputs)
+      .toEqual([{ _tag: 'CreationReplied', requestId: 'creation', from: nobody, reply: { _tag: 'Created' } }])
+    const sent = handled(machine, { _tag: 'Receive', requestId: 'creation', message: 'go', from: nobody })
+    expect(sent.outputs.filter((output) => output._tag === 'Replied' || output._tag === 'CreationReplied'))
+      .toEqual([{ _tag: 'Replied', requestId: 'creation', from: nobody, reply: { _tag: 'Accepted' } }])
   })
 
   test('a creation is not a message: its request id may be used again to send one', () => {

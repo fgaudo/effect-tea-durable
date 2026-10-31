@@ -1,7 +1,7 @@
 /**
  * The runtime on one process, over `SqlClient`: it drives the machine ([`machine.ts`](machine.ts)) and acts on its
  * outputs (decision 0013). An event is one transaction (decision 0007): the machine's next `Stored` is written,
- * and only then are the caller answered and the work started, so a crash before the commit leaves nothing of the
+ * and only then are the callers answered and the work started, so a crash before the commit leaves nothing of the
  * event, and one after it is an activation away from the work the state holds.
  *
  * What is stored lives in the database ([`storage.ts`](storage.ts)); what is running — the operations' fibers, the
@@ -13,6 +13,7 @@ import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
@@ -49,8 +50,8 @@ import {
  */
 export type Answer<Reason> = Reply<Reason> | Readonly<{ _tag: 'Suspended' }>
 
-/** What the runtime gives a request: a stored reply, the two it answers itself, or a creation's answer. */
-type Given = Answer<unknown> | Creation
+/** The callers waiting for a reply of one kind, by entity and then by request. */
+type Waiting<A> = Map<string, Map<string, Set<Deferred.Deferred<A>>>>
 
 /** A point of the design's crash table, where a test dies to see what survives. */
 export type Point =
@@ -72,8 +73,8 @@ export interface Options {
   /** Called with every entity unloaded, once its timers have stopped: a test counts passivations. */
   readonly unloaded?: (entity: Address) => Effect.Effect<void>
   /**
-   * How long a `send` from another entity waits before retrying a suspended one (decision 0010), and an operation
-   * before looking again for a program not deployed yet (decision 0045).
+   * How long a `send` from another entity waits before retrying a suspended receiver (decision 0010) or one that
+   * crashed (decision 0046), and an operation before looking again for a program not deployed yet (decision 0045).
    */
   readonly retry?: Readonly<{ millis: number }>
   /**
@@ -197,6 +198,11 @@ interface Waker {
 interface Deployment<T extends Types> {
   readonly program: Program<T>
   readonly storage: Storage<T>
+  /**
+   * Where everything that runs for the deployment runs: the entities' loops, their operations and timers, and the
+   * waker. A deploy that fails closes it, and leaves nothing running (decision 0051).
+   */
+  readonly scope: Scope.Closeable
   readonly loaded: Map<string, Loaded<T>>
   readonly waker: Waker
   /** The services the program was deployed with, which its operations run in. */
@@ -237,9 +243,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const deployments = new Map<string, Deployment<never>>()
     /**
      * The callers waiting for a reply, by entity and then by request: a retry of a queued message waits with the
-     * first, and a crash of the entity reaches every caller of it (decision 0042).
+     * first, and a crash of the entity reaches every caller of it (decision 0042). A creation's callers wait apart
+     * from a message's, since the two share request ids (decisions 0017, 0050).
      */
-    const waiting = new Map<string, Map<string, Set<Deferred.Deferred<Given>>>>()
+    const messages: Waiting<Answer<unknown>> = new Map()
+    const creations: Waiting<Creation> = new Map()
     const addressOf = (entity: Address) => JSON.stringify([entity.name, entity.id])
     const at = options.at ?? (() => Effect.void)
     const observe = options.observe ?? (() => Effect.void)
@@ -250,7 +258,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const deployment = <T extends Types>(name: string): Deployment<T> | undefined =>
       deployments.get(name) as Deployment<T> | undefined
 
-    const answer = (entity: Address, request: string, reply: Given) =>
+    const answer = <A>(waiting: Waiting<A>, entity: Address, request: string, reply: A) =>
       Effect.suspend(() => {
         const requests = waiting.get(addressOf(entity))
         const callers = requests?.get(request)
@@ -261,8 +269,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /** A caller registered and waiting: its event is offered, and the reply comes to `caller`. */
-    interface Asked {
-      readonly caller: Deferred.Deferred<Given>
+    interface Asked<A> {
+      readonly caller: Deferred.Deferred<A>
       readonly forget: Effect.Effect<void>
     }
 
@@ -270,17 +278,18 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * Registers a caller and offers its event. It is done while the entity is held — the registry's permit — so
      * that an entity is never unloaded between a caller finding it and its event being offered (decision 0029).
      */
-    const ask = <T extends Types>(
+    const ask = <T extends Types, A>(
+      waiting: Waiting<A>,
       loaded: Loaded<T>,
       entity: Address,
       request: string,
       event: Machine.Event<T>,
-    ): Effect.Effect<Asked> =>
+    ): Effect.Effect<Asked<A>> =>
       Effect.gen(function*() {
         const address = addressOf(entity)
-        const caller = yield* Deferred.make<Given>()
-        const requests = waiting.get(address) ?? new Map<string, Set<Deferred.Deferred<Given>>>()
-        const callers = requests.get(request) ?? new Set<Deferred.Deferred<Given>>()
+        const caller = yield* Deferred.make<A>()
+        const requests = waiting.get(address) ?? new Map<string, Set<Deferred.Deferred<A>>>()
+        const callers = requests.get(request) ?? new Set<Deferred.Deferred<A>>()
         callers.add(caller)
         requests.set(request, callers)
         waiting.set(address, requests)
@@ -299,7 +308,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /** Waits for the reply the entity stores or gives, and leaves nothing registered. */
-    const answered = ({ caller, forget }: Asked) => Effect.onExit(Deferred.await(caller), () => forget)
+    const answered = <A>({ caller, forget }: Asked<A>) => Effect.onExit(Deferred.await(caller), () => forget)
 
     /** The work under a key stops: its fiber is interrupted, and nothing it would deliver is recorded. */
     const stop = (held: Map<string, Fiber.Fiber<void>>, id: string) =>
@@ -346,13 +355,14 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               Effect.ensuring(Effect.sync(() => loaded.operations.delete(under(key, incarnation)))),
             ),
           ),
-          scope,
+          deployed.scope,
         )
         loaded.operations.set(under(key, incarnation), fiber)
       })
 
     /** Arms a timer: its time comes, and `Fire` is offered. A passivated entity would be woken by `due` instead. */
     const arm = <T extends Types>(
+      deployed: Deployment<T>,
       loaded: Loaded<T>,
       output: Extract<Machine.Output<T>, { _tag: 'Armed' }>,
     ) =>
@@ -365,7 +375,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             yield* Effect.sleep(`${millis} millis`)
             yield* Queue.offer(loaded.events, { _tag: 'Fire', key, incarnation })
           }).pipe(Effect.ensuring(Effect.sync(() => loaded.timers.delete(under(key, incarnation))))),
-          scope,
+          deployed.scope,
         )
         loaded.timers.set(under(key, incarnation), fiber)
       })
@@ -380,8 +390,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       Effect.gen(function*() {
         // The callers first: a reply is what the event's commit made true (decision 0023).
         for (const output of outputs) {
-          if (output._tag !== 'Replied') continue
-          yield* answer(entity, Machine.requestKey(deployed.program, output.from, output.requestId), output.reply)
+          if (output._tag !== 'Replied' && output._tag !== 'CreationReplied') continue
+          const request = Machine.requestKey(deployed.program, output.from, output.requestId)
+          yield* output._tag === 'Replied'
+            ? answer(messages, entity, request, output.reply)
+            : answer(creations, entity, request, output.reply)
         }
         yield* at('AfterReply', entity, event as Machine.Event<never>)
         for (const output of outputs) {
@@ -390,7 +403,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               yield* start(deployed, loaded, entity, output)
               break
             case 'Armed':
-              yield* arm(loaded, output)
+              yield* arm(deployed, loaded, output)
               break
             case 'Disarmed':
               yield* stop(loaded.timers, under(output.key, output.incarnation))
@@ -400,7 +413,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               yield* stopAll(loaded)
               break
             default:
-              // `Replied`, `Recorded`, `Delivered` and `Dropped` are what the commit already said.
+              // The replies, `Recorded`, `Delivered` and `Dropped` are what the commit already said.
               break
           }
         }
@@ -503,11 +516,16 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         if (deployed.loaded.get(id) === loaded) deployed.loaded.delete(id)
         yield* stopAll(loaded)
         const address = addressOf({ name, id })
-        const requests = waiting.get(address)
-        waiting.delete(address)
-        for (const callers of requests?.values() ?? []) {
-          for (const caller of callers) yield* Deferred.failCause(caller, cause)
-        }
+        const fail = <A>(waiting: Waiting<A>) =>
+          Effect.gen(function*() {
+            const requests = waiting.get(address)
+            waiting.delete(address)
+            for (const callers of requests?.values() ?? []) {
+              for (const caller of callers) yield* Deferred.failCause(caller, cause)
+            }
+          })
+        yield* fail(messages)
+        yield* fail(creations)
         // Its stored timers are the waker's again.
         yield* poke(deployed.waker)
       })
@@ -563,7 +581,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         yield* apply(deployed, loaded, { _tag: 'Restart' }).pipe(
           Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
         )
-        yield* Effect.forkIn(loop(deployed, loaded), scope)
+        yield* Effect.forkIn(loop(deployed, loaded), deployed.scope)
         return loaded
       })
 
@@ -612,11 +630,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const asked = yield* registry.withPermits(1)(Effect.gen(function*() {
           const held = deployed.loaded.get(id) ?? null
           // The entity was already there: the machine answers the request from what is stored (decision 0017).
-          if (held !== null) return yield* ask(held, entity, requested, { _tag: 'Create', ...request })
+          if (held !== null) return yield* ask(creations, held, entity, requested, { _tag: 'Create', ...request })
           const stored = yield* deployed.storage.load(id)
           if (stored !== null) {
             const loaded = yield* activate(deployed, stored)
-            return yield* ask(loaded, entity, requested, { _tag: 'Create', ...request })
+            return yield* ask(creations, loaded, entity, requested, { _tag: 'Create', ...request })
           }
           const now = yield* DateTime.now
           const started = Machine.start(deployed.program, id, flags, now, request)
@@ -640,13 +658,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           yield* perform(deployed, loaded, entity, { _tag: 'Restart' }, started.outputs).pipe(
             Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
           )
-          yield* Effect.forkIn(loop(deployed, loaded), scope)
+          yield* Effect.forkIn(loop(deployed, loaded), deployed.scope)
           return null
         }))
-        if (asked === null) return { _tag: 'Created' }
-        const reply = yield* answered(asked)
-        // `Create` is answered from what is stored: the machine gives `Created` or `AlreadyExists`, nothing else.
-        return reply._tag === 'Created' || reply._tag === 'AlreadyExists' ? reply : { _tag: 'AlreadyExists' }
+        return asked === null ? { _tag: 'Created' } : yield* answered(asked)
       })
 
     const send = <T extends Types>(
@@ -669,7 +684,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         })
         const requested = Machine.requestKey(deployed.program, request.from, request.requestId)
         const asked = yield* withEntity(deployed, id, (loaded) =>
-          loaded === null ? Effect.succeed(null) : ask(loaded, entity, requested, {
+          loaded === null ? Effect.succeed(null) : ask(messages, loaded, entity, requested, {
             _tag: 'Receive',
             requestId: request.requestId,
             message,
@@ -795,16 +810,21 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const deployed: Deployment<T> = {
           program,
           storage: storage(program, sql),
+          scope: yield* Scope.fork(scope),
           loaded: new Map(),
           // Nothing is known of the stored timers until the waker has read them once.
           waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1) },
           run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
         }
+        // An operation a crash interrupted starts again here; a timer waits for its time, loaded or not. A deploy
+        // that cannot finish stops what it started, and is never seen: an operation that reaches its program waits
+        // for one that finishes (decisions 0045, 0051).
+        yield* Effect.gen(function*() {
+          yield* deployed.storage.indexed
+          for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)
+        }).pipe(Effect.onError(() => Scope.close(deployed.scope, Exit.void)))
         deployments.set(program.name, deployed as unknown as Deployment<never>)
-        yield* deployed.storage.indexed
-        // An operation a crash interrupted starts again here; a timer waits for its time, loaded or not.
-        for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)
-        yield* Effect.forkIn(waking(deployed), scope)
+        yield* Effect.forkIn(waking(deployed), deployed.scope)
         const handle: Handle<T> = {
           create: (id, flags, request) =>
             faulted(create(deployed, id, flags, {

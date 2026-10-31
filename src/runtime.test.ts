@@ -336,6 +336,37 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // A message waits in the mailbox behind another while a creation under its request id is answered: the
+  // creation's reply must not reach the message's caller (decision 0050).
+  test('a creation and a message under one request id are answered each its own reply', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const gate = yield* Deferred.make<void>()
+      const sender = { _tag: 'Tester' } as const
+      yield* process({
+        // The first message holds the entity until both requests wait for their replies.
+        at: (point, _entity, event) =>
+          point === 'BeforeCommit' && event._tag === 'Receive' && event.requestId === 'first'
+            ? Deferred.await(gate)
+            : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender })
+          const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 'a', on: false, nonce })
+          yield* Effect.forkChild(toy.send(id, want('n1'), { requestId: 'first', sender }))
+          yield* Effect.sleep('20 millis')
+          const created = yield* Effect.forkChild(toy.create(id, { at }, { requestId: 'shared', sender }))
+          yield* Effect.sleep('5 millis')
+          const sent = yield* Effect.forkChild(toy.send(id, want('n2'), { requestId: 'shared', sender }))
+          yield* Effect.sleep('5 millis')
+          yield* Deferred.succeed(gate, undefined)
+          expect(yield* Fiber.join(created)).toEqual({ _tag: 'AlreadyExists' })
+          expect(yield* Fiber.join(sent)).toEqual({ _tag: 'Accepted' })
+        }))
+    })))
+
   test('suspends on a defect, answers Suspended, and resumes', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -1450,6 +1481,58 @@ describe('what the runtime cannot finish', () => {
           expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
             .toEqual({ _tag: 'Accepted' })
           yield* runtime.settled
+        }))
+    })))
+
+  test('a deploy that cannot finish stops what it started, and leaves the process settled', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const started: Array<string> = []
+      const stopped: Array<string> = []
+      // Hands that act and never come back, so that what a deploy starts runs until something stops it.
+      const layer = Layer.succeed(
+        Hands,
+        Hands.of({
+          act: (key) =>
+            Effect.sync(() => {
+              started.push(key)
+            }).pipe(
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() =>
+                Effect.sync(() => {
+                  stopped.push(key)
+                })
+              ),
+            ),
+        }),
+      )
+      // Two entities holding operations, which the next deploy activates in the order of their ids.
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          for (const entity of ['d-1', 'd-2']) {
+            yield* toy.create(entity, { at }, { requestId: `c-${entity}`, sender: tester })
+          }
+          yield* Effect.sleep('10 millis')
+        }))
+      started.length = 0
+      stopped.length = 0
+      /** Waits until the first entity's work has acted: a deploy that stopped nothing would then pass vacuously. */
+      const acting = (): Effect.Effect<void> =>
+        Effect.suspend(() => started.length > 0 ? Effect.void : Effect.flatMap(Effect.sleep('1 millis'), acting))
+      yield* process({
+        // The second activation cannot finish, once the first has started its work.
+        at: (point, entity, event) =>
+          point === 'BeforeCommit' && entity.id === 'd-2' && event._tag === 'Restart'
+            ? Effect.andThen(acting(), Effect.die('the runtime failed'))
+            : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          expect(Exit.isFailure(yield* Effect.exit(Effect.provide(runtime.deploy(program), layer)))).toBe(true)
+          // The first entity's work ran, and stopped with the deploy: nothing of a failed deploy runs on.
+          expect(started.length).toBeGreaterThan(0)
+          expect([...stopped].sort()).toEqual([...started].sort())
+          yield* runtime.settled.pipe(Effect.timeout('1 second'))
         }))
     })))
 

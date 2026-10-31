@@ -50,7 +50,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0022](decisions/0022-a-new-program-keeps-what-work-started-with.md)). How a rename is run, and
   what reaches the senders that stored a reply under the old name, is not decided. A schema that changes is
   ([decision 0036](decisions/0036-a-migration-is-a-function-on-the-json.md)).
-
 - **Reading with a program that dies on the state.** `read` calls `project` on the stored state outside the
   machine. A new program whose `project` dies on it gives the reader a defect, where an activation would suspend
   the entity ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)). Should a
@@ -82,7 +81,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   mailbox of an entity that may hold no operation and no timer. Nothing finds it at the next start — neither the
   entities with an operation nor the stored timers — and `settled` does not wait for it: it is handled when a
   caller loads the entity again. Should a process start the entities whose mailbox holds a message too?
-
 - **How many entities a process holds.** An entity is unloaded once it has had nothing to do for a while, and
   nothing caps how many are loaded at once: a burst of callers loads them all
   ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)). Should a process unload the least recently
