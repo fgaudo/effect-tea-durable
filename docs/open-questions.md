@@ -50,6 +50,13 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0022](decisions/0022-a-new-program-keeps-what-work-started-with.md)). How a rename is run, and
   what reaches the senders that stored a reply under the old name, is not decided. A schema that changes is
   ([decision 0036](decisions/0036-a-migration-is-a-function-on-the-json.md)).
+- **A sender migrated onto another's text.** A reply's row is keyed by its request's text as the version that
+  wrote it encoded it, and is found once read through the migrations
+  ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)). A migration of the sender that gives one
+  caller's old JSON to another — a rename, a swap — lets the second caller's request have the text of the first
+  one's stored row: its reply replaces that row, and the first caller's retry finds nothing and is applied again.
+  Should a reply be keyed by what no migration changes, its rows be written again at a deploy, or such a migration
+  be refused, which a function on the JSON cannot be checked for?
 - **Reading with a program that dies on the state.** `read` calls `project` on the stored state outside the
   machine. A new program whose `project` dies on it gives the reader a defect, where an activation would suspend
   the entity ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)). Should a
