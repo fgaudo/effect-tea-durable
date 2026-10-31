@@ -861,6 +861,66 @@ describe('passivation', () => {
       const stored = yield* storage(program, yield* SqlClient.SqlClient).load('slow')
       expect([...(stored?.state.applied ?? [])].sort()).toEqual(['n-1', 'n-2'])
     })))
+
+  test('an activation whose caller gives up is finished all the same, and the next caller is answered', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const tester = { _tag: 'Tester' } as const
+      const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+        }))
+      const reached = yield* Deferred.make<void>()
+      const gate = yield* Deferred.make<void>()
+      yield* process({
+        // The activation holds once its `Restart` is applied, as a slow database would.
+        observe: (_entity, event) =>
+          event._tag === 'Restart'
+            ? Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(gate))
+            : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const first = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
+          yield* Deferred.await(reached)
+          // Its caller gives up, a timeout of its own or an operation stopped: the activation is the entity's, and
+          // goes on (decision 0079). One left half done would hold the next caller for ever.
+          yield* Fiber.interrupt(first)
+          yield* Deferred.succeed(gate, undefined)
+          expect(yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester })).toEqual({ _tag: 'Accepted' })
+          yield* runtime.settled
+        }))
+    })))
+
+  test('a creation whose caller gives up after its commit starts its work all the same', () =>
+    database(Effect.gen(function*() {
+      const { acted, layer } = yield* hands()
+      const at = yield* DateTime.now
+      const tester = { _tag: 'Tester' } as const
+      const reached = yield* Deferred.make<void>()
+      const gate = yield* Deferred.make<void>()
+      yield* process({
+        at: (point, _entity, event) =>
+          point === 'AfterCommit' && event._tag === 'Create'
+            ? Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(gate))
+            : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const creator = yield* Effect.forkChild(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          yield* Deferred.await(reached)
+          yield* Fiber.interrupt(creator)
+          yield* Deferred.succeed(gate, undefined)
+          // The entity is stored with its operations, and runs them: one left unloaded would hold them until a
+          // caller came, since no timer of its is due (decision 0079).
+          yield* runtime.settled
+          expect([...acted].map((act) => act.split(':')[0]).sort()).toEqual(['a', 'b', 'c'])
+        }))
+    })))
 })
 
 describe('the crash table', () => {

@@ -56,7 +56,9 @@ unloads the least recently used of its idle entities once it holds more
 tries an entity it cannot load again after the retry, instead of dying with the program's timers
 ([decision 0077](decisions/0077-the-waker-tries-an-entity-it-cannot-load-again.md)). A review corrected the first two:
 a timer due is no spare entity, and a registered deploy keeps its name
-([decision 0078](decisions/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)). The next is
+([decision 0078](decisions/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)), and it
+found a bug older than them, fixed too: what a caller sets going — an activation, a creation — is finished
+without it ([decision 0079](decisions/0079-what-a-caller-sets-going-is-finished-without-it.md)). The next is
 [two versions at once](open-questions.md#running), which a rolling deploy across processes meets first.
 
 ## Later

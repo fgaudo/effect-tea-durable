@@ -479,7 +479,10 @@ for its operations to stop ([decision 0056](decisions/0056-nothing-waits-for-an-
 An activation the waker cannot finish crashes its entity alone too, and the waker tries it again after `retry`
 ([decision 0077](decisions/0077-the-waker-tries-an-entity-it-cannot-load-again.md)).
 Each entity is found, loaded, unloaded and crashed under a lock of its own, so the callers of one entity never
-wait on another's activation ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)).
+wait on another's activation ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)). An
+activation and a creation run detached from their caller, which only waits for them: one that gives up leaves
+them to finish, and only a crash of the process stops them halfway
+([decision 0079](decisions/0079-what-a-caller-sets-going-is-finished-without-it.md)).
 Everything a deployment runs runs in a scope of its own: a deploy that cannot finish stops what it started, and
 is never seen by other programs ([decision 0051](decisions/0051-a-deploy-that-fails-leaves-nothing-running.md)), and
 one that does gives its name back. A process deploys a name once: a new version, a fix included, is deployed by

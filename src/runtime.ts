@@ -290,6 +290,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const deployments = new Map<string, Deployment<never>>()
     /** The names deployed in this process, or being deployed: each is deployed once (decision 0075). */
     const names = new Set<string>()
+    /** The effects running detached from their callers, which `settled` waits for (decision 0079). */
+    let detachments = 0
     /**
      * The callers waiting for a reply, by entity and then by request: a retry of a queued message waits with the
      * first, and a crash of the entity reaches every caller of it (decision 0042). A creation's callers wait apart
@@ -832,7 +834,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         }
         yield* enter(deployed, loaded)
         // Before anything else: the stored state says what runs (decision 0003). An activation that cannot finish
-        // leaves nothing loaded, and its caller gets the defect (decision 0042).
+        // leaves nothing loaded, and its caller gets the defect (decision 0042). It runs detached from its caller,
+        // so an interruption is the process's crash (decision 0079).
         yield* apply(deployed, loaded, { _tag: 'Restart' }).pipe(
           Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
         )
@@ -841,21 +844,55 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /**
+     * Runs `effect` in the deployment's scope, and waits for it. A caller that gives up stops waiting, and what the
+     * effect sets going — an activation, a creation and its work — is finished all the same: only the process's
+     * crash stops it halfway, as the crash table says (decision 0079). It is counted from the step that forks it
+     * to its end, so that the process is not settled while it runs: the step is uninterruptible, and the fiber it
+     * forks is not, as a fiber never is for the region it is forked from, so the scope still stops it.
+     */
+    const detached = <T extends Types, A, E>(deployed: Deployment<T>, effect: Effect.Effect<A, E>) =>
+      Effect.flatMap(
+        Effect.uninterruptible(Effect.suspend(() => {
+          detachments += 1
+          const counted = Effect.ensuring(
+            effect,
+            Effect.sync(() => {
+              detachments -= 1
+              end()
+            }),
+          )
+          return Effect.forkIn(counted, deployed.scope)
+        })),
+        Fiber.join,
+      )
+
+    /**
      * Runs `found` on the entity `id` of `deployed`, loaded from storage when this process does not hold it, and
      * while the entity is held: its lock is what keeps it from being unloaded meanwhile, and what makes a caller
-     * of an entity being activated wait for that activation (decisions 0029, 0067).
+     * of an entity being activated wait for that activation (decisions 0029, 0067). An entity held is found in the
+     * caller's fiber; one to load is loaded detached from it, with `found`, under the same hold of its lock, so that
+     * the entity is never unloaded between its activation and its caller's event (decision 0079).
      */
     const withEntity = <T extends Types, A>(
       deployed: Deployment<T>,
       id: string,
       found: (loaded: Loaded<T> | null) => Effect.Effect<A>,
-    ) =>
-      holding({ name: deployed.program.name, id })(Effect.gen(function*() {
+    ) => {
+      const held = holding({ name: deployed.program.name, id })
+      const loading = held(Effect.gen(function*() {
         const loaded = deployed.loaded.get(id)
         if (loaded !== undefined) return yield* found(loaded)
         const stored = yield* deployed.storage.load(id)
         return yield* found(stored === null ? null : yield* activate(deployed, stored))
       }))
+      return Effect.flatMap(
+        held(Effect.suspend(() => {
+          const loaded = deployed.loaded.get(id)
+          return loaded === undefined ? Effect.succeed(null) : Effect.map(found(loaded), (value) => ({ value }))
+        })),
+        (found) => found === null ? detached(deployed, loading) : Effect.succeed(found.value),
+      )
+    }
 
     /** Loads the entity `id` into this process, if it is stored and this process does not hold it already. */
     const loads = <T extends Types>(deployed: Deployment<T>, id: string) =>
@@ -883,7 +920,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           },
           catch: (defect) => new Faulted({ defect }),
         })
-        const asked = yield* holding(entity)(Effect.gen(function*() {
+        // Detached from the caller: a creation committed is always started, and its entity loaded (decision 0079).
+        const asked = yield* detached(deployed, holding(entity)(Effect.gen(function*() {
           const held = deployed.loaded.get(id) ?? null
           // The entity was already there: the machine answers the request from what is stored (decision 0017).
           if (held !== null) return yield* ask(creations, held, entity, requested, { _tag: 'Create', request })
@@ -919,7 +957,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           )
           yield* Effect.forkIn(loop(deployed, loaded), deployed.scope)
           return null
-        }))
+        })))
         return asked === null ? { _tag: 'Created' } : yield* answered(asked)
       })
 
@@ -1130,13 +1168,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           )
         ))
         // Registered with its waker in one step: a deployment others can reach always has its timers woken. The
-        // waker itself is interruptible, whoever deploys, as the scope that closes it needs (decision 0078).
+        // waker is not forked uninterruptible with the step, so the scope that closes it stops it (decision 0078).
         yield* Effect.uninterruptible(Effect.gen(function*() {
           deployments.set(program.name, deployed as unknown as Deployment<never>)
           const awaited = undeployed.get(program.name)
           undeployed.delete(program.name)
           if (awaited !== undefined) Deferred.doneUnsafe(awaited, Effect.void)
-          yield* Effect.forkIn(Effect.interruptible(waking(deployed)), deployed.scope)
+          yield* Effect.forkIn(waking(deployed), deployed.scope)
         }))
         const handle: Handle<T> = {
           create: (id, flags, request) =>
@@ -1165,6 +1203,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     const quiet = (now: number) => {
+      if (detachments > 0) return false
       for (const deployed of deployments.values()) {
         const { waker } = deployed
         // The waker has a reading to make, so nothing is known of the stored timers.
