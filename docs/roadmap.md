@@ -87,10 +87,15 @@ asks ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-pro
 leaves its request alone ([decision 0091](decisions/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
 The others:
 
-- **What stays the runtime's**: passivation, the capacity, the suspension of a defect, the timers beside `DeliverAt`,
-  an operation that waits for a program no runner deploys, how one that waits on a suspended entity learns that
-  it is resumed ([decision 0087](decisions/0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and how the step
-  of an RPC whose message is queued behind the entity's own work gets its answer ([decision 0088](decisions/0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md)).
+- **What stays the runtime's** is proposed: the runtime keeps its entities, their passivation, capacity and timers,
+  as on one process, and learns which shards its runner holds from a singleton of each; a request is stepped in its
+  handler's fiber, in Cluster's transaction, and a step of the entity's own work checks the shard's lease in its own; a defect from Cluster is no reply, and is sent again after
+  `retry`; and a resumption tells the senders that wait for it by a message
+  ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)). It answers how
+  one that waits on a suspended entity learns that it is resumed
+  ([decision 0087](decisions/0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and how the step of an RPC
+  whose message is queued behind the entity's own work gets its answer
+  ([decision 0088](decisions/0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md)).
 - **Two versions at once** ([open question](open-questions.md#running)): Cluster's runners carry no version, and a
   shard may go back to an older one.
 

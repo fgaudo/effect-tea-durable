@@ -136,13 +136,13 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0076](0076-a-process-over-its-capacity-unloads-the-least-recently-used.md) | A process over its capacity unloads the least recently used | [0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) |
 | [0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md) | The waker tries an entity it cannot load again, after the retry |  |
 | [0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) | A timer due is no spare entity, and a registered deploy keeps its name |  |
-| [0079](0079-what-a-caller-sets-going-is-finished-without-it.md) | What a caller sets going is finished without it |  |
+| [0079](0079-what-a-caller-sets-going-is-finished-without-it.md) | What a caller sets going is finished without it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
 
 ## Effect Cluster
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0081](0081-on-cluster-a-step-commits-with-its-reply.md) | On Cluster, a step commits with its reply | [0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md), [0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md), [0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md), [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) |
+| [0081](0081-on-cluster-a-step-commits-with-its-reply.md) | On Cluster, a step commits with its reply | [0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md), [0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md), [0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md), [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md), [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
 | [0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md) | What 0081 saw of a defect is not Cluster's contract | [0083](0083-effect-moves-to-4-1-1.md) |
 | [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) | A step commits only where the commit checks the shard |  |
 | [0085](0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md) | On Cluster, a request is keyed as the machine keys it | [0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md) |
@@ -151,3 +151,4 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md) | On Cluster, the message an entity dies on stays in its mailbox |  |
 | [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it |  |
 | [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) | On Cluster, an interrupted caller leaves its request alone |  |
+| [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each (proposed) |  |

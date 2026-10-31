@@ -8,7 +8,9 @@ does not hold there. Its reasons against letting a defect reach Cluster are corr
 by [decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md), and what it says of the runtime's mailbox
 there is corrected by [decision 0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md). An
 interrupted caller had Cluster store an answer no step gave, which
-[decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) corrects.
+[decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) corrects. What a step sets going
+is started from the machine, not from the step, since `afterCommit` runs once the connection is released, by
+[decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), proposed.
 
 ## Context
 
