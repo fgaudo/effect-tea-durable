@@ -26,6 +26,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - Once fifteen notes are taken since the last review, a review reads them before the next step starts, from
   `reasoned` up, in a session that did not write them. What it finds is a note, a test, a fix or an open question,
   and the review is listed at the end of [`docs/decisions/README.md`](docs/decisions/README.md).
+  [`scripts/mutate.ts`](scripts/mutate.ts) takes each rule of the code out, one at a time, and runs the tests against
+  it, in a few minutes: it is how a review finds the rules no test holds. Its mutations are written for the code the
+  review reads, and are kept outside the repository.
 - The examples import the library from `src/`. When the design changes, the code, its tests and the examples
   change with it, and `bun run typecheck` and `bun test` pass.
 - [`src/machine.ts`](src/machine.ts) is the runtime's semantics. A rule it adds or changes is a decision, and
