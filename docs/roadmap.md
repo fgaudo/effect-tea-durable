@@ -71,13 +71,11 @@ note, in this order, since each may change the ones after it. The first is decid
 success of the RPC ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)); what its spike saw of a
 defect is an option of Cluster's and a bug, not its contract
 ([decision 0082](decisions/0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md)), confirmed on 4.1.1, which the
-project pins since ([decision 0083](decisions/0083-effect-moves-to-4-1-1.md)). The others:
+project pins since ([decision 0083](decisions/0083-effect-moves-to-4-1-1.md)). The fence is decided too: a step commits
+only where the commit checks the shard, so the runtime on Cluster runs on SQLite, and waits on PostgreSQL and MySQL for
+the fence [Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058) asks of Cluster, or for one of its
+own ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)). The others:
 
-- **A fence.** Cluster confirms a shard's lock before it saves a reply, inside the step's transaction. On SQLite
-  the lease is renewed in that transaction and the commit makes the check; on PostgreSQL and MySQL the lock is
-  checked through a session of its own, not by the commit: a runner frozen between the two past the lock's
-  expiration commits after another took the shard. Whether that window is accepted there, or each step's
-  transaction compares something the next holder changes.
 - **Requests and replies.** The sender's address in Cluster's primary key
   ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)), and what deletes a reply once one statement no
   longer reads both shards ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
@@ -92,5 +90,6 @@ that a sender waits — does not wait on Cluster, and is taken before it if an o
 ## Later
 
 - Effect Cluster: the runtime on it, as [`docs/cluster.md`](cluster.md) and the notes above decide, with sharding and
-  rolling deploys.
+  rolling deploys; across machines once Cluster has a fence, or the runtime one of its own
+  ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
 - The library's name, once there is code to publish.

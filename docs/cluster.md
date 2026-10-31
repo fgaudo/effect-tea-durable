@@ -58,19 +58,37 @@ and handled the message again. A refresh renews a lease for a full expiration, s
 the worst moment, not a slow refresh. On SQLite, PGlite and SQL Server the renewal holds the file's write lock, or
 the lock row's, until the commit, so no runner takes the shard between the check and the commit: the check is made
 by the commit — unless the check is shared. Writers on one shard share a refresh under way, and one started outside
-the transaction, by a persisted request without `WithTransaction`, does not commit with it. On SQLite, whose client
+the transaction, by a persisted request without `WithTransaction`, does not commit with it. Nor does one started in
+another writer's transaction, where transactions run side by side, as on SQL Server: the refresh runs in the
+context of the writer that started it, so a step it confirms is not confirmed by its own commit. On SQLite, whose client
 runs one transaction or statement at a time, that refresh waits for the transaction, which waits for it, until the
 check times out (10 s): the check fails, the transaction rolls back, and both requests are delivered again. Safe, but
 a stall; it cannot happen while every persisted RPC of the runner runs under `WithTransaction`, since SQLite's
 transactions then come one after the other. What a handler writes outside `WithTransaction`, and a chunk of a streamed reply, is not checked at
 all, on any database.
 
+The gap is reported to Effect, against 4.0.6, as
+[Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058): a runner that lost its shard lock still
+writes replies, requests and envelopes for the shard, and clears its replies and addresses, since none of these writes
+checks who owns it. Its repro is a reply saved by the stale runner after the new owner took the shard and ran the
+request again,
+which the check before a reply, in 4.1.0 and 4.1.1, narrows to the window above; the other writes are still not
+checked. It proposes a fence in Cluster: a table of shard epochs, raised by `resetShards` under an exclusive lock of
+the shard's row, and every write for a shard reading the epoch its writer acquired with under a shared lock of that row
+(`FOR SHARE`, `LOCK IN SHARE MODE`, `HOLDLOCK`), in the write's transaction, and failing with a typed error if it has
+moved on; a stale write either commits before the new owner's reset, or fails. On 2026-10-31 it is open, with no
+answer, and its fix not merged. [#10226](https://github.com/Effect-TS/effect/pull/10226), merged that day and in no
+release yet, fences only the workflow engine's reset of an activity, by comparing the reply it read, and says it is not
+that fence. Its companion, [#10059](https://github.com/Effect-TS/effect/issues/10059) — a frozen runner holding its
+advisory locks until TCP gave up — is closed, by the idle session timeout above.
+
 For the runtime, the shard's lock takes the place of the file's lock
 ([decision 0080](decisions/0080-a-database-is-held-by-one-runtime.md)). On SQLite it holds as the file's lock
 does: the check commits with the step. On PostgreSQL and MySQL it is weaker: the file's lock refuses a second
-writer outright, the shard's lock is confirmed before a commit, not by it. Whether the runtime accepts that window
-there, or adds a fence of its own — something each step's transaction compares, which the next holder of the shard
-changes when it takes it — is to be decided.
+writer outright, the shard's lock is confirmed before a commit, not by it. Decided: the window is not accepted, and
+until Cluster has a fence the runtime on Cluster does not run on PostgreSQL or MySQL; it waits for #10058, or for a
+fence of its own, decided then
+([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
 
 SQLite is a store for one runner. Two runners can share a file only on one machine, and a cluster of several
 machines needs PostgreSQL or MySQL. `@effect/sql-sqlite-bun` is all the project depends on today.
@@ -187,7 +205,9 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
   message is stored, then handled: two transactions
   ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)).
 - **[0080](decisions/0080-a-database-is-held-by-one-runtime.md)** — the shard's lock replaces the file's; on
-  SQLite it is confirmed by the step's commit, on PostgreSQL and MySQL before it, not by it, and whether the
-  runtime adds a fence there is to be decided.
+  SQLite it is confirmed by the step's commit, on PostgreSQL and MySQL before it, not by it. Decided: the runtime
+  runs only where the commit checks the shard, until Cluster has the fence
+  [#10058](https://github.com/Effect-TS/effect/issues/10058) asks for
+  ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
 - **[0019](decisions/0019-unstable-effect-modules.md)** — everything read here is `@stability unstable` in
   `effect` 4.1.0 and 4.1.1.
