@@ -65,13 +65,11 @@ a step to it; it is fixed: a database is held by one runtime
 one store, so it waits for what Effect Cluster says of which process holds which entities.
 
 Effect Cluster is studied, at `effect` 4.1.0: [`docs/cluster.md`](cluster.md) says what it gives, what it leaves to
-the runtime, and which decisions it bears on. Nothing of it is decided yet. Its findings are decided next, each in a
-note, in this order, since each may change the ones after it:
+the runtime, and which decisions it bears on. Its findings are decided next, each in a
+note, in this order, since each may change the ones after it. The first is decided, against a spike run on
+`SingleRunner`: on Cluster, a step commits with its reply, in Cluster's transaction, and everything it answers is a
+success of the RPC ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)). The others:
 
-- **One transaction.** A step and the acknowledgement of its message commit together through
-  `ClusterSchema.WithTransaction`, when the runtime's tables sit beside Cluster's on one `SqlClient`; Cluster's
-  mailbox then replaces the runtime's, and a message that finds it empty is no longer handled as it arrives
-  ([decision 0074](decisions/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)).
 - **A fence.** Cluster confirms a shard's lock before it saves a reply, inside the step's transaction. On SQLite
   the lease is renewed in that transaction and the commit makes the check; on PostgreSQL and MySQL the lock is
   checked through a session of its own, not by the commit: a runner frozen between the two past the lock's

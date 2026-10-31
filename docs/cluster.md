@@ -4,7 +4,7 @@ A study of `effect/cluster` at `effect` 4.1.0, the version the project pins
 ([decision 0019](decisions/0019-unstable-effect-modules.md)), read from its source in `node_modules/effect/src/cluster`
 (and `HashRing.ts` beside it) and from `ai-docs/src/80_cluster`. It says what Cluster gives, what it leaves to the runtime, and which decisions
 it bears on. Nothing here is decided: each finding is decided in a note of its own, as the
-[roadmap](roadmap.md) says.
+[roadmap](roadmap.md) says, and the list [at the end](#the-decisions-it-bears-on) links the notes taken.
 
 ## What Cluster is
 
@@ -91,6 +91,13 @@ handled, as decision 0007 foresaw. What the runtime must then keep is that every
 *success* of the RPC: a rejection is a reply the runtime encodes, never a failure of the handler, which Cluster
 would save outside the transaction.
 
+A spike on `SingleRunner` and `@effect/sql-sqlite-bun` confirmed it: a handler's row and its reply commit together,
+a `COMMIT` that fails leaves neither and the request is handled again, a failure is saved as the reply after the
+rollback, and a request sent again is answered from its stored reply without the handler running. It found what a
+defect does too: the entity restarts and is given the message again without end, its later messages waiting behind
+it; and once that message's caller is interrupted, by a timeout, messages to the runner's other entities wait as
+well, for 25 s and more, with or without `WithTransaction`. A request that is only slow does not do it.
+
 What stays two transactions:
 
 - **The arrival of a message and its handling.** `saveRequest` commits the message, and the handler commits the
@@ -142,7 +149,8 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
 ## The decisions it bears on
 
 - **[0007](decisions/0007-one-process-first.md)** — one transaction is possible with `WithTransaction` and one
-  `SqlClient`; the state need not record the last message it handled.
+  `SqlClient`; the state need not record the last message it handled. Decided: a step commits with its reply
+  ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)).
 - **[0015](decisions/0015-a-request-belongs-to-its-sender.md)**, **[0017](decisions/0017-creation-in-the-machine.md)**
   — Cluster's deduplication is by a primary key global to the receiver; the sender's address goes into the key.
   The 255-character limit is Cluster's own and is met by its hashing, apart from the
@@ -165,7 +173,8 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
   process: Cluster delivers one message at a time to a handler, but the runtime's activation, unloading and waker
   still meet in its memory. What a node keeps is per shard, which is what a shard leaving interrupts.
 - **[0074](decisions/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)** — on Cluster a
-  message is stored, then handled: two transactions.
+  message is stored, then handled: two transactions
+  ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)).
 - **[0080](decisions/0080-a-database-is-held-by-one-runtime.md)** — the shard's lock replaces the file's; on
   SQLite it is confirmed by the step's commit, on PostgreSQL and MySQL before it, not by it, and whether the
   runtime adds a fence there is to be decided.
