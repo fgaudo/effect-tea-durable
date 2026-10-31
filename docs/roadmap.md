@@ -76,9 +76,10 @@ only where the commit checks the shard, so the runtime on Cluster runs on SQLite
 the fence [Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058) asks of Cluster, or for one of its
 own ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)). The others:
 
-- **Requests and replies.** The sender's address in Cluster's primary key
-  ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)), and what deletes a reply once one statement no
-  longer reads both shards ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
+- **Requests and replies.** What deletes a reply once one statement no longer reads both shards
+  ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)), in Cluster's table and in the
+  runtime's. The sender in Cluster's primary key is decided: the key is the request's `requestKey`
+  ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md)).
 - **What stays the runtime's**: passivation, the capacity, the suspension of a defect, the timers beside `DeliverAt`,
   and an operation that waits for a program no runner deploys.
 - **Two versions at once** ([open question](open-questions.md#running)): Cluster's runners carry no version, and a
