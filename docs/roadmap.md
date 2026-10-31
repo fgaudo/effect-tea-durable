@@ -8,8 +8,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 The bugs of the third audit are fixed: a creation and a message under one request id are answered apart
 ([decision 0050](decisions/0050-a-creation-is-answered-apart-from-a-message.md)), and a deploy that fails
 leaves nothing running ([decision 0051](decisions/0051-a-deploy-that-fails-leaves-nothing-running.md)). What it
-found to make the project purer and more rigid is below, in order. Its first two steps are done: the machine
-gives what an event writes, and the storage decides nothing
+found to make the project purer and more rigid was planned in steps, and all of them are done. The first two:
+the machine gives what an event writes, and the storage decides nothing
 ([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)), and work is compared by what is stored
 ([decision 0058](decisions/0058-work-is-compared-by-what-is-stored.md)); so are the next three: a request is a
 value ([decision 0059](decisions/0059-a-request-is-a-value.md)), `send` and `create` take no key
@@ -20,14 +20,9 @@ through a schema ([decision 0062](decisions/0062-a-row-is-read-through-a-schema.
 not the machine's state, and a fix is a deploy
 ([decision 0064](decisions/0064-the-program-is-not-the-machines-state.md)); and so is the one after it: the
 machine holds no replies, and only a step changes it
-([decision 0065](decisions/0065-the-machine-holds-no-replies.md)). Each step is decided in a note before it is
-made.
-
-1. **The tests run on a clock they control.** The runtime's tests sleep for real time, up to 80 milliseconds at
-   once, which a loaded machine can outlast, and wait for a passivation by looking every millisecond. The runtime
-   reads time with `DateTime.now` and waits with `Effect.sleep`, which `TestClock` drives, and none of its own
-   waits needs real time to pass ([decision 0063](decisions/0063-the-runtime-waits-for-what-it-waits-for.md)): the
-   tests move time instead of waiting for it, and the random sequences, 25 runs today, can run many more.
+([decision 0065](decisions/0065-the-machine-holds-no-replies.md)); and so is the last: the runtime's tests move
+time instead of waiting for it ([decision 0066](decisions/0066-the-runtimes-tests-move-time.md)). Each step is
+decided in a note before it is made.
 
 The open questions that bear on cost — [a mailbox under a burst](open-questions.md#storage-and-reading) and
 [one permit for the process](open-questions.md#running) — are decided next: a machine holds only its state, its

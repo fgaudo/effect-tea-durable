@@ -423,7 +423,9 @@ The machine is tested with properties, under random orders of messages, completi
 defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime is tested against it
 ([`src/runtime.test.ts`](../src/runtime.test.ts)): a scenario, and then random sequences of events, are driven
 on the real runtime with the process dying at each point of the table above, and what the database holds
-afterwards is compared with where the machine ends on the events that committed. The machine's properties check
+afterwards is compared with where the machine ends on the events that committed. They run on Effect's
+`TestClock`, and move time instead of waiting for it
+([decision 0066](decisions/0066-the-runtimes-tests-move-time.md)). The machine's properties check
 that what an event writes, applied to the rows before it, gives the rows after it, and
 [`src/storage.test.ts`](../src/storage.test.ts) that the storage writes those rows as given
 ([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)).
