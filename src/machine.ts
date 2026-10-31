@@ -121,7 +121,10 @@ const shown = new WeakMap<object, WeakMap<object, Shown & Readonly<{ text: strin
  * the step before computed (decisions 0038, 0057). A projection that does not encode, or an index that is a number
  * JSON does not hold, is a defect (decision 0040).
  */
-export const shownOf = <T extends Types>(program: Program<T>, state: T['state']): Shown & Readonly<{ text: string }> => {
+export const shownOf = <T extends Types>(
+  program: Program<T>,
+  state: T['state'],
+): Shown & Readonly<{ text: string }> => {
   let held = shown.get(program)
   if (held === undefined) {
     held = new WeakMap()
@@ -284,7 +287,7 @@ export type Output<T extends Types> =
   /** The entity is suspended: everything under way stops. */
   | Readonly<{ _tag: 'Suspended'; cause: unknown }>
 
-/** A key's row: its incarnation, and the work it holds, as it is stored, with how it is delivered and when it is due. */
+/** A key's row: its incarnation and the work it holds, as stored, with how it is delivered and when it is due. */
 export type KeyRow = Readonly<{
   key: string
   incarnation: number
@@ -855,7 +858,8 @@ export const writes = <T extends Types>(
   }
   const ended: Array<Readonly<{ key: string; incarnation: number }>> = []
   for (const [key, held] of Object.entries(before?.keys ?? {})) {
-    if (held.work !== undefined && !holds(after, key, held.incarnation)) ended.push({ key, incarnation: held.incarnation })
+    if (held.work === undefined || holds(after, key, held.incarnation)) continue
+    ended.push({ key, incarnation: held.incarnation })
   }
   const row = changed ? shownOf(program, after.state) : null
   let published: Publication | null = null

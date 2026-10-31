@@ -185,7 +185,7 @@ the booking is cancelled or expires.
 
 After each message the runtime stores, in one transaction:
 
-- the new state;
+- the new state, when the step changed it;
 - the incarnations of the keys, and the work the state holds, with how each operation is delivered;
 - the message, marked as handled, with its reply for an inbound one;
 - and, when the state changed, the row a query reads: the projection, and the value of each index on it
@@ -400,7 +400,10 @@ The machine is tested with properties, under random orders of messages, completi
 defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime is tested against it
 ([`src/runtime.test.ts`](../src/runtime.test.ts)): a scenario, and then random sequences of events, are driven
 on the real runtime with the process dying at each point of the table above, and what the database holds
-afterwards is compared with where the machine ends on the events that committed.
+afterwards is compared with where the machine ends on the events that committed. The machine's properties check
+that what an event writes, applied to the rows before it, gives the rows after it, and
+[`src/storage.test.ts`](../src/storage.test.ts) that the storage writes those rows as given
+([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)).
 [`examples/booking/runtime.test.ts`](../examples/booking/runtime.test.ts) runs two entities that talk on it.
 
 ## Where it departs from effect-tea
