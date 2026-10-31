@@ -168,8 +168,7 @@ Each review of the notes, as [decision 0094](0094-the-notes-are-reviewed-every-f
 has them made: the notes it read, and what it found.
 
 A review can take each rule of the code out, one at a time, with [`scripts/mutate.ts`](../../scripts/mutate.ts),
-which runs the tests against each. What the review of 0061 to 0075 took out is in
-[`scripts/mutations/`](../../scripts/mutations).
+which runs the tests against each. The mutations are written for the code the review reads, and are not kept.
 
 | Date | Read | Found |
 | --- | --- | --- |

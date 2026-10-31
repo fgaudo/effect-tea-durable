@@ -8,9 +8,10 @@
  *
  *     bun scripts/mutate.ts <mutations.ts> [--workers 4] [--only id,prefix,...] [--timeout 5000]
  *
- * The mutations module exports `mutations: ReadonlyArray<Mutation>`. One line per mutation is printed, tab
- * separated: its id, `killed` or `SURVIVED`, the tests that ran it to the end, the seconds it took, and the first
- * test that failed.
+ * The mutations module exports `mutations: ReadonlyArray<Mutation>`. It is written for the code a review reads,
+ * and kept outside the repository: an edit stops finding its text once the code changes. One line per mutation is
+ * printed, tab separated: its id, `killed` or `SURVIVED`, the tests that ran it to the end, the seconds it took,
+ * and the first test that failed.
  */
 import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { availableParallelism, tmpdir } from 'node:os'
