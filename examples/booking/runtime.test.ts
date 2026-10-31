@@ -8,7 +8,7 @@ import { expect, test } from 'bun:test'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import { SqlClient } from 'effect/sql'
-import { create, createTables, launch, operation, send } from '../../src/index.ts'
+import { create, createTables, defect, launch, operation, send } from '../../src/index.ts'
 import { booking } from './booking.ts'
 import { inventory } from './inventory.ts'
 
@@ -143,7 +143,8 @@ test('a booking whose hold a crash interrupted holds its seats, whichever progra
       )
     }))
     yield* Effect.scoped(Effect.gen(function*() {
-      const runtime = yield* launch()
+      // A retry an hour long: what wakes the hold is the inventory's deploy, not a clock (decisions 0045, 0063).
+      const runtime = yield* launch({ retry: { millis: 3_600_000 } })
       // The booking first: its hold starts again at once, and waits for the inventory (decision 0045).
       const bookings = yield* runtime.deploy(booking)
       // The inventory comes later, once the hold has had the time to send.
@@ -173,6 +174,34 @@ test('a booking whose hold the inventory crashed on sends it again, and is not s
     // The hold sends again, and gets the reply the inventory stored before it crashed (decision 0046).
     yield* runtime.settled
     expect(crashes).toBe(false)
+    expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held', canConfirm: true })
+    expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
+  }))))
+
+test('a booking whose hold the inventory is suspended on waits for its resumption, and holds its seats', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    const suspended = yield* Deferred.make<void>()
+    const runtime = yield* launch({
+      // A retry an hour long: what wakes the hold is the inventory's resumption, not a clock (decision 0063).
+      retry: { millis: 3_600_000 },
+      // The inventory's one step is the hold it dies on.
+      observe: (entity, event) =>
+        entity.name === 'Inventory' && event._tag === 'Handle' ? Deferred.succeed(suspended, undefined) : Effect.void,
+    })
+    // An inventory that dies on a hold, and the fixed program an operator resumes it with.
+    const breaking: typeof inventory = {
+      ...inventory,
+      update: (message, meta) =>
+        message._tag === 'HoldRequested' ? () => defect('broken') : inventory.update(message, meta),
+    }
+    const inventories = yield* runtime.deploy(breaking)
+    const bookings = yield* runtime.deploy(booking)
+    yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
+    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    // The hold is answered `Suspended`, or is about to be: it waits either way, registered before it sent.
+    yield* Deferred.await(suspended)
+    yield* inventories.resume('gig', inventory)
+    yield* runtime.settled
     expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held', canConfirm: true })
     expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
   }))))

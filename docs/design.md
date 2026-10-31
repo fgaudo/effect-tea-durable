@@ -176,9 +176,11 @@ the name, whatever the operation's delivery, and no operation can send under ano
 the same entity dies ([decision 0047](decisions/0047-a-request-of-an-operation-has-a-name.md)). A restarted operation sends
 the same requests, and gets the receiver's stored replies, kept while the work that sent them is stored
 ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). While the receiver is
-suspended, `send` waits, and so does an operation that reaches a program not deployed yet
-([decision 0045](decisions/0045-an-operation-waits-for-a-program-not-deployed-yet.md)). A receiver that crashes
-has no reply yet either, and the operation sends again; only a defect of the sender's own suspends it
+suspended, `send` waits for its resumption, and an operation that reaches a program not deployed yet waits for
+its deploy ([decision 0045](decisions/0045-an-operation-waits-for-a-program-not-deployed-yet.md)): each is woken by
+what it waits for, and nothing looks again on a clock
+([decision 0063](decisions/0063-the-runtime-waits-for-what-it-waits-for.md)). A receiver that crashes has no reply
+yet either, and the operation sends again after a while; only a defect of the sender's own suspends it
 ([decision 0046](decisions/0046-a-receiver-that-crashes-is-sent-again.md)). An operation creates an
 entity the same way, with `create` and a name. So an operation that talks only to entities may run at least once:
 run again, it sends the same requests, and acts once. `update` never sends: a step never waits on another entity

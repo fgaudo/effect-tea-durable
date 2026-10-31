@@ -100,10 +100,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   program not deployed yet ([decision 0045](decisions/0045-an-operation-waits-for-a-program-not-deployed-yet.md)),
   for ever if it never is, and for a receiver that crashes
   ([decision 0046](decisions/0046-a-receiver-that-crashes-is-sent-again.md)), for ever if it keeps crashing.
-  How does an operator see, resume and discard? And how long may a sender wait before someone is told? It waits
-  by sending again every few milliseconds ([decision 0028](decisions/0028-rules-the-runtime-settled.md)), for as long as the receiver stays suspended,
-  and each try takes the registry's one permit, which every lookup, load and activation of every program in the
-  process shares: should it wait for the receiver's resumption instead?
+  How does an operator see, resume and discard? And how long may a sender wait before someone is told? It
+  waits for the receiver's resumption, and costs nothing meanwhile
+  ([decision 0063](decisions/0063-the-runtime-waits-for-what-it-waits-for.md)), but nothing says it waits.
   A suspension stops every operation of the entity, and drops what they deliver meanwhile
   ([decision 0006](decisions/0006-a-defect-suspends-the-entity.md)): a charge interrupted because another
   operation died runs again, or delivers `unknown` if at most once. Should a suspension stop only the handling
