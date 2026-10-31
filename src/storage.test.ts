@@ -9,7 +9,7 @@ import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import * as Machine from './machine.ts'
-import { noWork, operation, type Program } from './program.ts'
+import { type Migration, noWork, operation, type Program } from './program.ts'
 import { createTables, storage } from './storage.ts'
 
 type T = {
@@ -259,18 +259,15 @@ test('a caller whose request a migration gives the text of another caller’s ro
   database((sql) =>
     Effect.gen(function*() {
       type Named = Omit<T, 'sender'> & { sender: string }
-      const callers = (migrations: Program<Named>['migrations']): Program<Named> => ({
+      const callers = (migrations: ReadonlyArray<Migration>): Program<Named> => ({
         ...receiver,
         schemas: { ...receiver.schemas, sender: Schema.String },
         update: (message) => () => ({ last: message }),
-        ...(migrations === undefined ? {} : { migrations }),
+        migrations,
       })
-      const before = storage(callers(undefined), sql)
+      const first = callers([])
       // Version 2 renames the sender 'a' to 'b', and gives 'a' to the one that was 'z'.
-      const after = storage(
-        callers([{ sender: (json) => json === 'a' ? 'b' : json === 'z' ? 'a' : json }]),
-        sql,
-      )
+      const second = callers([{ sender: (json) => json === 'a' ? 'b' : json === 'z' ? 'a' : json }])
       const caller = (sender: string) => ({ _tag: 'Caller', sender, id: 'r' }) as const
       const accepted = (program: Program<Named>, sender: string): Machine.ReplyRow => ({
         request: Machine.requestKey(program, caller(sender)),
@@ -278,10 +275,11 @@ test('a caller whose request a migration gives the text of another caller’s ro
         reason: null,
         asked: null,
       })
-      yield* before.write('r', created({ replies: [accepted(callers(undefined), 'a')] }))
-      // The caller that is 'a' in version 2 has the text of the row 'a' stored in version 1, and is not answered by it.
+      yield* storage(first, sql).write('r', created({ replies: [accepted(first, 'a')] }))
+      const after = storage(second, sql)
+      // The caller that is 'a' in version 2 has the text of the row of 'a' in version 1, and is not answered by it.
       expect(yield* after.reply('r', caller('a'))).toBeNull()
-      yield* after.write('r', written({ replies: [accepted(callers([]), 'a')] }))
+      yield* after.write('r', written({ replies: [accepted(second, 'a')] }))
       expect(yield* after.reply('r', caller('a'))).toEqual({ _tag: 'Accepted' })
       // The caller version 1 stored as 'a' is 'b' now, and its retry still finds its own reply.
       expect(yield* after.reply('r', caller('b'))).toEqual({ _tag: 'Accepted' })

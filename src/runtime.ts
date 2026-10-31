@@ -315,7 +315,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       )
     }
     const probe = yield* Probe
-    // An event is told of as the machine's, whatever program it is stepped by: the probe compares, and steps nothing.
+    // The one cast of an event: a probe is told of the events of every program, and steps none of them.
     const at = <T extends Types>(point: Point, entity: Address, event: Machine.Event<T>) =>
       probe({ _tag: 'Reached', point, entity, event: event as Machine.Event<never> })
     const observe = <T extends Types>(entity: Address, event: Machine.Event<T>) =>
@@ -643,7 +643,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       }))
 
     /**
-     * An event the runtime could not finish — a write that failed, a hook that died — is a crash of its entity
+     * An event the runtime could not finish — a write that failed, a probe that died — is a crash of its entity
      * alone: the entity leaves this process, its work stops, and its waiting callers are given the defect, to
      * retry. What is stored is what its next activation starts from, as after a crash of the process. Called
      * where the entity's lock is held, so that no caller is between finding the entity and offering its event

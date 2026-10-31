@@ -1183,10 +1183,8 @@ describe('the read model', () => {
           Effect.gen(function*() {
             const { layer } = yield* hands({ holds: true })
             const toy = yield* Effect.provide(runtime.deploy(negated), layer)
-            // The step lands somewhere in the walk, where the row of 't-3' may be computed before it and written
-            // after it.
+            // The step lands in the walk, between the reading of the state of 't-3' and the writing of its row.
             const reindexing = yield* Effect.forkChild(toy.reindex)
-            yield* Effect.yieldNow
             yield* toy.send('t-3', { _tag: 'Want', key: 'a', on: true, nonce: 'on' }, {
               requestId: 'on',
               sender: tester,
@@ -1766,7 +1764,7 @@ describe('what the runtime cannot finish', () => {
       const at = yield* DateTime.now
       let dies = true
       yield* process({
-        // The message is written, and the runtime dies before it acts on it: the hook stands for a failed write.
+        // The message is written, and the runtime dies before it acts on it: the probe stands for a failed write.
         observe: (_entity, event) => {
           if (received(event) !== 'r-1' || !dies) return Effect.void
           dies = false

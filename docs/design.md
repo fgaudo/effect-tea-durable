@@ -353,8 +353,9 @@ with the values a caller reads of a single entity, and nothing is queried that a
 projections; `reindex` writes every row again from the stored states, which is what an index added or changed
 by a new version of the program needs. It runs while entities step, and writes a row only if the state it was
 computed from is still the one stored, in one statement: a step that committed since keeps the row it wrote
-([decision 0070](decisions/0070-reindex-writes-a-row-only-over-its-state.md)). [`examples/order/runtime.test.ts`](../examples/order/runtime.test.ts)
-asks for the orders still awaiting their payment.
+([decision 0070](decisions/0070-reindex-writes-a-row-only-over-its-state.md)).
+[`examples/order/runtime.test.ts`](../examples/order/runtime.test.ts) asks for the orders still awaiting their
+payment.
 
 ## Publishing what happened
 
@@ -388,8 +389,8 @@ the sale is not published. A program whose fact must reach other systems shows i
 A deploy publishes nothing of itself, and `reindex` writes the read model again without publishing. A step
 publishes when what callers read changed in that step, as the program deployed computes it before and after: a
 new `project` reaches the log at an entity's next step that changes what it shows, and a consumer that needs
-every entity as the new program shows it reads them through `query`. A projection whose schema changed is read
-through its migrations in the log too
+every entity as the new program shows it reads them through `query`, once `reindex` has run. A projection whose
+schema changed is read through its migrations in the log too
 ([decision 0072](decisions/0072-the-log-shows-what-a-step-changed.md)).
 
 ## Testing

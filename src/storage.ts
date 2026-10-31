@@ -114,8 +114,8 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // The replies, by request: a retry gets the one stored (decision 0015). The request is its JSON as the machine
   // keys it, read through its schema (decision 0059), and a row is keyed by the version that wrote it too: a
   // migration may give one caller's request the text another's had, and two versions never share a row
-  // (decision 0069). A reply to another entity's operation holds the work that
-  // asked — its program, id, key and incarnation — and is deleted once that work no longer holds (decision 0021).
+  // (decision 0069). A reply to another entity's operation holds the work that asked — its program, id, key and
+  // incarnation — and is deleted once that work no longer holds (decision 0021).
   yield* sql`
     CREATE TABLE IF NOT EXISTS replies (
       name TEXT NOT NULL,
@@ -730,11 +730,12 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         if (asked === null) continue
         yield* sql`
           DELETE FROM replies
-          WHERE name = ${name} AND id = ${id} AND request = ${reply.request} AND version = ${version} AND NOT EXISTS (
-            SELECT 1 FROM entity_keys AS asking
-            WHERE asking.name = ${asked.name} AND asking.id = ${asked.id} AND asking.key = ${asked.key}
-              AND asking.incarnation = ${asked.incarnation} AND asking.work IS NOT NULL
-          )
+          WHERE name = ${name} AND id = ${id} AND request = ${reply.request} AND version = ${version}
+            AND NOT EXISTS (
+              SELECT 1 FROM entity_keys AS asking
+              WHERE asking.name = ${asked.name} AND asking.id = ${asked.id} AND asking.key = ${asked.key}
+                AND asking.incarnation = ${asked.incarnation} AND asking.work IS NOT NULL
+            )
         `
       }
       for (const { key, incarnation } of written.ended) {
