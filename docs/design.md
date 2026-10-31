@@ -207,7 +207,9 @@ kept as an audit, but nothing replays them.
 The runtime on SQLite writes all of it through the program's schemas, as JSON, in seven tables — the entity, the
 keys with their incarnations and work, the mailbox in order, the replies by request, the read model, the
 outbox and the cursors of its consumers ([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
-by migrating its JSON to the program's version (see [schemas that change](#schemas-that-change)). A schema whose
+by migrating its JSON to the program's version (see [schemas that change](#schemas-that-change)). The row around
+the JSON is read through its table's schema, which says what the storage writes: nothing is filled in or cast, and
+a row it refuses fails the call that meets it ([decision 0062](decisions/0062-a-row-is-read-through-a-schema.md)). A schema whose
 encoded side is not JSON does not compile: a time is held as `Schema.DateTimeUtcFromMillis`, not as
 `Schema.DateTimeUtc` ([decision 0030](decisions/0030-a-schema-encodes-to-json.md)). A value its schema refuses,
 or that encodes to a number JSON does not hold (`NaN`, `Infinity`), cannot be stored: the machine encodes what a

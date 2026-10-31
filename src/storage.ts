@@ -166,6 +166,120 @@ const Suspended = Schema.Union([
   Schema.TaggedStruct('Activation', {}),
 ]) as unknown as Schema.Codec<Machine.Suspension['on'], Json>
 
+/** The version of the program that wrote a row: the first is 1 (decision 0036). */
+const Version = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1)))
+
+/** An incarnation, a `seq` or a count, as SQLite gives an integer. */
+const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
+
+/** How an operation is delivered, as its runner declared (decision 0011). */
+const Delivery = Schema.Literals(['Idempotent', 'AtLeastOnce', 'AtMostOnce'])
+
+/** The rows a reading gives, decoded by the schema of one: built once, for every reading of its kind. */
+const decoder = <S extends Schema.Top & { readonly DecodingServices: never }>(row: S) =>
+  Schema.decodeUnknownEffect(Schema.Array(row))
+
+/**
+ * The rows of each table as the runtime writes them, which a reading takes through their schema: a row that is
+ * none of them fails the call that meets it, as a row no version reads does (decisions 0043, 0062). The JSON a
+ * column holds is the program's, and is read through the program's schemas.
+ */
+const Rows = {
+  /** A suspension's event and its cause are written together, or not at all. */
+  entity: decoder(Schema.Union([
+    Schema.Struct({
+      state: Schema.String,
+      version: Version,
+      creation: Schema.String,
+      suspended_on: Schema.Null,
+      suspended_cause: Schema.Null,
+    }),
+    Schema.Struct({
+      state: Schema.String,
+      version: Version,
+      creation: Schema.String,
+      suspended_on: Schema.String,
+      suspended_cause: Schema.String,
+    }),
+  ])),
+  /** A key that holds no work has no delivery either. */
+  key: decoder(Schema.Union([
+    Schema.Struct({
+      key: Schema.String,
+      incarnation: Count,
+      version: Version,
+      work: Schema.Null,
+      delivery: Schema.Null,
+    }),
+    Schema.Struct({
+      key: Schema.String,
+      incarnation: Count,
+      version: Version,
+      work: Schema.String,
+      delivery: Schema.NullOr(Delivery),
+    }),
+  ])),
+  /** An inbound message carries its request, an internal one the key and incarnation of the work that sent it. */
+  envelope: decoder(Schema.Union([
+    Schema.Struct({
+      tag: Schema.Literal('Inbound'),
+      version: Version,
+      message: Schema.String,
+      request: Schema.String,
+      key: Schema.Null,
+      incarnation: Schema.Null,
+    }),
+    Schema.Struct({
+      tag: Schema.Literal('Internal'),
+      version: Version,
+      message: Schema.String,
+      request: Schema.Null,
+      key: Schema.String,
+      incarnation: Count,
+    }),
+  ])),
+  /** Only a rejection carries a reason, and null for a bare `reject` (decision 0010). */
+  reply: decoder(Schema.Union([
+    Schema.Struct({ request: Schema.String, tag: Schema.Literal('Accepted'), version: Version, reason: Schema.Null }),
+    Schema.Struct({
+      request: Schema.String,
+      tag: Schema.Literal('Rejected'),
+      version: Version,
+      reason: Schema.NullOr(Schema.String),
+    }),
+  ])),
+  projection: decoder(Schema.Struct({ id: Schema.String, projection: Schema.String, version: Version })),
+  state: decoder(Schema.Struct({ id: Schema.String, state: Schema.String, version: Version })),
+  /** A creation's row handles no message, and a step's always one (decision 0038). */
+  published: decoder(Schema.Union([
+    Schema.Struct({
+      seq: Count,
+      id: Schema.String,
+      tag: Schema.Literal('Creation'),
+      version: Version,
+      message: Schema.Null,
+      projection: Schema.String,
+    }),
+    Schema.Struct({
+      seq: Count,
+      id: Schema.String,
+      tag: Schema.Literals(['Inbound', 'Internal']),
+      version: Version,
+      message: Schema.String,
+      projection: Schema.String,
+    }),
+  ])),
+  id: decoder(Schema.Struct({ id: Schema.String })),
+  /** A timer's time, in milliseconds: one before 1970 is a time too. */
+  due: decoder(Schema.Struct({ id: Schema.String, at: Schema.Int })),
+  seq: decoder(Schema.Struct({ seq: Count })),
+  /** An aggregate over no rows is null. */
+  last: decoder(Schema.Struct({ seq: Schema.NullOr(Count) })),
+  through: decoder(Schema.Struct({ through: Schema.NullOr(Count) })),
+  consumer: decoder(Schema.Struct({ consumer: Schema.String, seq: Count, behind: Count })),
+  forgotten: decoder(Schema.Struct({ name: Schema.String, id: Schema.String, request: Schema.String })),
+} as const
+
 /** How a query compares an index with a value. */
 export type Comparison = '=' | '<>' | '<' | '<=' | '>' | '>='
 
@@ -303,6 +417,19 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const { name } = program
   const version = versionOf(program)
 
+  /**
+   * The rows `read` gives from `table`, through their schema: a row it refuses fails the call that meets it, and
+   * names where it is (decisions 0043, 0062).
+   */
+  const rows = <A>(table: string, decode: (held: unknown) => Effect.Effect<A, Schema.SchemaError>) =>
+  <E>(read: Effect.Effect<ReadonlyArray<unknown>, E>): Effect.Effect<A, E | Error> =>
+    Effect.flatMap(read, (held) =>
+      Effect.mapError(
+        decode(held),
+        (error) =>
+          new Error(`a row of '${table}' for the program '${name}' is no row the runtime writes: ${error.message}`),
+      ))
+
   /** The reading of one kind of value written by `from`, composed once and kept (decision 0036). */
   const readings = new Map<string, (json: Json) => Json>()
   const up = (of: Migrated, from: number): (json: Json) => Json => {
@@ -377,58 +504,42 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
 
   const load = (id: string) =>
     Effect.gen(function*() {
-      const rows = yield* sql<{
-        state: string
-        version: number
-        creation: string
-        suspended_on: string | null
-        suspended_cause: string | null
-      }>`SELECT state, version, creation, suspended_on, suspended_cause
-         FROM entities WHERE name = ${name} AND id = ${id}`
-      const row = rows[0]
+      const entities = yield* rows('entities', Rows.entity)(
+        sql`SELECT state, version, creation, suspended_on, suspended_cause
+            FROM entities WHERE name = ${name} AND id = ${id}`,
+      )
+      const row = entities[0]
       if (row === undefined) return null
-      const held = yield* sql<{
-        key: string
-        incarnation: number
-        version: number
-        work: string | null
-        delivery: string | null
-      }>`SELECT key, incarnation, version, work, delivery FROM entity_keys WHERE name = ${name} AND id = ${id}`
-      const queued = yield* sql<{
-        tag: string
-        version: number
-        message: string
-        request: string | null
-        key: string | null
-        incarnation: number | null
-      }>`SELECT tag, version, message, request, key, incarnation FROM mailbox
-         WHERE name = ${name} AND id = ${id} ORDER BY seq`
-      const answered = yield* sql<{
-        request: string
-        tag: string
-        version: number
-        reason: string | null
-      }>`SELECT request, tag, version, reason FROM replies WHERE name = ${name} AND id = ${id}`
+      const held = yield* rows('entity_keys', Rows.key)(
+        sql`SELECT key, incarnation, version, work, delivery FROM entity_keys WHERE name = ${name} AND id = ${id}`,
+      )
+      const queued = yield* rows('mailbox', Rows.envelope)(
+        sql`SELECT tag, version, message, request, key, incarnation FROM mailbox
+            WHERE name = ${name} AND id = ${id} ORDER BY seq`,
+      )
+      const answered = yield* rows('replies', Rows.reply)(
+        sql`SELECT request, tag, version, reason FROM replies WHERE name = ${name} AND id = ${id}`,
+      )
 
       const keys: Record<string, Machine.Key<T>> = {}
       for (const key of held) {
         keys[key.key] = {
           incarnation: key.incarnation,
           ...(key.work === null ? {} : { work: readWork(key.work, key.version) }),
-          ...(key.delivery === null ? {} : { delivery: key.delivery as NonNullable<Machine.Key<T>['delivery']> }),
+          ...(key.delivery === null ? {} : { delivery: key.delivery }),
         }
       }
       const mailbox = queued.map((envelope): Machine.Envelope<T> =>
         envelope.tag === 'Inbound'
           ? {
             _tag: 'Inbound',
-            request: request.read(envelope.request ?? 'null', upRequest(envelope.version)),
+            request: request.read(envelope.request, upRequest(envelope.version)),
             message: inbound.read(envelope.message, up('inbound', envelope.version)),
           }
           : {
             _tag: 'Internal',
-            key: envelope.key ?? '',
-            incarnation: envelope.incarnation ?? 0,
+            key: envelope.key,
+            incarnation: envelope.incarnation,
             message: internal.read(envelope.message, up('internal', envelope.version)),
           }
       )
@@ -453,7 +564,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         // The cause is what was rendered when the entity suspended: an operator reads it, nothing acts on it.
         suspension: row.suspended_on === null
           ? null
-          : { cause: row.suspended_cause ?? '', on: suspended.read(row.suspended_on) },
+          : { cause: row.suspended_cause, on: suspended.read(row.suspended_on) },
       } satisfies Machine.Stored<T>
     }).pipe(Effect.orDie)
 
@@ -526,9 +637,9 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         `
       }
       if (written.queued.length > 0) {
-        const last = yield* sql<{ seq: number | null }>`
-          SELECT max(seq) AS seq FROM mailbox WHERE name = ${name} AND id = ${id}
-        `
+        const last = yield* rows('mailbox', Rows.last)(
+          sql`SELECT max(seq) AS seq FROM mailbox WHERE name = ${name} AND id = ${id}`,
+        )
         const first = (last[0]?.seq ?? -1) + 1
         for (const [at, envelope] of written.queued.entries()) {
           yield* sql`INSERT INTO mailbox ${
@@ -583,24 +694,24 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         }`
         if (asked === null) continue
         forgotten.push(
-          ...yield* sql<Forgotten>`
+          ...yield* rows('replies', Rows.forgotten)(sql`
             DELETE FROM replies WHERE name = ${name} AND id = ${id} AND request = ${reply.request} AND NOT EXISTS (
               SELECT 1 FROM entity_keys AS asking
               WHERE asking.name = ${asked.name} AND asking.id = ${asked.id} AND asking.key = ${asked.key}
                 AND asking.incarnation = ${asked.incarnation} AND asking.work IS NOT NULL
             )
             RETURNING name, id, request
-          `,
+          `),
         )
       }
       for (const { key, incarnation } of written.ended) {
         forgotten.push(
-          ...yield* sql<Forgotten>`
+          ...yield* rows('replies', Rows.forgotten)(sql`
             DELETE FROM replies
             WHERE sender_name = ${name} AND sender_id = ${id} AND sender_key = ${key}
               AND sender_incarnation = ${incarnation}
             RETURNING name, id, request
-          `,
+          `),
         )
       }
       return forgotten
@@ -611,12 +722,12 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
 
   // A key holding an operation has no `due`: the time of a timer is what that column is for.
   const interrupted = Effect.gen(function*() {
-    const rows = yield* sql<{ id: string }>`
+    const found = yield* rows('entity_keys', Rows.id)(sql`
       SELECT DISTINCT id FROM entity_keys
       WHERE name = ${name} AND work IS NOT NULL AND due IS NULL AND id NOT IN ${onHold}
       ORDER BY id
-    `
-    return rows.map((row) => row.id)
+    `)
+    return found.map((row) => row.id)
   }).pipe(Effect.orDie)
 
   // The entities this process holds are left out as the rows are read, not by the query: a query that listed them
@@ -627,12 +738,12 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       const ready: Array<string> = []
       let after = ''
       while (ready.length < batch) {
-        const page = yield* sql<{ id: string }>`
+        const page = yield* rows('entity_keys', Rows.id)(sql`
           SELECT DISTINCT id FROM entity_keys
           WHERE name = ${name} AND work IS NOT NULL AND due IS NOT NULL AND due <= ${now}
             AND id > ${after} AND id NOT IN ${onHold}
           ORDER BY id LIMIT ${batch}
-        `
+        `)
         for (const { id } of page) if (!held.has(id) && ready.length < batch) ready.push(id)
         if (page.length < batch) break
         after = page[page.length - 1]?.id ?? after
@@ -641,13 +752,13 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       let next: number | null = null
       let from: Readonly<{ at: number; id: string }> | null = null
       while (next === null) {
-        const page: ReadonlyArray<{ id: string; at: number }> = yield* sql<{ id: string; at: number }>`
+        const page: ReadonlyArray<{ id: string; at: number }> = yield* rows('entity_keys', Rows.due)(sql`
           SELECT id, MIN(due) AS at FROM entity_keys
           WHERE name = ${name} AND work IS NOT NULL AND due > ${now} AND id NOT IN ${onHold}
           GROUP BY id
           ${from === null ? sql`` : sql`HAVING at > ${from.at} OR (at = ${from.at} AND id > ${from.id})`}
           ORDER BY at, id LIMIT ${batch}
-        `
+        `)
         next = page.find((row) => !held.has(row.id))?.at ?? null
         const last = page[page.length - 1]
         if (page.length < batch || last === undefined) break
@@ -682,14 +793,14 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         ? sql`id`
         : sql`${columnOf(order.index)} ${sql.literal(order.descending === true ? 'DESC' : 'ASC')}, id`
       // SQLite reads a negative limit as none.
-      const rows = yield* sql<{ id: string; projection: string; version: number }>`
+      const found = yield* rows('projections', Rows.projection)(sql`
         SELECT id, projection, version FROM projections
         WHERE ${sql.and(clauses)} ORDER BY ${by} LIMIT ${limit ?? -1}
-      `
+      `)
       // A row the version before wrote is read through its migrations; `reindex` is what writes it again.
-      return rows.map((found): Found<T> => ({
-        id: found.id,
-        projection: projection.read(found.projection, up('projection', found.version)),
+      return found.map((held): Found<T> => ({
+        id: held.id,
+        projection: projection.read(held.projection, up('projection', held.version)),
       }))
     }).pipe(Effect.orDie)
 
@@ -697,12 +808,12 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
     let cursor = ''
     let written = 0
     while (true) {
-      const rows = yield* sql<{ id: string; state: string; version: number }>`
+      const page = yield* rows('entities', Rows.state)(sql`
         SELECT id, state, version FROM entities
         WHERE name = ${name} AND id > ${cursor} ORDER BY id LIMIT ${batch}
-      `
-      if (rows.length === 0) return written
-      for (const held of rows) {
+      `)
+      if (page.length === 0) return written
+      for (const held of page) {
         yield* row(held.id, Machine.shownOf(program, state.read(held.state, up('state', held.version))))
         cursor = held.id
         written += 1
@@ -712,22 +823,15 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
 
   const published = (after: number, limit?: number) =>
     Effect.gen(function*() {
-      const rows = yield* sql<{
-        seq: number
-        id: string
-        tag: string
-        version: number
-        message: string | null
-        projection: string
-      }>`
+      const log = yield* rows('outbox', Rows.published)(sql`
         SELECT seq, id, tag, version, message, projection FROM outbox
         WHERE name = ${name} AND seq > ${after} ORDER BY seq LIMIT ${limit ?? -1}
-      `
-      return rows.map((row): Published<T> => ({
+      `)
+      return log.map((row): Published<T> => ({
         seq: row.seq,
         id: row.id,
-        kind: row.tag as Published<T>['kind'],
-        message: row.message === null
+        kind: row.tag,
+        message: row.tag === 'Creation'
           ? null
           : row.tag === 'Inbound'
           ? inbound.read(row.message, up('inbound', row.version))
@@ -745,9 +849,9 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
 
   const feed = (consumer: string, limit?: number) =>
     Effect.gen(function*() {
-      const held = yield* sql<{ seq: number }>`
-        SELECT seq FROM cursors WHERE name = ${name} AND consumer = ${consumer}
-      `
+      const held = yield* rows('cursors', Rows.seq)(
+        sql`SELECT seq FROM cursors WHERE name = ${name} AND consumer = ${consumer}`,
+      )
       const cursor = held[0]?.seq
       // The first reading declares the consumer, and only that one writes: a consumer that polls reads.
       if (cursor === undefined) yield* mark(consumer, 0)
@@ -759,7 +863,9 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   // a prune dropped its row, and has no row for the outbox until the first one is written.
   const ack = (consumer: string, through: number) =>
     Effect.gen(function*() {
-      const last = yield* sql<{ seq: number }>`SELECT seq FROM sqlite_sequence WHERE name = 'outbox'`
+      const last = yield* rows('sqlite_sequence', Rows.seq)(
+        sql`SELECT seq FROM sqlite_sequence WHERE name = 'outbox'`,
+      )
       yield* mark(consumer, Math.min(through, last[0]?.seq ?? 0))
     }).pipe(Effect.orDie)
 
@@ -767,26 +873,26 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   // middle of a prune either holds the log, and nothing goes, or starts after the drop. Otherwise it could read
   // rows with its cursor still at 0 and have them dropped behind it, and skip them without ever saying so.
   const prune = sql.withTransaction(Effect.gen(function*() {
-    const read = yield* sql<{ through: number | null }>`
-      SELECT min(seq) AS through FROM cursors WHERE name = ${name}
-    `
+    const read = yield* rows('cursors', Rows.through)(
+      sql`SELECT min(seq) AS through FROM cursors WHERE name = ${name}`,
+    )
     const through = read[0]?.through ?? null
     // No consumer has stored a cursor: the log is somebody's to read by hand, and nothing of it is dropped.
     if (through === null) return 0
-    const gone = yield* sql<{ seq: number }>`
-      DELETE FROM outbox WHERE name = ${name} AND seq <= ${through} RETURNING seq
-    `
+    const gone = yield* rows('outbox', Rows.seq)(
+      sql`DELETE FROM outbox WHERE name = ${name} AND seq <= ${through} RETURNING seq`,
+    )
     return gone.length
   })).pipe(Effect.orDie)
 
   const consumers = Effect.gen(function*() {
-    const rows = yield* sql<{ consumer: string; seq: number; behind: number }>`
+    const held = yield* rows('cursors', Rows.consumer)(sql`
       SELECT consumer, seq, (
         SELECT count(*) FROM outbox WHERE outbox.name = cursors.name AND outbox.seq > cursors.seq
       ) AS behind
       FROM cursors WHERE name = ${name} ORDER BY consumer
-    `
-    return rows.map((row): Consumer => ({ consumer: row.consumer, seq: row.seq, behind: row.behind }))
+    `)
+    return held.map((row): Consumer => ({ consumer: row.consumer, seq: row.seq, behind: row.behind }))
   }).pipe(Effect.orDie)
 
   const forget = (consumer: string) =>

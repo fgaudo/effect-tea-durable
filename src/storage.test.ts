@@ -4,6 +4,7 @@
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
+import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
@@ -178,3 +179,46 @@ test('the state is written with the request that created the entity, and only wh
         suspension: null,
       })
     })))
+
+// A row is read through its table's schema, and nothing is filled in or cast (decision 0062).
+test('a row the runtime never writes fails the call that meets it, and is read as nothing else', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(receiver, sql)
+      yield* store.write('r', created({ queued: [inbound('one')] }))
+      // Each row is broken by hand in one of the ways a reading used to fill in or cast.
+      const broken = [
+        sql`UPDATE mailbox SET tag = 'Outbound' WHERE name = 'Receiver' AND id = 'r'`,
+        sql`UPDATE mailbox SET request = NULL WHERE name = 'Receiver' AND id = 'r'`,
+        sql`UPDATE entities SET suspended_on = '{"_tag":"Message"}' WHERE name = 'Receiver' AND id = 'r'`,
+        sql`INSERT INTO replies ${
+          sql.insert({ name: 'Receiver', id: 'r', request: '"x"', tag: 'Maybe', version: 1, reason: null })
+        }`,
+        sql`INSERT INTO entity_keys ${
+          sql.insert({
+            name: 'Receiver',
+            id: 'r',
+            key: 'ask',
+            incarnation: 1,
+            version: 1,
+            work: null,
+            delivery: 'Twice',
+          })
+        }`,
+      ]
+      for (const breaking of broken) {
+        yield* sql`SAVEPOINT broken`
+        yield* breaking
+        const exit = yield* Effect.exit(store.load('r'))
+        expect(exit._tag).toBe('Failure')
+        if (exit._tag === 'Failure') expect(String(Cause.squash(exit.cause))).toContain('no row the runtime writes')
+        yield* sql`ROLLBACK TO broken`
+        yield* sql`RELEASE broken`
+      }
+      expect((yield* store.load('r'))?.mailbox.map((envelope) => envelope.message)).toEqual(['one'])
+      // A creation's row of the outbox handles no message.
+      yield* sql`INSERT INTO outbox ${
+        sql.insert({ name: 'Receiver', id: 'r', tag: 'Creation', version: 1, message: '"one"', projection: '"one"' })
+      }`
+      expect((yield* Effect.exit(store.published(0)))._tag).toBe('Failure')
+    }).pipe(Effect.orDie)))
