@@ -31,7 +31,7 @@ import {
  * where the state holds that key alone, and not where it holds a declared key beside a misspelt one. So is an
  * operation the program gives no runner for, which a cast lets through (decision 0054).
  */
-const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Work<T> => {
+const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Held<T> => {
   const work = program.durable(state)
   const declared = new Set<string>(program.keys)
   for (const [key, held] of Object.entries(work)) {
@@ -53,7 +53,7 @@ const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Wor
  * JSON holds. Any of them may die, and one that does suspends the entity, so a runtime may compute and encode them
  * again while it writes, knowing no defect escapes its transaction (decisions 0014, 0032, 0040).
  */
-const admitted = <T extends Types>(program: Program<T>, state: T['state']): Work<T> => {
+const admitted = <T extends Types>(program: Program<T>, state: T['state']): Held<T> => {
   const work = workUnder(program, state)
   const projection = program.project(state)
   const indexes = indexesOf(program, projection)
@@ -214,10 +214,14 @@ export const holds = <T extends Types>(stored: Stored<T>, key: string, incarnati
 export const idempotencyKeyOf = <T extends Types>(machine: Machine<T>, key: string, incarnation: number) =>
   idempotencyKey({ name: machine.stored.name, id: machine.stored.id }, key, incarnation)
 
-export type Work<T extends Types> = Readonly<Record<string, Durable<T['operation'], T['internal']>>>
+/**
+ * The work a state holds, by key, as the machine reads it: a record of any key, which `workUnder` checks against
+ * the declared ones. A program writes its own as `Work`, typed by its keys.
+ */
+export type Held<T extends Types> = Readonly<Record<string, Durable<T['operation'], T['internal']>>>
 
 /** The work the stored state holds, by key. */
-export const workOf = <T extends Types>(stored: Stored<T>): Work<T> => {
+export const workOf = <T extends Types>(stored: Stored<T>): Held<T> => {
   const work: Record<string, Durable<T['operation'], T['internal']>> = {}
   for (const [key, held] of Object.entries(stored.keys)) if (held.work !== undefined) work[key] = held.work
   return work
@@ -236,8 +240,8 @@ const deliveryOf = <T extends Types>(program: Program<T>, work: Durable<T['opera
 const renew = <T extends Types>(
   program: Program<T>,
   keys: Stored<T>['keys'],
-  previous: Work<T>,
-  next: Work<T>,
+  previous: Held<T>,
+  next: Held<T>,
 ): Stored<T>['keys'] => {
   const renewed: Record<string, Key<T>> = {}
   for (const key of new Set([...Object.keys(keys), ...Object.keys(next)])) {
@@ -327,9 +331,10 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
 }
 
 /**
- * Starts what the stored state says, with nothing under way, as `program` computes it: the work under each key,
- * unless its message is already in the mailbox. An at-most-once operation that may have run before (after a
- * crash, or a suspension) may have acted, so its `unknown` is recorded instead of running it again; one that is
+ * Starts what the stored state says, with nothing under way, as the program of `machine` computes it: the work
+ * under each key, unless its message is already in the mailbox. An at-most-once operation that may have run
+ * before (`mayHaveRun`: after a crash, or a suspension, and never at a creation) may have acted, so its `unknown`
+ * is recorded instead of running it again; one that is
  * new work at this activation, in an incarnation the stored work did not hold, never ran, and starts. A defect,
  * of the program on the stored state or of an `unknown` that dies or does not encode (decision 0040), leaves the
  * entity as it was before the event, `before`, suspended on what suspended it, or on the activation.
@@ -337,34 +342,29 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
  * A passivation is a `Restart` the runtime chooses, with an empty mailbox and only timers under way: activating
  * again arms the same timers, in the same incarnations, which the stored work holds while it is unloaded.
  */
-const activate = <T extends Types>(
-  before: Machine<T>,
-  machine: Machine<T>,
-  program: Program<T>,
-  mayHaveRun: (key: string) => boolean,
-): Transition<T> => {
-  if (machine.stored.suspension !== null) return { machine: { ...machine, program, running: {} }, outputs: [] }
+const activate = <T extends Types>(before: Machine<T>, machine: Machine<T>, mayHaveRun: boolean): Transition<T> => {
+  const { program } = machine
+  if (machine.stored.suspension !== null) return { machine: { ...machine, running: {} }, outputs: [] }
   try {
     const stored = reconcile(program, machine.stored)
     const running: Record<string, Running> = {}
     const mailbox = [...stored.mailbox]
     const outputs: Array<Output<T>> = []
-    const activated = { ...machine, program }
     for (const [key, { incarnation, work }] of Object.entries(stored.keys)) {
       if (work === undefined || isQueued(stored, key, incarnation)) continue
       const runner = isTimer(work) ? null : runnerOf(program, work)
       const started = incarnation === machine.stored.keys[key]?.incarnation
-      if (started && mayHaveRun(key) && runner?.delivery === 'AtMostOnce') {
+      if (started && mayHaveRun && runner?.delivery === 'AtMostOnce') {
         const message = runner.unknown(work as T['operation'])
         encode(program.schemas.internal, message, `unknown of the operation under '${key}'`)
         mailbox.push({ _tag: 'Internal', key, incarnation, message })
         outputs.push({ _tag: 'Recorded', key, incarnation })
       } else {
         running[key] = { kind: kindOf(work), incarnation }
-        outputs.push(startWork(activated, key, incarnation, work))
+        outputs.push(startWork(machine, key, incarnation, work))
       }
     }
-    return { machine: { ...activated, stored: { ...stored, mailbox }, running }, outputs }
+    return { machine: { ...machine, stored: { ...stored, mailbox }, running }, outputs }
   } catch (cause) {
     return suspend({ ...before, program }, { cause, on: before.stored.suspension?.on ?? { _tag: 'Activation' } })
   }
@@ -387,7 +387,7 @@ export const start = <T extends Types>(
   request: Readonly<{ requestId: string; from: Origin<T['sender']> }>,
 ): Start<T> => {
   let state: T['state']
-  let work: Work<T>
+  let work: Held<T>
   try {
     // `init` is given the flags its schema takes, and no others: flags that do not encode are a defect, and
     // nothing is stored (decision 0049).
@@ -408,7 +408,7 @@ export const start = <T extends Types>(
     suspension: null,
   }
   const created: Machine<T> = { program, stored, running: {} }
-  const { machine, outputs } = activate(created, created, program, () => false)
+  const { machine, outputs } = activate(created, created, false)
   const reply: Output<T> = { _tag: 'CreationReplied', ...request, reply: { _tag: 'Created' } }
   return { _tag: 'Created', machine, outputs: [reply, ...outputs] }
 }
@@ -591,7 +591,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
 const resume = <T extends Types>(machine: Machine<T>, fixed: Program<T> | undefined): Transition<T> => {
   if (machine.stored.suspension === null) return { machine, outputs: [] }
   const unsuspended = { ...machine, stored: { ...machine.stored, suspension: null } }
-  return activate(machine, unsuspended, fixed ?? machine.program, () => true)
+  return activate(machine, { ...unsuspended, program: fixed ?? machine.program }, true)
 }
 
 /**
@@ -604,12 +604,7 @@ const discard = <T extends Types>(machine: Machine<T>): Transition<T> => {
   const { stored } = machine
   const [head, ...rest] = stored.mailbox
   if (stored.suspension?.on._tag !== 'Message' || head?._tag !== 'Inbound') return { machine, outputs: [] }
-  return activate(
-    machine,
-    { ...machine, stored: { ...stored, mailbox: rest, suspension: null } },
-    machine.program,
-    () => true,
-  )
+  return activate(machine, { ...machine, stored: { ...stored, mailbox: rest, suspension: null } }, true)
 }
 
 export const step = <T extends Types>(machine: Machine<T>, event: Event<T>): Transition<T> => {
@@ -640,7 +635,7 @@ export const step = <T extends Types>(machine: Machine<T>, event: Event<T>): Tra
         : { machine, outputs: [] }
     }
     case 'Restart':
-      return activate(machine, { ...machine, running: {} }, event.program ?? machine.program, () => true)
+      return activate(machine, { ...machine, program: event.program ?? machine.program, running: {} }, true)
     case 'Resume':
       return resume(machine, event.program)
     case 'Discard':

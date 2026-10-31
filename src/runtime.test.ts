@@ -620,6 +620,24 @@ describe('passivation', () => {
 describe('the crash table', () => {
   const points: ReadonlyArray<Point> = ['BeforeCommit', 'AfterCommit', 'AfterReply']
 
+  test('each point of a creation is given the creation', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const reached: Array<string> = []
+      yield* process({
+        at: (point, _entity, event) =>
+          Effect.sync(() => {
+            reached.push(`${point} ${event._tag}`)
+          }),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+        }))
+      expect(reached).toEqual(points.map((point) => `${point} Create`))
+    })))
+
   for (const point of points) {
     for (const nth of [1, 2, 3, 5, 8]) {
       test(`a crash at ${point}, the ${nth}th time, leaves the entity where the machine leaves it`, () =>

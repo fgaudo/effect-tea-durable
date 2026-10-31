@@ -10,6 +10,7 @@
  * is what wakes it (decision 0029).
  */
 import * as Cause from 'effect/Cause'
+import * as Data from 'effect/Data'
 import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
@@ -218,10 +219,7 @@ const under = (key: string, incarnation: number) => `${key}@${incarnation}`
  * `init` dies on. Every caller is given it as a defect, and an operation is suspended on it; any other defect of a
  * delivery is the receiver's crash, which an operation sends again after (decision 0046).
  */
-class Faulted {
-  readonly _tag = 'Faulted'
-  constructor(readonly defect: unknown) {}
-}
+class Faulted extends Data.TaggedError('Faulted')<Readonly<{ defect: unknown }>> {}
 
 const faulted = <A>(effect: Effect.Effect<A, Faulted>): Effect.Effect<A> =>
   Effect.catchTag(effect, 'Faulted', (fault) => Effect.die(fault.defect))
@@ -647,7 +645,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             encode(deployed.program.schemas.flags, flags, 'value of the flags')
             return Machine.requestKey(deployed.program, request.from, request.requestId)
           },
-          catch: (defect) => new Faulted(defect),
+          catch: (defect) => new Faulted({ defect }),
         })
         const asked = yield* registry.withPermits(1)(Effect.gen(function*() {
           const held = deployed.loaded.get(id) ?? null
@@ -662,7 +660,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           const started = Machine.start(deployed.program, id, flags, now, request)
           // A defect at creation stores nothing: its creator is answered nothing but the defect itself
           // (decision 0014, and the open question of who may create an entity).
-          if (started._tag === 'Defect') return yield* Effect.fail(new Faulted(started.cause))
+          if (started._tag === 'Defect') return yield* Effect.fail(new Faulted({ defect: started.cause }))
           const loaded: Loaded<T> = {
             machine: started.machine,
             applying: false,
@@ -670,14 +668,15 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             operations: new Map(),
             timers: new Map(),
           }
-          const creation = { _tag: 'Create', ...request } as Machine.Event<never>
-          yield* at('BeforeCommit', entity, creation)
+          const creation: Machine.Event<T> = { _tag: 'Create', ...request }
+          yield* at('BeforeCommit', entity, creation as Machine.Event<never>)
           yield* sql.withTransaction(deployed.storage.write(null, started.machine.stored)).pipe(Effect.orDie)
           // The entity exists from here: its creation is the first event committed for it.
-          yield* observe(entity, creation)
-          yield* at('AfterCommit', entity, creation)
+          yield* observe(entity, creation as Machine.Event<never>)
+          yield* at('AfterCommit', entity, creation as Machine.Event<never>)
           deployed.loaded.set(id, loaded)
-          yield* perform(deployed, loaded, entity, { _tag: 'Restart' }, started.outputs).pipe(
+          // Each point of the crash table is given the creation, its event: `AfterReply` too.
+          yield* perform(deployed, loaded, entity, creation, started.outputs).pipe(
             Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
           )
           yield* Effect.forkIn(loop(deployed, loaded), deployed.scope)
@@ -702,7 +701,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             encode(schemas.inbound, message, 'inbound message')
             if (request.from._tag === 'Caller') encode(schemas.sender, request.from.sender, 'sender')
           },
-          catch: (defect) => new Faulted(defect),
+          catch: (defect) => new Faulted({ defect }),
         })
         const requested = Machine.requestKey(deployed.program, request.from, request.requestId)
         const asked = yield* withEntity(deployed, id, (loaded) =>

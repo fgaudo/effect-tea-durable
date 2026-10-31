@@ -70,12 +70,6 @@ which the later ones build on. Each step is decided in a note before it is made.
     once, which a loaded machine can outlast. The runtime reads time with `DateTime.now` and waits with
     `Effect.sleep`, which `TestClock` drives: the tests move time instead of waiting for it, and the random
     sequences, 25 runs today, can run many more.
-12. **The public surface is the library's.** `index.ts` exports what only the runtime uses (`indexesOf`,
-    `migrationOf`, `storage`), and a `Work` of `program.ts` beside the machine's `Work<T>`, another type of the
-    same name. It exports what a program, a test and an operator use, and the two `Work` get two names. With it,
-    the small things of the code: `Faulted` is a `Data.TaggedError`; `activate` takes a boolean where it takes a
-    function that is always a constant, and fewer arguments; the `AfterReply` point of a creation is given the
-    creation, as the two points before it are.
 
 The open questions that bear on cost — [a mailbox under a burst](open-questions.md#storage-and-reading),
 [the replies an entity holds](open-questions.md#storage-and-reading) and
