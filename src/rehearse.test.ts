@@ -8,7 +8,7 @@ import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Schema from 'effect/Schema'
 import { order, type Sender } from '../examples/order/order.ts'
-import { InvariantDefect, isTimer, timer } from './program.ts'
+import { InvariantDefect, isTimer, type Program, timer } from './program.ts'
 import { rehearse } from './rehearse.ts'
 
 const placedAt = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
@@ -200,6 +200,63 @@ describe('a rehearsal', () => {
         const due = isTimer(deadline.work) ? deadline.work.at : placedAt
         expect(DateTime.isGreaterThan(due, placedAt)).toBe(true)
         expect(seen.map(DateTime.formatIso)).toEqual([placedAt, placedAt, due, due].map(DateTime.formatIso))
+      }),
+    ))
+  })
+
+  // Two timers under way, fired out of their order: the earlier one firing after the later does not take time back.
+  test('keeps its time when a timer due earlier fires after one due later', () => {
+    const timers = ['early', 'late'] as const
+    const Timer = Schema.Literals(timers)
+    const dueOf = { early: DateTime.add(placedAt, { hours: 1 }), late: DateTime.add(placedAt, { hours: 2 }) }
+    type Clocked = {
+      state: { pending: ReadonlyArray<typeof Timer.Type>; seen: ReadonlyArray<DateTime.Utc> }
+      flags: Readonly<{}>
+      inbound: Readonly<{ _tag: 'Ping' }>
+      internal: Readonly<{ _tag: 'Rang'; key: typeof Timer.Type }>
+      operation: never
+      key: typeof Timer.Type
+      rejection: never
+      sender: Readonly<{ _tag: 'Tester' }>
+      projection: number
+      index: never
+      services: never
+    }
+    const clock: Program<Clocked> = {
+      name: 'Clock',
+      keys: timers,
+      schemas: {
+        state: Schema.Struct({ pending: Schema.Array(Timer), seen: Schema.Array(Schema.DateTimeUtcFromMillis) }),
+        flags: Schema.Struct({}),
+        inbound: Schema.TaggedStruct('Ping', {}),
+        internal: Schema.TaggedStruct('Rang', { key: Timer }),
+        operation: Schema.Never,
+        rejection: Schema.Never,
+        sender: Schema.TaggedStruct('Tester', {}),
+        projection: Schema.Int,
+      },
+      init: () => ({ pending: timers, seen: [] }),
+      update: (message, { at }) => (state) => ({
+        pending: message._tag === 'Rang' ? state.pending.filter((key) => key !== message.key) : state.pending,
+        seen: [...state.seen, at],
+      }),
+      durable: (state) =>
+        Object.fromEntries(state.pending.map((key) => [key, timer(dueOf[key], { _tag: 'Rang', key } as const)])),
+      operations: {},
+      project: (state) => state.seen.length,
+      indexes: {},
+    }
+    return Effect.runPromise(rehearse(
+      clock,
+      { flags: {}, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        const early = yield* rehearsal.pending('early')
+        const late = yield* rehearsal.pending('late')
+        expect(yield* rehearsal.fire(late)).toBe('Delivered')
+        expect(yield* rehearsal.fire(early)).toBe('Delivered')
+        yield* rehearsal.send({ _tag: 'Ping' }, { _tag: 'Tester' })
+        expect((yield* rehearsal.state).seen.map(DateTime.formatIso))
+          .toEqual([dueOf.late, dueOf.late, dueOf.late].map(DateTime.formatIso))
       }),
     ))
   })
