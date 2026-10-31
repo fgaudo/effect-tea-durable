@@ -558,6 +558,59 @@ describe('passivation', () => {
     }
   }, 30_000)
 
+  test('a process over its capacity unloads the least recently used of the idle entities, however the fibers yield', async () => {
+    const tester = { _tag: 'Tester' } as const
+    // Each budget moves the points where the entity told to leave may run between two steps of the caller.
+    const budgets = Array.from({ length: 198 }, (_, n) => n + 3)
+    for (const budget of budgets) {
+      await database(Effect.gen(function*() {
+        const { layer } = yield* hands()
+        const { entities, unloaded } = unloads()
+        const at = yield* DateTime.now
+        // A wait that never runs out in the test: only the capacity unloads (decision 0076).
+        yield* process({ unloaded, capacity: { entities: 2 } }, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            for (const entity of ['e-1', 'e-2']) yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+            yield* runtime.settled
+            const left = [[...entities]]
+            // `e-1` is used again, so `e-2` is the least recently used when a third enters, and it has left
+            // once the process is settled.
+            yield* toy.send('e-1', { _tag: 'Refuse', nonce: 'n-1' }, { requestId: 'r-1', sender: tester })
+            yield* runtime.settled
+            yield* toy.create('e-3', { at }, { requestId: 'e-3', sender: tester })
+            yield* runtime.settled
+            left.push([...entities])
+            // A caller loads it again, and `e-1` leaves in its turn.
+            yield* toy.send('e-2', { _tag: 'Refuse', nonce: 'n-2' }, { requestId: 'r-2', sender: tester })
+            yield* runtime.settled
+            left.push([...entities])
+            expect({ budget, left }).toEqual({ budget, left: [[], ['e-2'], ['e-2', 'e-1']] })
+          }))
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+  }, 30_000)
+
+  test('a busy entity is never unloaded for the capacity, and a capacity of none is refused', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      // An entity whose operations are under way stays: the process holds more than its capacity.
+      const { layer } = yield* hands({ holds: true })
+      yield* process({ unloaded, capacity: { entities: 1 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          for (const entity of ['f-1', 'f-2']) {
+            yield* ran(toy.create(entity, { at }, { requestId: entity, sender: { _tag: 'Tester' } }))
+          }
+          expect(entities).toEqual([])
+        }))
+      // A capacity of no entity at all is the launcher's defect.
+      const exit = yield* Effect.exit(process({ capacity: { entities: 0 } }, () => Effect.void))
+      const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+      expect(cause instanceof InvariantDefect && cause.reason).toBe('the capacity is 0, which is no positive integer')
+    })))
+
   test('a caller loads an unloaded entity again, and is answered', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()

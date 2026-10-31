@@ -287,7 +287,9 @@ it can read ([decision 0043](decisions/0043-a-row-no-version-reads-fails-what-re
   which only an activation runs again, and with those whose mailbox holds a message a crash left before its
   step; the stored times wake the rest — except a suspended entity's, which nothing of fires
   until an operator resumes it ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md),
-  [decision 0071](decisions/0071-a-process-starts-the-entities-with-a-message.md)).
+  [decision 0071](decisions/0071-a-process-starts-the-entities-with-a-message.md)). A process launched with a
+  capacity unloads the least recently used of its idle entities as soon as it holds more, and never a busy one
+  ([decision 0076](decisions/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md)).
 
 These rules are a pure state machine, [`src/machine.ts`](../src/machine.ts): its events are a message arriving,
 an operation completing or dying, a timer firing, a step, the process dying, and an operator resuming or

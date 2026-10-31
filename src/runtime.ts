@@ -94,6 +94,12 @@ export interface Options {
    * it runs out the entity is unloaded, or waits again if it still has something to do (decision 0029).
    */
   readonly passivate?: Readonly<{ millis: number }>
+  /**
+   * How many entities the process holds, of every program, before it unloads the least recently used of those
+   * with nothing to do, without waiting for their passivation. One with something to do is never unloaded for it,
+   * so the process holds more only while what it holds is busy. None by default: time alone unloads (decision 0076).
+   */
+  readonly capacity?: Readonly<{ entities: number }>
 }
 
 /** What a caller does with one program's entities. */
@@ -181,17 +187,26 @@ export interface Runtime {
     program: Program<T>,
   ) => Effect.Effect<Handle<T>, never, Exclude<T['services'], Entities>>
   /**
-   * Waits until nothing is under way: no event waits, no mailbox holds a message, no operation runs, and no
-   * stored timer of an entity this process has unloaded is due (decision 0029).
+   * Waits until nothing is under way: no event waits, no mailbox holds a message, no operation runs, no entity
+   * told to leave is still held (decision 0076), and no stored timer of an entity this process has unloaded is due
+   * (decision 0029).
    */
   readonly settled: Effect.Effect<void>
 }
+
+/**
+ * What tells an entity's loop to unload it now, as if its wait had run out: put in its queue of events, so that
+ * the loop takes it or an event, and loses neither (decision 0076). It is no event, and is not counted as one.
+ */
+type Evict = Readonly<{ _tag: 'Evict' }>
 
 /** An entity loaded in this process: its machine, the events waiting, and what is running for it. */
 interface Loaded<T extends Types> {
   machine: Machine.Machine<T>
   applying: boolean
-  readonly events: Queue.Queue<Machine.Offered<T>>
+  readonly events: Queue.Queue<Machine.Offered<T> | Evict>
+  /** Told to leave the process, and not taken that yet: until its loop does, the process is not settled. */
+  evicted: boolean
   /**
    * The events offered and not yet applied: counted as each is offered, and until its step is done, so that an
    * event taken off the queue and not yet applied is still under way (decision 0063).
@@ -325,6 +340,15 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       probe({ _tag: 'Applied', entity, event: event as Machine.Event<never> })
     const retry = options.retry?.millis ?? 10
     const passivate = options.passivate?.millis ?? 30_000
+    const capacity = options.capacity?.entities
+    if (capacity !== undefined && !(Number.isSafeInteger(capacity) && capacity > 0)) {
+      return yield* Effect.die(new InvariantDefect({ reason: `the capacity is ${capacity}, which is no positive integer` }))
+    }
+    /**
+     * Every entity this process holds, of every program, from the least recently used: an entity is used when it is
+     * loaded and when an event is offered to it. It is what a process over its capacity unloads first (decision 0076).
+     */
+    const recent = new Map<string, Loaded<never>>()
 
     const deployment = <T extends Types>(name: string): Deployment<T> | undefined =>
       deployments.get(name) as Deployment<T> | undefined
@@ -378,12 +402,44 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         return { caller, forget }
       })
 
-    /** Offers an event to a loaded entity, counted until its step is done (decision 0063). */
+    /**
+     * Offers an event to a loaded entity, counted until its step is done (decision 0063), and the entity is the most
+     * recently used, if it is still held (decision 0076).
+     */
     const offer = <T extends Types>(loaded: Loaded<T>, event: Machine.Offered<T>) =>
       Effect.sync(() => {
         loaded.pending += 1
         Queue.offerUnsafe(loaded.events, event)
+        const address = addressOf(loaded.machine.stored)
+        if (recent.get(address) !== (loaded as unknown as Loaded<never>)) return
+        recent.delete(address)
+        recent.set(address, loaded as unknown as Loaded<never>)
       })
+
+    /**
+     * An entity enters the process. Once the process holds more than its capacity, the least recently used of the
+     * entities with nothing to do are told to leave, as many as it holds too many, the one entering aside: their
+     * loops unload them, each under its own lock, so nothing here waits for another entity's lock while this one's
+     * is held (decisions 0067, 0076).
+     */
+    const enter = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) => {
+      const { id } = loaded.machine.stored
+      deployed.loaded.set(id, loaded)
+      recent.set(addressOf(loaded.machine.stored), loaded as unknown as Loaded<never>)
+      if (capacity === undefined) return
+      let over = recent.size - capacity
+      for (const other of recent.values()) {
+        if (over <= 0) return
+        if (other === (loaded as unknown as Loaded<never>)) continue
+        if (other.evicted) {
+          over -= 1
+        } else if (nothingToDo(other)) {
+          other.evicted = true
+          Queue.offerUnsafe(other.events, { _tag: 'Evict' })
+          over -= 1
+        }
+      }
+    }
 
     /** Wakes every sender waiting for the entity's resumption: it sends again, and is answered (decision 0063). */
     const wake = (entity: Address) => {
@@ -625,6 +681,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       Effect.sync(() => {
         const { id } = loaded.machine.stored
         if (deployed.loaded.get(id) === loaded) deployed.loaded.delete(id)
+        const address = addressOf(loaded.machine.stored)
+        if (recent.get(address) === (loaded as unknown as Loaded<never>)) recent.delete(address)
         deployed.waker.busy = true
         Queue.offerUnsafe(deployed.waker.poke, undefined)
         end()
@@ -675,9 +733,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
 
     /**
      * The entity's loop: while its mailbox holds a message, it is handled, one transaction each; otherwise the
-     * loop waits for an event, and the entity is unloaded if none comes for long enough. A suspended entity only
-     * waits (decision 0006). The wait times out, never the take: an event taken is always applied. A loop that
-     * dies crashes its entity, and an interruption is the process's crash (decision 0042).
+     * loop waits for an event, and the entity is unloaded if none comes for long enough, or once it is told to
+     * leave a process over its capacity (decision 0076). A suspended entity only waits (decision 0006). The wait
+     * times out, never the take: an event taken is always applied. A loop that dies crashes its entity, and an
+     * interruption is the process's crash (decision 0042).
      */
     const loop = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>): Effect.Effect<void> =>
       steps(deployed, loaded).pipe(
@@ -698,17 +757,27 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           )
         }
         return Effect.timeoutOption(Queue.take(loaded.events), `${passivate} millis`).pipe(
-          Effect.flatMap((taken) =>
-            taken._tag === 'Some'
-              ? Effect.flatMap(
+          Effect.flatMap((taken) => {
+            if (taken._tag === 'Some' && taken.value._tag !== 'Evict') {
+              return Effect.flatMap(
                 apply(deployed, loaded, taken.value).pipe(Effect.ensuring(Effect.sync(() => {
                   loaded.pending -= 1
                   end()
                 }))),
                 () => next,
               )
-              : Effect.flatMap(unload(deployed, loaded), (gone) => (gone ? Effect.void : next))
-          ),
+            }
+            // An entity told to leave that has something to do by now stays, and may be told again.
+            const evicted = taken._tag === 'Some'
+            return Effect.flatMap(unload(deployed, loaded), (gone) =>
+              Effect.suspend(() => {
+                if (evicted) {
+                  loaded.evicted = false
+                  end()
+                }
+                return gone ? Effect.void : next
+              }))
+          }),
         )
       })
       return next
@@ -720,12 +789,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const loaded: Loaded<T> = {
           machine: { stored, running: {} },
           applying: false,
-          events: yield* Queue.unbounded<Machine.Offered<T>>(),
+          events: yield* Queue.unbounded<Machine.Offered<T> | Evict>(),
+          evicted: false,
           pending: 0,
           operations: new Map(),
           timers: new Map(),
         }
-        deployed.loaded.set(stored.id, loaded)
+        enter(deployed, loaded)
         // Before anything else: the stored state says what runs (decision 0003). An activation that cannot finish
         // leaves nothing loaded, and its caller gets the defect (decision 0042).
         yield* apply(deployed, loaded, { _tag: 'Restart' }).pipe(
@@ -795,7 +865,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           const loaded: Loaded<T> = {
             machine: started.machine,
             applying: false,
-            events: yield* Queue.unbounded<Machine.Offered<T>>(),
+            events: yield* Queue.unbounded<Machine.Offered<T> | Evict>(),
+            evicted: false,
             pending: 0,
             operations: new Map(),
             timers: new Map(),
@@ -806,7 +877,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           // The entity exists from here: its creation is the first event committed for it.
           yield* observe(entity, creation)
           yield* at('AfterCommit', entity, creation)
-          deployed.loaded.set(id, loaded)
+          enter(deployed, loaded)
           // Each point of the crash table is given the creation, its event: `AfterReply` too.
           yield* perform(deployed, loaded, entity, creation, started.outputs).pipe(
             Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
@@ -1045,6 +1116,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           const { stored } = loaded.machine
           if (loaded.applying || loaded.pending > 0 || loaded.operations.size > 0) return false
           if (stored.suspension === null && stored.mailbox.length > 0) return false
+          // An entity told to leave has not left yet (decision 0076).
+          if (loaded.evicted) return false
         }
       }
       return true

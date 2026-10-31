@@ -49,9 +49,11 @@ transaction, and a burst waits in memory, where the runtime bounds nothing
 ([decision 0074](decisions/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)).
 
 What comes next is chosen among the [open questions](open-questions.md): those Effect Cluster's step depends on
-before it. The first is decided: a process deploys a name once, and a new version is a new process
-([decision 0075](decisions/0075-a-name-is-deployed-once-in-a-process.md)). The next is
-[how many entities a process holds](open-questions.md#running).
+before it. Two are decided: a process deploys a name once, and a new version is a new process
+([decision 0075](decisions/0075-a-name-is-deployed-once-in-a-process.md)); and a process launched with a capacity
+unloads the least recently used of its idle entities once it holds more
+([decision 0076](decisions/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md)). The next is
+[an entity the waker cannot load](open-questions.md#running), whose failure stops a program's timers.
 
 ## Later
 
