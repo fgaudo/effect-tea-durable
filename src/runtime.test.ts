@@ -15,6 +15,7 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import fc from 'fast-check'
+import * as Scheduler from 'effect/Scheduler'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
@@ -498,6 +499,35 @@ describe('passivation', () => {
       const stored = yield* persisted
       expect(stored).toEqual(replayed(stored?.state.since ?? at, events))
     })))
+
+  test('the process settles and a stored timer wakes its entity, however often the fibers yield', async () => {
+    // Each budget is how many steps a fiber takes before it yields, which moves every point where one fiber may
+    // run between two steps of another (decision 0068). Below 3 a fiber does nothing but yield.
+    const budgets = Array.from({ length: 398 }, (_, n) => n + 3)
+    for (const budget of budgets) {
+      await database(Effect.gen(function*() {
+        const { layer } = yield* hands()
+        const { entities, unloaded } = unloads()
+        const at = yield* DateTime.now
+        yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+            // An operation that ended before it was held would be counted as running for ever, and this would
+            // never return, which the test's own timeout reports.
+            yield* runtime.settled
+            yield* TestClock.adjust('5 millis')
+            yield* TestClock.adjust('60 millis')
+            yield* runtime.settled
+            expect({ budget, read: yield* toy.read(id), unloaded: entities }).toEqual({
+              budget,
+              read: 0,
+              unloaded: [id, id],
+            })
+          }))
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+  }, 30_000)
 
   test('a caller loads an unloaded entity again, and is answered', () =>
     database(Effect.gen(function*() {

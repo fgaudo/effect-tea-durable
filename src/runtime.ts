@@ -248,16 +248,6 @@ const counted = <A>(
     return effect
   })
 
-/**
- * Tells the waker that the set of unloaded entities changed. Its flag and its poke are set in one step, and the
- * waker clears the flag in one step too, so the process is never settled with a poke nobody has taken.
- */
-const poke = (waker: Waker) =>
-  Effect.sync(() => {
-    waker.busy = true
-    Queue.offerUnsafe(waker.poke, undefined)
-  })
-
 export const launch = (options: Options = {}): Effect.Effect<Runtime, never, SqlClient.SqlClient | Scope.Scope> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
@@ -423,6 +413,33 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         for (const id of [...loaded.timers.keys()]) yield* stop(loaded.timers, id)
       })
 
+    /**
+     * Forks `effect` in `scope`, held under `id` while it runs. The forking fiber may yield between the fork and the
+     * registration, and the fiber end meanwhile: one that has ended is never held, and its end is told after it has
+     * left `held`, in one step, so nothing ended is counted as running (decision 0068).
+     */
+    const forkHeld = (
+      held: Map<string, Fiber.Fiber<void>>,
+      id: string,
+      scope: Scope.Scope,
+      effect: Effect.Effect<void>,
+    ) =>
+      Effect.gen(function*() {
+        let done = false
+        const fiber = yield* Effect.forkIn(
+          Effect.ensuring(
+            effect,
+            Effect.sync(() => {
+              done = true
+              held.delete(id)
+              end()
+            }),
+          ),
+          scope,
+        )
+        if (!done) held.set(id, fiber)
+      })
+
     /** Starts an operation: its message is offered as a `Complete`, a defect of it as a `Die`. */
     const start = <T extends Types>(
       deployed: Deployment<T>,
@@ -445,7 +462,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const run = Effect.suspend(() =>
           runner.delivery === 'Idempotent' ? runner.run(operation, idempotencyKey) : runner.run(operation)
         )
-        const fiber = yield* Effect.forkIn(
+        yield* forkHeld(
+          loaded.operations,
+          under(key, incarnation),
+          deployed.scope,
           deployed.run(
             Effect.gen(function*() {
               const exit = yield* Effect.exit(run)
@@ -458,15 +478,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               // The requests it sends are this run's: an entity cannot pass for another, nor an operation for
               // another (decisions 0009, 0060).
               Effect.provideService(Entities, entities(entity, key, incarnation)),
-              Effect.ensuring(Effect.sync(() => {
-                loaded.operations.delete(under(key, incarnation))
-                end()
-              })),
             ),
           ),
-          deployed.scope,
         )
-        loaded.operations.set(under(key, incarnation), fiber)
       })
 
     /** Arms a timer: its time comes, and `Fire` is offered. A passivated entity would be woken by `due` instead. */
@@ -479,14 +493,15 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const { key, incarnation, timer } = output
         const now = yield* DateTime.now
         const millis = Math.max(0, DateTime.toEpochMillis(timer.at) - DateTime.toEpochMillis(now))
-        const fiber = yield* Effect.forkIn(
+        yield* forkHeld(
+          loaded.timers,
+          under(key, incarnation),
+          deployed.scope,
           Effect.gen(function*() {
             yield* Effect.sleep(`${millis} millis`)
             yield* offer(loaded, { _tag: 'Fire', key, incarnation })
-          }).pipe(Effect.ensuring(Effect.sync(() => loaded.timers.delete(under(key, incarnation))))),
-          deployed.scope,
+          }),
         )
-        loaded.timers.set(under(key, incarnation), fiber)
       })
 
     const perform = <T extends Types>(
@@ -582,6 +597,22 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     }
 
     /**
+     * The entity leaves this process, and the waker is told in the same step (decision 0068): a reading of the
+     * stored timers that left the entity out as held is made again, and one made after counts its timers, so there
+     * is no moment at which they are neither armed here nor counted among the stored ones. The waker's flag and its
+     * poke are set together, and the waker clears them in one step too, so the process is never settled with a
+     * poke nobody has taken.
+     */
+    const leave = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) =>
+      Effect.sync(() => {
+        const { id } = loaded.machine.stored
+        if (deployed.loaded.get(id) === loaded) deployed.loaded.delete(id)
+        deployed.waker.busy = true
+        Queue.offerUnsafe(deployed.waker.poke, undefined)
+        end()
+      })
+
+    /**
      * Unloads the entity: its timers stop, and what the state holds is what wakes it again — to the machine a
      * `Restart`, a crash this process chose (decision 0029). Under the entity's lock, so that no caller is between
      * finding the entity and offering its event; it gives whether the entity is gone.
@@ -590,11 +621,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       holding(loaded.machine.stored)(Effect.gen(function*() {
         const { id } = loaded.machine.stored
         if (!nothingToDo(loaded) || deployed.loaded.get(id) !== loaded) return false
-        // The waker is told before the entity leaves this process: there is no moment at which the entity's timers
-        // are neither armed here nor counted among the stored ones.
-        yield* poke(deployed.waker)
-        deployed.loaded.delete(id)
-        end()
+        yield* leave(deployed, loaded)
         // A timer that fires between here and its interruption delivers nothing, and the stored time stands.
         yield* stopAll(loaded)
         yield* unloaded({ name: deployed.program.name, id })
@@ -612,8 +639,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const crash = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>, cause: Cause.Cause<never>) =>
       Effect.gen(function*() {
         const { name, id } = loaded.machine.stored
-        if (deployed.loaded.get(id) === loaded) deployed.loaded.delete(id)
-        end()
+        // Its stored timers are the waker's again.
+        yield* leave(deployed, loaded)
         yield* Effect.forkIn(stopAll(loaded), deployed.scope)
         const address = addressOf({ name, id })
         const fail = <A>(waiting: Waiting<A>) =>
@@ -626,8 +653,6 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           })
         yield* fail(messages)
         yield* fail(creations)
-        // Its stored timers are the waker's again.
-        yield* poke(deployed.waker)
       })
 
     /**
