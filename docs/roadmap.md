@@ -24,8 +24,9 @@ machine holds no replies, and only a step changes it
 time instead of waiting for it ([decision 0066](decisions/0066-the-runtimes-tests-move-time.md)). Each step is
 decided in a note before it is made.
 
-The open questions that bear on cost — [a mailbox under a burst](open-questions.md#storage-and-reading) and
-[one permit for the process](open-questions.md#running) — are decided next: a machine holds only its state, its
+The open questions that bear on cost are decided next. The first is: each entity is held by a lock of its own,
+not by one permit for the process ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)). The
+one left is [a mailbox under a burst](open-questions.md#storage-and-reading): a machine holds only its state, its
 keys and its mailbox ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)), and an event writes only
 what it changed ([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)).
 

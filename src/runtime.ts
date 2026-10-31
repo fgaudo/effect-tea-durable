@@ -262,8 +262,6 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     const scope = yield* Effect.scope
-    // Loading an entity, and creating one, is one at a time: two callers never build two machines for one entity.
-    const registry = yield* Semaphore.make(1)
     const deployments = new Map<string, Deployment<never>>()
     /**
      * The callers waiting for a reply, by entity and then by request: a retry of a queued message waits with the
@@ -292,6 +290,29 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * resumption between its being answered `Suspended` and its waiting is not missed (decisions 0010, 0063).
      */
     const resumptions = new Map<string, Set<Deferred.Deferred<void>>>()
+    /**
+     * Each entity's lock, by entity, while someone holds or waits for it (decision 0067): what finds, loads, creates,
+     * unloads or crashes an entity holds it, so that no caller is between finding the entity and offering its event
+     * when it leaves the process, and two callers never build two machines for it (decisions 0029, 0042).
+     */
+    const locks = new Map<string, { readonly semaphore: Semaphore.Semaphore; users: number }>()
+    const holding = (entity: Address) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
+      const address = addressOf(entity)
+      return Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const lock = locks.get(address) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
+          lock.users += 1
+          locks.set(address, lock)
+          return lock
+        }),
+        (lock) => lock.semaphore.withPermits(1)(effect),
+        (lock) =>
+          Effect.sync(() => {
+            lock.users -= 1
+            if (lock.users === 0) locks.delete(address)
+          }),
+      )
+    }
     const at = options.at ?? (() => Effect.void)
     const observe = options.observe ?? (() => Effect.void)
     const unloaded = options.unloaded ?? (() => Effect.void)
@@ -318,8 +339,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     }
 
     /**
-     * Registers a caller and offers its event. It is done while the entity is held — the registry's permit — so
-     * that an entity is never unloaded between a caller finding it and its event being offered (decision 0029).
+     * Registers a caller and offers its event. It is done while the entity is held — its lock — so that an entity
+     * is never unloaded between a caller finding it and its event being offered (decisions 0029, 0067).
      */
     const ask = <T extends Types, A>(
       waiting: Waiting<A>,
@@ -562,15 +583,15 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
 
     /**
      * Unloads the entity: its timers stop, and what the state holds is what wakes it again — to the machine a
-     * `Restart`, a crash this process chose (decision 0029). Under the registry's permit, so that no caller is
-     * between finding the entity and offering its event; it gives whether the entity is gone.
+     * `Restart`, a crash this process chose (decision 0029). Under the entity's lock, so that no caller is between
+     * finding the entity and offering its event; it gives whether the entity is gone.
      */
     const unload = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) =>
-      registry.withPermits(1)(Effect.gen(function*() {
+      holding(loaded.machine.stored)(Effect.gen(function*() {
         const { id } = loaded.machine.stored
         if (!nothingToDo(loaded) || deployed.loaded.get(id) !== loaded) return false
-        // The waker is told before the entity leaves this process, and holds the permit while it reads: there is
-        // no moment at which the entity's timers are neither armed here nor counted among the stored ones.
+        // The waker is told before the entity leaves this process: there is no moment at which the entity's timers
+        // are neither armed here nor counted among the stored ones.
         yield* poke(deployed.waker)
         deployed.loaded.delete(id)
         end()
@@ -584,9 +605,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * An event the runtime could not finish — a write that failed, a hook that died — is a crash of its entity
      * alone: the entity leaves this process, its work stops, and its waiting callers are given the defect, to
      * retry. What is stored is what its next activation starts from, as after a crash of the process. Called
-     * where the registry's permit is held, so that no caller is between finding the entity and offering its event
-     * (decision 0042); the interruption of its work is forked, since it waits for the operations' finalizers, and
-     * nothing else waits for them under the permit (decision 0056).
+     * where the entity's lock is held, so that no caller is between finding the entity and offering its event
+     * (decisions 0042, 0067); the interruption of its work is forked, since it waits for the operations'
+     * finalizers, and nothing else waits for them under the lock (decision 0056).
      */
     const crash = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>, cause: Cause.Cause<never>) =>
       Effect.gen(function*() {
@@ -620,7 +641,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause)
             ? Effect.failCause(cause)
-            : registry.withPermits(1)(crash(deployed, loaded, cause))
+            : holding(loaded.machine.stored)(crash(deployed, loaded, cause))
         ),
       )
 
@@ -673,15 +694,15 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
 
     /**
      * Runs `found` on the entity `id` of `deployed`, loaded from storage when this process does not hold it, and
-     * while the entity is held: the registry's permit is what keeps it from being unloaded meanwhile
-     * (decision 0029).
+     * while the entity is held: its lock is what keeps it from being unloaded meanwhile, and what makes a caller
+     * of an entity being activated wait for that activation (decisions 0029, 0067).
      */
     const withEntity = <T extends Types, A>(
       deployed: Deployment<T>,
       id: string,
       found: (loaded: Loaded<T> | null) => Effect.Effect<A>,
     ) =>
-      registry.withPermits(1)(Effect.gen(function*() {
+      holding({ name: deployed.program.name, id })(Effect.gen(function*() {
         const loaded = deployed.loaded.get(id)
         if (loaded !== undefined) return yield* found(loaded)
         const stored = yield* deployed.storage.load(id)
@@ -714,7 +735,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           },
           catch: (defect) => new Faulted({ defect }),
         })
-        const asked = yield* registry.withPermits(1)(Effect.gen(function*() {
+        const asked = yield* holding(entity)(Effect.gen(function*() {
           const held = deployed.loaded.get(id) ?? null
           // The entity was already there: the machine answers the request from what is stored (decision 0017).
           if (held !== null) return yield* ask(creations, held, entity, requested, { _tag: 'Create', request })

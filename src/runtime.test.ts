@@ -666,6 +666,50 @@ describe('passivation', () => {
       // Every message was applied once. The callers are concurrent, so the order is the mailbox's, not theirs.
       expect([...(stored?.state.applied ?? [])].sort()).toEqual(nonces.map((nth) => `n${nth}`).sort())
     })))
+
+  test('an activation holds its own entity alone, and its callers wait for the one machine it builds', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const { events, observe } = log()
+      const at = yield* DateTime.now
+      const tester = { _tag: 'Tester' } as const
+      const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
+      // Two entities left with their timers alone, which the next process does not hold.
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('slow', { at }, { requestId: 'c-slow', sender: tester })
+          yield* toy.create('other', { at }, { requestId: 'c-other', sender: tester })
+          yield* runtime.settled
+        }))
+      const gate = yield* Deferred.make<void>()
+      yield* process({
+        // The activation of the first entity holds once its `Restart` is applied, as a slow database would. It
+        // writes nothing, so no point of the crash table sees it.
+        observe: (entity, event) =>
+          Effect.andThen(
+            observe(entity, event),
+            entity.id === 'slow' && event._tag === 'Restart' ? Deferred.await(gate) : Effect.void,
+          ),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const first = yield* running(toy.send('slow', want('n-1'), { requestId: 'r-1', sender: tester }))
+          const second = yield* running(toy.send('slow', want('n-2'), { requestId: 'r-2', sender: tester }))
+          // Another entity is loaded and answered meanwhile (decision 0067). A wait for the activation held would
+          // hold this call for ever, which the test's own timeout reports.
+          expect(yield* toy.send('other', want('n-3'), { requestId: 'r-3', sender: tester }))
+            .toEqual({ _tag: 'Accepted' })
+          yield* Deferred.succeed(gate, undefined)
+          expect(yield* Fiber.join(first)).toEqual({ _tag: 'Accepted' })
+          expect(yield* Fiber.join(second)).toEqual({ _tag: 'Accepted' })
+          yield* runtime.settled
+        }))
+      // One machine was built for the entity held, whichever caller came first.
+      expect(events.filter((event) => event._tag === 'Restart').length).toBe(2)
+      const stored = yield* storage(program, yield* SqlClient.SqlClient).load('slow')
+      expect([...(stored?.state.applied ?? [])].sort()).toEqual(['n-1', 'n-2'])
+    })))
 })
 
 describe('the crash table', () => {
@@ -1601,7 +1645,7 @@ describe('what the runtime cannot finish', () => {
         }))
     })))
 
-  test('a crash does not wait for its operations to stop: nothing else waits for them under the permit', () =>
+  test('a crash does not wait for its operations to stop: nothing waits for them under its entity’s lock', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const released = yield* Deferred.make<void>()
@@ -1619,20 +1663,27 @@ describe('what the runtime cannot finish', () => {
             ),
         }),
       )
+      let dies = true
       yield* process({
-        observe: (entity, event) =>
-          entity.id === 'slow' && event._tag === 'Receive' ? Effect.die('the runtime failed') : Effect.void,
+        observe: (entity, event) => {
+          if (entity.id !== 'slow' || event._tag !== 'Receive' || !dies) return Effect.void
+          dies = false
+          return Effect.die('the runtime failed')
+        },
       }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create('slow', { at }, { requestId: 'c-slow', sender: tester })
           yield* toy.create('other', { at }, { requestId: 'c-other', sender: tester })
           // The crash of the first entity interrupts its operations, which take their time to stop (decision 0056).
-          // A wait under the permit would hold every call below for ever, which the test's own timeout reports.
+          // A wait under the entity's lock would hold the calls to it below for ever, which the test's own timeout
+          // reports.
           const failed = yield* Effect.exit(toy.send('slow', want('n-1'), { requestId: 'r-1', sender: tester }))
           expect(Exit.isFailure(failed)).toBe(true)
-          // Meanwhile, every other entity is reached, loaded or not.
-          expect(yield* toy.send('other', want('n-2'), { requestId: 'r-2', sender: tester }))
+          // Meanwhile, the entity is loaded again and answered, and so is every other one (decision 0067).
+          expect(yield* toy.send('slow', want('n-2'), { requestId: 'r-2', sender: tester }))
+            .toEqual({ _tag: 'Accepted' })
+          expect(yield* toy.send('other', want('n-3'), { requestId: 'r-3', sender: tester }))
             .toEqual({ _tag: 'Accepted' })
           // The crash did interrupt it: it is stopping, and stops once the test lets it.
           yield* Deferred.await(stopping)
