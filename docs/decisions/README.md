@@ -167,8 +167,9 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 Each review of the notes, as [decision 0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md)
 has them made: the notes it read, and what it found.
 
-A review can take each rule of the code out, one at a time, with [`scripts/mutate.ts`](../../scripts/mutate.ts),
-which runs the tests against each. The mutations are written for the code the review reads, and are not kept.
+A review takes out the rules its notes decide, one at a time, with [`scripts/mutate.ts`](../../scripts/mutate.ts),
+which runs the tests and the compiler against each mutation it is given, and checks nothing else. The mutations are
+written for the code the review reads, and are not kept.
 
 | Date | Read | Found |
 | --- | --- | --- |

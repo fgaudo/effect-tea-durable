@@ -9,8 +9,8 @@ First, the notes 0001 to 0079 that no review read are reviewed, in lots of about
 did not write them, and their premises about a dependency are checked by a spike kept in `spikes/`
 ([decision 0097](decisions/0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md)). Each lot is listed
 in the [reviews](decisions/README.md#reviews); the backlog is done when 0079 is read. The next lot is 0076 to 0079;
-[`scripts/mutate.ts`](../scripts/mutate.ts) takes out each rule of the code its notes decide, and runs the tests
-against it.
+[`scripts/mutate.ts`](../scripts/mutate.ts) runs the tests against each rule of its notes the review takes out, as
+[`AGENTS.md`](../AGENTS.md) says.
 
 The bugs of the third audit are fixed: a creation and a message under one request id are answered apart
 ([decision 0050](decisions/0050-a-creation-is-answered-apart-from-a-message.md)), and a deploy that fails
