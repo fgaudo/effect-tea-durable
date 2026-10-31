@@ -465,7 +465,9 @@ that what an event writes, applied to the rows before it, gives the rows after i
 ## Where it runs
 
 On one process, with SQLite: the mailbox, the states and the timers sit in one database, so each step is one
-transaction ([decision 0007](decisions/0007-one-process-first.md)). `launch` gives a runtime, `deploy(program)`
+transaction ([decision 0007](decisions/0007-one-process-first.md)). A runtime holds its database until it
+ends: a second runtime on it, or a launch while another connection has the file open, dies as it launches
+([decision 0080](decisions/0080-a-database-is-held-by-one-runtime.md)). `launch` gives a runtime, `deploy(program)`
 a handle to one program's entities — `create`, `send`, `read`, and `resume` and `discard` for an operator — and
 the operations of a program are run with the services it was deployed with
 ([`src/runtime.ts`](../src/runtime.ts), [decision 0028](decisions/0028-rules-the-runtime-settled.md)).

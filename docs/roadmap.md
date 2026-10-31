@@ -58,8 +58,11 @@ tries an entity it cannot load again after the retry, instead of dying with the 
 a timer due is no spare entity, and a registered deploy keeps its name
 ([decision 0078](decisions/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)), and it
 found a bug older than them, fixed too: what a caller sets going — an activation, a creation — is finished
-without it ([decision 0079](decisions/0079-what-a-caller-sets-going-is-finished-without-it.md)). The next is
-[two versions at once](open-questions.md#running), which a rolling deploy across processes meets first.
+without it ([decision 0079](decisions/0079-what-a-caller-sets-going-is-finished-without-it.md)). Checking the next,
+[two versions at once](open-questions.md#running), found that nothing kept two runtimes off one database, and lost
+a step to it; it is fixed: a database is held by one runtime
+([decision 0080](decisions/0080-a-database-is-held-by-one-runtime.md)). Two versions at once needs two processes on
+one store, so it waits for what Effect Cluster says of which process holds which entities.
 
 ## Later
 

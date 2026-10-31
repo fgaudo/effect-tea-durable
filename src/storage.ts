@@ -8,10 +8,12 @@
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
+import type * as Scope from 'effect/Scope'
 import { SqlClient } from 'effect/sql'
 import * as Machine from './machine.ts'
 import {
   type Durable,
+  InvariantDefect,
   type Json,
   type Migrated,
   migrationOf,
@@ -22,6 +24,41 @@ import {
   type Types,
   versionOf,
 } from './program.ts'
+
+/** The clients a runtime of this process holds: another runtime on one of them is refused (decision 0080). */
+const held = new WeakSet<SqlClient.SqlClient>()
+
+/**
+ * Holds the database for one runtime until the scope ends (decision 0080): the client in this process, claimed in
+ * one synchronous step, and the file by SQLite's exclusive locking mode, which a write takes only while no other
+ * connection has the file open, which keeps every other from opening it, and which the end of the process gives
+ * back, however it ends. A database another runtime holds, or another connection has open, is the launcher's
+ * defect.
+ */
+export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> = Effect.gen(function*() {
+  const sql = yield* SqlClient.SqlClient
+  const refused = () => new InvariantDefect({
+    reason: 'the database is held by another runtime, or open to another connection',
+  })
+  yield* Effect.acquireRelease(
+    Effect.sync(() => {
+      if (held.has(sql)) throw refused()
+      held.add(sql)
+    }),
+    () => Effect.sync(() => held.delete(sql)),
+  )
+  // The mode is the connection's, and is taken or given back by the next access of the file.
+  const take = Effect.andThen(sql`PRAGMA locking_mode = EXCLUSIVE`, sql.withTransaction(Effect.void))
+  const give = Effect.ignore(Effect.andThen(sql`PRAGMA locking_mode = NORMAL`, sql.withTransaction(Effect.void)))
+  yield* Effect.acquireRelease(
+    take.pipe(
+      Effect.mapError((error) => error.reason._tag === 'LockTimeoutError' ? refused() : error),
+      Effect.onError(() => give),
+      Effect.orDie,
+    ),
+    () => give,
+  )
+})
 
 /**
  * The tables, created once for the database. Every entity of every program sits in them: the name of the program

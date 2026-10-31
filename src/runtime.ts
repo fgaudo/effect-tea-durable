@@ -40,6 +40,7 @@ import {
   type Consumer,
   type Found,
   type Published,
+  hold,
   type Query,
   storage,
   type Storage,
@@ -288,6 +289,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     const scope = yield* Effect.scope
+    // One runtime holds the database, before anything of this one runs, and lets it go after everything of it has
+    // stopped: the scope ends what it was given last first (decision 0080).
+    yield* hold
     const deployments = new Map<string, Deployment<never>>()
     /** The names deployed in this process, or being deployed: each is deployed once (decision 0075). */
     const names = new Set<string>()

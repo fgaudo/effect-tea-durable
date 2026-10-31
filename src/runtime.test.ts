@@ -15,7 +15,11 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import fc from 'fast-check'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import * as Scheduler from 'effect/Scheduler'
+import * as Scope from 'effect/Scope'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
@@ -2212,4 +2216,88 @@ describe('what the runtime cannot finish', () => {
           yield* runtime.settled
         }))
     })))
+})
+
+describe('a database held by one runtime', () => {
+  const reasonOf = (exit: Exit.Exit<unknown>) => {
+    const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+    return cause instanceof InvariantDefect ? cause.reason : null
+  }
+  const held = 'the database is held by another runtime, or open to another connection'
+
+  test('a runtime holds its database file alone: no other connection opens it, nor launches while one is open', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-'))
+    const filename = join(directory, 'store.db')
+    // A client of the file, as a process opens one, with no busy wait: one that cannot get the file fails at once.
+    const client = (scope: Scope.Scope) =>
+      Effect.map(
+        Scope.provide(Layer.build(SqliteClient.layer({ filename, busyTimeout: 0 })), scope),
+        (context) => Context.get(context, SqlClient.SqlClient),
+      )
+    const on = (sql: SqlClient.SqlClient) => <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      Effect.provideService(effect, SqlClient.SqlClient, sql)
+    return Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const firstScope = yield* Scope.make()
+      const first = yield* client(firstScope)
+      yield* on(first)(createTables)
+      yield* on(first)(process({}, () =>
+        Effect.gen(function*() {
+          // A second process would load the entities the first holds in memory, and one's steps would be lost
+          // under the other's: while a runtime runs, nothing else opens the file (decision 0080).
+          expect(Exit.isFailure(yield* Effect.exit(Effect.scoped(Effect.flatMap(Effect.scope, client)))))
+            .toBe(true)
+        })))
+      // The first runtime has ended and given the file back: another connection opens it, but launches nothing
+      // while the first client is still open on it.
+      const second = yield* client(yield* Effect.scope)
+      expect(reasonOf(yield* Effect.exit(on(second)(process({}, () => Effect.void))))).toBe(held)
+      yield* Scope.close(firstScope, Exit.void)
+      const at = DateTime.makeUnsafe(0)
+      yield* on(second)(process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          expect(yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } }))
+            .toEqual({ _tag: 'Created' })
+        })))
+    })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
+  })
+
+  test('a second runtime on one client dies as it launches, however the launches interleave', async () => {
+    // Each budget moves the points where one launch may run between two steps of the other (decision 0068).
+    const budgets = Array.from({ length: 48 }, (_, n) => n + 3)
+    for (const budget of budgets) {
+      await database(Effect.gen(function*() {
+        // How many launched runtimes are running at once: never two.
+        let running = 0
+        let most = 0
+        const body = () =>
+          Effect.ensuring(
+            Effect.andThen(
+              Effect.sync(() => {
+                running += 1
+                most = Math.max(most, running)
+              }),
+              Effect.yieldNow,
+            ),
+            Effect.sync(() => {
+              running -= 1
+            }),
+          )
+        const launch = Effect.exit(process({}, body))
+        const exits = (yield* Effect.all([launch, launch], { concurrency: 'unbounded' })).map(reasonOf)
+        // Either both ran one after the other, or the second met the first and died.
+        expect({ budget, most, made: exits.some((reason) => reason === null) }).toEqual({ budget, most: 1, made: true })
+        expect(exits.every((reason) => reason === null || reason === held)).toBe(true)
+        // Whoever held the client has let it go.
+        expect(reasonOf(yield* Effect.exit(process({}, () => Effect.void)))).toBeNull()
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+  }, 30_000)
+
+  test('two runtimes on one client at once: the second dies', () =>
+    database(process({}, () =>
+      Effect.gen(function*() {
+        expect(reasonOf(yield* Effect.exit(process({}, () => Effect.void)))).toBe(held)
+      }))))
 })
