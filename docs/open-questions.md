@@ -120,6 +120,15 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   message. After how many retries does it become a defect, if ever? And
   should the runtime notice work that comes back at once, turn after turn: a timer kept at a time already past,
   an operation kept on its own completion ([decision 0008](decisions/0008-delivered-work-is-done.md))?
+- **Bookkeeping in transactions.** What another fiber reads changes in one synchronous step
+  ([decision 0068](decisions/0068-what-another-fiber-reads-changes-in-one-step.md)): a rule kept by hand, which
+  a step that waits cannot keep. The waker reads the entities held and then waits for a poke, and only the steps
+  between the two keep a timer from being slept past. Effect's `Tx` modules (`TxRef`, `TxHashMap`, `Effect.tx`,
+  `Effect.txRetry`) would make the reading and the wait one transaction, and `settled` a wait on a condition. A
+  transaction does no I/O, so an entity's lock stays
+  ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)), and holds in one process only. Is it
+  worth it once the runtime is whole, and once Effect Cluster says what bookkeeping a node keeps? The tests that
+  run the runtime under every budget of steps are what such a rewrite is checked against.
 
 ## Naming
 
