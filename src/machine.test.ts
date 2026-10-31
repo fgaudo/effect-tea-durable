@@ -1558,6 +1558,7 @@ describe('who a request belongs to', () => {
     })
     expect(none.outputs).toEqual([{ _tag: 'Replied', request: by('r'), reply: accepted }])
     expect(none.machine.stored.mailbox).toEqual([])
+    expect(none.written?.queued).toEqual([])
     expect(Object.keys(none.machine.stored)).not.toContain('replies')
   })
 

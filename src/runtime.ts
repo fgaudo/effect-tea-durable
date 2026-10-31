@@ -560,7 +560,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     /**
      * One event: the machine's step, written in one transaction, then acted on. A crash at any of the points
      * leaves the entity as the crash table says. A message is given the reply stored under its request, read here,
-     * where no other event of the entity is applied: the machine holds none (decision 0065).
+     * where no other event of the entity is applied: the machine holds none (decision 0065). It is given the time
+     * too, at which it is handled if the mailbox is empty (decision 0074).
      */
     const apply = <T extends Types>(
       deployed: Deployment<T>,
@@ -821,8 +822,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     ): Effect.Effect<Answer<T['rejection']>, Faulted> =>
       Effect.gen(function*() {
         const entity: Address = { name: deployed.program.name, id }
-        // A message waits in the mailbox as its schema writes it: one that does not encode is its caller's defect,
-        // and reaches no entity (decision 0040).
+        // A message is stored as its schema writes it: one that does not encode is its caller's defect, and
+        // reaches no entity (decision 0040).
         const requested = yield* Effect.try({
           try: () => {
             const { schemas } = deployed.program

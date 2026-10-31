@@ -792,9 +792,9 @@ describe('the crash table', () => {
       expect(reached).toEqual(points.map((point) => `${point} Create`))
     })))
 
-  // A message that finds the mailbox empty is handled in its own transaction, so this runtime never leaves one there
-  // (decision 0074); a store a runtime before it wrote, between a message's `Receive` and its step, still has the
-  // entity started (decision 0071).
+  // A caller's message that finds the mailbox empty is handled in the transaction that receives it, so this runtime
+  // never leaves one there (decision 0074); one a store holds from before is handled at the next start
+  // (decision 0071).
   test('a message left in the mailbox of an idle entity is handled at the next start, with no retry', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now

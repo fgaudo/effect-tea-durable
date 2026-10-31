@@ -300,7 +300,7 @@ is a `Restart` stepped by another one, so the machine and the runtime never see 
 
 | The process dies…                                                      | After the restart                                                                 |
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| before a step's transaction commits                                    | the message is handled again, on the stored state; nothing of the step was seen   |
+| before a step's transaction commits                                    | nothing of the step was seen: the message is handled again, a caller's on retry   |
 | after the commit, before the reply reaches the caller                  | the caller retries with the same request id, and gets the stored reply            |
 | after the commit, before the work it started                           | activation computes `durable(state)` and starts it                                |
 | while an operation runs, its effect done in the world but not recorded | it runs again, with the same idempotency key, or delivers `unknown` if at most once |

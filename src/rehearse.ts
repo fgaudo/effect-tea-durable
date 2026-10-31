@@ -105,7 +105,7 @@ export const rehearse = <T extends Types, E>(
         return made
       }), (request) =>
         // Each request is a new one, so none has a reply stored yet (decision 0065).
-        Effect.flatMap(Effect.suspend(() => apply({ _tag: 'Receive', request, message, reply: null, at: now })), (outputs) => {
+        Effect.flatMap(apply({ _tag: 'Receive', request, message, reply: null, at: now }), (outputs) => {
           const key = Machine.requestKey(deployed, request)
           for (const output of outputs) {
             if (output._tag !== 'Replied' || Machine.requestKey(deployed, output.request) !== key) continue
