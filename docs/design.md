@@ -420,6 +420,6 @@ An entity with nothing to do is unloaded, and the earliest of its stored timers 
 runtime. An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
 process, its callers are given the defect, and the next one loads it from what is stored
 ([decision 0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)); nothing else waits
-for its operations to stop ([decision 0056](decisions/0056-nothing-waits-for-an-operation-under-the-permit.md)). Everything a
-deployment runs runs in a scope of its own: a deploy that cannot finish stops what it started, and is never
-seen by other programs ([decision 0051](decisions/0051-a-deploy-that-fails-leaves-nothing-running.md)). Effect Cluster's entities, sharding and message storage come next ([roadmap](roadmap.md)).
+for its operations to stop ([decision 0056](decisions/0056-nothing-waits-for-an-operation-under-the-permit.md)).
+Everything a deployment runs runs in a scope of its own: a deploy that cannot finish stops what it started, and
+is never seen by other programs ([decision 0051](decisions/0051-a-deploy-that-fails-leaves-nothing-running.md)). Effect Cluster's entities, sharding and message storage come next ([roadmap](roadmap.md)).

@@ -147,7 +147,10 @@ export interface Handle<T extends Types> {
    * or a name misspelt once, stops holding the log (decision 0039).
    */
   readonly forget: (consumer: string) => Effect.Effect<void>
-  /** An operator resumes a suspended entity, perhaps with a fixed program (decision 0006). */
+  /**
+   * An operator resumes a suspended entity, perhaps with a fixed program (decision 0006), which is checked first:
+   * one that cannot run as written dies, and reaches no entity (decision 0054).
+   */
   readonly resume: (id: string, fixed?: Program<T>) => Effect.Effect<void>
   /**
    * An operator discards the inbound message a suspended entity died on (decision 0014). An internal one is not
@@ -161,6 +164,7 @@ export interface Runtime {
    * Runs a program's entities in this process. The operations' services are taken from here, and their fibers run
    * in the runtime's scope: a program is deployed where its services are. `Entities` is the runtime's own, filled
    * in with the entity each operation runs for, so a program that only talks to other entities needs nothing.
+   * A program that cannot run as written dies here, before anything is stored or run (decision 0054).
    */
   readonly deploy: <T extends Types>(
     program: Program<T>,
@@ -354,8 +358,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         // Built in the operation's fiber: a runner that throws while it builds its effect dies as the operation,
         // and suspends the entity, instead of the event that started it (decision 0042).
         const run = Effect.suspend(() =>
+          // The machine admitted the operation with its own program's runners: a fixed program brought by
+          // `resume` may give one the deployed program does not (open questions).
           runner === undefined
-            ? Effect.die(new Error(`no runner for '${operation._tag}', which the machine admits no operation without`))
+            ? Effect.die(
+              new Error(`the deployed program '${deployed.program.name}' has no runner for '${operation._tag}'`),
+            )
             : runner.delivery === 'Idempotent'
             ? runner.run(operation, idempotencyKey)
             : runner.run(operation)

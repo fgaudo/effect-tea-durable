@@ -50,6 +50,7 @@ export interface Rehearsal<T extends Types> {
    * A deploy: the process dies, and `program`, a new version, activates the entity from what was stored. It keeps
    * the work under way that it returns the same, and starts the rest as new work. It fails the test when the new
    * program is a defect: one that changes, drops or delivers otherwise an operation under way, or bears another name.
+   * A program that cannot run as written fails it before the process dies (decision 0054).
    */
   readonly deploy: (program: Program<T>) => Effect.Effect<void>
 }

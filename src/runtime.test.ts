@@ -1542,7 +1542,7 @@ describe('what the runtime cannot finish', () => {
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const released = yield* Deferred.make<void>()
-      const stopping: Array<string> = []
+      const stopping = yield* Deferred.make<void>()
       // Hands that act and never come back, and that take until the end of the test to stop: a request to a slow
       // service, closing.
       const layer = Layer.succeed(
@@ -1551,12 +1551,7 @@ describe('what the runtime cannot finish', () => {
           act: () =>
             Effect.never.pipe(
               Effect.onInterrupt(() =>
-                Effect.andThen(
-                  Effect.sync(() => {
-                    stopping.push('stopping')
-                  }),
-                  Deferred.await(released),
-                )
+                Effect.andThen(Deferred.succeed(stopping, undefined), Deferred.await(released))
               ),
             ),
         }),
@@ -1575,10 +1570,10 @@ describe('what the runtime cannot finish', () => {
           )
           expect(Exit.isFailure(failed) && !Cause.hasFails(failed.cause)).toBe(true)
           // Meanwhile, every other entity is reached, loaded or not.
-          expect(
-            yield* toy.send('other', want('n-2'), { requestId: 'r-2', sender: tester }).pipe(Effect.timeout('1 second')),
-          ).toEqual({ _tag: 'Accepted' })
-          expect(stopping.length).toBeGreaterThan(0)
+          const other = toy.send('other', want('n-2'), { requestId: 'r-2', sender: tester })
+          expect(yield* other.pipe(Effect.timeout('1 second'))).toEqual({ _tag: 'Accepted' })
+          // The crash did interrupt it: it is stopping, and stops once the test lets it.
+          yield* Deferred.await(stopping).pipe(Effect.timeout('1 second'))
           // The operations stop once the test lets them, so that the process can end, whatever it found.
         }).pipe(Effect.ensuring(Deferred.succeed(released, undefined))))
     })))

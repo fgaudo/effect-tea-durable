@@ -1079,7 +1079,10 @@ describe('the runners a program gives', () => {
   const inbound = { _tag: 'Receive', requestId: 'r', message: 'go', from: nobody } as const
   // A cast lets a program through with no runner for an operation it holds: the machine admits none (decision
   // 0054).
-  const unrun = (program: Program<Tiny>): Program<Tiny> => ({ ...program, operations: {} as Program<Tiny>['operations'] })
+  const unrun = (program: Program<Tiny>): Program<Tiny> => ({
+    ...program,
+    operations: {} as Program<Tiny>['operations'],
+  })
   const missing = "the state holds the operation 'Work' under 'charge', which the program has no runner for"
 
   test('a state that holds an operation the program has no runner for is a defect, and starts nothing', () => {
