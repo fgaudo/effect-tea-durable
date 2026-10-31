@@ -558,7 +558,7 @@ describe('passivation', () => {
     }
   }, 30_000)
 
-  test('a process over its capacity unloads the least recently used of the idle entities, however the fibers yield', async () => {
+  test('a process over its capacity unloads its least recently used idle entity, however fibers yield', async () => {
     const tester = { _tag: 'Tester' } as const
     // Each budget moves the points where the entity told to leave may run between two steps of the caller.
     const budgets = Array.from({ length: 198 }, (_, n) => n + 3)
@@ -571,7 +571,9 @@ describe('passivation', () => {
         yield* process({ unloaded, capacity: { entities: 2 } }, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
-            for (const entity of ['e-1', 'e-2']) yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+            for (const entity of ['e-1', 'e-2']) {
+              yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+            }
             yield* runtime.settled
             const left = [[...entities]]
             // `e-1` is used again, so `e-2` is the least recently used when a third enters, and it has left
@@ -1961,7 +1963,10 @@ describe('what the runtime cannot finish', () => {
       stopped.length = 0
       acted = Deferred.makeUnsafe<void>()
       let dies = true
+      const { entities, unloaded } = unloads()
       yield* process({
+        unloaded,
+        capacity: { entities: 2 },
         // The second activation cannot finish, once the first has started its work.
         at: (point, entity, event) =>
           dies && point === 'BeforeCommit' && entity.id === 'd-2' && event._tag === 'Restart'
@@ -1974,6 +1979,13 @@ describe('what the runtime cannot finish', () => {
           expect(started.length).toBeGreaterThan(0)
           expect([...stopped].sort()).toEqual([...started].sort())
           yield* runtime.settled
+          // Nor is it held: two entities of another program fill the capacity, and neither leaves (decision 0076).
+          const twins = yield* Effect.provide(runtime.deploy({ ...program, name: 'Twin' }), (yield* hands()).layer)
+          for (const entity of ['e-1', 'e-2']) {
+            yield* twins.create(entity, { at }, { requestId: entity, sender: tester })
+            yield* runtime.settled
+          }
+          expect(entities).toEqual([])
           // A deploy that failed gives its name back, and the program can be deployed again (decision 0075).
           dies = false
           expect(Exit.isSuccess(yield* Effect.exit(Effect.provide(runtime.deploy(program), layer)))).toBe(true)
@@ -2048,9 +2060,8 @@ describe('what the runtime cannot finish', () => {
         Effect.gen(function*() {
           const { layer } = yield* hands()
           const deploy = Effect.exit(Effect.provide(runtime.deploy(program), layer))
-          const exits = yield* Effect.all([deploy, deploy], { concurrency: 'unbounded' })
           // A second deploy is refused, as is one after them both (decision 0075).
-          exits.push(yield* deploy)
+          const exits = [...yield* Effect.all([deploy, deploy], { concurrency: 'unbounded' }), yield* deploy]
           expect({ budget, deployed: exits.map(reasonOf).sort() }).toEqual({
             budget,
             deployed: [null, "the program 'Toy' is deployed already", "the program 'Toy' is deployed already"],

@@ -350,13 +350,21 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const passivate = options.passivate?.millis ?? 30_000
     const capacity = options.capacity?.entities
     if (capacity !== undefined && !(Number.isSafeInteger(capacity) && capacity > 0)) {
-      return yield* Effect.die(new InvariantDefect({ reason: `the capacity is ${capacity}, which is no positive integer` }))
+      const reason = `the capacity is ${capacity}, which is no positive integer`
+      return yield* Effect.die(new InvariantDefect({ reason }))
     }
     /**
      * Every entity this process holds, of every program, from the least recently used: an entity is used when it is
      * loaded and when an event is offered to it. It is what a process over its capacity unloads first (decision 0076).
      */
     const recent = new Map<string, Loaded<never>>()
+    // The one cast of a loaded entity: the process orders the entities of every program, and steps none of them.
+    const erased = <T extends Types>(loaded: Loaded<T>) => loaded as unknown as Loaded<never>
+    /** The entity leaves the order of use, if it is the one held there. */
+    const forgetUse = <T extends Types>(loaded: Loaded<T>) => {
+      const address = addressOf(loaded.machine.stored)
+      if (recent.get(address) === erased(loaded)) recent.delete(address)
+    }
 
     const deployment = <T extends Types>(name: string): Deployment<T> | undefined =>
       deployments.get(name) as Deployment<T> | undefined
@@ -419,9 +427,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         loaded.pending += 1
         Queue.offerUnsafe(loaded.events, event)
         const address = addressOf(loaded.machine.stored)
-        if (recent.get(address) !== (loaded as unknown as Loaded<never>)) return
+        if (recent.get(address) !== erased(loaded)) return
         recent.delete(address)
-        recent.set(address, loaded as unknown as Loaded<never>)
+        recent.set(address, erased(loaded))
       })
 
     /**
@@ -431,14 +439,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * is held (decisions 0067, 0076).
      */
     const enter = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) => {
-      const { id } = loaded.machine.stored
-      deployed.loaded.set(id, loaded)
-      recent.set(addressOf(loaded.machine.stored), loaded as unknown as Loaded<never>)
+      deployed.loaded.set(loaded.machine.stored.id, loaded)
+      recent.set(addressOf(loaded.machine.stored), erased(loaded))
       if (capacity === undefined) return
       let over = recent.size - capacity
       for (const other of recent.values()) {
         if (over <= 0) return
-        if (other === (loaded as unknown as Loaded<never>)) continue
+        if (other === erased(loaded)) continue
         if (other.evicted) {
           over -= 1
         } else if (nothingToDo(other)) {
@@ -689,8 +696,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       Effect.sync(() => {
         const { id } = loaded.machine.stored
         if (deployed.loaded.get(id) === loaded) deployed.loaded.delete(id)
-        const address = addressOf(loaded.machine.stored)
-        if (recent.get(address) === (loaded as unknown as Loaded<never>)) recent.delete(address)
+        forgetUse(loaded)
         deployed.waker.busy = true
         Queue.offerUnsafe(deployed.waker.poke, undefined)
         end()
@@ -766,25 +772,26 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         }
         return Effect.timeoutOption(Queue.take(loaded.events), `${passivate} millis`).pipe(
           Effect.flatMap((taken) => {
-            if (taken._tag === 'Some' && taken.value._tag !== 'Evict') {
-              return Effect.flatMap(
-                apply(deployed, loaded, taken.value).pipe(Effect.ensuring(Effect.sync(() => {
-                  loaded.pending -= 1
-                  end()
-                }))),
-                () => next,
-              )
+            // The wait ran out, or the entity was told to leave: it is unloaded if it has nothing to do.
+            const event = taken._tag === 'Some' ? taken.value : null
+            if (event === null || event._tag === 'Evict') {
+              return Effect.flatMap(unload(deployed, loaded), (gone) =>
+                Effect.suspend(() => {
+                  // One told to leave that has something to do by now stays, and may be told again.
+                  if (event !== null) {
+                    loaded.evicted = false
+                    end()
+                  }
+                  return gone ? Effect.void : next
+                }))
             }
-            // An entity told to leave that has something to do by now stays, and may be told again.
-            const evicted = taken._tag === 'Some'
-            return Effect.flatMap(unload(deployed, loaded), (gone) =>
-              Effect.suspend(() => {
-                if (evicted) {
-                  loaded.evicted = false
-                  end()
-                }
-                return gone ? Effect.void : next
-              }))
+            return Effect.flatMap(
+              apply(deployed, loaded, event).pipe(Effect.ensuring(Effect.sync(() => {
+                loaded.pending -= 1
+                end()
+              }))),
+              () => next,
+            )
           }),
         )
       })
@@ -1059,12 +1066,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         yield* Effect.sync(() => checkProgram(program))
         // A name is deployed once in a process: a new version is a new process (decision 0075). It is claimed in
         // the step that checks it, so that two deploys at once cannot both pass, and given back by one that fails.
-        yield* Effect.suspend(() => {
-          if (!names.has(program.name)) {
-            names.add(program.name)
-            return Effect.void
+        yield* Effect.sync(() => {
+          if (names.has(program.name)) {
+            throw new InvariantDefect({ reason: `the program '${program.name}' is deployed already` })
           }
-          return Effect.die(new InvariantDefect({ reason: `the program '${program.name}' is deployed already` }))
+          names.add(program.name)
         })
         return yield* Effect.onError(deploying(program), () =>
           Effect.sync(() => {
@@ -1087,11 +1093,17 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         // An operation a crash interrupted starts again here, and a message it left in a mailbox is handled
         // (decision 0071); a timer waits for its time, loaded or not. A deploy that cannot finish stops what it
         // started, and is never seen: an operation that reaches its program waits for one that finishes
-        // (decisions 0045, 0051).
+        // (decisions 0045, 0051). What it loaded leaves the process with it, and holds no place under the capacity
+        // (decision 0076).
         yield* Effect.gen(function*() {
           yield* deployed.storage.indexed
           for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)
-        }).pipe(Effect.onError(() => Scope.close(deployed.scope, Exit.void)))
+        }).pipe(Effect.onError(() =>
+          Effect.andThen(
+            Scope.close(deployed.scope, Exit.void),
+            Effect.sync(() => deployed.loaded.forEach(forgetUse)),
+          )
+        ))
         deployments.set(program.name, deployed as unknown as Deployment<never>)
         const awaited = undeployed.get(program.name)
         undeployed.delete(program.name)
