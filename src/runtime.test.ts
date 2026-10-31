@@ -1538,6 +1538,51 @@ describe('what the runtime cannot finish', () => {
         }))
     })))
 
+  test('a crash does not wait for its operations to stop: nothing else waits for them under the permit', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const released = yield* Deferred.make<void>()
+      const stopping: Array<string> = []
+      // Hands that act and never come back, and that take until the end of the test to stop: a request to a slow
+      // service, closing.
+      const layer = Layer.succeed(
+        Hands,
+        Hands.of({
+          act: () =>
+            Effect.never.pipe(
+              Effect.onInterrupt(() =>
+                Effect.andThen(
+                  Effect.sync(() => {
+                    stopping.push('stopping')
+                  }),
+                  Deferred.await(released),
+                )
+              ),
+            ),
+        }),
+      )
+      yield* process({
+        observe: (entity, event) =>
+          entity.id === 'slow' && event._tag === 'Receive' ? Effect.die('the runtime failed') : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('slow', { at }, { requestId: 'c-slow', sender: tester })
+          yield* toy.create('other', { at }, { requestId: 'c-other', sender: tester })
+          // The crash of the first entity interrupts its operations, which take their time to stop (decision 0056).
+          const failed = yield* Effect.exit(
+            toy.send('slow', want('n-1'), { requestId: 'r-1', sender: tester }).pipe(Effect.timeout('1 second')),
+          )
+          expect(Exit.isFailure(failed) && !Cause.hasFails(failed.cause)).toBe(true)
+          // Meanwhile, every other entity is reached, loaded or not.
+          expect(
+            yield* toy.send('other', want('n-2'), { requestId: 'r-2', sender: tester }).pipe(Effect.timeout('1 second')),
+          ).toEqual({ _tag: 'Accepted' })
+          expect(stopping.length).toBeGreaterThan(0)
+          // The operations stop once the test lets them, so that the process can end, whatever it found.
+        }).pipe(Effect.ensuring(Deferred.succeed(released, undefined))))
+    })))
+
   test('a deploy that cannot finish stops what it started, and leaves the process settled', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now

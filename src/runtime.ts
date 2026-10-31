@@ -528,13 +528,14 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * alone: the entity leaves this process, its work stops, and its waiting callers are given the defect, to
      * retry. What is stored is what its next activation starts from, as after a crash of the process. Called
      * where the registry's permit is held, so that no caller is between finding the entity and offering its event
-     * (decision 0042).
+     * (decision 0042); the interruption of its work is forked, since it waits for the operations' finalizers, and
+     * nothing else waits for them under the permit (decision 0056).
      */
     const crash = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>, cause: Cause.Cause<never>) =>
       Effect.gen(function*() {
         const { name, id } = loaded.machine.stored
         if (deployed.loaded.get(id) === loaded) deployed.loaded.delete(id)
-        yield* stopAll(loaded)
+        yield* Effect.forkIn(stopAll(loaded), deployed.scope)
         const address = addressOf({ name, id })
         const fail = <A>(waiting: Waiting<A>) =>
           Effect.gen(function*() {

@@ -89,7 +89,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 - **One permit for the process.** The registry's one permit keeps an entity from being unloaded between a caller
   finding it and offering its event ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)). Every
   `send` takes it, to an entity loaded or not, and an activation holds it while it reads the database and writes
-  its transaction: the messages of every entity of every program wait on one another there. Should an entity
+  its transaction: the messages of every entity of every program wait on one another there. A crash no longer
+  waits there for its operations to stop
+  ([decision 0056](decisions/0056-nothing-waits-for-an-operation-under-the-permit.md)). Should an entity
   hold its own lease — the callers between finding it and offering their event, which an unload waits for — so
   that the permit is taken only to load?
 - **Two versions at once.** During a rolling deploy, a state written by the new version may be read by the
