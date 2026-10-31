@@ -960,9 +960,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1) },
           run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
         }
-        // An operation a crash interrupted starts again here; a timer waits for its time, loaded or not. A deploy
-        // that cannot finish stops what it started, and is never seen: an operation that reaches its program waits
-        // for one that finishes (decisions 0045, 0051).
+        // An operation a crash interrupted starts again here, and a message it left in a mailbox is handled
+        // (decision 0071); a timer waits for its time, loaded or not. A deploy that cannot finish stops what it
+        // started, and is never seen: an operation that reaches its program waits for one that finishes
+        // (decisions 0045, 0051).
         yield* Effect.gen(function*() {
           yield* deployed.storage.indexed
           for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)

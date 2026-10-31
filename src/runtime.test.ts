@@ -763,6 +763,52 @@ describe('the crash table', () => {
       expect(reached).toEqual(points.map((point) => `${point} Create`))
     })))
 
+  // An inbound message is two transactions, its `Receive` and its step: one a crash left between them is found
+  // at the next start, as an interrupted operation is (decision 0071).
+  test('a message a crash left in the mailbox of an idle entity is handled at the next start, with no retry', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const sender = { _tag: 'Tester' } as const
+      const store = storage(program, yield* SqlClient.SqlClient)
+      // The entity has nothing left under way, so nothing else would have a process start it.
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender })
+          yield* runtime.settled
+          yield* TestClock.adjust('60 millis')
+          yield* runtime.settled
+        }))
+      const crashed = yield* Deferred.make<void>()
+      const dying = process({
+        at: (point, _entity, event) =>
+          point === 'BeforeCommit' && event._tag === 'Handle'
+            ? Effect.flatMap(Deferred.succeed(crashed, undefined), () => Effect.never)
+            : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* running(toy.send(id, { _tag: 'Want', key: 'a', on: false, nonce: 'left' }, {
+            requestId: 'left',
+            sender,
+          }))
+          yield* Effect.never
+        }))
+      yield* Effect.raceFirst(dying, Deferred.await(crashed))
+      expect((yield* store.load(id))?.mailbox.length).toBe(1)
+      // Nobody retries: the process that starts next handles the message on its own.
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          yield* Effect.provide(runtime.deploy(program), layer)
+          yield* runtime.settled
+        }))
+      const stored = yield* store.load(id)
+      expect({ mailbox: stored?.mailbox, applied: stored?.state.applied }).toEqual({ mailbox: [], applied: ['left'] })
+    })))
+
   for (const point of points) {
     for (const nth of [1, 2, 3, 5, 8]) {
       test(`a crash at ${point}, the ${nth}th time, leaves the entity where the machine leaves it`, () =>

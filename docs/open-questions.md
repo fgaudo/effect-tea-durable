@@ -78,10 +78,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   unloading what the first one holds? A fix is a deploy
   ([decision 0064](decisions/0064-the-program-is-not-the-machines-state.md)), so today an operator brings one by
   starting a new process.
-- **Messages a crash left in a mailbox.** An inbound message whose `Receive` committed before a crash waits in the
-  mailbox of an entity that may hold no operation and no timer. Nothing finds it at the next start — neither the
-  entities with an operation nor the stored timers — and `settled` does not wait for it: it is handled when a
-  caller loads the entity again. Should a process start the entities whose mailbox holds a message too?
 - **How many entities a process holds.** An entity is unloaded once it has had nothing to do for a while, and
   nothing caps how many are loaded at once: a burst of callers loads them all
   ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)). Should a process unload the least recently

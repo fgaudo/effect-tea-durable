@@ -360,10 +360,11 @@ export interface Storage<T extends Types> {
    */
   readonly write: (id: string, written: Machine.Written) => Effect.Effect<void>
   /**
-   * The entities whose state holds an operation: what a process activates when it starts, so that an operation a
-   * crash interrupted runs again without waiting for a caller. A timer needs no activation of its own — its time
-   * is stored, and `due` gives it — and a suspended entity runs nothing until an operator resumes it
-   * (decisions 0006, 0029).
+   * The entities whose state holds an operation, or whose mailbox holds a message: what a process activates when
+   * it starts, so that an operation a crash interrupted runs again, and a message a crash left between its
+   * `Receive` and its step is handled, without waiting for a caller. A timer needs no activation of its own — its
+   * time is stored, and `due` gives it — and a suspended entity runs nothing until an operator resumes it
+   * (decisions 0006, 0029, 0071).
    */
   readonly interrupted: Effect.Effect<ReadonlyArray<string>>
   /**
@@ -751,8 +752,10 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   // A key holding an operation has no `due`: the time of a timer is what that column is for.
   const interrupted = Effect.gen(function*() {
     const found = yield* rows('entity_keys', Rows.id)(sql`
-      SELECT DISTINCT id FROM entity_keys
+      SELECT id FROM entity_keys
       WHERE name = ${name} AND work IS NOT NULL AND due IS NULL AND id NOT IN ${onHold}
+      UNION
+      SELECT id FROM mailbox WHERE name = ${name} AND id NOT IN ${onHold}
       ORDER BY id
     `)
     return found.map((row) => row.id)

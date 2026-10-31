@@ -33,14 +33,10 @@ so a sender migrated onto another's text takes nothing of its row
 
 A review of decisions 0027 to 0039 found five more corrections. The first is made: `reindex` writes a row only
 over the state it was computed from ([decision 0070](decisions/0070-reindex-writes-a-row-only-over-its-state.md)).
-The others come next, in this order:
+So is the second: a process starts the entities whose mailbox holds a message
+([decision 0071](decisions/0071-a-process-starts-the-entities-with-a-message.md)). The others come next, in this
+order:
 
-- **A message a crash left in a mailbox is handled by chance.** An inbound message is a `Receive` and a step, two
-  transactions; a crash between them leaves it in the mailbox of an entity a process starts only if it holds an
-  operation ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)). It waits for a caller to load the
-  entity, and is then handled at whatever time that is. A note decides the
-  [open question](open-questions.md#running) — `interrupted` giving the entities whose mailbox holds a message
-  too, a suspended one aside — with a crash test between the two transactions and no retry.
 - **A new `project` does not always reach the log.** A step publishes when the projection of the state before it
   differs from the one after, both computed by the program deployed
   ([decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md)). After a deploy that changes
