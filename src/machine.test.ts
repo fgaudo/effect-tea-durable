@@ -1064,6 +1064,24 @@ describe('the checks of a step', () => {
       })
     }
   })
+  test('a deploy whose program dies on the stored state suspends the entity on the activation, as it was', () => {
+    const broken = new Error('broken')
+    const machine = checked((message) => message, () => ({}))
+    for (
+      const deploy of [
+        tiny((message) => message, () => ({}), () => {
+          throw broken
+        }),
+        tiny((message) => message, () => ({}), undefined, undefined, () => {
+          throw broken
+        }),
+      ]
+    ) {
+      const transition = stepped(machine, { _tag: 'Restart' }, deploy)
+      expect(transition.machine.stored.suspension).toEqual({ cause: broken, on: { _tag: 'Activation' } })
+      expect(transition.machine.stored.state).toEqual({ last: 'start' })
+    }
+  })
 })
 
 // A defect is what the program does; anything else thrown in a step is the runtime's, which crashes the entity
@@ -1171,10 +1189,48 @@ describe('what a runtime writes', () => {
     expect(initialized).toEqual([])
   })
 
+  test('a state its own schema refuses is a defect, and is not stored', () => {
+    const base = checked((message) => message, () => ({}))
+    // A refinement is no rule of the types: a state of the right type its schema refuses.
+    const last = Schema.String.check(Schema.makeFilter((last: string) => last !== 'go' || 'a state its schema refuses'))
+    const program: Program<Tiny> = {
+      ...base.program,
+      schemas: { ...base.program.schemas, state: Schema.Struct({ last }) },
+    }
+    const transition = handled({ ...base, program }, inbound)
+    expect(reasonOfSuspension(transition)).toStartWith('the state does not encode')
+    expect(transition.machine.stored.state).toEqual({ last: 'start' })
+    expect(transition.outputs).toContainEqual({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } })
+  })
+
+  test('a reason of a rejection its schema does not encode is a defect, and no rejection is stored', () => {
+    const base = checked((message) => message, () => ({}))
+    // The toy's schema of the reasons is `Schema.Never`: any reason is one it refuses.
+    const program: Program<Tiny> = { ...base.program, update: () => () => rejectWith('a reason' as never) }
+    const transition = handled({ ...base, program }, inbound)
+    expect(reasonOfSuspension(transition)).toStartWith('the reason of the rejection does not encode')
+    expect(transition.machine.stored.state).toEqual({ last: 'start' })
+    expect(transition.outputs).toContainEqual({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } })
+  })
+
   test('an operation whose message does not encode suspends the entity on the operation', () => {
     const machine = checked((message) => message, (state) => (state === 'start' ? { charge: 'operation' } : {}))
     const transition = stepped(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 1 as never })
     expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Operation', key: 'charge', incarnation: 1 })
+    expect(transition.machine.stored.mailbox).toEqual([])
+  })
+
+  test('an unknown that does not encode suspends the entity on the activation', () => {
+    const base = tiny((message) => message, () => ({ charge: 'operation' }))
+    const program: Program<Tiny> = {
+      ...base,
+      operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => 1 as never) },
+    }
+    const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
+    if (created._tag === 'Defect') throw created.cause
+    const transition = stepped({ ...created.machine, program, replies: new Map() }, { _tag: 'Restart' })
+    expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
+    expect(reasonOfSuspension(transition)).toStartWith("the unknown of the operation under 'charge' does not encode")
     expect(transition.machine.stored.mailbox).toEqual([])
   })
 

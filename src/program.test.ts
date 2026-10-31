@@ -7,13 +7,35 @@ import { expect, test } from 'bun:test'
 import type * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
-import { type Json, noWork, operation, program } from './program.ts'
+import { encode, InvariantDefect, type Json, noWork, operation, type Program, program } from './program.ts'
+import type { Rehearsal } from './rehearse.ts'
+import type { Query } from './storage.ts'
 
 test('a time encoded to its milliseconds is a codec of a program, and one declared as a DateTime is not', () => {
   const millis: Schema.Codec<DateTime.Utc, Json> = Schema.DateTimeUtcFromMillis
   // @ts-expect-error `Schema.DateTimeUtc` encodes to a `DateTime.Utc`, which JSON does not hold
   const declared: Schema.Codec<DateTime.Utc, Json> = Schema.DateTimeUtc
   expect([millis, declared]).toHaveLength(2)
+})
+
+test('a value is JSON as it is: finite numbers, and plain objects and arrays of such values (decision 0040)', () => {
+  // A schema that encodes anything as it is: what is checked is the value, not the schema.
+  const any = Schema.Unknown as unknown as Schema.Codec<unknown, Json>
+  const reasonOf = (value: unknown) => {
+    try {
+      encode(any, value, 'value')
+      return null
+    } catch (cause) {
+      return cause instanceof InvariantDefect ? cause.reason : String(cause)
+    }
+  }
+  for (const value of [null, 'a', 1, true, [1, ['b']], { a: { b: [null] } }, Object.create(null)]) {
+    expect(reasonOf(value)).toBeNull()
+  }
+  // `JSON.stringify` writes each of these as something else, or not at all, and the value read back is another.
+  for (const value of [new Date(0), new Map(), [1, Number.NaN], { a: [undefined] }, { a: () => 1 }, 1n, undefined]) {
+    expect(reasonOf(value)).toBe('the value encodes to what JSON does not hold')
+  }
 })
 
 const schemas = {
@@ -103,4 +125,32 @@ test('the schemas applied first type the pieces, where one call would widen a ta
   const widened = oneCall({ state: State, init: () => ({ _tag: 'Opn' }) })
   const any: ReturnType<typeof widened.init> = { _tag: 'any string' }
   expect([misspelt, any]).toHaveLength(2)
+})
+
+test('a rehearsal and a query name only the keys and the indexes the program declares (decisions 0032, 0033)', () => {
+  const pieces = {
+    name: 'Charges',
+    keys: ['charge'],
+    init: () => ({ charging: true }),
+    update: () => () => ({ charging: false }),
+    durable: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
+    operations: { Charge: operation(() => Effect.succeed('Charged' as const)) },
+    project: () => null,
+  } as const
+  const charges = program(schemas)({ ...pieces, indexes: { charging: () => true } })
+  type Of = typeof charges extends Program<infer T> ? T : never
+  const pending = (rehearsal: Rehearsal<Of>) => [
+    rehearsal.pending('charge'),
+    // @ts-expect-error `charg` is no key the program declares
+    rehearsal.pending('charg'),
+  ]
+  const found: Query<Of> = { where: [{ index: 'charging', is: '=', value: true }], order: { index: 'charging' } }
+  // @ts-expect-error `charged` is no index the program declares
+  const misnamed: Query<Of> = { order: { index: 'charged' } }
+  const unstored = program(schemas)({
+    ...pieces,
+    // @ts-expect-error an index is a scalar, which a column holds
+    indexes: { charging: () => ({ charging: true }) },
+  })
+  expect([pending, found, misnamed, unstored]).toHaveLength(4)
 })

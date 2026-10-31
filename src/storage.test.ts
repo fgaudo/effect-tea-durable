@@ -6,10 +6,11 @@ import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import * as Machine from './machine.ts'
-import { type Migration, noWork, operation, type Program } from './program.ts'
+import { isTimer, type Json, type Migration, noWork, operation, type Program } from './program.ts'
 import { createTables, storage } from './storage.ts'
 
 type T = {
@@ -283,4 +284,70 @@ test('a caller whose request a migration gives the text of another caller’s ro
       expect(yield* after.reply('r', caller('a'))).toEqual({ _tag: 'Accepted' })
       // The caller version 1 stored as 'a' is 'b' now, and its retry still finds its own reply.
       expect(yield* after.reply('r', caller('b'))).toEqual({ _tag: 'Accepted' })
+    })))
+
+/**
+ * Version 2 of the receiver, which marks what it reads of version 1: each kind of value is read through a migration
+ * of its own, and a row version 2 wrote is read with no mark.
+ */
+const marked: Program<T> = {
+  ...receiver,
+  migrations: [{
+    state: (json) => ({ ...json as Readonly<Record<string, Json>>, last: 'migrated' }),
+    inbound: (json) => `${String(json)} (inbound)`,
+    internal: (json) => `${String(json)} (internal)`,
+    projection: (json) => `${String(json)} (projection)`,
+  }],
+}
+
+/** The rows of a creation with a timer under way, two messages queued, and a row of the log. */
+const busy = created({
+  keys: [{ key: 'ask', incarnation: 1, work: { _tag: 'Timer', at: 0, message: 'rang' }, delivery: null, due: 0 }],
+  queued: [inbound('hello'), { _tag: 'Internal', message: 'done', key: 'ask', incarnation: 1 }],
+  published: { kind: 'Creation', message: null, projection: 'start' },
+})
+
+test('a version reads through its migrations the work, the mailbox and the log another version wrote', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const first = storage(receiver, sql)
+      yield* first.write('r', busy)
+      yield* first.write('r', written({ published: { kind: 'Inbound', message: 'hello', projection: 'hello' } }))
+      const after = storage(marked, sql)
+      const stored = yield* after.load('r')
+      const work = stored?.keys['ask']?.work
+      expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang (internal)')
+      expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello (inbound)', 'done (internal)'])
+      expect((yield* after.published(0)).map(({ message, projection }) => ({ message, projection }))).toEqual([
+        { message: null, projection: 'start (projection)' },
+        { message: 'hello (inbound)', projection: 'hello (projection)' },
+      ])
+    })))
+
+test('a query by an index the program does not declare dies, naming it', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      // A name is written into the query as it is, so only the program's own are: the types say so, and a cast
+      // that passes them still reaches nothing.
+      for (const query of [{ where: [{ index: 'nope', is: '=', value: 1 }] }, { order: { index: 'nope' } }]) {
+        const exit = yield* Effect.exit(storage(receiver, sql).query(query as never))
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        expect(cause instanceof Error && cause.message).toBe("'nope' is no index of the program 'Receiver'")
+      }
+    })))
+
+test('a row is written at the version that writes it, and read back as it was written', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      // Version 2 writes every row of the entity: one stamped with another version would be read through a
+      // migration it never needed, and come back marked.
+      const after = storage(marked, sql)
+      yield* after.write('r', busy)
+      const stored = yield* after.load('r')
+      expect(stored?.state).toEqual({ last: 'start' })
+      const work = stored?.keys['ask']?.work
+      expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang')
+      expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello', 'done'])
+      expect((yield* after.published(0)).map(({ projection }) => projection)).toEqual(['start'])
+      expect(yield* after.query({})).toEqual([{ id: 'r', projection: 'start' }])
     })))

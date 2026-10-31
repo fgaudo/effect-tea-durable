@@ -1490,6 +1490,42 @@ describe('publishing what happened', () => {
         }))
     })))
 
+  test('a consumer whose first reading lands in a prune skips nothing, however fibers yield', async () => {
+    // Each budget moves the points where the consumer's first reading may run between the statements of the prune
+    // (decision 0039).
+    const read = { before: 0, after: 0 }
+    for (let budget = 3; budget < 200; budget++) {
+      await database(Effect.gen(function*() {
+        const at = yield* DateTime.now
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const { layer } = yield* hands()
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+            yield* runtime.settled
+            yield* TestClock.adjust('60 millis')
+            yield* runtime.settled
+            const rows = yield* toy.published(0)
+            // A consumer that has read everything lets the prune go as far as the log.
+            yield* toy.ack('queue', rows[rows.length - 1]?.seq ?? 0)
+            const [first] = yield* Effect.all([toy.feed('late', 1), toy.prune], { concurrency: 'unbounded' })
+            if (first.length === 0) {
+              read.after++
+              return
+            }
+            read.before++
+            yield* toy.ack('late', first[first.length - 1]?.seq ?? 0)
+            // It holds the log from its first reading: it reads every row after the one it acked.
+            const rest = yield* toy.feed('late')
+            expect({ budget, rows: [...first, ...rest] }).toEqual({ budget, rows: [...rows] })
+          }))
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+    // The race was run both ways: the first reading came before the prune for some budgets, after it for others.
+    expect(read.before).toBeGreaterThan(0)
+    expect(read.after).toBeGreaterThan(0)
+  }, 30_000)
+
   test('an ack past the last seq moves the cursor to it, and the rows written after are kept', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
@@ -1944,6 +1980,69 @@ describe('what the runtime cannot finish', () => {
           expect(yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester })).toEqual({ _tag: 'Accepted' })
           expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
             .toEqual({ _tag: 'Accepted' })
+          yield* runtime.settled
+        }))
+    })))
+
+  test('a crash gives its defect to a creator waiting on the entity too', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      let dies = false
+      yield* process({
+        // A creation of an entity already there is one of its events: the probe stands for a failed write.
+        observe: (_entity, event) => {
+          if (event._tag !== 'Create' || !dies) return Effect.void
+          dies = false
+          return Effect.die('the runtime failed')
+        },
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          dies = true
+          const failed = yield* Effect.exit(toy.create(id, { at }, { requestId: 'again', sender: tester }))
+          expect(Exit.isFailure(failed)).toBe(true)
+          // The entity left the process, and the next creator loads it again.
+          expect(yield* toy.create(id, { at }, { requestId: 'again', sender: tester })).toEqual({ _tag: 'AlreadyExists' })
+          yield* runtime.settled
+        }))
+    })))
+
+  test('a creation it cannot finish crashes its entity, and the next caller loads it', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const activated: Array<string> = []
+      yield* process({
+        // The creation is written, and the runtime dies as it acts on it: the probe stands for a failure there.
+        at: (point, _entity, event) =>
+          point === 'AfterReply' && event._tag === 'Create' ? Effect.die('the runtime failed') : Effect.void,
+        observe: (entity, event) => event._tag === 'Restart' ? Effect.sync(() => activated.push(entity.id)) : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const failed = yield* Effect.exit(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          expect(Exit.isFailure(failed)).toBe(true)
+          // The entity left the process: the next caller loads it from what the creation stored.
+          expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester })).toEqual({ _tag: 'Accepted' })
+          expect(activated).toEqual([id])
+          yield* runtime.settled
+        }))
+    })))
+
+  test('a sender its schema cannot encode is its caller’s defect, named as the sender', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          const nobody = { _tag: 'Nobody' } as unknown as typeof tester
+          const exit = yield* Effect.exit(toy.send(id, want('n-1'), { requestId: 'r-1', sender: nobody }))
+          const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+          expect(cause instanceof InvariantDefect && cause.reason).toStartWith('the sender does not encode')
           yield* runtime.settled
         }))
     })))
