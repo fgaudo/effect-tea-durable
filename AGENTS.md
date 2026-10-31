@@ -20,6 +20,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   `docs/open-questions.md`, and leaves it when a note decides it. A step of the roadmap leaves it when done.
 - A note lists, in a section `What it rests on`, each premise its decision falls without, and says of each whether it
   is tested (naming the test), documented, seen in a spike, read in a dependency's source, or only reasoned.
+- A spike is a test in `spikes/`, run by `bun test` at the pinned version. A premise about what a dependency does
+  when it runs is tested, documented or seen in one before its note is taken; what no spike can run yet says what
+  would check it, and goes in `docs/open-questions.md`.
 - Once fifteen notes are taken since the last review, a review reads them before the next step starts, from
   `reasoned` up, in a session that did not write them. What it finds is a note, a test, a fix or an open question,
   and the review is listed at the end of [`docs/decisions/README.md`](docs/decisions/README.md).

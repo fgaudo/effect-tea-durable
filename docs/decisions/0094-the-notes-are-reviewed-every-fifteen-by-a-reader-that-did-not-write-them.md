@@ -1,6 +1,8 @@
 # 0094. The notes are reviewed every fifteen, by a reader that did not write them
 
 **Status:** accepted, 2026-10-31. Adds a rule to [`AGENTS.md`](../../AGENTS.md) on when the notes are reviewed.
+A review of the notes 0001 to 0079 that no review read is added by
+[decision 0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md).
 
 ## Context
 

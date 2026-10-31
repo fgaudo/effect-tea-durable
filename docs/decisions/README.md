@@ -17,8 +17,9 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0080](0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) |
 | [0083](0083-effect-moves-to-4-1-1.md) | Effect moves to 4.1.1 |  |
 | [0089](0089-a-note-says-what-changed-it-and-is-taken-with-its-step.md) | A note says what changed it, and is taken with its step |  |
-| [0093](0093-a-note-says-what-each-premise-rests-on.md) | A note says what each premise rests on |  |
-| [0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md) | The notes are reviewed every fifteen, by a reader that did not write them |  |
+| [0093](0093-a-note-says-what-each-premise-rests-on.md) | A note says what each premise rests on | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) |
+| [0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md) | The notes are reviewed every fifteen, by a reader that did not write them | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) |
+| [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) | A dependency is checked by a spike the repository keeps, and the older notes are reviewed |  |
 | [0024](0024-not-taken.md) | Not taken |  |
 
 ## The machine and the program

@@ -1,6 +1,8 @@
 # 0093. A note says what each premise rests on
 
 **Status:** accepted, 2026-10-31. Adds a rule to [`AGENTS.md`](../../AGENTS.md) on what a note says of its premises.
+That a premise about a dependency is checked before the note is taken, and a spike kept in `spikes/`, is added by
+[decision 0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md).
 
 ## Context
 
