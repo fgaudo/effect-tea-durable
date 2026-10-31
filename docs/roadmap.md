@@ -34,16 +34,10 @@ so a sender migrated onto another's text takes nothing of its row
 A review of decisions 0027 to 0039 found five more corrections. The first is made: `reindex` writes a row only
 over the state it was computed from ([decision 0070](decisions/0070-reindex-writes-a-row-only-over-its-state.md)).
 So is the second: a process starts the entities whose mailbox holds a message
-([decision 0071](decisions/0071-a-process-starts-the-entities-with-a-message.md)). The others come next, in this
-order:
+([decision 0071](decisions/0071-a-process-starts-the-entities-with-a-message.md)), and the third: the log shows
+what a step changed, as the program deployed computes it
+([decision 0072](decisions/0072-the-log-shows-what-a-step-changed.md)). The others come next, in this order:
 
-- **A new `project` does not always reach the log.** A step publishes when the projection of the state before it
-  differs from the one after, both computed by the program deployed
-  ([decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md)). After a deploy that changes
-  what `project` gives, without a schema to migrate, a step whose projection is the same under the new program
-  publishes nothing, and the log's last row keeps what the version before showed: the design's "a new `project`
-  reaches the log at each entity's next step" holds only for a step that changes it. A note decides whether a
-  step compares with what was last published, or the design says what holds.
 - **The runtime's options hold the tests' seams.** `at`, `observe` and `unloaded` are in `Options` beside `retry`
   and `passivate` ([decision 0028](decisions/0028-rules-the-runtime-settled.md)), so what an operator sets and what
   a test dies at are one record, and three hooks do one thing: say what the runtime did. `at` and `observe` take a

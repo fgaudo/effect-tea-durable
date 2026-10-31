@@ -385,8 +385,12 @@ rejected message, an internal message dropped, or a step that suspends the entit
 shows what that costs: confirming seats moves them from held to sold and leaves `available` where it was, so
 the sale is not published. A program whose fact must reach other systems shows it to callers.
 
-A deploy publishes nothing of itself: a new `project` reaches the log at each entity's next step, and
-`reindex` writes the read model again without publishing.
+A deploy publishes nothing of itself, and `reindex` writes the read model again without publishing. A step
+publishes when what callers read changed in that step, as the program deployed computes it before and after: a
+new `project` reaches the log at an entity's next step that changes what it shows, and a consumer that needs
+every entity as the new program shows it reads them through `query`. A projection whose schema changed is read
+through its migrations in the log too
+([decision 0072](decisions/0072-the-log-shows-what-a-step-changed.md)).
 
 ## Testing
 
