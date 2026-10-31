@@ -1,7 +1,9 @@
 # 0066. The runtime's tests move time, and wait for nothing on a clock
 
 **Status:** accepted, 2026-10-31. Takes the first step of the roadmap that
-[decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md) made possible.
+[decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md) made possible. What it says `TestClock.adjust` does
+for a fiber it did not wake holds under the default budget of steps alone, as
+[decision 0101](0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) says.
 
 ## Context
 

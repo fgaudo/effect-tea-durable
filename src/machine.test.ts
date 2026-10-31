@@ -1127,6 +1127,32 @@ describe('what the program throws', () => {
     const machine = { ...base, program: { ...base.program, durable: () => ({ charge: 5 as never }) } }
     expect(reasonOfSuspension(handled(machine, inbound))).toBe("the state holds what is no work under 'charge'")
   })
+
+  test('what a cast lets through as a record of work that is none is a defect', () => {
+    const base = checked((message) => message, () => ({}))
+    for (const work of [null, 'charge']) {
+      const machine = { ...base, program: { ...base.program, durable: () => work as never } }
+      expect(reasonOfSuspension(handled(machine, inbound))).toBe('durable gave no record of work')
+    }
+  })
+
+  test('a timer a cast lets through with no time is a defect', () => {
+    const base = checked((message) => message, () => ({}))
+    const durable = () => ({ deadline: timer(null as never, 'rang') })
+    const machine = { ...base, program: { ...base.program, durable } }
+    expect(handled(machine, inbound).machine.stored.suspension?.cause).toBeInstanceOf(TypeError)
+  })
+
+  test('what init throws is its defect, and the creation stores nothing', () => {
+    const broken = new TypeError('a bug of the program')
+    const program: Program<Tiny> = {
+      ...tiny((message) => message, () => ({})),
+      init: () => {
+        throw broken
+      },
+    }
+    expect(Machine.start(program, 'tiny', null, epoch, by('creation'))).toEqual({ _tag: 'Defect', cause: broken })
+  })
 })
 
 describe('what a runtime writes', () => {

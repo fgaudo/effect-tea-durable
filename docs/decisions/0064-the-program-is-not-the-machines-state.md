@@ -1,6 +1,8 @@
 # 0064. The program is not the machine's state, and a fix is a deploy
 
-**Status:** accepted, 2026-10-31. Decides [a fixed program brought by `resume`](../open-questions.md#running).
+**Status:** accepted, 2026-10-31. Decides [a fixed program brought by `resume`](../open-questions.md#running). Deploying
+a program twice in one process, which it leaves open, is decided by
+[decision 0075](0075-a-name-is-deployed-once-in-a-process.md): a process deploys a name once.
 
 ## Context
 

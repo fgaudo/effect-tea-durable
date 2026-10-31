@@ -37,6 +37,7 @@ import {
   rejectWith,
   timer,
 } from './program.ts'
+import * as Library from './index.ts'
 import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
 import { createTables, storage } from './storage.ts'
 
@@ -447,6 +448,72 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // A message is given the reply stored under its request and the time just before its step, not as it is offered:
+  // one that waits behind another is handled at the time it reaches the front (decisions 0065, 0074).
+  test('a message that waits behind another is given its time and its reply as its step begins', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const { events, observe } = log()
+      const at = yield* DateTime.now
+      const gate = yield* Deferred.make<void>()
+      const sender = { _tag: 'Tester' } as const
+      yield* process({
+        observe,
+        at: (point, _entity, event) =>
+          point === 'BeforeCommit' && received(event) === 'first' ? Deferred.await(gate) : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender })
+          const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 'a', on: false, nonce })
+          const first = yield* running(toy.send(id, want('n1'), { requestId: 'first', sender }))
+          // Both wait behind the first: a second message, and a retry of the first.
+          const second = yield* running(toy.send(id, want('n2'), { requestId: 'second', sender }))
+          const retry = yield* running(toy.send(id, want('n1'), { requestId: 'first', sender }))
+          yield* TestClock.adjust('5 seconds')
+          const released = DateTime.toEpochMillis(yield* DateTime.now)
+          yield* Deferred.succeed(gate, undefined)
+          for (const fiber of [first, second, retry]) expect(yield* Fiber.join(fiber)).toEqual({ _tag: 'Accepted' })
+          const times = events.flatMap((event) =>
+            event._tag === 'Receive' && event.request._tag === 'Caller'
+              ? [[event.request.id, DateTime.toEpochMillis(event.at), event.reply]]
+              : []
+          )
+          // The retry finds the reply the first stored, and `update` saw the message once.
+          expect(times).toEqual([
+            ['first', DateTime.toEpochMillis(at) + 1, null],
+            ['second', released, null],
+            ['first', released, { _tag: 'Accepted' }],
+          ])
+          expect((yield* storage(program, yield* SqlClient.SqlClient).load(id))?.state.applied).toEqual(['n1', 'n2'])
+        }))
+    })))
+
+  // Under the default budget a timer armed by work the test started has reached its sleep when the clock moves, and
+  // fires at its time, not one move later (decisions 0066, 0101).
+  test('a timer fires at its time, and not before', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const fired: Array<number> = []
+      const at = yield* DateTime.now
+      yield* process({
+        observe: (_entity, event) =>
+          Effect.map(DateTime.now, (now) => {
+            if (event._tag === 'Fire') fired.push(DateTime.toEpochMillis(now))
+          }),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+          yield* runtime.settled
+          // The toy's timer rings 40 milliseconds after its creation.
+          yield* TestClock.adjust('39 millis')
+          expect(fired).toEqual([])
+          yield* TestClock.adjust('1 millis')
+          expect(fired).toEqual([DateTime.toEpochMillis(at) + 40])
+        }))
+    })))
+
   test('suspends on a defect, answers Suspended, and resumes', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -498,6 +565,7 @@ describe('the runtime on SQLite', () => {
       expect(second.acted.filter((act) => act.startsWith('a:')).length).toBe(1)
       expect(second.acted.filter((act) => act === 'c').length).toBe(1)
     })))
+
 })
 
 /**
@@ -865,6 +933,59 @@ describe('passivation', () => {
       const stored = yield* storage(program, yield* SqlClient.SqlClient).load('slow')
       expect([...(stored?.state.applied ?? [])].sort()).toEqual(['n-1', 'n-2'])
     })))
+
+  // The load is under the entity's lock: two callers never read it from storage and build a machine each
+  // (decisions 0029, 0067).
+  test('two callers of an entity not loaded build one machine for it, however fibers yield', async () => {
+    const tester = { _tag: 'Tester' } as const
+    const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
+    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
+    for (const budget of budgets) {
+      await database(Effect.gen(function*() {
+        const { layer } = yield* hands()
+        const { events, observe } = log()
+        const at = yield* DateTime.now
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+            yield* runtime.settled
+          }))
+        yield* process({ observe }, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            const both = yield* ran(Effect.all([
+              toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }),
+              toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester }),
+            ], { concurrency: 'unbounded' }))
+            expect(both).toEqual([{ _tag: 'Accepted' }, { _tag: 'Accepted' }])
+          }))
+        expect({ budget, restarts: events.filter((event) => event._tag === 'Restart').length })
+          .toEqual({ budget, restarts: 1 })
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+  }, 30_000)
+
+  test('two creations of one entity at once build one machine, and the second is answered AlreadyExists', async () => {
+    const tester = { _tag: 'Tester' } as const
+    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
+    for (const budget of budgets) {
+      await database(Effect.gen(function*() {
+        const { layer } = yield* hands()
+        const at = yield* DateTime.now
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            const both = yield* ran(Effect.all([
+              Effect.exit(toy.create(id, { at }, { requestId: 'c-1', sender: tester })),
+              Effect.exit(toy.create(id, { at }, { requestId: 'c-2', sender: tester })),
+            ], { concurrency: 'unbounded' }))
+            expect({ budget, created: both.map((exit) => Exit.isSuccess(exit) ? exit.value._tag : 'died').sort() })
+              .toEqual({ budget, created: ['AlreadyExists', 'Created'] })
+          }))
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+  }, 30_000)
 
   test('an activation whose caller gives up is finished all the same, and the next caller is answered', () =>
     database(Effect.gen(function*() {
@@ -2401,4 +2522,14 @@ describe('a database held by one runtime', () => {
       Effect.gen(function*() {
         expect(reasonOf(yield* Effect.exit(process({}, () => Effect.void)))).toBe(held)
       }))))
+})
+
+// What the runtime tells a probe is the tests' seam, and no part of the public surface (decisions 0055, 0073).
+test('a probe and its points are no part of what a user imports', () => {
+  expect(Object.keys(Library).filter((name) => ['Probe', 'Point', 'Said'].includes(name))).toEqual([])
+  // @ts-expect-error `Point` is the runtime's, for its tests
+  const point: Library.Point | null = null
+  // @ts-expect-error `Said` too
+  const said: Library.Said | null = null
+  expect([point, said]).toEqual([null, null])
 })

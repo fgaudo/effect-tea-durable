@@ -165,6 +165,30 @@ test('a reply is read by its request alone, and a caller is given its own', () =
       expect(yield* store.reply('r', asked('one', 1))).toBeNull()
     })))
 
+// A process starts what holds an operation or a message, unless an operator has to resume it first (decisions
+// 0006, 0029, 0071).
+test('a process starts the entities holding an operation or a message, and none of them suspended', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(receiver, sql)
+      const keys = [{
+        key: 'ask',
+        incarnation: 1,
+        work: { _tag: 'Operation', operation: { _tag: 'Ask' } },
+        delivery: 'Idempotent',
+        due: null,
+      }] as const
+      const queued = [inbound('one')]
+      const suspension = { on: { _tag: 'Message' }, cause: 'broken' } as const
+      yield* store.write('operation', created({ keys }))
+      yield* store.write('message', created({ queued }))
+      yield* store.write('both', created({ keys, queued }))
+      yield* store.write('idle', created())
+      yield* store.write('suspended operation', created({ keys, suspension }))
+      yield* store.write('suspended message', created({ queued, suspension }))
+      expect(yield* store.interrupted).toEqual(['both', 'message', 'operation'])
+    })))
+
 test('the mailbox keeps the order its messages were queued in, as its head is handled', () =>
   database((sql) =>
     Effect.gen(function*() {
@@ -237,15 +261,117 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           }`,
           store.load('r'),
         ],
+        // The columns that go together: a key with no work has no delivery, an inbound message has no key, an
+        // internal one no request, and only a rejection a reason.
+        [
+          sql`INSERT INTO entity_keys ${
+            sql.insert({
+              name: 'Receiver',
+              id: 'r',
+              key: 'ask',
+              incarnation: 1,
+              version: 1,
+              work: null,
+              delivery: 'Idempotent',
+            })
+          }`,
+          store.load('r'),
+        ],
+        [
+          sql`INSERT INTO entity_keys ${
+            sql.insert({
+              name: 'Receiver',
+              id: 'r',
+              key: 'ask',
+              incarnation: 1,
+              version: 1,
+              work: '{"_tag":"Operation","operation":{"_tag":"Ask"}}',
+              delivery: 'Twice',
+            })
+          }`,
+          store.load('r'),
+        ],
+        [sql`UPDATE mailbox SET key = 'ask' WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
+        [
+          sql`UPDATE mailbox SET tag = 'Outbound', request = NULL, key = 'ask', incarnation = 1
+              WHERE name = 'Receiver' AND id = 'r'`,
+          store.load('r'),
+        ],
+        [
+          sql`UPDATE mailbox SET tag = 'Internal', key = 'ask', incarnation = 1 WHERE name = 'Receiver' AND id = 'r'`,
+          store.load('r'),
+        ],
+        [
+          sql`INSERT INTO replies ${
+            sql.insert({
+              name: 'Receiver',
+              id: 'r',
+              request: Machine.requestKey(receiver, caller),
+              tag: 'Accepted',
+              version: 1,
+              reason: '"why"',
+            })
+          }`,
+          store.reply('r', caller),
+        ],
+        // A version from 1, and a count from 0, wherever they are read.
+        [sql`UPDATE entities SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
+        [sql`UPDATE entities SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.reindex],
+        [sql`UPDATE projections SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.query({})],
+        [
+          sql`INSERT INTO entity_keys ${
+            sql.insert({
+              name: 'Receiver',
+              id: 'r',
+              key: 'ask',
+              incarnation: -1,
+              version: 1,
+              work: null,
+              delivery: null,
+            })
+          }`,
+          store.load('r'),
+        ],
+        [
+          sql`UPDATE mailbox SET seq = -5 WHERE name = 'Receiver' AND id = 'r'`,
+          store.write('r', written({ queued: [inbound('two')] })),
+        ],
+        [sql`INSERT INTO cursors ${sql.insert({ name: 'Receiver', consumer: 'c', seq: -1 })}`, store.feed('c')],
+        [sql`INSERT INTO cursors ${sql.insert({ name: 'Receiver', consumer: 'c', seq: -1 })}`, store.consumers],
+        [sql`INSERT INTO cursors ${sql.insert({ name: 'Receiver', consumer: 'c', seq: -1 })}`, store.prune],
+        // A timer's time is a whole number of milliseconds, read by the waker.
+        [
+          sql`INSERT INTO entity_keys ${
+            sql.insert({
+              name: 'Receiver',
+              id: 'r',
+              key: 'ask',
+              incarnation: 1,
+              version: 1,
+              work: '{"_tag":"Timer","at":1,"message":"rang"}',
+              delivery: null,
+              due: 1.5,
+            })
+          }`,
+          store.due(0, []),
+        ],
+        // A step's row of the outbox always handles a message.
+        [
+          sql`INSERT INTO outbox ${
+            sql.insert({ name: 'Receiver', id: 'r', tag: 'Inbound', version: 1, message: null, projection: '"one"' })
+          }`,
+          store.published(0),
+        ],
       ] as const
       for (const [breaking, reading] of broken) {
-        yield* sql`SAVEPOINT broken`
-        yield* breaking
-        const exit = yield* Effect.exit<unknown, never, never>(reading)
-        expect(exit._tag).toBe('Failure')
-        if (exit._tag === 'Failure') expect(String(Cause.squash(exit.cause))).toContain('no row the runtime writes')
-        yield* sql`ROLLBACK TO broken`
-        yield* sql`RELEASE broken`
+        // Broken and read in a transaction that fails with what the reading gave, so that nothing of it stays.
+        const exit = yield* Effect.flip(sql.withTransaction(
+          Effect.andThen(breaking, Effect.flatMap(Effect.exit<unknown, never, never>(reading), Effect.fail)),
+        ))
+        expect(Exit.isExit(exit) && exit._tag).toBe('Failure')
+        if (Exit.isExit(exit) && exit._tag === 'Failure') {
+          expect(String(Cause.squash(exit.cause))).toContain('no row the runtime writes')
+        }
       }
       expect((yield* store.load('r'))?.mailbox.map((envelope) => envelope.message)).toEqual(['one'])
       // A creation's row of the outbox handles no message.
@@ -286,6 +412,25 @@ test('a caller whose request a migration gives the text of another caller’s ro
       expect(yield* after.reply('r', caller('b'))).toEqual({ _tag: 'Accepted' })
     })))
 
+// A message costs a reading by the table's key, and a caller's that finds nothing one more, by its request id: each
+// by an index, as the storage writes them (decision 0065).
+test('a reply is read by the key of its table, and a caller’s again by an index of its request id', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const plan = (query: string) =>
+        Effect.map(sql.unsafe<{ detail: string }>(`EXPLAIN QUERY PLAN ${query}`), (rows) =>
+          rows.map(({ detail }) => detail).join(' '))
+      expect(
+        yield* plan(`SELECT request, tag, version, reason FROM replies
+                     WHERE name = 'Receiver' AND id = 'r' AND request = '{}'`),
+      ).toContain('USING INDEX sqlite_autoindex_replies_1 (name=? AND id=? AND request=?)')
+      expect(
+        yield* plan(`SELECT request, tag, version, reason FROM replies
+                     WHERE name = 'Receiver' AND id = 'r' AND json_extract(request, '$.id') = 'x'
+                       AND version <> 2 AND json_extract(request, '$._tag') = 'Caller'`),
+      ).toContain('USING INDEX replies_request_id (name=? AND id=? AND <expr>=?)')
+    }).pipe(Effect.orDie)))
+
 /**
  * Version 2 of the receiver, which marks what it reads of version 1: each kind of value is read through a migration
  * of its own, and a row version 2 wrote is read with no mark.
@@ -323,6 +468,27 @@ test('a version reads through its migrations the work, the mailbox and the log a
         { message: 'hello (inbound)', projection: 'hello (projection)' },
       ])
     })))
+
+// A state is compared by its text and the version that wrote it: one text is another state at another version
+// (decision 0070).
+test('reindex skips an entity that a step wrote since, though its state has the same text at another version', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const first = storage(receiver, sql)
+      yield* first.write('a', created({ entity: { state: { last: 'x' }, creation } }))
+      yield* first.write('b', created({ entity: { state: { last: 'x' }, creation } }))
+      // As 'a''s row is written, version 2 steps 'b' to the state it writes as the same text, which it reads as
+      // its own, with no migration: the step lands between the reading of 'b' and the writing of its row.
+      yield* sql.unsafe(`
+        CREATE TEMP TRIGGER step AFTER INSERT ON projections WHEN NEW.id = 'a' BEGIN
+          UPDATE entities SET version = 2 WHERE name = 'Receiver' AND id = 'b';
+          UPDATE projections SET projection = '"x"', version = 2 WHERE name = 'Receiver' AND id = 'b';
+        END
+      `)
+      const after = storage(marked, sql)
+      expect(yield* after.reindex).toBe(1)
+      expect(yield* after.query({})).toEqual([{ id: 'a', projection: 'migrated' }, { id: 'b', projection: 'x' }])
+    }).pipe(Effect.orDie)))
 
 test('a query by an index the program does not declare dies, naming it', () =>
   database((sql) =>

@@ -1,7 +1,11 @@
 # 0071. A process starts the entities whose mailbox holds a message
 
 **Status:** accepted, 2026-10-31. Decides [messages a crash left in a mailbox](../open-questions.md#running), and
-adds to what [decision 0029](0029-an-idle-entity-is-unloaded.md) has a process start with.
+adds to what [decision 0029](0029-an-idle-entity-is-unloaded.md) has a process start with. The alternative it rejects, a
+`Receive` and its step in one transaction, is taken by
+[decision 0074](0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md) for a message that finds the
+mailbox empty: a crash no longer leaves an inbound message in a mailbox, and what a process starts for is a
+completion or a firing recorded and not handled, or a message stored before that decision.
 
 ## Context
 

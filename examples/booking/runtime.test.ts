@@ -216,11 +216,16 @@ test('a booking whose hold a crash interrupted holds its seats, whichever progra
 test('a booking whose hold the inventory crashed on sends it again, and is not suspended', () =>
   database(Effect.scoped(Effect.gen(function*() {
     let crashes = true
-    const runtime = yield* launch().pipe(Effect.provideService(Probe, (said) => {
-      // The hold is written, and the runtime fails before it answers: the probe stands for a failed write.
-      if (said._tag !== 'Applied' || said.entity.name !== 'Inventory' || said.event._tag !== 'Receive' || !crashes) {
+    const sent: Array<number> = []
+    // The hold waits this long before it sends again to the inventory that crashed on it (decision 0063).
+    const retry = { millis: 100 }
+    const runtime = yield* launch({ retry }).pipe(Effect.provideService(Probe, (said) => {
+      if (said._tag !== 'Applied' || said.entity.name !== 'Inventory' || said.event._tag !== 'Receive') {
         return Effect.void
       }
+      sent.push(Date.now())
+      if (!crashes) return Effect.void
+      // The hold is written, and the runtime fails before it answers: the probe stands for a failed write.
       crashes = false
       return Effect.die('the runtime failed')
     }))
@@ -231,6 +236,8 @@ test('a booking whose hold the inventory crashed on sends it again, and is not s
     // The hold sends again, and gets the reply the inventory stored before it crashed (decision 0046).
     yield* runtime.settled
     expect(crashes).toBe(false)
+    expect(sent).toHaveLength(2)
+    expect((sent[1] ?? 0) - (sent[0] ?? 0)).toBeGreaterThanOrEqual(retry.millis - 5)
     expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held', canConfirm: true })
     expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
   }))))
@@ -260,10 +267,16 @@ test('a booking whose hold the inventory is suspended on waits for its resumptio
     }))
     // A fix is a deploy (decision 0064): the process that runs the fixed inventory starts the hold again, which is
     // answered `Suspended` and waits, registered before it sent, until the operator resumes the inventory.
-    const runtime = yield* launch({ retry })
+    const answered = yield* Deferred.make<void>()
+    const runtime = yield* launch({ retry }).pipe(Effect.provideService(Probe, (said) =>
+      // The hold's message, answered `Suspended`: the resumption comes after it, and is what wakes it.
+      said._tag === 'Applied' && said.entity.name === 'Inventory' && said.event._tag === 'Receive'
+        ? Deferred.succeed(answered, undefined)
+        : Effect.void))
     const inventories = yield* runtime.deploy(inventory)
     const bookings = yield* runtime.deploy(booking)
     expect(yield* bookings.read('b1')).toMatchObject({ status: 'Holding' })
+    yield* Deferred.await(answered)
     yield* inventories.resume('gig')
     yield* runtime.settled
     expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held', canConfirm: true })
