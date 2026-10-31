@@ -324,7 +324,9 @@ on, never back and never past the last `seq` written, so a crash before the ack 
 every consumer has read, through the lowest stored cursor, and drops nothing where no consumer has read from the
 log. `consumers` says where each one is and how many rows are past it, and `forget` lets the log go past one
 that is gone; `published(after, limit)` reads from a cursor the caller holds, and registers nothing
-([decision 0039](decisions/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). The log is kept for its
+([decision 0039](decisions/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). A cursor and a limit a handle
+is given are non-negative integers, and anything else is its caller's defect, which stores nothing
+([decision 0053](decisions/0053-what-a-handle-is-given-is-checked.md)). The log is kept for its
 consumers and is not an archive: a program whose past must stay readable keeps it where callers read it, in the
 state or in entities of its own.
 A cursor skips nothing because the runtime writes one transaction at a time, so a row's `seq` is given and

@@ -129,7 +129,8 @@ export interface Handle<T extends Types> {
   /**
    * Moves a consumer's cursor to `through`, never back, since what is behind it may be gone, and never past the
    * last `seq` written, so that no row written later is behind it. An ack from a consumer that has not read
-   * stores its cursor too (decision 0039).
+   * stores its cursor too (decision 0039). A cursor and a limit are non-negative integers, here and in `query`,
+   * `published` and `feed`, and anything else is the caller's defect (decision 0053).
    */
   readonly ack: (consumer: string, through: number) => Effect.Effect<void>
   /**
@@ -223,6 +224,22 @@ class Faulted {
 
 const faulted = <A>(effect: Effect.Effect<A, Faulted>): Effect.Effect<A> =>
   Effect.catchTag(effect, 'Faulted', (fault) => Effect.die(fault.defect))
+
+/**
+ * Runs `effect` once each count a caller gave — a cursor, a limit — is a non-negative integer: anything else is
+ * the caller's defect, and nothing is read or stored for it. A limit left out is none (decision 0053).
+ */
+const counted = <A>(
+  counts: Readonly<Record<string, number | undefined>>,
+  effect: Effect.Effect<A>,
+): Effect.Effect<A> =>
+  Effect.suspend(() => {
+    for (const [what, count] of Object.entries(counts)) {
+      if (count === undefined || (Number.isSafeInteger(count) && count >= 0)) continue
+      return Effect.die(new InvariantDefect({ reason: `the ${what} is ${count}, which is no non-negative integer` }))
+    }
+    return effect
+  })
 
 /**
  * Tells the waker that the set of unloaded entities changed. Its flag and its poke are set in one step, and the
@@ -843,11 +860,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               const stored = yield* deployed.storage.load(id)
               return stored === null ? null : program.project(stored.state)
             }),
-          query: (query) => deployed.storage.query(query),
+          query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
           reindex: deployed.storage.reindex,
-          published: (after, limit) => deployed.storage.published(after, limit),
-          feed: (consumer, limit) => deployed.storage.feed(consumer, limit),
-          ack: (consumer, through) => deployed.storage.ack(consumer, through),
+          published: (after, limit) => counted({ cursor: after, limit }, deployed.storage.published(after, limit)),
+          feed: (consumer, limit) => counted({ limit }, deployed.storage.feed(consumer, limit)),
+          ack: (consumer, through) => counted({ cursor: through }, deployed.storage.ack(consumer, through)),
           prune: deployed.storage.prune,
           consumers: deployed.storage.consumers,
           forget: (consumer) => deployed.storage.forget(consumer),

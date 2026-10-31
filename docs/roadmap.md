@@ -69,23 +69,20 @@ which the later ones build on. Each step is decided in a note before it is made.
    message of any tag but `Inbound` as internal, and casts `delivery` and an outbox row's kind unchecked. Each
    table's row has a schema, and a row it refuses fails the call that meets it, as a row no version reads does
    ([decision 0043](decisions/0043-a-row-no-version-reads-fails-what-reads-it.md)).
-10. **What a handle is given is checked.** `ack` stores a cursor at `2.5`, and a consumer's first ack one at `-5`.
-    A negative limit of `query`, `published` or `feed` reads everything, and a fractional one fails in SQLite, as a
-    defect of the runtime. Each is a non-negative integer, and anything else the caller's defect.
-11. **Nothing waits for an operation under the registry's permit.** `crash` interrupts the entity's operations
+10. **Nothing waits for an operation under the registry's permit.** `crash` interrupts the entity's operations
     while it holds the one permit of the process, and an interruption waits for the operation's finalizers: while a
     request to a slow service closes, every `send` and `create` to any entity of any program waits, and so does
     every load and unload. The interruption is made once the permit is released, or forked ([one permit for the
     process](open-questions.md#running)).
-12. **The runtime waits for what it waits for, and polls nothing.** `settled` looks every millisecond, `deployedAs`
+11. **The runtime waits for what it waits for, and polls nothing.** `settled` looks every millisecond, `deployedAs`
     every few, and a sender sends again to a suspended receiver every few too. Each becomes a signal: a count of
     what is under way with a latch for `settled`, a deploy that wakes the operations waiting for its program, a
     resumption that wakes the senders waiting for it ([suspended entities](open-questions.md#running)).
-13. **The tests run on a clock they control.** The runtime's tests sleep for real time, up to 80 milliseconds at
+12. **The tests run on a clock they control.** The runtime's tests sleep for real time, up to 80 milliseconds at
     once, which a loaded machine can outlast. The runtime reads time with `DateTime.now` and waits with
     `Effect.sleep`, which `TestClock` drives: the tests move time instead of waiting for it, and the random
     sequences, 25 runs today, can run many more.
-14. **The public surface is the library's.** `index.ts` exports what only the runtime uses (`indexesOf`,
+13. **The public surface is the library's.** `index.ts` exports what only the runtime uses (`indexesOf`,
     `migrationOf`, `storage`), and a `Work` of `program.ts` beside the machine's `Work<T>`, another type of the
     same name. It exports what a program, a test and an operator use, and the two `Work` get two names. With it,
     the small things of the code: `Faulted` is a `Data.TaggedError`; `activate` takes a boolean where it takes a

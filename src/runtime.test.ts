@@ -1078,6 +1078,42 @@ describe('publishing what happened', () => {
         }))
     })))
 
+  test('a cursor or a limit that is no non-negative integer is its caller’s defect, and stores nothing', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const reasonOf = (exit: Exit.Exit<unknown>) => {
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        return cause instanceof InvariantDefect ? cause.reason : null
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          // Each of them is refused before anything is read or stored (decision 0053).
+          const refused = [
+            toy.ack('queue', 2.5),
+            toy.ack('queue', -5),
+            toy.ack('queue', Number.NaN),
+            toy.published(-1),
+            toy.published(0, -1),
+            toy.published(0, 1.5),
+            toy.feed('queue', -1),
+            toy.feed('queue', Number.POSITIVE_INFINITY),
+            toy.query({ limit: -1 }),
+            toy.query({ limit: 0.5 }),
+          ]
+          for (const call of refused) {
+            expect(reasonOf(yield* Effect.exit(call))).toMatch(/^the (cursor|limit) is .+, which is no non-negative/)
+          }
+          // No consumer was stored by a call refused, and a limit of 0, or none, is a limit.
+          expect(yield* toy.consumers).toEqual([])
+          expect(yield* toy.published(0, 0)).toEqual([])
+          expect((yield* toy.published(0)).length).toBe(1)
+          expect((yield* toy.query({ limit: 0 })).length).toBe(0)
+        }))
+    })))
+
   test('entities stepping at once share one rising sequence, and nothing of theirs is lost', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
