@@ -106,4 +106,5 @@ that a sender waits — does not wait on Cluster, and is taken before it if an o
 - Effect Cluster: the runtime on it, as [`docs/cluster.md`](cluster.md) and the notes above decide, with sharding and
   rolling deploys; across machines once Cluster has a fence, or the runtime one of its own
   ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
-- The library's name, once there is code to publish.
+- The library's name, once there is code to publish, and its release, as experimental while it depends on
+  Effect's unstable modules ([decision 0099](decisions/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).

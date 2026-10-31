@@ -1,7 +1,9 @@
 # 0018. Operations are data, and their runners never see the state
 
 **Status:** accepted, 2026-10-30. Replaces [decision 0016](0016-work-is-what-it-was-started-with.md), and the
-way [decision 0011](0011-an-operation-declares-what-a-crash-does.md) builds an operation.
+way [decision 0011](0011-an-operation-declares-what-a-crash-does.md) builds an operation. Its comparison by
+`Equal.equals` is replaced by [decision 0058](0058-work-is-compared-by-what-is-stored.md): two works are the same
+when they encode to the same JSON.
 
 ## Context
 

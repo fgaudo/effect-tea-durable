@@ -3,6 +3,8 @@
 **Status:** accepted, 2026-10-30. What it says a caller of a suspended entity is answered is replaced by
 [decision 0023](0023-suspended-means-no-reply-yet.md), and what it says of discarding an internal message by
 [decision 0041](0041-a-completion-is-not-discarded.md) and [decision 0044](0044-a-firing-is-not-discarded.md).
+That a resumption may bring a fixed program is replaced by
+[decision 0064](0064-the-program-is-not-the-machines-state.md): a fix is a deploy, and the resumption follows it.
 
 ## Context
 

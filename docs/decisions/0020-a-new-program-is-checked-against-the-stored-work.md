@@ -1,6 +1,8 @@
 # 0020. A new program is checked against the work it finds stored
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. That a restart or a resumption carries the program it activates with is replaced
+by [decision 0064](0064-the-program-is-not-the-machines-state.md): an event is stepped by the program deployed, and a
+resumption brings none.
 
 ## Context
 

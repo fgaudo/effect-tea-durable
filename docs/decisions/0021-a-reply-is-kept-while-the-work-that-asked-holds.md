@@ -1,7 +1,9 @@
 # 0021. A reply to an entity is kept while the work that asked is stored
 
 **Status:** accepted, 2026-10-30. What its consequences say of Cluster is corrected by
-[decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md): one statement reads both shards.
+[decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md): one statement reads both shards. Which
+replies are deleted is given by the machine's step since [decision 0057](0057-the-machine-gives-what-is-written.md): the
+storage checks only another entity's keys.
 
 ## Context
 

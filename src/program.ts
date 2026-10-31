@@ -50,8 +50,8 @@ export const defect = (reason: string): never => {
   throw new InvariantDefect({ reason })
 }
 
-/** A value JSON holds: what a schema encodes to, so that a runtime can write it (decision 0030). */
-export type Json = string | number | boolean | null | { readonly [key: string]: Json } | ReadonlyArray<Json>
+/** A value JSON holds: what a schema encodes to, so that a runtime can write it (decisions 0030, 0098). */
+export type Json = Schema.Json
 
 /**
  * Whether a value is JSON as it is, so that `JSON.stringify` writes what is read back: the type `Json` admits

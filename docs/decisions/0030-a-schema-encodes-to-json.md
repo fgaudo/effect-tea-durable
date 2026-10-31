@@ -1,6 +1,7 @@
 # 0030. A schema encodes to what JSON holds
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. The type it declares is replaced by Effect's, in
+[decision 0098](0098-json-is-effect-s.md): Effect has one.
 
 ## Context
 

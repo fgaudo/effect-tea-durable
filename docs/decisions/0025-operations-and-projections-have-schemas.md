@@ -1,6 +1,8 @@
 # 0025. A program gives the schemas of its operations and of its projection
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its consequences that a decoded operation is compared by `Equal.equals`, and
+that a schema which does not round-trip it is a defect, are replaced by
+[decision 0058](0058-work-is-compared-by-what-is-stored.md): work is compared by the JSON it encodes to.
 
 ## Context
 

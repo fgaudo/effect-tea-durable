@@ -1,6 +1,8 @@
 # 0017. Creation is part of the machine
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its consequences that an operation creates an entity under its idempotency key, and
+sends one message to a given entity, are replaced by [decision 0047](0047-a-request-of-an-operation-has-a-name.md) and
+[decision 0060](0060-send-and-create-take-no-key.md).
 
 ## Context
 
