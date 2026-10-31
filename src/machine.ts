@@ -31,25 +31,63 @@ import {
 } from './program.ts'
 
 /**
+ * What the program threw, or a rule of the design it broke: the one exception that suspends the entity. Anything
+ * else thrown while an event is applied is the runtime's — a bug of the machine, or a machine the runtime gave it
+ * corrupted — and leaves the step, which a runtime crashes the entity on (decisions 0042, 0061).
+ */
+class Defect extends Error {
+  // Legible where it leaves the machine: `shownOf`, which `reindex` calls, throws it too.
+  constructor(override readonly cause: unknown) {
+    super(`a defect of the program: ${render(cause)}`)
+  }
+}
+
+/** Calls the program, each of its functions and schemas on its own: what it throws is its defect (decision 0061). */
+const byProgram = <A>(call: () => A): A => {
+  try {
+    return call()
+  } catch (cause) {
+    throw new Defect(cause)
+  }
+}
+
+/** A rule of the design the program broke: its defect, as what it throws is. */
+const broken = (reason: string): never => {
+  throw new Defect(new InvariantDefect({ reason }))
+}
+
+/** The cause of the program's defect `thrown`. Anything else is thrown again, as the runtime's (decision 0061). */
+const defectOf = (thrown: unknown): unknown => {
+  if (thrown instanceof Defect) return thrown.cause
+  throw thrown
+}
+
+/** A value encoded by one of the program's schemas: one it refuses, or that JSON does not hold, is its defect. */
+const encodeBy = <A>(codec: Schema.Codec<A, Json>, value: A, what: string): Json =>
+  byProgram(() => encode(codec, value, what))
+
+/**
  * The work the state holds, under the keys the program declares and no others: a key it does not declare is a
  * defect, where the state holding it is read (decision 0037). The types catch a key a program never declared
  * where the state holds that key alone, and not where it holds a declared key beside a misspelt one. So is an
- * operation the program gives no runner for, which a cast lets through (decision 0054).
+ * operation the program gives no runner for, which a cast lets through (decision 0054), and anything a cast lets
+ * through that is no work at all.
  */
 const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Held<T> => {
-  const work = program.durable(state)
+  const work: unknown = byProgram(() => program.durable(state))
+  if (typeof work !== 'object' || work === null) return broken('durable gave no record of work')
   const declared = new Set<string>(program.keys)
   for (const [key, held] of Object.entries(work)) {
-    if (!declared.has(key)) {
-      throw new InvariantDefect({ reason: `the state holds work under '${key}', which the program does not declare` })
+    if (!declared.has(key)) broken(`the state holds work under '${key}', which the program does not declare`)
+    if (held === undefined || isTimer(held)) continue
+    if (typeof held !== 'object' || held === null || typeof (held as { _tag?: unknown })._tag !== 'string') {
+      broken(`the state holds what is no work under '${key}'`)
     }
-    if (held !== undefined && !isTimer(held) && runnerOf(program, held) === undefined) {
-      throw new InvariantDefect({
-        reason: `the state holds the operation '${held._tag}' under '${key}', which the program has no runner for`,
-      })
+    if (runnerOf(program, held as T['operation']) === undefined) {
+      broken(`the state holds the operation '${(held as T['operation'])._tag}' under '${key}', which the program has no runner for`)
     }
   }
-  return work
+  return work as Held<T>
 }
 
 /**
@@ -59,7 +97,7 @@ const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Hel
 const encodings = new WeakMap<object, WeakMap<object, Json>>()
 
 const encodeOnce = <A>(codec: Schema.Codec<A, Json>, value: A, what: string): Json => {
-  if (typeof value !== 'object' || value === null) return encode(codec, value, what)
+  if (typeof value !== 'object' || value === null) return encodeBy(codec, value, what)
   let held = encodings.get(codec)
   if (held === undefined) {
     held = new WeakMap()
@@ -67,7 +105,7 @@ const encodeOnce = <A>(codec: Schema.Codec<A, Json>, value: A, what: string): Js
   }
   const cached = held.get(value)
   if (cached !== undefined) return cached
-  const json = encode(codec, value, what)
+  const json = encodeBy(codec, value, what)
   held.set(value, json)
   return json
 }
@@ -104,7 +142,7 @@ const encodeWork = <T extends Types>(
   const json: Json = isTimer(work)
     ? {
       _tag: 'Timer',
-      at: DateTime.toEpochMillis(work.at),
+      at: byProgram(() => DateTime.toEpochMillis(work.at)),
       message: encodeOnce(schemas.internal, work.message as T['internal'], `message of the timer under '${key}'`),
     }
     : { _tag: 'Operation', operation: encodeOnce(schemas.operation, work, `operation under '${key}'`) }
@@ -134,14 +172,12 @@ export const shownOf = <T extends Types>(
   }
   const cached = held.get(state)
   if (cached !== undefined) return cached
-  const projection = program.project(state)
-  const indexes = indexesOf(program, projection)
+  const projection = byProgram(() => program.project(state))
+  const indexes = byProgram(() => indexesOf(program, projection))
   for (const [name, value] of Object.entries(indexes)) {
-    if (typeof value === 'number' && !Number.isFinite(value)) {
-      throw new InvariantDefect({ reason: `the index '${name}' is a number JSON does not hold` })
-    }
+    if (typeof value === 'number' && !Number.isFinite(value)) broken(`the index '${name}' is a number JSON does not hold`)
   }
-  const json = encode(program.schemas.projection, projection, 'projection')
+  const json = encodeBy(program.schemas.projection, projection, 'projection')
   const row = { projection: json, indexes, text: canonical(json) }
   held.set(state, row)
   return row
@@ -500,27 +536,21 @@ const startWork = <T extends Types>(
  * otherwise an operation before its completion, is a defect, as in a step (decisions 0020, 0022).
  */
 const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Stored<T> => {
-  if (program.name !== stored.name) {
-    throw new InvariantDefect({
-      reason: `the program '${program.name}' replaces the entity's program '${stored.name}'`,
-    })
-  }
+  if (program.name !== stored.name) broken(`the program '${program.name}' replaces the entity's program '${stored.name}'`)
   const work = admitted(program, stored.state)
   const keys = renew(program, stored.keys, workOf(stored), work)
   for (const [key, { work: was, delivery }] of Object.entries(stored.keys)) {
     if (was === undefined || isTimer(was)) continue
     const next = work[key]
     if (!isSame(program, key, was, next)) {
-      throw new InvariantDefect({
-        reason: next === undefined || isTimer(next)
+      broken(
+        next === undefined || isTimer(next)
           ? `the program dropped the operation under '${key}' before its completion`
           : `the program changed the operation under '${key}' before its completion`,
-      })
+      )
     }
     if (keys[key]?.delivery !== delivery) {
-      throw new InvariantDefect({
-        reason: `the program changed how the operation under '${key}' is delivered before its completion`,
-      })
+      broken(`the program changed how the operation under '${key}' is delivered before its completion`)
     }
   }
   return { ...stored, keys }
@@ -551,8 +581,8 @@ const activate = <T extends Types>(before: Machine<T>, machine: Machine<T>, mayH
       const runner = isTimer(work) ? null : runnerOf(program, work)
       const started = incarnation === machine.stored.keys[key]?.incarnation
       if (started && mayHaveRun && runner?.delivery === 'AtMostOnce') {
-        const message = runner.unknown(work as T['operation'])
-        encode(program.schemas.internal, message, `unknown of the operation under '${key}'`)
+        const message = byProgram(() => runner.unknown(work as T['operation']))
+        encodeBy(program.schemas.internal, message, `unknown of the operation under '${key}'`)
         mailbox.push({ _tag: 'Internal', key, incarnation, message })
         outputs.push({ _tag: 'Recorded', key, incarnation })
       } else {
@@ -561,7 +591,8 @@ const activate = <T extends Types>(before: Machine<T>, machine: Machine<T>, mayH
       }
     }
     return { machine: { ...machine, stored: { ...stored, mailbox }, running }, outputs }
-  } catch (cause) {
+  } catch (thrown) {
+    const cause = defectOf(thrown)
     return suspend({ ...before, program }, { cause, on: before.stored.suspension?.on ?? { _tag: 'Activation' } })
   }
 }
@@ -587,12 +618,12 @@ export const start = <T extends Types>(
   try {
     // `init` is given the flags its schema takes, and no others: flags that do not encode are a defect, and
     // nothing is stored (decision 0049). The request is stored with the entity, and encodes too.
-    encode(program.schemas.flags, flags, 'value of the flags')
+    encodeBy(program.schemas.flags, flags, 'value of the flags')
     encodeOnce(requestCodec(program), request, 'request')
-    state = program.init(flags, at)
+    state = byProgram(() => program.init(flags, at))
     work = admitted(program, state)
-  } catch (cause) {
-    return { _tag: 'Defect', cause }
+  } catch (thrown) {
+    return { _tag: 'Defect', cause: defectOf(thrown) }
   }
   const stored: Stored<T> = {
     name: program.name,
@@ -670,9 +701,9 @@ const record = <T extends Types>(
   const recorded = message(work)
   if (kind === 'Operation') {
     try {
-      encode(machine.program.schemas.internal, recorded, `message of the operation under '${key}'`)
-    } catch (cause) {
-      return suspend(machine, { cause, on: { _tag: 'Operation', key, incarnation } })
+      encodeBy(machine.program.schemas.internal, recorded, `message of the operation under '${key}'`)
+    } catch (thrown) {
+      return suspend(machine, { cause: defectOf(thrown), on: { _tag: 'Operation', key, incarnation } })
     }
   }
   const { [key]: _, ...others } = machine.running
@@ -704,13 +735,11 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Moved<T
       }
     }
     const from: Origin<T['sender']> = head._tag === 'Inbound' ? originOf(head.request) : { _tag: 'Self' }
-    const result = program.update(head.message, { at, from })(stored.state)
+    const result = byProgram(() => program.update(head.message, { at, from })(stored.state))
     if (isRejected(result)) {
-      if (head._tag === 'Internal') {
-        throw new InvariantDefect({ reason: `update rejected the message of the work under '${head.key}'` })
-      }
+      if (head._tag === 'Internal') return broken(`update rejected the message of the work under '${head.key}'`)
       const reply = { _tag: 'Rejected', reason: reasonOf(result) } as const
-      if (reply.reason !== null) encode(program.schemas.rejection, reply.reason, 'reason of the rejection')
+      if (reply.reason !== null) encodeBy(program.schemas.rejection, reply.reason, 'reason of the rejection')
       const replies = { ...stored.replies, [requestKey(program, head.request)]: reply }
       return {
         machine: { ...machine, stored: { ...stored, mailbox: rest, replies } },
@@ -735,11 +764,11 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Moved<T
       // 0018); a timer has done nothing yet.
       if (!isTimer(work)) {
         const next = after[key]
-        throw new InvariantDefect({
-          reason: next === undefined || isTimer(next)
+        broken(
+          next === undefined || isTimer(next)
             ? `the step dropped the operation under '${key}' before its completion`
             : `the step changed the operation under '${key}' before its completion`,
-        })
+        )
       }
       const armed = running[key]
       if (armed !== undefined) {
@@ -774,9 +803,10 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Moved<T
       },
       outputs,
     }
-  } catch (cause) {
-    return suspend(machine, { cause, on: { _tag: 'Message' } })
+  } catch (thrown) {
+    return suspend(machine, { cause: defectOf(thrown), on: { _tag: 'Message' } })
   }
+
 }
 
 /**

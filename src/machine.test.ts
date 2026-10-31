@@ -915,6 +915,52 @@ describe('the checks of a step', () => {
   })
 })
 
+// A defect is what the program does; anything else thrown in a step is the runtime's, which crashes the entity
+// instead of suspending it as the program's (decisions 0042, 0061).
+describe('what the program throws', () => {
+  const inbound = { _tag: 'Receive', request: by('r'), message: 'go' } as const
+  /**
+   * A machine the runtime corrupted: the row of a timer the state keeps, which only the machine's own code reads
+   * where the work is kept, throws.
+   */
+  const corrupt = (): Machine.Machine<Tiny> => {
+    const machine = checked((message) => message, () => ({ deadline: 'timer' }))
+    const held = machine.stored.keys['deadline']
+    const deadline = {
+      incarnation: held?.incarnation ?? 0,
+      ...(held?.work === undefined ? {} : { work: held.work }),
+      get delivery(): never {
+        throw new TypeError('a row the runtime corrupted')
+      },
+    }
+    return { ...machine, stored: { ...machine.stored, keys: { ...machine.stored.keys, deadline } } }
+  }
+
+  test('an exception of the machine in a step is no defect of the program: it leaves the step', () => {
+    const queued = Machine.step(corrupt(), inbound).machine
+    expect(() => Machine.step(queued, { _tag: 'Handle', at })).toThrow('a row the runtime corrupted')
+  })
+
+  test('an exception of the machine in an activation is no defect of the program: it leaves the event', () => {
+    expect(() => Machine.step(corrupt(), { _tag: 'Restart' })).toThrow('a row the runtime corrupted')
+  })
+
+  test('what update throws is its defect, with what it threw as the cause', () => {
+    const broken = new TypeError('a bug of the program')
+    const machine = checked((message) => {
+      if (message === 'go') throw broken
+      return message
+    }, () => ({}))
+    expect(handled(machine, inbound).machine.stored.suspension).toEqual({ cause: broken, on: { _tag: 'Message' } })
+  })
+
+  test('what a cast lets through as work that is none is a defect', () => {
+    const base = checked((message) => message, () => ({}))
+    const machine = { ...base, program: { ...base.program, durable: () => ({ charge: 5 as never }) } }
+    expect(reasonOfSuspension(handled(machine, inbound))).toBe("the state holds what is no work under 'charge'")
+  })
+})
+
 describe('what a runtime writes', () => {
   const inbound = { _tag: 'Receive', request: by('r'), message: 'go' } as const
 

@@ -300,7 +300,10 @@ would receive it again and die again, forever. So a defect **suspends** the enti
 before the message, the message stays unhandled, and nothing is delivered to it until someone resumes it or
 discards the message ([decision 0006](decisions/0006-a-defect-suspends-the-entity.md)). A defect in an
 operation, in `durable` or `project` on a step's next state, or in a new program activating the stored state,
-suspends it too. Resuming activates it as after a
+suspends it too. A defect is what the program does: what one of its functions or schemas throws, each caught on
+its own, or a rule of the design it breaks. Anything else thrown while an event is applied — a bug of the machine,
+a row the runtime corrupted — is the runtime's, and crashes the entity instead
+([decision 0061](decisions/0061-only-what-the-program-does-is-its-defect.md)). Resuming activates it as after a
 crash; a discarded inbound message stores no reply, and its caller's retry is a new message
 ([decision 0014](decisions/0014-rules-the-machine-settled.md)). An internal message is not discarded: the state
 before it still holds its work, so an operation's completion would run the operation again under another
