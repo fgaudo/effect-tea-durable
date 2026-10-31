@@ -72,9 +72,11 @@ note, in this order, since each may change the ones after it:
   `ClusterSchema.WithTransaction`, when the runtime's tables sit beside Cluster's on one `SqlClient`; Cluster's
   mailbox then replaces the runtime's, and a message that finds it empty is no longer handled as it arrives
   ([decision 0074](decisions/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)).
-- **A fence.** Cluster confirms a shard's lock before it saves a reply, inside the step's transaction, but not
-  by the commit: a runner frozen between the two past the lock's expiration commits after another took the shard.
-  Whether that window is accepted, or each step's transaction compares something the next holder changes.
+- **A fence.** Cluster confirms a shard's lock before it saves a reply, inside the step's transaction. On SQLite
+  the lease is renewed in that transaction and the commit makes the check; on PostgreSQL and MySQL the lock is
+  checked through a session of its own, not by the commit: a runner frozen between the two past the lock's
+  expiration commits after another took the shard. Whether that window is accepted there, or each step's
+  transaction compares something the next holder changes.
 - **Requests and replies.** The sender's address in Cluster's primary key
   ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)), and what deletes a reply once one statement no
   longer reads both shards ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).

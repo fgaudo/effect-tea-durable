@@ -43,21 +43,27 @@ the entity leaves the runner, unless the handler stores it itself.
 - **The check before a reply.** The final reply of a persisted request is saved only once a refresh of its
   shard's lock confirms it, at that moment (`isShardOwned`, `confirmShardLock`). If it does not, the reply is not
   saved, the request's claim is reset, and the shard's next owner handles it again. Under `WithTransaction` the
-  check runs before the handler's transaction commits, so a failed check rolls back what the handler wrote; the
-  refresh itself goes through the connection that holds the locks, a session apart from the transaction's.
+  check runs before the handler's transaction commits, so a failed check rolls back what the handler wrote. On
+  PostgreSQL and MySQL the refresh goes through the connection that holds the locks, a session apart from the
+  transaction's, even with advisory locks disabled. SQLite, PGlite and SQL Server have no such connection: a
+  statement takes the transaction's connection from its context, and the reply is saved in the handler's, so the
+  refresh renews the lease inside the transaction, and commits or rolls back with it.
 
-What the check leaves open is the time between it and the commit: there is no fencing token that the commit
-itself compares. A runner frozen after the refresh that confirmed its lock — a pause of the process, a slow disk —
-for longer than the lock's expiration commits after another runner may have taken the shard and handled the
-message again. A refresh renews a lease for a full expiration, so the window is a pause of 35 s at the worst
-moment, not a slow refresh. What a handler writes outside `WithTransaction`, and a chunk of a streamed reply, is
-not checked at all.
+What the check leaves open on PostgreSQL and MySQL is the time between it and the commit: there is no fencing
+token that the commit itself compares. A runner frozen after the refresh that confirmed its lock — a pause of the
+process, a slow disk — for longer than the lock's expiration commits after another runner may have taken the shard
+and handled the message again. A refresh renews a lease for a full expiration, so the window is a pause of 35 s at
+the worst moment, not a slow refresh. On SQLite, PGlite and SQL Server the renewal holds the file's write lock, or
+the lock row's, until the commit, so no runner takes the shard between the check and the commit: the check is made
+by the commit. What a handler writes outside `WithTransaction`, and a chunk of a streamed reply, is not checked at
+all, on any database.
 
 For the runtime, the shard's lock takes the place of the file's lock
-([decision 0080](decisions/0080-a-database-is-held-by-one-runtime.md)), and is weaker: the file's lock refuses a
-second writer outright, the shard's lock is confirmed before a commit, not by it. Whether the runtime accepts that
-window, or adds a fence of its own — something each step's transaction compares, which the next holder of the
-shard changes when it takes it — is to be decided.
+([decision 0080](decisions/0080-a-database-is-held-by-one-runtime.md)). On SQLite it holds as the file's lock
+does: the check commits with the step. On PostgreSQL and MySQL it is weaker: the file's lock refuses a second
+writer outright, the shard's lock is confirmed before a commit, not by it. Whether the runtime accepts that window
+there, or adds a fence of its own — something each step's transaction compares, which the next holder of the shard
+changes when it takes it — is to be decided.
 
 SQLite is a store for one runner. Two runners can share a file only on one machine, and a cluster of several
 machines needs PostgreSQL or MySQL. `@effect/sql-sqlite-bun` is all the project depends on today.
@@ -96,7 +102,7 @@ What stays two transactions:
 | --- | --- | --- | --- |
 | Mailbox | `cluster_messages`, read per shard in `rowid` order; a message read is claimed (`last_read`) and read again if its claim is ten minutes old; polled every `entityMessagePollInterval` (10 s), and woken at once by a send through its runner | its own table, in one transaction with the step | Cluster's, if steps run in its transaction; the runtime's mailbox goes |
 | Deduplication | only for a payload that implements `PrimaryKey`, under `entityType/entityId/tag/id`; a duplicate is answered with the last reply stored; keys over 255 characters stored as their SHA-256 | under the sender and its request id ([0015](decisions/0015-a-request-belongs-to-its-sender.md)) | adapted: the primary key carries the sender's address, so no sender takes another's ids |
-| Replies | `cluster_replies`, kept until `Sharding.reset` (which the workflow engine calls) or `clearAddress` deletes them; processed messages are never pruned by Cluster | kept while the sender's work holds ([0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)) | Cluster keeps everything; the runtime decides what it deletes, and with what message |
+| Replies | `cluster_replies`, kept until `clearAddress` deletes an entity's messages and replies, or `Sharding.reset` (which the workflow engine calls) deletes a request's reply and marks the request unprocessed, so that it is handled again; processed messages are never pruned by Cluster | kept while the sender's work holds ([0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)) | Cluster keeps everything; the runtime decides what it deletes, and with what message |
 | Timers | `DeliverAt` on a payload: a message not delivered before its time, and not woken at it either: the next read of storage finds it, up to `entityMessagePollInterval` (10 s) late | `entity_keys.due`, armed by an activation, woken by the waker ([0029](decisions/0029-an-idle-entity-is-unloaded.md)) | open: a timer could be a message delivered at its time, so that an unloaded entity needs no waker, if a timer may fire up to a poll late |
 | Passivation | `maxIdleTime` per entity (1 min by default), measured from the end of its last request, while none is active, and checked every `maxIdleTime` or 30 s, whichever is shorter, but no more often than every 5 s | `passivate.millis`, measured from the last event, and nothing under way ([0029](decisions/0029-an-idle-entity-is-unloaded.md)) | kept by the runtime: Cluster would unload an entity whose operation is under way unless the handler calls `Entity.keepAlive(true)` |
 | Capacity | `maxResidentEntities` (10 000): beyond it, no new entity starts, and its messages wait in storage | the least recently used of the idle leave ([0076](decisions/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md)) | different: Cluster refuses the new, the runtime evicts the old; the two bounds would both apply |
@@ -155,7 +161,8 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
   still meet in its memory. What a node keeps is per shard, which is what a shard leaving interrupts.
 - **[0074](decisions/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)** — on Cluster a
   message is stored, then handled: two transactions.
-- **[0080](decisions/0080-a-database-is-held-by-one-runtime.md)** — the shard's lock replaces the file's; it is
-  confirmed before a commit, not by it, and whether the runtime adds a fence is to be decided.
+- **[0080](decisions/0080-a-database-is-held-by-one-runtime.md)** — the shard's lock replaces the file's; on
+  SQLite it is confirmed by the step's commit, on PostgreSQL and MySQL before it, not by it, and whether the
+  runtime adds a fence there is to be decided.
 - **[0019](decisions/0019-unstable-effect-modules.md)** — everything read here is `@stability unstable` in
   `effect` 4.1.0.
