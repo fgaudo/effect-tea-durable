@@ -338,7 +338,13 @@ const toEvent = (machine: Toy, command: Command, requests: Array<Receive>): Mach
   }
 }
 
-type Traced = Readonly<{ event: Machine.Event<T>; before: Toy; after: Toy; outputs: ReadonlyArray<Machine.Output<T>> }>
+type Traced = Readonly<{
+  event: Machine.Event<T>
+  before: Toy
+  after: Toy
+  outputs: ReadonlyArray<Machine.Output<T>>
+  written: Machine.Written | null
+}>
 
 const run = (commands: ReadonlyArray<Command>) => {
   const created = Machine.start(program, 'toy', null, epoch, creation)
@@ -347,11 +353,11 @@ const run = (commands: ReadonlyArray<Command>) => {
   const requests: Array<Receive> = []
   // Creation, as an activation that found nothing.
   const trace: Array<Traced> = [
-    { event: { _tag: 'Restart' }, before: machine, after: machine, outputs: created.outputs },
+    { event: { _tag: 'Restart' }, before: machine, after: machine, outputs: created.outputs, written: created.written },
   ]
   const apply = (event: Machine.Event<T>) => {
-    const { machine: after, outputs } = Machine.step(machine, event)
-    trace.push({ event, before: machine, after, outputs })
+    const { machine: after, outputs, written } = Machine.step(machine, event)
+    trace.push({ event, before: machine, after, outputs, written })
     machine = after
   }
   for (const command of commands) {
@@ -729,7 +735,13 @@ type Tiny = {
 type TinyWork = Readonly<
   Record<
     string,
-    'operation' | 'larger operation' | 'unmeasured operation' | 'timer' | 'later timer' | 'other timer'
+    | 'operation'
+    | 'larger operation'
+    | 'unmeasured operation'
+    | 'annotated operation'
+    | 'timer'
+    | 'later timer'
+    | 'other timer'
   >
 >
 
@@ -762,7 +774,11 @@ const tiny = (
   durable: ({ last }) =>
     Object.fromEntries(Object.entries(durable(last)).map(([key, kind]) => [
       key,
-      kind === 'operation' || kind === 'larger operation' || kind === 'unmeasured operation'
+      // An annotated operation carries a property its schema does not declare, which the types let through a
+      // spread: it is not stored (decision 0058).
+      kind === 'annotated operation'
+        ? { ...{ _tag: 'Work', size: 1 } as const, ...{ note: last } }
+        : kind === 'operation' || kind === 'larger operation' || kind === 'unmeasured operation'
         ? { _tag: 'Work', size: kind === 'operation' ? 1 : kind === 'larger operation' ? 2 : Number.NaN } as const
         : timer(kind === 'later timer' ? at : epoch, kind === 'other timer' ? 'rang again' : 'rang'),
     ])),
@@ -842,6 +858,14 @@ describe('the checks of a step', () => {
     const transition = handled(machine, inbound)
     expect(transition.machine.stored.suspension).toBeNull()
     expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+  })
+
+  test('an operation is compared by what is stored: a property its schema does not declare is not', () => {
+    const machine = checked((message) => message, () => ({ charge: 'annotated operation' }))
+    const transition = handled(machine, inbound)
+    expect(transition.machine.stored.suspension).toBeNull()
+    expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+    expect(transition.machine.stored.keys['charge']?.incarnation).toBe(1)
   })
 
   test('a key whose timer becomes an operation is new work', () => {
@@ -1231,6 +1255,15 @@ describe('a new program', () => {
     )
   })
 
+  test('keeps an operation that differs only by what its schema does not store', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const transition = deployed(machine, () => ({ charge: 'annotated operation' }))
+    expect(transition.machine.stored.suspension).toBeNull()
+    expect(transition.outputs).toContainEqual(
+      expect.objectContaining({ _tag: 'Started', key: 'charge', incarnation: 1 }),
+    )
+  })
+
   test('returning a key whose work was delivered starts new work, under a new key', () => {
     const machine = checked((message) => message, (state) => (state === 'start' ? { charge: 'operation' } : {}))
     const delivered = handled(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'charged' })
@@ -1373,4 +1406,76 @@ describe('creation', () => {
     const sent = handled(machine, { _tag: 'Receive', requestId: 'creation', message: 'go', from: nobody })
     expect(sent.machine.stored.state).toEqual({ last: 'go' })
   })
+})
+
+describe('what an event writes', () => {
+  /** The rows of what is stored, as the machine encodes them: what a storage holds of the entity. */
+  const table = (version: Program<T>, stored: Machine.Stored<T>) => {
+    const written = Machine.writes(version, null, stored, null)
+    if (written === null) throw new Error('an entity has rows')
+    return {
+      entity: written.entity,
+      suspension: written.suspension?.on ?? null,
+      keys: Object.fromEntries(written.keys.map((row) => [row.key, row])),
+      mailbox: written.queued,
+      replies: Object.fromEntries(written.replies.map(({ request, tag, reason }) => [request, { tag, reason }])),
+    }
+  }
+
+  type Table = ReturnType<typeof table>
+
+  const applied = (rows: Table, written: Machine.Written): Table => ({
+    entity: written.entity ?? rows.entity,
+    suspension: written.suspension?.on ?? null,
+    keys: { ...rows.keys, ...Object.fromEntries(written.keys.map((row) => [row.key, row])) },
+    mailbox: [...rows.mailbox.slice(written.handled), ...written.queued],
+    replies: {
+      ...rows.replies,
+      ...Object.fromEntries(written.replies.map(({ request, tag, reason }) => [request, { tag, reason }])),
+    },
+  })
+
+  test('applied to the rows before the event, it gives the rows after it, and nothing when nothing changed', () =>
+    property(({ trace }) => {
+      for (const { before, after, written } of trace.slice(1)) {
+        const was = table(after.program, before.stored)
+        expect(written === null ? was : applied(was, written)).toEqual(table(after.program, after.stored))
+      }
+    }))
+
+  test('it says which work ended, so that the replies to its requests go with it (decision 0021)', () =>
+    property(({ trace }) => {
+      for (const { before, after, written } of trace.slice(1)) {
+        const ended = Object.entries(before.stored.keys)
+          .filter(([key, held]) => held.work !== undefined && !Machine.holds(after.stored, key, held.incarnation))
+          .map(([key, held]) => ({ key, incarnation: held.incarnation }))
+        expect(written?.ended ?? []).toEqual(ended)
+      }
+    }))
+
+  test('a step publishes what callers read when it changes, with the message it handled, and nothing else does', () =>
+    property(({ trace }) => {
+      const [creation, ...events] = trace
+      expect(creation?.written?.published).toEqual({ kind: 'Creation', message: null, projection: keys.length })
+      for (const { event, before, after, written } of events) {
+        const head = before.stored.mailbox[0]
+        const { project } = after.program
+        const shows = event._tag === 'Handle' && head !== undefined && before.stored.state !== after.stored.state &&
+          project(before.stored.state) !== project(after.stored.state)
+        expect(written?.published ?? null).toEqual(
+          shows ? { kind: head._tag, message: head.message, projection: project(after.stored.state) } : null,
+        )
+      }
+    }))
+
+  test('a step that changes the state writes the row a query reads, and only such a step', () =>
+    property(({ trace }) => {
+      for (const { before, after, written } of trace.slice(1)) {
+        expect(written?.shown ?? null).toEqual(
+          before.stored.state === after.stored.state
+            ? null
+            : { projection: after.program.project(after.stored.state), indexes: {} },
+        )
+      }
+    }))
 })

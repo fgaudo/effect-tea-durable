@@ -135,8 +135,10 @@ Two kinds of work exist.
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
   nothing yet.
 
-A kept key keeps its work only if the work is the same by value: an operation equal to the one under way, a
-timer at the same time with the same message. A timer that changes is armed again, as new work. An operation
+A kept key keeps its work only if the work is the same as it is stored: an operation that encodes to the JSON of
+the one under way, a timer at the same time whose message encodes alike. A property a schema does not declare is
+not stored, and makes no difference: what a step compares is what a crash compares
+([decision 0058](decisions/0058-work-is-compared-by-what-is-stored.md)). A timer that changes is armed again, as new work. An operation
 that changes while it runs is a defect, as one dropped is: otherwise an operation restarted after a crash,
 built from the stored state, would act with other parameters under the same idempotency key. The rule holds
 until `update` is given the operation's message, even while its completion waits in the mailbox and a crash
@@ -208,8 +210,14 @@ and reaches no entity ([decision 0040](decisions/0040-what-is-stored-encodes-to-
 that do not encode: `init` sees only flags its schema takes
 ([decision 0049](decisions/0049-flags-are-checked-by-their-schema.md)).
 
-A reply to another entity is deleted in the transaction that ends the work that asked for it, or in the one that
-stores it, if that work has already ended
+What an event writes is the machine's: besides the next machine, a transition gives the rows it writes, already
+encoded — the state when it changed, the keys that changed, the messages that leave the mailbox and the ones
+queued, the replies added, the work that ended, the read model's row and the outbox's — and the storage writes
+them and decides nothing. Each value is encoded once, and the projection of a state computed once
+([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)).
+
+A reply to another entity is deleted in the transaction that ends the work that asked for it, which the machine
+names, or in the one that stores it, if that work has already ended: only the storage sees another entity's keys
 ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
 
 ## Schemas that change
@@ -227,8 +235,9 @@ not live on in the code.
 
 Every row carries the version that wrote it, and is read by migrating its JSON from that version and decoding it
 with the program's schema: the machine sees values of the program's own version only. A row is written at the
-program's version whenever it is written, so one step after a deploy the state, the keys and the mailbox are
-migrated for good; a reply and the row a query reads are migrated at every read until they are written again, and
+program's version whenever an event writes it, and an event writes only what it changed: the state, a key, a
+message in the mailbox, a reply and the row a query reads are migrated at every read until they are written again
+([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)), and
 `reindex` writes the read model again, which a deploy that changed the projection's schema runs, as one that
 changed an index does.
 

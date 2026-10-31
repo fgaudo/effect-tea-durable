@@ -60,11 +60,10 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   kept for ever ([callers' stored replies](#running)), so an entity that lives long, as a subscription does,
   holds more of them in memory at each message, and each step costs more. Should the machine see only the reply
   a request asks for, read from storage by its key, and the ones its step adds?
-- **A mailbox under a burst.** Nothing bounds a mailbox, and each event writes it whole
-  ([decision 0028](decisions/0028-rules-the-runtime-settled.md) took it to be a few rows): a burst of messages
-  writes rows in the square of their number. And an inbound message is two transactions, its `Receive` and its
-  step. Should a mailbox be written by appending, a burst be refused past a bound, and a message that finds the
-  entity idle be received and handled in one transaction?
+- **A mailbox under a burst.** Nothing bounds a mailbox. An event writes only the messages it queues and the one
+  it handles ([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)), but the machine holds the
+  whole mailbox in memory, and an inbound message is two transactions, its `Receive` and its step. Should a burst
+  be refused past a bound, and a message that finds the entity idle be received and handled in one transaction?
 
 ## Running
 

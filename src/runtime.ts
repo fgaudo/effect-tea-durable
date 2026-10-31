@@ -1,8 +1,8 @@
 /**
  * The runtime on one process, over `SqlClient`: it drives the machine ([`machine.ts`](machine.ts)) and acts on its
- * outputs (decision 0013). An event is one transaction (decision 0007): the machine's next `Stored` is written,
- * and only then are the callers answered and the work started, so a crash before the commit leaves nothing of the
- * event, and one after it is an activation away from the work the state holds.
+ * outputs (decision 0013). An event is one transaction (decision 0007): what the machine says it writes is
+ * written (decision 0057), and only then are the callers answered and the work started, so a crash before the
+ * commit leaves nothing of the event, and one after it is an activation away from the work the state holds.
  *
  * What is stored lives in the database ([`storage.ts`](storage.ts)); what is running — the operations' fibers, the
  * timers' sleeps, the entities loaded — lives in this process's scope, and a crash is that scope closing. An
@@ -475,23 +475,19 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const entity: Address = { name: loaded.machine.stored.name, id: loaded.machine.stored.id }
         const before = loaded.machine
         const transition = Machine.step(before, event)
-        const wrote = transition.machine.stored !== before.stored
+        const { written } = transition
         let forgotten: ReadonlyArray<Forgotten> = []
-        if (wrote) {
+        if (written !== null) {
           yield* at('BeforeCommit', entity, event as Machine.Event<never>)
-          // The message a step handles is the mailbox's first: what the step publishes, with the projection it
-          // leaves (decision 0038).
-          const handled = event._tag === 'Handle' ? before.stored.mailbox[0] ?? null : null
-          forgotten = yield* sql.withTransaction(
-            deployed.storage.write(before.stored, transition.machine.stored, handled),
-          ).pipe(Effect.orDie)
+          // What the event writes is the machine's, encoded: the storage decides nothing (decision 0057).
+          forgotten = yield* sql.withTransaction(deployed.storage.write(entity.id, written)).pipe(Effect.orDie)
         }
         loaded.machine = transition.machine
         forget(forgotten)
         // An event is observed once it is written — at once when it writes nothing — and before anything is
         // acted on: a crash before the commit leaves no event, and one after it an event that happened.
         yield* observe(entity, event as Machine.Event<never>)
-        if (wrote) yield* at('AfterCommit', entity, event as Machine.Event<never>)
+        if (written !== null) yield* at('AfterCommit', entity, event as Machine.Event<never>)
         yield* perform(deployed, loaded, entity, event, transition.outputs)
       }).pipe(Effect.ensuring(Effect.sync(() => {
         loaded.applying = false
@@ -679,7 +675,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           }
           const creation: Machine.Event<T> = { _tag: 'Create', ...request }
           yield* at('BeforeCommit', entity, creation as Machine.Event<never>)
-          yield* sql.withTransaction(deployed.storage.write(null, started.machine.stored)).pipe(Effect.orDie)
+          yield* sql.withTransaction(deployed.storage.write(id, started.written)).pipe(Effect.orDie)
           // The entity exists from here: its creation is the first event committed for it.
           yield* observe(entity, creation as Machine.Event<never>)
           yield* at('AfterCommit', entity, creation as Machine.Event<never>)

@@ -1,10 +1,11 @@
 /**
  * The runtime's semantics as a pure state machine: the executable form of the design's crash table, the engine
  * of `rehearse`, and the oracle of the real runtime's tests. Nothing here runs an effect: an event gives the next
- * machine, and the outputs a runtime acts on (an operation to start, a timer to arm, a reply to send).
+ * machine, what it writes, encoded, and the outputs a runtime acts on (an operation to start, a timer to arm, a
+ * reply to send).
  */
 import * as DateTime from 'effect/DateTime'
-import * as Equal from 'effect/Equal'
+import type * as Schema from 'effect/Schema'
 import {
   type Creation,
   type Durable,
@@ -15,12 +16,14 @@ import {
   InvariantDefect,
   isRejected,
   isTimer,
+  type Json,
   type Origin,
   type Program,
   reasonOf,
   type Reply,
   type Runner,
   runnerOf,
+  type Scalar,
   type Timer,
   type Types,
 } from './program.ts'
@@ -48,27 +51,108 @@ const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Hel
 }
 
 /**
- * The work of a state the machine may store, and everything a runtime writes of it checked: `durable`, what
- * callers read, with the indexes a query reads it by, and the state, its work and its projection encoded to what
- * JSON holds. Any of them may die, and one that does suspends the entity, so a runtime may compute and encode them
- * again while it writes, knowing no defect escapes its transaction (decisions 0014, 0032, 0040).
+ * A value's JSON as `codec` writes it, kept by the value, so that what the checks of a step encoded is what is
+ * written: a value is never mutated (decisions 0052, 0057). A value that is no object is encoded each time.
  */
-const admitted = <T extends Types>(program: Program<T>, state: T['state']): Held<T> => {
-  const work = workUnder(program, state)
+const encodings = new WeakMap<object, WeakMap<object, Json>>()
+
+const encodeOnce = <A>(codec: Schema.Codec<A, Json>, value: A, what: string): Json => {
+  if (typeof value !== 'object' || value === null) return encode(codec, value, what)
+  let held = encodings.get(codec)
+  if (held === undefined) {
+    held = new WeakMap()
+    encodings.set(codec, held)
+  }
+  const cached = held.get(value)
+  if (cached !== undefined) return cached
+  const json = encode(codec, value, what)
+  held.set(value, json)
+  return json
+}
+
+/** JSON as text with the fields of each object in order: two values that encode alike give the same text. */
+const canonical = (json: Json): string =>
+  JSON.stringify(json, (_, value: unknown) =>
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : value)
+
+/** A value's JSON and the canonical text it is compared by. */
+type Encoded = Readonly<{ json: Json; text: string }>
+
+const works = new WeakMap<object, WeakMap<object, Encoded>>()
+
+/**
+ * The work under a key as it is stored, by the program's schemas: an operation, or a timer's time in milliseconds
+ * and its message. Kept by the work, for each program, which is never mutated (decision 0052).
+ */
+const encodeWork = <T extends Types>(
+  program: Program<T>,
+  key: string,
+  work: Durable<T['operation'], T['internal']>,
+): Encoded => {
+  let held = works.get(program)
+  if (held === undefined) {
+    held = new WeakMap()
+    works.set(program, held)
+  }
+  const cached = held.get(work)
+  if (cached !== undefined) return cached
+  const { schemas } = program
+  const json: Json = isTimer(work)
+    ? {
+      _tag: 'Timer',
+      at: DateTime.toEpochMillis(work.at),
+      message: encodeOnce(schemas.internal, work.message as T['internal'], `message of the timer under '${key}'`),
+    }
+    : { _tag: 'Operation', operation: encodeOnce(schemas.operation, work, `operation under '${key}'`) }
+  const encoded = { json, text: canonical(json) }
+  held.set(work, encoded)
+  return encoded
+}
+
+/** What callers read of a state, encoded, with the value of each index on it: the row a query reads (decision 0032). */
+export type Shown = Readonly<{ projection: Json; indexes: Readonly<Record<string, Scalar>> }>
+
+const shown = new WeakMap<object, WeakMap<object, Shown & Readonly<{ text: string }>>>()
+
+/**
+ * What callers read of `state`, computed once for each program: the step that publishes compares it with the one
+ * the step before computed (decisions 0038, 0057). A projection that does not encode, or an index that is a number
+ * JSON does not hold, is a defect (decision 0040).
+ */
+export const shownOf = <T extends Types>(program: Program<T>, state: T['state']): Shown & Readonly<{ text: string }> => {
+  let held = shown.get(program)
+  if (held === undefined) {
+    held = new WeakMap()
+    shown.set(program, held)
+  }
+  const cached = held.get(state)
+  if (cached !== undefined) return cached
   const projection = program.project(state)
   const indexes = indexesOf(program, projection)
-  const { schemas } = program
-  encode(schemas.state, state, 'state')
-  encode(schemas.projection, projection, 'projection')
   for (const [name, value] of Object.entries(indexes)) {
     if (typeof value === 'number' && !Number.isFinite(value)) {
       throw new InvariantDefect({ reason: `the index '${name}' is a number JSON does not hold` })
     }
   }
-  for (const [key, held] of Object.entries(work)) {
-    if (isTimer(held)) encode(schemas.internal, held.message as T['internal'], `message of the timer under '${key}'`)
-    else encode(schemas.operation, held, `operation under '${key}'`)
-  }
+  const json = encode(program.schemas.projection, projection, 'projection')
+  const row = { projection: json, indexes, text: canonical(json) }
+  held.set(state, row)
+  return row
+}
+
+/**
+ * The work of a state the machine may store, and everything a runtime writes of it checked: `durable`, what
+ * callers read, with the indexes a query reads it by, and the state, its work and its projection encoded to what
+ * JSON holds. Any of them may die, and one that does suspends the entity. What is encoded here is kept, and is
+ * what the step writes (decisions 0014, 0032, 0040, 0057).
+ */
+const admitted = <T extends Types>(program: Program<T>, state: T['state']): Held<T> => {
+  const work = workUnder(program, state)
+  shownOf(program, state)
+  encodeOnce(program.schemas.state, state, 'state')
+  for (const [key, held] of Object.entries(work)) encodeWork(program, key, held)
   return work
 }
 
@@ -200,7 +284,78 @@ export type Output<T extends Types> =
   /** The entity is suspended: everything under way stops. */
   | Readonly<{ _tag: 'Suspended'; cause: unknown }>
 
-export type Transition<T extends Types> = Readonly<{ machine: Machine<T>; outputs: ReadonlyArray<Output<T>> }>
+/** A key's row: its incarnation, and the work it holds, as it is stored, with how it is delivered and when it is due. */
+export type KeyRow = Readonly<{
+  key: string
+  incarnation: number
+  work: Json | null
+  delivery: Delivery | null
+  /** A timer's time, in milliseconds, by which an entity nothing else holds loaded is woken (decision 0029). */
+  due: number | null
+}>
+
+/** A message queued at the end of the mailbox, encoded: who it came from, as the runtime and the program write it. */
+export type EnvelopeRow =
+  | Readonly<{ _tag: 'Inbound'; message: Json; requestId: string; from: Json }>
+  | Readonly<{ _tag: 'Internal'; message: Json; key: string; incarnation: number }>
+
+/** The work of another entity that sent a request: its reply is kept while that work holds (decision 0021). */
+export type Asker = Readonly<{ name: string; id: string; key: string; incarnation: number }>
+
+/** A reply stored under a request, by `requestKey`: a rejection's reason is null for a bare `reject`. */
+export type ReplyRow = Readonly<{
+  request: string
+  tag: StoredReply<unknown>['_tag']
+  reason: Json | null
+  asked: Asker | null
+}>
+
+/**
+ * What other systems learn of a step: the message it handled, and what callers read after it, or the first
+ * projection of a creation, which handles none (decision 0038).
+ */
+export type Publication = Readonly<{
+  kind: 'Inbound' | 'Internal' | 'Creation'
+  message: Json | null
+  projection: Json
+}>
+
+/**
+ * What an event writes, encoded, in one transaction: a storage writes it and decides nothing (decision 0057).
+ * The one thing it checks is what only it sees, another entity's keys: a reply whose asker's work no longer holds
+ * is deleted as it is stored.
+ */
+export type Written = Readonly<{
+  /** Whether the entity is new: its row is inserted. */
+  created: boolean
+  /** The state, with the request that created the entity, when the event changed the state. */
+  entity: Readonly<{ state: Json; creation: string }> | null
+  /** Why the entity is suspended, its cause rendered, or null when it is not. */
+  suspension: Readonly<{ on: Suspension['on']; cause: string }> | null
+  /** The keys that changed, whole. */
+  keys: ReadonlyArray<KeyRow>
+  /** How many messages leave the head of the mailbox, before `queued` is added at its end. */
+  handled: number
+  queued: ReadonlyArray<EnvelopeRow>
+  /** The replies added. */
+  replies: ReadonlyArray<ReplyRow>
+  /** The work of the entity that ended: the replies to the requests it sent are deleted (decision 0021). */
+  ended: ReadonlyArray<Readonly<{ key: string; incarnation: number }>>
+  /** The row a query reads, when the state changed (decision 0032). */
+  shown: Shown | null
+  /** The row of the outbox, when what callers read changed (decision 0038). */
+  published: Publication | null
+}>
+
+export type Transition<T extends Types> = Readonly<{
+  machine: Machine<T>
+  outputs: ReadonlyArray<Output<T>>
+  /** What the event writes, or null when it changes nothing stored. */
+  written: Written | null
+}>
+
+/** A transition before what it writes is worked out. */
+type Moved<T extends Types> = Omit<Transition<T>, 'written'>
 
 /**
  * Whether the work under `key` in `incarnation` is stored, and not yet done. Once it is not, it never is again, and
@@ -227,7 +382,7 @@ export const workOf = <T extends Types>(stored: Stored<T>): Held<T> => {
   return work
 }
 
-type Delivery = Runner<unknown, unknown, unknown>['delivery']
+export type Delivery = Runner<unknown, unknown, unknown>['delivery']
 
 /** How `program` delivers an operation, or `undefined` for a timer. The work was admitted, so it has a runner. */
 const deliveryOf = <T extends Types>(program: Program<T>, work: Durable<T['operation'], T['internal']>) =>
@@ -235,7 +390,8 @@ const deliveryOf = <T extends Types>(program: Program<T>, work: Durable<T['opera
 
 /**
  * The keys once the state holds `next`, as `program` delivers it: what is the same as in `previous` keeps its
- * incarnation, and anything else is new work, in the next one. A key `next` leaves keeps its incarnation.
+ * incarnation, and anything else is new work, in the next one. A key `next` leaves keeps its incarnation. A key
+ * that does not change is the same object, so that only the keys that changed are written (decision 0057).
  */
 const renew = <T extends Types>(
   program: Program<T>,
@@ -245,19 +401,23 @@ const renew = <T extends Types>(
 ): Stored<T>['keys'] => {
   const renewed: Record<string, Key<T>> = {}
   for (const key of new Set([...Object.keys(keys), ...Object.keys(next)])) {
+    const held = keys[key]
     const was = previous[key]
     const work = next[key]
-    const incarnation = keys[key]?.incarnation ?? 0
+    const incarnation = held?.incarnation ?? 0
     if (work === undefined) {
-      renewed[key] = { incarnation }
+      renewed[key] = held !== undefined && held.work === undefined ? held : { incarnation }
       continue
     }
     const delivery = deliveryOf(program, work)
-    renewed[key] = {
-      incarnation: was !== undefined && isSame(was, work) ? incarnation : incarnation + 1,
-      work,
-      ...(delivery === undefined ? {} : { delivery }),
-    }
+    const same = was !== undefined && isSame(program, key, was, work)
+    renewed[key] = same && held !== undefined && held.work === was && held.delivery === delivery
+      ? held
+      : {
+        incarnation: same ? incarnation : incarnation + 1,
+        work,
+        ...(delivery === undefined ? {} : { delivery }),
+      }
   }
   return renewed
 }
@@ -265,17 +425,15 @@ const renew = <T extends Types>(
 const kindOf = (work: unknown): Running['kind'] => (isTimer(work) ? 'Timer' : 'Operation')
 
 /**
- * Whether `next` is the work `previous` was: the same operation, compared by value, or a timer at the same time
- * with the same message (decision 0018).
+ * Whether `next` is the work `previous` was: the same JSON, as the program stores them — an operation by its
+ * schema, a timer by its time and its message — which is what a crash compares (decisions 0018, 0058).
  */
 const isSame = <T extends Types>(
+  program: Program<T>,
+  key: string,
   previous: Durable<T['operation'], T['internal']>,
   next: Durable<T['operation'], T['internal']> | undefined,
-) =>
-  next !== undefined &&
-  (isTimer(previous)
-    ? isTimer(next) && DateTime.Equivalence(previous.at, next.at) && Equal.equals(previous.message, next.message)
-    : !isTimer(next) && Equal.equals(previous, next))
+) => next !== undefined && encodeWork(program, key, previous).text === encodeWork(program, key, next).text
 
 const isQueued = <T extends Types>(stored: Stored<T>, key: string, incarnation: number) =>
   stored.mailbox.some((envelope) =>
@@ -314,7 +472,7 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
   for (const [key, { work: was, delivery }] of Object.entries(stored.keys)) {
     if (was === undefined || isTimer(was)) continue
     const next = work[key]
-    if (!isSame(was, next)) {
+    if (!isSame(program, key, was, next)) {
       throw new InvariantDefect({
         reason: next === undefined || isTimer(next)
           ? `the program dropped the operation under '${key}' before its completion`
@@ -342,7 +500,7 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
  * A passivation is a `Restart` the runtime chooses, with an empty mailbox and only timers under way: activating
  * again arms the same timers, in the same incarnations, which the stored work holds while it is unloaded.
  */
-const activate = <T extends Types>(before: Machine<T>, machine: Machine<T>, mayHaveRun: boolean): Transition<T> => {
+const activate = <T extends Types>(before: Machine<T>, machine: Machine<T>, mayHaveRun: boolean): Moved<T> => {
   const { program } = machine
   if (machine.stored.suspension !== null) return { machine: { ...machine, running: {} }, outputs: [] }
   try {
@@ -371,7 +529,7 @@ const activate = <T extends Types>(before: Machine<T>, machine: Machine<T>, mayH
 }
 
 export type Start<T extends Types> =
-  | Readonly<{ _tag: 'Created' } & Transition<T>>
+  | Readonly<{ _tag: 'Created'; machine: Machine<T>; outputs: ReadonlyArray<Output<T>>; written: Written }>
   /**
    * The flags do not encode, or `init`, `durable`, `project` or an index died on the first state: nothing is
    * stored.
@@ -410,14 +568,17 @@ export const start = <T extends Types>(
   const created: Machine<T> = { program, stored, running: {} }
   const { machine, outputs } = activate(created, created, false)
   const reply: Output<T> = { _tag: 'CreationReplied', ...request, reply: { _tag: 'Created' } }
-  return { _tag: 'Created', machine, outputs: [reply, ...outputs] }
+  // A new entity always writes its row.
+  const written = writes(program, null, machine.stored, null)
+  if (written === null) throw new Error(`the creation of '${program.name}' '${id}' writes nothing`)
+  return { _tag: 'Created', machine, outputs: [reply, ...outputs], written }
 }
 
 /**
  * Suspends the entity, and answers `Suspended` to every caller whose message waits in the mailbox: it has no reply
  * yet, and gets one by retrying once the entity is resumed (decision 0023).
  */
-const suspend = <T extends Types>(machine: Machine<T>, suspension: Suspension): Transition<T> => ({
+const suspend = <T extends Types>(machine: Machine<T>, suspension: Suspension): Moved<T> => ({
   machine: { ...machine, stored: { ...machine.stored, suspension }, running: {} },
   outputs: [
     { _tag: 'Suspended', cause: suspension.cause },
@@ -432,7 +593,7 @@ const suspend = <T extends Types>(machine: Machine<T>, suspension: Suspension): 
 const receive = <T extends Types>(
   machine: Machine<T>,
   event: Extract<Event<T>, { _tag: 'Receive' }>,
-): Transition<T> => {
+): Moved<T> => {
   const { stored } = machine
   const { requestId, from } = event
   const request = requestKey(machine.program, from, requestId)
@@ -465,7 +626,7 @@ const record = <T extends Types>(
   key: string,
   incarnation: number,
   message: (work: Durable<T['operation'], T['internal']>) => T['internal'],
-): Transition<T> => {
+): Moved<T> => {
   const running = machine.running[key]
   const work = machine.stored.keys[key]?.work
   if (running === undefined || running.kind !== kind || running.incarnation !== incarnation || work === undefined) {
@@ -496,7 +657,7 @@ const record = <T extends Types>(
  * its incarnation is dropped. The step is checked before it is stored, and a defect suspends the entity, with
  * the state and the mailbox as they were.
  */
-const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transition<T> => {
+const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Moved<T> => {
   const { program, stored } = machine
   const [head, ...rest] = stored.mailbox
   if (stored.suspension !== null || head === undefined) return { machine, outputs: [] }
@@ -534,7 +695,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
       ? [{ _tag: 'Delivered', key: head.key, incarnation: head.incarnation }]
       : []
     for (const [key, work] of Object.entries(previous)) {
-      if (isSame(work, after[key])) continue
+      if (isSame(program, key, work, after[key])) continue
       // An operation leaves only through its completion, and does not change while it runs (decisions 0005,
       // 0018); a timer has done nothing yet.
       if (!isTimer(work)) {
@@ -553,7 +714,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
     }
     for (const [key, work] of Object.entries(after)) {
       const was = previous[key]
-      if (was !== undefined && isSame(was, work)) continue
+      if (was !== undefined && isSame(program, key, was, work)) continue
       const incarnation = keys[key]?.incarnation ?? 0
       running[key] = { kind: kindOf(work), incarnation }
       outputs.push(startWork(machine, key, incarnation, work))
@@ -588,7 +749,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Transit
  * `project` or index dies on the stored state, or that changes an operation under way, leaves it suspended, with
  * that cause.
  */
-const resume = <T extends Types>(machine: Machine<T>, fixed: Program<T> | undefined): Transition<T> => {
+const resume = <T extends Types>(machine: Machine<T>, fixed: Program<T> | undefined): Moved<T> => {
   if (machine.stored.suspension === null) return { machine, outputs: [] }
   const unsuspended = { ...machine, stored: { ...machine.stored, suspension: null } }
   return activate(machine, { ...unsuspended, program: fixed ?? machine.program }, true)
@@ -600,14 +761,150 @@ const resume = <T extends Types>(machine: Machine<T>, fixed: Program<T> | undefi
  * under another idempotency key, and a timer whose time has passed would fire again at once. Only a program that
  * handles it gets the entity past it (decisions 0041, 0044).
  */
-const discard = <T extends Types>(machine: Machine<T>): Transition<T> => {
+const discard = <T extends Types>(machine: Machine<T>): Moved<T> => {
   const { stored } = machine
   const [head, ...rest] = stored.mailbox
   if (stored.suspension?.on._tag !== 'Message' || head?._tag !== 'Inbound') return { machine, outputs: [] }
   return activate(machine, { ...machine, stored: { ...stored, mailbox: rest, suspension: null } }, true)
 }
 
+/** A defect's cause as an operator reads it: a suspension stores this, not the value (decision 0028). */
+const render = (cause: unknown): string =>
+  cause instanceof Error ? `${cause.name}: ${cause.message}` : typeof cause === 'string' ? cause : String(cause)
+
+/** Who a queued message came from, as it is stored: the runtime owns `Self` and an entity's address. */
+const originRow = <T extends Types>(program: Program<T>, from: Origin<T['sender']>): Json =>
+  from._tag === 'Caller'
+    ? { _tag: 'Caller', sender: encodeOnce(program.schemas.sender, from.sender, 'sender') }
+    : from._tag === 'Entity'
+    ? { _tag: 'Entity', entity: { name: from.entity.name, id: from.entity.id } }
+    : { _tag: 'Self' }
+
+const envelopeRow = <T extends Types>(program: Program<T>, envelope: Envelope<T>): EnvelopeRow =>
+  envelope._tag === 'Inbound'
+    ? {
+      _tag: 'Inbound',
+      message: encodeOnce(program.schemas.inbound, envelope.message, 'inbound message'),
+      requestId: envelope.requestId,
+      from: originRow(program, envelope.from),
+    }
+    : {
+      _tag: 'Internal',
+      message: encodeOnce(program.schemas.internal, envelope.message, 'internal message'),
+      key: envelope.key,
+      incarnation: envelope.incarnation,
+    }
+
+/**
+ * The work that sent a request, when another entity's operation did: its request id is the operation's
+ * idempotency key, with the sender's program, id, key and incarnation, and the request's name (decisions 0015,
+ * 0021, 0047). Null for a caller's, and for a request id another entity chose by hand, which no work holds.
+ */
+const askerOf = <Sender>(from: Origin<Sender>, requestId: string): Asker | null => {
+  if (from._tag !== 'Entity') return null
+  try {
+    const named: unknown = JSON.parse(requestId)
+    if (!Array.isArray(named) || named.length !== 2 || typeof named[0] !== 'string') return null
+    const key: unknown = JSON.parse(named[0])
+    if (!Array.isArray(key) || key.length !== 4) return null
+    const [name, id, under, incarnation]: ReadonlyArray<unknown> = key
+    if (name !== from.entity.name || id !== from.entity.id || typeof under !== 'string') return null
+    if (!Number.isInteger(incarnation)) return null
+    return { name, id, key: under, incarnation: incarnation as number }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * What an event writes, from what was stored before it (null for a new entity) to what is stored after it, with
+ * the message it handled: nothing for an event that changed nothing stored (decision 0057). Only a step that
+ * handles a message changes the state of an entity that exists, so the row it publishes is that message's.
+ */
+export const writes = <T extends Types>(
+  program: Program<T>,
+  before: Stored<T> | null,
+  after: Stored<T>,
+  handled: Envelope<T> | null,
+): Written | null => {
+  const changed = before === null || before.state !== after.state
+  const keys: Array<KeyRow> = []
+  for (const [key, held] of Object.entries(after.keys)) {
+    if (before?.keys[key] === held) continue
+    keys.push({
+      key,
+      incarnation: held.incarnation,
+      work: held.work === undefined ? null : encodeWork(program, key, held.work).json,
+      delivery: held.delivery ?? null,
+      due: held.work !== undefined && isTimer(held.work) ? DateTime.toEpochMillis(held.work.at) : null,
+    })
+  }
+  // An event takes at most the mailbox's first message, and queues what it records at its end.
+  const was = before?.mailbox ?? []
+  const left = was.length > 0 && after.mailbox[0] !== was[0] ? 1 : 0
+  const queued = after.mailbox.slice(was.length - left).map((envelope) => envelopeRow(program, envelope))
+  const replies: Array<ReplyRow> = []
+  for (const [request, reply] of Object.entries(after.replies)) {
+    if (before?.replies[request] !== undefined) continue
+    // The machine adds a reply only for the message it handles.
+    const asked = handled?._tag === 'Inbound' ? askerOf(handled.from, handled.requestId) : null
+    const reason = reply._tag === 'Rejected' && reply.reason !== null
+      ? encodeOnce(program.schemas.rejection, reply.reason, 'reason of the rejection')
+      : null
+    replies.push({ request, tag: reply._tag, reason, asked })
+  }
+  const ended: Array<Readonly<{ key: string; incarnation: number }>> = []
+  for (const [key, held] of Object.entries(before?.keys ?? {})) {
+    if (held.work !== undefined && !holds(after, key, held.incarnation)) ended.push({ key, incarnation: held.incarnation })
+  }
+  const row = changed ? shownOf(program, after.state) : null
+  let published: Publication | null = null
+  if (row !== null && (before === null || shownOf(program, before.state).text !== row.text)) {
+    if (before !== null && handled === null) {
+      throw new Error(`the state of '${after.name}' '${after.id}' changed with no message handled`)
+    }
+    published = {
+      kind: handled === null ? 'Creation' : handled._tag,
+      message: handled === null ? null : envelopeRow(program, handled).message,
+      projection: row.projection,
+    }
+  }
+  if (
+    before !== null && !changed && keys.length === 0 && left === 0 && queued.length === 0 &&
+    replies.length === 0 && ended.length === 0 && before.suspension === after.suspension
+  ) {
+    return null
+  }
+  return {
+    created: before === null,
+    entity: changed
+      ? { state: encodeOnce(program.schemas.state, after.state, 'state'), creation: after.creation }
+      : null,
+    suspension: after.suspension === null
+      ? null
+      : { on: after.suspension.on, cause: render(after.suspension.cause) },
+    keys,
+    handled: left,
+    queued,
+    replies,
+    ended,
+    shown: row === null ? null : { projection: row.projection, indexes: row.indexes },
+    published,
+  }
+}
+
 export const step = <T extends Types>(machine: Machine<T>, event: Event<T>): Transition<T> => {
+  const moved = move(machine, event)
+  const handled = event._tag === 'Handle' ? machine.stored.mailbox[0] ?? null : null
+  return {
+    ...moved,
+    written: moved.machine.stored === machine.stored
+      ? null
+      : writes(moved.machine.program, machine.stored, moved.machine.stored, handled),
+  }
+}
+
+const move = <T extends Types>(machine: Machine<T>, event: Event<T>): Moved<T> => {
   switch (event._tag) {
     case 'Receive':
       return receive(machine, event)

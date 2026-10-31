@@ -2,8 +2,8 @@
  * What a runtime writes: a `Stored<T>` in one SQLite database, through `SqlClient` (decisions 0007, 0019). The
  * machine says what is stored; this module says in which tables, and encodes it with the program's schemas
  * (decisions 0025, 0027). Every row carries the version of the program that wrote it, and is read by migrating
- * its JSON to the program's version (decision 0036). Nothing here decides anything: a caller writes a whole
- * `Stored` in one transaction.
+ * its JSON to the program's version (decision 0036). Nothing here decides anything: the machine encodes what an
+ * event writes, and a caller writes it in one transaction (decision 0057).
  */
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
@@ -12,9 +12,6 @@ import { SqlClient } from 'effect/sql'
 import * as Machine from './machine.ts'
 import {
   type Durable,
-  encode,
-  indexesOf,
-  isTimer,
   type Json,
   type Migrated,
   migrationOf,
@@ -62,7 +59,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     )
   `
   yield* sql`CREATE INDEX IF NOT EXISTS entity_keys_due ON entity_keys (due)`
-  // The mailbox, in order: `seq` is the order of the machine's array.
+  // The mailbox, in order: `seq` is given as a message is queued, and the first message is the lowest.
   yield* sql`
     CREATE TABLE IF NOT EXISTS mailbox (
       name TEXT NOT NULL,
@@ -137,13 +134,12 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
 }).pipe(Effect.orDie)
 
 /**
- * A value written as JSON text through its schema: what leaves the process is what a schema describes, and the
- * schema encodes it to what JSON holds, as it is, so that the text reads back as written (decisions 0030, 0040).
+ * A value read from JSON text through its schema: what the machine wrote, encoded by the same schema
+ * (decisions 0030, 0040, 0057).
  */
-const json = <A>(codec: Schema.Codec<A, Json>, what: string) => {
+const json = <A>(codec: Schema.Codec<A, Json>) => {
   const decode = Schema.decodeSync(codec)
   return {
-    write: (value: A): string => JSON.stringify(encode(codec, value, what)),
     /** `up` is how the version that wrote the text is read at the program's, and is identity for its own. */
     read: (text: string, up: (json: Json) => Json = (json) => json): A =>
       decode(up(JSON.parse(text) as Json) as never),
@@ -181,10 +177,6 @@ const Suspended = Schema.Union([
   Schema.TaggedStruct('Operation', { key: Schema.String, incarnation: Schema.Int }),
   Schema.TaggedStruct('Activation', {}),
 ]) as unknown as Schema.Codec<Machine.Suspension['on'], Json>
-
-/** A defect's cause as an operator reads it: a suspension stores this, not the value (decision 0028). */
-export const render = (cause: unknown): string =>
-  cause instanceof Error ? `${cause.name}: ${cause.message}` : typeof cause === 'string' ? cause : String(cause)
 
 /** How a query compares an index with a value. */
 export type Comparison = '=' | '<>' | '<' | '<=' | '>' | '>='
@@ -233,30 +225,6 @@ export type Consumer = Readonly<{
 /** A reply storage deleted, since the work that asked for it no longer holds (decision 0021). */
 export type Forgotten = Readonly<{ name: string; id: string; request: string }>
 
-/**
- * The work that sent a request, when another entity's operation did: its request id is the operation's
- * idempotency key, the sender's program, id, key and incarnation, with the request's name (decisions 0015, 0021,
- * 0047). Null for a caller's.
- */
-const askedBy = (request: string) => {
-  try {
-    const held: unknown = JSON.parse(request)
-    if (!Array.isArray(held) || held.length !== 3) return null
-    const [name, id, requestId]: ReadonlyArray<unknown> = held
-    if (typeof name !== 'string' || typeof id !== 'string' || typeof requestId !== 'string') return null
-    const named: unknown = JSON.parse(requestId)
-    if (!Array.isArray(named) || named.length !== 2 || typeof named[0] !== 'string') return null
-    const key: unknown = JSON.parse(named[0])
-    if (!Array.isArray(key) || key.length !== 4) return null
-    const [from, of, under, incarnation]: ReadonlyArray<unknown> = key
-    if (from !== name || of !== id || typeof under !== 'string' || !Number.isInteger(incarnation)) return null
-    return { sender_name: name, sender_id: id, sender_key: under, sender_incarnation: incarnation as number }
-  } catch {
-    // A request id another entity chose by hand, which no work holds: its reply is kept, as a caller's is.
-    return null
-  }
-}
-
 /** An identifier SQLite reads as written: a program's name is the author's, and is quoted, not escaped away. */
 const quoted = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`
 
@@ -275,16 +243,11 @@ export interface Storage<T extends Types> {
   /** What is stored for the entity `id`, or null when there is none. */
   readonly load: (id: string) => Effect.Effect<Machine.Stored<T> | null>
   /**
-   * Writes what an event gave: the row of a new entity, and the state, the keys, the mailbox and the replies of
-   * one that was already there. The caller wraps it in the transaction of the event (decision 0007). It gives the
-   * replies to other entities it deleted, of any entity, whose work that asked no longer holds (decision 0021).
+   * Writes what an event wrote, as the machine encoded it (decision 0057). The caller wraps it in the transaction
+   * of the event (decision 0007). It gives the replies to other entities it deleted, of any entity, whose work
+   * that asked no longer holds (decision 0021).
    */
-  readonly write: (
-    before: Machine.Stored<T> | null,
-    after: Machine.Stored<T>,
-    /** The message the event handled, which the step publishes with the projection it leaves (decision 0038). */
-    handled?: Machine.Envelope<T> | null,
-  ) => Effect.Effect<ReadonlyArray<Forgotten>>
+  readonly write: (id: string, written: Machine.Written) => Effect.Effect<ReadonlyArray<Forgotten>>
   /**
    * The entities whose state holds an operation: what a process activates when it starts, so that an operation a
    * crash interrupted runs again without waiting for a caller. A timer needs no activation of its own — its time
@@ -341,14 +304,14 @@ export interface Storage<T extends Types> {
 
 /** The storage of one program's entities, on one client, with its schemas read once. */
 export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.SqlClient): Storage<T> => {
-  const state = json(program.schemas.state, 'state')
-  const inbound = json(program.schemas.inbound, 'inbound message')
-  const internal = json(program.schemas.internal, 'internal message')
-  const origin = json(originOf(program.schemas.sender), 'sender')
-  const work = json(workOf(program), 'work')
-  const reason = json(reasonOf(program.schemas.rejection), 'reason of the rejection')
-  const suspended = json(Suspended, 'suspension')
-  const projection = json(program.schemas.projection, 'projection')
+  const state = json(program.schemas.state)
+  const inbound = json(program.schemas.inbound)
+  const internal = json(program.schemas.internal)
+  const origin = json(originOf(program.schemas.sender))
+  const work = json(workOf(program))
+  const reason = json(reasonOf(program.schemas.rejection))
+  const suspended = json(Suspended)
+  const projection = json(program.schemas.projection)
   const { name } = program
   const version = versionOf(program)
 
@@ -420,19 +383,17 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
 
   const columnOf = (index: string) => sql.literal(expression(index))
 
-  /**
-   * The row a query reads: what callers read of the state, and the value of each index on it. Both are pure and
-   * were checked by the machine before the state was stored, so neither dies here (decision 0032).
-   */
-  const row = (id: string, shown: T['projection'], text: string) =>
+  /** The row a query reads, as the machine computed it from a state (decision 0032). */
+  const row = (id: string, shown: Machine.Shown) =>
     sql`INSERT OR REPLACE INTO projections ${
-      sql.insert({ name, id, projection: text, indexes: JSON.stringify(indexesOf(program, shown)), version })
+      sql.insert({
+        name,
+        id,
+        projection: JSON.stringify(shown.projection),
+        indexes: JSON.stringify(shown.indexes),
+        version,
+      })
     }`
-
-  const writeWork = (held: Durable<T['operation'], T['internal']>) =>
-    work.write(
-      isTimer(held) ? { _tag: 'Timer', at: held.at, message: held.message } : { _tag: 'Operation', operation: held },
-    )
 
   const readWork = (text: string, from: number): Durable<T['operation'], T['internal']> => {
     const held = work.read(text, upWork(from))
@@ -522,148 +483,154 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       } satisfies Machine.Stored<T>
     }).pipe(Effect.orDie)
 
-  const write = (
-    before: Machine.Stored<T> | null,
-    after: Machine.Stored<T>,
-    handled: Machine.Envelope<T> | null = null,
-  ) =>
+  const write = (id: string, written: Machine.Written) =>
     Effect.gen(function*() {
-      const { id } = after
-      const on = after.suspension === null ? null : suspended.write(after.suspension.on)
-      const cause = after.suspension === null ? null : render(after.suspension.cause)
-      if (before === null) {
+      const { entity, suspension } = written
+      const on = suspension === null ? null : JSON.stringify(suspension.on)
+      const cause = suspension === null ? null : suspension.cause
+      if (written.created) {
+        if (entity === null) throw new Error(`the entity '${name}' '${id}' is created with no state`)
         yield* sql`INSERT INTO entities ${
           sql.insert({
             name,
             id,
-            state: state.write(after.state),
+            state: JSON.stringify(entity.state),
             version,
-            creation: after.creation,
+            creation: entity.creation,
             suspended_on: on,
             suspended_cause: cause,
           })
         }`
-      } else {
+      } else if (entity !== null) {
+        // The request that created the entity is written with the state, at the version that reads both.
         yield* sql`
           UPDATE entities
-          SET state = ${state.write(after.state)}, version = ${version}, creation = ${after.creation},
+          SET state = ${JSON.stringify(entity.state)}, version = ${version}, creation = ${entity.creation},
               suspended_on = ${on}, suspended_cause = ${cause}
           WHERE name = ${name} AND id = ${id}
         `
+      } else {
+        yield* sql`
+          UPDATE entities SET suspended_on = ${on}, suspended_cause = ${cause} WHERE name = ${name} AND id = ${id}
+        `
       }
-      // The read model is written when the state changed, which is when the projection can have changed: a
-      // projection is a function of the state alone (decision 0032).
-      if (before === null || before.state !== after.state) {
-        const shown = program.project(after.state)
-        const text = projection.write(shown)
-        yield* row(id, shown, text)
-        // What other systems learn of the step, published when what callers read changed, compared as it is
-        // written: a creation's row carries no message, since a creation is no message (decision 0038).
-        const was = before === null ? null : projection.write(program.project(before.state))
-        if (was !== text) {
-          // Only a creation and a step that handled a message change the state, so the row is one or the other.
-          const published = before === null ? null : handled
-          if (before !== null && published === null) {
-            throw new Error(`the state of '${name}' '${id}' changed with no message handled`)
-          }
-          yield* sql`INSERT INTO outbox ${
-            sql.insert({
-              name,
-              id,
-              tag: published === null ? 'Creation' : published._tag,
-              version,
-              message: published === null
-                ? null
-                : published._tag === 'Inbound'
-                ? inbound.write(published.message)
-                : internal.write(published.message),
-              projection: text,
-            })
-          }`
-        }
-      }
-      // The keys and the mailbox are few, and one event may change any of them: they are written whole.
-      yield* sql`DELETE FROM entity_keys WHERE name = ${name} AND id = ${id}`
-      for (const [key, held] of Object.entries(after.keys)) {
-        yield* sql`INSERT INTO entity_keys ${
+      if (written.shown !== null) yield* row(id, written.shown)
+      if (written.published !== null) {
+        const { kind, message, projection } = written.published
+        yield* sql`INSERT INTO outbox ${
           sql.insert({
             name,
             id,
-            key,
-            incarnation: held.incarnation,
+            tag: kind,
             version,
-            work: held.work === undefined ? null : writeWork(held.work),
-            delivery: held.delivery ?? null,
-            due: held.work !== undefined && isTimer(held.work) ? DateTime.toEpochMillis(held.work.at) : null,
+            message: message === null ? null : JSON.stringify(message),
+            projection: JSON.stringify(projection),
           })
         }`
       }
-      yield* sql`DELETE FROM mailbox WHERE name = ${name} AND id = ${id}`
-      for (const [seq, envelope] of after.mailbox.entries()) {
-        yield* sql`INSERT INTO mailbox ${
-          sql.insert(
-            envelope._tag === 'Inbound'
-              ? {
-                name,
-                id,
-                seq,
-                tag: 'Inbound',
-                version,
-                message: inbound.write(envelope.message),
-                request_id: envelope.requestId,
-                origin: origin.write(envelope.from),
-                key: null,
-                incarnation: null,
-              }
-              : {
-                name,
-                id,
-                seq,
-                tag: 'Internal',
-                version,
-                message: internal.write(envelope.message),
-                request_id: null,
-                origin: null,
-                key: envelope.key,
-                incarnation: envelope.incarnation,
-              },
-          )
+      for (const held of written.keys) {
+        yield* sql`INSERT OR REPLACE INTO entity_keys ${
+          sql.insert({
+            name,
+            id,
+            key: held.key,
+            incarnation: held.incarnation,
+            version,
+            work: held.work === null ? null : JSON.stringify(held.work),
+            delivery: held.delivery,
+            due: held.due,
+          })
         }`
       }
-      // A reply is written once and read by every retry: the machine only ever adds one (decision 0015).
-      for (const [request, reply] of Object.entries(after.replies)) {
-        if (before !== null && before.replies[request] !== undefined) continue
+      // The mailbox's rows are numbered as they are queued: its first message is the lowest.
+      if (written.handled > 0) {
+        yield* sql`
+          DELETE FROM mailbox WHERE name = ${name} AND id = ${id} AND seq IN (
+            SELECT seq FROM mailbox WHERE name = ${name} AND id = ${id} ORDER BY seq LIMIT ${written.handled}
+          )
+        `
+      }
+      if (written.queued.length > 0) {
+        const last = yield* sql<{ seq: number | null }>`
+          SELECT max(seq) AS seq FROM mailbox WHERE name = ${name} AND id = ${id}
+        `
+        const first = (last[0]?.seq ?? -1) + 1
+        for (const [at, envelope] of written.queued.entries()) {
+          yield* sql`INSERT INTO mailbox ${
+            sql.insert(
+              envelope._tag === 'Inbound'
+                ? {
+                  name,
+                  id,
+                  seq: first + at,
+                  tag: 'Inbound',
+                  version,
+                  message: JSON.stringify(envelope.message),
+                  request_id: envelope.requestId,
+                  origin: JSON.stringify(envelope.from),
+                  key: null,
+                  incarnation: null,
+                }
+                : {
+                  name,
+                  id,
+                  seq: first + at,
+                  tag: 'Internal',
+                  version,
+                  message: JSON.stringify(envelope.message),
+                  request_id: null,
+                  origin: null,
+                  key: envelope.key,
+                  incarnation: envelope.incarnation,
+                },
+            )
+          }`
+        }
+      }
+      // A reply to another entity is kept while the work that asked holds (decision 0021). The work of this
+      // entity that ended takes the replies to its requests with it; a reply stored for work of another entity
+      // that already ended — an at-most-once operation that delivered `unknown` while its request waited in the
+      // mailbox — goes as it is stored, since only the storage sees the asker's keys.
+      const forgotten: Array<Forgotten> = []
+      for (const reply of written.replies) {
+        const { asked } = reply
         yield* sql`INSERT OR REPLACE INTO replies ${
           sql.insert({
             name,
             id,
-            request,
-            tag: reply._tag,
+            request: reply.request,
+            tag: reply.tag,
             version,
-            reason: reply._tag === 'Rejected' ? reason.write(reply.reason) : null,
-            ...(askedBy(request) ??
-              { sender_name: null, sender_id: null, sender_key: null, sender_incarnation: null }),
+            reason: reply.reason === null ? null : JSON.stringify(reply.reason),
+            sender_name: asked?.name ?? null,
+            sender_id: asked?.id ?? null,
+            sender_key: asked?.key ?? null,
+            sender_incarnation: asked?.incarnation ?? null,
           })
         }`
+        if (asked === null) continue
+        forgotten.push(
+          ...yield* sql<Forgotten>`
+            DELETE FROM replies WHERE name = ${name} AND id = ${id} AND request = ${reply.request} AND NOT EXISTS (
+              SELECT 1 FROM entity_keys AS asking
+              WHERE asking.name = ${asked.name} AND asking.id = ${asked.id} AND asking.key = ${asked.key}
+                AND asking.incarnation = ${asked.incarnation} AND asking.work IS NOT NULL
+            )
+            RETURNING name, id, request
+          `,
+        )
       }
-      // A reply to another entity is kept while the work that asked holds (decision 0021). It is deleted in the
-      // transaction that ends that work, which writes the sender's keys, or in the one that stores it, when the
-      // work ended while its request waited in the mailbox: an at-most-once operation that delivered `unknown`.
-      const ended = sql`NOT EXISTS (
-        SELECT 1 FROM entity_keys AS asking
-        WHERE asking.name = replies.sender_name AND asking.id = replies.sender_id
-          AND asking.key = replies.sender_key AND asking.incarnation = replies.sender_incarnation
-          AND asking.work IS NOT NULL
-      )`
-      const sent = yield* sql<Forgotten>`
-        DELETE FROM replies WHERE sender_name = ${name} AND sender_id = ${id} AND ${ended}
-        RETURNING name, id, request
-      `
-      const received = yield* sql<Forgotten>`
-        DELETE FROM replies WHERE name = ${name} AND id = ${id} AND sender_name IS NOT NULL AND ${ended}
-        RETURNING name, id, request
-      `
-      return [...sent, ...received]
+      for (const { key, incarnation } of written.ended) {
+        forgotten.push(
+          ...yield* sql<Forgotten>`
+            DELETE FROM replies
+            WHERE sender_name = ${name} AND sender_id = ${id} AND sender_key = ${key}
+              AND sender_incarnation = ${incarnation}
+            RETURNING name, id, request
+          `,
+        )
+      }
+      return forgotten
     }).pipe(Effect.orDie)
 
   /** The entities of the program an operator has to resume: nothing of theirs runs, and no timer of theirs fires. */
@@ -763,8 +730,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       `
       if (rows.length === 0) return written
       for (const held of rows) {
-        const shown = program.project(state.read(held.state, up('state', held.version)))
-        yield* row(held.id, shown, projection.write(shown))
+        yield* row(held.id, Machine.shownOf(program, state.read(held.state, up('state', held.version))))
         cursor = held.id
         written += 1
       }
