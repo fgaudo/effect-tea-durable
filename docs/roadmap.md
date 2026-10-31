@@ -68,7 +68,9 @@ Effect Cluster is studied, at `effect` 4.1.0: [`docs/cluster.md`](cluster.md) sa
 the runtime, and which decisions it bears on. Its findings are decided next, each in a
 note, in this order, since each may change the ones after it. The first is decided, against a spike run on
 `SingleRunner`: on Cluster, a step commits with its reply, in Cluster's transaction, and everything it answers is a
-success of the RPC ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)). The others:
+success of the RPC ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)); what its spike saw of a
+defect is an option of Cluster's and a likely bug of 4.1.0, not its contract
+([decision 0082](decisions/0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md)). The others:
 
 - **A fence.** Cluster confirms a shard's lock before it saves a reply, inside the step's transaction. On SQLite
   the lease is renewed in that transaction and the commit makes the check; on PostgreSQL and MySQL the lock is

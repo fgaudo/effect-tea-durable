@@ -93,10 +93,16 @@ would save outside the transaction.
 
 A spike on `SingleRunner` and `@effect/sql-sqlite-bun` confirmed it: a handler's row and its reply commit together,
 a `COMMIT` that fails leaves neither and the request is handled again, a failure is saved as the reply after the
-rollback, and a request sent again is answered from its stored reply without the handler running. It found what a
-defect does too: the entity restarts and is given the message again without end, its later messages waiting behind
-it; and once that message's caller is interrupted, by a timeout, messages to the runner's other entities wait as
-well, for 25 s and more, with or without `WithTransaction`. A request that is only slow does not do it.
+rollback, and a request sent again is answered from its stored reply without the handler running. All of it is
+what the documentation of `WithTransaction` says. It found what a defect does too, which is of two other kinds
+([decision 0082](decisions/0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md)):
+
+- **An option.** The entity restarts after `defectRetryPolicy` and is given the message again, without end under the
+  default policy, its later messages waiting behind it.
+- **Seen only, likely a bug of 4.1.0.** Once that message's caller is interrupted, by a timeout, messages to the
+  runner's other entities wait as well, for 25 s and more, with or without `WithTransaction`; a request that is only
+  slow does not do it. In the source, the runner's read of storage delivers messages one at a time, and the caller's
+  `Interrupt` waits for the entity's handlers, which a restart from a defect never keeps ready for long.
 
 What stays two transactions:
 
