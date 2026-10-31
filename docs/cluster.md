@@ -142,7 +142,7 @@ What stays two transactions:
 | What | Cluster | The runtime | Finding |
 | --- | --- | --- | --- |
 | Mailbox | `cluster_messages`, read per shard in `rowid` order; a message read is claimed (`last_read`) and read again if its claim is ten minutes old; polled every `entityMessagePollInterval` (10 s), and woken at once by a send through its runner | its own table, in one transaction with the step | Cluster's, if steps run in its transaction; the runtime's mailbox goes |
-| Deduplication | only for a payload that implements `PrimaryKey`, under `entityType/entityId/tag/id`; a duplicate is answered with the last reply stored; keys over 255 characters stored as their SHA-256 | under the sender and its request id ([0015](decisions/0015-a-request-belongs-to-its-sender.md)) | adapted: the primary key is the request's `requestKey`, which carries its sender, so no sender takes another's ids ([0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md)) |
+| Deduplication | only for a payload that implements `PrimaryKey`, under `entityType/entityId/tag/id`; a duplicate is answered with the last reply stored; keys over 255 characters stored as their SHA-256 | under the sender and its request id ([0015](decisions/0015-a-request-belongs-to-its-sender.md)) | adapted: the primary key is the request's version and `requestKey`, which carries its sender, so no sender takes another's ids ([0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md), [0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)) |
 | Replies | `cluster_replies`, kept until `clearAddress` deletes an entity's messages and replies, or `Sharding.reset` (which the workflow engine calls) deletes a request's reply and marks the request unprocessed, so that it is handled again; processed messages are never pruned by Cluster | kept while the sender's work holds ([0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)) | Cluster keeps everything; the runtime decides what it deletes, and with what message |
 | Timers | `DeliverAt` on a payload: a message not delivered before its time, and not woken at it either: the next read of storage finds it, up to `entityMessagePollInterval` (10 s) late | `entity_keys.due`, armed by an activation, woken by the waker ([0029](decisions/0029-an-idle-entity-is-unloaded.md)) | open: a timer could be a message delivered at its time, so that an unloaded entity needs no waker, if a timer may fire up to a poll late |
 | Passivation | `maxIdleTime` per entity (1 min by default), measured from the end of its last request, while none is active, and checked every `maxIdleTime` or 30 s, whichever is shorter, but no more often than every 5 s | `passivate.millis`, measured from the last event, and nothing under way ([0029](decisions/0029-an-idle-entity-is-unloaded.md)) | kept by the runtime: Cluster would unload an entity whose operation is under way unless the handler calls `Entity.keepAlive(true)` |
@@ -183,9 +183,11 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
 - **[0015](decisions/0015-a-request-belongs-to-its-sender.md)**, **[0017](decisions/0017-creation-in-the-machine.md)**
   — Cluster's deduplication is by a primary key global to the receiver; the sender's address goes into the key.
   The 255-character limit is Cluster's own and is met by its hashing, apart from the
-  [idempotency keys services cap](open-questions.md#running). Decided: the primary key is the request's `requestKey`,
-  under one RPC for a creation and one for messages, and the runtime keeps its own replies, which answer a retry whose
-  key a migration changed ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md)).
+  [idempotency keys services cap](open-questions.md#running). Decided: the primary key is the version that keyed the
+  request and its `requestKey`, under one RPC for a creation and one for messages; Cluster answers a retry within a
+  version, and the runtime's replies one across versions
+  ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md),
+  [decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)).
 - **[0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)** — Cluster deletes no reply by
   itself. The sender's work and the receiver's replies are on different shards, and maybe different runners: one
   statement no longer reads both. A deletion is a message, delivered at least once, that may arrive before the

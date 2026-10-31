@@ -79,7 +79,8 @@ own ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-
 - **Requests and replies.** What deletes a reply once one statement no longer reads both shards
   ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)), in Cluster's table and in the
   runtime's. The sender in Cluster's primary key is decided: the key is the request's `requestKey`
-  ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md)).
+  ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md)), and the version that keyed
+  it ([decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)).
 - **What stays the runtime's**: passivation, the capacity, the suspension of a defect, the timers beside `DeliverAt`,
   and an operation that waits for a program no runner deploys.
 - **Two versions at once** ([open question](open-questions.md#running)): Cluster's runners carry no version, and a
