@@ -42,7 +42,7 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0009](0009-entities-talk-through-operations.md) | Entities talk through operations, as themselves |  |
 | [0010](0010-a-rejection-may-carry-a-reason.md) | A rejection may carry a reason, an acceptance never carries data | [0023](0023-suspended-means-no-reply-yet.md) |
 | [0015](0015-a-request-belongs-to-its-sender.md) | A request belongs to its sender, and work to its entity | [0022](0022-a-new-program-keeps-what-work-started-with.md), [0048](0048-a-callers-request-belongs-to-its-sender.md) |
-| [0021](0021-a-reply-is-kept-while-the-work-that-asked-holds.md) | A reply to an entity is kept while the work that asked is stored |  |
+| [0021](0021-a-reply-is-kept-while-the-work-that-asked-holds.md) | A reply to an entity is kept while the work that asked is stored | [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) |
 | [0023](0023-suspended-means-no-reply-yet.md) | `Suspended` means no reply yet |  |
 | [0047](0047-a-request-of-an-operation-has-a-name.md) | A request of an operation has a name |  |
 | [0048](0048-a-callers-request-belongs-to-its-sender.md) | A caller's request belongs to its sender |  |
@@ -149,3 +149,4 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md) | On Cluster, a request is keyed by its version too | [0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md) |
 | [0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md) | On Cluster, what is not a reply is handled again | [0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md) |
 | [0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md) | On Cluster, the message an entity dies on stays in its mailbox |  |
+| [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it (proposed) |  |

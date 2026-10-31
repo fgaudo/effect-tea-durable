@@ -76,9 +76,12 @@ only where the commit checks the shard, so the runtime on Cluster runs on SQLite
 the fence [Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058) asks of Cluster, or for one of its
 own ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)). The others:
 
-- **Requests and replies.** What deletes a reply once one statement no longer reads both shards
-  ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)), in Cluster's table and in the
-  runtime's. The sender in Cluster's primary key is decided: the key is the request's `requestKey`
+- **Requests and replies.** What deletes a reply, in Cluster's table and in the runtime's
+  ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)), is proposed: as on one
+  process, since one statement still reads both shards, and Cluster's rows with it, by statements of the runtime's
+  until Cluster has an operation that forgets a processed request, which
+  [Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239) asks
+  ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). The sender in Cluster's primary key is decided: the key is the request's `requestKey`
   ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md)), and the version that keyed
   it ([decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)). So is what Cluster stores
   that is not a reply: a request answered `Suspended` or `NotFound` is handled again when sent again
