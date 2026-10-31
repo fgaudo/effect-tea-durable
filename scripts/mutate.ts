@@ -171,6 +171,7 @@ if (import.meta.main) {
       ].join('\t')),
   })
   const survived = results.filter((result) => !result.killed).map((result) => result.id)
-  console.log(`\n${results.length} mutations, ${survived.length} survived, in ${Math.round((Date.now() - started) / 1000)}s`)
+  const seconds = Math.round((Date.now() - started) / 1000)
+  console.log(`\n${results.length} mutations, ${survived.length} survived, in ${seconds}s`)
   if (survived.length > 0) console.log(`survived: ${survived.join(',')}`)
 }
