@@ -434,27 +434,29 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
 
     /**
      * An entity enters the process. Once the process holds more than its capacity, the least recently used of the
-     * entities with nothing to do are told to leave, as many as it holds too many, the one entering aside: their
-     * loops unload them, each under its own lock, so nothing here waits for another entity's lock while this one's
-     * is held (decisions 0067, 0076).
+     * spare entities are told to leave, as many as it holds too many, the one entering aside: their loops unload
+     * them, each under its own lock, so nothing here waits for another entity's lock while this one's is held
+     * (decisions 0067, 0076).
      */
-    const enter = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) => {
-      deployed.loaded.set(loaded.machine.stored.id, loaded)
-      recent.set(addressOf(loaded.machine.stored), erased(loaded))
-      if (capacity === undefined) return
-      let over = recent.size - capacity
-      for (const other of recent.values()) {
-        if (over <= 0) return
-        if (other === erased(loaded)) continue
-        if (other.evicted) {
-          over -= 1
-        } else if (nothingToDo(other)) {
-          other.evicted = true
-          Queue.offerUnsafe(other.events, { _tag: 'Evict' })
-          over -= 1
+    const enter = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) =>
+      Effect.map(DateTime.now, (at) => {
+        const now = DateTime.toEpochMillis(at)
+        deployed.loaded.set(loaded.machine.stored.id, loaded)
+        recent.set(addressOf(loaded.machine.stored), erased(loaded))
+        if (capacity === undefined) return
+        let over = recent.size - capacity
+        for (const other of recent.values()) {
+          if (over <= 0) return
+          if (other === erased(loaded)) continue
+          if (other.evicted) {
+            over -= 1
+          } else if (spare(other, now)) {
+            other.evicted = true
+            Queue.offerUnsafe(other.events, { _tag: 'Evict' })
+            over -= 1
+          }
         }
-      }
-    }
+      })
 
     /** Wakes every sender waiting for the entity's resumption: it sends again, and is answered (decision 0063). */
     const wake = (entity: Address) => {
@@ -686,6 +688,21 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     }
 
     /**
+     * Whether the entity may leave a process over its capacity: it has nothing to do, and no timer of its is due by
+     * `now`. A timer due is a firing about to be offered, and an entity woken for it would be unloaded before it
+     * fires, and woken again (decision 0078).
+     */
+    const spare = <T extends Types>(loaded: Loaded<T>, now: number) => {
+      const { stored } = loaded.machine
+      if (!nothingToDo(loaded)) return false
+      // A suspended entity's timers are not armed, and nothing of it fires (decision 0029).
+      if (stored.suspension !== null) return true
+      return Object.values(stored.keys).every((key) =>
+        key.work === undefined || !isTimer(key.work) || DateTime.toEpochMillis(key.work.at) > now
+      )
+    }
+
+    /**
      * The entity leaves this process, and the waker is told in the same step (decision 0068): a reading of the
      * stored timers that left the entity out as held is made again, and one made after counts its timers, so there
      * is no moment at which they are neither armed here nor counted among the stored ones. The waker's flag and its
@@ -705,12 +722,14 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     /**
      * Unloads the entity: its timers stop, and what the state holds is what wakes it again — to the machine a
      * `Restart`, a crash this process chose (decision 0029). Under the entity's lock, so that no caller is between
-     * finding the entity and offering its event; it gives whether the entity is gone.
+     * finding the entity and offering its event; it gives whether the entity is gone. One told to leave a process
+     * over its capacity is unloaded only if it is spare at `evicted`, the time its loop takes that (decision 0078).
      */
-    const unload = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) =>
+    const unload = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>, evicted: number | null) =>
       holding(loaded.machine.stored)(Effect.gen(function*() {
         const { id } = loaded.machine.stored
-        if (!nothingToDo(loaded) || deployed.loaded.get(id) !== loaded) return false
+        const leaves = evicted === null ? nothingToDo(loaded) : spare(loaded, evicted)
+        if (!leaves || deployed.loaded.get(id) !== loaded) return false
         yield* leave(deployed, loaded)
         // A timer that fires between here and its interruption delivers nothing, and the stored time stands.
         yield* stopAll(loaded)
@@ -775,7 +794,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             // The wait ran out, or the entity was told to leave: it is unloaded if it has nothing to do.
             const event = taken._tag === 'Some' ? taken.value : null
             if (event === null || event._tag === 'Evict') {
-              return Effect.flatMap(unload(deployed, loaded), (gone) =>
+              const evicted = event === null ? Effect.succeed(null) : Effect.map(DateTime.now, DateTime.toEpochMillis)
+              return Effect.flatMap(Effect.flatMap(evicted, (now) => unload(deployed, loaded, now)), (gone) =>
                 Effect.suspend(() => {
                   // One told to leave that has something to do by now stays, and may be told again.
                   if (event !== null) {
@@ -810,7 +830,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           operations: new Map(),
           timers: new Map(),
         }
-        enter(deployed, loaded)
+        yield* enter(deployed, loaded)
         // Before anything else: the stored state says what runs (decision 0003). An activation that cannot finish
         // leaves nothing loaded, and its caller gets the defect (decision 0042).
         yield* apply(deployed, loaded, { _tag: 'Restart' }).pipe(
@@ -892,7 +912,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           // The entity exists from here: its creation is the first event committed for it.
           yield* observe(entity, creation)
           yield* at('AfterCommit', entity, creation)
-          enter(deployed, loaded)
+          yield* enter(deployed, loaded)
           // Each point of the crash table is given the creation, its event: `AfterReply` too.
           yield* perform(deployed, loaded, entity, creation, started.outputs).pipe(
             Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
@@ -1028,9 +1048,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       // behind at every timer the process ever wakes for.
       return Effect.forever(Effect.gen(function*() {
         const now = DateTime.toEpochMillis(yield* DateTime.now)
-        for (const [id, at] of waker.failed) if (at <= now) waker.failed.delete(id)
+        let next = Infinity
+        for (const [id, at] of waker.failed) {
+          if (at <= now) waker.failed.delete(id)
+          else next = Math.min(next, at)
+        }
         const due = yield* deployed.storage.due(now, [...deployed.loaded.keys(), ...waker.failed.keys()])
-        const next = Math.min(due.next ?? Infinity, ...waker.failed.values())
+        next = Math.min(next, due.next ?? Infinity)
         waker.next = next === Infinity ? null : next
         // The entities just activated are this process's, and the reading of the next round leaves them out, as
         // it leaves out the ones that failed until their time.
@@ -1065,7 +1089,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         // A program that cannot run as written is refused before anything is stored or run (decision 0054).
         yield* Effect.sync(() => checkProgram(program))
         // A name is deployed once in a process: a new version is a new process (decision 0075). It is claimed in
-        // the step that checks it, so that two deploys at once cannot both pass, and given back by one that fails.
+        // the step that checks it, so that two deploys at once cannot both pass, and given back by one that fails
+        // before it is registered: one interrupted after keeps it, with its deployment (decision 0078).
         yield* Effect.sync(() => {
           if (names.has(program.name)) {
             throw new InvariantDefect({ reason: `the program '${program.name}' is deployed already` })
@@ -1074,7 +1099,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         })
         return yield* Effect.onError(deploying(program), () =>
           Effect.sync(() => {
-            names.delete(program.name)
+            if (!deployments.has(program.name)) names.delete(program.name)
           }))
       })
 
@@ -1104,11 +1129,15 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             Effect.sync(() => deployed.loaded.forEach(forgetUse)),
           )
         ))
-        deployments.set(program.name, deployed as unknown as Deployment<never>)
-        const awaited = undeployed.get(program.name)
-        undeployed.delete(program.name)
-        if (awaited !== undefined) Deferred.doneUnsafe(awaited, Effect.void)
-        yield* Effect.forkIn(waking(deployed), deployed.scope)
+        // Registered with its waker in one step: a deployment others can reach always has its timers woken. The
+        // waker itself is interruptible, whoever deploys, as the scope that closes it needs (decision 0078).
+        yield* Effect.uninterruptible(Effect.gen(function*() {
+          deployments.set(program.name, deployed as unknown as Deployment<never>)
+          const awaited = undeployed.get(program.name)
+          undeployed.delete(program.name)
+          if (awaited !== undefined) Deferred.doneUnsafe(awaited, Effect.void)
+          yield* Effect.forkIn(Effect.interruptible(waking(deployed)), deployed.scope)
+        }))
         const handle: Handle<T> = {
           create: (id, flags, request) =>
             faulted(create(deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId })),

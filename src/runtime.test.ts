@@ -593,6 +593,43 @@ describe('passivation', () => {
     }
   }, 30_000)
 
+  test('entities woken past the capacity each fire their timer and leave once, however fibers yield', async () => {
+    const tester = { _tag: 'Tester' } as const
+    // A timer due is no spare entity (decision 0078): none is told to leave before it fires, and woken again.
+    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
+    for (const budget of budgets) {
+      await database(Effect.gen(function*() {
+        const { layer } = yield* hands()
+        const { entities, unloaded } = unloads()
+        const fired: Array<string> = []
+        const at = yield* DateTime.now
+        yield* process({
+          unloaded,
+          passivate: { millis: 5 },
+          capacity: { entities: 1 },
+          observe: (entity, event) =>
+            Effect.sync(() => {
+              if (event._tag === 'Fire') fired.push(entity.id)
+            }),
+        }, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            for (const entity of ['w-1', 'w-2']) {
+              yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+              yield* runtime.settled
+            }
+            yield* TestClock.adjust('5 millis')
+            entities.length = 0
+            // Both timers come at once, and the waker activates one entity after the other, past the capacity.
+            yield* TestClock.adjust('60 millis')
+            yield* runtime.settled
+            expect({ budget, fired: [...fired].sort(), woken: entities.length })
+              .toEqual({ budget, fired: ['w-1', 'w-2'], woken: 2 })
+          }))
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+  }, 30_000)
+
   test('a busy entity is never unloaded for the capacity, and a capacity of none is refused', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
