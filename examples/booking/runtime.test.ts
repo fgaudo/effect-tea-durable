@@ -8,7 +8,7 @@ import { expect, test } from 'bun:test'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import { SqlClient } from 'effect/sql'
-import { createTables, launch, operation, send } from '../../src/index.ts'
+import { create, createTables, launch, operation, send } from '../../src/index.ts'
 import { booking } from './booking.ts'
 import { inventory } from './inventory.ts'
 
@@ -262,4 +262,43 @@ test('an operation that sends twice under one name to one inventory is suspended
       .toEqual({ _tag: 'Suspended' })
     // The release reached no inventory.
     expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
+  }))))
+
+// A booking that opens its event's inventory itself: an operation creates an entity under a name, and a creation
+// and a message are requests apart, so the same name serves both (decisions 0050, 0060).
+const opening = (creations: number) => ({
+  ...booking,
+  operations: {
+    ...booking.operations,
+    Hold: operation.atLeastOnce((op: { event: string; seats: number }) =>
+      Effect.gen(function*() {
+        for (let made = 0; made < creations; made++) yield* create(inventory, op.event, { capacity: 10 }, 'hold')
+        yield* send(inventory, op.event, { _tag: 'HoldRequested', seats: op.seats }, 'hold')
+        return { _tag: 'SeatsHeld' } as const
+      })
+    ),
+  },
+} as typeof booking)
+
+test('an operation creates an entity, and sends it a message under the same name', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    const runtime = yield* launch()
+    const inventories = yield* runtime.deploy(inventory)
+    const bookings = yield* runtime.deploy(opening(1))
+    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    yield* runtime.settled
+    expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
+  }))))
+
+test('an operation that creates twice under one name is suspended', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    const runtime = yield* launch()
+    const inventories = yield* runtime.deploy(inventory)
+    const bookings = yield* runtime.deploy(opening(2))
+    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    yield* runtime.settled
+    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann }))
+      .toEqual({ _tag: 'Suspended' })
+    // The first creation reached the inventory, and the hold did not.
+    expect(yield* inventories.read('gig')).toMatchObject({ available: 10 })
   }))))

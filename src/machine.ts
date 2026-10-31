@@ -80,11 +80,10 @@ const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Hel
   for (const [key, held] of Object.entries(work)) {
     if (!declared.has(key)) broken(`the state holds work under '${key}', which the program does not declare`)
     if (held === undefined || isTimer(held)) continue
-    if (typeof held !== 'object' || held === null || typeof (held as { _tag?: unknown })._tag !== 'string') {
-      broken(`the state holds what is no work under '${key}'`)
-    }
+    const tag: unknown = typeof held === 'object' && held !== null ? (held as { _tag?: unknown })._tag : undefined
+    if (typeof tag !== 'string') broken(`the state holds what is no work under '${key}'`)
     if (runnerOf(program, held as T['operation']) === undefined) {
-      broken(`the state holds the operation '${(held as T['operation'])._tag}' under '${key}', which the program has no runner for`)
+      broken(`the state holds the operation '${tag}' under '${key}', which the program has no runner for`)
     }
   }
   return work as Held<T>
@@ -175,7 +174,9 @@ export const shownOf = <T extends Types>(
   const projection = byProgram(() => program.project(state))
   const indexes = byProgram(() => indexesOf(program, projection))
   for (const [name, value] of Object.entries(indexes)) {
-    if (typeof value === 'number' && !Number.isFinite(value)) broken(`the index '${name}' is a number JSON does not hold`)
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      broken(`the index '${name}' is a number JSON does not hold`)
+    }
   }
   const json = encodeBy(program.schemas.projection, projection, 'projection')
   const row = { projection: json, indexes, text: canonical(json) }
@@ -536,7 +537,9 @@ const startWork = <T extends Types>(
  * otherwise an operation before its completion, is a defect, as in a step (decisions 0020, 0022).
  */
 const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Stored<T> => {
-  if (program.name !== stored.name) broken(`the program '${program.name}' replaces the entity's program '${stored.name}'`)
+  if (program.name !== stored.name) {
+    broken(`the program '${program.name}' replaces the entity's program '${stored.name}'`)
+  }
   const work = admitted(program, stored.state)
   const keys = renew(program, stored.keys, workOf(stored), work)
   for (const [key, { work: was, delivery }] of Object.entries(stored.keys)) {
@@ -600,8 +603,8 @@ const activate = <T extends Types>(before: Machine<T>, machine: Machine<T>, mayH
 export type Start<T extends Types> =
   | Readonly<{ _tag: 'Created'; machine: Machine<T>; outputs: ReadonlyArray<Output<T>>; written: Written }>
   /**
-   * The flags do not encode, or `init`, `durable`, `project` or an index died on the first state: nothing is
-   * stored.
+   * The flags or the request do not encode, or `init`, `durable`, `project` or an index died on the first state:
+   * nothing is stored.
    */
   | Readonly<{ _tag: 'Defect'; cause: unknown }>
 

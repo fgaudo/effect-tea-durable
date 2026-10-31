@@ -33,7 +33,8 @@ export interface Rehearsal<T extends Types> {
   readonly projection: Effect.Effect<T['projection']>
   /** Delivers an inbound message, with a new request id. */
   readonly send: (message: T['inbound'], sender: T['sender']) => Effect.Effect<Machine.StoredReply<T['rejection']>>
-  /** Delivers an inbound message from another entity's operation, with a new request id. */
+  /** Delivers an inbound message from another entity's operation, as a new run of it (decision 0059). */
+
   readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /** The work under way under `key`, one of the program's own (decision 0033). Fails the test when there is none. */
   readonly pending: (key: T['key']) => Effect.Effect<Pending<Durable<T['operation'], T['internal']>>>
@@ -102,14 +103,15 @@ export const rehearse = <T extends Types, E>(
         return made
       }), (request) =>
         Effect.flatMap(apply({ _tag: 'Receive', request, message }), (outputs) => {
+          const key = Machine.requestKey(program, request)
           for (const output of outputs) {
-            if (output._tag !== 'Replied' || output.request !== request) continue
+            if (output._tag !== 'Replied' || Machine.requestKey(program, output.request) !== key) continue
             const { reply } = output
             if (reply._tag === 'Accepted' || reply._tag === 'Rejected') {
               return Effect.succeed<Machine.StoredReply<T['rejection']>>(reply)
             }
           }
-          return Effect.die(`the request ${requests} was not answered`)
+          return Effect.die(`the request ${key} was not answered`)
         }))
 
     const outcome = ({ key, incarnation }: Pending) => (outputs: ReadonlyArray<Machine.Output<T>>) =>

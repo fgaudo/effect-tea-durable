@@ -434,8 +434,8 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       )
       const replies: Record<string, Machine.StoredReply<T['rejection']>> = {}
       for (const reply of answered) {
-        const asked = request.read(reply.request, upRequest(reply.version))
-        replies[Machine.requestKey(program, asked)] = reply.tag === 'Accepted'
+        const requested = request.read(reply.request, upRequest(reply.version))
+        replies[Machine.requestKey(program, requested)] = reply.tag === 'Accepted'
           ? { _tag: 'Accepted' }
           : {
             _tag: 'Rejected',

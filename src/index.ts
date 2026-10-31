@@ -24,7 +24,6 @@ export {
   type RejectedWith,
   rejectWith,
   type Reply,
-  type Request,
   type Scalar,
   type Schemas,
   send,

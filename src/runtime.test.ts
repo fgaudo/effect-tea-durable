@@ -208,8 +208,13 @@ const process = <A, E, R>(
   body: (runtime: Runtime) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R | SqlClient.SqlClient> => Effect.scoped(Effect.flatMap(launch(options), body))
 
+/** The request id a caller's message is received under, or null for any other event. */
+const received = (event: Machine.Event<never>) =>
+  event._tag === 'Receive' && event.request._tag === 'Caller' ? event.request.id : null
+
 /**
- * The events the runtime committed, replayed in the machine. The first of them is the entity's creation, since
+ * The events the runtime committed, replayed in the machine.
+ The first of them is the entity's creation, since
  * nothing can happen to an entity that is not stored yet: a log without one is a creation that never committed,
  * and there is no entity to compare.
  */
@@ -347,7 +352,7 @@ describe('the runtime on SQLite', () => {
       yield* process({
         // The first message holds the entity until both requests wait for their replies.
         at: (point, _entity, event) =>
-          point === 'BeforeCommit' && event._tag === 'Receive' && event.request._tag === 'Caller' && event.request.id === 'first'
+          point === 'BeforeCommit' && received(event) === 'first'
             ? Deferred.await(gate)
             : Effect.void,
       }, (runtime) =>
@@ -1517,7 +1522,7 @@ describe('what the runtime cannot finish', () => {
       yield* process({
         // The message is written, and the runtime dies before it acts on it: the hook stands for a failed write.
         observe: (_entity, event) => {
-          if (event._tag !== 'Receive' || event.request._tag !== 'Caller' || event.request.id !== 'r-1' || !dies) return Effect.void
+          if (received(event) !== 'r-1' || !dies) return Effect.void
           dies = false
           return Effect.die('the runtime failed')
         },
