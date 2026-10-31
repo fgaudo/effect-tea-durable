@@ -343,6 +343,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         (lock) =>
           Effect.sync(() => {
             lock.users -= 1
+            // Dropped by its last user only: one dropped while others wait would let a new taker hold it beside
+            // them. No test reaches that interleaving, as the review of 0061 to 0075 says.
             if (lock.users === 0) locks.delete(address)
           }),
       )
@@ -476,7 +478,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
 
     /**
      * Registers a sender's wait for the entity's resumption, before it sends: `resumed` is what it waits on if it is
-     * answered `Suspended`, and `forget` takes it back whatever it is answered.
+     * answered `Suspended`, and `forget` takes it back whatever it is answered. No test reaches a resumption between
+     * the answer and a registration made after it, which would wait for ever: only this order keeps it from it, as
+     * the review of 0061 to 0075 says.
      */
     const awaitResumption = (entity: Address) =>
       Effect.sync(() => {

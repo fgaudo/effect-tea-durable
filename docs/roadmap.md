@@ -105,6 +105,14 @@ that a sender waits — does not wait on Cluster, and is taken before it if an o
 
 - Effect Cluster: the runtime on it, as [`docs/cluster.md`](cluster.md) and the notes above decide, with sharding and
   rolling deploys; across machines once Cluster has a fence, or the runtime one of its own
-  ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
+  ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)). Before it is done,
+  the two interleavings no test reaches are read again: a sender that registers for its receiver's resumption only
+  after it is answered `Suspended` ([decision 0063](decisions/0063-the-runtime-waits-for-what-it-waits-for.md)),
+  which a resumption told by a message changes
+  ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)), and an
+  entity's lock dropped while others wait for it
+  ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)), which the
+  [review of 0061 to 0075](decisions/README.md#reviews) left reasoned. Where the runtime on Cluster makes either
+  reachable, it gets a test.
 - The library's name, once there is code to publish, and its release, as experimental while it depends on
   Effect's unstable modules ([decision 0099](decisions/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
