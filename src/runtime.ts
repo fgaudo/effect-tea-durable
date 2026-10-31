@@ -227,10 +227,18 @@ interface Waker {
    * been poked. While it is set, nothing is known of the stored timers, and the process is not settled.
    */
   busy: boolean
-  /** The earliest time a stored timer of an unloaded entity is due, as last read: to be read while `busy` is not. */
+  /**
+   * The earliest time a stored timer of an unloaded entity is due, or an entity that failed is tried again, as last
+   * read: to be read while `busy` is not.
+   */
   next: number | null
   /** An entity was unloaded, and its timers may be due before the one the fiber sleeps for. */
   readonly poke: Queue.Queue<void>
+  /**
+   * The entities whose activation failed, by the time each is tried again: left out of the readings until then, so
+   * that an entity the fiber cannot load neither stops it nor keeps it from sleeping (decision 0077).
+   */
+  readonly failed: Map<string, number>
 }
 
 interface Deployment<T extends Types> {
@@ -1004,7 +1012,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     /**
      * The timers of the entities this process does not hold: it reads the earliest time one is due, activates the
      * entities whose time has come — arming a timer already due fires it — and sleeps until the next, or until an
-     * entity is unloaded and brings an earlier one (decision 0029).
+     * entity is unloaded and brings an earlier one (decision 0029). An activation that fails crashes its entity
+     * alone, which is tried again after `retry`, as a receiver that crashed is sent to again (decisions 0046, 0077).
      */
     const waking = <T extends Types>(deployed: Deployment<T>) => {
       const { waker } = deployed
@@ -1012,11 +1021,20 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       // behind at every timer the process ever wakes for.
       return Effect.forever(Effect.gen(function*() {
         const now = DateTime.toEpochMillis(yield* DateTime.now)
-        const due = yield* deployed.storage.due(now, [...deployed.loaded.keys()])
-        waker.next = due.next
-        // The entities just activated are this process's, and the reading of the next round leaves them out.
+        for (const [id, at] of waker.failed) if (at <= now) waker.failed.delete(id)
+        const due = yield* deployed.storage.due(now, [...deployed.loaded.keys(), ...waker.failed.keys()])
+        const next = Math.min(due.next ?? Infinity, ...waker.failed.values())
+        waker.next = next === Infinity ? null : next
+        // The entities just activated are this process's, and the reading of the next round leaves them out, as
+        // it leaves out the ones that failed until their time.
         if (due.ready.length > 0) {
-          for (const id of due.ready) yield* loads(deployed, id)
+          for (const id of due.ready) {
+            yield* loads(deployed, id).pipe(Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.sync(() => {
+                waker.failed.set(id, now + retry)
+              })
+            ))
+          }
           return
         }
         // Whether the reading stands: an entity unloaded while it was made has poked, and it is made again.
@@ -1028,9 +1046,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           return true
         })
         if (!rests) return yield* Queue.take(waker.poke)
-        yield* due.next === null
+        yield* next === Infinity
           ? Queue.take(waker.poke)
-          : Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(`${Math.max(0, due.next - now)} millis`))
+          : Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(`${Math.max(0, next - now)} millis`))
         waker.busy = true
       }))
     }
@@ -1063,7 +1081,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           scope: yield* Scope.fork(scope),
           loaded: new Map(),
           // Nothing is known of the stored timers until the waker has read them once.
-          waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1) },
+          waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1), failed: new Map() },
           run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
         }
         // An operation a crash interrupted starts again here, and a message it left in a mailbox is handled

@@ -475,6 +475,8 @@ runtime. An event the runtime cannot finish — a write that fails — crashes i
 process, its callers are given the defect, and the next one loads it from what is stored
 ([decision 0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)); nothing else waits
 for its operations to stop ([decision 0056](decisions/0056-nothing-waits-for-an-operation-under-the-permit.md)).
+An activation the waker cannot finish crashes its entity alone too, and the waker tries it again after `retry`
+([decision 0077](decisions/0077-the-waker-tries-an-entity-it-cannot-load-again.md)).
 Each entity is found, loaded, unloaded and crashed under a lock of its own, so the callers of one entity never
 wait on another's activation ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)).
 Everything a deployment runs runs in a scope of its own: a deploy that cannot finish stops what it started, and

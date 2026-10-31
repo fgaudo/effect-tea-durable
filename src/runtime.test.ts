@@ -1843,6 +1843,41 @@ describe('what the runtime cannot finish', () => {
         }))
     })))
 
+  test('an entity the waker cannot activate is tried again after the retry, and the other timers fire', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      let dies = false
+      yield* process({
+        unloaded,
+        passivate: { millis: 5 },
+        retry: { millis: 100 },
+        // The first activation of `w-1` the waker makes cannot finish: the probe stands for a failed write.
+        observe: (entity, event) => {
+          if (entity.id !== 'w-1' || event._tag !== 'Restart' || !dies) return Effect.void
+          dies = false
+          return Effect.die('the runtime failed')
+        },
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          for (const entity of ['w-1', 'w-2']) yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+          yield* runtime.settled
+          yield* TestClock.adjust('5 millis')
+          expect(entities).toEqual(['w-1', 'w-2'])
+          // Both timers come at once, and the waker activates `w-1` first, in the order of the ids.
+          dies = true
+          yield* TestClock.adjust('60 millis')
+          yield* runtime.settled
+          expect([yield* toy.read('w-1'), yield* toy.read('w-2')]).toEqual([1, 0])
+          // The waker sleeps until `w-1` is tried again, and its timer fires then (decision 0077).
+          yield* TestClock.adjust('100 millis')
+          yield* runtime.settled
+          expect([yield* toy.read('w-1'), yield* toy.read('w-2')]).toEqual([0, 0])
+        }))
+    })))
+
   test('a crash does not wait for its operations to stop: nothing waits for them under its entity’s lock', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now

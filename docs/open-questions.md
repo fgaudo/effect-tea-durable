@@ -90,10 +90,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0041](decisions/0041-a-completion-is-not-discarded.md),
   [decision 0044](decisions/0044-a-firing-is-not-discarded.md)), and the runtime's `discard` does not say that it
   did nothing.
-- **An entity the waker cannot load.** An event the runtime cannot finish crashes its entity alone
-  ([decision 0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)), but the waker,
-  which loads the entities whose timers are due, dies with an activation that fails, and the program's timers
-  stop with it. Should it skip such an entity, and when does it try it again?
 - **Callers' stored replies.** A caller's reply is stored so that a retry gets it, and is kept for ever: a time
   after which a retry is applied again would depend on the protocol, and on who callers are
   ([who may send what](#programs)). Replies to entities are kept while the work that asked is stored
