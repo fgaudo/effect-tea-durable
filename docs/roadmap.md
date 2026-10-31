@@ -81,6 +81,13 @@ own ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-
   runtime's. The sender in Cluster's primary key is decided: the key is the request's `requestKey`
   ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md)), and the version that keyed
   it ([decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)).
+- **What is not a reply.** Cluster stores everything a step answers under the request's key
+  ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)), and answers a retry within a version
+  from it ([decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)). `Suspended` means no
+  reply yet ([decision 0023](decisions/0023-suspended-means-no-reply-yet.md)), and `NotFound` is not stored either: a
+  caller that retries once the entity is resumed, or created, would get them again for ever. And Cluster marks
+  processed the message an entity dies on, which on one process stays in the mailbox with the suspension
+  ([decision 0006](decisions/0006-a-defect-suspends-the-entity.md)).
 - **What stays the runtime's**: passivation, the capacity, the suspension of a defect, the timers beside `DeliverAt`,
   and an operation that waits for a program no runner deploys.
 - **Two versions at once** ([open question](open-questions.md#running)): Cluster's runners carry no version, and a
