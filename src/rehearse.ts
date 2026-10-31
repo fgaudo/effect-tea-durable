@@ -78,15 +78,17 @@ export const rehearse = <T extends Types, E>(
     const created = Machine.start(program, id, start.flags, start.at, { _tag: 'Self', id: 'creation' })
     if (created._tag === 'Defect') return Effect.die(created.cause)
     let machine = created.machine
+    // The program that runs the entity, which a deploy replaces, and steps every event (decision 0064).
+    let deployed = program
     let now = start.at
     let requests = 0
 
     const apply = (event: Machine.Event<T>): Effect.Effect<ReadonlyArray<Machine.Output<T>>> =>
       Effect.suspend(() => {
-        let transition = Machine.step(machine, event)
+        let transition = Machine.step(deployed, machine, event)
         const outputs = [...transition.outputs]
         while (transition.machine.stored.suspension === null && transition.machine.stored.mailbox.length > 0) {
-          transition = Machine.step(transition.machine, { _tag: 'Handle', at: now })
+          transition = Machine.step(deployed, transition.machine, { _tag: 'Handle', at: now })
           outputs.push(...transition.outputs)
         }
         machine = transition.machine
@@ -98,14 +100,14 @@ export const rehearse = <T extends Types, E>(
     const deliver = (message: T['inbound'], request: (n: number) => Request<T['sender']>) =>
       Effect.flatMap(Effect.sync(() => {
         const made = request(++requests)
-        encode(program.schemas.inbound, message, 'inbound message')
-        if (made._tag === 'Caller') encode(program.schemas.sender, made.sender, 'sender')
+        encode(deployed.schemas.inbound, message, 'inbound message')
+        if (made._tag === 'Caller') encode(deployed.schemas.sender, made.sender, 'sender')
         return made
       }), (request) =>
         Effect.flatMap(apply({ _tag: 'Receive', request, message }), (outputs) => {
-          const key = Machine.requestKey(program, request)
+          const key = Machine.requestKey(deployed, request)
           for (const output of outputs) {
-            if (output._tag !== 'Replied' || Machine.requestKey(program, output.request) !== key) continue
+            if (output._tag !== 'Replied' || Machine.requestKey(deployed, output.request) !== key) continue
             const { reply } = output
             if (reply._tag === 'Accepted' || reply._tag === 'Rejected') {
               return Effect.succeed<Machine.StoredReply<T['rejection']>>(reply)
@@ -126,7 +128,7 @@ export const rehearse = <T extends Types, E>(
 
     return scenario({
       state: Effect.sync(() => machine.stored.state),
-      projection: Effect.sync(() => machine.program.project(machine.stored.state)),
+      projection: Effect.sync(() => deployed.project(machine.stored.state)),
       send: (message, sender) => deliver(message, (n) => ({ _tag: 'Caller', sender, id: `request-${n}` })),
       // A request of another entity is a run of one of its operations: each one here is a run of its own.
       sendFrom: (message, entity) =>
@@ -165,6 +167,12 @@ export const rehearse = <T extends Types, E>(
         }),
       restart: Effect.asVoid(apply({ _tag: 'Restart' })),
       deploy: (program) =>
-        Effect.andThen(Effect.sync(() => checkProgram(program)), Effect.asVoid(apply({ _tag: 'Restart', program }))),
+        Effect.andThen(
+          Effect.sync(() => {
+            checkProgram(program)
+            deployed = program
+          }),
+          Effect.asVoid(apply({ _tag: 'Restart' })),
+        ),
     })
   })

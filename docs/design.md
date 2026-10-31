@@ -58,8 +58,8 @@ says of a state. The library relies on it — a step whose next state is the sam
 read, and an operation changed in place is never seen to change — and, as for purity, checks nothing of it
 ([decision 0052](decisions/0052-what-crosses-the-library-is-never-mutated.md)).
 
-A program is checked where it enters — `deploy`, `resume` with a fixed program, `rehearse` — before anything is
-stored or run: one whose name is empty, which declares a key twice, or one of whose indexes is not a word, is
+A program is checked where it enters — `deploy`, which a fix is too, and `rehearse` — before anything is stored
+or run: one whose name is empty, which declares a key twice, or one of whose indexes is not a word, is
 refused. The check is pure and made once, since a program is never mutated
 ([decision 0054](decisions/0054-a-program-is-checked-where-it-enters.md)).
 
@@ -279,6 +279,9 @@ it can read ([decision 0043](decisions/0043-a-row-no-version-reads-fails-what-re
 These rules are a pure state machine, [`src/machine.ts`](../src/machine.ts): its events are a message arriving,
 an operation completing or dying, a timer firing, a step, the process dying, and an operator resuming or
 discarding. A runtime interprets its outputs ([decision 0013](decisions/0013-the-runtime-is-a-pure-machine.md)).
+The program is not part of the machine: each event is stepped by the program that runs the entity, and a deploy
+is a `Restart` stepped by another one, so the machine and the runtime never see two programs
+([decision 0064](decisions/0064-the-program-is-not-the-machines-state.md)).
 
 ## What survives a crash
 
@@ -308,7 +311,9 @@ suspends it too. A defect is what the program does: what one of its functions or
 its own, or a rule of the design it breaks. Anything else thrown while an event is applied — a bug of the machine,
 a row the runtime corrupted — is the runtime's, and crashes the entity instead
 ([decision 0061](decisions/0061-only-what-the-program-does-is-its-defect.md)). Resuming activates it as after a
-crash; a discarded inbound message stores no reply, and its caller's retry is a new message
+crash, by the program deployed: a fixed program is a deploy, which the entity stays suspended through, and the
+resumption follows it ([decision 0064](decisions/0064-the-program-is-not-the-machines-state.md)); a discarded
+inbound message stores no reply, and its caller's retry is a new message
 ([decision 0014](decisions/0014-rules-the-machine-settled.md)). An internal message is not discarded: the state
 before it still holds its work, so an operation's completion would run the operation again under another
 idempotency key, and a timer's firing would fire again at once. Only a program that handles it gets the entity

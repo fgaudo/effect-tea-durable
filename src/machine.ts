@@ -299,8 +299,11 @@ export type Stored<T extends Types> = Readonly<{
 /** Work under way under a key: an operation running, or a timer armed. */
 export type Running = Readonly<{ kind: 'Operation' | 'Timer'; incarnation: number }>
 
+/**
+ * An entity as the machine sees it. The program is not part of it: each event is stepped by the program that runs
+ * the entity, which a deploy changes, so the machine and the runtime never see two programs (decision 0064).
+ */
 export type Machine<T extends Types> = Readonly<{
-  program: Program<T>
   stored: Stored<T>
   /** What the process is doing, lost in a crash. */
   running: Readonly<Record<string, Running>>
@@ -319,10 +322,13 @@ export type Event<T extends Types> =
   | Readonly<{ _tag: 'Handle'; at: DateTime.Utc }>
   /** An operation dies with a defect. */
   | Readonly<{ _tag: 'Die'; key: string; incarnation: number; cause: unknown }>
-  /** The process dies, and the entity is activated again from what was stored, perhaps by a new program: a deploy. */
-  | Readonly<{ _tag: 'Restart'; program?: Program<T> }>
-  /** An operator resumes a suspended entity, perhaps with a fixed program. */
-  | Readonly<{ _tag: 'Resume'; program?: Program<T> }>
+  /**
+   * The process dies, and the entity is activated again from what was stored, by the program the event is stepped
+   * by: when it is another than the one before, a deploy (decision 0064).
+   */
+  | Readonly<{ _tag: 'Restart' }>
+  /** An operator resumes a suspended entity. A fixed program is a deploy, before the resume (decision 0064). */
+  | Readonly<{ _tag: 'Resume' }>
   /** An operator discards the inbound message a suspended entity died on, and resumes it. */
   | Readonly<{ _tag: 'Discard' }>
 
@@ -560,19 +566,23 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
 }
 
 /**
- * Starts what the stored state says, with nothing under way, as the program of `machine` computes it: the work
- * under each key, unless its message is already in the mailbox. An at-most-once operation that may have run
- * before (`mayHaveRun`: after a crash, or a suspension, and never at a creation) may have acted, so its `unknown`
- * is recorded instead of running it again; one that is
- * new work at this activation, in an incarnation the stored work did not hold, never ran, and starts. A defect,
+ * Starts what the stored state says, with nothing under way, as `program` computes it: the work under each key,
+ * unless its message is already in the mailbox. An at-most-once operation that may have run before (`mayHaveRun`:
+ * after a crash, or a suspension, and never at a creation) may have acted, so its `unknown` is recorded instead of
+ * running it again; one that is new work at this activation, in an incarnation the stored work did not hold, never
+ * ran, and starts. A suspended entity starts nothing: a deploy of a fix leaves it as it is (decision 0064). A defect,
  * of the program on the stored state or of an `unknown` that dies or does not encode (decision 0040), leaves the
  * entity as it was before the event, `before`, suspended on what suspended it, or on the activation.
  *
  * A passivation is a `Restart` the runtime chooses, with an empty mailbox and only timers under way: activating
  * again arms the same timers, in the same incarnations, which the stored work holds while it is unloaded.
  */
-const activate = <T extends Types>(before: Machine<T>, machine: Machine<T>, mayHaveRun: boolean): Moved<T> => {
-  const { program } = machine
+const activate = <T extends Types>(
+  program: Program<T>,
+  before: Machine<T>,
+  machine: Machine<T>,
+  mayHaveRun: boolean,
+): Moved<T> => {
   if (machine.stored.suspension !== null) return { machine: { ...machine, running: {} }, outputs: [] }
   try {
     const stored = reconcile(program, machine.stored)
@@ -596,7 +606,7 @@ const activate = <T extends Types>(before: Machine<T>, machine: Machine<T>, mayH
     return { machine: { ...machine, stored: { ...stored, mailbox }, running }, outputs }
   } catch (thrown) {
     const cause = defectOf(thrown)
-    return suspend({ ...before, program }, { cause, on: before.stored.suspension?.on ?? { _tag: 'Activation' } })
+    return suspend(before, { cause, on: before.stored.suspension?.on ?? { _tag: 'Activation' } })
   }
 }
 
@@ -638,8 +648,8 @@ export const start = <T extends Types>(
     creation: request,
     suspension: null,
   }
-  const created: Machine<T> = { program, stored, running: {} }
-  const { machine, outputs } = activate(created, created, false)
+  const created: Machine<T> = { stored, running: {} }
+  const { machine, outputs } = activate(program, created, created, false)
   const reply: Output<T> = { _tag: 'CreationReplied', request, reply: { _tag: 'Created' } }
   // A new entity always writes its row.
   const written = writes(program, null, machine.stored, null)
@@ -664,10 +674,11 @@ const suspend = <T extends Types>(machine: Machine<T>, suspension: Suspension): 
 })
 
 const receive = <T extends Types>(
+  program: Program<T>,
   machine: Machine<T>,
   event: Extract<Event<T>, { _tag: 'Receive' }>,
 ): Moved<T> => {
-  const { stored, program } = machine
+  const { stored } = machine
   const { request } = event
   const key = requestKey(program, request)
   // A stored reply is read from storage: a suspended entity gives it too.
@@ -690,6 +701,7 @@ const receive = <T extends Types>(
  * operation's message that does not encode cannot be stored, and is the operation's defect (decision 0040).
  */
 const record = <T extends Types>(
+  program: Program<T>,
   machine: Machine<T>,
   kind: Running['kind'],
   key: string,
@@ -704,7 +716,7 @@ const record = <T extends Types>(
   const recorded = message(work)
   if (kind === 'Operation') {
     try {
-      encodeBy(machine.program.schemas.internal, recorded, `message of the operation under '${key}'`)
+      encodeBy(program.schemas.internal, recorded, `message of the operation under '${key}'`)
     } catch (thrown) {
       return suspend(machine, { cause: defectOf(thrown), on: { _tag: 'Operation', key, incarnation } })
     }
@@ -726,8 +738,8 @@ const record = <T extends Types>(
  * its incarnation is dropped. The step is checked before it is stored, and a defect suspends the entity, with
  * the state and the mailbox as they were.
  */
-const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Moved<T> => {
-  const { program, stored } = machine
+const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: DateTime.Utc): Moved<T> => {
+  const { stored } = machine
   const [head, ...rest] = stored.mailbox
   if (stored.suspension !== null || head === undefined) return { machine, outputs: [] }
   try {
@@ -813,14 +825,13 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Moved<T
 }
 
 /**
- * Activates a suspended entity again, as after a crash, perhaps with a fixed program. A program whose `durable`,
- * `project` or index dies on the stored state, or that changes an operation under way, leaves it suspended, with
- * that cause.
+ * Activates a suspended entity again, as after a crash, by the program that runs it, which a fix deployed
+ * (decision 0064). A program whose `durable`, `project` or index dies on the stored state, or that changes an
+ * operation under way, leaves it suspended, with that cause.
  */
-const resume = <T extends Types>(machine: Machine<T>, fixed: Program<T> | undefined): Moved<T> => {
+const resume = <T extends Types>(program: Program<T>, machine: Machine<T>): Moved<T> => {
   if (machine.stored.suspension === null) return { machine, outputs: [] }
-  const unsuspended = { ...machine, stored: { ...machine.stored, suspension: null } }
-  return activate(machine, { ...unsuspended, program: fixed ?? machine.program }, true)
+  return activate(program, machine, { ...machine, stored: { ...machine.stored, suspension: null } }, true)
 }
 
 /**
@@ -829,11 +840,11 @@ const resume = <T extends Types>(machine: Machine<T>, fixed: Program<T> | undefi
  * under another idempotency key, and a timer whose time has passed would fire again at once. Only a program that
  * handles it gets the entity past it (decisions 0041, 0044).
  */
-const discard = <T extends Types>(machine: Machine<T>): Moved<T> => {
+const discard = <T extends Types>(program: Program<T>, machine: Machine<T>): Moved<T> => {
   const { stored } = machine
   const [head, ...rest] = stored.mailbox
   if (stored.suspension?.on._tag !== 'Message' || head?._tag !== 'Inbound') return { machine, outputs: [] }
-  return activate(machine, { ...machine, stored: { ...stored, mailbox: rest, suspension: null } }, true)
+  return activate(program, machine, { ...machine, stored: { ...stored, mailbox: rest, suspension: null } }, true)
 }
 
 /** A defect's cause as an operator reads it: a suspension stores this, not the value (decision 0028). */
@@ -944,38 +955,42 @@ export const writes = <T extends Types>(
   }
 }
 
-export const step = <T extends Types>(machine: Machine<T>, event: Event<T>): Transition<T> => {
-  const moved = move(machine, event)
+/**
+ * One event, stepped by the program that runs the entity: the one an event of a deploy, a `Restart`, activates it
+ * by, and every event after it until the next (decision 0064).
+ */
+export const step = <T extends Types>(program: Program<T>, machine: Machine<T>, event: Event<T>): Transition<T> => {
+  const moved = move(program, machine, event)
   const handled = event._tag === 'Handle' ? machine.stored.mailbox[0] ?? null : null
   return {
     ...moved,
     written: moved.machine.stored === machine.stored
       ? null
-      : writes(moved.machine.program, machine.stored, moved.machine.stored, handled),
+      : writes(program, machine.stored, moved.machine.stored, handled),
   }
 }
 
-const move = <T extends Types>(machine: Machine<T>, event: Event<T>): Moved<T> => {
+const move = <T extends Types>(program: Program<T>, machine: Machine<T>, event: Event<T>): Moved<T> => {
   switch (event._tag) {
     case 'Receive':
-      return receive(machine, event)
+      return receive(program, machine, event)
     case 'Create': {
       // Read from storage, as a stored reply: a suspended entity answers it too.
       const { request } = event
-      const { program, stored } = machine
+      const { stored } = machine
       const reply: Creation = requestKey(program, request) === requestKey(program, stored.creation)
         ? { _tag: 'Created' }
         : { _tag: 'AlreadyExists' }
       return { machine, outputs: [{ _tag: 'CreationReplied', request, reply }] }
     }
     case 'Complete':
-      return record(machine, 'Operation', event.key, event.incarnation, () => event.message)
+      return record(program, machine, 'Operation', event.key, event.incarnation, () => event.message)
     case 'Fire':
-      return record(machine, 'Timer', event.key, event.incarnation, (work) =>
+      return record(program, machine, 'Timer', event.key, event.incarnation, (work) =>
         // `record` checked the kind of the work under way: the key is a timer in the stored state too.
         (work as Timer<T['internal']>).message as T['internal'])
     case 'Handle':
-      return handle(machine, event.at)
+      return handle(program, machine, event.at)
     case 'Die': {
       const { key, incarnation, cause } = event
       const running = machine.running[key]
@@ -984,10 +999,10 @@ const move = <T extends Types>(machine: Machine<T>, event: Event<T>): Moved<T> =
         : { machine, outputs: [] }
     }
     case 'Restart':
-      return activate(machine, { ...machine, program: event.program ?? machine.program, running: {} }, true)
+      return activate(program, machine, { ...machine, running: {} }, true)
     case 'Resume':
-      return resume(machine, event.program)
+      return resume(program, machine)
     case 'Discard':
-      return discard(machine)
+      return discard(program, machine)
   }
 }

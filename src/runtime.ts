@@ -148,10 +148,10 @@ export interface Handle<T extends Types> {
    */
   readonly forget: (consumer: string) => Effect.Effect<void>
   /**
-   * An operator resumes a suspended entity, perhaps with a fixed program (decision 0006), which is checked first:
-   * one that cannot run as written dies, and reaches no entity (decision 0054).
+   * An operator resumes a suspended entity (decision 0006), with the program deployed: a fixed program is a deploy
+   * of it, which the resume follows (decision 0064).
    */
-  readonly resume: (id: string, fixed?: Program<T>) => Effect.Effect<void>
+  readonly resume: (id: string) => Effect.Effect<void>
   /**
    * An operator discards the inbound message a suspended entity died on (decision 0014). An internal one is not
    * discarded, and the entity stays suspended (decisions 0041, 0044).
@@ -413,18 +413,17 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       Effect.gen(function*() {
         const { key, incarnation, idempotencyKey, operation } = output
         const runner = runnerOf(deployed.program, operation)
+        // The machine admitted the operation with the deployed program's runners, which stepped it (decision
+        // 0064): an operation with none is the runtime's, and crashes the entity (decision 0061).
+        if (runner === undefined) {
+          return yield* Effect.die(
+            new Error(`the deployed program '${deployed.program.name}' has no runner for '${operation._tag}'`),
+          )
+        }
         // Built in the operation's fiber: a runner that throws while it builds its effect dies as the operation,
         // and suspends the entity, instead of the event that started it (decision 0042).
         const run = Effect.suspend(() =>
-          // The machine admitted the operation with its own program's runners: a fixed program brought by
-          // `resume` may give one the deployed program does not (open questions).
-          runner === undefined
-            ? Effect.die(
-              new Error(`the deployed program '${deployed.program.name}' has no runner for '${operation._tag}'`),
-            )
-            : runner.delivery === 'Idempotent'
-            ? runner.run(operation, idempotencyKey)
-            : runner.run(operation)
+          runner.delivery === 'Idempotent' ? runner.run(operation, idempotencyKey) : runner.run(operation)
         )
         const fiber = yield* Effect.forkIn(
           deployed.run(
@@ -536,7 +535,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         loaded.applying = true
         const entity: Address = { name: loaded.machine.stored.name, id: loaded.machine.stored.id }
         const before = loaded.machine
-        const transition = Machine.step(before, event)
+        const transition = Machine.step(deployed.program, before, event)
         const { written } = transition
         let forgotten: ReadonlyArray<Forgotten> = []
         if (written !== null) {
@@ -668,7 +667,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const activate = <T extends Types>(deployed: Deployment<T>, stored: Machine.Stored<T>) =>
       Effect.gen(function*() {
         const loaded: Loaded<T> = {
-          machine: { program: deployed.program, stored, running: {} },
+          machine: { stored, running: {} },
           applying: false,
           events: yield* Queue.unbounded<Machine.Event<T>>(),
           pending: 0,
@@ -960,13 +959,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           prune: deployed.storage.prune,
           consumers: deployed.storage.consumers,
           forget: (consumer) => deployed.storage.forget(consumer),
-          resume: (id, fixed) =>
-            fixed === undefined
-              ? operate(deployed, id, { _tag: 'Resume' })
-              : Effect.andThen(
-                Effect.sync(() => checkProgram(fixed)),
-                operate(deployed, id, { _tag: 'Resume', program: fixed }),
-              ),
+          resume: (id) => operate(deployed, id, { _tag: 'Resume' }),
           discard: (id) => operate(deployed, id, { _tag: 'Discard' }),
         }
         return handle

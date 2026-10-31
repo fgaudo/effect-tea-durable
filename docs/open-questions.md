@@ -67,15 +67,12 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Running
 
-- **A fixed program brought by `resume`.** In the machine, `Resume` with a fixed program replaces the entity's
-  program. The runtime replaces only the program of the machine it holds: the runners and the storage are still
-  the deployed program's, so a fix with other runners or another version of its schemas is not run or written as
-  itself, and an entity unloaded after it is activated again by the deployed program, which may die where it
-  died before. Is a fixed program a deploy, or something the runtime keeps for the entity, and stores?
 - **Deploying a program twice in one process.** `deploy` of a name already deployed replaces the deployment,
   while the entities the first one loaded keep their loops: the second activates the same entities again, and
   two loops may step one entity. Is a second deploy refused, or is it how a new version takes over in place,
-  unloading what the first one holds?
+  unloading what the first one holds? A fix is a deploy
+  ([decision 0064](decisions/0064-the-program-is-not-the-machines-state.md)), so today an operator brings one by
+  starting a new process.
 - **Messages a crash left in a mailbox.** An inbound message whose `Receive` committed before a crash waits in the
   mailbox of an entity that may hold no operation and no timer. Nothing finds it at the next start — neither the
   entities with an operation nor the stored timers — and `settled` does not wait for it: it is handled when a

@@ -6,6 +6,7 @@ import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Schema from 'effect/Schema'
 import { order, type Sender } from '../examples/order/order.ts'
 import { InvariantDefect, isTimer, timer } from './program.ts'
 import { rehearse } from './rehearse.ts'
@@ -86,6 +87,24 @@ describe('a deploy', () => {
     const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
     expect(cause instanceof InvariantDefect && cause.reason)
       .toBe("the program changed the operation under 'charge' before its completion")
+  })
+
+  // The program is not the machine's: what follows a deploy is the deployed program's, its schemas too (decision 0064).
+  test('runs what follows it by the program deployed, whose schemas a message is checked by', async () => {
+    const strict: typeof order = {
+      ...order,
+      schemas: { ...order.schemas, inbound: order.schemas.inbound.check(Schema.makeFilter(() => 'nothing is taken')) },
+    }
+    const exit = await Effect.runPromiseExit(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.deploy(strict)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+      }),
+    ))
+    const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+    expect(cause instanceof InvariantDefect && cause.reason).toStartWith('the inbound message does not encode')
   })
 
   test('that changes a charge is taken once the charge has completed', () =>

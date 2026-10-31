@@ -224,7 +224,7 @@ const replayed = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) => 
   const created = Machine.start(program, id, { at }, at, first.request)
   if (created._tag === 'Defect') throw created.cause
   let machine = created.machine
-  for (const event of rest) machine = Machine.step(machine, event).machine
+  for (const event of rest) machine = Machine.step(program, machine, event).machine
   return machine.stored
 }
 
@@ -250,7 +250,7 @@ const publishedOf = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) 
   for (const event of rest) {
     // The message a step handles is the mailbox's first, read before the step takes it.
     const head = machine.stored.mailbox[0]
-    const next = Machine.step(machine, event).machine
+    const next = Machine.step(program, machine, event).machine
     const after = program.project(next.stored.state)
     if (next.stored.state !== machine.stored.state && after !== shown) {
       rows.push({
@@ -1680,11 +1680,11 @@ describe('what the runtime cannot finish', () => {
           expect(made.map(({ name }) => name).filter((name) => name.startsWith('projections '))).toEqual([])
           expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy({ ...program, name: '' }), layer))))
             .toBe("the program '' has an empty name")
-          // So does a resume with a fixed program, which reaches no entity.
+          // A fix is a deploy, checked as any (decision 0064): the entities go on with the program deployed.
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
           const twice = { ...program, keys: [...program.keys, 'a'] } as Program<T>
-          expect(reasonOf(yield* Effect.exit(toy.resume(id, twice))))
+          expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy(twice), layer))))
             .toBe("the program 'Toy' declares the key 'a' twice")
           expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester })).toEqual({ _tag: 'Accepted' })
           yield* runtime.settled

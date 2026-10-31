@@ -367,9 +367,9 @@ const isWord = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
 
 /**
  * Refuses a program that cannot run as it is written: an empty name, a key declared twice, an index whose name is
- * not a word. It is pure, and called where a program enters — `deploy`, a fixed program brought by `resume`,
- * `rehearse` — before anything is stored or run; a program is never mutated, so it holds for as long as the
- * program runs (decisions 0052, 0054). A missing runner is the machine's to find, where an operation is held.
+ * not a word. It is pure, and called where a program enters — `deploy`, which a fix is too, and `rehearse` —
+ * before anything is stored or run; a program is never mutated, so it holds for as long as the program runs
+ * (decisions 0052, 0054). A missing runner is the machine's to find, where an operation is held.
  */
 export const checkProgram = <T extends Types>(program: Program<T>): void => {
   const refuse = (reason: string): never => {

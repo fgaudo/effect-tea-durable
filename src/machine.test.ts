@@ -173,7 +173,7 @@ const mend = (version: Program<T>): Program<T> => ({
 
 const versions = { first: program, retuned, redelivered, retimed, mended: mend(program) } as const
 
-/** The program a restart or a resumption brings: the one running, or one of the versions. */
+/** The program a restart or a resumption brings: the one running, or one of the versions, deployed. */
 type Version = 'same' | keyof typeof versions
 
 const versionOf = (version: Version) => (version === 'same' ? undefined : versions[version])
@@ -271,28 +271,41 @@ const receive = (
   return event
 }
 
-/** Turns a command into events of the machine as it is: none when it has nothing to act on. */
-const toEvents = (machine: Toy, command: Command, requests: Array<Receive>): ReadonlyArray<Machine.Event<T>> => {
-  const event = toEvent(machine, command, requests)
-  return command._tag === 'Toggle'
-    ? [
-      receive(requests, (nonce) => ({ _tag: 'Want', key: command.key, on: false, nonce })),
-      receive(requests, (nonce) => ({ _tag: 'Want', key: command.key, on: true, nonce })),
+/** An event, and the version deployed to step it and what follows, if it brings one (decision 0064). */
+type Stepped = Readonly<{ event: Machine.Event<T>; deploy?: Program<T> }>
+
+/**
+ * Turns a command into events of the machine as it is: none when it has nothing to act on. A resumption with a fix
+ * is a deploy of it, a `Restart` the suspended entity stays suspended through, and then the resumption.
+ */
+const toEvents = (machine: Toy, command: Command, requests: Array<Receive>): ReadonlyArray<Stepped> => {
+  if (command._tag === 'Toggle') {
+    return [
+      { event: receive(requests, (nonce) => ({ _tag: 'Want', key: command.key, on: false, nonce })) },
+      { event: receive(requests, (nonce) => ({ _tag: 'Want', key: command.key, on: true, nonce })) },
     ]
-    : event === null
-    ? []
-    : [event]
+  }
+  if (command._tag === 'Restart' || command._tag === 'Resume') {
+    const fixed = versionOf(command.version)
+    const restart: Stepped = { event: { _tag: 'Restart' }, ...(fixed === undefined ? {} : { deploy: fixed }) }
+    const resume: Stepped = { event: { _tag: 'Resume' } }
+    return command._tag === 'Restart' ? [restart] : fixed === undefined ? [resume] : [restart, resume]
+  }
+  const event = toEvent(machine, command, requests)
+  return event === null ? [] : [{ event }]
 }
 
-const toEvent = (machine: Toy, command: Command, requests: Array<Receive>): Machine.Event<T> | null => {
+const toEvent = (
+  machine: Toy,
+  command: Exclude<Command, Readonly<{ _tag: 'Toggle' | 'Restart' | 'Resume' }>>,
+  requests: Array<Receive>,
+): Machine.Event<T> | null => {
   switch (command._tag) {
     case 'Send':
       return receive(requests, (nonce) =>
         command.kind === 'Want'
           ? { _tag: 'Want', key: command.key, on: command.on, nonce }
           : { _tag: command.kind, nonce }, command.sender)
-    case 'Toggle':
-      return null
     case 'Retry':
       return requests.length === 0 ? null : requests[command.pick % requests.length] ?? null
     case 'Create':
@@ -328,11 +341,6 @@ const toEvent = (machine: Toy, command: Command, requests: Array<Receive>): Mach
         ? null
         : { _tag: 'Die', key: chosen[0], incarnation: chosen[1].incarnation, cause: 'an operation died' }
     }
-    case 'Restart':
-    case 'Resume': {
-      const fixed = versionOf(command.version)
-      return fixed === undefined ? { _tag: command._tag } : { _tag: command._tag, program: fixed }
-    }
     default:
       return command
   }
@@ -340,6 +348,10 @@ const toEvent = (machine: Toy, command: Command, requests: Array<Receive>): Mach
 
 type Traced = Readonly<{
   event: Machine.Event<T>
+  /** The program that stepped the event. */
+  program: Program<T>
+  /** Whether it is another than the one that stepped the event before: the event is a deploy's. */
+  deployed: boolean
   before: Toy
   after: Toy
   outputs: ReadonlyArray<Machine.Output<T>>
@@ -350,18 +362,30 @@ const run = (commands: ReadonlyArray<Command>) => {
   const created = Machine.start(program, 'toy', null, epoch, creation)
   if (created._tag === 'Defect') throw created.cause
   let machine = created.machine
+  // The program deployed, which steps every event until another is (decision 0064).
+  let deployed = program
   const requests: Array<Receive> = []
   // Creation, as an activation that found nothing.
   const trace: Array<Traced> = [
-    { event: { _tag: 'Restart' }, before: machine, after: machine, outputs: created.outputs, written: created.written },
+    {
+      event: { _tag: 'Restart' },
+      program,
+      deployed: false,
+      before: machine,
+      after: machine,
+      outputs: created.outputs,
+      written: created.written,
+    },
   ]
-  const apply = (event: Machine.Event<T>) => {
-    const { machine: after, outputs, written } = Machine.step(machine, event)
-    trace.push({ event, before: machine, after, outputs, written })
+  const apply = (event: Machine.Event<T>, deploy?: Program<T>) => {
+    const was = deployed
+    deployed = deploy ?? deployed
+    const { machine: after, outputs, written } = Machine.step(deployed, machine, event)
+    trace.push({ event, program: deployed, deployed: deployed !== was, before: machine, after, outputs, written })
     machine = after
   }
   for (const command of commands) {
-    for (const event of toEvents(machine, command, requests)) apply(event)
+    for (const { event, deploy } of toEvents(machine, command, requests)) apply(event, deploy)
   }
   // Then everything ends: bugs are discarded, operations complete, timers fire, and the mailbox is handled. A
   // suspended entity is discarded or resumed, by each version in turn, until one keeps what runs and handles what
@@ -377,7 +401,12 @@ const run = (commands: ReadonlyArray<Command>) => {
       // message, which is not discarded (decisions 0041, 0044), the next version is brought.
       const discarding = stored.suspension.on._tag === 'Message' && stored.mailbox[0]?._tag === 'Inbound' &&
         trace.at(-1)?.event._tag !== 'Discard'
-      apply(discarding ? { _tag: 'Discard' } : { _tag: 'Resume', program: mend(fixes[tried++ % fixes.length] ?? program) })
+      if (discarding) apply({ _tag: 'Discard' })
+      else {
+        // A fix is a deploy, which the suspended entity stays suspended through, and then a resumption.
+        apply({ _tag: 'Restart' }, mend(fixes[tried++ % fixes.length] ?? program))
+        apply({ _tag: 'Resume' })
+      }
     } else if (stored.mailbox.length > 0) apply({ _tag: 'Handle', at })
     else if (operation !== undefined) {
       const [key, { incarnation }] = operation
@@ -524,12 +553,12 @@ describe('the machine', () => {
     property(({ trace }) => {
       const started = new Map<string, IdempotencyKey>()
       const atMostOnce = new Set<string>()
-      for (const { after, outputs } of trace) {
+      for (const { program, outputs } of trace) {
         for (const output of outputs) {
           if (output._tag !== 'Started') continue
           const id = `${output.key}@${output.incarnation}`
           const known = started.get(id)
-          if (known === undefined && runnerOf(after.program, output.operation)?.delivery === 'AtMostOnce') {
+          if (known === undefined && runnerOf(program, output.operation)?.delivery === 'AtMostOnce') {
             atMostOnce.add(id)
           } else expect(atMostOnce.has(id)).toBe(false)
           if (known !== undefined) expect(output.idempotencyKey).toBe(known)
@@ -607,8 +636,8 @@ describe('the machine', () => {
 
   test('a crash loses nothing stored, and an at-most-once operation under way delivers its unknown', () =>
     property(({ trace }) => {
-      for (const { event, before, after } of trace) {
-        if (event._tag !== 'Restart' || event.program !== undefined || before === after) continue
+      for (const { event, deployed, before, after } of trace) {
+        if (event._tag !== 'Restart' || deployed || before === after) continue
         const { mailbox, ...stored } = after.stored
         const { mailbox: previous, ...was } = before.stored
         expect(stored).toEqual(was)
@@ -787,15 +816,35 @@ const tiny = (
   indexes: { shown: index },
 })
 
-const checked = (...args: Parameters<typeof tiny>) => {
-  const created = Machine.start(tiny(...args), 'tiny', null, epoch, by('creation'))
+/** An entity of a tiny program: its machine, with the program deployed for it, which steps its events. */
+type Entity = Machine.Machine<Tiny> & Readonly<{ program: Program<Tiny> }>
+
+const checked = (...args: Parameters<typeof tiny>): Entity => {
+  const program = tiny(...args)
+  const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
   if (created._tag === 'Defect') throw created.cause
-  return created.machine
+  return { ...created.machine, program }
 }
 
+/**
+ * One event, stepped by the entity's program, or by `deploy`, which is the entity's from then on: a deploy is a
+ * `Restart` stepped by another program, and a fix a deploy before a resumption (decision 0064).
+ */
+const stepped = (entity: Entity, event: Machine.Event<Tiny>, deploy: Program<Tiny> = entity.program) => {
+  const transition = Machine.step(deploy, entity, event)
+  const machine: Entity = transition.machine === entity && deploy === entity.program
+    ? entity
+    : { ...transition.machine, program: deploy }
+  return { ...transition, machine }
+}
+
+/** Deploys `fixed`, through which the suspended entity stays suspended, and resumes it. */
+const resumedBy = (entity: Entity, fixed: Program<Tiny>) =>
+  stepped(stepped(entity, { _tag: 'Restart' }, fixed).machine, { _tag: 'Resume' })
+
 /** Records a message, and handles it. */
-const handled = (machine: Machine.Machine<Tiny>, event: Machine.Event<Tiny>) =>
-  Machine.step(Machine.step(machine, event).machine, { _tag: 'Handle', at })
+const handled = (machine: Entity, event: Machine.Event<Tiny>) =>
+  stepped(stepped(machine, event).machine, { _tag: 'Handle', at })
 
 const reasonOfSuspension = (transition: Machine.Transition<Tiny>) => {
   const cause = transition.machine.stored.suspension?.cause
@@ -923,7 +972,7 @@ describe('what the program throws', () => {
    * A machine the runtime corrupted: the row of a timer the state keeps, which only the machine's own code reads
    * where the work is kept, throws.
    */
-  const corrupt = (): Machine.Machine<Tiny> => {
+  const corrupt = (): Entity => {
     const machine = checked((message) => message, () => ({ deadline: 'timer' }))
     const held = machine.stored.keys['deadline']
     const deadline = {
@@ -937,12 +986,12 @@ describe('what the program throws', () => {
   }
 
   test('an exception of the machine in a step is no defect of the program: it leaves the step', () => {
-    const queued = Machine.step(corrupt(), inbound).machine
-    expect(() => Machine.step(queued, { _tag: 'Handle', at })).toThrow('a row the runtime corrupted')
+    const queued = stepped(corrupt(), inbound).machine
+    expect(() => stepped(queued, { _tag: 'Handle', at })).toThrow('a row the runtime corrupted')
   })
 
   test('an exception of the machine in an activation is no defect of the program: it leaves the event', () => {
-    expect(() => Machine.step(corrupt(), { _tag: 'Restart' })).toThrow('a row the runtime corrupted')
+    expect(() => stepped(corrupt(), { _tag: 'Restart' })).toThrow('a row the runtime corrupted')
   })
 
   test('what update throws is its defect, with what it threw as the cause', () => {
@@ -1017,7 +1066,7 @@ describe('what a runtime writes', () => {
 
   test('an operation whose message does not encode suspends the entity on the operation', () => {
     const machine = checked((message) => message, (state) => (state === 'start' ? { charge: 'operation' } : {}))
-    const transition = Machine.step(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 1 as never })
+    const transition = stepped(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 1 as never })
     expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Operation', key: 'charge', incarnation: 1 })
     expect(transition.machine.stored.mailbox).toEqual([])
   })
@@ -1034,7 +1083,7 @@ describe('what a runtime writes', () => {
     }
     const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
     if (created._tag === 'Defect') throw created.cause
-    const transition = Machine.step(created.machine, { _tag: 'Restart' })
+    const transition = stepped({ ...created.machine, program }, { _tag: 'Restart' })
     expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
     expect(transition.machine.stored.mailbox).toEqual([])
   })
@@ -1048,7 +1097,7 @@ describe('discarding', () => {
     const machine = checked(breaksOnDone, charging)
     const died = handled(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'done' })
     expect(died.machine.stored.suspension?.on).toEqual({ _tag: 'Message' })
-    const discarded = Machine.step(died.machine, { _tag: 'Discard' })
+    const discarded = stepped(died.machine, { _tag: 'Discard' })
     expect(discarded.outputs).toEqual([])
     expect(discarded.machine).toBe(died.machine)
   })
@@ -1056,10 +1105,10 @@ describe('discarding', () => {
   test('a fixed program gets the entity past the completion it died on', () => {
     const machine = checked(breaksOnDone, charging)
     const died = handled(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'done' })
-    const resumed = Machine.step(died.machine, { _tag: 'Resume', program: tiny((message) => message, charging) })
+    const resumed = resumedBy(died.machine, tiny((message) => message, charging))
     expect(resumed.machine.stored.suspension).toBeNull()
     expect(resumed.outputs.filter((output) => output._tag === 'Started')).toEqual([])
-    const after = Machine.step(resumed.machine, { _tag: 'Handle', at })
+    const after = stepped(resumed.machine, { _tag: 'Handle', at })
     expect(after.machine.stored.state).toEqual({ last: 'done' })
     expect(after.outputs).toContainEqual({ _tag: 'Delivered', key: 'charge', incarnation: 1 })
   })
@@ -1072,7 +1121,7 @@ describe('discarding', () => {
     )
     const died = handled(machine, { _tag: 'Fire', key: 'deadline', incarnation: 1 })
     expect(died.machine.stored.suspension?.on).toEqual({ _tag: 'Message' })
-    const discarded = Machine.step(died.machine, { _tag: 'Discard' })
+    const discarded = stepped(died.machine, { _tag: 'Discard' })
     expect(discarded.outputs).toEqual([])
     expect(discarded.machine).toBe(died.machine)
   })
@@ -1081,10 +1130,10 @@ describe('discarding', () => {
     const deadline = (state: string): TinyWork => (state === 'start' ? { deadline: 'timer' } : {})
     const machine = checked((message) => (message === 'rang' ? defect('broken') : message), deadline)
     const died = handled(machine, { _tag: 'Fire', key: 'deadline', incarnation: 1 })
-    const resumed = Machine.step(died.machine, { _tag: 'Resume', program: tiny((message) => message, deadline) })
+    const resumed = resumedBy(died.machine, tiny((message) => message, deadline))
     expect(resumed.machine.stored.suspension).toBeNull()
     expect(resumed.outputs.filter((output) => output._tag === 'Armed')).toEqual([])
-    const after = Machine.step(resumed.machine, { _tag: 'Handle', at })
+    const after = stepped(resumed.machine, { _tag: 'Handle', at })
     expect(after.machine.stored.state).toEqual({ last: 'rang' })
     expect(after.outputs).toContainEqual({ _tag: 'Delivered', key: 'deadline', incarnation: 1 })
   })
@@ -1092,7 +1141,7 @@ describe('discarding', () => {
   test('an inbound message the entity died on is discarded, with no reply stored', () => {
     const machine = checked((message) => (message === 'go' ? defect('broken') : message), () => ({}))
     const died = handled(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
-    const discarded = Machine.step(died.machine, { _tag: 'Discard' })
+    const discarded = stepped(died.machine, { _tag: 'Discard' })
     expect(discarded.machine.stored.suspension).toBeNull()
     expect(discarded.machine.stored.mailbox).toEqual([])
     expect(discarded.machine.stored.replies).toEqual({})
@@ -1134,7 +1183,7 @@ describe('the keys a program declares', () => {
 
   test('a deploy that stops declaring a key the state holds leaves the entity as it was', () => {
     const machine = checked((message) => message, () => ({ deadline: 'timer' }))
-    const transition = Machine.step(machine, { _tag: 'Restart', program: { ...machine.program, keys: [] } })
+    const transition = stepped(machine, { _tag: 'Restart' }, { ...machine.program, keys: [] })
     expect(reasonOfSuspension(transition)).toBe(
       "the state holds work under 'deadline', which the program does not declare",
     )
@@ -1176,7 +1225,7 @@ describe('the runners a program gives', () => {
 
   test('a deploy with no runner for an operation under way leaves the entity as it was', () => {
     const machine = checked((message) => message, () => ({ charge: 'operation' }))
-    const transition = Machine.step(machine, { _tag: 'Restart', program: unrun(machine.program) })
+    const transition = stepped(machine, { _tag: 'Restart' }, unrun(machine.program))
     expect(reasonOfSuspension(transition)).toBe(missing)
     expect(transition.machine.stored).toEqual({ ...machine.stored, suspension: transition.machine.stored.suspension })
     expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
@@ -1185,7 +1234,7 @@ describe('the runners a program gives', () => {
 
   test('a timer needs no runner', () => {
     const machine = checked((message) => message, () => ({ deadline: 'timer' }))
-    const transition = Machine.step(machine, { _tag: 'Restart', program: unrun(machine.program) })
+    const transition = stepped(machine, { _tag: 'Restart' }, unrun(machine.program))
     expect(transition.machine.stored.suspension).toBeNull()
     expect(transition.outputs.map((output) => output._tag)).toEqual(['Armed'])
   })
@@ -1202,11 +1251,11 @@ describe('a suspended entity', () => {
 
   test('gives the replies it stored, and answers anything else Suspended', () => {
     const machine = suspended()
-    expect(Machine.step(machine, { _tag: 'Receive', request: by('first'), message: 'ok' }).outputs)
+    expect(stepped(machine, { _tag: 'Receive', request: by('first'), message: 'ok' }).outputs)
       .toEqual([{ _tag: 'Replied', request: by('first'), reply: { _tag: 'Accepted' } }])
-    expect(Machine.step(machine, { _tag: 'Receive', request: by('third'), message: 'ok' }).outputs)
+    expect(stepped(machine, { _tag: 'Receive', request: by('third'), message: 'ok' }).outputs)
       .toEqual([{ _tag: 'Replied', request: by('third'), reply: { _tag: 'Suspended' } }])
-    expect(Machine.step(machine, { _tag: 'Create', request: by('creation') }).outputs)
+    expect(stepped(machine, { _tag: 'Create', request: by('creation') }).outputs)
       .toEqual([{ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } }])
   })
 
@@ -1214,38 +1263,47 @@ describe('a suspended entity', () => {
     const machine = checked((message) => (message === 'bug' ? defect('bug') : message), () => ({}))
     const receive = (requestId: string, message: string) =>
       ({ _tag: 'Receive', request: by(requestId), message }) as const
-    const queued = Machine.step(Machine.step(machine, receive('second', 'bug')).machine, receive('third', 'ok'))
-    const died = Machine.step(queued.machine, { _tag: 'Handle', at })
+    const queued = stepped(stepped(machine, receive('second', 'bug')).machine, receive('third', 'ok'))
+    const died = stepped(queued.machine, { _tag: 'Handle', at })
     for (const requestId of ['second', 'third']) {
       expect(died.outputs).toContainEqual({ _tag: 'Replied', request: by(requestId), reply: { _tag: 'Suspended' } })
     }
-    const resumed = Machine.step(died.machine, {
-      _tag: 'Resume',
-      program: { ...machine.program, update: (message) => () => ({ last: message }) },
-    })
+    const resumed = resumedBy(died.machine, { ...machine.program, update: (message) => () => ({ last: message }) })
     // A retry while its message is queued waits for the reply, which handling it gives.
-    expect(Machine.step(resumed.machine, receive('third', 'ok')).outputs).toEqual([])
-    const first = Machine.step(resumed.machine, { _tag: 'Handle', at })
-    const second = Machine.step(first.machine, { _tag: 'Handle', at })
+    expect(stepped(resumed.machine, receive('third', 'ok')).outputs).toEqual([])
+    const first = stepped(resumed.machine, { _tag: 'Handle', at })
+    const second = stepped(first.machine, { _tag: 'Handle', at })
     expect(second.outputs).toContainEqual({ _tag: 'Replied', request: by('third'), reply: accepted })
-    expect(Machine.step(second.machine, receive('third', 'ok')).outputs)
+    expect(stepped(second.machine, receive('third', 'ok')).outputs)
       .toEqual([{ _tag: 'Replied', request: by('third'), reply: accepted }])
   })
 
   test('an operation that dies answers Suspended every caller waiting', () => {
     const machine = checked((message) => message, () => ({ charge: 'operation' }))
-    const queued = Machine.step(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
-    const died = Machine.step(queued.machine, { _tag: 'Die', key: 'charge', incarnation: 1, cause: 'died' })
+    const queued = stepped(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
+    const died = stepped(queued.machine, { _tag: 'Die', key: 'charge', incarnation: 1, cause: 'died' })
     expect(died.outputs).toContainEqual({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } })
+  })
+
+  // The program is not the machine's: a fix is deployed, and the resumption is stepped by it (decision 0064).
+  test('stays as it was through the deploy of a fix, and is resumed by the program deployed', () => {
+    const machine = suspended()
+    const fixed = { ...machine.program, update: (message: string) => () => ({ last: message }) }
+    const deployed = stepped(machine, { _tag: 'Restart' }, fixed)
+    expect(deployed.machine.stored).toBe(machine.stored)
+    expect(deployed.outputs).toEqual([])
+    expect(deployed.written).toBeNull()
+    // Resumed by the program that died on it, it dies on it again; by the one deployed, it handles it.
+    const again = stepped(stepped(machine, { _tag: 'Resume' }).machine, { _tag: 'Handle', at })
+    expect(again.machine.stored.suspension?.on).toEqual({ _tag: 'Message' })
+    const resumed = stepped(deployed.machine, { _tag: 'Resume' })
+    expect(stepped(resumed.machine, { _tag: 'Handle', at }).machine.stored.state).toEqual({ last: 'bug' })
   })
 
   test('resumed with a fixed program, handles the message it died on', () => {
     const machine = suspended()
-    const resumed = Machine.step(machine, {
-      _tag: 'Resume',
-      program: { ...machine.program, update: (message) => () => ({ last: message }) },
-    })
-    const transition = Machine.step(resumed.machine, { _tag: 'Handle', at })
+    const resumed = resumedBy(machine, { ...machine.program, update: (message) => () => ({ last: message }) })
+    const transition = stepped(resumed.machine, { _tag: 'Handle', at })
     expect(transition.machine.stored.state).toEqual({ last: 'bug' })
     expect(transition.outputs).toContainEqual({
       _tag: 'Replied',
@@ -1257,13 +1315,10 @@ describe('a suspended entity', () => {
   test('stays suspended when the fixed program dies on its state', () => {
     const machine = suspended()
     const broken = new Error('broken')
-    const resumed = Machine.step(machine, {
-      _tag: 'Resume',
-      program: {
-        ...machine.program,
-        durable: () => {
-          throw broken
-        },
+    const resumed = resumedBy(machine, {
+      ...machine.program,
+      durable: () => {
+        throw broken
       },
     })
     expect(resumed.machine.stored.suspension).toEqual({ cause: broken, on: { _tag: 'Message' } })
@@ -1275,7 +1330,7 @@ describe('a suspended entity', () => {
 describe('passivation', () => {
   test('a restart with only timers under way arms them again, in their incarnations, and changes nothing stored', () => {
     const machine = checked((message) => message, () => ({ deadline: 'later timer', reminder: 'timer' }))
-    const transition = Machine.step(machine, { _tag: 'Restart' })
+    const transition = stepped(machine, { _tag: 'Restart' })
     expect(transition.machine.stored).toEqual(machine.stored)
     expect(transition.machine.running).toEqual(machine.running)
     expect(transition.outputs).toEqual([
@@ -1287,8 +1342,8 @@ describe('passivation', () => {
 
 describe('a new program', () => {
   /** Restarts the entity with a program whose work on each state is `durable`: a deploy. */
-  const deployed = (machine: Machine.Machine<Tiny>, durable: (state: string) => TinyWork) =>
-    Machine.step(machine, { _tag: 'Restart', program: tiny((message) => message, durable) })
+  const deployed = (machine: Entity, durable: (state: string) => TinyWork) =>
+    stepped(machine, { _tag: 'Restart' }, tiny((message) => message, durable))
 
   test('restarts an operation it keeps equal under the same key', () => {
     const machine = checked((message) => message, () => ({ charge: 'operation' }))
@@ -1338,13 +1393,10 @@ describe('a new program', () => {
   test('an at-most-once operation that is new work at an activation starts: it never ran', () => {
     const machine = checked((message) => message, () => ({ deadline: 'timer' }))
     const program = machine.program
-    const transition = Machine.step(machine, {
-      _tag: 'Restart',
-      program: {
-        ...program,
-        durable: (state) => ({ ...program.durable(state), mail: { _tag: 'Work', size: 1 } as const }),
-        operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => '?') },
-      },
+    const transition = stepped(machine, { _tag: 'Restart' }, {
+      ...program,
+      durable: (state) => ({ ...program.durable(state), mail: { _tag: 'Work', size: 1 } as const }),
+      operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => '?') },
     })
     expect(transition.outputs).toContainEqual(expect.objectContaining({ _tag: 'Started', key: 'mail', incarnation: 1 }))
     expect(transition.machine.stored.mailbox).toEqual([])
@@ -1353,9 +1405,9 @@ describe('a new program', () => {
   test('changing how an operation under way is delivered is a defect', () => {
     const machine = checked((message) => message, () => ({ charge: 'operation' }))
     const program = machine.program
-    const transition = Machine.step(machine, {
-      _tag: 'Restart',
-      program: { ...program, operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => '?') } },
+    const transition = stepped(machine, { _tag: 'Restart' }, {
+      ...program,
+      operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => '?') },
     })
     expect(reasonOfSuspension(transition)).toBe(
       "the program changed how the operation under 'charge' is delivered before its completion",
@@ -1367,16 +1419,15 @@ describe('a new program', () => {
     const machine = checked((message) => message, () => ({ charge: 'operation' }))
     const renamed = { ...machine.program, name: 'Renamed' }
     const reason = "the program 'Renamed' replaces the entity's program 'Tiny'"
-    expect(reasonOfSuspension(Machine.step(machine, { _tag: 'Restart', program: renamed }))).toBe(reason)
+    expect(reasonOfSuspension(stepped(machine, { _tag: 'Restart' }, renamed))).toBe(reason)
     const suspended = deployed(machine, () => ({ charge: 'larger operation' })).machine
-    const restarted = Machine.step(suspended, { _tag: 'Restart', program: renamed }).machine
-    expect(reasonOfSuspension(Machine.step(restarted, { _tag: 'Resume' }))).toBe(reason)
+    expect(reasonOfSuspension(resumedBy(suspended, renamed))).toBe(reason)
   })
 
   test('an entity it suspended is resumed by a program that keeps the operation', () => {
     const machine = checked((message) => message, () => ({ charge: 'operation' }))
     const suspended = deployed(machine, () => ({ charge: 'larger operation' })).machine
-    const resumed = Machine.step(suspended, { _tag: 'Resume', program: machine.program })
+    const resumed = resumedBy(suspended, machine.program)
     expect(resumed.machine.stored.suspension).toBeNull()
     expect(resumed.outputs).toContainEqual(expect.objectContaining({ _tag: 'Started', key: 'charge', incarnation: 1 }))
   })
@@ -1412,7 +1463,7 @@ describe('who a request belongs to', () => {
     const machine = checked((message) => message, () => ({}))
     const first = handled(machine, { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'one' })
     const { name, incarnation, key, entity, _tag } = ran('Booking', 'hold')
-    const again = Machine.step(first.machine, {
+    const again = stepped(first.machine, {
       _tag: 'Receive',
       request: { name, incarnation, key, entity: { id: entity.id, name: entity.name }, _tag },
       message: 'two',
@@ -1469,7 +1520,7 @@ describe('who a request belongs to', () => {
 describe('creation', () => {
   test('answers the request that created the entity Created, and stores nothing for the others', () => {
     const machine = checked((message) => message, () => ({}))
-    const create = (request: Request<null>) => Machine.step(machine, { _tag: 'Create', request })
+    const create = (request: Request<null>) => stepped(machine, { _tag: 'Create', request })
     expect(create(by('creation')).outputs)
       .toEqual([{ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } }])
     // The same request id from another sender is another request.
@@ -1481,7 +1532,7 @@ describe('creation', () => {
   // A runtime waits for each apart: a reply to the one must not reach a caller of the other (decision 0050).
   test('a creation is answered apart from a message under the same request id', () => {
     const machine = checked((message) => message, () => ({}))
-    expect(Machine.step(machine, { _tag: 'Create', request: by('creation') }).outputs)
+    expect(stepped(machine, { _tag: 'Create', request: by('creation') }).outputs)
       .toEqual([{ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } }])
     const sent = handled(machine, { _tag: 'Receive', request: by('creation'), message: 'go' })
     expect(sent.outputs.filter((output) => output._tag === 'Replied' || output._tag === 'CreationReplied'))
@@ -1524,9 +1575,9 @@ describe('what an event writes', () => {
 
   test('applied to the rows before the event, it gives the rows after it, and nothing when nothing changed', () =>
     property(({ trace }) => {
-      for (const { before, after, written } of trace.slice(1)) {
-        const was = table(after.program, before.stored)
-        expect(written === null ? was : applied(was, written)).toEqual(table(after.program, after.stored))
+      for (const { program, before, after, written } of trace.slice(1)) {
+        const was = table(program, before.stored)
+        expect(written === null ? was : applied(was, written)).toEqual(table(program, after.stored))
       }
     }))
 
@@ -1544,9 +1595,9 @@ describe('what an event writes', () => {
     property(({ trace }) => {
       const [creation, ...events] = trace
       expect(creation?.written?.published).toEqual({ kind: 'Creation', message: null, projection: keys.length })
-      for (const { event, before, after, written } of events) {
+      for (const { event, program, before, after, written } of events) {
         const head = before.stored.mailbox[0]
-        const { project } = after.program
+        const { project } = program
         const shows = event._tag === 'Handle' && head !== undefined && before.stored.state !== after.stored.state &&
           project(before.stored.state) !== project(after.stored.state)
         expect(written?.published ?? null).toEqual(
@@ -1557,11 +1608,11 @@ describe('what an event writes', () => {
 
   test('a step that changes the state writes the row a query reads, and only such a step', () =>
     property(({ trace }) => {
-      for (const { before, after, written } of trace.slice(1)) {
+      for (const { program, before, after, written } of trace.slice(1)) {
         expect(written?.shown ?? null).toEqual(
           before.stored.state === after.stored.state
             ? null
-            : { projection: after.program.project(after.stored.state), indexes: {} },
+            : { projection: program.project(after.stored.state), indexes: {} },
         )
       }
     }))
