@@ -96,8 +96,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   did nothing.
 - **A planned stop.** An at-most-once operation under way when its process stops delivers `unknown` at the next
   activation, and [decision 0011](decisions/0011-an-operation-declares-what-a-crash-does.md) says the runtime
-  should drain them before a planned stop. Nothing does: a process that ends interrupts every operation, as a
-  crash does, and a new version is a new process
+  should drain them before a planned stop. Nothing does: a process ends when the scope it was launched in
+  closes, which interrupts every operation as a crash does (the runtime's test `an at-most-once operation delivers
+  unknown after a crash` ends its first process so), and a new version is a new process
   ([decision 0075](decisions/0075-a-name-is-deployed-once-in-a-process.md)), so every deploy delivers `unknown`
   for each one under way. Should a process stop taking messages and wait for its at-most-once operations, and for
   how long, before it ends?

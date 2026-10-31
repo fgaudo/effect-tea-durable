@@ -174,4 +174,33 @@ describe('a rehearsal', () => {
         expect((yield* rehearsal.pending('payment-deadline')).work).toBeDefined()
       }),
     )))
+
+  // Time stands at the start's time, and moves to a timer's when it fires: a message after it is handled at the
+  // latest time the scenario reached, never at the start's again (decision 0014).
+  test('handles each message at the latest time it reached', () => {
+    const seen: Array<DateTime.Utc> = []
+    const clocked: typeof order = {
+      ...order,
+      update: (message, meta) => {
+        seen.push(meta.at)
+        return order.update(message, meta)
+      },
+    }
+    return Effect.runPromise(rehearse(
+      clocked,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        const charge = yield* rehearsal.pending('charge')
+        yield* rehearsal.answer(charge, { _tag: 'ChargeDeclined' })
+        const deadline = yield* rehearsal.pending('payment-deadline')
+        expect(isTimer(deadline.work)).toBe(true)
+        yield* rehearsal.fire(deadline)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-2' }, ada)
+        const due = isTimer(deadline.work) ? deadline.work.at : placedAt
+        expect(DateTime.isGreaterThan(due, placedAt)).toBe(true)
+        expect(seen.map(DateTime.formatIso)).toEqual([placedAt, placedAt, due, due].map(DateTime.formatIso))
+      }),
+    ))
+  })
 })
