@@ -2,12 +2,13 @@
  * Takes out, one at a time, the rules a review writes as mutations, and runs the tests against each (decision
  * 0094). It checks the mutations it is given and nothing else: a rule no mutation takes out is not checked by it.
  *
- * A mutation is a set of exact replacements in one file of `src/`, `examples/` or `spikes/`, and must leave code
- * that runs: one that does not is killed by the error, and tells nothing. Each mutation runs first the tests of the
- * file it changes, then, if those pass, the whole suite, and stops at the first failure; if the suite passes too,
- * the compiler checks the copy, so that a rule of the types is taken out as well. A test that hangs past the timeout
- * fails. A mutation the whole suite killed is run again alone once the others are done, since a test on real time
- * may fail under the load of the workers: one that survives then is `uncertain`.
+ * A mutation is a set of exact replacements in one file of `src/`, `examples/` or `spikes/`, made in turn, and must
+ * leave code that runs: one that does not is killed by the error, and tells nothing. Before any runs, the suite and
+ * the compiler run on the code unchanged, since what fails there would kill each mutation. Each mutation runs first
+ * the tests of the file it changes, then, if those pass, the whole suite, and stops at the first failure; if the
+ * suite passes too, the compiler checks the copy, so that a rule of the types is taken out as well. A test that
+ * hangs past the timeout fails. A mutation a test killed is run again alone once the others are done, since a test
+ * on real time may fail under the load of the workers: one that survives then is `uncertain`.
  *
  *     bun scripts/mutate.ts <mutations.ts> [--workers 4] [--only id,prefix,...] [--timeout 5000]
  *
@@ -63,17 +64,27 @@ const inCopy = (path: string) => {
 
 /**
  * What makes a mutation tell nothing, before anything runs: a file or a test outside the copy, which the workers
- * would share or not have, or an edit that does not find its text exactly once.
+ * would share or not have, or that does not exist, or a test whose name `bun test` does not take as a test's, which
+ * it fails on as it would on a test that fails; an edit that does not find its text
+ * exactly once in the file as the edits before it left it; or edits that leave the file as it was.
  */
 export const check = (mutations: ReadonlyArray<Mutation>): ReadonlyArray<string> =>
   mutations.flatMap((mutation) => {
-    const outside = [mutation.file, ...(mutation.tests ?? [])].filter((path) => !inCopy(path))
+    const paths = [mutation.file, ...(mutation.tests ?? [])]
+    const outside = paths.filter((path) => !inCopy(path))
     if (outside.length > 0) return [`${mutation.id}: outside ${copied.join(', ')}: ${outside.join(', ')}`]
+    const missing = paths.filter((path) => !existsSync(join(root, path)))
+    if (missing.length > 0) return [`${mutation.id}: not found: ${missing.join(', ')}`]
+    const untested = (mutation.tests ?? []).filter((path) => !/(\.|_)(test|spec)(\.|_)[^/\\]*$/.test(path))
+    if (untested.length > 0) return [`${mutation.id}: not a test file: ${untested.join(', ')}`]
     const { text } = normalized(readFileSync(join(root, mutation.file), 'utf8'))
-    return mutation.edits.flatMap(([find]) => {
-      const count = text.split(find).length - 1
-      return count === 1 ? [] : [`${mutation.id}: found ${count} times: ${JSON.stringify(find.slice(0, 80))}`]
-    })
+    let mutated = text
+    for (const [find, replace] of mutation.edits) {
+      const count = mutated.split(find).length - 1
+      if (count !== 1) return [`${mutation.id}: found ${count} times: ${JSON.stringify(find.slice(0, 80))}`]
+      mutated = mutated.replace(find, () => replace)
+    }
+    return mutated === text ? [`${mutation.id}: changes nothing`] : []
   })
 
 /** A copy of the repository for one worker: its sources copied, `node_modules` linked. */
@@ -136,9 +147,20 @@ const mutate = async (at: string, mutation: Mutation, timeout: number): Promise<
   }
 }
 
+/** What fails in a copy no mutation changed, and so would kill each one: `null` if nothing does. */
+const unmutated = async (at: string, timeout: number): Promise<string | null> => {
+  const suite = await tested(at, [], timeout)
+  if (!suite.passed) return `the suite fails unmutated: ${suite.failed ?? 'no test named'}`
+  const types = await typechecked(at)
+  return types.passed ? null : `the compiler fails unmutated: ${types.failed}`
+}
+
+/** Whether a test killed the mutation, which a test on real time may do under load; the compiler is not one. */
+const byTest = (result: Result) => result.status === 'killed' && result.by !== 'typecheck'
+
 /**
- * Runs the mutations on `workers` copies at once, then again, alone, each one the whole suite killed, and gives the
- * results in the order of the mutations.
+ * Runs the suite and the compiler on the code unchanged, then the mutations on `workers` copies at once, then again,
+ * alone, each one a test killed, and gives the results in the order of the mutations.
  */
 export const mutateAll = async (
   mutations: ReadonlyArray<Mutation>,
@@ -155,19 +177,22 @@ export const mutateAll = async (
         if (mutation === undefined) continue
         const result = await mutate(at, mutation, options.timeout)
         results[index] = result
-        // A kill of the suite is told once it holds alone.
-        if (!(result.status === 'killed' && result.by === 'suite')) options.each?.(result)
+        // A kill of a test is told once it holds alone.
+        if (!byTest(result)) options.each?.(result)
       }
     } finally {
       rmSync(at, { recursive: true, force: true })
     }
   }
-  await Promise.all(Array.from({ length: Math.min(options.workers, mutations.length) }, worker))
+  if (mutations.length === 0) return []
   const alone = copy()
   try {
+    const failing = await unmutated(alone, options.timeout)
+    if (failing !== null) throw new Error(failing)
+    await Promise.all(Array.from({ length: Math.min(options.workers, mutations.length) }, worker))
     for (const [index, mutation] of mutations.entries()) {
       const first = results[index]
-      if (first === undefined || first.status !== 'killed' || first.by !== 'suite') continue
+      if (first === undefined || !byTest(first)) continue
       const again = await mutate(alone, mutation, options.timeout)
       const result = again.status === 'killed' ? first : { ...again, status: 'uncertain' as const }
       results[index] = result
@@ -188,8 +213,16 @@ if (import.meta.main) {
       timeout: { type: 'string', default: '5000' },
     },
   })
+  const usage = 'usage: bun scripts/mutate.ts <mutations.ts> [--workers n] [--only ids] [--timeout ms]'
   const [list] = positionals
-  if (list === undefined) throw new Error('usage: bun scripts/mutate.ts <mutations.ts> [--workers n] [--only ids]')
+  if (list === undefined) throw new Error(usage)
+  // A count that is not a positive integer would run no worker, or give `bun test` a timeout it cannot use.
+  const positive = (name: string, value: string) => {
+    if (!/^[1-9]\d*$/.test(value)) throw new Error(`--${name} is not a positive integer: ${value}\n${usage}`)
+    return Number(value)
+  }
+  const workers = positive('workers', values.workers)
+  const timeout = positive('timeout', values.timeout)
   const { mutations } = (await import(resolve(list))) as { mutations: ReadonlyArray<Mutation> }
   const prefixes = values.only?.split(',')
   const chosen = mutations.filter((mutation) => prefixes?.some((prefix) => mutation.id.startsWith(prefix)) ?? true)
@@ -200,8 +233,8 @@ if (import.meta.main) {
   }
   const started = Date.now()
   const results = await mutateAll(chosen, {
-    workers: Number(values.workers),
-    timeout: Number(values.timeout),
+    workers,
+    timeout,
     each: (result) =>
       console.log([
         result.id,
