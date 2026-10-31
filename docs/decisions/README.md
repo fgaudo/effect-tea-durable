@@ -167,6 +167,10 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 Each review of the notes, as [decision 0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md)
 has them made: the notes it read, and what it found.
 
+A review can take each rule of the code out, one at a time, with [`scripts/mutate.ts`](../../scripts/mutate.ts),
+which runs the tests against each. What the review of 0061 to 0075 took out is in
+[`scripts/mutations/`](../../scripts/mutations).
+
 | Date | Read | Found |
 | --- | --- | --- |
 | 2026-10-31 | 0080 to 0091, and 0092 (proposed) | [0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md): a `defectRetryPolicy` that gives up does not end Cluster's retry; [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md): Cluster stores a defect no step gave for a type not registered, and 0090 keeps no id for it. Of 0092, for its step: a receiver's defect is not saved, and the id of a request answered with Cluster's defect has to be kept. Not checked: 0080's hold of a database not in WAL mode, which no test runs. |
