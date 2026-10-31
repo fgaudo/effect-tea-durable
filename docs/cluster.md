@@ -55,7 +55,12 @@ process, a slow disk — for longer than the lock's expiration commits after ano
 and handled the message again. A refresh renews a lease for a full expiration, so the window is a pause of 35 s at
 the worst moment, not a slow refresh. On SQLite, PGlite and SQL Server the renewal holds the file's write lock, or
 the lock row's, until the commit, so no runner takes the shard between the check and the commit: the check is made
-by the commit. What a handler writes outside `WithTransaction`, and a chunk of a streamed reply, is not checked at
+by the commit — unless the check is shared. Writers on one shard share a refresh under way, and one started outside
+the transaction, by a persisted request without `WithTransaction`, does not commit with it. On SQLite, whose client
+runs one transaction or statement at a time, that refresh waits for the transaction, which waits for it, until the
+check times out (10 s): the check fails, the transaction rolls back, and both requests are delivered again. Safe, but
+a stall; it cannot happen while every persisted RPC of the runner runs under `WithTransaction`, since SQLite's
+transactions then come one after the other. What a handler writes outside `WithTransaction`, and a chunk of a streamed reply, is not checked at
 all, on any database.
 
 For the runtime, the shard's lock takes the place of the file's lock
