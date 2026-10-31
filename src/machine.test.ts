@@ -24,6 +24,7 @@ import {
   timer,
   type Types,
 } from './program.ts'
+import { freezing, frozen } from './testing.ts'
 
 // A program whose work is chosen by its callers: `a` is idempotent, `b` at most once, `c` at least once, `t` a
 // timer, whose time moves with each message applied. `Break` is a bug, and dropping or changing an operation under
@@ -399,19 +400,24 @@ const handledBy = (event: Machine.Event<T>, before: Toy): Machine.Envelope<T> | 
     : undefined
 }
 
-const run = (commands: ReadonlyArray<Command>) => {
-  const created = Machine.start(program, 'toy', null, epoch, creation)
+/**
+ * The machine under a sequence of commands, and what it did. `freeze` runs it on values frozen through — what the
+ * program gives and what callers offer — so that a mutation of the machine's throws (decision 0052).
+ */
+const run = (commands: ReadonlyArray<Command>, freeze = false) => {
+  const as = (version: Program<T>) => (freeze ? freezing(version) : version)
+  const created = Machine.start(as(program), 'toy', null, epoch, freeze ? frozen({ ...creation }) : creation)
   if (created._tag === 'Defect') throw created.cause
   let machine = created.machine
   // The program deployed, which steps every event until another is (decision 0064).
-  let deployed = program
+  let deployed = as(program)
   const requests: Array<Receive> = []
   const replies: Replies<T['rejection']> = new Map()
   // Creation, as an activation that found nothing.
   const trace: Array<Traced> = [
     {
       event: { _tag: 'Restart' },
-      program,
+      program: as(program),
       deployed: false,
       before: machine,
       after: machine,
@@ -421,8 +427,8 @@ const run = (commands: ReadonlyArray<Command>) => {
   ]
   const apply = (offered: Machine.Offered<T>, deploy?: Program<T>) => {
     const was = deployed
-    deployed = deploy ?? deployed
-    const event = given(deployed, replies, offered)
+    deployed = deploy === undefined ? deployed : as(deploy)
+    const event = given(deployed, replies, freeze ? frozen(offered) : offered)
     const { machine: after, outputs, written } = Machine.step(deployed, machine, event)
     trace.push({ event, program: deployed, deployed: deployed !== was, before: machine, after, outputs, written })
     store(replies, written, Schema.decodeUnknownSync(deployed.schemas.rejection))
@@ -477,6 +483,20 @@ const queued = (machine: Toy, key: string, incarnation: number) =>
   )
 
 describe('the machine', () => {
+  // A mutation of the machine's throws on a frozen value, and so fails the run, or, where the program's schemas
+  // encode it, suspends the entity on it: the run is then another than on values that are not frozen.
+  test('mutates nothing the program gives or a caller offers (decision 0052)', () =>
+    fc.assert(
+      fc.property(fc.array(command, { maxLength: 40 }), (commands) => {
+        const free = run(commands)
+        const held = run(commands, true)
+        expect(held.trace.map(({ written }) => written)).toEqual(free.trace.map(({ written }) => written))
+        expect(held.trace.map(({ outputs }) => outputs)).toEqual(free.trace.map(({ outputs }) => outputs))
+        expect(held.machine.stored).toEqual(free.machine.stored)
+      }),
+      { numRuns: 200 },
+    ))
+
   test('a request is answered the same each time, and applied once', () =>
     property(({ trace, machine }) => {
       const replies = new Map<string, unknown>()
@@ -969,6 +989,31 @@ describe('the checks of a step', () => {
   test('an operation is compared by what is stored: a property its schema does not declare is not', () => {
     const machine = checked((message) => message, () => ({ charge: 'annotated operation' }))
     const transition = handled(machine, inbound)
+    expect(transition.machine.stored.suspension).toBeNull()
+    expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+    expect(transition.machine.stored.keys['charge']?.incarnation).toBe(1)
+  })
+
+  // A record is written with its fields in the order they were set, where a struct writes its schema's order: the
+  // JSON is compared with its fields in any order (decision 0058).
+  test('an operation is the same whatever the order its schema writes its fields in', () => {
+    const base = tiny((message) => message, () => ({}))
+    const program = {
+      ...base,
+      schemas: {
+        ...base.schemas,
+        operation: Schema.TaggedStruct('Work', {
+          size: Schema.Number,
+          weights: Schema.Record(Schema.String, Schema.Number),
+        }),
+      },
+      durable: ({ last }: Tiny['state']) => ({
+        charge: { _tag: 'Work', size: 1, weights: last === 'start' ? { a: 1, b: 2 } : { b: 2, a: 1 } },
+      }),
+    } as unknown as Program<Tiny>
+    const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
+    if (created._tag === 'Defect') throw created.cause
+    const transition = handled({ ...created.machine, program, replies: new Map() }, inbound)
     expect(transition.machine.stored.suspension).toBeNull()
     expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
     expect(transition.machine.stored.keys['charge']?.incarnation).toBe(1)
@@ -1541,6 +1586,33 @@ describe('who a request belongs to', () => {
     expect(again.outputs.map((output) => output._tag === 'Replied' && output.reply)).toEqual([{ _tag: 'Accepted' }])
   })
 
+  // A sender whose schema is a record is written with its fields in the order they were set: the text a request is
+  // keyed by orders them, so a caller is one caller however it builds its sender (decisions 0048, 0059).
+  test("a caller's retry gets the stored reply, whatever the order of its sender's fields", () => {
+    const base = tiny((message) => message, () => ({}))
+    const program = {
+      ...base,
+      schemas: { ...base.schemas, sender: Schema.Record(Schema.String, Schema.String) },
+    } as unknown as Program<Tiny>
+    const caller = (sender: Readonly<Record<string, string>>, id: string) =>
+      ({ _tag: 'Caller', sender, id }) as unknown as Request<null>
+    const created = Machine.start(program, 'tiny', null, epoch, caller({ team: 'ops' }, 'creation'))
+    if (created._tag === 'Defect') throw created.cause
+    const machine: Entity = { ...created.machine, program, replies: new Map() }
+    const first = handled(machine, {
+      _tag: 'Receive',
+      request: caller({ team: 'ops', user: 'ann' }, 'r'),
+      message: 'one',
+    })
+    const again = stepped(first.machine, {
+      _tag: 'Receive',
+      request: caller({ user: 'ann', team: 'ops' }, 'r'),
+      message: 'two',
+    })
+    expect(again.machine).toBe(first.machine)
+    expect(again.outputs.map((output) => output._tag === 'Replied' && output.reply)).toEqual([{ _tag: 'Accepted' }])
+  })
+
   // The machine holds no reply: what answers a retry is what storage read for it (decision 0065).
   test('a message is answered the reply it is given, and handled when it is given none', () => {
     const machine = checked((message) => message, () => ({}))
@@ -1643,6 +1715,36 @@ describe('creation', () => {
 })
 
 describe('what an event writes', () => {
+  // The checks of a step encode what it stores, and publishing compares the projections before and after: what was
+  // computed is kept by the value, and written as it is (decision 0057).
+  test('a step that changes the state projects it once, and encodes it and its projection once', () => {
+    const count = { projected: 0, state: 0, projection: 0 }
+    const counted = (what: keyof typeof count) =>
+      Schema.makeFilter(() => {
+        count[what]++
+        return true
+      })
+    const base = tiny((message) => message, () => ({}), (state) => {
+      count.projected++
+      return state
+    })
+    const program: Program<Tiny> = {
+      ...base,
+      schemas: {
+        ...base.schemas,
+        state: base.schemas.state.check(counted('state')),
+        projection: base.schemas.projection.check(counted('projection')),
+      },
+    }
+    const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
+    if (created._tag === 'Defect') throw created.cause
+    const machine: Entity = { ...created.machine, program, replies: new Map() }
+    count.projected = count.state = count.projection = 0
+    const transition = handled(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
+    expect(transition.written?.published?.projection).toBe('go')
+    expect(count).toEqual({ projected: 1, state: 1, projection: 1 })
+  })
+
   /** The rows of what is stored, as the machine encodes them: what a storage holds of the entity. */
   const table = (version: Program<T>, stored: Machine.Stored<T>) => {
     const written = Machine.writes(version, null, stored, null, null)

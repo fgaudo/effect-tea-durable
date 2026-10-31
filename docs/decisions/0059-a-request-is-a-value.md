@@ -1,6 +1,9 @@
 # 0059. A request is a value
 
-**Status:** accepted, 2026-10-31.
+**Status:** accepted, 2026-10-31. Its consequence that a load keys a stored reply as the program's version does is
+changed by [decision 0065](0065-the-machine-holds-no-replies.md): the machine holds no replies, and the storage
+finds one by its text, then a caller's among the rows of other versions, compared once migrated. A reply's row is
+keyed by its version too, by [decision 0069](0069-a-reply-is-keyed-by-the-version-that-wrote-it.md).
 
 ## Context
 

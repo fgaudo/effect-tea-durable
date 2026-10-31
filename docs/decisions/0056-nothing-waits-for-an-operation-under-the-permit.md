@@ -1,6 +1,8 @@
 # 0056. Nothing waits for an operation under the permit
 
-**Status:** accepted, 2026-10-31.
+**Status:** accepted, 2026-10-31. Its permit is replaced by a lock of the entity's own in
+[decision 0067](0067-each-entity-is-held-by-its-own-lock.md): a crash still forks the interruption of its work, so
+that nothing waits for it under that lock, and an unload stops its timers under it.
 
 ## Context
 

@@ -1,4 +1,5 @@
 import type * as DateTime from 'effect/DateTime'
+import * as Effect from 'effect/Effect'
 import { isRejected, type Program, type Types } from './program.ts'
 
 type TagOf<Message> = Message extends Readonly<{ _tag: infer Tag extends string }> ? Tag : never
@@ -53,4 +54,51 @@ export const projectionViolations = <T extends Types>(program: Program<T>, allow
     if (!shown && accepted) violations.push({ _tag: 'Missing', message, sender })
   }
   return violations
+}
+
+/**
+ * A value frozen through: its plain objects and arrays. Anything else — a `DateTime`, a schema — is left as it is,
+ * since Effect may keep on it what it computes of it. The library's tests run on such values, so that a mutation of
+ * the library's throws (decision 0052); not part of the public surface.
+ */
+export const frozen = <A>(value: A): A => {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value
+  const prototype: unknown = Object.getPrototypeOf(value)
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return value
+  Object.freeze(value)
+  for (const field of Object.values(value)) frozen(field)
+  return value
+}
+
+const freezings = new WeakMap<object, object>()
+
+/**
+ * `program`, whose every value crosses the library frozen: what `init`, `update`, `durable` and `project` give,
+ * and what its runners deliver. The same program gives the same one, which a runtime may compare by identity.
+ */
+export const freezing = <T extends Types>(program: Program<T>): Program<T> => {
+  const held = freezings.get(program)
+  if (held !== undefined) return held as Program<T>
+  type Any = Readonly<{
+    delivery: string
+    run: (...args: ReadonlyArray<unknown>) => Effect.Effect<unknown, never, unknown>
+    unknown?: (operation: unknown) => unknown
+  }>
+  const operations = Object.fromEntries(
+    Object.entries(program.operations as Readonly<Record<string, Any>>).map(([tag, runner]) => [tag, {
+      ...runner,
+      run: (...args: ReadonlyArray<unknown>) => Effect.map(runner.run(...args), frozen),
+      ...(runner.unknown === undefined ? {} : { unknown: (operation: unknown) => frozen(runner.unknown?.(operation)) }),
+    }]),
+  ) as unknown as Program<T>['operations']
+  const wrapped: Program<T> = {
+    ...program,
+    init: (flags, at) => frozen(program.init(flags, at)),
+    update: (message, meta) => (state) => frozen(program.update(message, meta)(state)),
+    durable: (state) => frozen(program.durable(state)),
+    project: (state) => frozen(program.project(state)),
+    operations,
+  }
+  freezings.set(program, wrapped)
+  return wrapped
 }

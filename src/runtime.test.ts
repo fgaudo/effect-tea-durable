@@ -1528,6 +1528,8 @@ describe('publishing what happened', () => {
             toy.ack('queue', 2.5),
             toy.ack('queue', -5),
             toy.ack('queue', Number.NaN),
+            // An integer past what a double holds exactly is no cursor either.
+            toy.ack('queue', 2 ** 53),
             toy.published(-1),
             toy.published(0, -1),
             toy.published(0, 1.5),

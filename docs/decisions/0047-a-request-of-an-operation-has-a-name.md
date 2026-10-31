@@ -1,6 +1,10 @@
 # 0047. A request of an operation has a name
 
-**Status:** accepted, 2026-10-31.
+**Status:** accepted, 2026-10-31. The request id made of the idempotency key, and the work found through it, are
+replaced by [decision 0059](0059-a-request-is-a-value.md): a request is a value that names the run, which the work
+is read off. That `send` takes the key and `create` keeps it as its request id is replaced by
+[decision 0060](0060-send-and-create-take-no-key.md): neither takes a key, and `create` takes a name too, used once
+per receiver apart from a message's.
 
 ## Context
 

@@ -1,6 +1,8 @@
 # 0046. A receiver that crashes is sent to again
 
-**Status:** accepted, 2026-10-31.
+**Status:** accepted, 2026-10-31. That a sender takes a crash as it takes `Suspended` is changed by
+[decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md): a sender to a suspended receiver waits for its
+resumption, and `retry` is the wait after a crash alone.
 
 ## Context
 

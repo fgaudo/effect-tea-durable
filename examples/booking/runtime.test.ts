@@ -11,6 +11,8 @@ import { SqlClient } from 'effect/sql'
 import { create, createTables, defect, launch, operation, send } from '../../src/index.ts'
 // What the runtime did is told to a probe, which is a test's and no part of the library's surface (decision 0073).
 import { Probe } from '../../src/runtime.ts'
+// Values frozen through, which only the library's own tests run on (decision 0052).
+import { freezing, frozen } from '../../src/testing.ts'
 import { booking } from './booking.ts'
 import { inventory } from './inventory.ts'
 
@@ -70,6 +72,62 @@ test('a booking holds its seats in the inventory, and confirms them', () =>
       ),
     ).toEqual([['Creation', null, 10], ['Inbound', 'HoldRequested', 7]])
   }))))
+
+// What a program gives and what a caller offers is never mutated, by the runtime either: frozen through, a mutation
+// of the runtime's throws, and crashes an entity or suspends it where this story has neither (decision 0052).
+test('the runtime mutates nothing the programs give or the callers offer', () =>
+  database(Effect.gen(function*() {
+    const requested = <Sender>(requestId: string, sender: Sender) => frozen({ requestId, sender })
+    yield* Effect.scoped(Effect.gen(function*() {
+      const runtime = yield* launch()
+      const inventories = yield* runtime.deploy(freezing(inventory))
+      const bookings = yield* runtime.deploy(freezing(booking))
+      yield* inventories.create('gig', frozen({ capacity: 10 }), requested('c-gig', { ...organizer }))
+      const story = [
+        ['b1', 3, 'Confirm'],
+        ['b2', 9, null],
+        ['b3', 2, 'Cancel'],
+      ] as const
+      for (const [id, seats] of story) {
+        const flags = frozen({ customer: 'ann', event: 'gig', seats })
+        expect(yield* bookings.create(id, flags, requested(`c-${id}`, { ...ann }))).toEqual({ _tag: 'Created' })
+        yield* runtime.settled
+      }
+      for (const [id, , then] of story) {
+        if (then === null) continue
+        const message = frozen(
+          then === 'Confirm' ? { _tag: 'ConfirmRequested' } as const : { _tag: 'CancelRequested' } as const,
+        )
+        expect(yield* bookings.send(id, message, requested(`r-${id}`, { ...ann }))).toEqual({ _tag: 'Accepted' })
+        // A retry is answered the stored reply.
+        expect(yield* bookings.send(id, message, requested(`r-${id}`, { ...ann }))).toEqual({ _tag: 'Accepted' })
+        yield* runtime.settled
+      }
+    }))
+    // Another process reads what the first stored, and the same programs, frozen, run on it.
+    yield* Effect.scoped(Effect.gen(function*() {
+      const runtime = yield* launch()
+      const inventories = yield* runtime.deploy(freezing(inventory))
+      const bookings = yield* runtime.deploy(freezing(booking))
+      yield* runtime.settled
+      expect(yield* bookings.read('b1')).toMatchObject({ status: 'Confirmed' })
+      expect(yield* bookings.read('b2')).toMatchObject({ status: 'Cancelled' })
+      expect(yield* bookings.read('b3')).toMatchObject({ status: 'Cancelled' })
+      expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
+      expect((yield* bookings.published(0)).map(({ projection }) => projection.status)).toEqual([
+        'Holding',
+        'Held',
+        'Holding',
+        'Cancelled',
+        'Holding',
+        'Held',
+        'Confirming',
+        'Confirmed',
+        'Releasing',
+        'Cancelled',
+      ])
+    }))
+  })))
 
 test('a booking of more seats than are left is cancelled with the inventory’s reason', () =>
   database(Effect.scoped(Effect.gen(function*() {
@@ -322,6 +380,33 @@ test('an operation creates an entity, and sends it a message under the same name
     const bookings = yield* runtime.deploy(opening(1))
     yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
     yield* runtime.settled
+    expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
+  }))))
+
+// What an operation sends crosses the library too: its runner builds it, so the flags and the message are frozen
+// here, where the rest of the programs is frozen through (decision 0052).
+test('the runtime mutates nothing an operation creates with or sends', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    const runtime = yield* launch()
+    const sending = {
+      ...booking,
+      operations: {
+        ...booking.operations,
+        Hold: operation.atLeastOnce((op: { event: string; seats: number }) =>
+          Effect.gen(function*() {
+            yield* create(inventory, op.event, frozen({ capacity: 10 }), 'hold')
+            yield* send(inventory, op.event, frozen({ _tag: 'HoldRequested', seats: op.seats } as const), 'hold')
+            return { _tag: 'SeatsHeld' } as const
+          })
+        ),
+      },
+    } as typeof booking
+    const inventories = yield* runtime.deploy(freezing(inventory))
+    const bookings = yield* runtime.deploy(freezing(sending))
+    const flags = frozen({ customer: 'ann', event: 'gig', seats: 3 })
+    yield* bookings.create('b1', flags, frozen({ requestId: 'c-b1', sender: ann }))
+    yield* runtime.settled
+    expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held' })
     expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
   }))))
 

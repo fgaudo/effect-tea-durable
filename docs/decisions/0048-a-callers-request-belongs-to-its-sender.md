@@ -1,7 +1,12 @@
 # 0048. A caller's request belongs to its sender
 
 **Status:** accepted, 2026-10-31. Replaces the consequence of
-[decision 0015](0015-a-request-belongs-to-its-sender.md) that callers share one space of request ids.
+[decision 0015](0015-a-request-belongs-to-its-sender.md) that callers share one space of request ids. Where the
+sender is found in a stored request is changed by [decision 0059](0059-a-request-is-a-value.md): by the request's
+tag. That a load computes a stored request's key again is changed by
+[decision 0065](0065-the-machine-holds-no-replies.md): the machine holds no replies, and the storage reads a
+caller's by its text, then among the rows other versions wrote under its request id, compared once migrated. A
+reply's row is keyed by its version too, by [decision 0069](0069-a-reply-is-keyed-by-the-version-that-wrote-it.md).
 
 ## Context
 

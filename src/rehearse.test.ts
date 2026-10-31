@@ -162,3 +162,16 @@ describe('a program that cannot run as written', () => {
     expect(reasonOf(exit)).toBe("the program 'Order' declares the key 'refund' twice")
   })
 })
+
+describe('a rehearsal', () => {
+  // No one retries a rehearsal's creation, so its request is the entity's own: a program need not have a sender for
+  // it, nor take any (decision 0048).
+  test('creates its entity under the entity itself, whatever senders the program takes', () =>
+    Effect.runPromise(rehearse(
+      { ...order, schemas: { ...order.schemas, sender: order.schemas.sender.check(Schema.makeFilter(() => 'none')) } },
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        expect((yield* rehearsal.pending('payment-deadline')).work).toBeDefined()
+      }),
+    )))
+})
