@@ -50,6 +50,16 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0022](decisions/0022-a-new-program-keeps-what-work-started-with.md)). How a rename is run, and
   what reaches the senders that stored a reply under the old name, is not decided. A schema that changes is
   ([decision 0036](decisions/0036-a-migration-is-a-function-on-the-json.md)).
+- **Migrations that never leave.** A program's version is how many migrations it carries, plus one
+  ([decision 0036](decisions/0036-a-migration-is-a-function-on-the-json.md)): nothing is declared, and no bump is
+  forgotten. But a migration can never be dropped, since dropping the first renumbers every version after it, and
+  a row is migrated only when it is written again, while a caller's reply is kept for ever
+  ([callers' stored replies](#running)). So a program carries every migration it ever had. Dropping them would
+  need every row written again at the program's version — what `reindex` does for the read model alone — and a
+  version that starts past 1, which a program then declares: one that forgets to raise it reads its own rows as
+  newer and fails loudly ([decision 0043](decisions/0043-a-row-no-version-reads-fails-what-reads-it.md)). Nothing
+  either checks that a migration once deployed is never changed, which a function cannot be compared for. Is it
+  worth it, and once replies are no longer kept for ever?
 - **A sender migrated onto another's text.** A reply's row is keyed by its request's text as the version that
   wrote it encoded it, and is found once read through the migrations
   ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)). A migration of the sender that gives one
