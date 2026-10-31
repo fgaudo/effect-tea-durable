@@ -80,16 +80,13 @@ own ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-
   ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)), in Cluster's table and in the
   runtime's. The sender in Cluster's primary key is decided: the key is the request's `requestKey`
   ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md)), and the version that keyed
-  it ([decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)).
-- **What is not a reply.** Cluster stores everything a step answers under the request's key
-  ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)), and answers a retry within a version
-  from it ([decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)). `Suspended` means no
-  reply yet ([decision 0023](decisions/0023-suspended-means-no-reply-yet.md)), and `NotFound` is not stored either: a
-  caller that retries once the entity is resumed, or created, would get them again for ever. And Cluster marks
-  processed the message an entity dies on, which on one process stays in the mailbox with the suspension
-  ([decision 0006](decisions/0006-a-defect-suspends-the-entity.md)).
+  it ([decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)). So is what Cluster stores
+  that is not a reply: a request answered `Suspended` or `NotFound` is handled again when sent again, and a
+  resumption has the message the entity died on delivered again
+  ([decision 0087](decisions/0087-on-cluster-what-is-not-a-reply-is-handled-again.md)).
 - **What stays the runtime's**: passivation, the capacity, the suspension of a defect, the timers beside `DeliverAt`,
-  and an operation that waits for a program no runner deploys.
+  an operation that waits for a program no runner deploys, and how one that waits on a suspended entity learns that
+  it is resumed ([decision 0087](decisions/0087-on-cluster-what-is-not-a-reply-is-handled-again.md)).
 - **Two versions at once** ([open question](open-questions.md#running)): Cluster's runners carry no version, and a
   shard may go back to an older one.
 
