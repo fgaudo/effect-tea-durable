@@ -96,8 +96,9 @@ export interface Options {
   readonly passivate?: Readonly<{ millis: number }>
   /**
    * How many entities the process holds, of every program, before it unloads the least recently used of those
-   * with nothing to do, without waiting for their passivation. One with something to do is never unloaded for it,
-   * so the process holds more only while what it holds is busy. None by default: time alone unloads (decision 0076).
+   * with nothing to do and no timer due, without waiting for their passivation. Another is never unloaded for it,
+   * so the process holds more only while what it holds is busy. None by default: time alone unloads (decisions
+   * 0076, 0078).
    */
   readonly capacity?: Readonly<{ entities: number }>
 }
@@ -890,7 +891,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           const loaded = deployed.loaded.get(id)
           return loaded === undefined ? Effect.succeed(null) : Effect.map(found(loaded), (value) => ({ value }))
         })),
-        (found) => found === null ? detached(deployed, loading) : Effect.succeed(found.value),
+        (here) => here === null ? detached(deployed, loading) : Effect.succeed(here.value),
       )
     }
 
