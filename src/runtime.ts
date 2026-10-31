@@ -27,12 +27,11 @@ import {
   type Creation,
   encode,
   Entities,
-  type IdempotencyKey,
   InvariantDefect,
   isTimer,
-  type Origin,
   type Program,
   type Reply,
+  type Request,
   runnerOf,
   type Types,
 } from './program.ts'
@@ -378,8 +377,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
                 yield* Queue.offer(loaded.events, { _tag: 'Die', key, incarnation, cause: Cause.squash(exit.cause) })
               }
             }).pipe(
-              // The entity it sends from is this one: an entity cannot pass for another (decision 0009).
-              Effect.provideService(Entities, entities(entity)),
+              // The requests it sends are this run's: an entity cannot pass for another, nor an operation for
+              // another (decisions 0009, 0060).
+              Effect.provideService(Entities, entities(entity, key, incarnation)),
               Effect.ensuring(Effect.sync(() => loaded.operations.delete(under(key, incarnation)))),
             ),
           ),
@@ -419,7 +419,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         // The callers first: a reply is what the event's commit made true (decision 0023).
         for (const output of outputs) {
           if (output._tag !== 'Replied' && output._tag !== 'CreationReplied') continue
-          const request = Machine.requestKey(deployed.program, output.from, output.requestId)
+          const request = Machine.requestKey(deployed.program, output.request)
           yield* output._tag === 'Replied'
             ? answer(messages, entity, request, output.reply)
             : answer(creations, entity, request, output.reply)
@@ -638,7 +638,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       deployed: Deployment<T>,
       id: string,
       flags: T['flags'],
-      request: Readonly<{ requestId: string; from: Origin<T['sender']> }>,
+      request: Request<T['sender']>,
     ): Effect.Effect<Creation, Faulted> =>
       Effect.gen(function*() {
         const entity: Address = { name: deployed.program.name, id }
@@ -648,18 +648,19 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const requested = yield* Effect.try({
           try: () => {
             encode(deployed.program.schemas.flags, flags, 'value of the flags')
-            return Machine.requestKey(deployed.program, request.from, request.requestId)
+            if (request._tag === 'Caller') encode(deployed.program.schemas.sender, request.sender, 'sender')
+            return Machine.requestKey(deployed.program, request)
           },
           catch: (defect) => new Faulted({ defect }),
         })
         const asked = yield* registry.withPermits(1)(Effect.gen(function*() {
           const held = deployed.loaded.get(id) ?? null
           // The entity was already there: the machine answers the request from what is stored (decision 0017).
-          if (held !== null) return yield* ask(creations, held, entity, requested, { _tag: 'Create', ...request })
+          if (held !== null) return yield* ask(creations, held, entity, requested, { _tag: 'Create', request })
           const stored = yield* deployed.storage.load(id)
           if (stored !== null) {
             const loaded = yield* activate(deployed, stored)
-            return yield* ask(creations, loaded, entity, requested, { _tag: 'Create', ...request })
+            return yield* ask(creations, loaded, entity, requested, { _tag: 'Create', request })
           }
           const now = yield* DateTime.now
           const started = Machine.start(deployed.program, id, flags, now, request)
@@ -673,7 +674,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             operations: new Map(),
             timers: new Map(),
           }
-          const creation: Machine.Event<T> = { _tag: 'Create', ...request }
+          const creation: Machine.Event<T> = { _tag: 'Create', request }
           yield* at('BeforeCommit', entity, creation as Machine.Event<never>)
           yield* sql.withTransaction(deployed.storage.write(id, started.written)).pipe(Effect.orDie)
           // The entity exists from here: its creation is the first event committed for it.
@@ -694,28 +695,25 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       deployed: Deployment<T>,
       id: string,
       message: T['inbound'],
-      request: Readonly<{ requestId: string; from: Origin<T['sender']> }>,
+      request: Request<T['sender']>,
     ): Effect.Effect<Answer<T['rejection']>, Faulted> =>
       Effect.gen(function*() {
         const entity: Address = { name: deployed.program.name, id }
         // A message waits in the mailbox as its schema writes it: one that does not encode is its caller's defect,
         // and reaches no entity (decision 0040).
-        yield* Effect.try({
+        const requested = yield* Effect.try({
           try: () => {
             const { schemas } = deployed.program
             encode(schemas.inbound, message, 'inbound message')
-            if (request.from._tag === 'Caller') encode(schemas.sender, request.from.sender, 'sender')
+            if (request._tag === 'Caller') encode(schemas.sender, request.sender, 'sender')
+            return Machine.requestKey(deployed.program, request)
           },
           catch: (defect) => new Faulted({ defect }),
         })
-        const requested = Machine.requestKey(deployed.program, request.from, request.requestId)
         const asked = yield* withEntity(deployed, id, (loaded) =>
-          loaded === null ? Effect.succeed(null) : ask(messages, loaded, entity, requested, {
-            _tag: 'Receive',
-            requestId: request.requestId,
-            message,
-            from: request.from,
-          }))
+          loaded === null
+            ? Effect.succeed(null)
+            : ask(messages, loaded, entity, requested, { _tag: 'Receive', request, message }))
         if (asked === null) return { _tag: 'NotFound' }
         return (yield* answered(asked)) as Answer<T['rejection']>
       })
@@ -743,35 +741,40 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         Cause.hasInterruptsOnly(cause) || Cause.hasFails(cause) ? Effect.failCause(cause) : Effect.succeed(none))
 
     /**
-     * What one run of an operation sends with: its own entity's address, and its idempotency key with the name of
-     * each request as the request id, so that a restarted operation gets the stored replies (decisions 0009,
-     * 0047). A name the run already sent under to the same entity would be answered the first one's reply, and
-     * is the operation's defect. A suspended receiver has no reply yet, and `send` waits for one instead of giving
-     * up (decision 0010); a receiver that crashed has none either (decision 0046); `send` and `create` wait for a
-     * program not deployed yet (decision 0045).
+     * What one run of an operation sends with: its request is the run's — its entity, key and incarnation — with
+     * the name the operation gives it, so that a restarted operation gets the stored replies, and no operation can
+     * send under another's (decisions 0009, 0047, 0060). A name the run already used with the same entity would be
+     * answered the first one's reply, and is the operation's defect: for a message, and apart for a creation. A
+     * suspended receiver has no reply yet, and `send` waits for one instead of giving up (decision 0010); a
+     * receiver that crashed has none either (decision 0046); `send` and `create` wait for a program not deployed
+     * yet (decision 0045).
      */
-    const entities = (from: Address) => {
-      const sent = new Set<string>()
+    const entities = (entity: Address, key: string, incarnation: number) => {
+      const used = { message: new Set<string>(), creation: new Set<string>() }
+      /** The request named `name` to the entity `id` of `program`, or the run's defect if it made it already. */
+      const named = <T extends Types>(
+        kind: keyof typeof used,
+        program: Program<T>,
+        id: string,
+        name: string,
+      ): Effect.Effect<Readonly<{ deployed: Deployment<T>; request: Request<T['sender']> }>> =>
+        Effect.suspend(() => {
+          const to = JSON.stringify([program.name, id, name])
+          if (used[kind].has(to)) {
+            const verb = kind === 'message' ? 'sent' : 'created'
+            return Effect.die(
+              new InvariantDefect({ reason: `the operation ${verb} '${name}' to ${program.name} '${id}' twice` }),
+            )
+          }
+          used[kind].add(to)
+          return Effect.map(deployedAs(program), (deployed) => ({
+            deployed,
+            request: { _tag: 'Operation', entity, key, incarnation, name } as const,
+          }))
+        })
       return Entities.of({
-        send: <T extends Types>(
-          program: Program<T>,
-          id: string,
-          message: T['inbound'],
-          key: IdempotencyKey,
-          name: string,
-        ) => {
-          const requestId = JSON.stringify([key, name])
-          return Effect.suspend(() => {
-            const to = JSON.stringify([program.name, id, requestId])
-            if (sent.has(to)) {
-              return Effect.die(
-                new InvariantDefect({ reason: `the operation sent '${name}' to ${program.name} '${id}' twice` }),
-              )
-            }
-            sent.add(to)
-            return deployedAs(program)
-          }).pipe(Effect.flatMap((deployed) => {
-            const request = { requestId, from: { _tag: 'Entity', entity: from } } as const
+        send: <T extends Types>(program: Program<T>, id: string, message: T['inbound'], name: string) =>
+          Effect.flatMap(named('message', program, id, name), ({ deployed, request }) => {
             const waits = (): Effect.Effect<Reply<T['rejection']>, Faulted> =>
               Effect.flatMap(
                 unlessCrashed(send(deployed, id, message, request), { _tag: 'Suspended' } as const),
@@ -781,11 +784,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
                     : Effect.succeed(reply),
               )
             return faulted(waits())
-          }))
-        },
-        create: <T extends Types>(program: Program<T>, id: string, flags: T['flags'], requestId: IdempotencyKey) =>
-          Effect.flatMap(deployedAs(program), (deployed) => {
-            const request = { requestId, from: { _tag: 'Entity', entity: from } } as const
+          }),
+        create: <T extends Types>(program: Program<T>, id: string, flags: T['flags'], name: string) =>
+          Effect.flatMap(named('creation', program, id, name), ({ deployed, request }) => {
             const waits = (): Effect.Effect<Creation, Faulted> =>
               Effect.flatMap(
                 unlessCrashed(create(deployed, id, flags, request), null),
@@ -855,15 +856,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         yield* Effect.forkIn(waking(deployed), deployed.scope)
         const handle: Handle<T> = {
           create: (id, flags, request) =>
-            faulted(create(deployed, id, flags, {
-              requestId: request.requestId,
-              from: { _tag: 'Caller', sender: request.sender },
-            })),
+            faulted(create(deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId })),
           send: (id, message, request) =>
-            faulted(send(deployed, id, message, {
-              requestId: request.requestId,
-              from: { _tag: 'Caller', sender: request.sender },
-            })),
+            faulted(send(deployed, id, message, { _tag: 'Caller', sender: request.sender, id: request.requestId })),
           read: (id) =>
             Effect.gen(function*() {
               const held = deployed.loaded.get(id)

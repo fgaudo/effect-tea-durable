@@ -8,8 +8,8 @@ import {
   encode,
   type IdempotencyKey,
   isTimer,
-  type Origin,
   type Program,
+  type Request,
   type Types,
 } from './program.ts'
 
@@ -73,11 +73,8 @@ export const rehearse = <T extends Types, E>(
 ): Effect.Effect<void, E> =>
   // A program the runtime would refuse is refused here too, before the scenario runs (decision 0054).
   Effect.andThen(Effect.sync(() => checkProgram(program)), () => {
-    const created = Machine.start(program, id, start.flags, start.at, {
-      requestId: 'creation',
-      // No one retries the rehearsal's creation, so it is stored under the entity itself: no sender is needed.
-      from: { _tag: 'Self' },
-    })
+    // No one retries the rehearsal's creation, so it is the entity's own request: no sender is needed.
+    const created = Machine.start(program, id, start.flags, start.at, { _tag: 'Self', id: 'creation' })
     if (created._tag === 'Defect') return Effect.die(created.cause)
     let machine = created.machine
     let now = start.at
@@ -97,21 +94,22 @@ export const rehearse = <T extends Types, E>(
       })
 
     // A message the runtime could not store fails the test, as it is the caller's defect there (decision 0040).
-    const deliver = (message: T['inbound'], from: Origin<T['sender']>) =>
+    const deliver = (message: T['inbound'], request: (n: number) => Request<T['sender']>) =>
       Effect.flatMap(Effect.sync(() => {
+        const made = request(++requests)
         encode(program.schemas.inbound, message, 'inbound message')
-        if (from._tag === 'Caller') encode(program.schemas.sender, from.sender, 'sender')
-        return `request-${++requests}`
-      }), (requestId) =>
-        Effect.flatMap(apply({ _tag: 'Receive', requestId, message, from }), (outputs) => {
+        if (made._tag === 'Caller') encode(program.schemas.sender, made.sender, 'sender')
+        return made
+      }), (request) =>
+        Effect.flatMap(apply({ _tag: 'Receive', request, message }), (outputs) => {
           for (const output of outputs) {
-            if (output._tag !== 'Replied' || output.requestId !== requestId) continue
+            if (output._tag !== 'Replied' || output.request !== request) continue
             const { reply } = output
             if (reply._tag === 'Accepted' || reply._tag === 'Rejected') {
               return Effect.succeed<Machine.StoredReply<T['rejection']>>(reply)
             }
           }
-          return Effect.die(`the request ${requestId} was not answered`)
+          return Effect.die(`the request ${requests} was not answered`)
         }))
 
     const outcome = ({ key, incarnation }: Pending) => (outputs: ReadonlyArray<Machine.Output<T>>) =>
@@ -127,8 +125,11 @@ export const rehearse = <T extends Types, E>(
     return scenario({
       state: Effect.sync(() => machine.stored.state),
       projection: Effect.sync(() => machine.program.project(machine.stored.state)),
-      send: (message, sender) => deliver(message, { _tag: 'Caller', sender }),
-      sendFrom: (message, entity) => deliver(message, { _tag: 'Entity', entity }),
+      send: (message, sender) => deliver(message, (n) => ({ _tag: 'Caller', sender, id: `request-${n}` })),
+      // A request of another entity is a run of one of its operations: each one here is a run of its own.
+      sendFrom: (message, entity) =>
+        deliver(message, (n) => ({ _tag: 'Operation', entity, key: 'rehearsal', incarnation: n, name: 'request' })),
+
       pending: (key) =>
         Effect.suspend(() => {
           const running = machine.running[key]

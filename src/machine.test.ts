@@ -16,9 +16,9 @@ import {
   isTimer,
   noWork,
   operation,
-  type Origin,
   type Program,
   reject,
+  type Request,
   rejectWith,
   runnerOf,
   timer,
@@ -254,21 +254,18 @@ const at = DateTime.makeUnsafe(1_000)
 
 type Receive = Extract<Machine.Event<T>, { _tag: 'Receive' }>
 
-const caller = { _tag: 'Caller', sender: 'ann' } as const
-
-const creation = { requestId: 'creation', from: caller } as const
+const creation = { _tag: 'Caller', sender: 'ann', id: 'creation' } as const
 
 const receive = (
   requests: Array<Receive>,
   message: (nonce: string) => Inbound,
   sender: T['sender'] = 'ann',
 ): Receive => {
-  const from = { _tag: 'Caller', sender } as const
+  const mine = requests.filter(({ request }) => request._tag === 'Caller' && request.sender === sender)
   const event: Receive = {
     _tag: 'Receive',
-    requestId: `r${requests.filter((request) => Equal.equals(request.from, from)).length}`,
+    request: { _tag: 'Caller', sender, id: `r${mine.length}` },
     message: message(`n${requests.length}`),
-    from,
   }
   requests.push(event)
   return event
@@ -299,7 +296,10 @@ const toEvent = (machine: Toy, command: Command, requests: Array<Receive>): Mach
     case 'Retry':
       return requests.length === 0 ? null : requests[command.pick % requests.length] ?? null
     case 'Create':
-      return { _tag: 'Create', requestId: command.again ? creation.requestId : `c${requests.length}`, from: caller }
+      return {
+        _tag: 'Create',
+        request: command.again ? creation : { _tag: 'Caller', sender: 'ann', id: `c${requests.length}` },
+      }
     case 'Complete': {
       const operations = runningOf(machine, 'Operation')
       const chosen = operations[command.pick % Math.max(operations.length, 1)]
@@ -412,7 +412,7 @@ describe('the machine', () => {
           if (output._tag !== 'Replied' && output._tag !== 'CreationReplied') continue
           if (output.reply._tag === 'Suspended') continue
           // A creation and a message are requests apart, whose ids may be the same (decision 0050).
-          const request = `${output._tag} ${Machine.requestKey(program, output.from, output.requestId)}`
+          const request = `${output._tag} ${Machine.requestKey(program, output.request)}`
           const first = replies.get(request)
           if (first === undefined) replies.set(request, output.reply)
           else expect<unknown>(output.reply).toEqual(first)
@@ -427,8 +427,8 @@ describe('the machine', () => {
       for (const { outputs } of trace) {
         for (const output of outputs) {
           if (output._tag !== 'Replied' || output.reply._tag !== 'Accepted') continue
-          const { from, requestId } = output
-          const request = requests.find((sent) => sent.requestId === requestId && Equal.equals(sent.from, from))
+          const key = Machine.requestKey(program, output.request)
+          const request = requests.find((sent) => Machine.requestKey(program, sent.request) === key)
           if (request === undefined) continue
           expect(machine.stored.state.applied).toContain(request.message.nonce)
         }
@@ -647,8 +647,7 @@ describe('the machine', () => {
         if (!outputs.some((output) => output._tag === 'Suspended')) continue
         for (const envelope of after.stored.mailbox) {
           if (envelope._tag !== 'Inbound') continue
-          const { requestId, from } = envelope
-          expect(outputs).toContainEqual({ _tag: 'Replied', requestId, from, reply: { _tag: 'Suspended' } })
+          expect(outputs).toContainEqual({ _tag: 'Replied', request: envelope.request, reply: { _tag: 'Suspended' } })
         }
       }
     }))
@@ -660,11 +659,11 @@ describe('the machine', () => {
       const discarded = new Set<string>()
       for (const { event, before, after } of trace) {
         for (const envelope of after.stored.mailbox) {
-          if (envelope._tag === 'Inbound') waited.add(Machine.requestKey(program, envelope.from, envelope.requestId))
+          if (envelope._tag === 'Inbound') waited.add(Machine.requestKey(program, envelope.request))
         }
         const head = before.stored.mailbox[0]
         if (event._tag === 'Discard' && head?._tag === 'Inbound') {
-          discarded.add(Machine.requestKey(program, head.from, head.requestId))
+          discarded.add(Machine.requestKey(program, head.request))
         }
       }
       expect(machine.stored.suspension).toBeNull()
@@ -714,7 +713,8 @@ describe('the machine', () => {
   })
 })
 
-const nobody = { _tag: 'Caller', sender: null } as const
+/** A caller's request, under the request id `id`. */
+const by = (id: string) => ({ _tag: 'Caller', sender: null, id }) as const
 
 // The state is the last message, held in an object as every state is (decision 0031), and the work each state
 // holds is given: enough to break each check of a step.
@@ -788,7 +788,7 @@ const tiny = (
 })
 
 const checked = (...args: Parameters<typeof tiny>) => {
-  const created = Machine.start(tiny(...args), 'tiny', null, epoch, { requestId: 'creation', from: nobody })
+  const created = Machine.start(tiny(...args), 'tiny', null, epoch, by('creation'))
   if (created._tag === 'Defect') throw created.cause
   return created.machine
 }
@@ -803,7 +803,7 @@ const reasonOfSuspension = (transition: Machine.Transition<Tiny>) => {
 }
 
 describe('the checks of a step', () => {
-  const inbound = { _tag: 'Receive', requestId: 'r', message: 'go', from: { _tag: 'Caller', sender: null } } as const
+  const inbound = { _tag: 'Receive', request: by('r'), message: 'go' } as const
 
   test('a step that drops an operation before its completion is a defect', () => {
     const machine = checked((message) => message, (state) => (state === 'start' ? { charge: 'operation' } : {}))
@@ -908,8 +908,7 @@ describe('the checks of a step', () => {
       expect(transition.machine.stored.state).toEqual({ last: 'start' })
       expect(transition.outputs).toContainEqual({
         _tag: 'Replied',
-        requestId: 'r',
-        from: nobody,
+        request: by('r'),
         reply: { _tag: 'Suspended' },
       })
     }
@@ -917,7 +916,7 @@ describe('the checks of a step', () => {
 })
 
 describe('what a runtime writes', () => {
-  const inbound = { _tag: 'Receive', requestId: 'r', message: 'go', from: nobody } as const
+  const inbound = { _tag: 'Receive', request: by('r'), message: 'go' } as const
 
   test('a state whose projection or work does not encode to JSON is a defect, and is not stored', () => {
     for (
@@ -947,7 +946,7 @@ describe('what a runtime writes', () => {
       'tiny',
       null,
       epoch,
-      { requestId: 'creation', from: nobody },
+      by('creation'),
     )
     expect(created._tag).toBe('Defect')
   })
@@ -964,7 +963,7 @@ describe('what a runtime writes', () => {
         return { last: 'start' }
       },
     }
-    const created = Machine.start(program, 'tiny', null, epoch, { requestId: 'creation', from: nobody })
+    const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
     expect(created._tag === 'Defect' && created.cause instanceof InvariantDefect && created.cause.reason)
       .toStartWith('the value of the flags does not encode')
     expect(initialized).toEqual([])
@@ -987,7 +986,7 @@ describe('what a runtime writes', () => {
         }),
       },
     }
-    const created = Machine.start(program, 'tiny', null, epoch, { requestId: 'creation', from: nobody })
+    const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
     if (created._tag === 'Defect') throw created.cause
     const transition = Machine.step(created.machine, { _tag: 'Restart' })
     expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
@@ -1046,7 +1045,7 @@ describe('discarding', () => {
 
   test('an inbound message the entity died on is discarded, with no reply stored', () => {
     const machine = checked((message) => (message === 'go' ? defect('broken') : message), () => ({}))
-    const died = handled(machine, { _tag: 'Receive', requestId: 'r', message: 'go', from: nobody })
+    const died = handled(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
     const discarded = Machine.step(died.machine, { _tag: 'Discard' })
     expect(discarded.machine.stored.suspension).toBeNull()
     expect(discarded.machine.stored.mailbox).toEqual([])
@@ -1055,7 +1054,7 @@ describe('discarding', () => {
 })
 
 describe('the keys a program declares', () => {
-  const inbound = { _tag: 'Receive', requestId: 'r', message: 'go', from: nobody } as const
+  const inbound = { _tag: 'Receive', request: by('r'), message: 'go' } as const
 
   test('a state that holds work under a key the program does not declare is a defect', () => {
     const machine = checked((message) => message, (state) => (state === 'start' ? {} : { charg: 'operation' }))
@@ -1080,7 +1079,7 @@ describe('the keys a program declares', () => {
       'tiny',
       null,
       epoch,
-      { requestId: 'creation', from: nobody },
+      by('creation'),
     )
     expect(created._tag).toBe('Defect')
     expect(created._tag === 'Defect' && created.cause instanceof InvariantDefect && created.cause.reason)
@@ -1100,7 +1099,7 @@ describe('the keys a program declares', () => {
 })
 
 describe('the runners a program gives', () => {
-  const inbound = { _tag: 'Receive', requestId: 'r', message: 'go', from: nobody } as const
+  const inbound = { _tag: 'Receive', request: by('r'), message: 'go' } as const
   // A cast lets a program through with no runner for an operation it holds: the machine admits none (decision
   // 0054).
   const unrun = (program: Program<Tiny>): Program<Tiny> => ({
@@ -1123,7 +1122,7 @@ describe('the runners a program gives', () => {
       'tiny',
       null,
       epoch,
-      { requestId: 'creation', from: nobody },
+      by('creation'),
     )
     expect(created._tag === 'Defect' && created.cause instanceof InvariantDefect && created.cause.reason)
       .toBe(missing)
@@ -1147,33 +1146,32 @@ describe('the runners a program gives', () => {
 })
 
 describe('a suspended entity', () => {
-  const caller = { _tag: 'Caller', sender: null } as const
   const accepted = { _tag: 'Accepted' } as const
   // Accepts `ok`, and dies on `bug`.
   const suspended = () => {
     const machine = checked((message) => (message === 'bug' ? defect('bug') : message), () => ({}))
-    const answered = handled(machine, { _tag: 'Receive', requestId: 'first', message: 'ok', from: caller })
-    return handled(answered.machine, { _tag: 'Receive', requestId: 'second', message: 'bug', from: caller }).machine
+    const answered = handled(machine, { _tag: 'Receive', request: by('first'), message: 'ok' })
+    return handled(answered.machine, { _tag: 'Receive', request: by('second'), message: 'bug' }).machine
   }
 
   test('gives the replies it stored, and answers anything else Suspended', () => {
     const machine = suspended()
-    expect(Machine.step(machine, { _tag: 'Receive', requestId: 'first', message: 'ok', from: caller }).outputs)
-      .toEqual([{ _tag: 'Replied', requestId: 'first', from: caller, reply: { _tag: 'Accepted' } }])
-    expect(Machine.step(machine, { _tag: 'Receive', requestId: 'third', message: 'ok', from: caller }).outputs)
-      .toEqual([{ _tag: 'Replied', requestId: 'third', from: caller, reply: { _tag: 'Suspended' } }])
-    expect(Machine.step(machine, { _tag: 'Create', requestId: 'creation', from: caller }).outputs)
-      .toEqual([{ _tag: 'CreationReplied', requestId: 'creation', from: caller, reply: { _tag: 'Created' } }])
+    expect(Machine.step(machine, { _tag: 'Receive', request: by('first'), message: 'ok' }).outputs)
+      .toEqual([{ _tag: 'Replied', request: by('first'), reply: { _tag: 'Accepted' } }])
+    expect(Machine.step(machine, { _tag: 'Receive', request: by('third'), message: 'ok' }).outputs)
+      .toEqual([{ _tag: 'Replied', request: by('third'), reply: { _tag: 'Suspended' } }])
+    expect(Machine.step(machine, { _tag: 'Create', request: by('creation') }).outputs)
+      .toEqual([{ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } }])
   })
 
   test('answers Suspended every caller waiting, and gives each its reply on a retry once resumed', () => {
     const machine = checked((message) => (message === 'bug' ? defect('bug') : message), () => ({}))
     const receive = (requestId: string, message: string) =>
-      ({ _tag: 'Receive', requestId, message, from: caller }) as const
+      ({ _tag: 'Receive', request: by(requestId), message }) as const
     const queued = Machine.step(Machine.step(machine, receive('second', 'bug')).machine, receive('third', 'ok'))
     const died = Machine.step(queued.machine, { _tag: 'Handle', at })
     for (const requestId of ['second', 'third']) {
-      expect(died.outputs).toContainEqual({ _tag: 'Replied', requestId, from: caller, reply: { _tag: 'Suspended' } })
+      expect(died.outputs).toContainEqual({ _tag: 'Replied', request: by(requestId), reply: { _tag: 'Suspended' } })
     }
     const resumed = Machine.step(died.machine, {
       _tag: 'Resume',
@@ -1183,16 +1181,16 @@ describe('a suspended entity', () => {
     expect(Machine.step(resumed.machine, receive('third', 'ok')).outputs).toEqual([])
     const first = Machine.step(resumed.machine, { _tag: 'Handle', at })
     const second = Machine.step(first.machine, { _tag: 'Handle', at })
-    expect(second.outputs).toContainEqual({ _tag: 'Replied', requestId: 'third', from: caller, reply: accepted })
+    expect(second.outputs).toContainEqual({ _tag: 'Replied', request: by('third'), reply: accepted })
     expect(Machine.step(second.machine, receive('third', 'ok')).outputs)
-      .toEqual([{ _tag: 'Replied', requestId: 'third', from: caller, reply: accepted }])
+      .toEqual([{ _tag: 'Replied', request: by('third'), reply: accepted }])
   })
 
   test('an operation that dies answers Suspended every caller waiting', () => {
     const machine = checked((message) => message, () => ({ charge: 'operation' }))
-    const queued = Machine.step(machine, { _tag: 'Receive', requestId: 'r', message: 'go', from: caller })
+    const queued = Machine.step(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
     const died = Machine.step(queued.machine, { _tag: 'Die', key: 'charge', incarnation: 1, cause: 'died' })
-    expect(died.outputs).toContainEqual({ _tag: 'Replied', requestId: 'r', from: caller, reply: { _tag: 'Suspended' } })
+    expect(died.outputs).toContainEqual({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } })
   })
 
   test('resumed with a fixed program, handles the message it died on', () => {
@@ -1205,8 +1203,7 @@ describe('a suspended entity', () => {
     expect(transition.machine.stored.state).toEqual({ last: 'bug' })
     expect(transition.outputs).toContainEqual({
       _tag: 'Replied',
-      requestId: 'second',
-      from: caller,
+      request: by('second'),
       reply: { _tag: 'Accepted' },
     })
   })
@@ -1339,21 +1336,71 @@ describe('a new program', () => {
   })
 })
 
-describe('who a request belongs to', () => {
-  const booking = { _tag: 'Entity', entity: { name: 'Booking', id: 'b1' } } as const
-  const waitlist = { _tag: 'Entity', entity: { name: 'Waitlist', id: 'b1' } } as const
+/** The request named `name` of a run of an operation of another entity, which a reply is kept for (decision 0021). */
+const ran = (program: string, name: string, incarnation = 1) =>
+  ({ _tag: 'Operation', entity: { name: program, id: 'b1' }, key: 'hold', incarnation, name }) as const
 
+describe('who a request belongs to', () => {
   test('the same request id from different senders is different requests, each answered its own reply', () => {
     const machine = checked((message) => (message === 'no' ? reject : message), () => ({}))
-    const first = handled(machine, { _tag: 'Receive', requestId: 'k', message: 'no', from: nobody })
-    const second = handled(first.machine, { _tag: 'Receive', requestId: 'k', message: 'yes', from: booking })
-    const third = handled(second.machine, { _tag: 'Receive', requestId: 'k', message: 'go', from: waitlist })
+    const first = handled(machine, { _tag: 'Receive', request: by('k'), message: 'no' })
+    const second = handled(first.machine, { _tag: 'Receive', request: ran('Booking', 'k'), message: 'yes' })
+    const third = handled(second.machine, { _tag: 'Receive', request: ran('Waitlist', 'k'), message: 'go' })
     const rejected = { _tag: 'Rejected', reason: null } as const
     const accepted = { _tag: 'Accepted' } as const
-    expect(first.outputs).toContainEqual({ _tag: 'Replied', requestId: 'k', from: nobody, reply: rejected })
-    expect(second.outputs).toContainEqual({ _tag: 'Replied', requestId: 'k', from: booking, reply: accepted })
-    expect(third.outputs).toContainEqual({ _tag: 'Replied', requestId: 'k', from: waitlist, reply: accepted })
+    expect(first.outputs).toContainEqual({ _tag: 'Replied', request: by('k'), reply: rejected })
+    expect(second.outputs).toContainEqual({ _tag: 'Replied', request: ran('Booking', 'k'), reply: accepted })
+    expect(third.outputs).toContainEqual({ _tag: 'Replied', request: ran('Waitlist', 'k'), reply: accepted })
     expect(third.machine.stored.state).toEqual({ last: 'go' })
+  })
+
+  test('two runs of an operation are different requests, though they give the same name', () => {
+    const machine = checked((message) => message, () => ({}))
+    const first = handled(machine, { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'one' })
+    const second = handled(first.machine, { _tag: 'Receive', request: ran('Booking', 'hold', 2), message: 'two' })
+    expect(second.machine.stored.state).toEqual({ last: 'two' })
+  })
+
+  // Nothing parses a request back: it is a value, the same whoever built it, with its fields in any order.
+  test('a request is the same as one that encodes alike, and a retry of it gets the stored reply', () => {
+    const machine = checked((message) => message, () => ({}))
+    const first = handled(machine, { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'one' })
+    const { name, incarnation, key, entity, _tag } = ran('Booking', 'hold')
+    const again = Machine.step(first.machine, {
+      _tag: 'Receive',
+      request: { name, incarnation, key, entity: { id: entity.id, name: entity.name }, _tag },
+      message: 'two',
+    })
+    expect(again.machine).toBe(first.machine)
+    expect(again.outputs.map((output) => output._tag === 'Replied' && output.reply)).toEqual([{ _tag: 'Accepted' }])
+  })
+
+  test('update reads who sent a request off it', () => {
+    const seen: Array<unknown> = []
+    const base = checked((message) => message, () => ({}))
+    const machine = {
+      ...base,
+      program: {
+        ...base.program,
+        update: (message: string, meta: Parameters<Program<Tiny>['update']>[1]) => () => {
+          seen.push(meta.from)
+          return { last: message }
+        },
+      },
+    }
+    handled(machine, { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'go' })
+    handled(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
+    expect(seen).toEqual([{ _tag: 'Entity', entity: { name: 'Booking', id: 'b1' } }, { _tag: 'Caller', sender: null }])
+  })
+
+  // So its reply goes once that work no longer holds, which only the storage sees of another entity (decision 0021).
+  test("a reply to another entity's operation says which work asked, and a caller's says none", () => {
+    const machine = checked((message) => message, () => ({}))
+    const operation = handled(machine, { _tag: 'Receive', request: ran('Booking', 'hold', 3), message: 'go' })
+    expect(operation.written?.replies.map((reply) => reply.asked))
+      .toEqual([{ name: 'Booking', id: 'b1', key: 'hold', incarnation: 3 }])
+    const caller = handled(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
+    expect(caller.written?.replies.map((reply) => reply.asked)).toEqual([null])
   })
 
   test('entities of two programs with the same id give their work different idempotency keys', () => {
@@ -1361,9 +1408,8 @@ describe('who a request belongs to', () => {
     const started = (name: string) =>
       handled(checked((message) => message, charging, undefined, name), {
         _tag: 'Receive',
-        requestId: 'r',
+        request: by('r'),
         message: 'go',
-        from: nobody,
       }).outputs.find((output) => output._tag === 'Started')
     const order = started('Order')
     const booking = started('Booking')
@@ -1375,35 +1421,30 @@ describe('who a request belongs to', () => {
 })
 
 describe('creation', () => {
-  const booking = { _tag: 'Entity', entity: { name: 'Booking', id: 'b1' } } as const
-
   test('answers the request that created the entity Created, and stores nothing for the others', () => {
     const machine = checked((message) => message, () => ({}))
-    const create = (requestId: string, from: Origin<null>) =>
-      Machine.step(machine, { _tag: 'Create', requestId, from })
-    expect(create('creation', nobody).outputs)
-      .toEqual([{ _tag: 'CreationReplied', requestId: 'creation', from: nobody, reply: { _tag: 'Created' } }])
+    const create = (request: Request<null>) => Machine.step(machine, { _tag: 'Create', request })
+    expect(create(by('creation')).outputs)
+      .toEqual([{ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } }])
     // The same request id from another sender is another request.
-    expect(create('creation', booking).outputs)
-      .toEqual([
-        { _tag: 'CreationReplied', requestId: 'creation', from: booking, reply: { _tag: 'AlreadyExists' } },
-      ])
-    expect(create('other', nobody).machine).toBe(machine)
+    expect(create(ran('Booking', 'creation')).outputs)
+      .toEqual([{ _tag: 'CreationReplied', request: ran('Booking', 'creation'), reply: { _tag: 'AlreadyExists' } }])
+    expect(create(by('other')).machine).toBe(machine)
   })
 
   // A runtime waits for each apart: a reply to the one must not reach a caller of the other (decision 0050).
   test('a creation is answered apart from a message under the same request id', () => {
     const machine = checked((message) => message, () => ({}))
-    expect(Machine.step(machine, { _tag: 'Create', requestId: 'creation', from: nobody }).outputs)
-      .toEqual([{ _tag: 'CreationReplied', requestId: 'creation', from: nobody, reply: { _tag: 'Created' } }])
-    const sent = handled(machine, { _tag: 'Receive', requestId: 'creation', message: 'go', from: nobody })
+    expect(Machine.step(machine, { _tag: 'Create', request: by('creation') }).outputs)
+      .toEqual([{ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } }])
+    const sent = handled(machine, { _tag: 'Receive', request: by('creation'), message: 'go' })
     expect(sent.outputs.filter((output) => output._tag === 'Replied' || output._tag === 'CreationReplied'))
-      .toEqual([{ _tag: 'Replied', requestId: 'creation', from: nobody, reply: { _tag: 'Accepted' } }])
+      .toEqual([{ _tag: 'Replied', request: by('creation'), reply: { _tag: 'Accepted' } }])
   })
 
   test('a creation is not a message: its request id may be used again to send one', () => {
     const machine = checked((message) => message, () => ({}))
-    const sent = handled(machine, { _tag: 'Receive', requestId: 'creation', message: 'go', from: nobody })
+    const sent = handled(machine, { _tag: 'Receive', request: by('creation'), message: 'go' })
     expect(sent.machine.stored.state).toEqual({ last: 'go' })
   })
 })

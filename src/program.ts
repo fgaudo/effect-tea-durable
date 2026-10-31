@@ -124,6 +124,26 @@ export type Origin<Sender> =
   /** An operation of another entity. The runtime says which: an entity cannot pass for another. */
   | Readonly<{ _tag: 'Entity'; entity: Address }>
 
+/**
+ * A request, as it is stored and deduplicated: who asked, and what names the request among the ones it makes
+ * (decision 0059). A caller's is its sender's, as the program's schema writes it, under the request id it chose
+ * (decision 0048); another entity's is a run of one of its operations — its entity, key and incarnation — under the
+ * name the operation gave the request (decisions 0015, 0047); the entity's own is the rehearsal's creation, which
+ * no one retries.
+ */
+export type Request<Sender> =
+  | Readonly<{ _tag: 'Caller'; sender: Sender; id: string }>
+  | Readonly<{ _tag: 'Operation'; entity: Address; key: string; incarnation: number; name: string }>
+  | Readonly<{ _tag: 'Self'; id: string }>
+
+/** Who sent a request, as `update` reads it in `meta.from`. */
+export const originOf = <Sender>(request: Request<Sender>): Origin<Sender> =>
+  request._tag === 'Caller'
+    ? { _tag: 'Caller', sender: request.sender }
+    : request._tag === 'Operation'
+    ? { _tag: 'Entity', entity: request.entity }
+    : { _tag: 'Self' }
+
 export type Meta<Sender> = Readonly<{
   /** When the runtime handles the message, read once before `update`. */
   at: DateTime.Utc
@@ -149,7 +169,8 @@ export type Update<State, Message, Sender, Reason> = (
 
 /**
  * The entity's program and id, the work's key and its incarnation: the same when a crash restarts the work, and
- * different for every other piece of work of every entity.
+ * different for every other piece of work of every entity. An idempotent runner passes it on to a service outside;
+ * nothing of the library reads it back, and a request to another entity is a value of its own (decision 0059).
  */
 export type IdempotencyKey = string & Brand.Brand<'IdempotencyKey'>
 
@@ -490,48 +511,48 @@ export type Creation = Readonly<{ _tag: 'Created' }> | Readonly<{ _tag: 'Already
 
 /**
  * The service through which an operation sends messages to other entities, as its own entity. The runtime
- * provides it, filling in the sender from the operation that runs.
+ * provides it to each run of an operation, filling in the request from that run: its entity, key and incarnation,
+ * with the name the operation gives (decisions 0047, 0060).
  */
 export class Entities extends Context.Service<Entities, {
   readonly send: <T extends Types>(
     program: Program<T>,
     id: string,
     message: T['inbound'],
-    key: IdempotencyKey,
     name: string,
   ) => Effect.Effect<Reply<T['rejection']>>
   readonly create: <T extends Types>(
     program: Program<T>,
     id: string,
     flags: T['flags'],
-    requestId: IdempotencyKey,
+    name: string,
   ) => Effect.Effect<Creation>
 }>()('effect-tea-durable/Entities') {}
 
 /**
- * Sends an inbound message to another entity from an operation, and waits for the reply. The request id is the
- * operation's idempotency key and `name`, which names the request among those the operation makes: a restarted
- * operation sends the same requests, and gets the stored replies, and one that sends twice under the same name to
- * the same entity dies (decision 0047). While the receiver is suspended, it waits, and it sends again when the
- * receiver crashes (decision 0046).
+ * Sends an inbound message to another entity from an operation, and waits for the reply. The request is the run of
+ * the operation and `name`, which names it among those the operation makes: a restarted operation sends the same
+ * requests, and gets the stored replies, and one that sends twice under the same name to the same entity dies
+ * (decisions 0047, 0060). While the receiver is suspended, it waits, and it sends again when the receiver crashes
+ * (decision 0046).
  */
 export const send = <T extends Types>(
   program: Program<T>,
   id: string,
   message: T['inbound'],
-  key: IdempotencyKey,
   name: string,
 ): Effect.Effect<Reply<T['rejection']>, never, Entities> =>
-  Effect.flatMap(Effect.service(Entities), (entities) => entities.send(program, id, message, key, name))
+  Effect.flatMap(Effect.service(Entities), (entities) => entities.send(program, id, message, name))
 
 /**
- * Creates an entity from an operation, with the operation's idempotency key as the request id. A creation is
- * stored apart from messages, so the same operation may then send the entity one message (decision 0017).
+ * Creates an entity from an operation, under the run of the operation and `name`, as `send` sends. A creation is
+ * stored apart from messages, so the same operation may then send the entity a message under the same name
+ * (decisions 0017, 0050, 0060).
  */
 export const create = <T extends Types>(
   program: Program<T>,
   id: string,
   flags: T['flags'],
-  requestId: IdempotencyKey,
+  name: string,
 ): Effect.Effect<Creation, never, Entities> =>
-  Effect.flatMap(Effect.service(Entities), (entities) => entities.create(program, id, flags, requestId))
+  Effect.flatMap(Effect.service(Entities), (entities) => entities.create(program, id, flags, name))

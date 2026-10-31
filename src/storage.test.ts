@@ -7,7 +7,7 @@ import { expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
-import type * as Machine from './machine.ts'
+import * as Machine from './machine.ts'
 import { noWork, operation, type Program } from './program.ts'
 import { createTables, storage } from './storage.ts'
 
@@ -68,25 +68,35 @@ const written = (rows: Partial<Machine.Written>): Machine.Written => ({
 const created = (rows: Partial<Machine.Written> = {}): Machine.Written =>
   written({
     created: true,
-    entity: { state: { last: 'start' }, creation: '["creation"]' },
+    entity: { state: { last: 'start' }, creation },
     shown: { projection: 'start', indexes: {} },
     ...rows,
   })
 
-const asking = (incarnation: number) => ({ name: 'Asker', id: 'a', key: 'ask', incarnation })
+/** A caller's request that created the entity, as the machine encodes it. */
+const creation = { _tag: 'Caller', sender: null, id: 'creation' } as const
 
-const reply = (request: string, incarnation: number): Machine.ReplyRow => ({
-  request,
+/** The request named `name` of the asker's work in `incarnation`, as the machine keys its reply (decision 0059). */
+const sent = (name: string, incarnation: number) =>
+  Machine.requestKey(receiver, {
+    _tag: 'Operation',
+    entity: { name: 'Asker', id: 'a' },
+    key: 'ask',
+    incarnation,
+    name,
+  })
+
+const reply = (name: string, incarnation: number): Machine.ReplyRow => ({
+  request: sent(name, incarnation),
   tag: 'Accepted',
   reason: null,
-  asked: asking(incarnation),
+  asked: { name: 'Asker', id: 'a', key: 'ask', incarnation },
 })
 
 const inbound = (message: string): Machine.EnvelopeRow => ({
   _tag: 'Inbound',
   message,
-  requestId: message,
-  from: { _tag: 'Caller', sender: null },
+  request: { _tag: 'Caller', sender: null, id: message },
 })
 
 const database = <A>(body: (sql: SqlClient.SqlClient) => Effect.Effect<A>) =>
@@ -110,8 +120,8 @@ test('a reply asked by work that no longer holds goes as it is stored, and one w
         'r',
         created({ replies: [reply('held', 1), reply('ended', 2)] }),
       )
-      expect(forgotten).toEqual([{ name: 'Receiver', id: 'r', request: 'ended' }])
-      expect(Object.keys((yield* storage(receiver, sql).load('r'))?.replies ?? {})).toEqual(['held'])
+      expect(forgotten).toEqual([{ name: 'Receiver', id: 'r', request: sent('ended', 2) }])
+      expect(Object.keys((yield* storage(receiver, sql).load('r'))?.replies ?? {})).toEqual([sent('held', 1)])
     })))
 
 test('the work that ended takes the replies to its requests with it, and no others', () =>
@@ -132,8 +142,8 @@ test('the work that ended takes the replies to its requests with it, and no othe
         }),
       )
       expect(forgotten).toEqual([
-        { name: 'Receiver', id: 'r', request: 'first' },
-        { name: 'Receiver', id: 's', request: 'other' },
+        { name: 'Receiver', id: 'r', request: sent('first', 1) },
+        { name: 'Receiver', id: 's', request: sent('other', 1) },
       ])
       // Work of another incarnation asked nothing that is stored.
       expect(yield* storage(asker, sql).write('a', written({ ended: [{ key: 'ask', incarnation: 2 }] }))).toEqual([])
@@ -161,10 +171,10 @@ test('the state is written with the request that created the entity, and only wh
         state: { last: 'start' },
         suspension: { on: { _tag: 'Message' }, cause: 'broken' },
       })
-      yield* store.write('r', written({ entity: { state: { last: 'next' }, creation: '["creation"]' } }))
+      yield* store.write('r', written({ entity: { state: { last: 'next' }, creation } }))
       expect(yield* store.load('r')).toMatchObject({
         state: { last: 'next' },
-        creation: '["creation"]',
+        creation,
         suspension: null,
       })
     })))

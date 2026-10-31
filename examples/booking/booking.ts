@@ -8,7 +8,6 @@ import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
 import {
   defect,
-  type IdempotencyKey,
   noWork,
   type Origin,
   operation,
@@ -90,11 +89,11 @@ const Operation = Schema.TaggedUnion({
 })
 type Operation = typeof Operation.Type
 
-// The idempotency key and the request's name are the request id: a hold restarted after a crash is answered from
-// the stored reply, and holds nothing twice.
+// A request is the run of the operation and the name it gives: a hold run again after a crash sends the same
+// request, is answered from the stored reply, and holds nothing twice. So it may run at least once.
 const hold = Effect.fn('Hold')(
-  function*({ event, seats }: Extract<Operation, { _tag: 'Hold' }>, idempotencyKey: IdempotencyKey) {
-    const reply = yield* send(inventory, event, { _tag: 'HoldRequested', seats }, idempotencyKey, 'hold')
+  function*({ event, seats }: Extract<Operation, { _tag: 'Hold' }>) {
+    const reply = yield* send(inventory, event, { _tag: 'HoldRequested', seats }, 'hold')
     // A rejection with no reason means the two entities disagree: a booking holds once, and holds some seats.
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsHeld' } satisfies Internal
@@ -109,8 +108,8 @@ const hold = Effect.fn('Hold')(
 // The inventory confirms and releases any hold it made, and existed when it made it. Any other reply means the
 // two entities disagree, which no message of this program can repair: it is a defect, and suspends the booking.
 const confirm = Effect.fn('Confirm')(
-  function*({ event }: Extract<Operation, { _tag: 'Confirm' }>, idempotencyKey: IdempotencyKey) {
-    const reply = yield* send(inventory, event, { _tag: 'ConfirmRequested' }, idempotencyKey, 'confirm')
+  function*({ event }: Extract<Operation, { _tag: 'Confirm' }>) {
+    const reply = yield* send(inventory, event, { _tag: 'ConfirmRequested' }, 'confirm')
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsConfirmed' } satisfies Internal
       : yield* Effect.die('the inventory did not accept the confirmation of its own hold')
@@ -118,8 +117,8 @@ const confirm = Effect.fn('Confirm')(
 )
 
 const release = Effect.fn('Release')(
-  function*({ event }: Extract<Operation, { _tag: 'Release' }>, idempotencyKey: IdempotencyKey) {
-    const reply = yield* send(inventory, event, { _tag: 'ReleaseRequested' }, idempotencyKey, 'release')
+  function*({ event }: Extract<Operation, { _tag: 'Release' }>) {
+    const reply = yield* send(inventory, event, { _tag: 'ReleaseRequested' }, 'release')
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsReleased' } satisfies Internal
       : yield* Effect.die('the inventory did not accept the release of its own hold')
@@ -205,7 +204,11 @@ export const booking = program({
       Cancelled: () => noWork,
     }),
 
-  operations: { Hold: operation(hold), Confirm: operation(confirm), Release: operation(release) },
+  operations: {
+    Hold: operation.atLeastOnce(hold),
+    Confirm: operation.atLeastOnce(confirm),
+    Release: operation.atLeastOnce(release),
+  },
 
   project: (state) => ({
     status: state._tag,

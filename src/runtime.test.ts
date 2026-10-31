@@ -216,7 +216,7 @@ const process = <A, E, R>(
 const replayed = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) => {
   const [first, ...rest] = events
   if (first === undefined || first._tag !== 'Create') return null
-  const created = Machine.start(program, id, { at }, at, { requestId: first.requestId, from: first.from })
+  const created = Machine.start(program, id, { at }, at, first.request)
   if (created._tag === 'Defect') throw created.cause
   let machine = created.machine
   for (const event of rest) machine = Machine.step(machine, event).machine
@@ -232,7 +232,7 @@ const publishedOf = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) 
   const [first, ...rest] = events
   // A log without a creation is one that never committed: nothing of the entity was published either.
   if (first === undefined || first._tag !== 'Create') return []
-  const created = Machine.start(program, id, { at }, at, { requestId: first.requestId, from: first.from })
+  const created = Machine.start(program, id, { at }, at, first.request)
   if (created._tag === 'Defect') throw created.cause
   let machine = created.machine
   let shown = program.project(machine.stored.state)
@@ -347,7 +347,7 @@ describe('the runtime on SQLite', () => {
       yield* process({
         // The first message holds the entity until both requests wait for their replies.
         at: (point, _entity, event) =>
-          point === 'BeforeCommit' && event._tag === 'Receive' && event.requestId === 'first'
+          point === 'BeforeCommit' && event._tag === 'Receive' && event.request._tag === 'Caller' && event.request.id === 'first'
             ? Deferred.await(gate)
             : Effect.void,
       }, (runtime) =>
@@ -1517,7 +1517,7 @@ describe('what the runtime cannot finish', () => {
       yield* process({
         // The message is written, and the runtime dies before it acts on it: the hook stands for a failed write.
         observe: (_entity, event) => {
-          if (event._tag !== 'Receive' || event.requestId !== 'r-1' || !dies) return Effect.void
+          if (event._tag !== 'Receive' || event.request._tag !== 'Caller' || event.request.id !== 'r-1' || !dies) return Effect.void
           dies = false
           return Effect.die('the runtime failed')
         },

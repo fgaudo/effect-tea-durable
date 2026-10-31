@@ -75,8 +75,11 @@ A message is one of two kinds, and the rule for a message that does not apply fo
   gets the same answer, and the message is applied once. Request ids are their sender's: another entity's are
   stored under its address, apart from everyone else's
   ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md)), and a caller's under its sender, as the
-  program's schema writes it ([decision 0048](decisions/0048-a-callers-request-belongs-to-its-sender.md)).
-  `meta.from` says who sent it, so that
+  program's schema writes it ([decision 0048](decisions/0048-a-callers-request-belongs-to-its-sender.md)). A
+  request is a value — a caller's sender and request id, or the run of another entity's operation and the name it
+  gave — stored as its schema writes it, and never parsed out of a string
+  ([decision 0059](decisions/0059-a-request-is-a-value.md)).
+  `meta.from` says who sent it, read off the request, so that
   `update` decides who may do what. An inbound message may arrive in any state: a slow client, a retry, a second
   device, a malicious caller. One that does not apply is rejected.
   A caller may be another entity's operation: `meta.from` is then `Entity`, with the sender's name and id,
@@ -166,16 +169,19 @@ impossible, so that no program has to remember attempt numbers.
 
 ### Entities that talk
 
-An entity sends a message to another from an operation, with `send`, the operation's idempotency key and a name
-for the request, which make the request id: an operation that sends twice under one name to the same entity
-dies ([decision 0047](decisions/0047-a-request-of-an-operation-has-a-name.md)). A restarted operation sends
+An entity sends a message to another from an operation, with `send` and a name for the request. The runtime gives
+each run of an operation its own `Entities`, so the request is that run's — its entity, key and incarnation — under
+the name, whatever the operation's delivery, and no operation can send under another's
+([decision 0060](decisions/0060-send-and-create-take-no-key.md)): an operation that sends twice under one name to
+the same entity dies ([decision 0047](decisions/0047-a-request-of-an-operation-has-a-name.md)). A restarted operation sends
 the same requests, and gets the receiver's stored replies, kept while the work that sent them is stored
 ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). While the receiver is
 suspended, `send` waits, and so does an operation that reaches a program not deployed yet
 ([decision 0045](decisions/0045-an-operation-waits-for-a-program-not-deployed-yet.md)). A receiver that crashes
 has no reply yet either, and the operation sends again; only a defect of the sender's own suspends it
 ([decision 0046](decisions/0046-a-receiver-that-crashes-is-sent-again.md)). An operation creates an
-entity the same way, with `create`. `update` never sends: a step never waits on another entity
+entity the same way, with `create` and a name. So an operation that talks only to entities may run at least once:
+run again, it sends the same requests, and acts once. `update` never sends: a step never waits on another entity
 ([decision 0009](decisions/0009-entities-talk-through-operations.md)).
 
 [`examples/booking`](../examples/booking) holds seats in an event's inventory this way, and releases them when

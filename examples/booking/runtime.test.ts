@@ -185,9 +185,9 @@ test('a booking whose hold sends a message the inventory cannot encode is suspen
       ...booking,
       operations: {
         ...booking.operations,
-        Hold: operation((op: { event: string }, idempotencyKey) =>
+        Hold: operation.atLeastOnce((op: { event: string }) =>
           Effect.flatMap(
-            send(inventory, op.event, { _tag: 'HoldRequested', seats: 0.5 }, idempotencyKey, 'hold'),
+            send(inventory, op.event, { _tag: 'HoldRequested', seats: 0.5 }, 'hold'),
             () => Effect.succeed({ _tag: 'SeatsHeld' } as const),
           )
         ),
@@ -212,12 +212,12 @@ test('an operation that sends two requests to one inventory has both applied, ea
       ...booking,
       operations: {
         ...booking.operations,
-        Hold: operation((op: { event: string; seats: number }, idempotencyKey) =>
+        Hold: operation.atLeastOnce((op: { event: string; seats: number }) =>
           Effect.flatMap(
-            send(inventory, op.event, { _tag: 'HoldRequested', seats: op.seats }, idempotencyKey, 'hold'),
+            send(inventory, op.event, { _tag: 'HoldRequested', seats: op.seats }, 'hold'),
             () =>
               Effect.as(
-                send(inventory, op.event, { _tag: 'ReleaseRequested' }, idempotencyKey, 'release'),
+                send(inventory, op.event, { _tag: 'ReleaseRequested' }, 'release'),
                 { _tag: 'SeatsHeld' } as const,
               ),
           )
@@ -241,12 +241,12 @@ test('an operation that sends twice under one name to one inventory is suspended
       ...booking,
       operations: {
         ...booking.operations,
-        Hold: operation((op: { event: string; seats: number }, idempotencyKey) =>
+        Hold: operation.atLeastOnce((op: { event: string; seats: number }) =>
           Effect.flatMap(
-            send(inventory, op.event, { _tag: 'HoldRequested', seats: op.seats }, idempotencyKey, 'hold'),
+            send(inventory, op.event, { _tag: 'HoldRequested', seats: op.seats }, 'hold'),
             () =>
               Effect.as(
-                send(inventory, op.event, { _tag: 'ReleaseRequested' }, idempotencyKey, 'hold'),
+                send(inventory, op.event, { _tag: 'ReleaseRequested' }, 'hold'),
                 { _tag: 'SeatsHeld' } as const,
               ),
           )

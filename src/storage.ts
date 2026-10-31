@@ -15,7 +15,6 @@ import {
   type Json,
   type Migrated,
   migrationOf,
-  type Origin,
   type Program,
   type Scalar,
   timer,
@@ -68,8 +67,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       tag TEXT NOT NULL,
       version INTEGER NOT NULL,
       message TEXT NOT NULL,
-      request_id TEXT,
-      origin TEXT,
+      request TEXT,
       key TEXT,
       incarnation INTEGER,
       PRIMARY KEY (name, id, seq)
@@ -112,9 +110,9 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       PRIMARY KEY (name, consumer)
     )
   `
-  // The replies, by `requestKey`: a retry gets the one stored (decision 0015). A reply to another entity holds
-  // the work that asked — its program, id, key and incarnation — and is deleted once that work no longer holds
-  // (decision 0021).
+  // The replies, by request: a retry gets the one stored (decision 0015). The request is its JSON as the machine
+  // keys it, read through its schema (decision 0059). A reply to another entity's operation holds the work that
+  // asked — its program, id, key and incarnation — and is deleted once that work no longer holds (decision 0021).
   yield* sql`
     CREATE TABLE IF NOT EXISTS replies (
       name TEXT NOT NULL,
@@ -145,16 +143,6 @@ const json = <A>(codec: Schema.Codec<A, Json>) => {
       decode(up(JSON.parse(text) as Json) as never),
   }
 }
-
-const Address = Schema.Struct({ name: Schema.String, id: Schema.String })
-
-/** Who a queued message came from: the runtime owns `Self` and an entity's address, the program the sender. */
-const originOf = <Sender>(sender: Schema.Codec<Sender, Json>) =>
-  Schema.Union([
-    Schema.TaggedStruct('Self', {}),
-    Schema.TaggedStruct('Caller', { sender }),
-    Schema.TaggedStruct('Entity', { entity: Address }),
-  ]) as unknown as Schema.Codec<Origin<Sender>, Json>
 
 type Written<T extends Types> =
   | Readonly<{ _tag: 'Operation'; operation: T['operation'] }>
@@ -307,7 +295,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const state = json(program.schemas.state)
   const inbound = json(program.schemas.inbound)
   const internal = json(program.schemas.internal)
-  const origin = json(originOf(program.schemas.sender))
+  const request = json(Machine.requestCodec(program))
   const work = json(workOf(program))
   const reason = json(reasonOf(program.schemas.rejection))
   const suspended = json(Suspended)
@@ -342,8 +330,11 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       : { ...written, operation: up('operation', from)(written.operation ?? null) }
   }
 
-  /** Who a queued message came from: only a caller's sender is the program's. */
-  const upOrigin = (from: number) => (held: Json): Json => {
+  /**
+   * A request: only a caller's sender is the program's, and is migrated, so that a retry after a deploy that
+   * migrates the sender finds its reply, under the request as this version keys it (decisions 0048, 0059).
+   */
+  const upRequest = (from: number) => (held: Json): Json => {
     const written = fields(held)
     return written === null || written._tag !== 'Caller'
       ? held
@@ -352,22 +343,6 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
 
   /** The reason a reply carries, null for a bare `reject`, which no migration reads. */
   const upReason = (from: number) => (held: Json): Json => held === null ? held : up('rejection', from)(held)
-
-  const sender = Schema.decodeSync(program.schemas.sender)
-
-  /**
-   * A request stored by `from`, by `requestKey` as this version computes it: a caller's holds its sender as the
-   * version that stored it wrote it, which is read and written again, so that a retry after a deploy that
-   * migrates the sender finds its reply (decision 0048). An entity's request holds no value of the program's.
-   */
-  const rekey = (request: string, from: number): string => {
-    if (from === version) return request
-    const held: unknown = JSON.parse(request)
-    if (!Array.isArray(held) || held.length !== 2 || typeof held[1] !== 'string') return request
-    const [written, requestId] = held as [Json, string]
-    const caller = { _tag: 'Caller', sender: sender(up('sender', from)(written) as never) } as const
-    return Machine.requestKey(program, caller, requestId)
-  }
 
   /**
    * The expression that reads an index out of the row, written once: SQLite uses an index of an expression only
@@ -423,11 +398,10 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         tag: string
         version: number
         message: string
-        request_id: string | null
-        origin: string | null
+        request: string | null
         key: string | null
         incarnation: number | null
-      }>`SELECT tag, version, message, request_id, origin, key, incarnation FROM mailbox
+      }>`SELECT tag, version, message, request, key, incarnation FROM mailbox
          WHERE name = ${name} AND id = ${id} ORDER BY seq`
       const answered = yield* sql<{
         request: string
@@ -448,9 +422,8 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         envelope.tag === 'Inbound'
           ? {
             _tag: 'Inbound',
-            requestId: envelope.request_id ?? '',
+            request: request.read(envelope.request ?? 'null', upRequest(envelope.version)),
             message: inbound.read(envelope.message, up('inbound', envelope.version)),
-            from: origin.read(envelope.origin ?? 'null', upOrigin(envelope.version)),
           }
           : {
             _tag: 'Internal',
@@ -461,7 +434,8 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       )
       const replies: Record<string, Machine.StoredReply<T['rejection']>> = {}
       for (const reply of answered) {
-        replies[rekey(reply.request, reply.version)] = reply.tag === 'Accepted'
+        const asked = request.read(reply.request, upRequest(reply.version))
+        replies[Machine.requestKey(program, asked)] = reply.tag === 'Accepted'
           ? { _tag: 'Accepted' }
           : {
             _tag: 'Rejected',
@@ -475,7 +449,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         keys,
         mailbox,
         replies,
-        creation: rekey(row.creation, row.version),
+        creation: request.read(row.creation, upRequest(row.version)),
         // The cause is what was rendered when the entity suspended: an operator reads it, nothing acts on it.
         suspension: row.suspended_on === null
           ? null
@@ -496,7 +470,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             id,
             state: JSON.stringify(entity.state),
             version,
-            creation: entity.creation,
+            creation: JSON.stringify(entity.creation),
             suspended_on: on,
             suspended_cause: cause,
           })
@@ -505,7 +479,8 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         // The request that created the entity is written with the state, at the version that reads both.
         yield* sql`
           UPDATE entities
-          SET state = ${JSON.stringify(entity.state)}, version = ${version}, creation = ${entity.creation},
+          SET state = ${JSON.stringify(entity.state)}, version = ${version},
+              creation = ${JSON.stringify(entity.creation)},
               suspended_on = ${on}, suspended_cause = ${cause}
           WHERE name = ${name} AND id = ${id}
         `
@@ -566,8 +541,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
                   tag: 'Inbound',
                   version,
                   message: JSON.stringify(envelope.message),
-                  request_id: envelope.requestId,
-                  origin: JSON.stringify(envelope.from),
+                  request: JSON.stringify(envelope.request),
                   key: null,
                   incarnation: null,
                 }
@@ -578,8 +552,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
                   tag: 'Internal',
                   version,
                   message: JSON.stringify(envelope.message),
-                  request_id: null,
-                  origin: null,
+                  request: null,
                   key: envelope.key,
                   incarnation: envelope.incarnation,
                 },

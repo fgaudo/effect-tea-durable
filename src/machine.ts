@@ -5,7 +5,7 @@
  * reply to send).
  */
 import * as DateTime from 'effect/DateTime'
-import type * as Schema from 'effect/Schema'
+import * as Schema from 'effect/Schema'
 import {
   type Creation,
   type Durable,
@@ -18,9 +18,11 @@ import {
   isTimer,
   type Json,
   type Origin,
+  originOf,
   type Program,
   reasonOf,
   type Reply,
+  type Request,
   type Runner,
   runnerOf,
   type Scalar,
@@ -161,7 +163,7 @@ const admitted = <T extends Types>(program: Program<T>, state: T['state']): Held
 
 /** A message waiting in the mailbox: from a caller, or from the entity's own work in one incarnation. */
 export type Envelope<T extends Types> =
-  | Readonly<{ _tag: 'Inbound'; requestId: string; message: T['inbound']; from: Origin<T['sender']> }>
+  | Readonly<{ _tag: 'Inbound'; request: Request<T['sender']>; message: T['inbound'] }>
   | Readonly<{ _tag: 'Internal'; key: string; incarnation: number; message: T['internal'] }>
 
 /**
@@ -179,23 +181,53 @@ export type Suspension = Readonly<{
 /** The replies stored under request ids: never `NotFound`, which the runtime answers for no entity. */
 export type StoredReply<Reason> = Exclude<Reply<Reason>, Readonly<{ _tag: 'NotFound' }>>
 
+const Address = Schema.Struct({ name: Schema.String, id: Schema.String })
+
+const requests = new WeakMap<object, Schema.Codec<Request<unknown>, Json>>()
+
 /**
- * A request as it is stored and deduplicated: under who sent it and the request id it chose. Another entity's are
- * its own, under its address (decision 0015), and a caller's are its sender's, as the program's schema writes the
- * sender (decision 0048). The rehearsal creates its entity as the entity itself, and no one retries it.
+ * How a request is stored: a tagged value, whose caller's sender is written by the program's schema, and nothing
+ * else of it is the program's (decision 0059). Kept for each schema of the sender, which is never mutated.
  */
-export const requestKey = <T extends Types>(
-  program: Program<T>,
-  from: Origin<T['sender']>,
-  requestId: string,
-): string =>
-  JSON.stringify(
-    from._tag === 'Entity'
-      ? [from.entity.name, from.entity.id, requestId]
-      : from._tag === 'Caller'
-      ? [encode(program.schemas.sender, from.sender, 'sender'), requestId]
-      : [requestId],
-  )
+export const requestCodec = <T extends Types>(program: Program<T>): Schema.Codec<Request<T['sender']>, Json> => {
+  const sender = program.schemas.sender
+  let codec = requests.get(sender)
+  if (codec === undefined) {
+    codec = Schema.Union([
+      Schema.TaggedStruct('Caller', { sender, id: Schema.String }),
+      Schema.TaggedStruct('Operation', {
+        entity: Address,
+        key: Schema.String,
+        incarnation: Schema.Int,
+        name: Schema.String,
+      }),
+      Schema.TaggedStruct('Self', { id: Schema.String }),
+    ]) as unknown as Schema.Codec<Request<unknown>, Json>
+    requests.set(sender, codec)
+  }
+  return codec as Schema.Codec<Request<T['sender']>, Json>
+}
+
+const keyed = new WeakMap<object, WeakMap<object, string>>()
+
+/**
+ * What a request is deduplicated by: its JSON as text, with the fields of each object in order. Two requests are
+ * the same when they encode alike, whoever built them; the text is an index of the machine's, and nothing parses
+ * it back (decision 0059). A request that does not encode — a caller's sender its schema refuses — is a defect.
+ */
+export const requestKey = <T extends Types>(program: Program<T>, request: Request<T['sender']>): string => {
+  const codec = requestCodec(program)
+  let held = keyed.get(codec)
+  if (held === undefined) {
+    held = new WeakMap()
+    keyed.set(codec, held)
+  }
+  const cached = held.get(request)
+  if (cached !== undefined) return cached
+  const text = canonical(encodeOnce(codec, request, 'request'))
+  held.set(request, text)
+  return text
+}
 
 /** A key ever returned by `durable`: one that holds no work once was returned, and left. */
 export type Key<T extends Types> = Readonly<{
@@ -222,8 +254,8 @@ export type Stored<T extends Types> = Readonly<{
   mailbox: ReadonlyArray<Envelope<T>>
   /** By `requestKey`. */
   replies: Readonly<Record<string, StoredReply<T['rejection']>>>
-  /** The request that created the entity, by `requestKey`: its retries are answered `Created` (decision 0017). */
-  creation: string
+  /** The request that created the entity: its retries are answered `Created` (decision 0017). */
+  creation: Request<T['sender']>
   suspension: Suspension | null
 }>
 
@@ -238,10 +270,10 @@ export type Machine<T extends Types> = Readonly<{
 }>
 
 export type Event<T extends Types> =
-  /** An inbound message arrives, with the caller's request id. */
-  | Readonly<{ _tag: 'Receive'; requestId: string; message: T['inbound']; from: Origin<T['sender']> }>
+  /** An inbound message arrives, under its request. */
+  | Readonly<{ _tag: 'Receive'; request: Request<T['sender']>; message: T['inbound'] }>
   /** A request to create the entity, which exists. Its flags do not matter (decision 0012). */
-  | Readonly<{ _tag: 'Create'; requestId: string; from: Origin<T['sender']> }>
+  | Readonly<{ _tag: 'Create'; request: Request<T['sender']> }>
   /** An operation's effect ends with its message, recorded in the mailbox. */
   | Readonly<{ _tag: 'Complete'; key: string; incarnation: number; message: T['internal'] }>
   /** A timer's time comes, and its message is recorded in the mailbox. */
@@ -260,15 +292,14 @@ export type Event<T extends Types> =
 export type Output<T extends Types> =
   | Readonly<{
     _tag: 'Replied'
-    requestId: string
-    from: Origin<T['sender']>
+    request: Request<T['sender']>
     reply: StoredReply<T['rejection']> | Readonly<{ _tag: 'Suspended' }>
   }>
   /**
    * A creation's request answered: apart from a message's, since a creation and a message share request ids
    * (decisions 0017, 0050).
    */
-  | Readonly<{ _tag: 'CreationReplied'; requestId: string; from: Origin<T['sender']>; reply: Creation }>
+  | Readonly<{ _tag: 'CreationReplied'; request: Request<T['sender']>; reply: Creation }>
   /** A completion, a firing or an `unknown` written to the mailbox. */
   | Readonly<{ _tag: 'Recorded'; key: string; incarnation: number }>
   /** An internal message `update` handled. */
@@ -297,15 +328,19 @@ export type KeyRow = Readonly<{
   due: number | null
 }>
 
-/** A message queued at the end of the mailbox, encoded: who it came from, as the runtime and the program write it. */
+/** A message queued at the end of the mailbox, encoded, with an inbound message's request (decision 0059). */
 export type EnvelopeRow =
-  | Readonly<{ _tag: 'Inbound'; message: Json; requestId: string; from: Json }>
+  | Readonly<{ _tag: 'Inbound'; message: Json; request: Json }>
   | Readonly<{ _tag: 'Internal'; message: Json; key: string; incarnation: number }>
 
 /** The work of another entity that sent a request: its reply is kept while that work holds (decision 0021). */
 export type Asker = Readonly<{ name: string; id: string; key: string; incarnation: number }>
 
-/** A reply stored under a request, by `requestKey`: a rejection's reason is null for a bare `reject`. */
+/**
+ * A reply stored under a request: `request` is its `requestKey`, the request's JSON as text, which the reply is
+ * found by. A rejection's reason is null for a bare `reject`, and `asked` is the operation of another entity that
+ * sent the request, read off it (decision 0059).
+ */
 export type ReplyRow = Readonly<{
   request: string
   tag: StoredReply<unknown>['_tag']
@@ -332,7 +367,7 @@ export type Written = Readonly<{
   /** Whether the entity is new: its row is inserted. */
   created: boolean
   /** The state, with the request that created the entity, when the event changed the state. */
-  entity: Readonly<{ state: Json; creation: string }> | null
+  entity: Readonly<{ state: Json; creation: Json }> | null
   /** Why the entity is suspended, its cause rendered, or null when it is not. */
   suspension: Readonly<{ on: Suspension['on']; cause: string }> | null
   /** The keys that changed, whole. */
@@ -545,14 +580,15 @@ export const start = <T extends Types>(
   id: string,
   flags: T['flags'],
   at: DateTime.Utc,
-  request: Readonly<{ requestId: string; from: Origin<T['sender']> }>,
+  request: Request<T['sender']>,
 ): Start<T> => {
   let state: T['state']
   let work: Held<T>
   try {
     // `init` is given the flags its schema takes, and no others: flags that do not encode are a defect, and
-    // nothing is stored (decision 0049).
+    // nothing is stored (decision 0049). The request is stored with the entity, and encodes too.
     encode(program.schemas.flags, flags, 'value of the flags')
+    encodeOnce(requestCodec(program), request, 'request')
     state = program.init(flags, at)
     work = admitted(program, state)
   } catch (cause) {
@@ -565,12 +601,12 @@ export const start = <T extends Types>(
     keys: renew(program, {}, {}, work),
     mailbox: [],
     replies: {},
-    creation: requestKey(program, request.from, request.requestId),
+    creation: request,
     suspension: null,
   }
   const created: Machine<T> = { program, stored, running: {} }
   const { machine, outputs } = activate(created, created, false)
-  const reply: Output<T> = { _tag: 'CreationReplied', ...request, reply: { _tag: 'Created' } }
+  const reply: Output<T> = { _tag: 'CreationReplied', request, reply: { _tag: 'Created' } }
   // A new entity always writes its row.
   const written = writes(program, null, machine.stored, null)
   if (written === null) throw new Error(`the creation of '${program.name}' '${id}' writes nothing`)
@@ -587,7 +623,7 @@ const suspend = <T extends Types>(machine: Machine<T>, suspension: Suspension): 
     { _tag: 'Suspended', cause: suspension.cause },
     ...machine.stored.mailbox.flatMap((envelope): ReadonlyArray<Output<T>> =>
       envelope._tag === 'Inbound'
-        ? [{ _tag: 'Replied', requestId: envelope.requestId, from: envelope.from, reply: { _tag: 'Suspended' } }]
+        ? [{ _tag: 'Replied', request: envelope.request, reply: { _tag: 'Suspended' } }]
         : []
     ),
   ],
@@ -597,25 +633,21 @@ const receive = <T extends Types>(
   machine: Machine<T>,
   event: Extract<Event<T>, { _tag: 'Receive' }>,
 ): Moved<T> => {
-  const { stored } = machine
-  const { requestId, from } = event
-  const request = requestKey(machine.program, from, requestId)
+  const { stored, program } = machine
+  const { request } = event
+  const key = requestKey(program, request)
   // A stored reply is read from storage: a suspended entity gives it too.
-  const reply = stored.replies[request]
-  if (reply !== undefined) return { machine, outputs: [{ _tag: 'Replied', requestId, from, reply }] }
+  const reply = stored.replies[key]
+  if (reply !== undefined) return { machine, outputs: [{ _tag: 'Replied', request, reply }] }
   // Queued or not, a message has no reply yet: its caller retries once the entity is resumed (decision 0023).
   if (stored.suspension !== null) {
-    return { machine, outputs: [{ _tag: 'Replied', requestId, from, reply: { _tag: 'Suspended' } }] }
+    return { machine, outputs: [{ _tag: 'Replied', request, reply: { _tag: 'Suspended' } }] }
   }
   // A retry of a message still in the mailbox waits for its reply.
-  if (
-    stored.mailbox.some((envelope) =>
-      envelope._tag === 'Inbound' && requestKey(machine.program, envelope.from, envelope.requestId) === request
-    )
-  ) {
+  if (stored.mailbox.some((envelope) => envelope._tag === 'Inbound' && requestKey(program, envelope.request) === key)) {
     return { machine, outputs: [] }
   }
-  const envelope: Envelope<T> = { _tag: 'Inbound', requestId, message: event.message, from: event.from }
+  const envelope: Envelope<T> = { _tag: 'Inbound', request, message: event.message }
   return { machine: { ...machine, stored: { ...stored, mailbox: [...stored.mailbox, envelope] } }, outputs: [] }
 }
 
@@ -671,7 +703,7 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Moved<T
         outputs: [{ _tag: 'Dropped', key: head.key, incarnation: head.incarnation }],
       }
     }
-    const from: Origin<T['sender']> = head._tag === 'Inbound' ? head.from : { _tag: 'Self' }
+    const from: Origin<T['sender']> = head._tag === 'Inbound' ? originOf(head.request) : { _tag: 'Self' }
     const result = program.update(head.message, { at, from })(stored.state)
     if (isRejected(result)) {
       if (head._tag === 'Internal') {
@@ -679,10 +711,10 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Moved<T
       }
       const reply = { _tag: 'Rejected', reason: reasonOf(result) } as const
       if (reply.reason !== null) encode(program.schemas.rejection, reply.reason, 'reason of the rejection')
-      const replies = { ...stored.replies, [requestKey(program, head.from, head.requestId)]: reply }
+      const replies = { ...stored.replies, [requestKey(program, head.request)]: reply }
       return {
         machine: { ...machine, stored: { ...stored, mailbox: rest, replies } },
-        outputs: [{ _tag: 'Replied', requestId: head.requestId, from: head.from, reply }],
+        outputs: [{ _tag: 'Replied', request: head.request, reply }],
       }
     }
     const state: T['state'] = result
@@ -723,10 +755,10 @@ const handle = <T extends Types>(machine: Machine<T>, at: DateTime.Utc): Moved<T
       outputs.push(startWork(machine, key, incarnation, work))
     }
     const replies = head._tag === 'Inbound'
-      ? { ...stored.replies, [requestKey(program, head.from, head.requestId)]: { _tag: 'Accepted' } as const }
+      ? { ...stored.replies, [requestKey(program, head.request)]: { _tag: 'Accepted' } as const }
       : stored.replies
     if (head._tag === 'Inbound') {
-      outputs.unshift({ _tag: 'Replied', requestId: head.requestId, from: head.from, reply: { _tag: 'Accepted' } })
+      outputs.unshift({ _tag: 'Replied', request: head.request, reply: { _tag: 'Accepted' } })
     }
     return {
       machine: {
@@ -775,21 +807,12 @@ const discard = <T extends Types>(machine: Machine<T>): Moved<T> => {
 const render = (cause: unknown): string =>
   cause instanceof Error ? `${cause.name}: ${cause.message}` : typeof cause === 'string' ? cause : String(cause)
 
-/** Who a queued message came from, as it is stored: the runtime owns `Self` and an entity's address. */
-const originRow = <T extends Types>(program: Program<T>, from: Origin<T['sender']>): Json =>
-  from._tag === 'Caller'
-    ? { _tag: 'Caller', sender: encodeOnce(program.schemas.sender, from.sender, 'sender') }
-    : from._tag === 'Entity'
-    ? { _tag: 'Entity', entity: { name: from.entity.name, id: from.entity.id } }
-    : { _tag: 'Self' }
-
 const envelopeRow = <T extends Types>(program: Program<T>, envelope: Envelope<T>): EnvelopeRow =>
   envelope._tag === 'Inbound'
     ? {
       _tag: 'Inbound',
       message: encodeOnce(program.schemas.inbound, envelope.message, 'inbound message'),
-      requestId: envelope.requestId,
-      from: originRow(program, envelope.from),
+      request: encodeOnce(requestCodec(program), envelope.request, 'request'),
     }
     : {
       _tag: 'Internal',
@@ -799,25 +822,13 @@ const envelopeRow = <T extends Types>(program: Program<T>, envelope: Envelope<T>
     }
 
 /**
- * The work that sent a request, when another entity's operation did: its request id is the operation's
- * idempotency key, with the sender's program, id, key and incarnation, and the request's name (decisions 0015,
- * 0021, 0047). Null for a caller's, and for a request id another entity chose by hand, which no work holds.
+ * The work of another entity that sent a request, read off the request: an operation's is its run's, with its
+ * entity, key and incarnation (decisions 0021, 0059). Null for any other request.
  */
-const askerOf = <Sender>(from: Origin<Sender>, requestId: string): Asker | null => {
-  if (from._tag !== 'Entity') return null
-  try {
-    const named: unknown = JSON.parse(requestId)
-    if (!Array.isArray(named) || named.length !== 2 || typeof named[0] !== 'string') return null
-    const key: unknown = JSON.parse(named[0])
-    if (!Array.isArray(key) || key.length !== 4) return null
-    const [name, id, under, incarnation]: ReadonlyArray<unknown> = key
-    if (name !== from.entity.name || id !== from.entity.id || typeof under !== 'string') return null
-    if (!Number.isInteger(incarnation)) return null
-    return { name, id, key: under, incarnation: incarnation as number }
-  } catch {
-    return null
-  }
-}
+const askerOf = <Sender>(request: Request<Sender>): Asker | null =>
+  request._tag === 'Operation'
+    ? { name: request.entity.name, id: request.entity.id, key: request.key, incarnation: request.incarnation }
+    : null
 
 /**
  * What an event writes, from what was stored before it (null for a new entity) to what is stored after it, with
@@ -850,7 +861,7 @@ export const writes = <T extends Types>(
   for (const [request, reply] of Object.entries(after.replies)) {
     if (before?.replies[request] !== undefined) continue
     // The machine adds a reply only for the message it handles.
-    const asked = handled?._tag === 'Inbound' ? askerOf(handled.from, handled.requestId) : null
+    const asked = handled?._tag === 'Inbound' ? askerOf(handled.request) : null
     const reason = reply._tag === 'Rejected' && reply.reason !== null
       ? encodeOnce(program.schemas.rejection, reply.reason, 'reason of the rejection')
       : null
@@ -882,7 +893,10 @@ export const writes = <T extends Types>(
   return {
     created: before === null,
     entity: changed
-      ? { state: encodeOnce(program.schemas.state, after.state, 'state'), creation: after.creation }
+      ? {
+        state: encodeOnce(program.schemas.state, after.state, 'state'),
+        creation: encodeOnce(requestCodec(program), after.creation, 'request'),
+      }
       : null,
     suspension: after.suspension === null
       ? null
@@ -914,11 +928,12 @@ const move = <T extends Types>(machine: Machine<T>, event: Event<T>): Moved<T> =
       return receive(machine, event)
     case 'Create': {
       // Read from storage, as a stored reply: a suspended entity answers it too.
-      const { requestId, from } = event
-      const reply: Creation = requestKey(machine.program, from, requestId) === machine.stored.creation
+      const { request } = event
+      const { program, stored } = machine
+      const reply: Creation = requestKey(program, request) === requestKey(program, stored.creation)
         ? { _tag: 'Created' }
         : { _tag: 'AlreadyExists' }
-      return { machine, outputs: [{ _tag: 'CreationReplied', requestId, from, reply }] }
+      return { machine, outputs: [{ _tag: 'CreationReplied', request, reply }] }
     }
     case 'Complete':
       return record(machine, 'Operation', event.key, event.incarnation, () => event.message)
