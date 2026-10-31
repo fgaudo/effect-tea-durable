@@ -8,7 +8,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A commit message stays short: a subject line of at most 72 characters in the imperative, and a body only
   where the diff cannot say it, four lines at most. Why a change was taken belongs in `docs/`, not in the message.
 - A decision gets a note in `docs/decisions/`, numbered in order and never rewritten once taken: a decision
-  that changes is a new note that says which one it replaces. A question not decided yet goes in
+  that changes is a new note that says which one it replaces. A note is taken by the commit that adds it, which
+  holds the code it decides. After that commit, only a link that a later rename breaks is fixed in it: a
+  consequence found later, a correction or a rule it missed is a new note that says which one it changes. A question not decided yet goes in
   `docs/open-questions.md`, and leaves it when a note decides it. A step of the roadmap leaves it when done.
 - The examples import the library from `src/`. When the design changes, the code, its tests and the examples
   change with it, and `bun run typecheck` and `bun test` pass.

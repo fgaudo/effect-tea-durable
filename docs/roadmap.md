@@ -31,22 +31,23 @@ A bug of correctness came before the last of them, and is fixed: a reply is keye
 so a sender migrated onto another's text takes nothing of its row
 ([decision 0069](decisions/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md)).
 
-A review of decisions 0027 to 0039 found five more corrections. The first is made: `reindex` writes a row only
-over the state it was computed from ([decision 0070](decisions/0070-reindex-writes-a-row-only-over-its-state.md)).
-So is the second: a process starts the entities whose mailbox holds a message
-([decision 0071](decisions/0071-a-process-starts-the-entities-with-a-message.md)), and the third: the log shows
-what a step changed, as the program deployed computes it
-([decision 0072](decisions/0072-the-log-shows-what-a-step-changed.md)), and the fourth: what the runtime did is
-told to a probe, out of its options ([decision 0073](decisions/0073-what-the-runtime-did-is-told-to-a-probe.md)).
-The last comes next:
+A review of decisions 0027 to 0039 found five more corrections, and all of them are made:
 
-- **A note changed after it was taken.** Decisions 0029, 0032, 0037 and 0038 were edited by later commits, and
-  0032's edit is what accepts the first bug above. [`AGENTS.md`](../AGENTS.md) says a note is never rewritten:
-  it says too when a note counts as taken, so that a correction found later is a note of its own.
+- `reindex` writes a row only over the state it was computed from
+  ([decision 0070](decisions/0070-reindex-writes-a-row-only-over-its-state.md));
+- a process starts the entities whose mailbox holds a message
+  ([decision 0071](decisions/0071-a-process-starts-the-entities-with-a-message.md));
+- the log shows what a step changed, as the program deployed computes it
+  ([decision 0072](decisions/0072-the-log-shows-what-a-step-changed.md));
+- what the runtime did is told to a probe, out of its options
+  ([decision 0073](decisions/0073-what-the-runtime-did-is-told-to-a-probe.md));
+- [`AGENTS.md`](../AGENTS.md) says that a note is taken by the commit that adds it, so that a correction found
+  later is a note of its own.
 
-The cost question left after it is [a mailbox under a burst](open-questions.md#storage-and-reading): a machine holds only its state, its
-keys and its mailbox ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)), and an event writes only
-what it changed ([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)).
+The cost question left is [a mailbox under a burst](open-questions.md#storage-and-reading): a machine holds only
+its state, its keys and its mailbox ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)), and an
+event writes only what it changed ([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)). It is
+decided next.
 
 ## Later
 
