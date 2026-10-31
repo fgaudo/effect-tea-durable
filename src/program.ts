@@ -341,15 +341,44 @@ export const migrationOf = <T extends Types>(
   return steps.length === 0 ? (json) => json : (json) => steps.reduce((held, up) => up(held), json)
 }
 
-/** The runner of an operation, found by its tag. */
+/** An index's name is a word, so that a store writes it as it is, in a query and in an index of its own. */
+const isWord = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
+
+/**
+ * Refuses a program that cannot run as it is written: an empty name, a key declared twice, an index whose name is
+ * not a word. It is pure, and called where a program enters — `deploy`, a fixed program brought by `resume`,
+ * `rehearse` — before anything is stored or run; a program is never mutated, so it holds for as long as the
+ * program runs (decisions 0052, 0054). A missing runner is the machine's to find, where an operation is held.
+ */
+export const checkProgram = <T extends Types>(program: Program<T>): void => {
+  const refuse = (reason: string): never => {
+    throw new InvariantDefect({ reason: `the program '${program.name}' ${reason}` })
+  }
+  if (program.name.length === 0) refuse('has an empty name')
+  const keys = new Set<string>()
+  for (const key of program.keys) {
+    if (keys.has(key)) refuse(`declares the key '${key}' twice`)
+    keys.add(key)
+  }
+  for (const index of Object.keys(program.indexes)) {
+    if (!isWord(index)) refuse(`has an index '${index}' whose name is not a word`)
+  }
+}
+
+/**
+ * The runner of an operation, found by its tag, or `undefined` for a tag the program gives none for: the types
+ * give one for every tag, and a cast does not (decision 0054).
+ */
 export const runnerOf = <T extends Types>(
   program: Program<T>,
   operation: T['operation'],
-): Runner<T['operation'], T['internal'], T['services']> =>
+): Runner<T['operation'], T['internal'], T['services']> | undefined => {
   // `Runners` has a runner for every tag of `T['operation']`, which TypeScript cannot index by a tag it holds.
-  (program.operations as unknown as Readonly<Record<string, Runner<T['operation'], T['internal'], T['services']>>>)[
-    operation._tag
-  ] as Runner<T['operation'], T['internal'], T['services']>
+  const runners = program.operations as unknown as Readonly<
+    Record<string, Runner<T['operation'], T['internal'], T['services']>>
+  >
+  return Object.hasOwn(runners, operation._tag) ? runners[operation._tag] : undefined
+}
 
 /**
  * The value of each index on a projection: what the machine checks and a runtime writes. An index that dies is

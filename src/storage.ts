@@ -257,9 +257,6 @@ const askedBy = (request: string) => {
   }
 }
 
-/** An index's name is a word, so that it is a column of a query and of an index's expression. */
-const isName = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
-
 /** An identifier SQLite reads as written: a program's name is the author's, and is quoted, not escaped away. */
 const quoted = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`
 
@@ -411,10 +408,11 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
 
   /**
    * The expression that reads an index out of the row, written once: SQLite uses an index of an expression only
-   * where the query writes the expression the same way, so the index created and the query must share this.
+   * where the query writes the expression the same way, so the index created and the query must share this. A
+   * program's indexes are words, which its check made sure of where it entered (decision 0054).
    */
   const expression = (index: string) => {
-    if (!Object.hasOwn(program.indexes, index) || !isName(index)) {
+    if (!Object.hasOwn(program.indexes, index)) {
       throw new Error(`'${index}' is no index of the program '${name}'`)
     }
     return `json_extract(indexes, '$.${index}')`

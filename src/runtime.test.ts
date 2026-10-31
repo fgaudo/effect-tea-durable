@@ -1598,6 +1598,36 @@ describe('what the runtime cannot finish', () => {
       expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: 'c', incarnation: 1 })
     })))
 
+  test('a program that cannot run as written is refused where it enters, before anything is stored', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const sql = yield* SqlClient.SqlClient
+      const reasonOf = (exit: Exit.Exit<unknown>) => {
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        return cause instanceof InvariantDefect ? cause.reason : null
+      }
+      const unworded = { ...program, indexes: { 'wanted;': program.indexes.wanted } } as unknown as Program<T>
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          // A deploy refuses it before it writes an index into SQL, or loads an entity (decision 0054).
+          expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy(unworded), layer))))
+            .toBe("the program 'Toy' has an index 'wanted;' whose name is not a word")
+          const made = yield* sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'index'`
+          expect(made.map(({ name }) => name).filter((name) => name.startsWith('projections '))).toEqual([])
+          expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy({ ...program, name: '' }), layer))))
+            .toBe("the program '' has an empty name")
+          // So does a resume with a fixed program, which reaches no entity.
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          const twice = { ...program, keys: [...program.keys, 'a'] } as Program<T>
+          expect(reasonOf(yield* Effect.exit(toy.resume(id, twice))))
+            .toBe("the program 'Toy' declares the key 'a' twice")
+          expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester })).toEqual({ _tag: 'Accepted' })
+          yield* runtime.settled
+        }))
+    })))
+
   test('a message its schema cannot encode is its caller’s defect, and reaches no entity', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now

@@ -44,45 +44,33 @@ which the later ones build on. Each step is decided in a note before it is made.
    exception elsewhere is the runtime's, and crashes the entity ([decision
    0042](decisions/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). Whether `update` returns a
    defect as a value, as it returns a rejection, is decided with it.
-6. **A program is checked where it enters.** Nothing checks a program at run time: an empty name, two keys of the
-   same name, an index whose name is not a word — found only at the deploy, which writes it into SQL — and an
-   operation with no runner, which a cast lets through and the runtime meets as a `TypeError` that suspends the
-   entity, while a rehearsal of it notices nothing. `Program` stays a plain object, as in effect-tea: a new version
-   is a spread of the one before, and a brand would be copied by the spread with the rest. A pure check, called by
-   `deploy`, `resume` with a fixed program and `rehearse` before anything is stored or run, refuses a program whose
-   name is empty, whose keys repeat or whose indexes are not words; it remembers nothing, since it costs a pass
-   over a few names, and is made once, since a program is never mutated ([decision
-   0052](decisions/0052-what-crosses-the-library-is-never-mutated.md)). A runner is checked where an operation is,
-   not on the schema, which need not list its tags: the machine admits no operation its program has no runner for,
-   as it admits no undeclared key ([decision 0037](decisions/0037-the-machine-checks-the-declared-keys.md)).
-   Whether an index's name is a rule of the program or of the storage is decided with it.
-7. **The program is not the machine's state.** `Machine` holds its program, and `Resume` replaces it, which the
+6. **The program is not the machine's state.** `Machine` holds its program, and `Resume` replaces it, which the
    runtime does not follow ([a fixed program brought by `resume`](open-questions.md#running)). `step` takes the
    program as an argument, and the stored entity says which version of it runs: a fixed program is then a deploy,
    or something stored, but never a value the machine and the runtime see differently.
-8. **Only a step changes the machine.** `forget` in the runtime removes replies from a loaded machine outside any
+7. **Only a step changes the machine.** `forget` in the runtime removes replies from a loaded machine outside any
    event. Once step 1 deletes them, the machine either holds no replies at all and reads the one a request asks for
    ([the replies an entity holds](open-questions.md#storage-and-reading)), or forgets them through an event of its
    own.
-9. **A row is read through a schema, or not at all.** `load` gives a missing request id or key as `''`, an
+8. **A row is read through a schema, or not at all.** `load` gives a missing request id or key as `''`, an
    incarnation as `0` and a cause as `''`, reads a reply of any tag but `Accepted` as a rejection and a queued
    message of any tag but `Inbound` as internal, and casts `delivery` and an outbox row's kind unchecked. Each
    table's row has a schema, and a row it refuses fails the call that meets it, as a row no version reads does
    ([decision 0043](decisions/0043-a-row-no-version-reads-fails-what-reads-it.md)).
-10. **Nothing waits for an operation under the registry's permit.** `crash` interrupts the entity's operations
-    while it holds the one permit of the process, and an interruption waits for the operation's finalizers: while a
-    request to a slow service closes, every `send` and `create` to any entity of any program waits, and so does
-    every load and unload. The interruption is made once the permit is released, or forked ([one permit for the
-    process](open-questions.md#running)).
-11. **The runtime waits for what it waits for, and polls nothing.** `settled` looks every millisecond, `deployedAs`
+9. **Nothing waits for an operation under the registry's permit.** `crash` interrupts the entity's operations
+   while it holds the one permit of the process, and an interruption waits for the operation's finalizers: while a
+   request to a slow service closes, every `send` and `create` to any entity of any program waits, and so does
+   every load and unload. The interruption is made once the permit is released, or forked ([one permit for the
+   process](open-questions.md#running)).
+10. **The runtime waits for what it waits for, and polls nothing.** `settled` looks every millisecond, `deployedAs`
     every few, and a sender sends again to a suspended receiver every few too. Each becomes a signal: a count of
     what is under way with a latch for `settled`, a deploy that wakes the operations waiting for its program, a
     resumption that wakes the senders waiting for it ([suspended entities](open-questions.md#running)).
-12. **The tests run on a clock they control.** The runtime's tests sleep for real time, up to 80 milliseconds at
+11. **The tests run on a clock they control.** The runtime's tests sleep for real time, up to 80 milliseconds at
     once, which a loaded machine can outlast. The runtime reads time with `DateTime.now` and waits with
     `Effect.sleep`, which `TestClock` drives: the tests move time instead of waiting for it, and the random
     sequences, 25 runs today, can run many more.
-13. **The public surface is the library's.** `index.ts` exports what only the runtime uses (`indexesOf`,
+12. **The public surface is the library's.** `index.ts` exports what only the runtime uses (`indexesOf`,
     `migrationOf`, `storage`), and a `Work` of `program.ts` beside the machine's `Work<T>`, another type of the
     same name. It exports what a program, a test and an operator use, and the two `Work` get two names. With it,
     the small things of the code: `Faulted` is a `Data.TaggedError`; `activate` takes a boolean where it takes a
@@ -91,7 +79,7 @@ which the later ones build on. Each step is decided in a note before it is made.
 
 The open questions that bear on cost — [a mailbox under a burst](open-questions.md#storage-and-reading),
 [the replies an entity holds](open-questions.md#storage-and-reading) and
-[one permit for the process](open-questions.md#running) — are decided after steps 1 and 8, which change what
+[one permit for the process](open-questions.md#running) — are decided after steps 1 and 7, which change what
 an event writes and what a machine holds.
 
 ## Later

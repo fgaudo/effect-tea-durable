@@ -22,6 +22,7 @@ import { SqlClient } from 'effect/sql'
 import * as Machine from './machine.ts'
 import {
   type Address,
+  checkProgram,
   type Creation,
   encode,
   Entities,
@@ -355,7 +356,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         // Built in the operation's fiber: a runner that throws while it builds its effect dies as the operation,
         // and suspends the entity, instead of the event that started it (decision 0042).
         const run = Effect.suspend(() =>
-          runner.delivery === 'Idempotent' ? runner.run(operation, idempotencyKey) : runner.run(operation)
+          runner === undefined
+            ? Effect.die(new Error(`no runner for '${operation._tag}', which the machine admits no operation without`))
+            : runner.delivery === 'Idempotent'
+            ? runner.run(operation, idempotencyKey)
+            : runner.run(operation)
         )
         const fiber = yield* Effect.forkIn(
           deployed.run(
@@ -823,6 +828,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
 
     const deploy = <T extends Types>(program: Program<T>) =>
       Effect.gen(function*() {
+        // A program that cannot run as written is refused before anything is stored or run (decision 0054).
+        yield* Effect.sync(() => checkProgram(program))
         const services = yield* Effect.context<Exclude<T['services'], Entities>>()
         const deployed: Deployment<T> = {
           program,
@@ -869,7 +876,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           consumers: deployed.storage.consumers,
           forget: (consumer) => deployed.storage.forget(consumer),
           resume: (id, fixed) =>
-            operate(deployed, id, fixed === undefined ? { _tag: 'Resume' } : { _tag: 'Resume', program: fixed }),
+            fixed === undefined
+              ? operate(deployed, id, { _tag: 'Resume' })
+              : Effect.andThen(
+                Effect.sync(() => checkProgram(fixed)),
+                operate(deployed, id, { _tag: 'Resume', program: fixed }),
+              ),
           discard: (id) => operate(deployed, id, { _tag: 'Discard' }),
         }
         return handle

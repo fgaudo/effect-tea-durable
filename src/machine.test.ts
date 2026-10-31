@@ -523,7 +523,7 @@ describe('the machine', () => {
           if (output._tag !== 'Started') continue
           const id = `${output.key}@${output.incarnation}`
           const known = started.get(id)
-          if (known === undefined && runnerOf(after.program, output.operation).delivery === 'AtMostOnce') {
+          if (known === undefined && runnerOf(after.program, output.operation)?.delivery === 'AtMostOnce') {
             atMostOnce.add(id)
           } else expect(atMostOnce.has(id)).toBe(false)
           if (known !== undefined) expect(output.idempotencyKey).toBe(known)
@@ -681,7 +681,7 @@ describe('the machine', () => {
               : output._tag === 'Replied' || output._tag === 'CreationReplied'
               ? `${output._tag} ${output.reply._tag}`
               : output._tag === 'Started'
-              ? `Started ${runnerOf(program, output.operation).delivery}`
+              ? `Started ${runnerOf(program, output.operation)?.delivery}`
               : output._tag,
           )
         }
@@ -1072,6 +1072,50 @@ describe('the keys a program declares', () => {
     expect(transition.machine.stored).toEqual({ ...machine.stored, suspension: transition.machine.stored.suspension })
     expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
     expect(transition.outputs.filter((output) => output._tag === 'Armed')).toEqual([])
+  })
+})
+
+describe('the runners a program gives', () => {
+  const inbound = { _tag: 'Receive', requestId: 'r', message: 'go', from: nobody } as const
+  // A cast lets a program through with no runner for an operation it holds: the machine admits none (decision
+  // 0054).
+  const unrun = (program: Program<Tiny>): Program<Tiny> => ({ ...program, operations: {} as Program<Tiny>['operations'] })
+  const missing = "the state holds the operation 'Work' under 'charge', which the program has no runner for"
+
+  test('a state that holds an operation the program has no runner for is a defect, and starts nothing', () => {
+    const machine = checked((message) => message, (state) => (state === 'start' ? {} : { charge: 'operation' }))
+    const transition = handled({ ...machine, program: unrun(machine.program) }, inbound)
+    expect(reasonOfSuspension(transition)).toBe(missing)
+    expect(transition.machine.stored.state).toEqual({ last: 'start' })
+    expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+  })
+
+  test('a first state that holds one stores nothing', () => {
+    const created = Machine.start(
+      unrun(tiny((message) => message, () => ({ charge: 'operation' }))),
+      'tiny',
+      null,
+      epoch,
+      { requestId: 'creation', from: nobody },
+    )
+    expect(created._tag === 'Defect' && created.cause instanceof InvariantDefect && created.cause.reason)
+      .toBe(missing)
+  })
+
+  test('a deploy with no runner for an operation under way leaves the entity as it was', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const transition = Machine.step(machine, { _tag: 'Restart', program: unrun(machine.program) })
+    expect(reasonOfSuspension(transition)).toBe(missing)
+    expect(transition.machine.stored).toEqual({ ...machine.stored, suspension: transition.machine.stored.suspension })
+    expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
+    expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+  })
+
+  test('a timer needs no runner', () => {
+    const machine = checked((message) => message, () => ({ deadline: 'timer' }))
+    const transition = Machine.step(machine, { _tag: 'Restart', program: unrun(machine.program) })
+    expect(transition.machine.stored.suspension).toBeNull()
+    expect(transition.outputs.map((output) => output._tag)).toEqual(['Armed'])
   })
 })
 

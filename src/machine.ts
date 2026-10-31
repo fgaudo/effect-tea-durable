@@ -28,14 +28,20 @@ import {
 /**
  * The work the state holds, under the keys the program declares and no others: a key it does not declare is a
  * defect, where the state holding it is read (decision 0037). The types catch a key a program never declared
- * where the state holds that key alone, and not where it holds a declared key beside a misspelt one.
+ * where the state holds that key alone, and not where it holds a declared key beside a misspelt one. So is an
+ * operation the program gives no runner for, which a cast lets through (decision 0054).
  */
 const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Work<T> => {
   const work = program.durable(state)
   const declared = new Set<string>(program.keys)
-  for (const key of Object.keys(work)) {
+  for (const [key, held] of Object.entries(work)) {
     if (!declared.has(key)) {
       throw new InvariantDefect({ reason: `the state holds work under '${key}', which the program does not declare` })
+    }
+    if (held !== undefined && !isTimer(held) && runnerOf(program, held) === undefined) {
+      throw new InvariantDefect({
+        reason: `the state holds the operation '${held._tag}' under '${key}', which the program has no runner for`,
+      })
     }
   }
   return work
@@ -219,13 +225,9 @@ export const workOf = <T extends Types>(stored: Stored<T>): Work<T> => {
 
 type Delivery = Runner<unknown, unknown, unknown>['delivery']
 
-/** How `program` delivers an operation, or `undefined` for a timer or an operation it has no runner for. */
-const deliveryOf = <T extends Types>(program: Program<T>, work: Durable<T['operation'], T['internal']>) => {
-  if (isTimer(work)) return undefined
-  // A program a deploy brings may have no runner for an operation it finds stored.
-  const runner: Runner<T['operation'], T['internal'], T['services']> | undefined = runnerOf(program, work)
-  return runner?.delivery
-}
+/** How `program` delivers an operation, or `undefined` for a timer. The work was admitted, so it has a runner. */
+const deliveryOf = <T extends Types>(program: Program<T>, work: Durable<T['operation'], T['internal']>) =>
+  isTimer(work) ? undefined : runnerOf(program, work)?.delivery
 
 /**
  * The keys once the state holds `next`, as `program` delivers it: what is the same as in `previous` keeps its

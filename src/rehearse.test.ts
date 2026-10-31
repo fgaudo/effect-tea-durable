@@ -100,3 +100,46 @@ describe('a deploy', () => {
       }),
     )))
 })
+
+describe('a program that cannot run as written', () => {
+  const reasonOf = (exit: Exit.Exit<unknown>) => {
+    const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+    return cause instanceof InvariantDefect ? cause.reason : null
+  }
+  const acted: Array<string> = []
+  const rehearsed = (program: typeof order) =>
+    rehearse(
+      program,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        acted.push('ran')
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+      }),
+    )
+
+  test('is refused before its scenario runs, as the runtime refuses it (decision 0054)', async () => {
+    const refused: ReadonlyArray<readonly [typeof order, string]> = [
+      [{ ...order, name: '' }, "the program '' has an empty name"],
+      [{ ...order, keys: [...order.keys, 'charge'] }, "the program 'Order' declares the key 'charge' twice"],
+      [
+        { ...order, indexes: { ...order.indexes, 'not a word': () => null } as typeof order.indexes },
+        "the program 'Order' has an index 'not a word' whose name is not a word",
+      ],
+    ]
+    for (const [program, reason] of refused) {
+      expect(reasonOf(await Effect.runPromiseExit(rehearsed(program)))).toBe(reason)
+    }
+    expect(acted).toEqual([])
+  })
+
+  test('is refused where a rehearsal deploys it', async () => {
+    const exit = await Effect.runPromiseExit(rehearse(
+      order,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.deploy({ ...order, keys: [...order.keys, 'refund'] })
+      }),
+    ))
+    expect(reasonOf(exit)).toBe("the program 'Order' declares the key 'refund' twice")
+  })
+})

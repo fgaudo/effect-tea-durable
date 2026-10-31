@@ -58,6 +58,11 @@ says of a state. The library relies on it — a step whose next state is the sam
 read, and an operation changed in place is never seen to change — and, as for purity, checks nothing of it
 ([decision 0052](decisions/0052-what-crosses-the-library-is-never-mutated.md)).
 
+A program is checked where it enters — `deploy`, `resume` with a fixed program, `rehearse` — before anything is
+stored or run: one whose name is empty, which declares a key twice, or one of whose indexes is not a word, is
+refused. The check is pure and made once, since a program is never mutated
+([decision 0054](decisions/0054-a-program-is-checked-where-it-enters.md)).
+
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
 
 ## Messages
@@ -99,7 +104,9 @@ keys is finite, and a key a program computes is not one of them
 ([decision 0033](decisions/0033-a-program-declares-its-keys.md)). The types catch a key never declared; a
 declared key beside a misspelt one they accept, so the machine checks what `durable` returns against `keys`
 wherever it reads it, and a key the program does not declare is a defect
-([decision 0037](decisions/0037-the-machine-checks-the-declared-keys.md)). The runtime compares the work with
+([decision 0037](decisions/0037-the-machine-checks-the-declared-keys.md)). So is an operation the program gives
+no runner for, which a cast lets through
+([decision 0054](decisions/0054-a-program-is-checked-where-it-enters.md)). The runtime compares the work with
 the previous state's, as effect-tea compares subscriptions:
 
 - a new key starts its work;

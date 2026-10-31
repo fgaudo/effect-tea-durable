@@ -3,6 +3,7 @@ import * as Effect from 'effect/Effect'
 import * as Machine from './machine.ts'
 import {
   type Address,
+  checkProgram,
   type Durable,
   encode,
   type IdempotencyKey,
@@ -69,7 +70,8 @@ export const rehearse = <T extends Types, E>(
   start: Readonly<{ flags: T['flags']; at: DateTime.Utc }>,
   scenario: (rehearsal: Rehearsal<T>) => Effect.Effect<void, E>,
 ): Effect.Effect<void, E> =>
-  Effect.suspend(() => {
+  // A program the runtime would refuse is refused here too, before the scenario runs (decision 0054).
+  Effect.andThen(Effect.sync(() => checkProgram(program)), () => {
     const created = Machine.start(program, id, start.flags, start.at, {
       requestId: 'creation',
       // No one retries the rehearsal's creation, so it is stored under the entity itself: no sender is needed.
@@ -158,6 +160,7 @@ export const rehearse = <T extends Types, E>(
           return Effect.map(apply({ _tag: 'Fire', key, incarnation }), outcome(pending))
         }),
       restart: Effect.asVoid(apply({ _tag: 'Restart' })),
-      deploy: (program) => Effect.asVoid(apply({ _tag: 'Restart', program })),
+      deploy: (program) =>
+        Effect.andThen(Effect.sync(() => checkProgram(program)), Effect.asVoid(apply({ _tag: 'Restart', program }))),
     })
   })
