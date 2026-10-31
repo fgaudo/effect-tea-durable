@@ -81,12 +81,13 @@ own ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-
   runtime's. The sender in Cluster's primary key is decided: the key is the request's `requestKey`
   ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md)), and the version that keyed
   it ([decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)). So is what Cluster stores
-  that is not a reply: a request answered `Suspended` or `NotFound` is handled again when sent again, and a
-  resumption has the message the entity died on delivered again
-  ([decision 0087](decisions/0087-on-cluster-what-is-not-a-reply-is-handled-again.md)).
+  that is not a reply: a request answered `Suspended` or `NotFound` is handled again when sent again
+  ([decision 0087](decisions/0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and the message an entity dies
+  on stays in the runtime's mailbox, where a resumption handles it ([decision 0088](decisions/0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md)).
 - **What stays the runtime's**: passivation, the capacity, the suspension of a defect, the timers beside `DeliverAt`,
-  an operation that waits for a program no runner deploys, and how one that waits on a suspended entity learns that
-  it is resumed ([decision 0087](decisions/0087-on-cluster-what-is-not-a-reply-is-handled-again.md)).
+  an operation that waits for a program no runner deploys, how one that waits on a suspended entity learns that
+  it is resumed ([decision 0087](decisions/0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and how the step
+  of an RPC whose message is queued behind the entity's own work gets its answer ([decision 0088](decisions/0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md)).
 - **Two versions at once** ([open question](open-questions.md#running)): Cluster's runners carry no version, and a
   shard may go back to an older one.
 
