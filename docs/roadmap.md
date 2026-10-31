@@ -95,7 +95,10 @@ The others:
   one that waits on a suspended entity learns that it is resumed
   ([decision 0087](decisions/0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and how the step of an RPC
   whose message is queued behind the entity's own work gets its answer
-  ([decision 0088](decisions/0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md)).
+  ([decision 0088](decisions/0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md)). Before it is
+  taken, it decides how the Cluster id of a request answered with Cluster's defect is kept
+  ([decision 0096](decisions/0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md)), and gets its
+  section `What it rests on` ([decision 0093](decisions/0093-a-note-says-what-each-premise-rests-on.md)).
 - **Two versions at once** ([open question](open-questions.md#running)): Cluster's runners carry no version, and a
   shard may go back to an older one.
 

@@ -18,6 +18,11 @@ This repository is a design and its pure core, not a library yet: read [`README.
   [`docs/decisions/README.md`](docs/decisions/README.md) by what it decides, with the notes that changed it,
   updated by the commit that adds or changes a note. A question not decided yet goes in
   `docs/open-questions.md`, and leaves it when a note decides it. A step of the roadmap leaves it when done.
+- A note lists, in a section `What it rests on`, each premise its decision falls without, and says of each whether it
+  is tested (naming the test), documented, seen in a spike, read in a dependency's source, or only reasoned.
+- Once fifteen notes are taken since the last review, a review reads them before the next step starts, from
+  `reasoned` up, in a session that did not write them. What it finds is a note, a test, a fix or an open question,
+  and the review is listed at the end of [`docs/decisions/README.md`](docs/decisions/README.md).
 - The examples import the library from `src/`. When the design changes, the code, its tests and the examples
   change with it, and `bun run typecheck` and `bun test` pass.
 - [`src/machine.ts`](src/machine.ts) is the runtime's semantics. A rule it adds or changes is a decision, and

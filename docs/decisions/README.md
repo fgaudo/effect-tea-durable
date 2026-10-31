@@ -17,6 +17,8 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0080](0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) |
 | [0083](0083-effect-moves-to-4-1-1.md) | Effect moves to 4.1.1 |  |
 | [0089](0089-a-note-says-what-changed-it-and-is-taken-with-its-step.md) | A note says what changed it, and is taken with its step |  |
+| [0093](0093-a-note-says-what-each-premise-rests-on.md) | A note says what each premise rests on |  |
+| [0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md) | The notes are reviewed every fifteen, by a reader that did not write them |  |
 | [0024](0024-not-taken.md) | Not taken |  |
 
 ## The machine and the program
@@ -143,12 +145,23 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | Note | Decides | Changed by |
 | --- | --- | --- |
 | [0081](0081-on-cluster-a-step-commits-with-its-reply.md) | On Cluster, a step commits with its reply | [0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md), [0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md), [0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md), [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md), [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
-| [0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md) | What 0081 saw of a defect is not Cluster's contract | [0083](0083-effect-moves-to-4-1-1.md) |
+| [0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md) | What 0081 saw of a defect is not Cluster's contract | [0083](0083-effect-moves-to-4-1-1.md), [0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md) |
 | [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) | A step commits only where the commit checks the shard |  |
 | [0085](0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md) | On Cluster, a request is keyed as the machine keys it | [0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md) |
 | [0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md) | On Cluster, a request is keyed by its version too | [0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md) |
 | [0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md) | On Cluster, what is not a reply is handled again | [0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md) |
 | [0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md) | On Cluster, the message an entity dies on stays in its mailbox |  |
-| [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it |  |
-| [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) | On Cluster, an interrupted caller leaves its request alone |  |
+| [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it | [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) |
+| [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) | On Cluster, an interrupted caller leaves its request alone | [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) |
 | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each (proposed) |  |
+| [0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md) | Cluster restarts an entity after a defect, whatever its policy |  |
+| [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) | Cluster stores an answer no step gave, for a type not registered |  |
+
+## Reviews
+
+Each review of the notes, as [decision 0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md)
+has them made: the notes it read, and what it found.
+
+| Date | Read | Found |
+| --- | --- | --- |
+| 2026-10-31 | 0080 to 0091, and 0092 (proposed) | [0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md): a `defectRetryPolicy` that gives up does not end Cluster's retry; [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md): Cluster stores a defect no step gave for a type not registered, and 0090 keeps no id for it. Of 0092, for its step: a receiver's defect is not saved, and the id of a request answered with Cluster's defect has to be kept. Not checked: 0080's hold of a database not in WAL mode, which no test runs. |

@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-10-31. Corrects [decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md): a caller
 interrupted while it waits has Cluster store an answer no step gave. Found by the review of
-[decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md).
+[decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md). That every answer Cluster stores for an
+entity is a step's does not hold of a type its runner did not register, by
+[decision 0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md).
 
 ## Context
 

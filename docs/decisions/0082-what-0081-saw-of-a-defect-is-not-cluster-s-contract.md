@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-10-31. Corrects the reasons [decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md)
 gives against letting a defect reach Cluster; its decision stands. What it says it did not know of the stall is
-corrected by [decision 0083](0083-effect-moves-to-4-1-1.md).
+corrected by [decision 0083](0083-effect-moves-to-4-1-1.md). That a `defectRetryPolicy` that gives up would end the
+retry is corrected by [decision 0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md).
 
 ## Context
 

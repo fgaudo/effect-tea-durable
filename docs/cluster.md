@@ -117,8 +117,9 @@ rollback, and a request sent again is answered from its stored reply without the
 what the documentation of `WithTransaction` says. It found what a defect does too, which is of two other kinds
 ([decision 0082](decisions/0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md)):
 
-- **An option.** The entity restarts after `defectRetryPolicy` and is given the message again, without end under the
-  default policy, its later messages waiting behind it.
+- **An option.** The entity restarts after `defectRetryPolicy` and is given the message again, without end whatever the
+  policy, which is concatenated with an endless default, its later messages waiting behind it
+  ([decision 0095](decisions/0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md)).
 - **A bug, of 4.1.0 and 4.1.1.** Once that message's caller is interrupted, by a timeout, messages to the runner's
   other entities are never delivered, with or without `WithTransaction`, on `TestRunner` too; a request that is only
   slow does not do it. Traced with logs: the runner's read of storage delivers messages one at a time, and stops on
