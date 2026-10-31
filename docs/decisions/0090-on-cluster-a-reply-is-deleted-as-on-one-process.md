@@ -1,6 +1,6 @@
 # 0090. On Cluster, a reply is deleted as on one process, and Cluster's rows with it
 
-**Status:** proposed, 2026-10-31. Proposes the [roadmap](../roadmap.md)'s finding on requests and replies from
+**Status:** accepted, 2026-10-31. Decides the [roadmap](../roadmap.md)'s finding on requests and replies from
 [Effect Cluster](../cluster.md#the-decisions-it-bears-on): what deletes a reply there. Corrects what
 [decision 0021](0021-a-reply-is-kept-while-the-work-that-asked-holds.md) says of Cluster in its consequences.
 
