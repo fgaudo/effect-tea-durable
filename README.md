@@ -28,6 +28,25 @@ flowchart LR
   project -->|projection, when it changes| outbox
 ```
 
+## Why
+
+The bugs of an entity that lives in time are the costly ones: a timer that fires after a cancellation, a payment
+taken twice, a process that died halfway through. The code that prevents them is the same for every entity —
+a request applied once, a timer that survives a restart, work resumed after a crash, an outbox, the migrations
+of what is stored — and this library writes it once, so that a program holds only its use case.
+
+- **Written by an agent, checked by a person.** A program is pure functions over data, declared in one place,
+  with nothing of storage, locks, retries or timers to write: what an agent can get wrong is the use case, and a
+  type error or a scenario that fails tells it so without a database or a clock. A person then reads `update`,
+  `durable` and `project`, and the scenarios, which read as the use case does, crashes included. What holds
+  where the process may die is checked once, in the library, and not again in each program.
+- **Nothing is left to cancel.** There are no commands: the work under way is what the state says it is. A
+  state that holds no timer has no timer, and a cancellation that forgets one cannot be written.
+- **Time is a value.** A timer is data, derived from the state, and a test fires it instead of waiting for it: a
+  deadline a month away is tested as fast as one a second away.
+- **One model, in the browser and on the server.** A program is written as in effect-tea: who writes the Elm
+  architecture for a screen writes it the same way for an order.
+
 **This repository holds a design, its pure core, and a runtime on SQLite that runs on one process.** It has:
 
 - [`docs/design.md`](docs/design.md): what the library is for, its model of execution, and what it guarantees
