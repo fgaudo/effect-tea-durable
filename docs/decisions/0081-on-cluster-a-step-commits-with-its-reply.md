@@ -6,7 +6,9 @@ consequence for Cluster, and says that [decision 0074](0074-a-message-that-finds
 does not hold there. Its reasons against letting a defect reach Cluster are corrected by
 [decision 0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md), what it says of a stored answer is changed
 by [decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md), and what it says of the runtime's mailbox
-there is corrected by [decision 0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md).
+there is corrected by [decision 0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md). An
+interrupted caller had Cluster store an answer no step gave, which
+[decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) corrects.
 
 ## Context
 

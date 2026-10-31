@@ -81,7 +81,10 @@ own ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-
   process, since one statement still reads both shards, and Cluster's rows with it, by statements of the runtime's
   until Cluster has an operation that forgets a processed request, which
   [Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239) asks
-  ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). The sender in Cluster's primary key is decided: the key is the request's `requestKey`
+  ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). Its review found that a caller
+  that stops waiting had Cluster store an answer no step gave, and it is fixed: an interrupted caller leaves its
+  request alone ([decision 0091](decisions/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)). The
+  sender in Cluster's primary key is decided: the key is the request's `requestKey`
   ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md)), and the version that keyed
   it ([decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-too.md)). So is what Cluster stores
   that is not a reply: a request answered `Suspended` or `NotFound` is handled again when sent again

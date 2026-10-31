@@ -127,6 +127,13 @@ what the documentation of `WithTransaction` says. It found what a defect does to
   ([decision 0083](decisions/0083-effect-moves-to-4-1-1.md)). Reported as
   [Effect-TS/effect#10238](https://github.com/Effect-TS/effect/issues/10238).
 
+A caller that stops waiting is not a defect, and stores an answer too. A fiber interrupted while it waits for a
+persisted RPC has Cluster's client store an `Interrupt` under the request's id, unless Cluster is shutting down or
+tearing the caller down; the receiver interrupts the request if it waits or runs, and saves the interruption as its
+reply, so the same key sent again is answered with it and the handler never runs. `ClusterSchema.Uninterruptible`
+set to `"client"` keeps the client from sending it, and the request is handled when its turn comes
+([decision 0091](decisions/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
+
 What stays two transactions:
 
 - **The arrival of a message and its handling.** `saveRequest` commits the message, and the handler commits the
@@ -179,7 +186,8 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
 
 - **[0007](decisions/0007-one-process-first.md)** — one transaction is possible with `WithTransaction` and one
   `SqlClient`; the state need not record the last message it handled. Decided: a step commits with its reply
-  ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)).
+  ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)), and a caller that stops waiting stores
+  no answer ([decision 0091](decisions/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
 - **[0015](decisions/0015-a-request-belongs-to-its-sender.md)**, **[0017](decisions/0017-creation-in-the-machine.md)**
   — Cluster's deduplication is by a primary key global to the receiver; the sender's address goes into the key.
   The 255-character limit is Cluster's own and is met by its hashing, apart from the

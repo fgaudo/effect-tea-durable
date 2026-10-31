@@ -28,7 +28,8 @@ then hold as they hold on one process:
 - **Nothing sends under a key once its work ended.** An operation leaves only through its completion
   ([decision 0005](0005-an-operation-leaves-only-by-completing.md)), so its fiber is done before the step that
   delivers the completion ends the work, or died with its process when the completion is an at-most-once
-  operation's `unknown`; a suspension or an unload stops the fiber, but the work still holds.
+  operation's `unknown`; a suspension or an unload stops the fiber, but the work still holds, and the request the
+  fiber waited for is still handled ([decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
 
 Cluster's own rows are another matter. A spike against `effect` 4.1.1, with `SingleRunner` on
 `@effect/sql-sqlite-bun`, and an entity whose persisted RPC runs under `WithTransaction` and counts its runs, found:
@@ -58,10 +59,17 @@ Cluster has no operation that forgets a processed request without delivering it 
   answered `Suspended` or `NotFound` is reset and delivered again under the same id
   ([decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and a retry across versions is a new
   request to Cluster, under an id of its own ([decision 0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md)):
-  each id is kept.
+  each id is kept. Every answer Cluster stores for an entity is a step's, since a caller that stops waiting stores
+  none (decision 0091), so every id that has rows to delete is kept.
 - **The asker's step whose work ended deletes Cluster's rows with the runtime's replies**: every row in
-  `cluster_messages` and `cluster_replies` under the ids kept for that work, and the ids, in its transaction. Each
-  of them is processed, since an id is kept by the step that answers its request, in Cluster's transaction.
+  `cluster_messages` and `cluster_replies` under the ids kept for that work — the request, and any envelope stored
+  under its id — and the ids, in its transaction. An id is kept by the step that answers its request, in Cluster's
+  transaction, so its request is processed, but for one case: a request answered `Suspended` or `NotFound` and reset
+  by its asker's client (decision 0087), whose process died before it sent the request again. The asker's work then
+  ends with an at-most-once operation's `unknown`, and its step deletes the rows of a request Cluster will deliver
+  again. If Cluster has not read it yet, the message is lost, as `unknown` allows. If Cluster holds it in memory, a
+  step handles it, finds the asker's work ended, and leaves its id pending, as below; Cluster's tables have no
+  foreign key on SQLite, so the reply Cluster then saves is a row of its own, deleted with the pending id.
 - **A request answered after its asker's work ended leaves its Cluster request id pending**, in a row written in
   the step's transaction instead of the one above. Every step first deletes, in its transaction, Cluster's rows under
   the pending ids and the pending rows, all written by steps that have committed, and only then writes its own: the
