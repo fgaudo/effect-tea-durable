@@ -21,6 +21,7 @@ import * as Machine from './machine.ts'
 import {
   defect,
   type IdempotencyKey,
+  InvariantDefect,
   isTimer,
   type Json,
   noWork,
@@ -1498,5 +1499,29 @@ describe('what the runtime cannot finish', () => {
       expect(observed.filter((event) => event === 'Restart')).toEqual([])
       const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
       expect(stored?.state.applied).toEqual(['n-2'])
+    })))
+
+  test('flags their schema cannot encode are their creator’s defect, whether the entity exists or not', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const wrong = { at: 'now' } as unknown as T['flags']
+      const reasonOf = (exit: Exit.Exit<unknown>) => {
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        return cause instanceof InvariantDefect ? cause.reason : null
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          // Nothing is created from them (decision 0049).
+          const fresh = yield* Effect.exit(toy.create('toy-2', wrong, { requestId: 'c-2', sender: tester }))
+          expect(reasonOf(fresh)).toStartWith('the value of the flags does not encode')
+          expect(yield* toy.read('toy-2')).toBeNull()
+          // Nor is an existing entity's `AlreadyExists` given for them: they never reach it.
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          const again = yield* Effect.exit(toy.create(id, wrong, { requestId: 'c-1', sender: tester }))
+          expect(reasonOf(again)).toStartWith('the value of the flags does not encode')
+          yield* runtime.settled
+        }))
     })))
 })

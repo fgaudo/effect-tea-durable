@@ -20,7 +20,7 @@ import {
 } from '../../src/index.ts'
 import { inventory } from './inventory.ts'
 
-// Decoded with the flags, before the booking exists: a booking holds some seats.
+// Checked with the flags, before the booking exists: a booking holds some seats (decision 0049).
 const Seats = Schema.Int.check(Schema.isGreaterThan(0))
 
 const Booking = Schema.Struct({

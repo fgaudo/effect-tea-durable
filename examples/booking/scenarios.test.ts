@@ -18,6 +18,13 @@ const start = { flags: { customer: 'ada', event: 'concert-1', seats: 2 }, at: bo
 const ada: Sender = { _tag: 'Customer', id: 'ada' }
 
 describe('booking', () => {
+  test('a booking of no seats is never created', async () => {
+    const exit = await Effect.runPromiseExit(
+      rehearse(booking, { ...start, flags: { ...start.flags, seats: 0 } }, () => Effect.void),
+    )
+    expect(exit._tag).toBe('Failure')
+  })
+
   test('held seats are confirmed', () =>
     Effect.runPromise(rehearse(
       booking,

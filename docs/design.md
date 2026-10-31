@@ -190,7 +190,9 @@ encoded side is not JSON does not compile: a time is held as `Schema.DateTimeUtc
 `Schema.DateTimeUtc` ([decision 0030](decisions/0030-a-schema-encodes-to-json.md)). A value its schema refuses,
 or that encodes to a number JSON does not hold (`NaN`, `Infinity`), cannot be stored: the machine encodes what a
 step would store, and such a step is a defect; an inbound message that does not encode is its caller's defect,
-and reaches no entity ([decision 0040](decisions/0040-what-is-stored-encodes-to-json-as-it-is.md)).
+and reaches no entity ([decision 0040](decisions/0040-what-is-stored-encodes-to-json-as-it-is.md)). So are flags
+that do not encode: `init` sees only flags its schema takes
+([decision 0049](decisions/0049-flags-are-checked-by-their-schema.md)).
 
 A reply to another entity is deleted in the transaction that ends the work that asked for it, or in the one that
 stores it, if that work has already ended

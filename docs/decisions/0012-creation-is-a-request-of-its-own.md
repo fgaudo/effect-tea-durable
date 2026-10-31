@@ -1,6 +1,7 @@
 # 0012. Creating an entity is a request of its own
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its consequence that flags are decoded before anything is stored is replaced by
+[decision 0049](0049-flags-are-checked-by-their-schema.md).
 
 ## Context
 

@@ -206,9 +206,9 @@ interface Deployment<T extends Types> {
 const under = (key: string, incarnation: number) => `${key}@${incarnation}`
 
 /**
- * A defect that is its caller's, not the receiver's: a message that does not encode, a creation that `init` dies
- * on. Every caller is given it as a defect, and an operation is suspended on it; any other defect of a delivery is
- * the receiver's crash, which an operation sends again after (decision 0046).
+ * A defect that is its caller's, not the receiver's: a message or flags that do not encode, a creation that
+ * `init` dies on. Every caller is given it as a defect, and an operation is suspended on it; any other defect of a
+ * delivery is the receiver's crash, which an operation sends again after (decision 0046).
  */
 class Faulted {
   readonly _tag = 'Faulted'
@@ -600,9 +600,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       Effect.gen(function*() {
         const entity: Address = { name: deployed.program.name, id }
         // A caller's creation is stored under its sender, which a sender that does not encode cannot be: the
-        // caller's defect, as for a message (decisions 0040, 0048).
+        // caller's defect, as for a message (decisions 0040, 0048). So are flags that do not encode, whether the
+        // entity exists or not (decision 0049).
         const requested = yield* Effect.try({
-          try: () => Machine.requestKey(deployed.program, request.from, request.requestId),
+          try: () => {
+            encode(deployed.program.schemas.flags, flags, 'value of the flags')
+            return Machine.requestKey(deployed.program, request.from, request.requestId)
+          },
           catch: (defect) => new Faulted(defect),
         })
         const asked = yield* registry.withPermits(1)(Effect.gen(function*() {

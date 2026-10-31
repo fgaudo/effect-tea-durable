@@ -22,12 +22,14 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0009](decisions/0009-entities-talk-through-operations.md)). Is a rehearsal of several entities
   needed, where `send` reaches the other program, or a check that two programs agree on their messages?
 - **Who may send what.** `update` reads `meta.from` and rejects what a sender may not do. Should authorization
-  that is not domain (a valid token) happen before the mailbox, and what does the caller get then, or for
-  flags that do not decode? And who may create an entity, since `init` sees no sender
-  ([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md))? A defect at creation stores nothing
-  ([decision 0014](decisions/0014-rules-the-machine-settled.md)): what is its creator answered? A caller's
-  requests are its sender's ([decision 0048](decisions/0048-a-callers-request-belongs-to-its-sender.md)), so
-  how fine a sender is says whose request ids are whose.
+  that is not domain (a valid token) happen before the mailbox, and what does the caller get then? Flags and
+  messages that do not encode are the caller's defect, not a reply
+  ([decision 0049](decisions/0049-flags-are-checked-by-their-schema.md)). And who may create an entity, since
+  `init` sees no sender ([decision 0012](decisions/0012-creation-is-a-request-of-its-own.md))? A defect at
+  creation stores nothing ([decision 0014](decisions/0014-rules-the-machine-settled.md)): what is its creator
+  answered? A caller's requests are its sender's
+  ([decision 0048](decisions/0048-a-callers-request-belongs-to-its-sender.md)), so how fine a sender is says
+  whose request ids are whose.
 
 ## Storage and reading
 

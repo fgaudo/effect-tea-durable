@@ -365,7 +365,10 @@ const activate = <T extends Types>(
 
 export type Start<T extends Types> =
   | Readonly<{ _tag: 'Created' } & Transition<T>>
-  /** `init`, `durable`, `project` or an index died on the first state: nothing is stored. */
+  /**
+   * The flags do not encode, or `init`, `durable`, `project` or an index died on the first state: nothing is
+   * stored.
+   */
   | Readonly<{ _tag: 'Defect'; cause: unknown }>
 
 /** Creates the entity `id` from its flags, answers the request `Created`, and activates it. */
@@ -379,6 +382,9 @@ export const start = <T extends Types>(
   let state: T['state']
   let work: Work<T>
   try {
+    // `init` is given the flags its schema takes, and no others: flags that do not encode are a defect, and
+    // nothing is stored (decision 0049).
+    encode(program.schemas.flags, flags, 'value of the flags')
     state = program.init(flags, at)
     work = admitted(program, state)
   } catch (cause) {

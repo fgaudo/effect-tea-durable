@@ -926,6 +926,24 @@ describe('what a runtime writes', () => {
     expect(created._tag).toBe('Defect')
   })
 
+  test('flags a refinement of their schema refuses never reach init, and store nothing (decision 0049)', () => {
+    const initialized: Array<unknown> = []
+    const base = tiny((message) => message, () => ({}))
+    // A refinement is no rule of the types: flags of the right type its schema refuses.
+    const program: Program<Tiny> = {
+      ...base,
+      schemas: { ...base.schemas, flags: Schema.Null.check(Schema.makeFilter(() => 'no flags are taken')) },
+      init: (flags) => {
+        initialized.push(flags)
+        return { last: 'start' }
+      },
+    }
+    const created = Machine.start(program, 'tiny', null, epoch, { requestId: 'creation', from: nobody })
+    expect(created._tag === 'Defect' && created.cause instanceof InvariantDefect && created.cause.reason)
+      .toStartWith('the value of the flags does not encode')
+    expect(initialized).toEqual([])
+  })
+
   test('an operation whose message does not encode suspends the entity on the operation', () => {
     const machine = checked((message) => message, (state) => (state === 'start' ? { charge: 'operation' } : {}))
     const transition = Machine.step(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 1 as never })
