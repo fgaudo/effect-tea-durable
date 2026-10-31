@@ -14,5 +14,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   change with it, and `bun run typecheck` and `bun test` pass.
 - [`src/machine.ts`](src/machine.ts) is the runtime's semantics. A rule it adds or changes is a decision, and
   [`src/machine.test.ts`](src/machine.test.ts) has a test that fails without it.
+- A change to [`src/runtime.ts`](src/runtime.ts) that adds or moves a wait, a lock, a fork, or state another
+  fiber reads has a test in [`src/runtime.test.ts`](src/runtime.test.ts) that fails or hangs without it, run
+  against the code before the change. Where the interleaving cannot be reached — `Scheduler.MaxOpsBeforeYield`
+  is how a test moves the points where fibers yield — the decision says why, and why the change holds.
 - The design follows effect-tea's Guide (`README.md` of `github.com/fgaudo/effect-tea`) wherever the Guide
   applies; `docs/design.md` says where a server departs from it, and why.
