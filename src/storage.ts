@@ -381,9 +381,9 @@ export interface Storage<T extends Types> {
   /**
    * Writes the row of every entity of the program again, from its stored state: what an index added or changed
    * by a new version of the program needs, since a row is only written when its entity takes a step. Each row is
-   * its own write, so a crash leaves the rest to the next run, and gives how many were written. An entity that
-   * takes a step between the reading of its state and the writing of its row has that row written back as it
-   * was, and the step after it writes the row again.
+   * its own write, so a crash leaves the rest to the next run, and gives how many were written. A row is written
+   * only if the state it was computed from is still the one stored: an entity that took a step since wrote its own
+   * (decision 0070).
    */
   readonly reindex: Effect.Effect<number>
   /**
@@ -842,9 +842,19 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       `)
       if (page.length === 0) return written
       for (const held of page) {
-        yield* row(held.id, Machine.shownOf(program, state.read(held.state, up('state', held.version))))
+        // The row is written only if the state it was computed from is still the one stored, in one statement:
+        // a step that committed since wrote its own row, which this would replace with a projection the entity
+        // has moved past (decision 0070).
+        const shown = Machine.shownOf(program, state.read(held.state, up('state', held.version)))
+        const rewritten = yield* rows('projections', Rows.id)(sql`
+          INSERT OR REPLACE INTO projections (name, id, projection, indexes, version)
+          SELECT name, id, ${JSON.stringify(shown.projection)}, ${JSON.stringify(shown.indexes)}, ${version}
+          FROM entities WHERE name = ${name} AND id = ${held.id} AND state = ${held.state}
+            AND version = ${held.version}
+          RETURNING id
+        `)
         cursor = held.id
-        written += 1
+        written += rewritten.length
       }
     }
   }).pipe(Effect.orDie)

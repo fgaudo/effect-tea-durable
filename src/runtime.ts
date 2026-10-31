@@ -109,8 +109,8 @@ export interface Handle<T extends Types> {
   /**
    * Writes the read model of every entity of the program again, from its stored state, and gives how many: what
    * an index a new version of the program added or changed needs, since a row is written when its entity takes a
-   * step. An operator runs it after such a deploy (decision 0032). An entity that takes a step while it runs may
-   * have its row written back as it was, and writes it again at its next step.
+   * step. An operator runs it after such a deploy (decision 0032). An entity that takes a step while it runs keeps
+   * the row its step wrote (decision 0070).
    */
   readonly reindex: Effect.Effect<number>
   /**

@@ -350,7 +350,9 @@ with the values a caller reads of a single entity, and nothing is queried that a
 
 `query` takes the criteria that hold, an index to order by and a limit, and gives the ids found with their
 projections; `reindex` writes every row again from the stored states, which is what an index added or changed
-by a new version of the program needs. [`examples/order/runtime.test.ts`](../examples/order/runtime.test.ts)
+by a new version of the program needs. It runs while entities step, and writes a row only if the state it was
+computed from is still the one stored, in one statement: a step that committed since keeps the row it wrote
+([decision 0070](decisions/0070-reindex-writes-a-row-only-over-its-state.md)). [`examples/order/runtime.test.ts`](../examples/order/runtime.test.ts)
 asks for the orders still awaiting their payment.
 
 ## Publishing what happened

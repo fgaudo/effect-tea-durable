@@ -1088,6 +1088,46 @@ describe('the read model', () => {
             .toEqual(held)
         }))
     })))
+
+  // A row is written only if the state it was computed from is still the one stored (decision 0070).
+  test('reindex leaves no row a step has moved past, however often the fibers yield', async () => {
+    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
+    for (const budget of budgets) {
+      await database(Effect.gen(function*() {
+        const at = yield* DateTime.now
+        // Forty toys more, walked before the one that steps, so that the walk is long enough to be stepped into.
+        const walked = [...Array.from({ length: 40 }, (_, n) => `s-${String(n).padStart(2, '0')}`), ...ids]
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* settled(runtime, at)
+            for (const id of walked.slice(0, 40)) {
+              yield* toy.create(id, { at }, { requestId: `c-${id}`, sender: tester })
+            }
+            yield* runtime.settled
+            yield* TestClock.adjust('60 millis')
+            yield* runtime.settled
+          }))
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const { layer } = yield* hands({ holds: true })
+            const toy = yield* Effect.provide(runtime.deploy(negated), layer)
+            // The step lands somewhere in the walk, where the row of 't-3' may be computed before it and written
+            // after it.
+            const reindexing = yield* Effect.forkChild(toy.reindex)
+            yield* Effect.yieldNow
+            yield* toy.send('t-3', { _tag: 'Want', key: 'a', on: true, nonce: 'on' }, {
+              requestId: 'on',
+              sender: tester,
+            })
+            yield* Fiber.join(reindexing)
+            const read = yield* Effect.forEach(walked, (id) =>
+              Effect.map(toy.read(id), (projection) => ({ id, projection })))
+            const rows: ReadonlyArray<unknown> = yield* toy.query({})
+            expect({ budget, rows }).toEqual({ budget, rows: read })
+          }))
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+  }, 30_000)
 })
 
 describe('publishing what happened', () => {
