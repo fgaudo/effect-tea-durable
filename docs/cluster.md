@@ -1,7 +1,9 @@
 # Effect Cluster, as the runtime would meet it
 
-A study of `effect/cluster` at `effect` 4.1.0, the version the project pins
-([decision 0019](decisions/0019-unstable-effect-modules.md)), read from its source in `node_modules/effect/src/cluster`
+A study of `effect/cluster` at `effect` 4.1.0, the version the project pinned then
+([decision 0019](decisions/0019-unstable-effect-modules.md)); 4.1.1, pinned since
+([decision 0083](decisions/0083-effect-moves-to-4-1-1.md)), changes none of what it says, and saves a success reply
+under `WithTransaction` once instead of up to four times. Read from its source in `node_modules/effect/src/cluster`
 (and `HashRing.ts` beside it) and from `ai-docs/src/80_cluster`. It says what Cluster gives, what it leaves to the runtime, and which decisions
 it bears on. Nothing here is decided: each finding is decided in a note of its own, as the
 [roadmap](roadmap.md) says, and the list [at the end](#the-decisions-it-bears-on) links the notes taken.
@@ -99,10 +101,12 @@ what the documentation of `WithTransaction` says. It found what a defect does to
 
 - **An option.** The entity restarts after `defectRetryPolicy` and is given the message again, without end under the
   default policy, its later messages waiting behind it.
-- **Seen only, likely a bug of 4.1.0.** Once that message's caller is interrupted, by a timeout, messages to the
-  runner's other entities wait as well, for 25 s and more, with or without `WithTransaction`; a request that is only
-  slow does not do it. In the source, the runner's read of storage delivers messages one at a time, and the caller's
-  `Interrupt` waits for the entity's handlers, which a restart from a defect never keeps ready for long.
+- **A bug, of 4.1.0 and 4.1.1.** Once that message's caller is interrupted, by a timeout, messages to the runner's
+  other entities are never delivered, with or without `WithTransaction`, on `TestRunner` too; a request that is only
+  slow does not do it. Traced with logs: the runner's read of storage delivers messages one at a time, and stops on
+  the caller's `Interrupt`, which waits for the entity's handlers; each rebuild replays the message that dies and fails
+  before it publishes them, so the wait lasts while the handler dies
+  ([decision 0083](decisions/0083-effect-moves-to-4-1-1.md)).
 
 What stays two transactions:
 
@@ -185,4 +189,4 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
   SQLite it is confirmed by the step's commit, on PostgreSQL and MySQL before it, not by it, and whether the
   runtime adds a fence there is to be decided.
 - **[0019](decisions/0019-unstable-effect-modules.md)** — everything read here is `@stability unstable` in
-  `effect` 4.1.0.
+  `effect` 4.1.0 and 4.1.1.
