@@ -18,5 +18,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
   fiber reads has a test in [`src/runtime.test.ts`](src/runtime.test.ts) that fails or hangs without it, run
   against the code before the change. Where the interleaving cannot be reached — `Scheduler.MaxOpsBeforeYield`
   is how a test moves the points where fibers yield — the decision says why, and why the change holds.
+- The two diagrams in [`README.md`](README.md) show an entity's loop and the modules of `src/`. A change that
+  adds, removes or renames a piece of a program, a message, a flow, a module or a table they show changes them
+  in the same commit.
 - The design follows effect-tea's Guide (`README.md` of `github.com/fgaudo/effect-tea`) wherever the Guide
   applies; `docs/design.md` says where a server departs from it, and why.

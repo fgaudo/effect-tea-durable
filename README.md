@@ -5,6 +5,29 @@ whose state survives crashes, restarts and deploys. A program is written as in
 [effect-tea](https://github.com/fgaudo/effect-tea), with a pure `update`, and tested without a database, a
 cluster or a clock.
 
+An entity keeps one **state**. A pure **`update`** changes it in response to messages. There are no commands:
+the work under way — operations, as data, and timers — is derived from the state by **`durable`**, by key, and
+answers with messages of the same incarnation. Callers read a **projection**, made from the state, which is
+also the row a query reads and what the outbox publishes.
+
+```mermaid
+flowchart LR
+  caller -->|create, with flags| init
+  init --> state([state])
+  caller -->|inbound message, with a request id| update
+  update -->|Accepted, Rejected or Suspended| caller
+  update --> state
+  state --> durable[durable, by key]
+  durable -->|operations| runner[runners]
+  durable -->|timers| timers
+  runner -->|completion, same incarnation| update
+  timers -->|firing, same incarnation| update
+  runner -->|send, create| other[another entity]
+  state --> project
+  project -->|projection| read[read, query]
+  project -->|projection, when it changes| outbox
+```
+
 **This repository holds a design, its pure core, and a runtime on SQLite that runs on one process.** It has:
 
 - [`docs/design.md`](docs/design.md): what the library is for, its model of execution, and what it guarantees
@@ -27,6 +50,24 @@ cluster or a clock.
 - [`examples/booking`](examples/booking): a booking that holds seats in an event's inventory, two entities
   that talk, rehearsed and also run on the runtime
   ([`examples/booking/runtime.test.ts`](examples/booking/runtime.test.ts)).
+
+The modules of `src/`, each built on the one above it:
+
+```mermaid
+flowchart TB
+  program["program.ts: program(schemas)(…), with init, update, durable,<br/>operations, project, indexes and migrations"]
+  machine["machine.ts: the pure machine, from an event<br/>to the next machine and the rows it writes"]
+  rehearse["rehearse.ts: a scenario without storage or clock"]
+  runtime["runtime.ts: launch and deploy, each entity under its own lock,<br/>its fibers, timers and passivation"]
+  storage["storage.ts: entities, entity_keys, mailbox, replies,<br/>projections, outbox and cursors"]
+  db[(SQLite)]
+
+  program --> machine
+  machine --> rehearse
+  machine --> runtime
+  runtime --> storage
+  storage --> db
+```
 
 ```sh
 bun install
