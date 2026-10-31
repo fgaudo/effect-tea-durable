@@ -1,7 +1,8 @@
 # 0086. On Cluster, a request is keyed by its version too
 
 **Status:** accepted, 2026-10-31. Corrects [decision 0085](0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md):
-its primary key, what it says of the runtime's replies, and a rule it missed for what Cluster stores.
+its primary key, what it says of the runtime's replies, and a rule it missed for what Cluster stores. What it says of a
+stored answer is changed by [decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md).
 
 ## Context
 

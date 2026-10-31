@@ -4,7 +4,8 @@
 a reply; changes what [decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md) and
 [decision 0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md) say of a stored answer, and says how
 [decision 0006](0006-a-defect-suspends-the-entity.md) and [decision 0023](0023-suspended-means-no-reply-yet.md)
-hold on Cluster.
+hold on Cluster. What a resumption and a discard do on Cluster is corrected by
+[decision 0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md).
 
 ## Context
 

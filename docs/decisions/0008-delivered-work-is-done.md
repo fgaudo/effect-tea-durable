@@ -1,6 +1,7 @@
 # 0008. Work that has delivered its message is done
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. What it says of discarding an internal message is replaced, for an operation's
+completion, by [decision 0041](0041-a-completion-is-not-discarded.md).
 
 ## Context
 

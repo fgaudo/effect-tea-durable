@@ -1,6 +1,7 @@
 # 0032. A projection is a row, and a program declares the indexes a query uses
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its consequence that lets `reindex` write a row back over a step is replaced by
+[decision 0070](0070-reindex-writes-a-row-only-over-its-state.md).
 
 ## Context
 

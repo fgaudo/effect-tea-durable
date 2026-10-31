@@ -3,7 +3,10 @@
 **Status:** accepted, 2026-10-31. Decides the first of the [roadmap](../roadmap.md)'s findings from
 [Effect Cluster](../cluster.md#one-transaction-or-two); changes [decision 0007](0007-one-process-first.md)'s
 consequence for Cluster, and says that [decision 0074](0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)
-does not hold there.
+does not hold there. Its reasons against letting a defect reach Cluster are corrected by
+[decision 0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md), what it says of a stored answer is changed
+by [decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md), and what it says of the runtime's mailbox
+there is corrected by [decision 0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md).
 
 ## Context
 

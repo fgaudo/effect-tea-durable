@@ -1,6 +1,8 @@
 # 0075. A name is deployed once in a process
 
-**Status:** accepted, 2026-10-31. Decides [deploying a program twice in one process](../open-questions.md#running).
+**Status:** accepted, 2026-10-31. Decides [deploying a program twice in one process](../open-questions.md#running). When
+a deploy gives its name back is corrected by
+[decision 0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md).
 
 ## Context
 

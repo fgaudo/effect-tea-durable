@@ -1,6 +1,7 @@
 # 0045. An operation waits for a program not deployed yet
 
-**Status:** accepted, 2026-10-31.
+**Status:** accepted, 2026-10-31. Its wait every `retry` milliseconds is replaced by
+[decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md).
 
 ## Context
 

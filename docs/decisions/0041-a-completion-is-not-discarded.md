@@ -2,7 +2,7 @@
 
 **Status:** accepted, 2026-10-30. Replaces what [decision 0014](0014-rules-the-machine-settled.md) and
 [decision 0008](0008-delivered-work-is-done.md) said of discarding an internal message, for an operation's
-completion.
+completion. Its bullet that discards a timer's firing is replaced by [decision 0044](0044-a-firing-is-not-discarded.md).
 
 ## Context
 

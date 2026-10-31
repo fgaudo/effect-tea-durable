@@ -1,6 +1,7 @@
 # 0036. A program carries its migrations, and a migration is a function on the JSON
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its bullet that says the runtime dies on a row no version reads is replaced by
+[decision 0043](0043-a-row-no-version-reads-fails-what-reads-it.md).
 
 ## Context
 

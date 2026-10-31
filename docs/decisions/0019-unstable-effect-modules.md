@@ -1,6 +1,6 @@
 # 0019. The library depends on Effect's unstable modules
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its pinned version is moved by [decision 0083](0083-effect-moves-to-4-1-1.md).
 
 ## Context
 

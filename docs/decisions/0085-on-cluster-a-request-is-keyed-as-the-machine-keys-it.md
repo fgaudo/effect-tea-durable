@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-10-31. Decides the first half of the [roadmap](../roadmap.md)'s finding on requests and
 replies from [Effect Cluster](../cluster.md#what-cluster-gives-that-the-runtime-already-does): how
 [decision 0015](0015-a-request-belongs-to-its-sender.md) and [decision 0017](0017-creation-in-the-machine.md) hold
-on it.
+on it. Its primary key, what it says of the runtime's replies, and a rule it missed for what Cluster stores are
+corrected by [decision 0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md).
 
 ## Context
 

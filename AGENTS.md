@@ -8,11 +8,16 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A commit message stays short: a subject line of at most 72 characters in the imperative, and a body only
   where the diff cannot say it, four lines at most. Why a change was taken belongs in `docs/`, not in the message.
 - A decision gets a note in `docs/decisions/`, numbered in order and never rewritten once taken: a decision
-  that changes is a new note that says which one it replaces. A note is taken by the commit that adds it, with
-  the code it decides, if any. After that commit only a link a later rename breaks is fixed in it: a consequence
-  found later, a correction or a rule it missed is a new note that says which one it changes. A question not
-  decided yet goes in `docs/open-questions.md`, and leaves it when a note decides it. A step of the roadmap
-  leaves it when done.
+  that changes is a new note that says which one it replaces. A note made for a step of the roadmap is
+  `proposed`, and is rewritten in place while the step is under way; it is taken, `accepted`, by the commit that
+  takes the step out of the roadmap. Any other note is taken by the commit that adds it, with the code it
+  decides, if any. Once a note is taken, only a link a later rename breaks is fixed in it, and its status line
+  grows: a consequence found later, a correction or a rule it missed is a new note that says which one it
+  changes, and adds to that one's status line what changed and a link to itself. A note that only says how
+  another holds elsewhere links it from its own status line alone. Each note is listed in
+  [`docs/decisions/README.md`](docs/decisions/README.md) by what it decides, with the notes that changed it,
+  updated by the commit that adds or changes a note. A question not decided yet goes in
+  `docs/open-questions.md`, and leaves it when a note decides it. A step of the roadmap leaves it when done.
 - The examples import the library from `src/`. When the design changes, the code, its tests and the examples
   change with it, and `bun run typecheck` and `bun test` pass.
 - [`src/machine.ts`](src/machine.ts) is the runtime's semantics. A rule it adds or changes is a decision, and

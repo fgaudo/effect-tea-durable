@@ -39,7 +39,8 @@ flowchart LR
   unloading an entity that has nothing to do and waking it from its stored timers, tested by dying at each point
   of the design's crash table and comparing where it ends with the machine
   ([`src/runtime.test.ts`](src/runtime.test.ts));
-- [`docs/decisions/`](docs/decisions): one note per decision, with the alternatives it rejected;
+- [`docs/decisions/`](docs/decisions): one note per decision, with the alternatives it rejected, listed by what
+  they decide in [its index](docs/decisions/README.md);
 - [`docs/open-questions.md`](docs/open-questions.md): what is not decided yet;
 - [`docs/roadmap.md`](docs/roadmap.md): the steps from this design to a library, in order;
 - [`examples/order`](examples/order): an order's lifecycle, with its scenarios as tests, the question a

@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-10-31. Decides the open question of one permit for the process, and replaces the
 permit of [decision 0029](0029-an-idle-entity-is-unloaded.md) and
-[decision 0042](0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md) with a lock of the entity's own.
+[decision 0042](0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md) with a lock of the entity's own. Which
+fiber holds an entity's lock while it is activated or created is changed by
+[decision 0079](0079-what-a-caller-sets-going-is-finished-without-it.md).
 
 ## Context
 

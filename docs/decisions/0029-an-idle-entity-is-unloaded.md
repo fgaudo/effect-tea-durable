@@ -1,6 +1,9 @@
 # 0029. An idle entity is unloaded, and what is stored wakes it
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its permit is replaced by a lock of the entity's own in
+[decision 0067](0067-each-entity-is-held-by-its-own-lock.md), its hooks in the runtime's options by a probe in
+[decision 0073](0073-what-the-runtime-did-is-told-to-a-probe.md), and what a process starts with is added to by
+[decision 0071](0071-a-process-starts-the-entities-with-a-message.md).
 
 ## Context
 

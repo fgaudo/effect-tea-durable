@@ -1,7 +1,8 @@
 # 0080. A database is held by one runtime
 
 **Status:** accepted, 2026-10-31. Makes [decision 0007](0007-one-process-first.md)'s one process a rule the runtime
-keeps.
+keeps. What an alternative says of Cluster's shard locks is corrected by
+[decision 0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md).
 
 ## Context
 

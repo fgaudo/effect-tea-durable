@@ -1,6 +1,7 @@
 # 0042. An event the runtime cannot finish crashes its entity
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its permit is replaced by a lock of the entity's own in
+[decision 0067](0067-each-entity-is-held-by-its-own-lock.md).
 
 ## Context
 

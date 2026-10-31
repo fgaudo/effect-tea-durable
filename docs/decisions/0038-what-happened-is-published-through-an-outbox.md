@@ -1,6 +1,7 @@
 # 0038. What happened is published through an outbox
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its consequence that the entity's next step publishes the new projection is corrected
+by [decision 0072](0072-the-log-shows-what-a-step-changed.md): it holds only for a step that changes it.
 
 ## Context
 

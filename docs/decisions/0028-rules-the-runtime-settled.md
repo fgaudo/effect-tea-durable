@@ -1,6 +1,8 @@
 # 0028. Rules the runtime settled
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its bullet that has a sender to a suspended receiver send again every few milliseconds
+is replaced by [decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md), and its hooks in the runtime's options
+by a probe, in [decision 0073](0073-what-the-runtime-did-is-told-to-a-probe.md).
 
 ## Context
 
