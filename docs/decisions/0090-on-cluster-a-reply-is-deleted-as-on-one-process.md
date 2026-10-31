@@ -4,6 +4,9 @@
 [Effect Cluster](../cluster.md#the-decisions-it-bears-on): what deletes a reply there. Corrects what
 [decision 0021](0021-a-reply-is-kept-while-the-work-that-asked-holds.md) says of Cluster in its consequences. That every id with rows to delete is kept does not hold of a request answered
 with Cluster's defect for a type not registered, by [decision 0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md).
+The id of a request answered with Cluster's defect is kept by the client given it, before it resets the request, an
+id already kept is not kept again, and the database holds a pending id for each transaction since the last step, not
+one, by [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md).
 
 ## Context
 

@@ -1,13 +1,18 @@
 # 0092. On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each
 
-**Status:** proposed, 2026-10-31. Decides the [roadmap](../roadmap.md)'s finding on what stays the runtime's on
+**Status:** accepted, 2026-10-31. Decides the [roadmap](../roadmap.md)'s finding on what stays the runtime's on
 [Effect Cluster](../cluster.md#what-cluster-gives-that-the-runtime-already-does): passivation, the capacity, the
 timers, an operation that waits for a program no runner deploys, a sender that waits on a suspended entity, and the
 step of a request queued behind the entity's own work. Changes what
 [decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md) says of what a step sets going, and how
 [decision 0079](0079-what-a-caller-sets-going-is-finished-without-it.md) holds for an activation on Cluster, and says
 how [decision 0056](0056-nothing-waits-for-an-operation-under-the-permit.md) holds for a shard that leaves. What it
-says of Cluster is read from its source at `effect` 4.1.1, and what the runtime relies on is checked by a spike.
+says of Cluster is read from its source at `effect` 4.1.1, and what the runtime relies on is checked by two spikes.
+Decides what [decision 0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) left to it: who
+keeps the Cluster id of a request answered with Cluster's defect, which changes which steps keep an id in
+[decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md); and corrects 0096's rule of what Cluster
+stores without a step. A pending id is written by more than a step, which changes how many decision 0090 says the
+database holds.
 
 ## Context
 
@@ -45,9 +50,16 @@ Cluster's source says:
   then dies. Sent to a shard of the sender's own runner, it dies at the sender, and nothing is stored. Sent to a
   shard of another runner, it is stored, and that runner saves the defect as its reply: a retry under the same key
   is given that defect, for ever.
+- **What else a runner saves as a reply without a handler is a defect too**: a request that the RPC's schema does
+  not decode is answered `MalformedMessage`, as a defect, and a defect while a message read from storage is delivered
+  is saved under its request. A full mailbox, a runner that no longer holds the shard, and a
+  request already being processed save nothing: the message stays in storage, and is read again. A defect of a
+  handler is not saved, and restarts the entity
+  ([decision 0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md)).
 - **A shard's lease on SQLite is a row of `cluster_locks`**, `shard_id`, `address` and `acquired_at`, and a runner
-  takes it from another only by writing it, where `acquired_at < datetime(CURRENT_TIMESTAMP, '-35 seconds')` (the
-  `shardLockExpiration`), which waits for the file's one writer.
+  takes it from another only by writing it, where `acquired_at` is more than 35 s (the `shardLockExpiration`) before
+  `CURRENT_TIMESTAMP`, counted in whole seconds by `strftime('%s', …)`; the write waits for the file's one writer.
+  Both are written to the second, so it is `acquired_at < datetime(CURRENT_TIMESTAMP, '-35 seconds')`.
 
 A spike against `effect` 4.1.1, with `SingleRunner` on `@effect/sql-sqlite-bun`, `runnerStorage: "sql"`, four
 shards, and two runners on one file where it needs them, found:
@@ -87,6 +99,21 @@ shards, and two runners on one file where it needs them, found:
 - a lease written over by another address while its runner runs is seen by that runner at its next refresh, up to
   `shardLockRefreshInterval` (10 s) later: only then does it interrupt the shard's singleton, whose finalizer runs
   while the lease already names the other.
+
+A second spike, on one runner of the same setup, with an RPC whose payload the receiver refuses to decode at will,
+found:
+
+- the runner saves `MalformedMessage` as a defect under the request, and the client is given the defect alone: no
+  request id, no reply id;
+- `MessageStorage.requestIdForPrimaryKey` gives the request's id from its primary key, and `repliesForUnfiltered` the
+  id of the defect's reply, as `ClusterWorkflowEngine` reads its own;
+- the same key sent again is given the same defect, under the same request id, and writes no row;
+- `Sharding.reset` with the defect's id as the reply expected has the request handled again, and the handler is
+  given the same request id; with another id it changes nothing, and answers `true` all the same: its result says
+  only that the storage did not fail, as `clearReplies` in `SqlMessageStorage.ts` shows;
+- an id of Cluster's read by a `SELECT` through `@effect/sql-sqlite-bun` comes back as a JavaScript number, its last
+  digits lost, where `MessageStorage` gives it whole;
+- Cluster's take condition and the lease check below agree on a lease 33, 34, 35, 36 and 37 seconds old.
 
 On one process every event of an entity, a caller's included, is offered to the entity's queue, and its loop
 computes each step and writes it in a transaction of its own ([`src/runtime.ts`](../../src/runtime.ts)). On Cluster
@@ -162,13 +189,31 @@ checks the shard; it said so of the RPCs alone.
   throughout, so the loop steps nothing of the entity meanwhile; what the loop holds in memory and has not written is
   stepped after.
 - **A defect from Cluster is no reply.** The runtime never answers with one
-  ([decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md)), so a defect saved under a request is
-  Cluster's: a type not registered in time, or a defect of a receiver that escaped the runtime. An operation's
-  client that is given one resets the request, with the id of the stored defect as the reply expected, if one is
-  stored ([decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and sends again after `retry`,
-  as it does after a receiver that crashed ([decision 0046](0046-a-receiver-that-crashes-is-sent-again.md)). A
-  defect that died at the sender stored nothing, and is simply sent again. While the window lasts, the message
-  waits, and the operation with it, at no cost.
+  ([decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md)), and a defect of a receiver that escapes the
+  runtime is not saved (decision 0095), so a defect saved under a request is Cluster's own: a type not registered in
+  time, a payload the RPC's schema does not decode, or a delivery that died. The runtime's payload is JSON, which
+  that schema decodes as it is ([decision 0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md)), so the
+  second needs a row Cluster's encoding did not write. An operation's client that is given one keeps the request's
+  id and resets the request, as below, with the id of the stored defect as the reply expected
+  ([decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and sends again after `retry`, as it
+  does after a receiver that crashed ([decision 0046](0046-a-receiver-that-crashes-is-sent-again.md)). A defect
+  that died at the sender stored nothing, and is simply sent again. While the window lasts, the message waits, and
+  the operation with it, at no cost.
+- **The client that is given Cluster's defect keeps the request's Cluster id before it resets the request.** The
+  defect carries no id: the client reads the request's id from `MessageStorage.requestIdForPrimaryKey`, by the
+  payload's primary key, and the id of the defect's reply from `repliesForUnfiltered`, never by a `SELECT` of its
+  own, which loses digits of an id. In a transaction of its own, it keeps the request's id under the asker's work, as
+  the step that answers a request keeps it ([decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)),
+  if the asker's row still holds that work; then it resets the request and sends again. If the work has ended, it
+  keeps the id pending instead, as a request answered after its asker's work ended, and neither resets nor sends:
+  nothing waits for the answer. So the step that ends the work deletes the defect's rows with the others, whichever
+  way the work ends. The transaction checks no lease: it writes no state, only an id, which the step that ends the
+  work reads on whichever runner holds the shard then.
+- **An id already kept is not kept again.** The step that answers the request once it is reset is given the same id,
+  and keeps it as decision 0090 has every answering step do: that keep writes nothing.
+- **The result of `Sharding.reset` is not read.** It says only that the storage did not fail. A reset that failed, or
+  found another reply than the defect, leaves what is stored, and the send after it is given that again: the client
+  starts over from it.
 - **A resumption tells the senders that wait for it, by a message.** A step that answers `Suspended` to an entity's
   operation writes, in its transaction, the sender's address and request beside the suspension, once for each
   request however often it is answered so. The step that takes the entity out of its suspension, a resumption or a
@@ -178,6 +223,46 @@ checks the shard; it said so of the RPCs alone.
   work ended; the operation sends again under the same request id. A sender whose operation is no longer running
   there sends again anyway, when its activation runs the operation. A caller outside the runtime is told nothing, as
   on one process.
+
+## What it rests on
+
+- The reaper, `maxResidentEntities`, `KeepAliveRpc` and `DeliverAt` behave as the context says: **read in the
+  source**, at 4.1.1, `entityReaper.ts`, `entityManager.ts`, `Sharding.ts`, `DeliverAt.ts` and `MessageStorage.ts`. That a door bounded by a `maxIdleTime`
+  no longer than `passivate.millis` follows the runtime's entity out is **reasoned** from it.
+- A singleton per shard starts on the shard's holder, and its finalizer runs to its end, unbounded, before the shard
+  changes hands, a runner leaving included: **seen** in the spike.
+- A runner learns that its lease was taken only at its next refresh, and a transaction held past the refresh's
+  timeout makes every runner on the file give up its shards: **seen** in the spike.
+- A persisted send under `WithTransaction` is a row of the handler's transaction, gone if the handler fails: **seen**
+  in the spike.
+- A `COMMIT` that fails is told to no handler, and the request is delivered again; `afterCommit` runs after the
+  connection is released, and not at all on a rollback: **seen** in the spike.
+- The count of steps keeps what is in memory equal to what is stored: **seen** in the spike, on a toy entity; that it
+  holds of the runtime's machine, whose steps write more than a count, is **reasoned**.
+- `@effect/sql-sqlite-bun` runs one transaction at a time, and begins a writable one with `BEGIN IMMEDIATE`: **seen**
+  in the spike, and **read in the source** of its `SqliteClient.ts`. That two fibers stepping one entity are ordered
+  by it, and so need no lock of their own, is **reasoned**.
+- The lease check is the exact complement of the condition under which another runner takes the lease: **read in the
+  source**, `SqlRunnerStorage.ts`, where the take counts whole seconds, and **seen** in the second spike at the
+  boundary. That they stay equal rests on `acquired_at` being written as `CURRENT_TIMESTAMP`, to the second, which is
+  **read in the source**.
+- A runner saves as a reply without a handler only a defect — for a type not registered, a request that does not
+  decode, a delivery that died — and saves nothing for a full mailbox, a shard it no longer holds, or a request
+  already being processed: **read in the source**, the storage read of `Sharding.ts` and `send` in
+  `entityManager.ts`. A type not registered is **seen** in the first spike, a request that does not decode in the
+  second; the others are not.
+- A defect of a handler is not saved: decision 0095, **read in the source**.
+- The client is given the defect alone, and finds the request's id and the reply's from `MessageStorage`; the same
+  key sent again is given the same defect under the same id; after a reset the handler is given that id: **seen** in
+  the second spike.
+- `Sharding.reset` with the id of the stored defect has the request handled again: **seen** in both spikes. That it
+  answers `true` when it changed nothing: **seen** in the second, and **read in the source**.
+- An id read by a `SELECT` through `@effect/sql-sqlite-bun` loses digits: **seen** in the second spike.
+- A reset with a reply expected leaves the request's interrupts in `cluster_messages`, where one without deletes them:
+  **read in the source**. The runtime's RPCs leave none, since a caller that stops waiting stores nothing
+  ([decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)): **reasoned**.
+- That a resumption reaches every sender that waits, by `Resumed`, and that keeping a defect's id before the reset
+  leaves no rows behind but in the window below: **reasoned**.
 
 ## Alternatives
 
@@ -204,6 +289,14 @@ checks the shard; it said so of the RPCs alone.
 - **A request that waits, without answering, for the work queued before it.** It holds its transaction open while
   it waits, the file's one writer (decision 0087).
 - **A sender to a suspended entity sending again on a clock.** Polling, which decision 0063 replaced.
+- **The asker's step that ends its work keeping the id of a request answered with Cluster's defect.** It never saw
+  the id: only the client that was given the defect did.
+- **Keeping the Cluster id of every request when it is sent.** No window is left, but every send writes a row of
+  the runtime's for what only a defect needs, and the step that answers keeps the id again.
+- **Reading the ids from Cluster's tables by a statement of the runtime's.** It is what decision 0090 does to delete,
+  inside the database; read into the runtime, an id loses digits, and `MessageStorage` already gives it whole.
+- **Reading the result of the reset to decide whether to send again.** It is `true` whether or not the reset changed
+  anything.
 
 ## Consequences
 
@@ -236,4 +329,14 @@ checks the shard; it said so of the RPCs alone.
   the reaper's period, and a burst may open more doors than the capacity meanwhile.
 - `Resumed` and the rows of the senders that wait are new: the sender's request is the one decision 0090 keeps the
   Cluster ids of, and `Resumed`'s own rows are deleted as a request answered for work that ended.
+- The rows decision 0096 found left behind are left only in a window: a process that dies after its client is given
+  Cluster's defect and before it keeps the id, under an at-most-once operation whose work then ends with `unknown`.
+  An operation run again sends under the same key, is given the same defect, and keeps the id then. A process that
+  dies after the keep and before the reset leaves a defect under a kept id, deleted when the work ends.
+- A pending id is written by a step, by the sender's handler of `Resumed`, and by a client given Cluster's defect,
+  not only by a step answering a request after its asker's work ended: the database holds one for each transaction
+  committed since the last step of any entity, not one, as decision 0090 has it. That step deletes them all.
+- Every answer Cluster stores for an entity is a step's or a defect of Cluster's own, which corrects the rule of
+  decision 0096 that names only a type not registered: a request that does not decode, or whose delivery died, is
+  answered the same way, and its id kept the same way.
 - Nothing of this is code yet: the runtime on Cluster is a later step of the [roadmap](../roadmap.md).

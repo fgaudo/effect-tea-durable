@@ -4,7 +4,9 @@
 [decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) that every answer Cluster stores
 for an entity is a step's, and what [decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) rests on
 of it. Found by the first review
-([decision 0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md)).
+([decision 0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md)). Who keeps the id is
+decided, and a request that does not decode or whose delivery died is found to be answered with Cluster's defect too,
+by [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md).
 
 ## Context
 

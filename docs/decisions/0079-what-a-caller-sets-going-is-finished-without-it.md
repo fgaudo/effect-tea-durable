@@ -4,7 +4,7 @@
 holds an entity's lock while it is activated or created, and keeps the rule of
 [decision 0042](0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md) that an interruption is the
 process's crash. On Cluster an activation a request needs runs in the request's transaction, not detached, by
-[decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), proposed.
+[decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md).
 
 ## Context
 

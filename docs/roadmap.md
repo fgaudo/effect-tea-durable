@@ -83,22 +83,13 @@ it ([decision 0086](decisions/0086-on-cluster-a-request-is-keyed-by-its-version-
 stays in the runtime's mailbox ([decision 0088](decisions/0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md));
 a reply is deleted as on one process, and Cluster's rows with it, by statements of the runtime's until Cluster has an
 operation that forgets a processed request, which [Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239)
-asks ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)); and an interrupted caller
-leaves its request alone ([decision 0091](decisions/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
-The others:
+asks ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)); an interrupted caller
+leaves its request alone ([decision 0091](decisions/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md));
+and the runtime keeps its entities, their passivation, capacity and timers, and learns which shards its runner holds
+from a singleton of each: a request is stepped in its handler's fiber, in Cluster's transaction, a step of the entity's
+own work checks the shard's lease in its own, a defect from Cluster is no reply, and a resumption tells the senders
+that wait for it by a message ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)). One remains:
 
-- **What stays the runtime's** is proposed: the runtime keeps its entities, their passivation, capacity and timers,
-  as on one process, and learns which shards its runner holds from a singleton of each; a request is stepped in its
-  handler's fiber, in Cluster's transaction, and a step of the entity's own work checks the shard's lease in its own; a defect from Cluster is no reply, and is sent again after
-  `retry`; and a resumption tells the senders that wait for it by a message
-  ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)). It answers how
-  one that waits on a suspended entity learns that it is resumed
-  ([decision 0087](decisions/0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and how the step of an RPC
-  whose message is queued behind the entity's own work gets its answer
-  ([decision 0088](decisions/0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md)). Before it is
-  taken, it decides how the Cluster id of a request answered with Cluster's defect is kept
-  ([decision 0096](decisions/0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md)), and gets its
-  section `What it rests on` ([decision 0093](decisions/0093-a-note-says-what-each-premise-rests-on.md)).
 - **Two versions at once** ([open question](open-questions.md#running)): Cluster's runners carry no version, and a
   shard may go back to an older one.
 

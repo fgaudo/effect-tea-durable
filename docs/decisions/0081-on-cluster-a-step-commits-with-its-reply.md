@@ -10,7 +10,7 @@ there is corrected by [decision 0088](0088-on-cluster-the-message-an-entity-dies
 interrupted caller had Cluster store an answer no step gave, which
 [decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) corrects. What a step sets going
 is started from the machine, not from the step, since `afterCommit` runs once the connection is released, by
-[decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), proposed.
+[decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md).
 
 ## Context
 

@@ -151,11 +151,11 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md) | On Cluster, a request is keyed by its version too | [0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md) |
 | [0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md) | On Cluster, what is not a reply is handled again | [0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md) |
 | [0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md) | On Cluster, the message an entity dies on stays in its mailbox |  |
-| [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it | [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) |
+| [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it | [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md), [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
 | [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) | On Cluster, an interrupted caller leaves its request alone | [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) |
-| [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each (proposed) |  |
+| [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each |  |
 | [0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md) | Cluster restarts an entity after a defect, whatever its policy |  |
-| [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) | Cluster stores an answer no step gave, for a type not registered |  |
+| [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) | Cluster stores an answer no step gave, for a type not registered | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
 
 ## Reviews
 
