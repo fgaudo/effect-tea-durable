@@ -31,16 +31,10 @@ A bug of correctness came before the last of them, and is fixed: a reply is keye
 so a sender migrated onto another's text takes nothing of its row
 ([decision 0069](decisions/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md)).
 
-A review of decisions 0027 to 0039 found five more corrections, which come next, in this order:
+A review of decisions 0027 to 0039 found five more corrections. The first is made: `reindex` writes a row only
+over the state it was computed from ([decision 0070](decisions/0070-reindex-writes-a-row-only-over-its-state.md)).
+The others come next, in this order:
 
-- **`reindex` writes a row back over a step.** It reads a page of states and then writes each row, outside any
-  transaction ([`src/storage.ts`](../src/storage.ts)): a step that commits in between has its row replaced by the
-  projection of the state before it, until the entity's next step, which may never come. A query then reads a
-  projection the entity has moved past, which [decision 0032](decisions/0032-a-projection-is-a-row.md) says it
-  never does, and a deploy that changed the projection runs `reindex` while entities step. A new note replaces the
-  consequence of 0032 that accepts it — a row written only if the state it was computed from is still the stored
-  one, in one transaction — with a test in [`src/runtime.test.ts`](../src/runtime.test.ts) that interleaves a step
-  with `reindex` and fails before the change.
 - **A message a crash left in a mailbox is handled by chance.** An inbound message is a `Receive` and a step, two
   transactions; a crash between them leaves it in the mailbox of an entity a process starts only if it holds an
   operation ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)). It waits for a caller to load the
