@@ -230,6 +230,11 @@ A reply to another entity is deleted in the transaction that ends the work that 
 names, or in the one that stores it, if that work has already ended: only the storage sees another entity's keys
 ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
 
+The machine holds no reply. A message that arrives is given the reply stored under its request, which the runtime
+reads by the request just before the step, where no other event of the entity is applied; an activation reads
+none, and what a loaded entity holds grows with its mailbox and its keys only. A deletion changes no machine, so
+only a step changes one ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)).
+
 ## Schemas that change
 
 A program's schemas are what is stored, so a version of the program that changes one finds the version before it

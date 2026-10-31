@@ -16,6 +16,7 @@ import {
   type Migrated,
   migrationOf,
   type Program,
+  type Request,
   type Scalar,
   timer,
   type Types,
@@ -129,6 +130,9 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     )
   `
   yield* sql`CREATE INDEX IF NOT EXISTS replies_sender ON replies (sender_name, sender_id)`
+  // A caller's request a version before stored is found by its request id: its sender may be migrated since
+  // (decision 0065).
+  yield* sql`CREATE INDEX IF NOT EXISTS replies_request_id ON replies (name, id, json_extract(request, '$.id'))`
 }).pipe(Effect.orDie)
 
 /**
@@ -277,7 +281,6 @@ const Rows = {
   last: decoder(Schema.Struct({ seq: Schema.NullOr(Count) })),
   through: decoder(Schema.Struct({ through: Schema.NullOr(Count) })),
   consumer: decoder(Schema.Struct({ consumer: Schema.String, seq: Count, behind: Count })),
-  forgotten: decoder(Schema.Struct({ name: Schema.String, id: Schema.String, request: Schema.String })),
 } as const
 
 /** How a query compares an index with a value. */
@@ -324,9 +327,6 @@ export type Consumer = Readonly<{
   behind: number
 }>
 
-/** A reply storage deleted, since the work that asked for it no longer holds (decision 0021). */
-export type Forgotten = Readonly<{ name: string; id: string; request: string }>
-
 /** An identifier SQLite reads as written: a program's name is the author's, and is quoted, not escaped away. */
 const quoted = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`
 
@@ -342,14 +342,21 @@ export type Due = Readonly<{
 const batch = 256
 
 export interface Storage<T extends Types> {
-  /** What is stored for the entity `id`, or null when there is none. */
+  /** What is stored for the entity `id`, its replies left out, or null when there is none (decision 0065). */
   readonly load: (id: string) => Effect.Effect<Machine.Stored<T> | null>
   /**
-   * Writes what an event wrote, as the machine encoded it (decision 0057). The caller wraps it in the transaction
-   * of the event (decision 0007). It gives the replies to other entities it deleted, of any entity, whose work
-   * that asked no longer holds (decision 0021).
+   * The reply stored for the entity `id` under `request`, or null for none: what a `Receive` is given
+   * (decision 0065).
    */
-  readonly write: (id: string, written: Machine.Written) => Effect.Effect<ReadonlyArray<Forgotten>>
+  readonly reply: (
+    id: string,
+    request: Request<T['sender']>,
+  ) => Effect.Effect<Machine.StoredReply<T['rejection']> | null>
+  /**
+   * Writes what an event wrote, as the machine encoded it (decision 0057). The caller wraps it in the transaction
+   * of the event (decision 0007).
+   */
+  readonly write: (id: string, written: Machine.Written) => Effect.Effect<void>
   /**
    * The entities whose state holds an operation: what a process activates when it starts, so that an operation a
    * crash interrupted runs again without waiting for a caller. A timer needs no activation of its own — its time
@@ -517,10 +524,6 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         sql`SELECT tag, version, message, request, key, incarnation FROM mailbox
             WHERE name = ${name} AND id = ${id} ORDER BY seq`,
       )
-      const answered = yield* rows('replies', Rows.reply)(
-        sql`SELECT request, tag, version, reason FROM replies WHERE name = ${name} AND id = ${id}`,
-      )
-
       const keys: Record<string, Machine.Key<T>> = {}
       for (const key of held) {
         keys[key.key] = {
@@ -543,29 +546,58 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             message: internal.read(envelope.message, up('internal', envelope.version)),
           }
       )
-      const replies: Record<string, Machine.StoredReply<T['rejection']>> = {}
-      for (const reply of answered) {
-        const requested = request.read(reply.request, upRequest(reply.version))
-        replies[Machine.requestKey(program, requested)] = reply.tag === 'Accepted'
-          ? { _tag: 'Accepted' }
-          : {
-            _tag: 'Rejected',
-            reason: reply.reason === null ? null : reason.read(reply.reason, upReason(reply.version)),
-          }
-      }
       return {
         name,
         id,
         state: state.read(row.state, up('state', row.version)),
         keys,
         mailbox,
-        replies,
         creation: request.read(row.creation, upRequest(row.version)),
         // The cause is what was rendered when the entity suspended: an operator reads it, nothing acts on it.
         suspension: row.suspended_on === null
           ? null
           : { cause: row.suspended_cause, on: suspended.read(row.suspended_on) },
       } satisfies Machine.Stored<T>
+    }).pipe(Effect.orDie)
+
+  /**
+   * The reply among `found` stored under the request `key`, as this version keys it: a row is compared once read
+   * through the migrations, since only a caller's sender is the program's, and may be migrated (decision 0059).
+   */
+  const replyOf = (found: Effect.Success<ReturnType<typeof Rows.reply>>, key: string) => {
+    for (const held of found) {
+      if (Machine.requestKey(program, request.read(held.request, upRequest(held.version))) !== key) continue
+      return held.tag === 'Accepted'
+        ? { _tag: 'Accepted' } as const
+        : {
+          _tag: 'Rejected',
+          reason: held.reason === null ? null : reason.read(held.reason, upReason(held.version)),
+        } as const
+    }
+    return null
+  }
+
+  // A request is found by its text, as the machine keys it, and then, for a caller's request, among the rows
+  // other versions wrote under its request id: its sender as such a version wrote it may be another text. Each
+  // reading is by an index (decision 0065).
+  const reply = (id: string, asked: Request<T['sender']>) =>
+    Effect.gen(function*() {
+      const key = Machine.requestKey(program, asked)
+      const exact = replyOf(
+        yield* rows('replies', Rows.reply)(sql`
+          SELECT request, tag, version, reason FROM replies WHERE name = ${name} AND id = ${id} AND request = ${key}
+        `),
+        key,
+      )
+      if (exact !== null || asked._tag !== 'Caller') return exact
+      return replyOf(
+        yield* rows('replies', Rows.reply)(sql`
+          SELECT request, tag, version, reason FROM replies
+          WHERE name = ${name} AND id = ${id} AND json_extract(request, '$.id') = ${asked.id}
+            AND version <> ${version} AND json_extract(request, '$._tag') = 'Caller'
+        `),
+        key,
+      )
     }).pipe(Effect.orDie)
 
   const write = (id: string, written: Machine.Written) =>
@@ -674,8 +706,8 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       // A reply to another entity is kept while the work that asked holds (decision 0021). The work of this
       // entity that ended takes the replies to its requests with it; a reply stored for work of another entity
       // that already ended — an at-most-once operation that delivered `unknown` while its request waited in the
-      // mailbox — goes as it is stored, since only the storage sees the asker's keys.
-      const forgotten: Array<Forgotten> = []
+      // mailbox — goes as it is stored, since only the storage sees the asker's keys. No machine holds a reply, so
+      // none is told (decision 0065).
       for (const reply of written.replies) {
         const { asked } = reply
         yield* sql`INSERT OR REPLACE INTO replies ${
@@ -693,28 +725,21 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
           })
         }`
         if (asked === null) continue
-        forgotten.push(
-          ...yield* rows('replies', Rows.forgotten)(sql`
-            DELETE FROM replies WHERE name = ${name} AND id = ${id} AND request = ${reply.request} AND NOT EXISTS (
-              SELECT 1 FROM entity_keys AS asking
-              WHERE asking.name = ${asked.name} AND asking.id = ${asked.id} AND asking.key = ${asked.key}
-                AND asking.incarnation = ${asked.incarnation} AND asking.work IS NOT NULL
-            )
-            RETURNING name, id, request
-          `),
-        )
+        yield* sql`
+          DELETE FROM replies WHERE name = ${name} AND id = ${id} AND request = ${reply.request} AND NOT EXISTS (
+            SELECT 1 FROM entity_keys AS asking
+            WHERE asking.name = ${asked.name} AND asking.id = ${asked.id} AND asking.key = ${asked.key}
+              AND asking.incarnation = ${asked.incarnation} AND asking.work IS NOT NULL
+          )
+        `
       }
       for (const { key, incarnation } of written.ended) {
-        forgotten.push(
-          ...yield* rows('replies', Rows.forgotten)(sql`
-            DELETE FROM replies
-            WHERE sender_name = ${name} AND sender_id = ${id} AND sender_key = ${key}
-              AND sender_incarnation = ${incarnation}
-            RETURNING name, id, request
-          `),
-        )
+        yield* sql`
+          DELETE FROM replies
+          WHERE sender_name = ${name} AND sender_id = ${id} AND sender_key = ${key}
+            AND sender_incarnation = ${incarnation}
+        `
       }
-      return forgotten
     }).pipe(Effect.orDie)
 
   /** The entities of the program an operator has to resume: nothing of theirs runs, and no timer of theirs fires. */
@@ -898,5 +923,5 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const forget = (consumer: string) =>
     Effect.asVoid(sql`DELETE FROM cursors WHERE name = ${name} AND consumer = ${consumer}`).pipe(Effect.orDie)
 
-  return { load, write, interrupted, due, indexed, query, reindex, published, feed, ack, prune, consumers, forget }
+  return { load, reply, write, interrupted, due, indexed, query, reindex, published, feed, ack, prune, consumers, forget }
 }

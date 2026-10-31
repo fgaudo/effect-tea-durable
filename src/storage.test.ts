@@ -78,14 +78,10 @@ const created = (rows: Partial<Machine.Written> = {}): Machine.Written =>
 const creation = { _tag: 'Caller', sender: null, id: 'creation' } as const
 
 /** The request named `name` of the asker's work in `incarnation`, as the machine keys its reply (decision 0059). */
-const sent = (name: string, incarnation: number) =>
-  Machine.requestKey(receiver, {
-    _tag: 'Operation',
-    entity: { name: 'Asker', id: 'a' },
-    key: 'ask',
-    incarnation,
-    name,
-  })
+const asked = (name: string, incarnation: number) =>
+  ({ _tag: 'Operation', entity: { name: 'Asker', id: 'a' }, key: 'ask', incarnation, name }) as const
+
+const sent = (name: string, incarnation: number) => Machine.requestKey(receiver, asked(name, incarnation))
 
 const reply = (name: string, incarnation: number): Machine.ReplyRow => ({
   request: sent(name, incarnation),
@@ -117,12 +113,10 @@ test('a reply asked by work that no longer holds goes as it is stored, and one w
         'a',
         created({ keys: [{ key: 'ask', incarnation: 1, work, delivery: 'Idempotent', due: null }] }),
       )
-      const forgotten = yield* storage(receiver, sql).write(
-        'r',
-        created({ replies: [reply('held', 1), reply('ended', 2)] }),
-      )
-      expect(forgotten).toEqual([{ name: 'Receiver', id: 'r', request: sent('ended', 2) }])
-      expect(Object.keys((yield* storage(receiver, sql).load('r'))?.replies ?? {})).toEqual([sent('held', 1)])
+      const store = storage(receiver, sql)
+      yield* store.write('r', created({ replies: [reply('held', 1), reply('ended', 2)] }))
+      expect(yield* store.reply('r', asked('held', 1))).toEqual({ _tag: 'Accepted' })
+      expect(yield* store.reply('r', asked('ended', 2))).toBeNull()
     })))
 
 test('the work that ended takes the replies to its requests with it, and no others', () =>
@@ -133,21 +127,41 @@ test('the work that ended takes the replies to its requests with it, and no othe
         'a',
         created({ keys: [{ key: 'ask', incarnation: 1, work, delivery: 'Idempotent', due: null }] }),
       )
-      yield* storage(receiver, sql).write('r', created({ replies: [reply('first', 1)] }))
-      yield* storage(receiver, sql).write('s', created({ replies: [reply('other', 1)] }))
-      const forgotten = yield* storage(asker, sql).write(
+      const store = storage(receiver, sql)
+      yield* store.write('r', created({ replies: [reply('first', 1)] }))
+      yield* store.write('s', created({ replies: [reply('other', 1)] }))
+      // Work of another incarnation asked nothing that is stored.
+      yield* storage(asker, sql).write('a', written({ ended: [{ key: 'ask', incarnation: 2 }] }))
+      expect(yield* store.reply('r', asked('first', 1))).toEqual({ _tag: 'Accepted' })
+      yield* storage(asker, sql).write(
         'a',
         written({
           keys: [{ key: 'ask', incarnation: 1, work: null, delivery: null, due: null }],
           ended: [{ key: 'ask', incarnation: 1 }],
         }),
       )
-      expect(forgotten).toEqual([
-        { name: 'Receiver', id: 'r', request: sent('first', 1) },
-        { name: 'Receiver', id: 's', request: sent('other', 1) },
-      ])
-      // Work of another incarnation asked nothing that is stored.
-      expect(yield* storage(asker, sql).write('a', written({ ended: [{ key: 'ask', incarnation: 2 }] }))).toEqual([])
+      expect(yield* store.reply('r', asked('first', 1))).toBeNull()
+      expect(yield* store.reply('s', asked('other', 1))).toBeNull()
+    })))
+
+// A request is found by its text, and a caller's by its sender as a version before stored it (decision 0065).
+test('a reply is read by its request alone, and a caller is given its own', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(receiver, sql)
+      const caller = (id: string) => ({ _tag: 'Caller', sender: null, id }) as const
+      const accepted = (id: string): Machine.ReplyRow => ({
+        request: Machine.requestKey(receiver, caller(id)),
+        tag: 'Accepted',
+        reason: null,
+        asked: null,
+      })
+      yield* store.write('r', created({ replies: [accepted('one')] }))
+      expect(yield* store.reply('r', caller('one'))).toEqual({ _tag: 'Accepted' })
+      expect(yield* store.reply('r', caller('two'))).toBeNull()
+      expect(yield* store.reply('s', caller('one'))).toBeNull()
+      // An operation's request named as the caller's request id is another request.
+      expect(yield* store.reply('r', asked('one', 1))).toBeNull()
     })))
 
 test('the mailbox keeps the order its messages were queued in, as its head is handled', () =>
@@ -186,30 +200,47 @@ test('a row the runtime never writes fails the call that meets it, and is read a
     Effect.gen(function*() {
       const store = storage(receiver, sql)
       yield* store.write('r', created({ queued: [inbound('one')] }))
-      // Each row is broken by hand in one of the ways a reading used to fill in or cast.
+      const caller = { _tag: 'Caller', sender: null, id: 'x' } as const
+      // Each row is broken by hand in one of the ways a reading used to fill in or cast, and read by what reads it.
       const broken = [
-        sql`UPDATE mailbox SET tag = 'Outbound' WHERE name = 'Receiver' AND id = 'r'`,
-        sql`UPDATE mailbox SET request = NULL WHERE name = 'Receiver' AND id = 'r'`,
-        sql`UPDATE entities SET suspended_on = '{"_tag":"Message"}' WHERE name = 'Receiver' AND id = 'r'`,
-        sql`INSERT INTO replies ${
-          sql.insert({ name: 'Receiver', id: 'r', request: '"x"', tag: 'Maybe', version: 1, reason: null })
-        }`,
-        sql`INSERT INTO entity_keys ${
-          sql.insert({
-            name: 'Receiver',
-            id: 'r',
-            key: 'ask',
-            incarnation: 1,
-            version: 1,
-            work: null,
-            delivery: 'Twice',
-          })
-        }`,
-      ]
-      for (const breaking of broken) {
+        [sql`UPDATE mailbox SET tag = 'Outbound' WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
+        [sql`UPDATE mailbox SET request = NULL WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
+        [
+          sql`UPDATE entities SET suspended_on = '{"_tag":"Message"}' WHERE name = 'Receiver' AND id = 'r'`,
+          store.load('r'),
+        ],
+        [
+          sql`INSERT INTO replies ${
+            sql.insert({
+              name: 'Receiver',
+              id: 'r',
+              request: Machine.requestKey(receiver, caller),
+              tag: 'Maybe',
+              version: 1,
+              reason: null,
+            })
+          }`,
+          store.reply('r', caller),
+        ],
+        [
+          sql`INSERT INTO entity_keys ${
+            sql.insert({
+              name: 'Receiver',
+              id: 'r',
+              key: 'ask',
+              incarnation: 1,
+              version: 1,
+              work: null,
+              delivery: 'Twice',
+            })
+          }`,
+          store.load('r'),
+        ],
+      ] as const
+      for (const [breaking, reading] of broken) {
         yield* sql`SAVEPOINT broken`
         yield* breaking
-        const exit = yield* Effect.exit(store.load('r'))
+        const exit = yield* Effect.exit<unknown, never, never>(reading)
         expect(exit._tag).toBe('Failure')
         if (exit._tag === 'Failure') expect(String(Cause.squash(exit.cause))).toContain('no row the runtime writes')
         yield* sql`ROLLBACK TO broken`

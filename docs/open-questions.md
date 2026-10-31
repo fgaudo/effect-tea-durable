@@ -54,12 +54,7 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   machine. A new program whose `project` dies on it gives the reader a defect, where an activation would suspend
   the entity ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)). Should a
   read activate the entity, answer from the read model, or say that the entity is suspended? A `read` of an
-  entity this process does not hold also loads all of it, its mailbox and every reply, to read its state alone.
-- **The replies an entity holds.** The machine holds every reply stored for the entity: an activation loads them
-  all, and every step that answers a caller copies them, as every write goes through them. A caller's reply is
-  kept for ever ([callers' stored replies](#running)), so an entity that lives long, as a subscription does,
-  holds more of them in memory at each message, and each step costs more. Should the machine see only the reply
-  a request asks for, read from storage by its key, and the ones its step adds?
+  entity this process does not hold also loads all of it, its keys and its mailbox, to read its state alone.
 - **A mailbox under a burst.** Nothing bounds a mailbox. An event writes only the messages it queues and the one
   it handles ([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)), but the machine holds the
   whole mailbox in memory, and an inbound message is two transactions, its `Receive` and its step. Should a burst

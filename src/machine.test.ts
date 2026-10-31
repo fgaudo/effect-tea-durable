@@ -22,6 +22,7 @@ import {
   rejectWith,
   runnerOf,
   timer,
+  type Types,
 } from './program.ts'
 
 // A program whose work is chosen by its callers: `a` is idempotent, `b` at most once, `c` at least once, `t` a
@@ -252,7 +253,7 @@ const runningOf = (machine: Toy, kind: Machine.Running['kind']) =>
 
 const at = DateTime.makeUnsafe(1_000)
 
-type Receive = Extract<Machine.Event<T>, { _tag: 'Receive' }>
+type Receive = Extract<Machine.Offered<T>, { _tag: 'Receive' }>
 
 const creation = { _tag: 'Caller', sender: 'ann', id: 'creation' } as const
 
@@ -272,7 +273,7 @@ const receive = (
 }
 
 /** An event, and the version deployed to step it and what follows, if it brings one (decision 0064). */
-type Stepped = Readonly<{ event: Machine.Event<T>; deploy?: Program<T> }>
+type Stepped = Readonly<{ event: Machine.Offered<T>; deploy?: Program<T> }>
 
 /**
  * Turns a command into events of the machine as it is: none when it has nothing to act on. A resumption with a fix
@@ -299,7 +300,7 @@ const toEvent = (
   machine: Toy,
   command: Exclude<Command, Readonly<{ _tag: 'Toggle' | 'Restart' | 'Resume' }>>,
   requests: Array<Receive>,
-): Machine.Event<T> | null => {
+): Machine.Offered<T> | null => {
   switch (command._tag) {
     case 'Send':
       return receive(requests, (nonce) =>
@@ -358,6 +359,37 @@ type Traced = Readonly<{
   written: Machine.Written | null
 }>
 
+/**
+ * The replies of a table as a storage holds them, read back from the rows a step writes: what a `Receive` is given,
+ * since the machine holds none (decision 0065).
+ */
+type Replies<Reason> = Map<string, Machine.StoredReply<Reason>>
+
+const store = <Reason>(
+  replies: Replies<Reason>,
+  written: Machine.Written | null,
+  reason: (json: unknown) => Reason,
+) => {
+  for (const row of written?.replies ?? []) {
+    replies.set(
+      row.request,
+      row.tag === 'Accepted'
+        ? { _tag: 'Accepted' }
+        : { _tag: 'Rejected', reason: row.reason === null ? null : reason(row.reason) },
+    )
+  }
+}
+
+/** An offered event, given the reply stored under its request when it is a message. */
+const given = <U extends Types>(
+  program: Program<U>,
+  replies: Replies<U['rejection']>,
+  offered: Machine.Offered<U>,
+): Machine.Event<U> =>
+  offered._tag === 'Receive'
+    ? { ...offered, reply: replies.get(Machine.requestKey(program, offered.request)) ?? null }
+    : offered
+
 const run = (commands: ReadonlyArray<Command>) => {
   const created = Machine.start(program, 'toy', null, epoch, creation)
   if (created._tag === 'Defect') throw created.cause
@@ -365,6 +397,7 @@ const run = (commands: ReadonlyArray<Command>) => {
   // The program deployed, which steps every event until another is (decision 0064).
   let deployed = program
   const requests: Array<Receive> = []
+  const replies: Replies<T['rejection']> = new Map()
   // Creation, as an activation that found nothing.
   const trace: Array<Traced> = [
     {
@@ -377,11 +410,13 @@ const run = (commands: ReadonlyArray<Command>) => {
       written: created.written,
     },
   ]
-  const apply = (event: Machine.Event<T>, deploy?: Program<T>) => {
+  const apply = (offered: Machine.Offered<T>, deploy?: Program<T>) => {
     const was = deployed
     deployed = deploy ?? deployed
+    const event = given(deployed, replies, offered)
     const { machine: after, outputs, written } = Machine.step(deployed, machine, event)
     trace.push({ event, program: deployed, deployed: deployed !== was, before: machine, after, outputs, written })
+    store(replies, written, Schema.decodeUnknownSync(deployed.schemas.rejection))
     machine = after
   }
   for (const command of commands) {
@@ -414,7 +449,7 @@ const run = (commands: ReadonlyArray<Command>) => {
     } else if (firing !== undefined) apply({ _tag: 'Fire', key: firing[0], incarnation: firing[1].incarnation })
     else break
   }
-  return { machine, trace, requests }
+  return { machine, trace, requests, replies }
 }
 
 type Run = ReturnType<typeof run>
@@ -683,7 +718,7 @@ describe('the machine', () => {
 
   // A request answered `Suspended` while the entity is suspended was never in the mailbox: its caller retries.
   test('once the work ends, every request that reached the mailbox is answered, and nothing is left', () =>
-    property(({ machine, trace }) => {
+    property(({ machine, trace, replies }) => {
       const waited = new Set<string>()
       const discarded = new Set<string>()
       for (const { event, before, after } of trace) {
@@ -699,7 +734,7 @@ describe('the machine', () => {
       expect(machine.stored.mailbox).toEqual([])
       expect(machine.running).toEqual({})
       for (const request of waited) {
-        if (!discarded.has(request)) expect(machine.stored.replies[request]).toBeDefined()
+        if (!discarded.has(request)) expect(replies.get(request)).toBeDefined()
       }
     }))
 
@@ -816,25 +851,30 @@ const tiny = (
   indexes: { shown: index },
 })
 
-/** An entity of a tiny program: its machine, with the program deployed for it, which steps its events. */
-type Entity = Machine.Machine<Tiny> & Readonly<{ program: Program<Tiny> }>
+/**
+ * An entity of a tiny program: its machine, with the program deployed for it, which steps its events, and the
+ * replies its steps stored, as a storage holds them (decision 0065).
+ */
+type Entity = Machine.Machine<Tiny> & Readonly<{ program: Program<Tiny>; replies: Replies<never> }>
 
 const checked = (...args: Parameters<typeof tiny>): Entity => {
   const program = tiny(...args)
   const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
   if (created._tag === 'Defect') throw created.cause
-  return { ...created.machine, program }
+  return { ...created.machine, program, replies: new Map() }
 }
 
 /**
  * One event, stepped by the entity's program, or by `deploy`, which is the entity's from then on: a deploy is a
- * `Restart` stepped by another program, and a fix a deploy before a resumption (decision 0064).
+ * `Restart` stepped by another program, and a fix a deploy before a resumption (decision 0064). A message is given
+ * the reply the entity's steps stored under its request.
  */
-const stepped = (entity: Entity, event: Machine.Event<Tiny>, deploy: Program<Tiny> = entity.program) => {
-  const transition = Machine.step(deploy, entity, event)
-  const machine: Entity = transition.machine === entity && deploy === entity.program
-    ? entity
-    : { ...transition.machine, program: deploy }
+const stepped = (entity: Entity, offered: Machine.Offered<Tiny>, deploy: Program<Tiny> = entity.program) => {
+  const transition = Machine.step(deploy, entity, given(deploy, entity.replies, offered))
+  if (transition.machine === entity && deploy === entity.program) return { ...transition, machine: entity }
+  const replies = new Map(entity.replies)
+  store(replies, transition.written, Schema.decodeUnknownSync(deploy.schemas.rejection))
+  const machine: Entity = { ...transition.machine, program: deploy, replies }
   return { ...transition, machine }
 }
 
@@ -843,7 +883,7 @@ const resumedBy = (entity: Entity, fixed: Program<Tiny>) =>
   stepped(stepped(entity, { _tag: 'Restart' }, fixed).machine, { _tag: 'Resume' })
 
 /** Records a message, and handles it. */
-const handled = (machine: Entity, event: Machine.Event<Tiny>) =>
+const handled = (machine: Entity, event: Machine.Offered<Tiny>) =>
   stepped(stepped(machine, event).machine, { _tag: 'Handle', at })
 
 const reasonOfSuspension = (transition: Machine.Transition<Tiny>) => {
@@ -1083,7 +1123,7 @@ describe('what a runtime writes', () => {
     }
     const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
     if (created._tag === 'Defect') throw created.cause
-    const transition = stepped({ ...created.machine, program }, { _tag: 'Restart' })
+    const transition = stepped({ ...created.machine, program, replies: new Map() }, { _tag: 'Restart' })
     expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
     expect(transition.machine.stored.mailbox).toEqual([])
   })
@@ -1144,7 +1184,7 @@ describe('discarding', () => {
     const discarded = stepped(died.machine, { _tag: 'Discard' })
     expect(discarded.machine.stored.suspension).toBeNull()
     expect(discarded.machine.stored.mailbox).toEqual([])
-    expect(discarded.machine.stored.replies).toEqual({})
+    expect(discarded.machine.replies).toEqual(new Map())
   })
 })
 
@@ -1472,6 +1512,25 @@ describe('who a request belongs to', () => {
     expect(again.outputs.map((output) => output._tag === 'Replied' && output.reply)).toEqual([{ _tag: 'Accepted' }])
   })
 
+  // The machine holds no reply: what answers a retry is what storage read for it (decision 0065).
+  test('a message is answered the reply it is given, and queued when it is given none', () => {
+    const machine = checked((message) => message, () => ({}))
+    const accepted = { _tag: 'Accepted' } as const
+    const given = Machine.step(machine.program, machine, {
+      _tag: 'Receive',
+      request: by('r'),
+      message: 'go',
+      reply: accepted,
+    })
+    expect(given.machine).toBe(machine)
+    expect(given.outputs).toEqual([{ _tag: 'Replied', request: by('r'), reply: accepted }])
+    expect(given.written).toBeNull()
+    const none = Machine.step(machine.program, machine, { _tag: 'Receive', request: by('r'), message: 'go', reply: null })
+    expect(none.outputs).toEqual([])
+    expect(none.machine.stored.mailbox).toEqual([{ _tag: 'Inbound', request: by('r'), message: 'go' }])
+    expect(Object.keys(none.machine.stored)).not.toContain('replies')
+  })
+
   test('update reads who sent a request off it', () => {
     const seen: Array<unknown> = []
     const base = checked((message) => message, () => ({}))
@@ -1549,14 +1608,13 @@ describe('creation', () => {
 describe('what an event writes', () => {
   /** The rows of what is stored, as the machine encodes them: what a storage holds of the entity. */
   const table = (version: Program<T>, stored: Machine.Stored<T>) => {
-    const written = Machine.writes(version, null, stored, null)
+    const written = Machine.writes(version, null, stored, null, null)
     if (written === null) throw new Error('an entity has rows')
     return {
       entity: written.entity,
       suspension: written.suspension?.on ?? null,
       keys: Object.fromEntries(written.keys.map((row) => [row.key, row])),
       mailbox: written.queued,
-      replies: Object.fromEntries(written.replies.map(({ request, tag, reason }) => [request, { tag, reason }])),
     }
   }
 
@@ -1567,10 +1625,6 @@ describe('what an event writes', () => {
     suspension: written.suspension?.on ?? null,
     keys: { ...rows.keys, ...Object.fromEntries(written.keys.map((row) => [row.key, row])) },
     mailbox: [...rows.mailbox.slice(written.handled), ...written.queued],
-    replies: {
-      ...rows.replies,
-      ...Object.fromEntries(written.replies.map(({ request, tag, reason }) => [request, { tag, reason }])),
-    },
   })
 
   test('applied to the rows before the event, it gives the rows after it, and nothing when nothing changed', () =>
@@ -1578,6 +1632,24 @@ describe('what an event writes', () => {
       for (const { program, before, after, written } of trace.slice(1)) {
         const was = table(program, before.stored)
         expect(written === null ? was : applied(was, written)).toEqual(table(program, after.stored))
+      }
+    }))
+
+  // A storage gives back what a step wrote, and the machine holds none of it (decision 0065).
+  test('a step writes the reply it answers the message it handles, and no other event writes one', () =>
+    property(({ trace }) => {
+      for (const { event, program, outputs, written } of trace.slice(1)) {
+        const stored = outputs.flatMap((output) =>
+          output._tag === 'Replied' && output.reply._tag !== 'Suspended' && event._tag === 'Handle'
+            ? [{
+              request: Machine.requestKey(program, output.request),
+              tag: output.reply._tag,
+              reason: output.reply._tag === 'Rejected' ? output.reply.reason : null,
+            }]
+            : []
+        )
+        expect((written?.replies ?? []).map(({ request, tag, reason }) => ({ request, tag, reason })))
+          .toEqual(stored)
       }
     }))
 

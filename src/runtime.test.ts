@@ -171,9 +171,16 @@ const hands = (options: Readonly<{ holds?: boolean }> = {}) =>
 
 const id = 'toy-1'
 
-/** What is compared: the stored state as a value, with the work and the suspension's cause normalised. */
-const shape = (stored: Machine.Stored<T> | null) =>
+/** A reply as its row holds it, by request. */
+type Answered = Readonly<{ request: string; tag: string; reason: unknown }>
+
+/**
+ * What is compared: the stored state as a value, with the work and the suspension's cause normalised, and the
+ * replies stored for the entity, which the machine does not hold (decision 0065).
+ */
+const shape = (stored: Machine.Stored<T> | null, replies: ReadonlyArray<Answered>) =>
   stored === null ? null : {
+    replies: Object.fromEntries(replies.map(({ request, tag, reason }) => [request, { tag, reason }])),
     state: stored.state,
     keys: Object.fromEntries(
       Object.entries(stored.keys).map(([key, held]) => [key, {
@@ -187,11 +194,23 @@ const shape = (stored: Machine.Stored<T> | null) =>
       }]),
     ),
     mailbox: stored.mailbox,
-    replies: stored.replies,
     creation: stored.creation,
     // The cause is rendered when it is stored, so only where the defect happened is compared.
     suspension: stored.suspension === null ? null : stored.suspension.on,
   }
+
+/** What the storage holds of the entity, with the rows of its replies, as `shape` compares it. */
+const persisted = Effect.gen(function*() {
+  const sql = yield* SqlClient.SqlClient
+  const stored = yield* storage(program, sql).load(id)
+  const replies = yield* sql<{ request: string; tag: string; reason: string | null }>`
+    SELECT request, tag, reason FROM replies WHERE name = ${program.name} AND id = ${id}
+  `
+  return shape(
+    stored,
+    replies.map(({ request, tag, reason }) => ({ request, tag, reason: reason === null ? null : JSON.parse(reason) })),
+  )
+})
 
 /** A database for one test: every process of the test shares it, as a crash leaves the file behind. */
 const database = <A, E>(test: Effect.Effect<A, E, SqlClient.SqlClient>) =>
@@ -224,8 +243,14 @@ const replayed = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) => 
   const created = Machine.start(program, id, { at }, at, first.request)
   if (created._tag === 'Defect') throw created.cause
   let machine = created.machine
-  for (const event of rest) machine = Machine.step(program, machine, event).machine
-  return machine.stored
+  // The toy is sent nothing by another entity's work, so no reply of its is deleted (decision 0021).
+  const replies: Array<Answered> = [...created.written.replies]
+  for (const event of rest) {
+    const transition = Machine.step(program, machine, event)
+    machine = transition.machine
+    replies.push(...transition.written?.replies ?? [])
+  }
+  return shape(machine.stored, replies)
 }
 
 /**
@@ -312,8 +337,8 @@ describe('the runtime on SQLite', () => {
       expect(acted.filter((act) => act.startsWith('a:')).length).toBe(1)
       expect(acted.filter((act) => act === 'b').length).toBe(1)
       expect(acted.filter((act) => act === 'c').length).toBe(1)
-      const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
-      expect(shape(stored)).toEqual(shape(replayed(stored?.state.since ?? at, events)))
+      const stored = yield* persisted
+      expect(stored).toEqual(replayed(stored?.state.since ?? at, events))
     })))
 
   test('answers a retry from the stored reply, and NotFound for no entity', () =>
@@ -454,8 +479,8 @@ describe('passivation', () => {
           yield* after(2)
           expect(entities).toEqual([id, id])
         }))
-      const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
-      expect(shape(stored)).toEqual(shape(replayed(stored?.state.since ?? at, events)))
+      const stored = yield* persisted
+      expect(stored).toEqual(replayed(stored?.state.since ?? at, events))
     })))
 
   test('a caller loads an unloaded entity again, and is answered', () =>
@@ -518,7 +543,7 @@ describe('passivation', () => {
           expect(events.filter((event) => event._tag === 'Restart').length).toBe(1)
         }))
       expect((yield* store.load(id))?.state.want).toEqual([])
-      expect(shape(yield* store.load(id))).toEqual(shape(replayed(since, events)))
+      expect(yield* persisted).toEqual(replayed(since, events))
     })))
 
   test('the due timers pass over the loaded entities, page after page', () =>
@@ -711,7 +736,7 @@ describe('the crash table', () => {
 
           // The crash happened where the test asked: a point never reached would make the comparison vacuous.
           expect(yield* Deferred.isDone(crashed)).toBe(true)
-          expect(shape(yield* store.load(id))).toEqual(shape(replayed(since, events)))
+          expect(yield* persisted).toEqual(replayed(since, events))
           expect((yield* store.published(0)).map(({ kind, message, projection }) => ({ kind, message, projection })))
             .toEqual(publishedOf(since, events))
         })))
@@ -850,7 +875,7 @@ describe('random sequences of events', () => {
                 yield* runtime.settled
               }))
 
-            expect(shape(yield* store.load(id))).toEqual(shape(replayed(since, events)))
+            expect(yield* persisted).toEqual(replayed(since, events))
             expect(
               (yield* store.published(0)).map(({ kind, message, projection }) => ({ kind, message, projection })),
             ).toEqual(publishedOf(since, events))

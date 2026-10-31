@@ -104,7 +104,8 @@ export const rehearse = <T extends Types, E>(
         if (made._tag === 'Caller') encode(deployed.schemas.sender, made.sender, 'sender')
         return made
       }), (request) =>
-        Effect.flatMap(apply({ _tag: 'Receive', request, message }), (outputs) => {
+        // Each request is a new one, so none has a reply stored yet (decision 0065).
+        Effect.flatMap(apply({ _tag: 'Receive', request, message, reply: null }), (outputs) => {
           const key = Machine.requestKey(deployed, request)
           for (const output of outputs) {
             if (output._tag !== 'Replied' || Machine.requestKey(deployed, output.request) !== key) continue

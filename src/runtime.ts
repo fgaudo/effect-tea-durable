@@ -37,7 +37,6 @@ import {
 } from './program.ts'
 import {
   type Consumer,
-  type Forgotten,
   type Found,
   type Published,
   type Query,
@@ -180,7 +179,7 @@ export interface Runtime {
 interface Loaded<T extends Types> {
   machine: Machine.Machine<T>
   applying: boolean
-  readonly events: Queue.Queue<Machine.Event<T>>
+  readonly events: Queue.Queue<Machine.Offered<T>>
   /**
    * The events offered and not yet applied: counted as each is offered, and until its step is done, so that an
    * event taken off the queue and not yet applied is still under way (decision 0063).
@@ -327,7 +326,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       loaded: Loaded<T>,
       entity: Address,
       request: string,
-      event: Machine.Event<T>,
+      event: Machine.Offered<T>,
     ): Effect.Effect<Asked<A>> =>
       Effect.gen(function*() {
         const address = addressOf(entity)
@@ -352,7 +351,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /** Offers an event to a loaded entity, counted until its step is done (decision 0063). */
-    const offer = <T extends Types>(loaded: Loaded<T>, event: Machine.Event<T>) =>
+    const offer = <T extends Types>(loaded: Loaded<T>, event: Machine.Offered<T>) =>
       Effect.sync(() => {
         loaded.pending += 1
         Queue.offerUnsafe(loaded.events, event)
@@ -509,45 +508,33 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /**
-     * Takes the replies storage deleted out of the entities this process holds, so that what a loaded entity keeps
-     * grows with the work under way, as what is stored does (decision 0021). An entity whose step is applied
-     * meanwhile may keep one until it is unloaded: nothing asks for it, and it is never written again.
-     */
-    const forget = (forgotten: ReadonlyArray<Forgotten>) => {
-      for (const { name, id, request } of forgotten) {
-        const loaded = deployment(name)?.loaded.get(id)
-        if (loaded === undefined || loaded.machine.stored.replies[request] === undefined) continue
-        const { [request]: _, ...replies } = loaded.machine.stored.replies
-        loaded.machine = { ...loaded.machine, stored: { ...loaded.machine.stored, replies } }
-      }
-    }
-
-    /**
      * One event: the machine's step, written in one transaction, then acted on. A crash at any of the points
-     * leaves the entity as the crash table says.
+     * leaves the entity as the crash table says. A message is given the reply stored under its request, read here,
+     * where no other event of the entity is applied: the machine holds none (decision 0065).
      */
     const apply = <T extends Types>(
       deployed: Deployment<T>,
       loaded: Loaded<T>,
-      event: Machine.Event<T>,
+      offered: Machine.Offered<T>,
     ): Effect.Effect<void> =>
       Effect.gen(function*() {
         loaded.applying = true
         const entity: Address = { name: loaded.machine.stored.name, id: loaded.machine.stored.id }
+        const event: Machine.Event<T> = offered._tag === 'Receive'
+          ? { ...offered, reply: yield* deployed.storage.reply(entity.id, offered.request) }
+          : offered
         const before = loaded.machine
         const transition = Machine.step(deployed.program, before, event)
         const { written } = transition
-        let forgotten: ReadonlyArray<Forgotten> = []
         if (written !== null) {
           yield* at('BeforeCommit', entity, event as Machine.Event<never>)
           // What the event writes is the machine's, encoded: the storage decides nothing (decision 0057).
-          forgotten = yield* sql.withTransaction(deployed.storage.write(entity.id, written)).pipe(Effect.orDie)
+          yield* sql.withTransaction(deployed.storage.write(entity.id, written)).pipe(Effect.orDie)
         }
         loaded.machine = transition.machine
         if (before.stored.suspension !== null && transition.machine.stored.suspension === null) {
           wake(entity)
         }
-        forget(forgotten)
         // An event is observed once it is written — at once when it writes nothing — and before anything is
         // acted on: a crash before the commit leaves no event, and one after it an event that happened.
         yield* observe(entity, event as Machine.Event<never>)
@@ -669,7 +656,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const loaded: Loaded<T> = {
           machine: { stored, running: {} },
           applying: false,
-          events: yield* Queue.unbounded<Machine.Event<T>>(),
+          events: yield* Queue.unbounded<Machine.Offered<T>>(),
           pending: 0,
           operations: new Map(),
           timers: new Map(),
@@ -705,7 +692,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const loads = <T extends Types>(deployed: Deployment<T>, id: string) =>
       withEntity(deployed, id, () => Effect.void)
 
-    const operate = <T extends Types>(deployed: Deployment<T>, id: string, event: Machine.Event<T>) =>
+    const operate = <T extends Types>(deployed: Deployment<T>, id: string, event: Machine.Offered<T>) =>
       withEntity(deployed, id, (loaded) => loaded === null ? Effect.void : offer(loaded, event))
 
     const create = <T extends Types>(
@@ -744,7 +731,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           const loaded: Loaded<T> = {
             machine: started.machine,
             applying: false,
-            events: yield* Queue.unbounded<Machine.Event<T>>(),
+            events: yield* Queue.unbounded<Machine.Offered<T>>(),
             pending: 0,
             operations: new Map(),
             timers: new Map(),

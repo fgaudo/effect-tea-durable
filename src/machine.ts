@@ -281,7 +281,11 @@ export type Key<T extends Types> = Readonly<{
   delivery?: Delivery
 }>
 
-/** What is stored, and survives a crash. Each event changes it at once or not at all: one transaction. */
+/**
+ * What is stored, and survives a crash. Each event changes it at once or not at all: one transaction. The replies
+ * are stored too, and are not here: a `Receive` is given the one stored under its request, and the reply a step
+ * stores is in what it writes (decision 0065).
+ */
 export type Stored<T extends Types> = Readonly<{
   /** The name of the program the entity was created by: with its id, the entity's address (decision 0022). */
   name: string
@@ -289,8 +293,6 @@ export type Stored<T extends Types> = Readonly<{
   state: T['state']
   keys: Readonly<Record<string, Key<T>>>
   mailbox: ReadonlyArray<Envelope<T>>
-  /** By `requestKey`. */
-  replies: Readonly<Record<string, StoredReply<T['rejection']>>>
   /** The request that created the entity: its retries are answered `Created` (decision 0017). */
   creation: Request<T['sender']>
   suspension: Suspension | null
@@ -310,8 +312,16 @@ export type Machine<T extends Types> = Readonly<{
 }>
 
 export type Event<T extends Types> =
-  /** An inbound message arrives, under its request. */
-  | Readonly<{ _tag: 'Receive'; request: Request<T['sender']>; message: T['inbound'] }>
+  /**
+   * An inbound message arrives, under its request, with the reply stored under that request, or null for none: a
+   * runtime reads it just before the step, where no other event of the entity is applied (decision 0065).
+   */
+  | Readonly<{
+    _tag: 'Receive'
+    request: Request<T['sender']>
+    message: T['inbound']
+    reply: StoredReply<T['rejection']> | null
+  }>
   /** A request to create the entity, which exists. Its flags do not matter (decision 0012). */
   | Readonly<{ _tag: 'Create'; request: Request<T['sender']> }>
   /** An operation's effect ends with its message, recorded in the mailbox. */
@@ -331,6 +341,11 @@ export type Event<T extends Types> =
   | Readonly<{ _tag: 'Resume' }>
   /** An operator discards the inbound message a suspended entity died on, and resumes it. */
   | Readonly<{ _tag: 'Discard' }>
+
+/** An event as it is offered, before what it reads of storage is given to it: a `Receive` with no reply yet. */
+export type Offered<T extends Types> =
+  | Exclude<Event<T>, Readonly<{ _tag: 'Receive' }>>
+  | Omit<Extract<Event<T>, Readonly<{ _tag: 'Receive' }>>, 'reply'>
 
 export type Output<T extends Types> =
   | Readonly<{
@@ -435,8 +450,8 @@ export type Transition<T extends Types> = Readonly<{
   written: Written | null
 }>
 
-/** A transition before what it writes is worked out. */
-type Moved<T extends Types> = Omit<Transition<T>, 'written'>
+/** A transition before what it writes is worked out, with the reply it stores for the message it handles. */
+type Moved<T extends Types> = Omit<Transition<T>, 'written'> & Readonly<{ answered?: StoredReply<T['rejection']> }>
 
 /**
  * Whether the work under `key` in `incarnation` is stored, and not yet done. Once it is not, it never is again, and
@@ -644,7 +659,6 @@ export const start = <T extends Types>(
     state,
     keys: renew(program, {}, {}, work),
     mailbox: [],
-    replies: {},
     creation: request,
     suspension: null,
   }
@@ -652,7 +666,7 @@ export const start = <T extends Types>(
   const { machine, outputs } = activate(program, created, created, false)
   const reply: Output<T> = { _tag: 'CreationReplied', request, reply: { _tag: 'Created' } }
   // A new entity always writes its row.
-  const written = writes(program, null, machine.stored, null)
+  const written = writes(program, null, machine.stored, null, null)
   if (written === null) throw new Error(`the creation of '${program.name}' '${id}' writes nothing`)
   return { _tag: 'Created', machine, outputs: [reply, ...outputs], written }
 }
@@ -679,16 +693,15 @@ const receive = <T extends Types>(
   event: Extract<Event<T>, { _tag: 'Receive' }>,
 ): Moved<T> => {
   const { stored } = machine
-  const { request } = event
-  const key = requestKey(program, request)
+  const { request, reply } = event
   // A stored reply is read from storage: a suspended entity gives it too.
-  const reply = stored.replies[key]
-  if (reply !== undefined) return { machine, outputs: [{ _tag: 'Replied', request, reply }] }
+  if (reply !== null) return { machine, outputs: [{ _tag: 'Replied', request, reply }] }
   // Queued or not, a message has no reply yet: its caller retries once the entity is resumed (decision 0023).
   if (stored.suspension !== null) {
     return { machine, outputs: [{ _tag: 'Replied', request, reply: { _tag: 'Suspended' } }] }
   }
   // A retry of a message still in the mailbox waits for its reply.
+  const key = requestKey(program, request)
   if (stored.mailbox.some((envelope) => envelope._tag === 'Inbound' && requestKey(program, envelope.request) === key)) {
     return { machine, outputs: [] }
   }
@@ -755,10 +768,10 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
       if (head._tag === 'Internal') return broken(`update rejected the message of the work under '${head.key}'`)
       const reply = { _tag: 'Rejected', reason: reasonOf(result) } as const
       if (reply.reason !== null) encodeBy(program.schemas.rejection, reply.reason, 'reason of the rejection')
-      const replies = { ...stored.replies, [requestKey(program, head.request)]: reply }
       return {
-        machine: { ...machine, stored: { ...stored, mailbox: rest, replies } },
+        machine: { ...machine, stored: { ...stored, mailbox: rest } },
         outputs: [{ _tag: 'Replied', request: head.request, reply }],
+        answered: reply,
       }
     }
     const state: T['state'] = result
@@ -798,25 +811,13 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
       running[key] = { kind: kindOf(work), incarnation }
       outputs.push(startWork(machine, key, incarnation, work))
     }
-    const replies = head._tag === 'Inbound'
-      ? { ...stored.replies, [requestKey(program, head.request)]: { _tag: 'Accepted' } as const }
-      : stored.replies
     if (head._tag === 'Inbound') {
       outputs.unshift({ _tag: 'Replied', request: head.request, reply: { _tag: 'Accepted' } })
     }
     return {
-      machine: {
-        ...machine,
-        stored: {
-          ...stored,
-          state,
-          keys,
-          mailbox: rest,
-          replies,
-        },
-        running,
-      },
+      machine: { ...machine, stored: { ...stored, state, keys, mailbox: rest }, running },
       outputs,
+      ...(head._tag === 'Inbound' ? { answered: { _tag: 'Accepted' } as const } : {}),
     }
   } catch (thrown) {
     return suspend(machine, { cause: defectOf(thrown), on: { _tag: 'Message' } })
@@ -876,14 +877,16 @@ const askerOf = <Sender>(request: Request<Sender>): Asker | null =>
 
 /**
  * What an event writes, from what was stored before it (null for a new entity) to what is stored after it, with
- * the message it handled: nothing for an event that changed nothing stored (decision 0057). Only a step that
- * handles a message changes the state of an entity that exists, so the row it publishes is that message's.
+ * the message it handled and the reply it stored for it: nothing for an event that changed nothing stored
+ * (decisions 0057, 0065). Only a step that handles a message changes the state of an entity that exists, so the
+ * row it publishes is that message's.
  */
 export const writes = <T extends Types>(
   program: Program<T>,
   before: Stored<T> | null,
   after: Stored<T>,
   handled: Envelope<T> | null,
+  answered: StoredReply<T['rejection']> | null,
 ): Written | null => {
   const changed = before === null || before.state !== after.state
   const keys: Array<KeyRow> = []
@@ -901,16 +904,15 @@ export const writes = <T extends Types>(
   const was = before?.mailbox ?? []
   const left = was.length > 0 && after.mailbox[0] !== was[0] ? 1 : 0
   const queued = after.mailbox.slice(was.length - left).map((envelope) => envelopeRow(program, envelope))
-  const replies: Array<ReplyRow> = []
-  for (const [request, reply] of Object.entries(after.replies)) {
-    if (before?.replies[request] !== undefined) continue
-    // The machine adds a reply only for the message it handles.
-    const asked = handled?._tag === 'Inbound' ? askerOf(handled.request) : null
-    const reason = reply._tag === 'Rejected' && reply.reason !== null
-      ? encodeOnce(program.schemas.rejection, reply.reason, 'reason of the rejection')
-      : null
-    replies.push({ request, tag: reply._tag, reason, asked })
-  }
+  // The machine stores a reply only for the inbound message it handles.
+  const replies: ReadonlyArray<ReplyRow> = answered === null || handled?._tag !== 'Inbound' ? [] : [{
+    request: requestKey(program, handled.request),
+    tag: answered._tag,
+    reason: answered._tag === 'Rejected' && answered.reason !== null
+      ? encodeOnce(program.schemas.rejection, answered.reason, 'reason of the rejection')
+      : null,
+    asked: askerOf(handled.request),
+  }]
   const ended: Array<Readonly<{ key: string; incarnation: number }>> = []
   for (const [key, held] of Object.entries(before?.keys ?? {})) {
     if (held.work === undefined || holds(after, key, held.incarnation)) continue
@@ -960,13 +962,13 @@ export const writes = <T extends Types>(
  * by, and every event after it until the next (decision 0064).
  */
 export const step = <T extends Types>(program: Program<T>, machine: Machine<T>, event: Event<T>): Transition<T> => {
-  const moved = move(program, machine, event)
+  const { answered = null, ...moved } = move(program, machine, event)
   const handled = event._tag === 'Handle' ? machine.stored.mailbox[0] ?? null : null
   return {
     ...moved,
     written: moved.machine.stored === machine.stored
       ? null
-      : writes(program, machine.stored, moved.machine.stored, handled),
+      : writes(program, machine.stored, moved.machine.stored, handled, answered),
   }
 }
 
