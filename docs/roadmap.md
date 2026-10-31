@@ -44,10 +44,13 @@ A review of decisions 0027 to 0039 found five more corrections, and all of them 
 - [`AGENTS.md`](../AGENTS.md) says that a note is taken by the commit that adds it, so that a correction found
   later is a note of its own.
 
-The cost question left is [a mailbox under a burst](open-questions.md#storage-and-reading): a machine holds only
-its state, its keys and its mailbox ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)), and an
-event writes only what it changed ([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)). It is
-decided next.
+The last cost question is decided too: a message that finds the mailbox empty is handled as it arrives, in one
+transaction, and a burst waits in memory, where the runtime bounds nothing
+([decision 0074](decisions/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)).
+
+What comes next is chosen among the [open questions](open-questions.md): those Effect Cluster's step depends on
+before it, such as [deploying a program twice](open-questions.md#running) and
+[how many entities a process holds](open-questions.md#running).
 
 ## Later
 

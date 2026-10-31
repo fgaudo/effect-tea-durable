@@ -65,10 +65,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   the entity ([decision 0020](decisions/0020-a-new-program-is-checked-against-the-stored-work.md)). Should a
   read activate the entity, answer from the read model, or say that the entity is suspended? A `read` of an
   entity this process does not hold also loads all of it, its keys and its mailbox, to read its state alone.
-- **A mailbox under a burst.** Nothing bounds a mailbox. An event writes only the messages it queues and the one
-  it handles ([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)), but the machine holds the
-  whole mailbox in memory, and an inbound message is two transactions, its `Receive` and its step. Should a burst
-  be refused past a bound, and a message that finds the entity idle be received and handled in one transaction?
 
 ## Running
 

@@ -387,8 +387,17 @@ const given = <U extends Types>(
   offered: Machine.Offered<U>,
 ): Machine.Event<U> =>
   offered._tag === 'Receive'
-    ? { ...offered, reply: replies.get(Machine.requestKey(program, offered.request)) ?? null }
+    ? { ...offered, reply: replies.get(Machine.requestKey(program, offered.request)) ?? null, at }
     : offered
+
+/** The message an event handles: a step's, or a message's that finds the mailbox empty (decision 0074). */
+const handledBy = (event: Machine.Event<T>, before: Toy): Machine.Envelope<T> | undefined => {
+  if (before.stored.suspension !== null) return undefined
+  if (event._tag === 'Handle') return before.stored.mailbox[0]
+  return event._tag === 'Receive' && event.reply === null && before.stored.mailbox.length === 0
+    ? { _tag: 'Inbound', request: event.request, message: event.message }
+    : undefined
+}
 
 const run = (commands: ReadonlyArray<Command>) => {
   const created = Machine.start(program, 'toy', null, epoch, creation)
@@ -688,9 +697,14 @@ describe('the machine', () => {
 
   test('a defect suspends the entity, with its state and its mailbox as they were', () =>
     property(({ trace }) => {
-      for (const { before, after, outputs } of trace) {
+      for (const { event, before, after, outputs } of trace) {
         if (!outputs.some((output) => output._tag === 'Suspended')) continue
-        expect({ ...after.stored, suspension: null }).toEqual({ ...before.stored, suspension: null })
+        // A message that suspends the entity as it arrives stays, as one queued before would (decision 0074).
+        const received: ReadonlyArray<Machine.Envelope<T>> = event._tag === 'Receive'
+          ? [{ _tag: 'Inbound', request: event.request, message: event.message }]
+          : []
+        expect({ ...after.stored, suspension: null })
+          .toEqual({ ...before.stored, mailbox: [...before.stored.mailbox, ...received], suspension: null })
         expect(after.running).toEqual({})
       }
     }))
@@ -884,7 +898,10 @@ const resumedBy = (entity: Entity, fixed: Program<Tiny>) =>
 
 /** Records a message, and handles it. */
 const handled = (machine: Entity, event: Machine.Offered<Tiny>) =>
-  stepped(stepped(machine, event).machine, { _tag: 'Handle', at })
+  // A message that finds the mailbox empty is handled as it arrives (decision 0074).
+  event._tag === 'Receive' && machine.stored.mailbox.length === 0
+    ? stepped(machine, event)
+    : stepped(stepped(machine, event).machine, { _tag: 'Handle', at })
 
 const reasonOfSuspension = (transition: Machine.Transition<Tiny>) => {
   const cause = transition.machine.stored.suspension?.cause
@@ -1026,8 +1043,7 @@ describe('what the program throws', () => {
   }
 
   test('an exception of the machine in a step is no defect of the program: it leaves the step', () => {
-    const queued = stepped(corrupt(), inbound).machine
-    expect(() => stepped(queued, { _tag: 'Handle', at })).toThrow('a row the runtime corrupted')
+    expect(() => stepped(corrupt(), inbound)).toThrow('a row the runtime corrupted')
   })
 
   test('an exception of the machine in an activation is no defect of the program: it leaves the event', () => {
@@ -1300,11 +1316,16 @@ describe('a suspended entity', () => {
   })
 
   test('answers Suspended every caller waiting, and gives each its reply on a retry once resumed', () => {
-    const machine = checked((message) => (message === 'bug' ? defect('bug') : message), () => ({}))
+    const machine = checked(
+      (message) => (message === 'bug' ? defect('bug') : message),
+      (state) => (state === 'start' ? { charge: 'operation' } : {}),
+    )
     const receive = (requestId: string, message: string) =>
       ({ _tag: 'Receive', request: by(requestId), message }) as const
-    const queued = stepped(stepped(machine, receive('second', 'bug')).machine, receive('third', 'ok'))
-    const died = stepped(queued.machine, { _tag: 'Handle', at })
+    // The operation's completion is ahead of them, so both wait in the mailbox (decision 0074).
+    const completed = stepped(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'done' })
+    const queued = stepped(stepped(completed.machine, receive('second', 'bug')).machine, receive('third', 'ok'))
+    const died = stepped(stepped(queued.machine, { _tag: 'Handle', at }).machine, { _tag: 'Handle', at })
     for (const requestId of ['second', 'third']) {
       expect(died.outputs).toContainEqual({ _tag: 'Replied', request: by(requestId), reply: { _tag: 'Suspended' } })
     }
@@ -1319,8 +1340,10 @@ describe('a suspended entity', () => {
   })
 
   test('an operation that dies answers Suspended every caller waiting', () => {
-    const machine = checked((message) => message, () => ({ charge: 'operation' }))
-    const queued = stepped(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
+    const machine = checked((message) => message, () => ({ charge: 'operation', work: 'operation' }))
+    // A completion is ahead of the message, which waits behind it (decision 0074).
+    const completed = stepped(machine, { _tag: 'Complete', key: 'work', incarnation: 1, message: 'done' })
+    const queued = stepped(completed.machine, { _tag: 'Receive', request: by('r'), message: 'go' })
     const died = stepped(queued.machine, { _tag: 'Die', key: 'charge', incarnation: 1, cause: 'died' })
     expect(died.outputs).toContainEqual({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } })
   })
@@ -1513,7 +1536,7 @@ describe('who a request belongs to', () => {
   })
 
   // The machine holds no reply: what answers a retry is what storage read for it (decision 0065).
-  test('a message is answered the reply it is given, and queued when it is given none', () => {
+  test('a message is answered the reply it is given, and handled when it is given none', () => {
     const machine = checked((message) => message, () => ({}))
     const accepted = { _tag: 'Accepted' } as const
     const given = Machine.step(machine.program, machine, {
@@ -1521,13 +1544,20 @@ describe('who a request belongs to', () => {
       request: by('r'),
       message: 'go',
       reply: accepted,
+      at,
     })
     expect(given.machine).toBe(machine)
     expect(given.outputs).toEqual([{ _tag: 'Replied', request: by('r'), reply: accepted }])
     expect(given.written).toBeNull()
-    const none = Machine.step(machine.program, machine, { _tag: 'Receive', request: by('r'), message: 'go', reply: null })
-    expect(none.outputs).toEqual([])
-    expect(none.machine.stored.mailbox).toEqual([{ _tag: 'Inbound', request: by('r'), message: 'go' }])
+    const none = Machine.step(machine.program, machine, {
+      _tag: 'Receive',
+      request: by('r'),
+      message: 'go',
+      reply: null,
+      at,
+    })
+    expect(none.outputs).toEqual([{ _tag: 'Replied', request: by('r'), reply: accepted }])
+    expect(none.machine.stored.mailbox).toEqual([])
     expect(Object.keys(none.machine.stored)).not.toContain('replies')
   })
 
@@ -1638,9 +1668,9 @@ describe('what an event writes', () => {
   // A storage gives back what a step wrote, and the machine holds none of it (decision 0065).
   test('a step writes the reply it answers the message it handles, and no other event writes one', () =>
     property(({ trace }) => {
-      for (const { event, program, outputs, written } of trace.slice(1)) {
+      for (const { event, program, before, outputs, written } of trace.slice(1)) {
         const stored = outputs.flatMap((output) =>
-          output._tag === 'Replied' && output.reply._tag !== 'Suspended' && event._tag === 'Handle'
+          output._tag === 'Replied' && output.reply._tag !== 'Suspended' && handledBy(event, before) !== undefined
             ? [{
               request: Machine.requestKey(program, output.request),
               tag: output.reply._tag,
@@ -1668,9 +1698,9 @@ describe('what an event writes', () => {
       const [creation, ...events] = trace
       expect(creation?.written?.published).toEqual({ kind: 'Creation', message: null, projection: keys.length })
       for (const { event, program, before, after, written } of events) {
-        const head = before.stored.mailbox[0]
+        const head = handledBy(event, before)
         const { project } = program
-        const shows = event._tag === 'Handle' && head !== undefined && before.stored.state !== after.stored.state &&
+        const shows = head !== undefined && before.stored.state !== after.stored.state &&
           project(before.stored.state) !== project(after.stored.state)
         expect(written?.published ?? null).toEqual(
           shows ? { kind: head._tag, message: head.message, projection: project(after.stored.state) } : null,

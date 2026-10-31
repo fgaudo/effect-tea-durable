@@ -320,8 +320,11 @@ const publishedOf = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) 
   }>
   const rows: Array<Row> = [{ kind: 'Creation', message: null, projection: shown }]
   for (const event of rest) {
-    // The message a step handles is the mailbox's first, read before the step takes it.
-    const head = machine.stored.mailbox[0]
+    // The message a step handles is the mailbox's first, read before the step takes it, or a message that finds
+    // the mailbox empty (decision 0074).
+    const head = event._tag === 'Receive' && machine.stored.mailbox.length === 0
+      ? { _tag: 'Inbound' as const, message: event.message }
+      : machine.stored.mailbox[0]
     const next = Machine.step(program, machine, event).machine
     const after = program.project(next.stored.state)
     if (next.stored.state !== machine.stored.state && after !== shown) {
@@ -789,13 +792,15 @@ describe('the crash table', () => {
       expect(reached).toEqual(points.map((point) => `${point} Create`))
     })))
 
-  // An inbound message is two transactions, its `Receive` and its step: one a crash left between them is found
-  // at the next start, as an interrupted operation is (decision 0071).
-  test('a message a crash left in the mailbox of an idle entity is handled at the next start, with no retry', () =>
+  // A message that finds the mailbox empty is handled in its own transaction, so this runtime never leaves one there
+  // (decision 0074); a store a runtime before it wrote, between a message's `Receive` and its step, still has the
+  // entity started (decision 0071).
+  test('a message left in the mailbox of an idle entity is handled at the next start, with no retry', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const sender = { _tag: 'Tester' } as const
-      const store = storage(program, yield* SqlClient.SqlClient)
+      const sql = yield* SqlClient.SqlClient
+      const store = storage(program, sql)
       // The entity has nothing left under way, so nothing else would have a process start it.
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
@@ -806,23 +811,23 @@ describe('the crash table', () => {
           yield* TestClock.adjust('60 millis')
           yield* runtime.settled
         }))
-      const crashed = yield* Deferred.make<void>()
-      const dying = process({
-        at: (point, _entity, event) =>
-          point === 'BeforeCommit' && event._tag === 'Handle'
-            ? Effect.flatMap(Deferred.succeed(crashed, undefined), () => Effect.never)
-            : Effect.void,
-      }, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands()
-          const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* running(toy.send(id, { _tag: 'Want', key: 'a', on: false, nonce: 'left' }, {
-            requestId: 'left',
-            sender,
-          }))
-          yield* Effect.never
-        }))
-      yield* Effect.raceFirst(dying, Deferred.await(crashed))
+      const request = { _tag: 'Caller', sender, id: 'left' } as const
+      yield* sql.withTransaction(store.write(id, {
+        created: false,
+        entity: null,
+        suspension: null,
+        keys: [],
+        handled: 0,
+        queued: [{
+          _tag: 'Inbound',
+          message: { _tag: 'Want', key: 'a', on: false, nonce: 'left' },
+          request: Schema.encodeSync(Machine.requestCodec(program))(request),
+        }],
+        replies: [],
+        ended: [],
+        shown: null,
+        published: null,
+      }))
       expect((yield* store.load(id))?.mailbox.length).toBe(1)
       // Nobody retries: the process that starts next handles the message on its own.
       yield* process({}, (runtime) =>

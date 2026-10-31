@@ -275,14 +275,17 @@ it can read ([decision 0043](decisions/0043-a-row-no-version-reads-fails-what-re
   `project` and the indexes on the next state), stores it, answers the caller, and starts or ends the work
   whose keys changed.
   An internal message `update` rejects is a defect, since it cannot be late
-  ([decision 0014](decisions/0014-rules-the-machine-settled.md)).
+  ([decision 0014](decisions/0014-rules-the-machine-settled.md)). A message that finds the mailbox empty is
+  received and handled in one event, and one transaction; the runtime takes a caller's message only once the
+  mailbox is empty, so a burst waits in memory, unstored, and nothing bounds it but the server in front of the
+  process ([decision 0074](decisions/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)).
 - **Passivation.** An entity with no message for a while is unloaded. An operation under way keeps it loaded; a
   suspended entity, which runs nothing, is unloaded with the message it died on. To the machine, a passivation is
   a crash the runtime chose: a `Restart` activates the entity again, and arms the same timers in the same
   incarnations. The timers stored are the stored work's, which says each one's time: the earliest wakes the
   entity, and nothing else needs storing. So a process starts with the entities whose state holds an operation,
-  which only an activation runs again, and with those whose mailbox holds a message a crash left between its
-  arrival and its step; the stored times wake the rest — except a suspended entity's, which nothing of fires
+  which only an activation runs again, and with those whose mailbox holds a message a crash left before its
+  step; the stored times wake the rest — except a suspended entity's, which nothing of fires
   until an operator resumes it ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md),
   [decision 0071](decisions/0071-a-process-starts-the-entities-with-a-message.md)).
 

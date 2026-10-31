@@ -361,8 +361,8 @@ export interface Storage<T extends Types> {
   readonly write: (id: string, written: Machine.Written) => Effect.Effect<void>
   /**
    * The entities whose state holds an operation, or whose mailbox holds a message: what a process activates when
-   * it starts, so that an operation a crash interrupted runs again, and a message a crash left between its
-   * `Receive` and its step is handled, without waiting for a caller. A timer needs no activation of its own — its
+   * it starts, so that an operation a crash interrupted runs again, and a message a crash left before its step is
+   * handled, without waiting for a caller. A timer needs no activation of its own — its
    * time is stored, and `due` gives it — and a suspended entity runs nothing until an operator resumes it
    * (decisions 0006, 0029, 0071).
    */

@@ -314,13 +314,15 @@ export type Machine<T extends Types> = Readonly<{
 export type Event<T extends Types> =
   /**
    * An inbound message arrives, under its request, with the reply stored under that request, or null for none: a
-   * runtime reads it just before the step, where no other event of the entity is applied (decision 0065).
+   * runtime reads it just before the step, where no other event of the entity is applied (decision 0065). One that
+   * finds the mailbox empty is handled at `at` in the same event: one transaction (decision 0074).
    */
   | Readonly<{
     _tag: 'Receive'
     request: Request<T['sender']>
     message: T['inbound']
     reply: StoredReply<T['rejection']> | null
+    at: DateTime.Utc
   }>
   /** A request to create the entity, which exists. Its flags do not matter (decision 0012). */
   | Readonly<{ _tag: 'Create'; request: Request<T['sender']> }>
@@ -342,10 +344,13 @@ export type Event<T extends Types> =
   /** An operator discards the inbound message a suspended entity died on, and resumes it. */
   | Readonly<{ _tag: 'Discard' }>
 
-/** An event as it is offered, before what it reads of storage is given to it: a `Receive` with no reply yet. */
+/**
+ * An event as it is offered, before what it reads of storage and of the clock is given to it: a `Receive` with no
+ * reply and no time yet.
+ */
 export type Offered<T extends Types> =
   | Exclude<Event<T>, Readonly<{ _tag: 'Receive' }>>
-  | Omit<Extract<Event<T>, Readonly<{ _tag: 'Receive' }>>, 'reply'>
+  | Omit<Extract<Event<T>, Readonly<{ _tag: 'Receive' }>>, 'reply' | 'at'>
 
 export type Output<T extends Types> =
   | Readonly<{
@@ -450,8 +455,13 @@ export type Transition<T extends Types> = Readonly<{
   written: Written | null
 }>
 
-/** A transition before what it writes is worked out, with the reply it stores for the message it handles. */
-type Moved<T extends Types> = Omit<Transition<T>, 'written'> & Readonly<{ answered?: StoredReply<T['rejection']> }>
+/**
+ * A transition before what it writes is worked out, with the message it handles and the reply it stores for an
+ * inbound one.
+ */
+type Moved<T extends Types> =
+  & Omit<Transition<T>, 'written'>
+  & Readonly<{ handled?: Envelope<T>; answered?: StoredReply<T['rejection']> }>
 
 /**
  * Whether the work under `key` in `incarnation` is stored, and not yet done. Once it is not, it never is again, and
@@ -706,7 +716,9 @@ const receive = <T extends Types>(
     return { machine, outputs: [] }
   }
   const envelope: Envelope<T> = { _tag: 'Inbound', request, message: event.message }
-  return { machine: { ...machine, stored: { ...stored, mailbox: [...stored.mailbox, envelope] } }, outputs: [] }
+  const queued: Machine<T> = { ...machine, stored: { ...stored, mailbox: [...stored.mailbox, envelope] } }
+  // Nothing is ahead of it: it is handled as it arrives, and never written to the mailbox (decision 0074).
+  return stored.mailbox.length === 0 ? handle(program, queued, event.at) : { machine: queued, outputs: [] }
 }
 
 /**
@@ -771,6 +783,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
       return {
         machine: { ...machine, stored: { ...stored, mailbox: rest } },
         outputs: [{ _tag: 'Replied', request: head.request, reply }],
+        handled: head,
         answered: reply,
       }
     }
@@ -817,6 +830,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
     return {
       machine: { ...machine, stored: { ...stored, state, keys, mailbox: rest }, running },
       outputs,
+      handled: head,
       ...(head._tag === 'Inbound' ? { answered: { _tag: 'Accepted' } as const } : {}),
     }
   } catch (thrown) {
@@ -962,8 +976,7 @@ export const writes = <T extends Types>(
  * by, and every event after it until the next (decision 0064).
  */
 export const step = <T extends Types>(program: Program<T>, machine: Machine<T>, event: Event<T>): Transition<T> => {
-  const { answered = null, ...moved } = move(program, machine, event)
-  const handled = event._tag === 'Handle' ? machine.stored.mailbox[0] ?? null : null
+  const { handled = null, answered = null, ...moved } = move(program, machine, event)
   return {
     ...moved,
     written: moved.machine.stored === machine.stored

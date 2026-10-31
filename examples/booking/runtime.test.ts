@@ -190,8 +190,8 @@ test('a booking whose hold the inventory is suspended on waits for its resumptio
     yield* Effect.scoped(Effect.gen(function*() {
       const suspended = yield* Deferred.make<void>()
       const runtime = yield* launch({ retry }).pipe(Effect.provideService(Probe, (said) =>
-        // The inventory's one step is the hold it dies on.
-        said._tag === 'Applied' && said.entity.name === 'Inventory' && said.event._tag === 'Handle'
+        // The inventory's one message is the hold it dies on, handled as it arrives (decision 0074).
+        said._tag === 'Applied' && said.entity.name === 'Inventory' && said.event._tag === 'Receive'
           ? Deferred.succeed(suspended, undefined)
           : Effect.void))
       const inventories = yield* runtime.deploy(breaking)

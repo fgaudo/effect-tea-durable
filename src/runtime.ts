@@ -571,7 +571,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         loaded.applying = true
         const entity: Address = { name: loaded.machine.stored.name, id: loaded.machine.stored.id }
         const event: Machine.Event<T> = offered._tag === 'Receive'
-          ? { ...offered, reply: yield* deployed.storage.reply(entity.id, offered.request) }
+          ? { ...offered, reply: yield* deployed.storage.reply(entity.id, offered.request), at: yield* DateTime.now }
           : offered
         const before = loaded.machine
         const transition = Machine.step(deployed.program, before, event)
