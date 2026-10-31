@@ -74,8 +74,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 - **Two versions at once.** During a rolling deploy, a state written by the new version may be read by the
   old one. Is forward compatibility for one version required, or do deploys avoid it? A database is held by one
   runtime ([decision 0080](decisions/0080-a-database-is-held-by-one-runtime.md)), so two versions meet only where
-  two processes share a store, and the question waits for what Effect Cluster says of which process holds which
-  entities.
+  two processes share a store. On Effect Cluster a runner carries no version, and a shard may go from a new runner
+  back to an old one ([Cluster](cluster.md#two-versions-at-once)): the choice is between deploys that replace every
+  runner before a new one writes, forward compatibility for one version, or a change to Cluster.
 - **Suspended entities.** A caller gets `Suspended`, and an operation that sends waits, keeping its own entity
   waiting with it ([decision 0010](decisions/0010-a-rejection-may-carry-a-reason.md)), as it waits for a
   program not deployed yet ([decision 0045](decisions/0045-an-operation-waits-for-a-program-not-deployed-yet.md)),
