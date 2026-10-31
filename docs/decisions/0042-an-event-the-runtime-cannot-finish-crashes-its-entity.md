@@ -1,7 +1,10 @@
 # 0042. An event the runtime cannot finish crashes its entity
 
 **Status:** accepted, 2026-10-30. Its permit is replaced by a lock of the entity's own in
-[decision 0067](0067-each-entity-is-held-by-its-own-lock.md).
+[decision 0067](0067-each-entity-is-held-by-its-own-lock.md). That a crash stops its operations before it goes on is
+changed by [decision 0056](0056-nothing-waits-for-an-operation-under-the-permit.md): it forks their interruption. Its
+consequence that the waker dies with an activation that fails is decided otherwise by
+[decision 0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md): the waker goes on, and tries the entity again.
 
 ## Context
 

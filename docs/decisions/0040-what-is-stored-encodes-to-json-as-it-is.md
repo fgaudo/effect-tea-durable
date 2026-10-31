@@ -1,6 +1,8 @@
 # 0040. What is stored encodes to JSON as it is
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its consequence that each step encodes what it stores twice, and its bullet that
+the storage writes through `encode`, are changed by [decision 0057](0057-the-machine-gives-what-is-written.md): the
+machine gives what is written, encoded once, and the storage writes it.
 
 ## Context
 

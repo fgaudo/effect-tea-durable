@@ -1,7 +1,9 @@
 # 0043. A row no version reads fails what reads it, not the process
 
 **Status:** accepted, 2026-10-31. Replaces the bullet of
-[decision 0036](0036-a-migration-is-a-function-on-the-json.md) that says the runtime dies on such a row.
+[decision 0036](0036-a-migration-is-a-function-on-the-json.md) that says the runtime dies on such a row. Its
+consequence that the waker dies on such an entity is changed by
+[decision 0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md): the waker goes on, and tries it again.
 
 ## Context
 

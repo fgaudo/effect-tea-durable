@@ -1,7 +1,10 @@
 # 0036. A program carries its migrations, and a migration is a function on the JSON
 
 **Status:** accepted, 2026-10-30. Its bullet that says the runtime dies on a row no version reads is replaced by
-[decision 0043](0043-a-row-no-version-reads-fails-what-reads-it.md).
+[decision 0043](0043-a-row-no-version-reads-fails-what-reads-it.md). Its consequence that a stored operation, migrated,
+must be `Equal.equals` to the new one is changed by [decision 0058](0058-work-is-compared-by-what-is-stored.md): the
+two must encode to the same JSON. That a rejection's reason is kept for ever, which holds of a caller's reply alone, is
+corrected by [decision 0100](0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md).
 
 ## Context
 

@@ -1082,6 +1082,12 @@ describe('what a runtime writes', () => {
           checked((message) => message, (state) => (state === 'go' ? { charge: 'unmeasured operation' } : {})),
           "the operation under 'charge' encodes to what JSON does not hold",
         ],
+        // An index that is a number JSON writes as `null`, which no schema encodes.
+        [
+          checked((message) => message, () => ({}), undefined, undefined, (projection) =>
+            projection === 'go' ? Number.POSITIVE_INFINITY as never : projection),
+          "the index 'shown' is a number JSON does not hold",
+        ],
       ] as const
     ) {
       const transition = handled(machine, inbound)
