@@ -25,8 +25,15 @@ time instead of waiting for it ([decision 0066](decisions/0066-the-runtimes-test
 decided in a note before it is made.
 
 The open questions that bear on cost are decided next. The first is: each entity is held by a lock of its own,
-not by one permit for the process ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)). The
-one left is [a mailbox under a burst](open-questions.md#storage-and-reading): a machine holds only its state, its
+not by one permit for the process ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)).
+
+A bug of correctness comes before the last of them: [a sender migrated onto another's
+text](open-questions.md#storage-and-reading) lets one caller's request take the reply row of another, whose retry
+is then applied again ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)). It is decided next, and
+before Effect Cluster brings rolling deploys, since how a reply is keyed bears on renaming a program and on two
+versions at once.
+
+The cost question left after it is [a mailbox under a burst](open-questions.md#storage-and-reading): a machine holds only its state, its
 keys and its mailbox ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)), and an event writes only
 what it changed ([decision 0057](decisions/0057-the-machine-gives-what-is-written.md)).
 
