@@ -1872,10 +1872,11 @@ describe('what the runtime cannot finish', () => {
       started.length = 0
       stopped.length = 0
       acted = Deferred.makeUnsafe<void>()
+      let dies = true
       yield* process({
         // The second activation cannot finish, once the first has started its work.
         at: (point, entity, event) =>
-          point === 'BeforeCommit' && entity.id === 'd-2' && event._tag === 'Restart'
+          dies && point === 'BeforeCommit' && entity.id === 'd-2' && event._tag === 'Restart'
             ? Effect.andThen(Deferred.await(acted), Effect.die('the runtime failed'))
             : Effect.void,
       }, (runtime) =>
@@ -1885,6 +1886,9 @@ describe('what the runtime cannot finish', () => {
           expect(started.length).toBeGreaterThan(0)
           expect([...stopped].sort()).toEqual([...started].sort())
           yield* runtime.settled
+          // A deploy that failed gives its name back, and the program can be deployed again (decision 0075).
+          dies = false
+          expect(Exit.isSuccess(yield* Effect.exit(Effect.provide(runtime.deploy(program), layer)))).toBe(true)
         }))
     })))
 
@@ -1943,6 +1947,29 @@ describe('what the runtime cannot finish', () => {
           yield* runtime.settled
         }))
     })))
+
+  test('a name is deployed once in a process, however two deploys of it interleave', async () => {
+    const reasonOf = (exit: Exit.Exit<unknown>) => {
+      const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+      return cause instanceof InvariantDefect ? cause.reason : null
+    }
+    // Each budget moves the points where one deploy may run between two steps of the other (decision 0068).
+    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
+    for (const budget of budgets) {
+      await database(process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const deploy = Effect.exit(Effect.provide(runtime.deploy(program), layer))
+          const exits = yield* Effect.all([deploy, deploy], { concurrency: 'unbounded' })
+          // A second deploy is refused, as is one after them both (decision 0075).
+          exits.push(yield* deploy)
+          expect({ budget, deployed: exits.map(reasonOf).sort() }).toEqual({
+            budget,
+            deployed: [null, "the program 'Toy' is deployed already", "the program 'Toy' is deployed already"],
+          })
+        })).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+  }, 30_000)
 
   test('a message its schema cannot encode is its caller’s defect, and reaches no entity', () =>
     database(Effect.gen(function*() {

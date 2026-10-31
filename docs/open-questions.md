@@ -68,12 +68,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Running
 
-- **Deploying a program twice in one process.** `deploy` of a name already deployed replaces the deployment,
-  while the entities the first one loaded keep their loops: the second activates the same entities again, and
-  two loops may step one entity. Is a second deploy refused, or is it how a new version takes over in place,
-  unloading what the first one holds? A fix is a deploy
-  ([decision 0064](decisions/0064-the-program-is-not-the-machines-state.md)), so today an operator brings one by
-  starting a new process.
 - **How many entities a process holds.** An entity is unloaded once it has had nothing to do for a while, and
   nothing caps how many are loaded at once: a burst of callers loads them all
   ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)). Should a process unload the least recently

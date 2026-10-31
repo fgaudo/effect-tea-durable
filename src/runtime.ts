@@ -174,7 +174,8 @@ export interface Runtime {
    * Runs a program's entities in this process. The operations' services are taken from here, and their fibers run
    * in the runtime's scope: a program is deployed where its services are. `Entities` is the runtime's own, filled
    * in with the entity each operation runs for, so a program that only talks to other entities needs nothing.
-   * A program that cannot run as written dies here, before anything is stored or run (decision 0054).
+   * A program that cannot run as written dies here, before anything is stored or run (decision 0054), and so does
+   * one whose name this process has deployed already: a new version is deployed by a new process (decision 0075).
    */
   readonly deploy: <T extends Types>(
     program: Program<T>,
@@ -264,6 +265,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const sql = yield* SqlClient.SqlClient
     const scope = yield* Effect.scope
     const deployments = new Map<string, Deployment<never>>()
+    /** The names deployed in this process, or being deployed: each is deployed once (decision 0075). */
+    const names = new Set<string>()
     /**
      * The callers waiting for a reply, by entity and then by request: a retry of a queued message waits with the
      * first, and a crash of the entity reaches every caller of it (decision 0042). A creation's callers wait apart
@@ -965,6 +968,23 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       Effect.gen(function*() {
         // A program that cannot run as written is refused before anything is stored or run (decision 0054).
         yield* Effect.sync(() => checkProgram(program))
+        // A name is deployed once in a process: a new version is a new process (decision 0075). It is claimed in
+        // the step that checks it, so that two deploys at once cannot both pass, and given back by one that fails.
+        yield* Effect.suspend(() => {
+          if (!names.has(program.name)) {
+            names.add(program.name)
+            return Effect.void
+          }
+          return Effect.die(new InvariantDefect({ reason: `the program '${program.name}' is deployed already` }))
+        })
+        return yield* Effect.onError(deploying(program), () =>
+          Effect.sync(() => {
+            names.delete(program.name)
+          }))
+      })
+
+    const deploying = <T extends Types>(program: Program<T>) =>
+      Effect.gen(function*() {
         const services = yield* Effect.context<Exclude<T['services'], Entities>>()
         const deployed: Deployment<T> = {
           program,

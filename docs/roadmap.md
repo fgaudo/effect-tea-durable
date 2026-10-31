@@ -49,7 +49,8 @@ transaction, and a burst waits in memory, where the runtime bounds nothing
 ([decision 0074](decisions/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)).
 
 What comes next is chosen among the [open questions](open-questions.md): those Effect Cluster's step depends on
-before it, such as [deploying a program twice](open-questions.md#running) and
+before it. The first is decided: a process deploys a name once, and a new version is a new process
+([decision 0075](decisions/0075-a-name-is-deployed-once-in-a-process.md)). The next is
 [how many entities a process holds](open-questions.md#running).
 
 ## Later

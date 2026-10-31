@@ -476,4 +476,7 @@ for its operations to stop ([decision 0056](decisions/0056-nothing-waits-for-an-
 Each entity is found, loaded, unloaded and crashed under a lock of its own, so the callers of one entity never
 wait on another's activation ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)).
 Everything a deployment runs runs in a scope of its own: a deploy that cannot finish stops what it started, and
-is never seen by other programs ([decision 0051](decisions/0051-a-deploy-that-fails-leaves-nothing-running.md)). Effect Cluster's entities, sharding and message storage come next ([roadmap](roadmap.md)).
+is never seen by other programs ([decision 0051](decisions/0051-a-deploy-that-fails-leaves-nothing-running.md)), and
+one that does gives its name back. A process deploys a name once: a new version, a fix included, is deployed by
+a new process ([decision 0075](decisions/0075-a-name-is-deployed-once-in-a-process.md)). Effect Cluster's
+entities, sharding and message storage come next ([roadmap](roadmap.md)).
