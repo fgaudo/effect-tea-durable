@@ -253,3 +253,36 @@ test('a row the runtime never writes fails the call that meets it, and is read a
       }`
       expect((yield* Effect.exit(store.published(0)))._tag).toBe('Failure')
     }).pipe(Effect.orDie)))
+
+// A row is keyed by its request as the version that wrote it encoded it, and by that version (decision 0069).
+test('a caller whose request a migration gives the text of another caller’s row takes nothing of it', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      type Named = Omit<T, 'sender'> & { sender: string }
+      const callers = (migrations: Program<Named>['migrations']): Program<Named> => ({
+        ...receiver,
+        schemas: { ...receiver.schemas, sender: Schema.String },
+        update: (message) => () => ({ last: message }),
+        ...(migrations === undefined ? {} : { migrations }),
+      })
+      const before = storage(callers(undefined), sql)
+      // Version 2 renames the sender 'a' to 'b', and gives 'a' to the one that was 'z'.
+      const after = storage(
+        callers([{ sender: (json) => json === 'a' ? 'b' : json === 'z' ? 'a' : json }]),
+        sql,
+      )
+      const caller = (sender: string) => ({ _tag: 'Caller', sender, id: 'r' }) as const
+      const accepted = (program: Program<Named>, sender: string): Machine.ReplyRow => ({
+        request: Machine.requestKey(program, caller(sender)),
+        tag: 'Accepted',
+        reason: null,
+        asked: null,
+      })
+      yield* before.write('r', created({ replies: [accepted(callers(undefined), 'a')] }))
+      // The caller that is 'a' in version 2 has the text of the row 'a' stored in version 1, and is not answered by it.
+      expect(yield* after.reply('r', caller('a'))).toBeNull()
+      yield* after.write('r', written({ replies: [accepted(callers([]), 'a')] }))
+      expect(yield* after.reply('r', caller('a'))).toEqual({ _tag: 'Accepted' })
+      // The caller version 1 stored as 'a' is 'b' now, and its retry still finds its own reply.
+      expect(yield* after.reply('r', caller('b'))).toEqual({ _tag: 'Accepted' })
+    })))

@@ -27,13 +27,11 @@ decided in a note before it is made.
 The open questions that bear on cost are decided next. The first is: each entity is held by a lock of its own,
 not by one permit for the process ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)).
 
-A bug of correctness comes before the last of them: [a sender migrated onto another's
-text](open-questions.md#storage-and-reading) lets one caller's request take the reply row of another, whose retry
-is then applied again ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)). It is decided next, and
-before Effect Cluster brings rolling deploys, since how a reply is keyed bears on renaming a program and on two
-versions at once.
+A bug of correctness came before the last of them, and is fixed: a reply is keyed by the version that wrote it,
+so a sender migrated onto another's text takes nothing of its row
+([decision 0069](decisions/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md)).
 
-A review of decisions 0027 to 0039 found five more corrections, which come after it, in this order:
+A review of decisions 0027 to 0039 found five more corrections, which come next, in this order:
 
 - **`reindex` writes a row back over a step.** It reads a page of states and then writes each row, outside any
   transaction ([`src/storage.ts`](../src/storage.ts)): a step that commits in between has its row replaced by the

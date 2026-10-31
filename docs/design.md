@@ -235,6 +235,10 @@ reads by the request just before the step, where no other event of the entity is
 none, and what a loaded entity holds grows with its mailbox and its keys only. A deletion changes no machine, so
 only a step changes one ([decision 0065](decisions/0065-the-machine-holds-no-replies.md)).
 
+A reply's row is keyed by its request's text and by the version that wrote it: a migration of the sender may give
+one caller's request the text another's had, and its reply then replaces nothing that other caller's retry reads
+([decision 0069](decisions/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md)).
+
 ## Schemas that change
 
 A program's schemas are what is stored, so a version of the program that changes one finds the version before it
