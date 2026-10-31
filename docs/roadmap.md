@@ -64,7 +64,53 @@ a step to it; it is fixed: a database is held by one runtime
 ([decision 0080](decisions/0080-a-database-is-held-by-one-runtime.md)). Two versions at once needs two processes on
 one store, so it waits for what Effect Cluster says of which process holds which entities.
 
+The next step is a study of Effect Cluster, before anything of it is designed: every question left before it
+waits on which process holds which entities. It reads Cluster's code and documentation, at the version of `effect`
+the project pins, and ends in a page of `docs/` that says what Cluster gives, what it leaves to the runtime, and
+which decisions it changes. Nothing of `src/` changes in it; what it finds is decided afterwards, each in a note.
+It answers:
+
+- **Who holds an entity.** How shards are assigned and locked, how a shard moves, what becomes of an entity loaded
+  in memory when its shard leaves, and what keeps a node that lost its lock from writing on. A database is held by
+  one runtime through SQLite's lock on one file
+  ([decision 0080](decisions/0080-a-database-is-held-by-one-runtime.md)); on a shared store, the shard's lock
+  takes its place.
+- **One transaction or two.** Cluster's message storage commits apart from the runtime's tables
+  ([decision 0007](decisions/0007-one-process-first.md)). Can a step and the acknowledgement of its message be one
+  transaction, on one `SqlClient`, or does the state record the last message it handled?
+- **What Cluster gives that the runtime already does**: the mailbox; a message delivered at a time (`DeliverAt`),
+  beside the stored timers; passivation and the capacity of a node
+  ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md),
+  [decision 0076](decisions/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md)); requests
+  deduplicated, beside the replies stored under a request
+  ([decision 0015](decisions/0015-a-request-belongs-to-its-sender.md),
+  [decision 0017](decisions/0017-creation-in-the-machine.md)). Each is kept, replaced or adapted.
+- **Two versions at once** ([open question](open-questions.md#running)): how a rolling deploy moves shards, and
+  whether a shard may go back to a node of an older version, where every row the newer one wrote fails what reads
+  it ([decision 0043](decisions/0043-a-row-no-version-reads-fails-what-reads-it.md)).
+
+The decisions that left a part of themselves to Cluster are read with it:
+
+- the replies to an entity are deleted by the statement that ends the work that asked; on Cluster the two sit on
+  different shards, and the deletion is a message that may arrive before the request it ends
+  ([decision 0021](decisions/0021-a-reply-is-kept-while-the-work-that-asked-holds.md));
+- a consumer's cursor over the outbox skips nothing only while one transaction writes at a time
+  ([decision 0038](decisions/0038-what-happened-is-published-through-an-outbox.md), and
+  [the order of what is published](open-questions.md#storage-and-reading));
+- an operation waits, in its own process, for a program not deployed yet; in a cluster the receiver's program may
+  be deployed by another process, or later in a rolling deploy
+  ([decision 0045](decisions/0045-an-operation-waits-for-a-program-not-deployed-yet.md));
+- each entity's lock, and what other fibers read, are the memory of one process
+  ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md),
+  [decision 0068](decisions/0068-what-another-fiber-reads-changes-in-one-step.md)), and
+  [bookkeeping in transactions](open-questions.md#running) waits for what a node keeps;
+- Cluster's modules are unstable, and Effect is pinned to an exact version
+  ([decision 0019](decisions/0019-unstable-effect-modules.md)): the study names the version it read.
+
+[Suspended entities](open-questions.md#running) — how an operator sees, resumes and discards them, and who is told
+that a sender waits — does not wait on Cluster, and is taken before it if an operator needs it first.
+
 ## Later
 
-- Effect Cluster: sharding, rolling deploys, the state recording the last message it handled.
+- Effect Cluster: the runtime on it, as the study above says, with sharding and rolling deploys.
 - The library's name, once there is code to publish.
