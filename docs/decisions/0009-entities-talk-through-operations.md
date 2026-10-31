@@ -1,6 +1,8 @@
 # 0009. Entities talk through operations, as themselves
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Its consequence that an operation sends one message to a given entity is
+replaced by [decision 0047](0047-a-request-of-an-operation-has-a-name.md), and `send` taking the request id by
+[decision 0060](0060-send-and-create-take-no-key.md).
 
 ## Context
 

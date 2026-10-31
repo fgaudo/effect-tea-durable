@@ -1,6 +1,7 @@
 # 0013. The runtime's semantics are a pure machine
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. The stored replies it has the machine hold are taken out of it by
+[decision 0065](0065-the-machine-holds-no-replies.md).
 
 ## Context
 

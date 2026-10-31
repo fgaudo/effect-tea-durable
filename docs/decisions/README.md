@@ -28,7 +28,7 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | --- | --- | --- |
 | [0002](0002-store-the-state-not-the-messages.md) | Store the state after each message, never replay messages |  |
 | [0003](0003-durable-work-derived-from-state.md) | All durable work is derived from the state |  |
-| [0013](0013-the-runtime-is-a-pure-machine.md) | The runtime's semantics are a pure machine |  |
+| [0013](0013-the-runtime-is-a-pure-machine.md) | The runtime's semantics are a pure machine | [0065](0065-the-machine-holds-no-replies.md) |
 | [0014](0014-rules-the-machine-settled.md) | The rules the pure machine settled | [0023](0023-suspended-means-no-reply-yet.md), [0041](0041-a-completion-is-not-discarded.md), [0044](0044-a-firing-is-not-discarded.md) |
 | [0031](0031-a-state-is-an-object.md) | A state is an object |  |
 | [0033](0033-a-program-declares-its-keys.md) | A program declares its keys |  |
@@ -42,7 +42,7 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | Note | Decides | Changed by |
 | --- | --- | --- |
 | [0004](0004-incarnations-guard-internal-messages.md) | Incarnations guard internal messages |  |
-| [0009](0009-entities-talk-through-operations.md) | Entities talk through operations, as themselves |  |
+| [0009](0009-entities-talk-through-operations.md) | Entities talk through operations, as themselves | [0047](0047-a-request-of-an-operation-has-a-name.md), [0060](0060-send-and-create-take-no-key.md) |
 | [0010](0010-a-rejection-may-carry-a-reason.md) | A rejection may carry a reason, an acceptance never carries data | [0023](0023-suspended-means-no-reply-yet.md) |
 | [0015](0015-a-request-belongs-to-its-sender.md) | A request belongs to its sender, and work to its entity | [0022](0022-a-new-program-keeps-what-work-started-with.md), [0048](0048-a-callers-request-belongs-to-its-sender.md) |
 | [0021](0021-a-reply-is-kept-while-the-work-that-asked-holds.md) | A reply to an entity is kept while the work that asked is stored | [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) |
@@ -74,7 +74,7 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0012](0012-creation-is-a-request-of-its-own.md) | Creating an entity is a request of its own | [0049](0049-flags-are-checked-by-their-schema.md) |
+| [0012](0012-creation-is-a-request-of-its-own.md) | Creating an entity is a request of its own | [0049](0049-flags-are-checked-by-their-schema.md), [0060](0060-send-and-create-take-no-key.md) |
 | [0017](0017-creation-in-the-machine.md) | Creation is part of the machine |  |
 | [0049](0049-flags-are-checked-by-their-schema.md) | Flags are checked by their schema |  |
 | [0050](0050-a-creation-is-answered-apart-from-a-message.md) | A creation is answered apart from a message |  |
@@ -83,7 +83,7 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0006](0006-a-defect-suspends-the-entity.md) | A defect suspends the entity |  |
+| [0006](0006-a-defect-suspends-the-entity.md) | A defect suspends the entity | [0046](0046-a-receiver-that-crashes-is-sent-again.md), [0061](0061-only-what-the-program-does-is-its-defect.md) |
 | [0042](0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md) | An event the runtime cannot finish crashes its entity | [0067](0067-each-entity-is-held-by-its-own-lock.md) |
 | [0061](0061-only-what-the-program-does-is-its-defect.md) | Only what the program does is its defect |  |
 
@@ -166,3 +166,4 @@ has them made: the notes it read, and what it found.
 | Date | Read | Found |
 | --- | --- | --- |
 | 2026-10-31 | 0080 to 0091, and 0092 (proposed) | [0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md): a `defectRetryPolicy` that gives up does not end Cluster's retry; [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md): Cluster stores a defect no step gave for a type not registered, and 0090 keeps no id for it. Of 0092, for its step: a receiver's defect is not saved, and the id of a request answered with Cluster's defect has to be kept. Not checked: 0080's hold of a database not in WAL mode, which no test runs. |
+| 2026-10-31 | 0001 to 0015, the first lot of the backlog | Fixed: the status lines of [0006](0006-a-defect-suspends-the-entity.md), [0009](0009-entities-talk-through-operations.md), [0012](0012-creation-is-a-request-of-its-own.md) and [0013](0013-the-runtime-is-a-pure-machine.md) did not say that [0061](0061-only-what-the-program-does-is-its-defect.md) and [0046](0046-a-receiver-that-crashes-is-sent-again.md), [0047](0047-a-request-of-an-operation-has-a-name.md) and [0060](0060-send-and-create-take-no-key.md), and [0065](0065-the-machine-holds-no-replies.md) changed them. Seen in spikes: a transaction is stored whole or not at all, when it fails, is interrupted, or its process is killed (`spikes/sqlite-transaction.test.ts`, for 0002, 0007, 0013); a workflow replays its body past a signal, which takes one value (`spikes/workflow-replays-its-body.test.ts`, for 0007). Read in the source only: Workflow has no mailbox into a workflow, its `DurableQueue` being one out of it. Tested: each rule of 0004, 0005, 0008 and 0014 that the machine keeps fails a test of `src/machine.test.ts` once taken out. Open: [a planned stop](../open-questions.md#running), which 0011 asks of the runtime and nothing does. Reasoned, and left so: what 0002, 0007 and 0011 say of systems they rejected (Akka Persistence, services with no idempotency keys). |

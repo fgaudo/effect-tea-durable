@@ -1,6 +1,8 @@
 # 0006. A defect suspends the entity
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. What it counts as a defect is narrowed to what the program does by
+[decision 0061](0061-only-what-the-program-does-is-its-defect.md), and an operation is not given its receiver's
+crash by [decision 0046](0046-a-receiver-that-crashes-is-sent-again.md).
 
 ## Context
 

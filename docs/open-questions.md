@@ -94,6 +94,13 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0041](decisions/0041-a-completion-is-not-discarded.md),
   [decision 0044](decisions/0044-a-firing-is-not-discarded.md)), and the runtime's `discard` does not say that it
   did nothing.
+- **A planned stop.** An at-most-once operation under way when its process stops delivers `unknown` at the next
+  activation, and [decision 0011](decisions/0011-an-operation-declares-what-a-crash-does.md) says the runtime
+  should drain them before a planned stop. Nothing does: a process that ends interrupts every operation, as a
+  crash does, and a new version is a new process
+  ([decision 0075](decisions/0075-a-name-is-deployed-once-in-a-process.md)), so every deploy delivers `unknown`
+  for each one under way. Should a process stop taking messages and wait for its at-most-once operations, and for
+  how long, before it ends?
 - **Callers' stored replies.** A caller's reply is stored so that a retry gets it, and is kept for ever: a time
   after which a retry is applied again would depend on the protocol, and on who callers are
   ([who may send what](#programs)). Replies to entities are kept while the work that asked is stored
