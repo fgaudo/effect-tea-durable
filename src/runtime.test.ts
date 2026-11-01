@@ -20,7 +20,6 @@ import fc from 'fast-check'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import * as Scheduler from 'effect/Scheduler'
 import * as Scope from 'effect/Scope'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
@@ -44,7 +43,7 @@ import {
 import * as Library from './index.ts'
 import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
 import { createTables, storage } from './storage.ts'
-import { inOrder, prioritized, replayed as replayedSchedule, scheduled, type Strategy } from './testing.ts'
+import { inOrder, prioritized, replayed as replayedSchedule, type Run, scheduled, type Strategy } from './testing.ts'
 
 // The toy of `machine.test.ts`, with the schemas a runtime needs: `a` is idempotent, `b` at most once, `c` at
 // least once, and `t` a timer. Each key's work ends by removing its key, unless a message brings it back.
@@ -285,6 +284,91 @@ const running = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
 /** The same for an effect that ends: what it gives, once everything it set going waits. */
 const ran = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.flatMap(running(effect), Fiber.join)
+
+/**
+ * Where a test under `explored` is explored: while it is open, the schedules preempt and pick as PCT draws them; while
+ * the test closes it, the run goes in order. A test closes it before it moves the clock, so that the fibers the move
+ * wakes are at their waits, as decision 0104 found they must be.
+ */
+type Window = { open: boolean }
+
+/**
+ * Runs `test` over a database of its own under `runs` prioritized schedules at `depth`, with inline resumptions, so
+ * that each is an order Effect's own scheduler can give (decision 0104). Each run must give `ended`, and one that does
+ * not end fails, with the seed that replays it. The window is open as each run starts, unless `open` is false. PCT draws
+ * its changes of priority among the steps a run in order is asked of preemption with the window open. With `bound` 1
+ * it runs instead every schedule that deviates once from the run in order within the window, a pick or a preemption,
+ * as `everySchedule` does: exhaustive where PCT is not, for a point between two steps of one fiber.
+ */
+const explored = <A>(
+  test: (window: Window) => Effect.Effect<A, unknown, SqlClient.SqlClient | Scope.Scope>,
+  ended: A,
+  { runs = 2_000, depth = 4, open = true, bound }: Readonly<
+    { runs?: number; depth?: number; open?: boolean; bound?: 1 }
+  > = {},
+) => {
+  const window: Window = { open }
+  const scenario = Effect.scoped(Effect.suspend(() => {
+    window.open = open
+    return Effect.flatMap(createTables, () => test(window))
+  })).pipe(
+    Effect.provide(SqliteClient.layer({ filename: ':memory:' })),
+    Effect.provide(TestClock.layer()),
+    Effect.orDie,
+  )
+  const within = (strategy: Strategy): Strategy => ({
+    pick: (ready) => window.open ? strategy.pick(ready) : 0,
+    preempt: (fiber, ready) => window.open && strategy.preempt(fiber, ready),
+  })
+  const ends = (run: Run<A, unknown>) => run.exit !== undefined && Exit.isSuccess(run.exit) ? run.exit.value : run.exit
+  if (bound === 1) {
+    // How many ways each decision of the window can go, in a run in order.
+    const ways: Array<number> = []
+    scheduled(scenario, {
+      pick: (ready) => (window.open && ways.push(ready.length), 0),
+      preempt: () => (window.open && ways.push(2), false),
+    }, 'inline')
+    ways.forEach((choices, decision) => {
+      for (let choice = 1; choice < choices; choice++) {
+        let at = -1
+        const run = scheduled(scenario, {
+          pick: () => window.open && ++at === decision ? choice : 0,
+          preempt: () => window.open && ++at === decision,
+        }, 'inline')
+        expect({ decision, choice, ended: ends(run) }).toEqual({ decision, choice, ended })
+      }
+    })
+    return
+  }
+  let steps = 0
+  scheduled(scenario, { pick: () => 0, preempt: () => (window.open && (steps += 1), false) }, 'inline')
+  for (let seed = 0; seed < runs; seed++) {
+    const run = scheduled(scenario, within(prioritized(seed, depth, steps)), 'inline')
+    expect({ seed, ended: ends(run) }).toEqual({ seed, ended })
+  }
+}
+
+/**
+ * Runs `effects` at once, each forked as a task of its own, and gives what each gives. `Effect.all` starts its
+ * children inline, on the stack of its own fiber, and the scheduler of the tests asks a fiber to yield only while
+ * another task is ready: so the first child would run to its first wait before the second is forked (decision 0104).
+ */
+const together = <A, E, R>(effects: ReadonlyArray<Effect.Effect<A, E, R>>) =>
+  Effect.flatMap(Effect.forEach(effects, (effect) => Effect.forkChild(effect)), (fibers) => Effect.forEach(fibers, Fiber.join))
+
+/** Opens or closes the window of a test under `explored`. */
+const opened = (window: Window, open: boolean) => Effect.sync(() => (window.open = open))
+
+/**
+ * `TestClock.adjust` in a test under `explored`, with its window closed: the fibers the move wakes are then at their
+ * waits, and `adjust` waits for what it wakes (decision 0104). What the move sets going runs in order.
+ */
+const adjusted = (window: Window, duration: Duration.Input) =>
+  Effect.suspend(() => {
+    const open = window.open
+    window.open = false
+    return Effect.ensuring(TestClock.adjust(duration), Effect.sync(() => (window.open = open)))
+  })
 
 /** The request id a caller's message is received under, or null for any other event. */
 const received = (event: Machine.Event<never>) =>
@@ -653,46 +737,42 @@ describe('passivation', () => {
       expect(stored).toEqual(replayed(stored?.state.since ?? at, events))
     })))
 
-  test('the process settles and a stored timer wakes its entity, however often the fibers yield', async () => {
-    // Each budget is how many steps a fiber takes before it yields, which moves every point where one fiber may
-    // run between two steps of another (decision 0068). Below 3 a fiber does nothing but yield.
-    const budgets = Array.from({ length: 398 }, (_, n) => n + 3)
-    for (const budget of budgets) {
-      await database(Effect.gen(function*() {
+  test('the process settles and a stored timer wakes its entity, under prioritized schedules', () => {
+    // Each schedule moves the points where one fiber runs between two steps of another (decisions 0068, 0104).
+    explored((window) =>
+      Effect.gen(function*() {
         const { layer } = yield* hands()
         const { entities, unloaded } = unloads()
         const at = yield* DateTime.now
-        yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
+        return yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
             yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
             // An operation that ended before it was held would be counted as running for ever, and this would
-            // never return, which the test's own timeout reports.
+            // never return: the run would not end. An event not counted as it is offered would let it return before
+            // the event is applied, and the entity would be read with a key it no longer wants.
             yield* runtime.settled
-            yield* TestClock.adjust('5 millis')
-            yield* TestClock.adjust('60 millis')
+            const read = [yield* toy.read(id)]
+            yield* adjusted(window, '5 millis')
             yield* runtime.settled
-            expect({ budget, read: yield* toy.read(id), unloaded: entities }).toEqual({
-              budget,
-              read: 0,
-              unloaded: [id, id],
-            })
+            yield* adjusted(window, '60 millis')
+            yield* runtime.settled
+            read.push(yield* toy.read(id))
+            return { read, unloaded: [...entities] }
           }))
-      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-  }, 30_000)
+      }), { read: [1, 0], unloaded: [id, id] })
+  }, 60_000)
 
-  test('a process over its capacity unloads its least recently used idle entity, however fibers yield', async () => {
+  test('a process over its capacity unloads its least recently used idle entity, under prioritized schedules', () => {
     const tester = { _tag: 'Tester' } as const
-    // Each budget moves the points where the entity told to leave may run between two steps of the caller.
-    const budgets = Array.from({ length: 198 }, (_, n) => n + 3)
-    for (const budget of budgets) {
-      await database(Effect.gen(function*() {
+    // Each schedule moves the points where the entity told to leave runs between two steps of the caller.
+    explored(() =>
+      Effect.gen(function*() {
         const { layer } = yield* hands()
         const { entities, unloaded } = unloads()
         const at = yield* DateTime.now
         // A wait that never runs out in the test: only the capacity unloads (decision 0076).
-        yield* process({ unloaded, capacity: { entities: 2 } }, (runtime) =>
+        return yield* process({ unloaded, capacity: { entities: 2 } }, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
             for (const entity of ['e-1', 'e-2']) {
@@ -711,23 +791,21 @@ describe('passivation', () => {
             yield* toy.send('e-2', { _tag: 'Refuse', nonce: 'n-2' }, { requestId: 'r-2', sender: tester })
             yield* runtime.settled
             left.push([...entities])
-            expect({ budget, left }).toEqual({ budget, left: [[], ['e-2'], ['e-2', 'e-1']] })
+            return left
           }))
-      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-  }, 30_000)
+      }), [[], ['e-2'], ['e-2', 'e-1']])
+  }, 60_000)
 
-  test('entities woken past the capacity each fire their timer and leave once, however fibers yield', async () => {
+  test('entities woken past the capacity each fire their timer and leave once, under prioritized schedules', () => {
     const tester = { _tag: 'Tester' } as const
     // A timer due is no spare entity (decision 0078): none is told to leave before it fires, and woken again.
-    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
-    for (const budget of budgets) {
-      await database(Effect.gen(function*() {
+    explored((window) =>
+      Effect.gen(function*() {
         const { layer } = yield* hands()
         const { entities, unloaded } = unloads()
         const fired: Array<string> = []
         const at = yield* DateTime.now
-        yield* process({
+        return yield* process({
           unloaded,
           passivate: { millis: 5 },
           capacity: { entities: 1 },
@@ -742,17 +820,15 @@ describe('passivation', () => {
               yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
               yield* runtime.settled
             }
-            yield* TestClock.adjust('5 millis')
+            yield* adjusted(window, '5 millis')
             entities.length = 0
             // Both timers come at once, and the waker activates one entity after the other, past the capacity.
-            yield* TestClock.adjust('60 millis')
+            yield* adjusted(window, '60 millis')
             yield* runtime.settled
-            expect({ budget, fired: [...fired].sort(), woken: entities.length })
-              .toEqual({ budget, fired: ['w-1', 'w-2'], woken: 2 })
+            return { fired: [...fired].sort(), woken: entities.length }
           }))
-      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-  }, 30_000)
+      }), { fired: ['w-1', 'w-2'], woken: 2 })
+  }, 60_000)
 
   test('a busy entity is never unloaded for the capacity, and a capacity of none is refused', () =>
     database(Effect.gen(function*() {
@@ -867,13 +943,12 @@ describe('passivation', () => {
         }))
     })))
 
-  test('entities entering at once tell no more to leave than the process holds too many, however fibers yield', async () => {
-    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
-    for (const budget of budgets) {
-      await database(Effect.gen(function*() {
+  test('entities entering at once tell no more to leave than the process holds too many, under prioritized schedules', () => {
+    explored(() =>
+      Effect.gen(function*() {
         const at = yield* DateTime.now
         const { entities, unloaded } = unloads()
-        yield* process({ unloaded, capacity: { entities: 3 } }, (runtime) =>
+        return yield* process({ unloaded, capacity: { entities: 3 } }, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
             for (const entity of ['s-1', 's-2', 's-3']) {
@@ -881,16 +956,15 @@ describe('passivation', () => {
               yield* runtime.settled
             }
             // Two enter at once: one told to leave and not gone yet counts against the second one's excess.
-            yield* Effect.all([
+            yield* together([
               toy.create('s-4', { at }, { requestId: 's-4', sender: tester }),
               toy.create('s-5', { at }, { requestId: 's-5', sender: tester }),
-            ], { concurrency: 'unbounded' })
+            ])
             yield* runtime.settled
-            expect({ budget, left: [...entities].sort() }).toEqual({ budget, left: ['s-1', 's-2'] })
+            return [...entities].sort()
           }))
-      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-  }, 30_000)
+      }), ['s-1', 's-2'])
+  }, 60_000)
 
   test('the entity entering is never told to leave, even with nothing to do', () =>
     database(Effect.gen(function*() {
@@ -1023,11 +1097,10 @@ describe('passivation', () => {
         }))
     })))
 
-  test('callers of two unloaded entities over a capacity of one are both answered, however fibers yield', async () => {
+  test('callers of two unloaded entities over a capacity of one are both answered, under prioritized schedules', () => {
     const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
-    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
-    for (const budget of budgets) {
-      await database(Effect.gen(function*() {
+    explored(() =>
+      Effect.gen(function*() {
         const at = yield* DateTime.now
         yield* process({}, (runtime) =>
           Effect.gen(function*() {
@@ -1035,46 +1108,42 @@ describe('passivation', () => {
             for (const entity of ['u-1', 'u-2']) yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
             yield* runtime.settled
           }))
-        yield* process({ capacity: { entities: 1 } }, (runtime) =>
+        return yield* process({ capacity: { entities: 1 } }, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
             // Each activation holds its caller's event before the other can tell it to leave (decision 0079).
-            const both = yield* ran(Effect.all([
+            return yield* together([
               toy.send('u-1', want('n-1'), { requestId: 'r-1', sender: tester }),
               toy.send('u-2', want('n-2'), { requestId: 'r-2', sender: tester }),
-            ], { concurrency: 'unbounded' }))
-            expect({ budget, both }).toEqual({ budget, both: [{ _tag: 'Accepted' }, { _tag: 'Accepted' }] })
+            ])
           }))
-      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-  }, 30_000)
+      }), [{ _tag: 'Accepted' }, { _tag: 'Accepted' }])
+  }, 60_000)
 
-  test('a caller interrupted anywhere as it activates its entity leaves the process able to settle', async () => {
+  test('a caller interrupted anywhere as it activates its entity leaves the process able to settle', () => {
     const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
-    for (let budget = 3; budget <= 8; budget++) {
-      for (let yields = 0; yields <= 30; yields++) {
-        await database(Effect.gen(function*() {
-          const at = yield* DateTime.now
-          yield* process({}, (runtime) =>
-            Effect.gen(function*() {
-              const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-              yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
-              yield* runtime.settled
-            }))
-          yield* process({}, (runtime) =>
-            Effect.gen(function*() {
-              const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-              const caller = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
-              yield* Effect.replicateEffect(Effect.yieldNow, yields, { discard: true })
-              yield* Fiber.interrupt(caller)
-              // What runs detached is counted from the step that forks it to its end: a count left behind would
-              // keep this from returning, which the test's own timeout reports (decision 0079).
-              yield* runtime.settled
-            }))
-        }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-      }
-    }
-  }, 30_000)
+    // Each schedule moves the point where the interruption reaches the caller.
+    explored(() =>
+      Effect.gen(function*() {
+        const at = yield* DateTime.now
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+            yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+            yield* runtime.settled
+          }))
+        return yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+            const caller = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
+            yield* Fiber.interrupt(caller)
+            // What runs detached is counted from the step that forks it to its end: a count left behind would
+            // keep this from returning, and the run would not end (decision 0079).
+            yield* runtime.settled
+            return 'settled'
+          }))
+      }), 'settled')
+  }, 60_000)
 
   test('a caller loads an unloaded entity again, and is answered', () =>
     database(Effect.gen(function*() {
@@ -1290,12 +1359,11 @@ describe('passivation', () => {
 
   // The load is under the entity's lock: two callers never read it from storage and build a machine each
   // (decisions 0029, 0067).
-  test('two callers of an entity not loaded build one machine for it, however fibers yield', async () => {
+  test('two callers of an entity not loaded build one machine for it, under prioritized schedules', () => {
     const tester = { _tag: 'Tester' } as const
     const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
-    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
-    for (const budget of budgets) {
-      await database(Effect.gen(function*() {
+    explored(() =>
+      Effect.gen(function*() {
         const { layer } = yield* hands()
         const { events, observe } = log()
         const at = yield* DateTime.now
@@ -1305,41 +1373,35 @@ describe('passivation', () => {
             yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
             yield* runtime.settled
           }))
-        yield* process({ observe }, (runtime) =>
+        const both = yield* process({ observe }, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
-            const both = yield* ran(Effect.all([
+            return yield* together([
               toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }),
               toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester }),
-            ], { concurrency: 'unbounded' }))
-            expect(both).toEqual([{ _tag: 'Accepted' }, { _tag: 'Accepted' }])
+            ])
           }))
-        expect({ budget, restarts: events.filter((event) => event._tag === 'Restart').length })
-          .toEqual({ budget, restarts: 1 })
-      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-  }, 30_000)
+        return { both, restarts: events.filter((event) => event._tag === 'Restart').length }
+      }), { both: [{ _tag: 'Accepted' }, { _tag: 'Accepted' }], restarts: 1 })
+  }, 60_000)
 
-  test('two creations of one entity at once build one machine, and the second is answered AlreadyExists', async () => {
+  test('two creations of one entity at once build one machine, and the second is answered AlreadyExists', () => {
     const tester = { _tag: 'Tester' } as const
-    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
-    for (const budget of budgets) {
-      await database(Effect.gen(function*() {
+    explored(() =>
+      Effect.gen(function*() {
         const { layer } = yield* hands()
         const at = yield* DateTime.now
-        yield* process({}, (runtime) =>
+        return yield* process({}, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
-            const both = yield* ran(Effect.all([
+            const both = yield* together([
               Effect.exit(toy.create(id, { at }, { requestId: 'c-1', sender: tester })),
               Effect.exit(toy.create(id, { at }, { requestId: 'c-2', sender: tester })),
-            ], { concurrency: 'unbounded' }))
-            expect({ budget, created: both.map((exit) => Exit.isSuccess(exit) ? exit.value._tag : 'died').sort() })
-              .toEqual({ budget, created: ['AlreadyExists', 'Created'] })
+            ])
+            return both.map((exit) => Exit.isSuccess(exit) ? exit.value._tag : 'died').sort()
           }))
-      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-  }, 30_000)
+      }), ['AlreadyExists', 'Created'])
+  }, 60_000)
 
   test('an activation whose caller gives up is finished all the same, and the next caller is answered', () =>
     database(Effect.gen(function*() {
@@ -1798,10 +1860,10 @@ describe('the read model', () => {
     })))
 
   // A row is written only if the state it was computed from is still the one stored (decision 0070).
-  test('reindex leaves no row a step has moved past, however often the fibers yield', async () => {
-    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
-    for (const budget of budgets) {
-      await database(Effect.gen(function*() {
+  test('reindex leaves no row a step has moved past, under prioritized schedules', () => {
+    // The schedules are explored from the reindex on: what comes before only makes the entities it walks.
+    explored((window) =>
+      Effect.gen(function*() {
         const at = yield* DateTime.now
         // Forty toys more, walked before the one that steps, so that the walk is long enough to be stepped into.
         const walked = [...Array.from({ length: 40 }, (_, n) => `s-${String(n).padStart(2, '0')}`), ...ids]
@@ -1815,11 +1877,12 @@ describe('the read model', () => {
             yield* TestClock.adjust('60 millis')
             yield* runtime.settled
           }))
-        yield* process({}, (runtime) =>
+        return yield* process({}, (runtime) =>
           Effect.gen(function*() {
             const { layer } = yield* hands({ holds: true })
             const toy = yield* Effect.provide(runtime.deploy(negated), layer)
             // The step lands in the walk, between the reading of the state of 't-3' and the writing of its row.
+            yield* opened(window, true)
             const reindexing = yield* Effect.forkChild(toy.reindex)
             yield* toy.send('t-3', { _tag: 'Want', key: 'a', on: true, nonce: 'on' }, {
               requestId: 'on',
@@ -1829,11 +1892,10 @@ describe('the read model', () => {
             const read = yield* Effect.forEach(walked, (id) =>
               Effect.map(toy.read(id), (projection) => ({ id, projection })))
             const rows: ReadonlyArray<unknown> = yield* toy.query({})
-            expect({ budget, rows }).toEqual({ budget, rows: read })
+            return { stale: rows.filter((row) => !read.some((one) => JSON.stringify(one) === JSON.stringify(row))) }
           }))
-      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-  }, 30_000)
+      }), { stale: [] }, { runs: 200, open: false })
+  }, 60_000)
 })
 
 describe('publishing what happened', () => {
@@ -1965,14 +2027,14 @@ describe('publishing what happened', () => {
         }))
     })))
 
-  test('a consumer whose first reading lands in a prune skips nothing, however fibers yield', async () => {
-    // Each budget moves the points where the consumer's first reading may run between the statements of the prune
+  test('a consumer whose first reading lands in a prune skips nothing, under prioritized schedules', () => {
+    // Each schedule moves the points where the consumer's first reading runs between the statements of the prune
     // (decision 0039).
     const read = { before: 0, after: 0 }
-    for (let budget = 3; budget < 200; budget++) {
-      await database(Effect.gen(function*() {
+    explored((window) =>
+      Effect.gen(function*() {
         const at = yield* DateTime.now
-        yield* process({}, (runtime) =>
+        return yield* process({}, (runtime) =>
           Effect.gen(function*() {
             const { layer } = yield* hands()
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
@@ -1983,23 +2045,27 @@ describe('publishing what happened', () => {
             const rows = yield* toy.published(0)
             // A consumer that has read everything lets the prune go as far as the log.
             yield* toy.ack('queue', rows[rows.length - 1]?.seq ?? 0)
-            const [first] = yield* Effect.all([toy.feed('late', 1), toy.prune], { concurrency: 'unbounded' })
+            yield* opened(window, true)
+            // Each forked as a task of its own, as `together` does.
+            const reading = yield* Effect.forkChild(toy.feed('late', 1))
+            const pruning = yield* Effect.forkChild(toy.prune)
+            const first = yield* Fiber.join(reading)
+            yield* Fiber.join(pruning)
             if (first.length === 0) {
               read.after++
-              return
+              return { skipped: [] }
             }
             read.before++
             yield* toy.ack('late', first[first.length - 1]?.seq ?? 0)
             // It holds the log from its first reading: it reads every row after the one it acked.
-            const rest = yield* toy.feed('late')
-            expect({ budget, rows: [...first, ...rest] }).toEqual({ budget, rows: [...rows] })
+            const all = [...first, ...yield* toy.feed('late')]
+            return { skipped: rows.filter((row) => !all.some(({ seq }) => seq === row.seq)).map(({ seq }) => seq) }
           }))
-      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-    // The race was run both ways: the first reading came before the prune for some budgets, after it for others.
+      }), { skipped: [] }, { open: false })
+    // The race was run both ways: the first reading came before the prune under some schedules, after it under others.
     expect(read.before).toBeGreaterThan(0)
     expect(read.after).toBeGreaterThan(0)
-  }, 30_000)
+  }, 60_000)
 
   test('an ack past the last seq moves the cursor to it, and the rows written after are kept', () =>
     database(Effect.gen(function*() {
@@ -2800,29 +2866,24 @@ describe('what the runtime cannot finish', () => {
         }))
     })))
 
-  test('a name is deployed once in a process, however two deploys of it interleave', async () => {
+  test('a name is deployed once in a process, however two deploys of it interleave', () => {
     const reasonOf = (exit: Exit.Exit<unknown>) => {
       const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
       return cause instanceof InvariantDefect ? cause.reason : null
     }
-    // Each budget moves the points where one deploy may run between two steps of the other (decision 0068).
-    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
-    for (const budget of budgets) {
-      await database(process({}, (runtime) =>
+    // Each schedule moves the points where one deploy runs between two steps of the other (decisions 0068, 0104).
+    explored(() =>
+      process({}, (runtime) =>
         Effect.gen(function*() {
           const { layer } = yield* hands()
           const deploy = Effect.exit(Effect.provide(runtime.deploy(program), layer))
           // A second deploy is refused, as is one after them both (decision 0075).
-          const exits = [...yield* Effect.all([deploy, deploy], { concurrency: 'unbounded' }), yield* deploy]
-          expect({ budget, deployed: exits.map(reasonOf).sort() }).toEqual({
-            budget,
-            deployed: [null, "the program 'Toy' is deployed already", "the program 'Toy' is deployed already"],
-          })
-        })).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-  }, 30_000)
+          const exits = [...yield* together([deploy, deploy]), yield* deploy]
+          return exits.map(reasonOf).sort()
+        })), [null, "the program 'Toy' is deployed already", "the program 'Toy' is deployed already"])
+  }, 60_000)
 
-  test('a deploy interrupted anywhere keeps its name and its waker, or stops what it started', async () => {
+  test('a deploy interrupted anywhere keeps its name and its waker, or stops what it started', () => {
     // An entity left with its operations under way, which a deploy activates, and one with its timer alone, which
     // only a deployment's waker activates.
     const prepared = Effect.gen(function*() {
@@ -2863,41 +2924,45 @@ describe('what the runtime cannot finish', () => {
       )
       return { running, gate, layer }
     })
-    const found: Array<string> = []
-    // Each budget and each count of yields moves the point where the interruption reaches the deploy.
-    for (let budget = 3; budget <= 6; budget++) {
-      for (let yields = 0; yields <= 180; yields++) {
-        await database(Effect.gen(function*() {
-          yield* prepared
-          const { running, gate, layer } = yield* live
-          const fired: Array<string> = []
-          yield* process({
-            observe: (entity, event) =>
-              Effect.sync(() => {
-                if (event._tag === 'Fire') fired.push(entity.id)
-              }),
-          }, (runtime) =>
-            Effect.gen(function*() {
-              const first = yield* Effect.forkChild(Effect.provide(runtime.deploy(program), layer))
-              yield* Effect.replicateEffect(Effect.yieldNow, yields, { discard: true })
-              yield* Fiber.interrupt(first)
-              const second = yield* Effect.exit(Effect.provide(runtime.deploy(program), layer))
-              yield* TestClock.adjust('1 millis')
-              // One deployment runs the entity's operations, whichever deploy it is.
-              const seen = { a: running.get('a') ?? 0, c: running.get('c') ?? 0 }
-              yield* Deferred.succeed(gate, undefined)
-              yield* runtime.settled
-              // And its waker fires each timer once: the one of the entity it activated, and the stored one.
-              yield* TestClock.adjust('100 millis')
-              yield* runtime.settled
-              if (seen.a !== 1 || seen.c !== 1 || [...fired].sort().join() !== 'd,w') {
-                found.push(`${budget}/${yields}: ${JSON.stringify({ ...seen, fired, second: second._tag })}`)
-              }
-            }))
-        }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-      }
+    // Each schedule moves the point where the interruption reaches the deploy, and so does each count of the test's
+    // own yields before it interrupts. PCT seldom preempts the deploy for the test's yields, which name no fiber, so
+    // each count of yields comes once a run; and with a few yields, a run in order with one deviation stops the deploy
+    // at each of its steps.
+    const interrupted = (yields: () => number) => (window: Window) =>
+      Effect.gen(function*() {
+        const count = yields()
+        yield* prepared
+        const { running, gate, layer } = yield* live
+        const fired: Array<string> = []
+        return yield* process({
+          observe: (entity, event) =>
+            Effect.sync(() => {
+              if (event._tag === 'Fire') fired.push(entity.id)
+            }),
+        }, (runtime) =>
+          Effect.gen(function*() {
+            yield* opened(window, true)
+            const first = yield* Effect.forkChild(Effect.provide(runtime.deploy(program), layer))
+            yield* Effect.replicateEffect(Effect.yieldNow, count, { discard: true })
+            yield* Fiber.interrupt(first)
+            yield* Effect.exit(Effect.provide(runtime.deploy(program), layer))
+            yield* adjusted(window, '1 millis')
+            // One deployment runs the entity's operations, whichever deploy it is.
+            const seen = { a: running.get('a') ?? 0, c: running.get('c') ?? 0 }
+            yield* Deferred.succeed(gate, undefined)
+            yield* runtime.settled
+            // And its waker fires each timer once: the one of the entity it activated, and the stored one.
+            yield* adjusted(window, '100 millis')
+            yield* runtime.settled
+            return { ...seen, fired: [...fired].sort() }
+          }))
+      })
+    let runs = 0
+    explored(interrupted(() => runs++ % 200), { a: 1, c: 1, fired: ['d', 'w'] }, { open: false })
+    // Two yields let the deploy reach its registration, where one deviation stops it.
+    for (const count of [0, 1, 2, 3]) {
+      explored(interrupted(() => count), { a: 1, c: 1, fired: ['d', 'w'] }, { open: false, bound: 1 })
     }
-    expect(found).toEqual([])
   }, 120_000)
 
   test('a deploy interrupted as it activates an entity stops the activation', () =>
@@ -3032,11 +3097,10 @@ describe('a database held by one runtime', () => {
     })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
   })
 
-  test('a second runtime on one client dies as it launches, however the launches interleave', async () => {
-    // Each budget moves the points where one launch may run between two steps of the other (decision 0068).
-    const budgets = Array.from({ length: 48 }, (_, n) => n + 3)
-    for (const budget of budgets) {
-      await database(Effect.gen(function*() {
+  test('a second runtime on one client dies as it launches, however the launches interleave', () => {
+    // Each schedule moves the points where one launch runs between two steps of the other (decisions 0068, 0104).
+    explored(() =>
+      Effect.gen(function*() {
         // How many launched runtimes are running at once: never two.
         let running = 0
         let most = 0
@@ -3054,15 +3118,17 @@ describe('a database held by one runtime', () => {
             }),
           )
         const launch = Effect.exit(process({}, body))
-        const exits = (yield* Effect.all([launch, launch], { concurrency: 'unbounded' })).map(reasonOf)
-        // Either both ran one after the other, or the second met the first and died.
-        expect({ budget, most, made: exits.some((reason) => reason === null) }).toEqual({ budget, most: 1, made: true })
-        expect(exits.every((reason) => reason === null || reason === held)).toBe(true)
-        // Whoever held the client has let it go.
-        expect(reasonOf(yield* Effect.exit(process({}, () => Effect.void)))).toBeNull()
-      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
-    }
-  }, 30_000)
+        const exits = (yield* together([launch, launch])).map(reasonOf)
+        // Either both ran one after the other, or the second met the first and died; and whoever held the client
+        // has let it go.
+        return {
+          most,
+          made: exits.some((reason) => reason === null),
+          died: exits.every((reason) => reason === null || reason === held),
+          after: reasonOf(yield* Effect.exit(process({}, () => Effect.void))),
+        }
+      }), { most: 1, made: true, died: true, after: null })
+  }, 60_000)
 
   test('two runtimes on one client at once: the second dies', () =>
     database(process({}, () =>
@@ -3138,27 +3204,6 @@ test('a process runs to its end under the scheduler of the tests, which needs no
   }
 })
 
-/**
- * Runs `scenario` under 2,000 prioritized schedules at depth 4, with inline resumptions, so that each is an order
- * Effect's own scheduler can give (decision 0104). It runs in order until the scenario sets `point.reached`, as its
- * callers arrive: what comes before, a passivation the test clock moves among it, is followed, and PCT draws its
- * changes of priority among the steps that count. Each run must end as `ended`; one that does not end fails.
- */
-const fromPoint = <A, E>(scenario: Effect.Effect<A, E>, point: { reached: boolean }, ended: A) => {
-  const after = (strategy: Strategy): Strategy => ({
-    pick: (ready) => point.reached ? strategy.pick(ready) : 0,
-    preempt: (fiber, ready) => point.reached && strategy.preempt(fiber, ready),
-  })
-  // The steps PCT draws among: those a run in order is asked of preemption once the point is reached.
-  let steps = 0
-  scheduled(scenario, { pick: () => 0, preempt: () => (point.reached && (steps += 1), false) }, 'inline')
-  for (let seed = 0; seed < 2_000; seed++) {
-    const run = scheduled(scenario, after(prioritized(seed, 4, steps)), 'inline')
-    expect({ seed, ended: run.exit !== undefined && Exit.isSuccess(run.exit) ? run.exit.value : run.exit })
-      .toEqual({ seed, ended })
-  }
-}
-
 test('a sender answered Suspended is woken by the resumption, under prioritized schedules from its arrival', () => {
   // Decision 0063: a sender registers for the receiver's resumption before it sends. A resumption between its being
   // answered `Suspended` and a registration made after it would wake no one, and the sender would wait for ever:
@@ -3175,9 +3220,8 @@ test('a sender answered Suspended is woken by the resumption, under prioritized 
       ),
     },
   }
-  const point = { reached: false }
-  const start = Effect.andThen(Effect.sync(() => (point.reached = false)), createTables)
-  const scenario = Effect.scoped(Effect.flatMap(start, () =>
+  // The schedules are explored from the sender's arrival on.
+  explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
       const at = yield* DateTime.now
@@ -3190,27 +3234,21 @@ test('a sender answered Suspended is woken by the resumption, under prioritized 
           yield* runtime.settled
           yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester })
           // The sender's operation sends to the suspended toy while an operator discards what it died on.
-          yield* Effect.sync(() => (point.reached = true))
+          yield* opened(window, true)
           yield* senders.create('s', { at }, { requestId: 's', sender: tester })
           yield* toy.discard(id)
           yield* runtime.settled
           return { applied: (yield* store.load(id))?.state.applied, wanted: yield* senders.read('s') }
         }))
-    }))).pipe(
-      Effect.provide(SqliteClient.layer({ filename: ':memory:' })),
-      Effect.provide(TestClock.layer()),
-      Effect.orDie,
-    )
-  fromPoint(scenario, point, { applied: ['sent'], wanted: 0 })
+    }), { applied: ['sent'], wanted: 0 }, { open: false })
 }, 60_000)
 
 test('callers of an unloaded entity build one machine for it, under prioritized schedules from their arrival', () => {
   // Decision 0067: an entity's lock is dropped by its last user only. One dropped while a caller waits for it lets a
   // new taker hold a lock of its own beside that caller, and both load the entity: two machines, two `Restart`s.
   // With the lock dropped by any user, 67 seeds of 2,000 build two.
-  const point = { reached: false }
-  const start = Effect.andThen(Effect.sync(() => (point.reached = false)), createTables)
-  const scenario = Effect.scoped(Effect.flatMap(start, () =>
+  // The schedules are explored from the callers' arrival on.
+  explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
       const { events, observe } = log()
@@ -3224,15 +3262,10 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
           yield* TestClock.adjust('5 millis')
           const want = (nonce: string) =>
             toy.send(id, { _tag: 'Want', key: 't', on: true, nonce }, { requestId: nonce, sender: tester })
-          yield* Effect.sync(() => (point.reached = true))
-          yield* Effect.all([want('w-1'), want('w-2')], { concurrency: 'unbounded' })
+          yield* opened(window, true)
+          yield* together([want('w-1'), want('w-2')])
           yield* runtime.settled
           return { unloaded: [...entities], restarts: events.filter((event) => event._tag === 'Restart').length }
         }))
-    }))).pipe(
-      Effect.provide(SqliteClient.layer({ filename: ':memory:' })),
-      Effect.provide(TestClock.layer()),
-      Effect.orDie,
-    )
-  fromPoint(scenario, point, { unloaded: [id], restarts: 1 })
+    }), { unloaded: [id], restarts: 1 }, { open: false })
 }, 60_000)

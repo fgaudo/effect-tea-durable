@@ -144,13 +144,15 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0071](0071-a-process-starts-the-entities-with-a-message.md) | A process starts the entities whose mailbox holds a message | [0074](0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md) |
 | [0073](0073-what-the-runtime-did-is-told-to-a-probe.md) | What the runtime did is told to a probe, out of its options |  |
 | [0074](0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md) | A message that finds the mailbox empty is handled as it arrives | [0081](0081-on-cluster-a-step-commits-with-its-reply.md) |
-| [0076](0076-a-process-over-its-capacity-unloads-the-least-recently-used.md) | A process over its capacity unloads the least recently used | [0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) |
+| [0076](0076-a-process-over-its-capacity-unloads-the-least-recently-used.md) | A process over its capacity unloads the least recently used | [0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md), [0109](0109-settled-waits-for-an-entity-unloading.md) |
 | [0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md) | The waker tries an entity it cannot load again, after the retry |  |
 | [0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) | A timer due is no spare entity, and a registered deploy keeps its name | [0102](0102-a-deploy-interrupted-before-it-registers-undoes-itself.md), [0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md) |
-| [0079](0079-what-a-caller-sets-going-is-finished-without-it.md) | What a caller sets going is finished without it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
+| [0079](0079-what-a-caller-sets-going-is-finished-without-it.md) | What a caller sets going is finished without it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), [0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md) |
 | [0101](0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) | A moved clock gives a fiber it did not wake one turn |  |
 | [0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md) | A test moves the wall clock ahead of the sleeps |  |
 | [0104](0104-the-runtimes-tests-choose-where-fibers-yield.md) | The runtime's tests choose where fibers yield (proposed) |  |
+| [0109](0109-settled-waits-for-an-entity-unloading.md) | `settled` waits for an entity unloading |  |
+| [0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md) | Detached work is counted until it ends, however it ends |  |
 
 ## Effect Cluster
 

@@ -190,8 +190,8 @@ export interface Runtime {
   ) => Effect.Effect<Handle<T>, never, Exclude<T['services'], Entities>>
   /**
    * Waits until nothing is under way: no event waits, no mailbox holds a message, no operation runs, no entity
-   * told to leave is still held (decision 0076), and no stored timer of an entity this process has unloaded is due
-   * (decision 0029).
+   * told to leave is still held (decision 0076), none is still unloading (decision 0109), and no stored timer of an
+   * entity this process has unloaded is due (decision 0029).
    */
   readonly settled: Effect.Effect<void>
 }
@@ -297,6 +297,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const names = new Set<string>()
     /** The effects running detached from their callers, which `settled` waits for (decision 0079). */
     let detachments = 0
+    /**
+     * The entities unloading: left the process, and their timers not all stopped yet, nor the probe told. `settled`
+     * waits for them too (decision 0109).
+     */
+    let leaving = 0
     /**
      * The callers waiting for a reply, by entity and then by request: a retry of a queued message waits with the
      * first, and a crash of the entity reaches every caller of it (decision 0042). A creation's callers wait apart
@@ -741,10 +746,25 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const { id } = loaded.machine.stored
         const leaves = evicted === null ? nothingToDo(loaded) : spare(loaded, evicted)
         if (!leaves || deployed.loaded.get(id) !== loaded) return false
-        yield* leave(deployed, loaded)
-        // A timer that fires between here and its interruption delivers nothing, and the stored time stands.
-        yield* stopAll(loaded)
-        yield* probe({ _tag: 'Unloaded', entity: { name: deployed.program.name, id } })
+        // Counted from before it leaves: once it has, nothing else keeps the process from being settled. `a process
+        // over its capacity unloads its least recently used idle entity`, in the tests, reaches it (decision 0109).
+        yield* Effect.acquireUseRelease(
+          Effect.sync(() => {
+            leaving += 1
+          }),
+          () =>
+            Effect.gen(function*() {
+              yield* leave(deployed, loaded)
+              // A timer that fires between here and its interruption delivers nothing, and the stored time stands.
+              yield* stopAll(loaded)
+              yield* probe({ _tag: 'Unloaded', entity: { name: deployed.program.name, id } })
+            }),
+          () =>
+            Effect.sync(() => {
+              leaving -= 1
+              end()
+            }),
+        )
         return true
       }))
 
@@ -857,20 +877,26 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * effect sets going — an activation, a creation and its work — is finished all the same: only the process's
      * crash stops it halfway, as the crash table says (decision 0079). It is counted from the step that forks it
      * to its end, so that the process is not settled while it runs: the step is uninterruptible, and the fiber it
-     * forks is not, as a fiber never is for the region it is forked from, so the scope still stops it.
+     * forks is not, as a fiber never is for the region it is forked from, so the scope still stops it. The count is
+     * given back by a fiber of the process's scope that waits for it: one the deployment's scope stops before its
+     * first step runs no finalizer of its own (decision 0110).
      */
     const detached = <T extends Types, A, E>(deployed: Deployment<T>, effect: Effect.Effect<A, E>) =>
       Effect.flatMap(
-        Effect.uninterruptible(Effect.suspend(() => {
+        Effect.uninterruptible(Effect.gen(function*() {
           detachments += 1
-          const counted = Effect.ensuring(
-            effect,
-            Effect.sync(() => {
-              detachments -= 1
-              end()
-            }),
+          const fiber = yield* Effect.forkIn(effect, deployed.scope)
+          yield* Effect.forkIn(
+            Effect.andThen(
+              Fiber.await(fiber),
+              Effect.sync(() => {
+                detachments -= 1
+                end()
+              }),
+            ),
+            scope,
           )
-          return Effect.forkIn(counted, deployed.scope)
+          return fiber
         })),
         Fiber.join,
       )
@@ -1214,7 +1240,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     const quiet = (now: number) => {
-      if (detachments > 0) return false
+      if (detachments > 0 || leaving > 0) return false
       for (const deployed of deployments.values()) {
         const { waker } = deployed
         // The waker has a reading to make, so nothing is known of the stored timers.

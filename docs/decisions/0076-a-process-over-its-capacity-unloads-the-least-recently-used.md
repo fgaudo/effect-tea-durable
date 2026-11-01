@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-10-31. Decides [how many entities a process holds](../open-questions.md#running), the
 alternative [decision 0029](0029-an-idle-entity-is-unloaded.md) left, beside the passivation it decided, which
 holds as it was. What a process over its capacity may unload is corrected by
-[decision 0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md).
+[decision 0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md). `settled` waits for
+an entity unloading too, by [decision 0109](0109-settled-waits-for-an-entity-unloading.md).
 
 ## Context
 
