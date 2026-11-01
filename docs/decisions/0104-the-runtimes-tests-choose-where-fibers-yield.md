@@ -359,7 +359,7 @@ For the session that takes it, in order; each may change the ones after it.
    `yield* TestClock.adjust(...)`. To decide here: even with no preemption, which ready task runs is a choice at every
    step, so the schedules within `k` preemptions are far more than `k` bounds; an exploration that is exhaustive
    within its bound bounds the picks too, or holds them to an order, as CHESS runs a fiber on until it blocks.
-3. **The two interleavings**: a test for each, which fails or hangs with its rule taken out — registering for the
+3. **Done**: [The two interleavings](#the-two-interleavings). **The two interleavings**: a test for each, which fails or hangs with its rule taken out — registering for the
    resumption after the send in `entities` of [`src/runtime.ts`](../../src/runtime.ts) (`awaitResumption`), and
    dropping the lock while others wait in `holding` — and passes with it.
 4. **Move the tests under budgets** that the scheduler covers, by `scripts/mutate.ts` against the rules the budgets
