@@ -181,7 +181,14 @@ For the session that takes it, in order; each may change the ones after it.
    **Done**: [What the spike saw](#what-the-spike-saw).
 2. **The scheduler**, in `src/testing.ts`: record and replay a schedule; an exploration that runs a scenario under
    every schedule with at most `k` preemptions, and one under PCT. Keep it apart from what `index.ts` exports, as the
-   probe is ([decision 0073](0073-what-the-runtime-did-is-told-to-a-probe.md)).
+   probe is ([decision 0073](0073-what-the-runtime-did-is-told-to-a-probe.md)). It starts from the spike's
+   `controlled`, which keeps the rules [What the spike saw](#what-the-spike-saw) found: a fiber's first run let
+   through, every later run made to yield once, a schedule as the picks and the answers of preemption, fibers named
+   by their id less the run's first, and a cap on the steps of a run. A scenario under it waits for its fibers to be
+   at their waits, with no preemption, before it moves the clock, and reads what a move did right after
+   `yield* TestClock.adjust(...)`. To decide here: even with no preemption, which ready task runs is a choice at every
+   step, so the schedules within `k` preemptions are far more than `k` bounds; an exploration that is exhaustive
+   within its bound bounds the picks too, or holds them to an order, as CHESS runs a fiber on until it blocks.
 3. **The two interleavings**: a test for each, which fails or hangs with its rule taken out — registering for the
    resumption after the send in `entities` of [`src/runtime.ts`](../../src/runtime.ts) (`awaitResumption`), and
    dropping the lock while others wait in `holding` — and passes with it.
