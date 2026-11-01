@@ -119,7 +119,9 @@ what the documentation of `WithTransaction` says. It found what a defect does to
 
 - **An option.** The entity restarts after `defectRetryPolicy` and is given the message again, without end whatever the
   policy, which is concatenated with an endless default, its later messages waiting behind it
-  ([decision 0095](decisions/0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md)).
+  ([decision 0095](decisions/0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md)). The backoff is
+  one for the entity type, stepped by every restart of any of its entities, and never reset
+  ([decision 0113](decisions/0113-cluster-s-restart-backoff-is-shared-by-the-entities-of-a-type.md), Effect-TS/effect#10252).
 - **A bug, of 4.1.0 and 4.1.1.** Once that message's caller is interrupted, by a timeout, messages to the runner's
   other entities are never delivered, with or without `WithTransaction`, on `TestRunner` too; a request that is only
   slow does not do it. Traced with logs: the runner's read of storage delivers messages one at a time, and stops on

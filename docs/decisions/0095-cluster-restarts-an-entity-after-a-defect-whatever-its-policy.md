@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-10-31. Corrects what [decision 0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md)
 says of `defectRetryPolicy`; its decision stands. Found by the first review
-([decision 0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md)).
+([decision 0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md)). What it read is
+seen on a run, and the backoff found shared by the entities of a type, which never resets, by
+[decision 0113](0113-cluster-s-restart-backoff-is-shared-by-the-entities-of-a-type.md), reported as Effect-TS/effect#10252.
 
 ## Context
 
