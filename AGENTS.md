@@ -29,6 +29,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   its own.
 - A note lists, in a section `What it rests on`, each premise its decision falls without, and says of each whether it
   is tested (naming the test), documented, seen in a spike, read in a dependency's source, or only reasoned.
+- A premise about a dependency is looked up first in the documentation of the version pinned, for Effect its JSDoc
+  in `node_modules/effect/src`: found, it is documented; not found, the note says so. A rule that loses data in
+  silence if a behaviour not promised changes does not rest on it alone, where a guard of the library's is cheap;
+  otherwise the premise goes in `docs/open-questions.md`.
 - A spike is a test in `spikes/`, run by `bun test` at the pinned version. A premise about what a dependency does
   when it runs is tested, documented or seen in one before its note is taken; what no spike can run yet says what
   would check it, and goes in `docs/open-questions.md`.

@@ -18,9 +18,10 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0083](0083-effect-moves-to-4-1-1.md) | Effect moves to 4.1.1 |  |
 | [0089](0089-a-note-says-what-changed-it-and-is-taken-with-its-step.md) | A note says what changed it, and is taken with its step | [0106](0106-notes-the-design-covers-are-archived-at-each-release.md) |
 | [0107](0107-what-effect-documents-of-the-premises.md) | What Effect documents of the premises |  |
-| [0093](0093-a-note-says-what-each-premise-rests-on.md) | A note says what each premise rests on | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) |
+| [0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md) | A premise about a dependency is looked up in its documentation first |  |
+| [0093](0093-a-note-says-what-each-premise-rests-on.md) | A note says what each premise rests on | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md), [0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md) |
 | [0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md) | The notes are reviewed every fifteen, by a reader that did not write them | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) |
-| [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) | A dependency is checked by a spike the repository keeps, and the older notes are reviewed |  |
+| [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) | A dependency is checked by a spike the repository keeps, and the older notes are reviewed | [0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md) |
 | [0099](0099-a-library-on-unstable-modules-is-released-as-experimental.md) | A library on unstable modules is released as experimental |  |
 | [0105](0105-commits-prose-and-the-roadmap-are-written-for-a-reader.md) | Commits, prose and the roadmap are written for a reader |  |
 | [0106](0106-notes-the-design-covers-are-archived-at-each-release.md) | Notes the design covers are archived at each release |  |

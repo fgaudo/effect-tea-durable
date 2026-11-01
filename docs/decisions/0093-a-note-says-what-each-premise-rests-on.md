@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-10-31. Adds a rule to [`AGENTS.md`](../../AGENTS.md) on what a note says of its premises.
 That a premise about a dependency is checked before the note is taken, and a spike kept in `spikes/`, is added by
-[decision 0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md).
+[decision 0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md). That such a premise is looked up in
+its documentation first is added by [decision 0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md).
 
 ## Context
 

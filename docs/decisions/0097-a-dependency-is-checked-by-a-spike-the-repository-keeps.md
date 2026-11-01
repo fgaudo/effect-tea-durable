@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-10-31. Adds to [decision 0093](0093-a-note-says-what-each-premise-rests-on.md) what a
 premise about a dependency needs before a note is taken, and to
 [decision 0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md) a review of the
-notes no review has read. Adds rules to [`AGENTS.md`](../../AGENTS.md).
+notes no review has read. Adds rules to [`AGENTS.md`](../../AGENTS.md). That a premise is looked up in its
+dependency's documentation before a spike, and what a rule does with one not promised, is added by
+[decision 0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md).
 
 ## Context
 
