@@ -121,8 +121,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   (`spikes/effect-queue-take-timeout.test.ts`) and not promised by Effect's documentation
   ([decision 0107](decisions/0107-what-effect-documents-of-the-premises.md)). A release that changed it would lose
   that event in silence, and the spike would fail first. Does Effect promise it, or should the wait not depend on
-  it, for instance by reading the queue again under the entity's lock before it unloads? Asked in Effect's Discord on
-  2026-11-01, with no answer yet. It holds no step back: the guard can be taken without the answer, and an answer
+  it, for instance by reading the queue again under the entity's lock before it unloads? Asked in
+  [Effect's Discord](https://discord.com/channels/795981131316985866/1566436021133119649) on 2026-11-01, with no
+  answer yet. It holds no step back: the guard can be taken without the answer, and an answer
   that Effect promises it closes the question with a note.
 - **Bookkeeping in transactions.** What another fiber reads changes in one synchronous step
   ([decision 0068](decisions/0068-what-another-fiber-reads-changes-in-one-step.md)): a rule kept by hand, which
