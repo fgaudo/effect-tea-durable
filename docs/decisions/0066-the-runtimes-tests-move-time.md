@@ -5,6 +5,8 @@
 for a fiber it did not wake holds under the default budget of steps alone, as
 [decision 0101](0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) says. A second way to move time, a wall
 clock ahead of the sleeps, is added by [decision 0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md).
+A scheduler of the tests that chooses where fibers yield is added by
+[decision 0104](0104-the-runtimes-tests-choose-where-fibers-yield.md), which moves the clock in order.
 
 ## Context
 

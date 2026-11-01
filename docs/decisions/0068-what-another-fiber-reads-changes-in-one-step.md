@@ -1,6 +1,7 @@
 # 0068. What another fiber reads changes in one step
 
-**Status:** accepted, 2026-10-31.
+**Status:** accepted, 2026-10-31. Its tests under budgets of steps run under the scheduler of the tests of
+[decision 0104](0104-the-runtimes-tests-choose-where-fibers-yield.md) instead.
 
 ## Context
 

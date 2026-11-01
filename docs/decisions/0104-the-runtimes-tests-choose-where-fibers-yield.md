@@ -1,14 +1,12 @@
 # 0104. The runtime's tests choose where fibers yield
 
-**Status:** proposed, 2026-11-01. For the first step of the [roadmap](../roadmap.md). Would add to
-[decision 0066](0066-the-runtimes-tests-move-time.md) and [decision 0068](0068-what-another-fiber-reads-changes-in-one-step.md)
-a way to reach interleavings that no budget of steps reaches. Written by the session that reviewed 0076 to 0079, so
-that a later one can take the step; everything below marked **to check** is not seen yet. Its first step, the spike,
-is taken: [`spikes/effect-scheduler-controlled.test.ts`](../../spikes/effect-scheduler-controlled.test.ts), and what
-it saw is in [What the spike saw](#what-the-spike-saw). Its second, the scheduler, is taken too: it is in
-[`src/testing.ts`](../../src/testing.ts), and [The scheduler](#the-scheduler) says what it decided, with
-[Two models](#two-models) of how a resumed fiber runs. Of its third, both interleavings are reached:
-[The two interleavings](#the-two-interleavings) says how.
+**Status:** accepted, 2026-11-01. Adds to [decision 0066](0066-the-runtimes-tests-move-time.md) and
+[decision 0068](0068-what-another-fiber-reads-changes-in-one-step.md) a way to reach interleavings that no budget of
+steps reaches, and moves the runtime's tests under budgets onto it. The spike is
+[`spikes/effect-scheduler-controlled.test.ts`](../../spikes/effect-scheduler-controlled.test.ts), the scheduler is in
+[`src/testing.ts`](../../src/testing.ts), and the tests are in [`src/runtime.test.ts`](../../src/runtime.test.ts).
+Moving them found [decision 0109](0109-settled-waits-for-an-entity-unloading.md) and
+[decision 0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md).
 
 ## Context
 
@@ -30,7 +28,7 @@ What that leaves:
   steps ([decision 0102](0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)) by yields from 0 to 180 under
   budgets 3 to 6, and that these are every point an interruption is seen is only reasoned there.
 
-## Decision, as proposed
+## Decision
 
 - **A test runs the runtime under a scheduler it controls.** Effect's `Scheduler` service has two hooks:
   `shouldYield(fiber)`, asked as a fiber runs, which says whether it yields now, and `makeDispatcher()`, whose
@@ -40,16 +38,21 @@ What that leaves:
 - **The runtime is not touched.** The choices are the scheduler's, where any fiber yields or resumes; no point of the
   probe is added, and 0066's rejection stands.
 - **Exploration, not every schedule.** A schedule over a scenario of thousands of steps has too many orders to run them
-  all. Two strategies, to be compared on the runtime:
+  all. Two strategies, compared on the runtime:
   - **delay bounding**: every schedule that deviates at most `k` times from the run in order, `k` of 1 or 2, which is
     exhaustive within the bound, and most bugs of concurrency need few. A deviation is a preemption, as in CHESS's
     preemption bounding, or a pick of any task but the oldest. The picks are counted too, since a pick is a choice at
     every step here, and the schedules would be unbounded otherwise ([The scheduler](#the-scheduler));
   - **PCT**, probabilistic concurrency testing: fibers given random priorities, changed at `d - 1` random points,
     which finds a bug of depth `d` with a probability the method bounds, in far fewer runs.
-- **The step is done when the two interleavings above are reached**, each by a test that fails or hangs once the rule
-  that keeps it is taken out, and the tests under every budget that the new scheduler covers are moved onto it. What it
-  does not cover stays under budgets, and says why.
+- **The two interleavings above are reached**, each by a test that fails or hangs once the rule that keeps it is taken
+  out ([The two interleavings](#the-two-interleavings)).
+- **The runtime's tests run under PCT**, at depth 4 over 2,000 seeds, exploring only where they do not move the clock.
+  Delay bounding over a whole process takes about 1,450 runs at one deviation and a million at two, so it is kept for
+  a point between two steps of one fiber, within a window, as the deploy interrupted needs.
+- **No test of the runtime runs under budgets any more.** Each of the thirteen is run under the scheduler instead,
+  over a database of its own, and kills every mutation the budgets killed, but two that decision 0109 made no test
+  kill ([The tests moved from budgets](#the-tests-moved-from-budgets)).
 
 ## What it rests on
 
@@ -70,7 +73,7 @@ What that leaves:
   (**read in the source**).
 - A run is deterministic once its choices are: **seen** for the spike's scenarios, its result included, `a run given
   the same choices takes the same steps, its fibers counted from its first`; for a process of the runtime, **seen**
-  since step 2, in order and under PCT, the first run of the process included (`a process runs to its end under the
+  since the scheduler, in order and under PCT, the first run of the process included (`a process runs to its end under the
   scheduler of the tests, which needs nothing of the platform`); for every scenario of it, **reasoned**: the
   SQLite client is synchronous, each call an `Effect.try` over `bun:sqlite` (**read in the source**,
   `@effect/sql-sqlite-bun` `SqliteClient.ts`), time is the test clock's, and the library reads no other clock (`the
@@ -97,6 +100,11 @@ What that leaves:
   children, are let through.
 - The two interleavings need a fiber to yield where the others do not: **seen**, both under `inline` resumptions,
   which PCT at depth 4 reaches and no budget does ([The two interleavings](#the-two-interleavings)).
+- A test explores the schedules only where it does not move the clock: **seen**, explored across its moves, the
+  first of the moved tests fails at seed 1, a passivation's sleeper not at its latch, and still fails with the fiber
+  that moves the clock kept from preemption ([The tests moved from budgets](#the-tests-moved-from-budgets)).
+- What the moved tests hold, the budgets held: **seen**, by two runs of 56 mutations, below. That they hold every rule
+  a budget held is only as true as the mutations are many: a rule none of them takes out is not checked.
 
 ## What the spike saw
 
@@ -142,8 +150,10 @@ run last, below, a guard as well.
   the step of another fiber that ran it inline, as `runForkWith` does (`a fiber resumed in the step of another that
   ran it runs on without a pick, taken for one whose run has ended`, which fails without the rule), or by a fiber
   under `PreventSchedulerYield`, which is not asked and so never takes its place (seen, by a check not kept: resumed
-  by such a fiber after another was let run, a fiber waits for its pick). The runtime starts no fiber inline, by
-  `startImmediately` or a `runFork`, nor sets `PreventSchedulerYield` (`src/runtime.ts`, **read in the source**).
+  by such a fiber after another was let run, a fiber waits for its pick). The runtime calls neither
+  `startImmediately` nor `runFork`, and sets no `PreventSchedulerYield` (`src/runtime.ts`, **read in the source**).
+  It starts children inline all the same, through `timeoutOption` and `raceFirst`, which this spike did not see
+  ([The tests moved from budgets](#the-tests-moved-from-budgets)).
 - **An interruption that races a resumption** ends as under Effect's scheduler: the fiber either goes on to its end or
   is interrupted without going on, never both or neither, and both ends are reached (`an interruption racing a
   resumption ends as under the scheduler of Effect, one way or the other`). Under Effect's scheduler both are reached
@@ -162,7 +172,7 @@ run last, below, a guard as well.
   `internal/effect.ts`, **read in the source**); a wrapper such as `provideService` puts back what it changed in a
   step of its own. **Seen**: `what a test reads by Effect.map, or right after yield*, stands as the effect ended, and
   after a wrapper may not` — under preemption at even odds, a read after a wrapper saw another fiber move in 56 reads
-  of 200, the others in none. A test of step 2 reads right after `yield* TestClock.adjust(...)`, or by `map`, with no
+  of 200, the others in none. A test under the scheduler reads right after `yield* TestClock.adjust(...)`, or by `map`, with no
   wrapper between. The spike's scenario keeps this rule, but none of its ends hangs on it at the seeds it runs:
   reading after a wrapper there fails no test, and reading right after `yield*` is the same read as by `map`.
 - **Out of order, a fiber forked before `adjust` may reach its wait only once the clock has moved**, and is not waited
@@ -183,10 +193,11 @@ run last, below, a guard as well.
   3000, and none of 6000 with that fiber kept from preemption). The test waits, with no preemption and no `adjust`
   under way, until the sleeper has called its sleep, which it then follows to its latch in one run. Under Effect's
   scheduler none of 600 runs was late, budgets 3 to 12 with 0 to 59 steps before the sleep, by a check not kept. A
-  test of step 2 that moves the clock says how its sleepers get to their latch.
+  test under the scheduler moves the clock with its window closed, in order
+  ([The tests moved from budgets](#the-tests-moved-from-budgets)).
 - **A pick that starves.** Picking the newest task every time can run one fiber alone forever: a fiber that yields
   until others have moved is always the newest task. The spike caps a run at 100,000 steps so that such a run fails
-  instead of hanging; the strategies of step 2 are of the kind that does not starve, or are capped as well.
+  instead of hanging; the strategies of the scheduler are of the kind that does not starve, or are capped as well.
 - **Determinism and choice.** Given the same choices and the same answers of preemption, a run takes the same steps
   and ends the same; 50 seeds give more than 40 different runs; preempting a fiber at chosen steps lets another run
   between two of them (`a fiber yields where the scheduler says, and another runs between two of its steps`); no task
@@ -199,7 +210,7 @@ run last, below, a guard as well.
 
 ## The scheduler
 
-Step 2 of [How to take the step](#how-to-take-the-step), in [`src/testing.ts`](../../src/testing.ts), tested in
+In [`src/testing.ts`](../../src/testing.ts), tested in
 [`src/testing.test.ts`](../../src/testing.test.ts). It is apart from what `index.ts` exports.
 
 - **`scheduled(effect, strategy)`** runs an effect under the spike's `controlled`, with its rules as they were
@@ -276,7 +287,7 @@ Step 2 of [How to take the step](#how-to-take-the-step), in [`src/testing.ts`](.
 - **What exploring that process costs**, seen by a check not kept: a run in order asks 14 picks and 1,434
   preemptions, and takes about 5 milliseconds. Every schedule within one deviation is about 1,450 runs, some
   seconds; within two, about a million, which no suite runs. PCT at depth 2 ran 50 seeds in a quarter of a second,
-  and each ended. So step 3 runs delay bounding at 1 and PCT above it, unless a scenario is made smaller.
+  and each ended. So the runtime's tests run PCT, whose cost the number of runs bounds.
 
 ## Two models
 
@@ -295,17 +306,16 @@ Step 2 of [How to take the step](#how-to-take-the-step), in [`src/testing.ts`](.
 
 ## The two interleavings
 
-Step 3 of [How to take the step](#how-to-take-the-step), in [`src/runtime.test.ts`](../../src/runtime.test.ts). Both
-are reached under `inline` resumptions, so each is a bug of the runtime on Effect as it runs today. Each test runs its
-scenario in order until its callers arrive, and PCT at depth 4 from there, over 2,000 seeds, with the steps counted from
-there too (`fromPoint`). PCT over the whole run spends its changes of priority among the steps of the creation and the
-passivation, and finds them far less often. Running in order before the callers also follows the passivation, which
-preempted it may not be ([What the spike saw](#what-the-spike-saw)). The strategy that waits for a point of the
-scenario is the tests' own: `src/testing.ts` has none yet.
+In [`src/runtime.test.ts`](../../src/runtime.test.ts). Both are reached under `inline` resumptions, so each is a bug
+of the runtime on Effect as it runs today. Each test runs under `explored`, below, with its window closed until its
+callers arrive, and PCT at depth 4 from there, over 2,000 seeds, with the steps counted from there too. PCT over the
+whole run spends its changes of priority among the steps of the creation and the passivation, and finds them far
+less often. Running in order before the callers also follows the passivation, which preempted it may not be
+([What the spike saw](#what-the-spike-saw)).
 
 - **A sender that registers for the resumption only after it is answered `Suspended`**: `a sender answered Suspended is
   woken by the resumption, under prioritized schedules from its arrival`. An operation of a second program sends to a
-  toy suspended on a message, while the test discards that message. With the registration moved after the answer, 27
+  toy suspended on a message, while the test discards that message. With the registration moved after the answer, 25
   seeds of 2,000 do not end: the sender waits for ever (**seen**, by a mutation not kept). Under `queued` the run in
   order does not end either: the toy applies the discard in the task that answers the sender, which waits for its
   pick. Under Effect's own scheduler the mutation passes under budgets 3, 4, 5, 8 and 2048, and under `inline` within
@@ -314,12 +324,59 @@ scenario is the tests' own: `src/testing.ts` has none yet.
 - **An entity's lock dropped while others wait for it**: `callers of an unloaded entity build one machine for it, under
   prioritized schedules from their arrival`. Two callers send at once to an entity just passivated. With the lock
   dropped by any user, a caller that waits for the lock gets it while a new taker holds a lock of its own, and both
-  activate the entity: two `Restart`s for one passivation, in 67 seeds of 2,000 (**seen**, by a mutation not kept,
-  traced to the two activations). Under `queued` 10 seeds of 2,000 find it. Neither delay bounding at 1 nor Effect's
-  own scheduler under budgets 3 to 60 does (**seen**, by checks not kept).
-- **What a test of 2,000 runs misses.** A run finds the first with a probability near 1 in 75, and the second near 1
-  in 30. If the steps move, so that other seeds are drawn, 2,000 runs miss either with a probability below e^-25.
-  The two run in about thirteen seconds.
+  activate the entity: two `Restart`s for one passivation, in 96 seeds of 2,000 (**seen**, by a mutation not kept,
+  traced to the two activations). Under `queued` 10 seeds of 2,000 found it, with the callers started by `Effect.all`.
+  Neither delay bounding at 1 nor Effect's own scheduler under budgets 3 to 60 does (**seen**, by checks not kept).
+- **What a test of 2,000 runs misses.** A run finds the first with a probability near 1 in 80, and the second near 1
+  in 20. If the steps move, so that other seeds are drawn, 2,000 runs miss either with a probability below e^-25.
+
+## The tests moved from budgets
+
+Thirteen tests of [`src/runtime.test.ts`](../../src/runtime.test.ts) ran a scenario under every budget of steps, from
+3 up, and two of them under counts of the test's own yields as well. Each runs under `explored` now, and no test of
+the runtime sets `Scheduler.MaxOpsBeforeYield`.
+
+- **`explored(test, ended, { runs, depth, open })`** runs a test over a database of its own, under `runs` prioritized
+  schedules at `depth`, 2,000 at 4 by default, with `inline` resumptions. Each run must give `ended`, and one that
+  does not end fails, with the seed that replays it. It is the tests' own, beside the scheduler, since it builds the
+  database and the test clock of the runtime's tests.
+- **A window says where a run is explored.** While it is open, PCT preempts and picks; while it is closed, the run goes
+  in order. PCT draws its changes among the steps a run in order is asked of preemption with the window open. A test
+  opens it where its concurrency starts, and the reindex, the prune, the deploy interrupted and the two interleavings
+  do so.
+- **The clock moves with the window closed** (`adjusted`). Explored across a move, the first test failed at seed 1: the
+  passivation's sleeper was not at its latch, as the spike found it may not be. Keeping only the fiber that moves the
+  clock from preemption still failed. A drain in order before the move passed, but hid a bug the budgets found: it
+  applied the events `settled` had returned before, so a mutation that counts an event only once it is taken survived.
+  So what a move sets going runs in order, and the test reads the entity right after each `settled` instead, where an
+  early return shows.
+- **What runs at once is forked** (`together`). Effect starts the children of a concurrent `Effect.all`, and of
+  `raceFirst` and `timeoutOption`, inline, on their parent's stack (`forkUnsafe` with `startImmediately`, in
+  `internal/effect.ts`, **read in the source**). The scheduler asks a fiber to yield only while another task is ready,
+  so under `Effect.all` the first child ran to its first wait before the second was forked. In the prune's test no
+  step was asked of preemption at all, and the consumer's reading always came before the prune. Forked as tasks of
+  their own, both orders come. That a child started inline is not asked with nothing ready is an
+  [open question](../open-questions.md#running).
+- **`ran` is not used under it.** It moves the clock to wait for what it starts, which would run it all in order.
+- **The deploy interrupted anywhere keeps the test's own yields**, one count a run, from 0 to 199, before it
+  interrupts. Under PCT alone the forked deploy seldom ran as far as its registration before the interruption, and a
+  mutation that gives the name back to a registered deploy survived 2,000 seeds; with the counts it fails.
+- **Nothing a budget held is lost to the move.** 56 mutations of the rules of decisions 0039, 0063, 0067, 0068, 0070,
+  0075 to 0080 and 0102 were run against the whole suite before and after, each recording every test it failed, and
+  six more for decisions 0109 and 0110 after. Before, 17 were killed by a test under budgets alone. After, every
+  mutation killed before is killed still, but two, and every mutation of 0109 and 0110 is killed but one. The two are
+  rules of 0068: `leave` sets the waker's flag in the step it pokes it, and the waker clears its flag in the step it
+  finds no poke. No test kills either since decision 0109, the tests under budgets included, run against the runtime
+  with it: they are lost to 0109, not to the move, and are left to the next review. The one of 0109 counts the unload
+  only once the entity has left, which no test can tell from the count taken before.
+- **Two decisions were found here**, each an order no budget reached. `a process over its capacity unloads its least
+  recently used idle entity, under prioritized schedules` failed at seed 0: `settled` returned while the entity told
+  to leave was stopping its timers ([decision 0109](0109-settled-waits-for-an-entity-unloading.md)). `a deploy
+  interrupted anywhere keeps its name and its waker, or stops what it started` did not end at seed 1000: the deploy's
+  scope stopped a detached activation before its first step, and the count of what runs detached was never given back
+  ([decision 0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md)).
+- **What it costs.** The runtime's tests ran in 34 seconds under budgets, and run in 113 under the scheduler, on the
+  same machine; most of it is the 2,000 runs of each test.
 
 ## Alternatives
 
@@ -334,34 +391,10 @@ scenario is the tests' own: `src/testing.ts` has none yet.
 
 ## Consequences
 
-- [`src/testing.ts`](../../src/testing.ts) has the scheduler and the explorations; a test names the scenario, the
-  strategy and its bound, and a failure prints the schedule that replays it.
-- The Cluster step changes the runtime's concurrency: the scheduler goes on with it, and the tests that are moved onto
-  it now may be rewritten then. Moving all of them is not part of this step.
-
-## How to take the step
-
-For the session that takes it, in order; each may change the ones after it.
-
-1. **Spike** `spikes/effect-scheduler-controlled.test.ts`: a `Scheduler` whose dispatcher holds the tasks and runs the
-   one a test picks, and whose `shouldYield` says yes at chosen steps. Check that `Deferred`, `Queue`, `Semaphore`,
-   `Fiber.join`, `forkIn` and `Effect.sleep` under `TestClock.layer` all resume through it, that a schedule replays the
-   same steps, and what a fiber id is across two runs. Update the premises above to **seen** or say what fails.
-   **Done**: [What the spike saw](#what-the-spike-saw).
-2. **Done**: [The scheduler](#the-scheduler). **The scheduler**, in `src/testing.ts`: record and replay a schedule; an exploration that runs a scenario under
-   every schedule with at most `k` preemptions, and one under PCT. Keep it apart from what `index.ts` exports, as the
-   probe is ([decision 0073](0073-what-the-runtime-did-is-told-to-a-probe.md)). It starts from the spike's
-   `controlled`, which keeps the rules [What the spike saw](#what-the-spike-saw) found: a fiber's first run let
-   through, every later run made to yield once unless it is the first its own task starts or the one that interrupts
-   the children of a run that has ended, a schedule as the picks and the answers of preemption, fibers named by their
-   id less the run's first, and a cap on the steps of a run. A scenario under it waits for its fibers to be
-   at their waits, with no preemption, before it moves the clock, and reads what a move did right after
-   `yield* TestClock.adjust(...)`. To decide here: even with no preemption, which ready task runs is a choice at every
-   step, so the schedules within `k` preemptions are far more than `k` bounds; an exploration that is exhaustive
-   within its bound bounds the picks too, or holds them to an order, as CHESS runs a fiber on until it blocks.
-3. **Done**: [The two interleavings](#the-two-interleavings). **The two interleavings**: a test for each, which fails or hangs with its rule taken out — registering for the
-   resumption after the send in `entities` of [`src/runtime.ts`](../../src/runtime.ts) (`awaitResumption`), and
-   dropping the lock while others wait in `holding` — and passes with it.
-4. **Move the tests under budgets** that the scheduler covers, by `scripts/mutate.ts` against the rules the budgets
-   already kill, so that nothing a budget held is lost; say of each one left why.
-5. Rewrite this note with what was seen, and take it with the commit that takes the step out of the roadmap.
+- [`src/testing.ts`](../../src/testing.ts) has the scheduler and the explorations, and
+  [`src/runtime.test.ts`](../../src/runtime.test.ts) runs its tests of interleavings under `explored`. A failure names
+  the seed that replays it.
+- A test of an interleaving forks what it runs at once, moves the clock with its window closed, and reads what
+  `settled` waited for right after it.
+- The Cluster step changes the runtime's concurrency: the scheduler goes on with it, and the moved tests may be
+  rewritten then.
