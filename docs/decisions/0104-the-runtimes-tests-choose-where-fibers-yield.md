@@ -3,7 +3,9 @@
 **Status:** proposed, 2026-11-01. For the first step of the [roadmap](../roadmap.md). Would add to
 [decision 0066](0066-the-runtimes-tests-move-time.md) and [decision 0068](0068-what-another-fiber-reads-changes-in-one-step.md)
 a way to reach interleavings that no budget of steps reaches. Written by the session that reviewed 0076 to 0079, so
-that a later one can take the step; everything below marked **to check** is not seen yet.
+that a later one can take the step; everything below marked **to check** is not seen yet. Its first step, the spike,
+is taken: [`spikes/effect-scheduler-controlled.test.ts`](../../spikes/effect-scheduler-controlled.test.ts), and what
+it saw is in [What the spike saw](#what-the-spike-saw).
 
 ## Context
 
@@ -48,20 +50,107 @@ What that leaves:
 
 - The scheduler is a service a test provides, read by every fiber the runtime forks: **read in the source**, `Scheduler`
   in `effect/src/Scheduler.ts` at 4.1.1, a `Context.Reference` documented "to replace scheduling behavior globally in
-  tests"; `shouldYield` is asked in the fiber's run loop (`internal/effect.ts`). **To check** in a spike: that every
-  suspension and resumption the runtime uses goes through `scheduleTask` and `shouldYield` — `Deferred`, `Queue`,
-  `Semaphore`, `Fiber.join`, `forkIn`, `Effect.sleep` — and none through a microtask or a timer of the platform.
-- A run is deterministic once its choices are: **reasoned**. The SQLite client is synchronous, each call an
-  `Effect.try` over `bun:sqlite` (**read in the source**, `@effect/sql-sqlite-bun` `SqliteClient.ts`), time is the test
-  clock's, and the library reads no other clock (`the library reads the time and sleeps through Effect alone, which a
-  test moves`, in [`src/runtime.test.ts`](../../src/runtime.test.ts)). **To check** in the same spike: that two runs
-  given the same choices take the same steps, the ids of their fibers included.
+  tests"; `shouldYield` is asked in the fiber's run loop (`internal/effect.ts`). That every resumption `Deferred`,
+  `Queue`, `Semaphore`, `Fiber.join`, a fork and the test clock's `Effect.sleep` make reaches the scheduler, and none
+  needs a microtask or a timer of the platform: **seen**, `driven by hand, every fiber resumes through the scheduler,
+  that of the test clock included`, and `the timers of the platform the test clock sets are all cleared by the end of
+  a run`, in the spike. Not all of them reach it through `scheduleTask`: see below. A fiber under
+  `Scheduler.PreventSchedulerYield` is not asked, and runs on uncontrolled; neither Effect nor the library sets it
+  (**read in the source**).
+- A run is deterministic once its choices are: **seen** for the spike's scenarios, its result included, `a run given
+  the same choices takes the same steps, its fibers counted from its first`; for the runtime's, **reasoned**: the
+  SQLite client is synchronous, each call an `Effect.try` over `bun:sqlite` (**read in the source**,
+  `@effect/sql-sqlite-bun` `SqliteClient.ts`), time is the test clock's, and the library reads no other clock (`the
+  library reads the time and sleeps through Effect alone, which a test moves`, in
+  [`src/runtime.test.ts`](../../src/runtime.test.ts)). Fiber ids are not the same across two runs: Effect counts them
+  for the process (`fiberIdStore` in `internal/effect.ts`), so a schedule names a fiber by its id less the run's first.
 - The scheduler composes with the test clock: **read in the source**, `TestClock.layer` builds its scheduler over the
   `Scheduler` it finds, wrapping `scheduleTask` to follow what a wake sets going (`TestClock.ts`, `makeWithScheduler`),
-  so the controlled one is provided beneath it. **To check**: that `adjust` still waits for what it wakes when the tasks
-  are picked out of order.
+  so the controlled one is provided beneath it. That `adjust` still waits for what it wakes, and for what that sets
+  going, when the tasks are picked out of order and every fiber may be preempted, the one that moves the clock
+  included: **seen**, `adjust waits for what it wakes, and for what that sets going, whichever task is picked`, in
+  8000 runs, given that every fiber it wakes is at its wait when the clock moves — which out of order is less often
+  so, and for a sleeper is not seen by the test, below.
+- The scheduler gives no end Effect's own cannot give: **seen** for the cases the spike runs — a fiber interrupted
+  before it starts, and an interruption that races a resumption — and **reasoned** for the rest: a yield before a
+  fiber's first step after a resumption is one Effect's scheduler never makes, and Effect's code is written for yields
+  at any later step (the `Semaphore` checks again for its permit when its waiter runs, `takePermits` in
+  `Semaphore.ts`, read in the source). The one case found where that yield changes an end, the first run, is let
+  through.
 - The two interleavings need a fiber to yield where the others do not: **reasoned**, in the review of 0061 to 0075, by
   reading where the steps fall; the step confirms it or finds otherwise.
+
+## What the spike saw
+
+At `effect` 4.1.1, in [`spikes/effect-scheduler-controlled.test.ts`](../../spikes/effect-scheduler-controlled.test.ts),
+whose scheduler holds every task and is stepped by hand, synchronously, so that a run that ends needed nothing of the
+platform's. Each rule of its scheduler and of its scenario was taken out in turn, and a test failed for each, but for
+three: the read of a move after a wrapper, and the same read right after `yield*`, below; and the cap on the steps
+of a run, a guard that no run of the spike reaches.
+
+- **Two ways back into a fiber.** A fiber forked, one that yields, and one woken by a `Semaphore`, a `Queue` or a
+  `Latch` go through `scheduleTask`; one woken by a `Deferred`, a `Fiber.join` or any `Effect.callback` is resumed
+  inline, on the stack of the fiber that completes it (`Deferred.doneUnsafe`, `callbackOptions` in
+  `internal/effect.ts`, **read in the source**). Every fiber asks `shouldYield` before the first step of each run
+  loop, so a scheduler that answers yes there makes an inline resumption wait in its queue, as a fork does: `fibers a
+  Deferred resumes inline run in the order the test picks`, which fails without that yield.
+- **But not before a fiber's first run.** Made to yield there, a fiber interrupted before it has started is run in
+  full: the interruption's run loop yields, and the fork's task, which then finds the fiber not ended, runs its body
+  over it. A fiber's first run is a task of the queue already, its fork, so it is let through: `a fiber interrupted
+  before it starts does not run, as under the scheduler of Effect`, which fails without it. Effect's scheduler never
+  yields at a first step under a budget above 1 (`currentOpCount >= maxOpsBeforeYield`, **read in the source**); under
+  1 it yields at every step and no fiber moves (seen, by a check not kept).
+- **An interruption that races a resumption** ends as under Effect's scheduler: the fiber either goes on to its end or
+  is interrupted without going on, never both or neither, and both ends are reached (`an interruption racing a
+  resumption ends as under the scheduler of Effect, one way or the other`). Under Effect's scheduler both are reached
+  too, under budgets of 3 and 4 steps (seen, by a check not kept).
+- **The test clock follows what a fiber schedules once the clock is in its context.** A fiber's dispatcher is made the
+  first time it schedules a task, from the scheduler its context has then, and made again when its context gives it
+  another (`setContext` in `internal/effect.ts`, **read in the source**); a fiber given the clock, the test's first one
+  included, has the clock's (seen, by a check not kept). A `Queue` keeps the dispatcher of the fiber that makes it
+  (`Queue.make`, **read in the source**), so a `Queue` made before the clock is provided wakes its takers where the
+  clock does not follow them. The runtime makes its queues as it runs (`src/runtime.ts`), and its tests provide the
+  clock to all they run (`database`, and `a runtime holds its database file alone`, in `src/runtime.test.ts`).
+- **What a test reads of a move must be read in the step `adjust` returns in.** Read in a later step, after a
+  preemption of the test's fiber, it shows what the other fibers did after `adjust` returned, as though `adjust` had
+  waited for it, and a test that should fail passes. Effect hands a value on to the function given to `map`, and to
+  the generator that yielded the effect, in the step the effect ends in (`succeed` and `getCont` in
+  `internal/effect.ts`, **read in the source**); a wrapper such as `provideService` puts back what it changed in a
+  step of its own. **Seen**: `what a test reads by Effect.map, or right after yield*, stands as the effect ended, and
+  after a wrapper may not` — under preemption at even odds, a read after a wrapper saw another fiber move in 56 reads
+  of 200, the others in none. A test of step 2 reads right after `yield* TestClock.adjust(...)`, or by `map`, with no
+  wrapper between. The spike's scenario keeps this rule, but none of its ends hangs on it at the seeds it runs:
+  reading after a wrapper there fails no test, and reading right after `yield*` is the same read as by `map`.
+- **Out of order, a fiber forked before `adjust` may reach its wait only once the clock has moved**, and is not waited
+  for. Under Effect's scheduler `adjust` gives such a fiber one turn first
+  ([decision 0101](0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md)), which its queue, first in first
+  out, makes enough; picked out of order, it may not be. Each waiter reads the clock in the step before its wait: with
+  no preemption, in 1000 runs, every run whose chain was not at its end as `adjust` returned had a waiter that came
+  to its wait at the sleeper's time or later, and none had its waiters all there before (`a fiber forked before adjust
+  may reach its wait only once the clock has moved, and is not waited for`). A scenario under the controlled scheduler
+  waits for its fibers to be at their waits before it moves the clock, with no preemption until then.
+- **A sleeper the test cannot see at its latch.** The test clock's sleep puts its entry in the clock's list, takes a
+  permit of a semaphore that `adjust` takes too, and only then waits on the entry's latch (`TestClock.ts`, **read in
+  the source**). Woken before it is at the latch, a sleeper is not followed: the clock opens the latch with no fiber at
+  it and returns, and the sleeper goes on after `adjust` (`a sleeper woken before it is at its latch is not waited
+  for`). Two things keep it from the latch, both seen with the waiters at their waits: a preemption of the sleeper
+  between the entry and the latch (16 runs of 1000), and, with the sleeper not preempted there, the permit, which an
+  `adjust` under way holds long enough only when the fiber that moves the clock is preempted holding it (3 runs of
+  3000, and none of 6000 with that fiber kept from preemption). The test waits, with no preemption and no `adjust`
+  under way, until the sleeper has called its sleep, which it then follows to its latch in one run. Under Effect's
+  scheduler none of 600 runs was late, budgets 3 to 12 with 0 to 59 steps before the sleep, by a check not kept. A
+  test of step 2 that moves the clock says how its sleepers get to their latch.
+- **A pick that starves.** Picking the newest task every time can run one fiber alone forever: a fiber that yields
+  until others have moved is always the newest task. The spike caps a run at 100,000 steps so that such a run fails
+  instead of hanging; the strategies of step 2 are of the kind that does not starve, or are capped as well.
+- **Determinism and choice.** Given the same choices and the same answers of preemption, a run takes the same steps
+  and ends the same; 50 seeds give more than 40 different runs; preempting a fiber at chosen steps lets another run
+  between two of them (`a fiber yields where the scheduler says, and another runs between two of its steps`); no task
+  is left in the queue when a run ends; and every timer of the platform the test clock sets for its warning is
+  cleared by then.
+- **Priorities.** Effect gives every task priority 0 at 4.1.1 but one that `Effect.yieldNowWith(priority)` gives,
+  which neither the library nor its tests call (**read in the source**: every other `scheduleTask` in `effect/src`
+  passes 0); the scheduler ignores them.
 
 ## Alternatives
 
@@ -89,6 +178,7 @@ For the session that takes it, in order; each may change the ones after it.
    one a test picks, and whose `shouldYield` says yes at chosen steps. Check that `Deferred`, `Queue`, `Semaphore`,
    `Fiber.join`, `forkIn` and `Effect.sleep` under `TestClock.layer` all resume through it, that a schedule replays the
    same steps, and what a fiber id is across two runs. Update the premises above to **seen** or say what fails.
+   **Done**: [What the spike saw](#what-the-spike-saw).
 2. **The scheduler**, in `src/testing.ts`: record and replay a schedule; an exploration that runs a scenario under
    every schedule with at most `k` preemptions, and one under PCT. Keep it apart from what `index.ts` exports, as the
    probe is ([decision 0073](0073-what-the-runtime-did-is-told-to-a-probe.md)).

@@ -10,8 +10,8 @@ where each fiber yields and which runs next, records the choices so that a run r
 by preemption bounding or PCT, instead of sampling them by budgets of steps. The step is done when it reaches the two
 interleavings no budget reaches — a sender that registers for its receiver's resumption only after it is answered
 `Suspended`, and an entity's lock dropped while others wait for it — each with a test that fails without its rule.
-[Decision 0104](decisions/0104-the-runtimes-tests-choose-where-fibers-yield.md), proposed, says what is seen of
-Effect's scheduler, what is to check first in a spike, and the order to take the step in.
+[Decision 0104](decisions/0104-the-runtimes-tests-choose-where-fibers-yield.md), proposed, says what its spike saw of
+Effect's scheduler and the test clock, and the order to take the rest of the step in.
 
 The bugs of the third audit are fixed: a creation and a message under one request id are answered apart
 ([decision 0050](decisions/0050-a-creation-is-answered-apart-from-a-message.md)), and a deploy that fails
