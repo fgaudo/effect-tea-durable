@@ -29,6 +29,7 @@ import * as Machine from './machine.ts'
 import {
   defect,
   type Address,
+  type Entities,
   type IdempotencyKey,
   InvariantDefect,
   isTimer,
@@ -37,12 +38,13 @@ import {
   operation,
   type Program,
   rejectWith,
+  send,
   timer,
 } from './program.ts'
 import * as Library from './index.ts'
 import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
 import { createTables, storage } from './storage.ts'
-import { inOrder, prioritized, replayed as replayedSchedule, scheduled } from './testing.ts'
+import { everySchedule, inOrder, prioritized, replayed as replayedSchedule, scheduled } from './testing.ts'
 
 // The toy of `machine.test.ts`, with the schemas a runtime needs: `a` is idempotent, `b` at most once, `c` at
 // least once, and `t` a timer. Each key's work ends by removing its key, unless a message brings it back.
@@ -3135,3 +3137,49 @@ test('a process runs to its end under the scheduler of the tests, which needs no
     expect(again.exit !== undefined && Exit.isSuccess(again.exit) ? again.exit.value : again.exit).toEqual(ended)
   }
 })
+
+test('a sender answered Suspended is woken by the resumption, wherever it falls, under every schedule within one deviation', () => {
+  // Decision 0063: a sender registers for the receiver's resumption before it sends. A resumption between its being
+  // answered `Suspended` and a registration made after it would wake no one, and the sender would wait for ever.
+  const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
+    ...program,
+    name: 'Sender',
+    init: (_flags, at) => ({ want: ['c'], applied: [], since: at, rings: at }),
+    operations: {
+      A: operation(() => Effect.succeed(done('a'))),
+      B: operation.atMostOnce(({ key }) => Effect.succeed(done(key)), ({ key }): Internal => ({ _tag: 'Unknown', key })),
+      C: operation.atLeastOnce(({ key }) =>
+        Effect.as(send(program, id, { _tag: 'Want', key: 'a', on: false, nonce: 'sent' }, 'want'), done(key))
+      ),
+    },
+  }
+  const scenario = Effect.scoped(Effect.flatMap(createTables, () =>
+    Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const store = storage(program, yield* SqlClient.SqlClient)
+      return yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const senders = yield* runtime.deploy(sender)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester })
+          // The sender's operation sends to the suspended toy while an operator discards what it died on.
+          yield* senders.create('s', { at }, { requestId: 's', sender: tester })
+          yield* toy.discard(id)
+          yield* runtime.settled
+          return { applied: (yield* store.load(id))?.state.applied, wanted: yield* senders.read('s') }
+        }))
+    }))).pipe(
+      Effect.provide(SqliteClient.layer({ filename: ':memory:' })),
+      Effect.provide(TestClock.layer()),
+      Effect.orDie,
+    )
+  // In order the toy applies the discard in the task that answers the sender, whose resumption waits for its pick:
+  // so the run in order reaches the resumption before a registration made after the answer. Under Effect's own
+  // scheduler the sender is resumed inline, and registers first, under every budget.
+  everySchedule(scenario, { bound: 1 }, (exit) => {
+    expect(Exit.isSuccess(exit) ? exit.value : exit).toEqual({ applied: ['sent'], wanted: 0 })
+  })
+}, 60_000)

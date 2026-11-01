@@ -478,9 +478,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
 
     /**
      * Registers a sender's wait for the entity's resumption, before it sends: `resumed` is what it waits on if it is
-     * answered `Suspended`, and `forget` takes it back whatever it is answered. No test reaches a resumption between
-     * the answer and a registration made after it, which would wait for ever: only this order keeps it from it, as
-     * the review of 0061 to 0075 says.
+     * answered `Suspended`, and `forget` takes it back whatever it is answered. A registration made after the answer
+     * would miss a resumption between the two, and wait for ever: `a sender answered Suspended is woken by the
+     * resumption, wherever it falls`, in the tests, reaches it under the scheduler of the tests (decision 0104).
      */
     const awaitResumption = (entity: Address) =>
       Effect.sync(() => {

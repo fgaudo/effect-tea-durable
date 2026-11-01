@@ -6,7 +6,8 @@ a way to reach interleavings that no budget of steps reaches. Written by the ses
 that a later one can take the step; everything below marked **to check** is not seen yet. Its first step, the spike,
 is taken: [`spikes/effect-scheduler-controlled.test.ts`](../../spikes/effect-scheduler-controlled.test.ts), and what
 it saw is in [What the spike saw](#what-the-spike-saw). Its second, the scheduler, is taken too: it is in
-[`src/testing.ts`](../../src/testing.ts), and [The scheduler](#the-scheduler) says what it decided.
+[`src/testing.ts`](../../src/testing.ts), and [The scheduler](#the-scheduler) says what it decided. Of its third,
+the first interleaving is reached: [The two interleavings](#the-two-interleavings) says how.
 
 ## Context
 
@@ -89,7 +90,8 @@ What that leaves:
   `Semaphore.ts`, read in the source). The two cases found where that yield changes an end, a fiber's first run and
   the run of one that has ended and interrupts its children, are let through.
 - The two interleavings need a fiber to yield where the others do not: **reasoned**, in the review of 0061 to 0075, by
-  reading where the steps fall; the step confirms it or finds otherwise.
+  reading where the steps fall; the step confirms it or finds otherwise. For the first, **seen** otherwise: the yield
+  before a resumption reaches it in the run in order, with no preemption ([The two interleavings](#the-two-interleavings)).
 
 ## What the spike saw
 
@@ -270,6 +272,21 @@ Step 2 of [How to take the step](#how-to-take-the-step), in [`src/testing.ts`](.
   preemptions, and takes about 5 milliseconds. Every schedule within one deviation is about 1,450 runs, some
   seconds; within two, about a million, which no suite runs. PCT at depth 2 ran 50 seeds in a quarter of a second,
   and each ended. So step 3 runs delay bounding at 1 and PCT above it, unless a scenario is made smaller.
+
+## The two interleavings
+
+Step 3 of [How to take the step](#how-to-take-the-step), in [`src/runtime.test.ts`](../../src/runtime.test.ts).
+
+- **A sender that registers for the resumption only after it is answered `Suspended`** is reached, by `a sender
+  answered Suspended is woken by the resumption, wherever it falls, under every schedule within one deviation`. An
+  operation of a second program sends to a toy suspended on a message, while the test discards that message. With
+  the registration moved after the answer, the run in order does not end: **seen**, by a mutation not kept. The toy
+  applies the discard in the task that answers the sender, since the yield before a resumption queues the sender
+  there. Under Effect's own scheduler the same mutation passes under budgets 3, 4, 5, 8 and 2048 (**seen**, by a
+  check not kept): the sender is resumed inline, and registers before the toy goes on. So it is the yield before a
+  resumption that reaches it, and no deviation is needed. The test runs every schedule within one deviation all the
+  same, 2,085 runs in about ten seconds, so that the rule holds wherever the discard falls.
+- **An entity's lock dropped while others wait for it**: not reached yet.
 
 ## Alternatives
 
