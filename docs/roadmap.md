@@ -30,6 +30,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     ([decision 0063](decisions/0063-the-runtime-waits-for-what-it-waits-for.md)), which a resumption told by a
     message changes ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md));
   - an entity's lock dropped while others wait for it ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)).
+- **When Effect moves past 4.1.1**, a script in `scripts/` compares the JSDoc of the functions
+  [decision 0107](decisions/0107-what-effect-documents-of-the-premises.md) reads, in the old release and the new. A
+  spike tells when a behaviour changes; the comparison tells when a promise is added or taken away
+  ([decision 0108](decisions/0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md)).
 - **The library's name and release**, once there is code to publish. It is released as experimental while it depends
   on Effect's unstable modules ([decision 0099](decisions/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
   The release archives the notes the design covers
