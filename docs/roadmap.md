@@ -5,6 +5,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
+First, the runtime's tests choose where fibers yield: a scheduler of the tests', provided under the test clock, picks
+where each fiber yields and which runs next, records the choices so that a run replays, and explores the schedules
+by preemption bounding or PCT, instead of sampling them by budgets of steps. The step is done when it reaches the two
+interleavings no budget reaches — a sender that registers for its receiver's resumption only after it is answered
+`Suspended`, and an entity's lock dropped while others wait for it — each with a test that fails without its rule.
+[Decision 0104](decisions/0104-the-runtimes-tests-choose-where-fibers-yield.md), proposed, says what is seen of
+Effect's scheduler, what is to check first in a spike, and the order to take the step in.
+
 The bugs of the third audit are fixed: a creation and a message under one request id are answered apart
 ([decision 0050](decisions/0050-a-creation-is-answered-apart-from-a-message.md)), and a deploy that fails
 leaves nothing running ([decision 0051](decisions/0051-a-deploy-that-fails-leaves-nothing-running.md)). What it
@@ -107,7 +115,8 @@ that a sender waits — does not wait on Cluster, and is taken before it if an o
   ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)), and an
   entity's lock dropped while others wait for it
   ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)), which the
-  [review of 0061 to 0075](decisions/README.md#reviews) left reasoned. Where the runtime on Cluster makes either
-  reachable, it gets a test.
+  [review of 0061 to 0075](decisions/README.md#reviews) left reasoned. The first step of Next reaches both on one
+  process ([decision 0104](decisions/0104-the-runtimes-tests-choose-where-fibers-yield.md)); where the runtime on
+  Cluster changes either, its test changes with it.
 - The library's name, once there is code to publish, and its release, as experimental while it depends on
   Effect's unstable modules ([decision 0099](decisions/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).

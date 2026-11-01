@@ -2555,6 +2555,37 @@ describe('what the runtime cannot finish', () => {
         }))
     })))
 
+  test('an entity the waker can never activate leaves the process settled between its retries', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const tried: Array<number> = []
+      yield* process({
+        passivate: { millis: 5 },
+        retry: { millis: 100 },
+        // Every activation of `w` cannot finish, as a row no version reads (decision 0043).
+        observe: (entity, event) =>
+          entity.id !== 'w' || event._tag !== 'Restart'
+            ? Effect.void
+            : Effect.andThen(
+              Effect.map(DateTime.now, (now) => tried.push(DateTime.toEpochMillis(now))),
+              Effect.die('the runtime failed'),
+            ),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+          yield* toy.create('w', { at }, { requestId: 'w', sender: tester })
+          yield* runtime.settled
+          // Its timer comes, and each activation fails: the waker tries it once a retry, and rests in between,
+          // where one that tried at once would never settle (decision 0077).
+          for (let round = 0; round < 3; round++) {
+            yield* TestClock.adjust('100 millis')
+            yield* runtime.settled
+          }
+          expect(tried).toEqual([40, 140, 240])
+          expect(yield* toy.read('w')).toBe(1)
+        }))
+    })))
+
   test('the process is not settled while a stored timer or a retry has come by the clock and not run', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
