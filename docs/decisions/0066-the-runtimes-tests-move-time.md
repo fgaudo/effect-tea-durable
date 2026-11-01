@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-10-31. Takes the first step of the roadmap that
 [decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md) made possible. What it says `TestClock.adjust` does
 for a fiber it did not wake holds under the default budget of steps alone, as
-[decision 0101](0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) says.
+[decision 0101](0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) says. A second way to move time, a wall
+clock ahead of the sleeps, is added by [decision 0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md).
 
 ## Context
 

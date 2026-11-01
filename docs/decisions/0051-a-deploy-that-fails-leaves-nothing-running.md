@@ -1,7 +1,9 @@
 # 0051. A deploy that fails leaves nothing running
 
 **Status:** accepted, 2026-10-31. Its consequence that an operation sending to its own program retries until the
-deploy is done is changed by [decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md): the deploy wakes it.
+deploy is done is changed by [decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md): the deploy wakes it. That it holds of a
+deploy interrupted anywhere before it registers, which it did not, is
+[decision 0102](0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)'s.
 
 ## Context
 

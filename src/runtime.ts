@@ -1135,47 +1135,49 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       Effect.gen(function*() {
         // A program that cannot run as written is refused before anything is stored or run (decision 0054).
         yield* Effect.sync(() => checkProgram(program))
+        const services = yield* Effect.context<Exclude<T['services'], Entities>>()
         // A name is deployed once in a process: a new version is a new process (decision 0075). It is claimed in
-        // the step that checks it, so that two deploys at once cannot both pass, and given back by one that fails
-        // before it is registered: one interrupted after keeps it, with its deployment (decision 0078).
-        yield* Effect.sync(() => {
-          if (names.has(program.name)) {
-            throw new InvariantDefect({ reason: `the program '${program.name}' is deployed already` })
-          }
-          names.add(program.name)
-        })
-        return yield* Effect.onError(deploying(program), () =>
-          Effect.sync(() => {
-            if (!deployments.has(program.name)) names.delete(program.name)
-          }))
+        // the step that checks it, so that two deploys at once cannot both pass. A deploy that fails before it is
+        // registered, interrupted included, stops what it started and gives the name back; one interrupted after
+        // keeps both, with its deployment (decisions 0078, 0102). The claim, the deployment's scope and what undoes
+        // them are made in one step, so that no interruption falls between them.
+        return yield* Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function*() {
+            if (names.has(program.name)) {
+              return yield* Effect.die(new InvariantDefect({ reason: `the program '${program.name}' is deployed already` }))
+            }
+            names.add(program.name)
+            const deployed: Deployment<T> = {
+              program,
+              storage: storage(program, sql),
+              scope: yield* Scope.fork(scope),
+              loaded: new Map(),
+              // Nothing is known of the stored timers until the waker has read them once.
+              waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1), failed: new Map() },
+              run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
+            }
+            return yield* Effect.onError(restore(deploying(deployed)), () =>
+              deployments.has(program.name) ? Effect.void : Effect.andThen(
+                Scope.close(deployed.scope, Exit.void),
+                Effect.sync(() => {
+                  deployed.loaded.forEach(forgetUse)
+                  names.delete(program.name)
+                }),
+              ))
+          })
+        )
       })
 
-    const deploying = <T extends Types>(program: Program<T>) =>
+    const deploying = <T extends Types>(deployed: Deployment<T>) =>
       Effect.gen(function*() {
-        const services = yield* Effect.context<Exclude<T['services'], Entities>>()
-        const deployed: Deployment<T> = {
-          program,
-          storage: storage(program, sql),
-          scope: yield* Scope.fork(scope),
-          loaded: new Map(),
-          // Nothing is known of the stored timers until the waker has read them once.
-          waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1), failed: new Map() },
-          run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
-        }
+        const { program } = deployed
         // An operation a crash interrupted starts again here, and a message it left in a mailbox is handled
         // (decision 0071); a timer waits for its time, loaded or not. A deploy that cannot finish stops what it
         // started, and is never seen: an operation that reaches its program waits for one that finishes
         // (decisions 0045, 0051). What it loaded leaves the process with it, and holds no place under the capacity
         // (decision 0076).
-        yield* Effect.gen(function*() {
-          yield* deployed.storage.indexed
-          for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)
-        }).pipe(Effect.onError(() =>
-          Effect.andThen(
-            Scope.close(deployed.scope, Exit.void),
-            Effect.sync(() => deployed.loaded.forEach(forgetUse)),
-          )
-        ))
+        yield* deployed.storage.indexed
+        for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)
         // Registered with its waker in one step: a deployment others can reach always has its timers woken. The
         // waker is not forked uninterruptible with the step, so the scope that closes it stops it (decision 0078).
         yield* Effect.uninterruptible(Effect.gen(function*() {

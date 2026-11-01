@@ -485,8 +485,11 @@ wait on another's activation ([decision 0067](decisions/0067-each-entity-is-held
 activation and a creation run detached from their caller, which only waits for them: one that gives up leaves
 them to finish, and only a crash of the process stops them halfway
 ([decision 0079](decisions/0079-what-a-caller-sets-going-is-finished-without-it.md)).
-Everything a deployment runs runs in a scope of its own: a deploy that cannot finish stops what it started, and
-is never seen by other programs ([decision 0051](decisions/0051-a-deploy-that-fails-leaves-nothing-running.md)), and
-one that does gives its name back. A process deploys a name once: a new version, a fix included, is deployed by
+Everything a deployment runs runs in a scope of its own: a deploy that cannot finish before it registers its
+deployment, interrupted included, stops what it started, is never seen by other programs, and gives its name back
+([decisions 0051](decisions/0051-a-deploy-that-fails-leaves-nothing-running.md),
+[0102](decisions/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)); one interrupted after keeps its
+name, with its deployment and its waker
+([decision 0078](decisions/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)). A process deploys a name once: a new version, a fix included, is deployed by
 a new process ([decision 0075](decisions/0075-a-name-is-deployed-once-in-a-process.md)). Effect Cluster's
 entities, sharding and message storage come next ([roadmap](roadmap.md)).

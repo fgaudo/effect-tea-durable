@@ -7,9 +7,11 @@
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { describe, expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
+import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
+import type * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
@@ -178,6 +180,8 @@ const hands = (options: Readonly<{ holds?: boolean }> = {}) =>
   })
 
 const id = 'toy-1'
+
+const tester = { _tag: 'Tester' } as const
 
 /** A reply as its row holds it, by request. */
 type Answered = Readonly<{ request: string; tag: string; reason: unknown }>
@@ -356,6 +360,51 @@ const unloads = () => {
       entities.push(entity.id)
     })
   return { entities, unloaded }
+}
+
+/**
+ * A wall clock that runs ahead of the sleeps by `by.millis`, moved in one step: what a real clock does between two
+ * steps of a fiber, and the test clock never does, since its time moves only with `adjust`, which wakes each sleep
+ * it passes and waits for what it wakes (decision 0066). Sleeps are the test clock's still.
+ */
+const ahead = () => {
+  const by = { millis: 0 }
+  const skewed = (clock: Clock.Clock): Clock.Clock => ({
+    currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe() + by.millis,
+    currentTimeMillis: Effect.sync(() => clock.currentTimeMillisUnsafe() + by.millis),
+    currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe() + BigInt(by.millis) * 1_000_000n,
+    currentTimeNanos: Effect.sync(() => clock.currentTimeNanosUnsafe() + BigInt(by.millis) * 1_000_000n),
+    monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
+    monotonicTimeNanos: clock.monotonicTimeNanos,
+    sleep: (duration) => clock.sleep(duration),
+  })
+  let test: Clock.Clock | null = null
+  const around = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.flatMap(Effect.service(Clock.Clock), (clock) => {
+      test = clock
+      return Effect.provideService(effect, Clock.Clock, skewed(clock))
+    })
+  /** `TestClock.adjust`, which takes the test clock from where this one stands. */
+  const adjust = (duration: Duration.Input) =>
+    Effect.suspend(() => test === null ? Effect.die('no clock to adjust') : Effect.provideService(TestClock.adjust(duration), Clock.Clock, test))
+  return { by, around, adjust }
+}
+
+/** Hands that act and come back once `open` is run: operations under way until the test lets them end. */
+const gated = () =>
+  Effect.sync(() => {
+    const gate = Deferred.makeUnsafe<void>()
+    return {
+      open: Deferred.succeed(gate, undefined),
+      layer: Layer.succeed(Hands, Hands.of({ act: () => Deferred.await(gate) })),
+    }
+  })
+
+/** A program whose entities are created with their timer alone: nothing under way, and spare until it is due. */
+const timed: Program<T> = {
+  ...program,
+  name: 'Timed',
+  init: (_flags, at) => ({ want: ['t'], applied: [], since: at, rings: DateTime.addDuration(at, '40 millis') }),
 }
 
 /** Collects every event the runtime commits, in order. */
@@ -716,11 +765,313 @@ describe('passivation', () => {
           }
           expect(entities).toEqual([])
         }))
-      // A capacity of no entity at all is the launcher's defect.
-      const exit = yield* Effect.exit(process({ capacity: { entities: 0 } }, () => Effect.void))
-      const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
-      expect(cause instanceof InvariantDefect && cause.reason).toBe('the capacity is 0, which is no positive integer')
+      // A capacity of no entity at all, or of no whole number of them, is the launcher's defect.
+      for (const entities of [0, 1.5, Infinity, NaN]) {
+        const exit = yield* Effect.exit(process({ capacity: { entities } }, () => Effect.void))
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        expect(cause instanceof InvariantDefect && cause.reason)
+          .toBe(`the capacity is ${entities}, which is no positive integer`)
+      }
     })))
+
+  test('with no capacity, only time unloads', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      yield* process({ unloaded }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+          for (const entity of ['s-1', 's-2', 's-3']) {
+            yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+            yield* runtime.settled
+          }
+          expect(entities).toEqual([])
+        }))
+    })))
+
+  test('an entity that crashed holds no place under the capacity, whatever its operations deliver after', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      // Operations that finish once the test lets them, and that an interruption cannot stop before: they deliver
+      // after their entity has crashed and left the process.
+      const gate = Deferred.makeUnsafe<void>()
+      const late = Layer.succeed(Hands, Hands.of({ act: () => Effect.uninterruptible(Deferred.await(gate)) }))
+      let dies = true
+      yield* process({
+        unloaded,
+        capacity: { entities: 2 },
+        observe: (entity, event) => {
+          if (entity.id !== 'x' || event._tag !== 'Receive' || !dies) return Effect.void
+          dies = false
+          return Effect.die('the runtime failed')
+        },
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), late)
+          const timers = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+          yield* ran(toy.create('x', { at }, { requestId: 'x', sender: tester }))
+          const failed = yield* Effect.exit(toy.send('x', { _tag: 'Refuse', nonce: 'n' }, { requestId: 'r', sender: tester }))
+          expect(Exit.isFailure(failed)).toBe(true)
+          yield* Deferred.succeed(gate, undefined)
+          yield* runtime.settled
+          // Two entities fill the capacity, and neither leaves: the one that crashed is not counted.
+          for (const entity of ['s-1', 's-2']) {
+            yield* timers.create(entity, { at }, { requestId: entity, sender: tester })
+            yield* runtime.settled
+          }
+          expect(entities).toEqual([])
+        }))
+    })))
+
+  test('the capacity counts the entities of every program the process deploys', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      yield* process({ unloaded, capacity: { entities: 2 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
+          const twin = yield* Effect.provide(runtime.deploy({ ...program, name: 'Twin' }), (yield* hands()).layer)
+          yield* toy.create('e-1', { at }, { requestId: 'e-1', sender: tester })
+          yield* runtime.settled
+          yield* twin.create('e-2', { at }, { requestId: 'e-2', sender: tester })
+          yield* runtime.settled
+          expect(entities).toEqual([])
+          // A third entity, of the first program: the process holds three, and the least recently used leaves.
+          yield* toy.create('e-3', { at }, { requestId: 'e-3', sender: tester })
+          yield* runtime.settled
+          expect(entities).toEqual(['e-1'])
+        }))
+    })))
+
+  test('a process that comes back over its capacity unloads as many as it holds too many', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      const { open, layer } = yield* gated()
+      yield* process({ unloaded, capacity: { entities: 1 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          // Two entities busy at once hold the process over its capacity, and stay once their work is done: only
+          // an entity that enters tells the others to leave (decision 0076).
+          for (const entity of ['f-1', 'f-2']) yield* ran(toy.create(entity, { at }, { requestId: entity, sender: tester }))
+          yield* open
+          yield* runtime.settled
+          expect(entities).toEqual([])
+          yield* toy.create('f-3', { at }, { requestId: 'f-3', sender: tester })
+          yield* runtime.settled
+          expect([...entities].sort()).toEqual(['f-1', 'f-2'])
+        }))
+    })))
+
+  test('entities entering at once tell no more to leave than the process holds too many, however fibers yield', async () => {
+    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
+    for (const budget of budgets) {
+      await database(Effect.gen(function*() {
+        const at = yield* DateTime.now
+        const { entities, unloaded } = unloads()
+        yield* process({ unloaded, capacity: { entities: 3 } }, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+            for (const entity of ['s-1', 's-2', 's-3']) {
+              yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+              yield* runtime.settled
+            }
+            // Two enter at once: one told to leave and not gone yet counts against the second one's excess.
+            yield* Effect.all([
+              toy.create('s-4', { at }, { requestId: 's-4', sender: tester }),
+              toy.create('s-5', { at }, { requestId: 's-5', sender: tester }),
+            ], { concurrency: 'unbounded' })
+            yield* runtime.settled
+            expect({ budget, left: [...entities].sort() }).toEqual({ budget, left: ['s-1', 's-2'] })
+          }))
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+  }, 30_000)
+
+  test('the entity entering is never told to leave, even with nothing to do', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      yield* process({ unloaded, capacity: { entities: 1 } }, (runtime) =>
+        Effect.gen(function*() {
+          const busy = yield* Effect.provide(runtime.deploy(program), (yield* hands({ holds: true })).layer)
+          const timers = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+          yield* ran(busy.create('f-1', { at }, { requestId: 'f-1', sender: tester }))
+          // The process is over its capacity, and only the entity entering has nothing to do: it stays.
+          yield* ran(timers.create('s-1', { at }, { requestId: 's-1', sender: tester }))
+          expect(entities).toEqual([])
+        }))
+    })))
+
+  test('an entity told to leave that is sent a message before it leaves stays, and is answered', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      let toy: Library.Handle<T> | null = null
+      let answer: Answer<'Refused'> | null = null
+      yield* process({
+        unloaded,
+        capacity: { entities: 1 },
+        // Once `s-2` has entered and told `s-1` to leave, and before `s-1`'s loop takes that, `s-1` is sent a
+        // message: its loop finds it with something to do, and keeps it.
+        at: (point, entity, event) =>
+          point === 'AfterReply' && entity.id === 's-2' && event._tag === 'Create' && toy !== null
+            ? Effect.map(
+              toy.send('s-1', { _tag: 'Refuse', nonce: 'n-1' }, { requestId: 'r-1', sender: tester }),
+              (reply) => {
+                answer = reply
+              },
+            )
+            : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+          yield* toy.create('s-1', { at }, { requestId: 's-1', sender: tester })
+          yield* runtime.settled
+          yield* toy.create('s-2', { at }, { requestId: 's-2', sender: tester })
+          // A loop that unloaded it would lose the message, and one that kept it told would never settle.
+          yield* runtime.settled
+          expect(answer).toEqual({ _tag: 'Rejected', reason: 'Refused' })
+          expect(entities).toEqual([])
+          // The next entity to enter finds the process two over its capacity, and both leave.
+          yield* toy.create('s-3', { at }, { requestId: 's-3', sender: tester })
+          yield* runtime.settled
+          expect([...entities].sort()).toEqual(['s-1', 's-2'])
+        }))
+    })))
+
+  test('an entity whose timer comes due before it takes the telling to leave stays, and fires', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      const clock = ahead()
+      const fired: Array<string> = []
+      yield* clock.around(process({
+        unloaded,
+        capacity: { entities: 1 },
+        observe: (entity, event) =>
+          Effect.sync(() => {
+            if (event._tag === 'Fire') fired.push(entity.id)
+          }),
+        // Once `s-2` has told `s-1` to leave, the wall clock reaches `s-1`'s timer before its loop takes that, as a
+        // real clock may: `s-1` is no longer spare (decision 0078).
+        at: (point, entity, event) =>
+          point === 'AfterReply' && entity.id === 's-2' && event._tag === 'Create'
+            ? Effect.sync(() => {
+              clock.by.millis = 40
+            })
+            : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+          yield* toy.create('s-1', { at }, { requestId: 's-1', sender: tester })
+          yield* runtime.settled
+          yield* toy.create('s-2', { at }, { requestId: 's-2', sender: tester })
+          // The sleeps reach the time too, and each timer fires where it is armed.
+          yield* clock.adjust('40 millis')
+          yield* runtime.settled
+          expect({ fired: [...fired].sort(), entities }).toEqual({ fired: ['s-1', 's-2'], entities: [] })
+        })))
+    })))
+
+  test('an entity whose timer is due by the clock is not spare, and the next least recently used leaves', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      const clock = ahead()
+      yield* clock.around(process({ unloaded, capacity: { entities: 2 } }, (runtime) =>
+        Effect.gen(function*() {
+          const timers = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+          const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
+          // `w` is due at 40, and `s` later: both spare until then.
+          yield* timers.create('w', { at }, { requestId: 'w', sender: tester })
+          yield* runtime.settled
+          yield* clock.adjust('10 millis')
+          yield* timers.create('s', { at: yield* DateTime.now }, { requestId: 's', sender: tester })
+          yield* runtime.settled
+          // The clock reaches `w`'s time, exactly, and its sleep has not fired yet when a third entity enters:
+          // `w` is about to fire, and `s` is told to leave in its place (decision 0078).
+          clock.by.millis = 30
+          yield* toy.create('x', { at }, { requestId: 'x', sender: tester })
+          clock.by.millis = 0
+          yield* clock.adjust('30 millis')
+          yield* runtime.settled
+          expect(entities).toEqual(['s'])
+        })))
+    })))
+
+  test('a suspended entity is spare whatever its timers, and leaves for an entity that enters', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      yield* process({ unloaded, capacity: { entities: 1 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+          yield* toy.create('s-1', { at }, { requestId: 's-1', sender: tester })
+          expect(yield* toy.send('s-1', { _tag: 'Break', nonce: 'b' }, { requestId: 'b', sender: tester }))
+            .toEqual({ _tag: 'Suspended' })
+          // Its timer's time passes, and no sleep of it is armed: nothing of it fires.
+          yield* TestClock.adjust('50 millis')
+          yield* runtime.settled
+          yield* toy.create('s-2', { at }, { requestId: 's-2', sender: tester })
+          yield* runtime.settled
+          expect(entities).toEqual(['s-1'])
+        }))
+    })))
+
+  test('callers of two unloaded entities over a capacity of one are both answered, however fibers yield', async () => {
+    const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
+    const budgets = Array.from({ length: 98 }, (_, n) => n + 3)
+    for (const budget of budgets) {
+      await database(Effect.gen(function*() {
+        const at = yield* DateTime.now
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+            for (const entity of ['u-1', 'u-2']) yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+            yield* runtime.settled
+          }))
+        yield* process({ capacity: { entities: 1 } }, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+            // Each activation holds its caller's event before the other can tell it to leave (decision 0079).
+            const both = yield* ran(Effect.all([
+              toy.send('u-1', want('n-1'), { requestId: 'r-1', sender: tester }),
+              toy.send('u-2', want('n-2'), { requestId: 'r-2', sender: tester }),
+            ], { concurrency: 'unbounded' }))
+            expect({ budget, both }).toEqual({ budget, both: [{ _tag: 'Accepted' }, { _tag: 'Accepted' }] })
+          }))
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+    }
+  }, 30_000)
+
+  test('a caller interrupted anywhere as it activates its entity leaves the process able to settle', async () => {
+    const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
+    for (let budget = 3; budget <= 8; budget++) {
+      for (let yields = 0; yields <= 30; yields++) {
+        await database(Effect.gen(function*() {
+          const at = yield* DateTime.now
+          yield* process({}, (runtime) =>
+            Effect.gen(function*() {
+              const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+              yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+              yield* runtime.settled
+            }))
+          yield* process({}, (runtime) =>
+            Effect.gen(function*() {
+              const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+              const caller = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
+              yield* Effect.replicateEffect(Effect.yieldNow, yields, { discard: true })
+              yield* Fiber.interrupt(caller)
+              // What runs detached is counted from the step that forks it to its end: a count left behind would
+              // keep this from returning, which the test's own timeout reports (decision 0079).
+              yield* runtime.settled
+            }))
+        }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+      }
+    }
+  }, 30_000)
 
   test('a caller loads an unloaded entity again, and is answered', () =>
     database(Effect.gen(function*() {
@@ -2196,11 +2547,55 @@ describe('what the runtime cannot finish', () => {
           yield* TestClock.adjust('60 millis')
           yield* runtime.settled
           expect([yield* toy.read('w-1'), yield* toy.read('w-2')]).toEqual([1, 0])
-          // The waker sleeps until `w-1` is tried again, and its timer fires then (decision 0077).
-          yield* TestClock.adjust('100 millis')
+          // The waker sleeps until `w-1` is tried again, at 40 and the retry, and its timer fires then, at that
+          // time exactly (decision 0077).
+          yield* TestClock.adjust('75 millis')
           yield* runtime.settled
           expect([yield* toy.read('w-1'), yield* toy.read('w-2')]).toEqual([0, 0])
         }))
+    })))
+
+  test('the process is not settled while a stored timer or a retry has come by the clock and not run', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const clock = ahead()
+      let dies = false
+      /** Whether `settled` returns while the clock stands ahead of the waker's sleep, which only `adjust` ends. */
+      const settles = (runtime: Runtime, millis: number) =>
+        Effect.gen(function*() {
+          const settling = yield* Effect.forkChild(runtime.settled)
+          yield* Effect.replicateEffect(Effect.yieldNow, 50, { discard: true })
+          const early = settling.pollUnsafe() !== undefined
+          yield* clock.adjust(`${millis} millis`)
+          yield* Fiber.join(settling)
+          return early
+        })
+      yield* clock.around(process({
+        passivate: { millis: 5 },
+        retry: { millis: 100 },
+        // The first activation of `w-1` the waker makes cannot finish: the probe stands for a failed write.
+        observe: (entity, event) => {
+          if (entity.id !== 'w-1' || event._tag !== 'Restart' || !dies) return Effect.void
+          dies = false
+          return Effect.die('the runtime failed')
+        },
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+          for (const entity of ['w-1', 'w-2']) yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+          yield* runtime.settled
+          yield* clock.adjust('5 millis')
+          // The clock reaches the stored timers before the waker's sleep does: they are work not activated yet.
+          dies = true
+          clock.by.millis = 35
+          expect(yield* settles(runtime, 35)).toBe(false)
+          expect([yield* toy.read('w-1'), yield* toy.read('w-2')]).toEqual([1, 0])
+          // And so is `w-1`'s retry, once the clock reaches it: the waker read 75, and it is due at 175, which the
+          // sleep reaches at 140 (decision 0077).
+          clock.by.millis = 135
+          expect(yield* settles(runtime, 100)).toBe(false)
+          expect([yield* toy.read('w-1'), yield* toy.read('w-2')]).toEqual([0, 0])
+        })))
     })))
 
   test('a crash does not wait for its operations to stop: nothing waits for them under its entity’s lock', () =>
@@ -2392,6 +2787,124 @@ describe('what the runtime cannot finish', () => {
         })).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
     }
   }, 30_000)
+
+  test('a deploy interrupted anywhere keeps its name and its waker, or stops what it started', async () => {
+    // An entity left with its operations under way, which a deploy activates, and one with its timer alone, which
+    // only a deployment's waker activates.
+    const prepared = Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
+          yield* toy.create('w', { at }, { requestId: 'c-w', sender: tester })
+          yield* runtime.settled
+        }))
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands({ holds: true })).layer)
+          yield* ran(toy.create('d', { at }, { requestId: 'c-d', sender: tester }))
+        }))
+    })
+    // Hands that act and come back once the test opens the gate, and say which acts an interruption stopped.
+    const live = Effect.sync(() => {
+      const running = new Map<string, number>()
+      const gate = Deferred.makeUnsafe<void>()
+      const layer = Layer.succeed(
+        Hands,
+        Hands.of({
+          act: (key) => {
+            let acted = false
+            return Effect.onInterrupt(
+              Effect.andThen(Effect.sync(() => {
+                acted = true
+                running.set(key, (running.get(key) ?? 0) + 1)
+              }), Deferred.await(gate)),
+              () =>
+                Effect.sync(() => {
+                  if (acted) running.set(key, (running.get(key) ?? 0) - 1)
+                }),
+            )
+          },
+        }),
+      )
+      return { running, gate, layer }
+    })
+    const found: Array<string> = []
+    // Each budget and each count of yields moves the point where the interruption reaches the deploy.
+    for (let budget = 3; budget <= 6; budget++) {
+      for (let yields = 0; yields <= 180; yields++) {
+        await database(Effect.gen(function*() {
+          yield* prepared
+          const { running, gate, layer } = yield* live
+          const fired: Array<string> = []
+          yield* process({
+            observe: (entity, event) =>
+              Effect.sync(() => {
+                if (event._tag === 'Fire') fired.push(entity.id)
+              }),
+          }, (runtime) =>
+            Effect.gen(function*() {
+              const first = yield* Effect.forkChild(Effect.provide(runtime.deploy(program), layer))
+              yield* Effect.replicateEffect(Effect.yieldNow, yields, { discard: true })
+              yield* Fiber.interrupt(first)
+              const second = yield* Effect.exit(Effect.provide(runtime.deploy(program), layer))
+              yield* TestClock.adjust('1 millis')
+              // One deployment runs the entity's operations, whichever deploy it is.
+              const seen = { a: running.get('a') ?? 0, c: running.get('c') ?? 0 }
+              yield* Deferred.succeed(gate, undefined)
+              yield* runtime.settled
+              // And its waker fires each timer once: the one of the entity it activated, and the stored one.
+              yield* TestClock.adjust('100 millis')
+              yield* runtime.settled
+              if (seen.a !== 1 || seen.c !== 1 || [...fired].sort().join() !== 'd,w') {
+                found.push(`${budget}/${yields}: ${JSON.stringify({ ...seen, fired, second: second._tag })}`)
+              }
+            }))
+        }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)))
+      }
+    }
+    expect(found).toEqual([])
+  }, 120_000)
+
+  test('a deploy interrupted as it activates an entity stops the activation', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands({ holds: true })).layer)
+          yield* ran(toy.create('d', { at }, { requestId: 'c-d', sender: tester }))
+        }))
+      const reached = yield* Deferred.make<void>()
+      const gate = yield* Deferred.make<void>()
+      let held = true
+      let restarts = 0
+      yield* process({
+        // The first activation of `d` holds before its commit, as a slow database would.
+        at: (point, entity, event) => {
+          if (!held || point !== 'BeforeCommit' || entity.id !== 'd' || event._tag !== 'Restart') return Effect.void
+          held = false
+          return Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(gate))
+        },
+        observe: (entity, event) =>
+          Effect.sync(() => {
+            if (entity.id === 'd' && event._tag === 'Restart') restarts += 1
+          }),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const first = yield* Effect.forkChild(Effect.provide(runtime.deploy(program), layer))
+          yield* Deferred.await(reached)
+          // The deploy is given up while its activation runs detached: the activation runs in the deployment's
+          // scope, which the failed deploy closes, and stops with it (decisions 0079, 0102).
+          yield* Fiber.interrupt(first)
+          yield* Deferred.succeed(gate, undefined)
+          yield* TestClock.adjust('1 millis')
+          expect(restarts).toBe(0)
+          yield* Effect.provide(runtime.deploy(program), layer)
+          yield* runtime.settled
+          expect(restarts).toBe(1)
+        }))
+    })))
 
   test('a message its schema cannot encode is its caller’s defect, and reaches no entity', () =>
     database(Effect.gen(function*() {
