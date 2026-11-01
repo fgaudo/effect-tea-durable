@@ -32,3 +32,5 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - an entity's lock dropped while others wait for it ([decision 0067](decisions/0067-each-entity-is-held-by-its-own-lock.md)).
 - **The library's name and release**, once there is code to publish. It is released as experimental while it depends
   on Effect's unstable modules ([decision 0099](decisions/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
+  The release archives the notes the design covers
+  ([decision 0106](decisions/0106-notes-the-design-covers-are-archived-at-each-release.md)).

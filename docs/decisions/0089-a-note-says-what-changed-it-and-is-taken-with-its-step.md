@@ -1,7 +1,8 @@
 # 0089. A note says what changed it, and is taken with its step
 
 **Status:** accepted, 2026-10-31. Changes the rules of [`AGENTS.md`](../../AGENTS.md) on when a note is taken and
-what of it may change after.
+what of it may change after. The index lists only the notes not archived, since
+[decision 0106](0106-notes-the-design-covers-are-archived-at-each-release.md).
 
 ## Context
 

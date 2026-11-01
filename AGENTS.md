@@ -24,6 +24,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   updated by the commit that adds or changes a note. A question not decided yet goes in
   `docs/open-questions.md`, and leaves it when a note decides it. A step of the roadmap leaves it when done.
   The roadmap holds only the steps ahead: what a done step decided is in its notes, and is not retold there.
+- Each release archives the notes the design covers. A note moves to `docs/decisions/archive/` once
+  `docs/design.md` says what holds of it. It moves with every note that changes it, and the archive has an index of
+  its own.
 - A note lists, in a section `What it rests on`, each premise its decision falls without, and says of each whether it
   is tested (naming the test), documented, seen in a spike, read in a dependency's source, or only reasoned.
 - A spike is a test in `spikes/`, run by `bun test` at the pinned version. A premise about what a dependency does
