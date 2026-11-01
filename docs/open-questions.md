@@ -115,6 +115,13 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   message. After how many retries does it become a defect, if ever? And
   should the runtime notice work that comes back at once, turn after turn: a timer kept at a time already past,
   an operation kept on its own completion ([decision 0008](decisions/0008-delivered-work-is-done.md))?
+- **A take a timeout interrupts.** An entity waits for its next event with a `Queue.take` under a timeout, and is
+  unloaded when the time runs out ([decision 0029](decisions/0029-an-idle-entity-is-unloaded.md)). That an
+  interrupted take takes nothing, so an event offered as the time runs out stays in the queue, is seen at 4.1.1
+  (`spikes/effect-queue-take-timeout.test.ts`) and not promised by Effect's documentation
+  ([decision 0107](decisions/0107-what-effect-documents-of-the-premises.md)). A release that changed it would lose
+  that event in silence, and the spike would fail first. Does Effect promise it, or should the wait not depend on
+  it, for instance by reading the queue again under the entity's lock before it unloads?
 - **Bookkeeping in transactions.** What another fiber reads changes in one synchronous step
   ([decision 0068](decisions/0068-what-another-fiber-reads-changes-in-one-step.md)): a rule kept by hand, which
   a step that waits cannot keep. The waker reads the entities held and then waits for a poke, and only the steps

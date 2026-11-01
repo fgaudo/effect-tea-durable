@@ -2,7 +2,8 @@
  * What decisions 0058 and 0059 rely on of a schema's encoding, at `effect` 4.1.1: a struct writes its fields in its
  * schema's order, and drops what it does not declare; a record writes them in the order they were set. Two values
  * that encode alike may give their fields in another order, which is why the machine compares JSON with its fields
- * in any order, and only a record reaches that rule.
+ * in any order, and only a record reaches that rule. The order is what 4.1.1 does, not what it promises: Schema
+ * guarantees no order of the keys it encodes (`SchemaAST.ts`, decision 0107), and the machine relies on none.
  */
 import { expect, test } from 'bun:test'
 import * as Schema from 'effect/Schema'
