@@ -17,6 +17,7 @@ import {
   replayed,
   type Run,
   scheduled,
+  type Strategy,
 } from './testing.ts'
 
 const value = <A, E>(run: Run<A, E>) => run.exit !== undefined && Exit.isSuccess(run.exit) ? run.exit.value : undefined
@@ -154,10 +155,35 @@ test('a run counts the tasks it leaves ready, which a fiber the root did not wai
   expect(run.left).toBe(1)
 })
 
-test('a dispatcher of the scheduler refuses a flush inside a run', () => {
+test('a dispatcher of the scheduler refuses a flush inside a run, even one the effect catches', () => {
   const flushes = Effect.withFiber((fiber) => Effect.sync(() => fiber.currentDispatcher.flush()))
-  const { exit } = scheduled(flushes, inOrder)
-  expect(exit !== undefined && Exit.isFailure(exit) ? String(exit.cause) : '').toMatch(/never flushed/)
+  expect(() => scheduled(Effect.catchDefect(flushes, () => Effect.void), inOrder)).toThrow(/never flushed/)
+})
+
+test('a strategy that throws stops its run, which throws it, even where the effect catches it', () => {
+  // Effect asks the scheduler within the fiber's loop, and takes what it throws for a defect of that fiber.
+  let thrown = false
+  const throwsOnce: Strategy = {
+    pick: () => 0,
+    preempt: () => {
+      if (thrown) return false
+      thrown = true
+      throw new Error('a strategy failed')
+    },
+  }
+  expect(() => scheduled(Effect.catchDefect(twoWriters, () => Effect.succeed('caught')), throwsOnce))
+    .toThrow(/a strategy failed/)
+  expect(thrown).toBe(true)
+})
+
+test('a fiber that never waits stops its run, rather than running it forever', () => {
+  // It runs within one task, which a count of tasks never stops. Effect's own scheduler would preempt it.
+  const spins = Effect.forever(Effect.void, { disableYield: true })
+  const run = scheduled(spins, inOrder)
+  expect({ exit: run.exit, spun: run.spun }).toEqual({ exit: undefined, spun: true })
+  expect(scheduled(twoWriters, inOrder).spun).toBe(false)
+  const forked = Effect.flatMap(Effect.forkChild(spins), Fiber.join)
+  expect(() => everySchedule(forked, { bound: 0 }, () => {})).toThrow(/never waited/)
 })
 
 test('every schedule within two deviations is every one, each run once', () => {

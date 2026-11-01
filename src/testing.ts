@@ -127,14 +127,19 @@ export type Strategy = Readonly<{
 export type Schedule = Readonly<{ picks: ReadonlyArray<number>; preemptions: ReadonlyArray<boolean> }>
 
 /**
- * A run under `controlled`. `exit` is `undefined` for a run that did not end: nothing was left to run, or it took
- * `maxSteps`, as one that starves does.
+ * A run under `controlled`. `exit` is `undefined` for a run that did not end: nothing was left to run, it took
+ * `maxSteps`, as one that starves does, or it spun.
  */
 export type Run<A, E> = Readonly<{
   exit: Exit.Exit<A, E> | undefined
   schedule: Schedule
   /** How many tasks it ran. */
   steps: number
+  /**
+   * Whether a task asked `maxOps` times to yield, as a fiber that never waits does. The run stops there, since that
+   * fiber would run on in that task forever, and no count of tasks would stop it.
+   */
+  spun: boolean
   /**
    * How many tasks were ready still as it ended. They are not run: a fiber the root did not wait for, as a daemon,
    * stops where it was, so a check reads what the root waited for alone.
@@ -167,7 +172,14 @@ const controlled = (strategy: Strategy) => {
   // The fiber this scheduler has just made yield: the task Effect schedules next is its yield's.
   let yielding: number | undefined
   let first: number | undefined
-  const id = (fiber: Fiber.Fiber<unknown, unknown>) => fiber.id - first!
+  // How many times the task under way has asked to yield, counted from each task's start.
+  let ops = 0
+  let spun = false
+  // What a strategy or a flush threw. Thrown inside a fiber, Effect takes it for a defect of that fiber, which the
+  // effect under test can catch, and asks again: so the run stops, and `scheduled` throws it.
+  let failure: Readonly<{ error: unknown }> | undefined
+  const stopped = () => spun || failure !== undefined
+  const id =(fiber: Fiber.Fiber<unknown, unknown>) => fiber.id - first!
   const tasks = () => ready.map(({ fiber }) => ({ fiber }))
   const yields = (fiber: Fiber.Fiber<unknown, unknown>) => {
     if (fiber.currentOpCount === 1) {
@@ -194,7 +206,19 @@ const controlled = (strategy: Strategy) => {
     shouldYield(fiber) {
       // The root asks first: Effect runs it inline as it forks it (`runForkWith` in `internal/effect.ts`).
       first ??= fiber.id
-      const answer = yields(fiber)
+      // A run stopped makes each fiber that asks yield, which ends the task under way, and runs no other.
+      if (stopped()) return true
+      if (++ops > maxOps) {
+        spun = true
+        return true
+      }
+      let answer: boolean
+      try {
+        answer = yields(fiber)
+      } catch (error) {
+        failure = { error }
+        return true
+      }
       if (!answer) running = fiber
       return answer
     },
@@ -206,12 +230,16 @@ const controlled = (strategy: Strategy) => {
       // Effect flushes only a dispatcher of its own `runSync`, and `scheduled` alone steps this one. A flush inside a
       // task would run other tasks within it, and the rules above, which read the task under way, would not hold.
       flush: () => {
-        throw new Error('a dispatcher of the controlled scheduler is stepped by its run alone, and never flushed')
+        const error = new Error(
+          'a dispatcher of the controlled scheduler is stepped by its run alone, and never flushed',
+        )
+        failure ??= { error }
+        throw error
       },
     }),
   }
   const step = () => {
-    if (ready.length === 0) return false
+    if (stopped() || ready.length === 0) return false
     let index = 0
     if (ready.length > 1) {
       index = strategy.pick(tasks())
@@ -223,26 +251,40 @@ const controlled = (strategy: Strategy) => {
     const { task } = ready.splice(index, 1)[0]!
     entering = true
     running = undefined
+    ops = 0
     task()
     return true
   }
-  return { scheduler, step, schedule: (): Schedule => ({ picks, preemptions }), left: () => ready.length }
+  return {
+    scheduler,
+    step,
+    schedule: (): Schedule => ({ picks, preemptions }),
+    left: () => ready.length,
+    spun: () => spun,
+    failure: () => failure,
+  }
 }
 
 /** How many tasks a run may take before it is taken for one that never ends. */
 const maxSteps = 1_000_000
 
+/** How many times a task may ask to yield before it is taken for a fiber that never waits. */
+const maxOps = 1_000_000
+
 /**
  * Runs `effect` under a scheduler `strategy` decides, stepped by hand and synchronously, until it ends, nothing is
- * ready, or it has taken `maxSteps` tasks. So a run needs nothing of the platform's, no timer and no microtask: what
- * does is left waiting, and the run does not end.
+ * ready, it has taken `maxSteps` tasks, or a task spins. So a run needs nothing of the platform's, no timer and no
+ * microtask: what does is left waiting, and the run does not end. Throws what the strategy throws, or a flush, even
+ * where the effect catches it.
  */
 export const scheduled = <A, E>(effect: Effect.Effect<A, E>, strategy: Strategy): Run<A, E> => {
   const run = controlled(strategy)
   const fiber = Effect.runFork(effect, { scheduler: run.scheduler })
   let steps = 0
   while (fiber.pollUnsafe() === undefined && steps < maxSteps && run.step()) steps++
-  return { exit: fiber.pollUnsafe(), schedule: run.schedule(), steps, left: run.left() }
+  const failure = run.failure()
+  if (failure !== undefined) throw failure.error
+  return { exit: fiber.pollUnsafe(), schedule: run.schedule(), steps, spun: run.spun(), left: run.left() }
 }
 
 /**
@@ -300,6 +342,7 @@ export const deviated = <A, E>(
 /** Checks a run's end, a run that did not end failing, and says on failure what replays it. */
 const checked = <A, E>(run: Run<A, E>, check: (exit: Exit.Exit<A, E>) => void, replay: string): void => {
   try {
+    if (run.spun) throw new Error(`a task of the run asked ${maxOps} times to yield, and never waited`)
     if (run.exit === undefined) throw new Error(`the run did not end after ${run.steps} tasks`)
     check(run.exit)
   } catch (error) {

@@ -196,7 +196,7 @@ Step 2 of [How to take the step](#how-to-take-the-step), in [`src/testing.ts`](.
 [`src/testing.test.ts`](../../src/testing.test.ts). It is apart from what `index.ts` exports.
 
 - **`scheduled(effect, strategy)`** runs an effect under the spike's `controlled`, with its rules as they were
-  found, stepped by hand and synchronously until it ends, nothing is ready, or a million tasks have run. A
+  found, stepped by hand and synchronously until it ends, nothing is ready, a million tasks have run, or it stops. A
   **strategy** answers two questions: which ready task runs, and whether the fiber running yields at a step. It is
   asked the first only when more than one task is ready, and the second only when another is ready: elsewhere the
   answer changes nothing, and asking would only make the schedules more. The answers, in order, are the run's
@@ -207,6 +207,18 @@ Step 2 of [How to take the step](#how-to-take-the-step), in [`src/testing.ts`](.
   for stops where it was. A dispatcher of the scheduler refuses a `flush`: Effect flushes only those of its own
   `runSync` and of a schema's standard validation, each with a scheduler of its own (**read in the source**), and a
   flush inside a task would run other tasks within it, where the rules above read the task under way.
+- **A run stops on what it cannot step past.** Two cases stop it, and once stopped, each fiber that asks the
+  scheduler yields, which ends the task under way, and no other task runs.
+  - **What a strategy or a flush throws is thrown by `scheduled`.** Effect asks `shouldYield` inside the `try` of
+    its `runLoop`, takes what it throws for a defect of the fiber, and asks again (**read in the source**,
+    `internal/effect.ts`). So a strategy that throws once would end a run that catches defects as if nothing
+    failed, and one that always throws would spin there forever (`a strategy that throws stops its run, which
+    throws it, even where the effect catches it`, and `a dispatcher of the scheduler refuses a flush inside a run,
+    even one the effect catches`).
+  - **A task that asks a million times to yield spun**, as a fiber that never waits does, `Effect.forever` with
+    `disableYield` among them. Effect's own scheduler preempts it, and the strategy in order never does, so it
+    runs within one task forever, which the count of tasks never stops. The run says it spun, and an exploration
+    fails it (`a fiber that never waits stops its run, rather than running it forever`, which hangs without it).
 - **The fiber of a task.** A strategy is told, for each ready task, the fiber it resumes, where the scheduler made
   that fiber yield, by a preemption or by the yield before a resumption. Effect schedules the task of such a yield in
   the same step as `shouldYield` answers (`runLoop` and `yieldNowWith` in `internal/effect.ts`, **read in the
