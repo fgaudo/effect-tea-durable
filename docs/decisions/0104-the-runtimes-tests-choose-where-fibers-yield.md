@@ -50,11 +50,16 @@ What that leaves:
 
 - The scheduler is a service a test provides, read by every fiber the runtime forks: **read in the source**, `Scheduler`
   in `effect/src/Scheduler.ts` at 4.1.1, a `Context.Reference` documented "to replace scheduling behavior globally in
-  tests"; `shouldYield` is asked in the fiber's run loop (`internal/effect.ts`). That every resumption `Deferred`,
-  `Queue`, `Semaphore`, `Fiber.join`, a fork and the test clock's `Effect.sleep` make reaches the scheduler, and none
-  needs a microtask or a timer of the platform: **seen**, `driven by hand, every fiber resumes through the scheduler,
-  that of the test clock included`, and `the timers of the platform the test clock sets are all cleared by the end of
-  a run`, in the spike. Not all of them reach it through `scheduleTask`: see below. A fiber under
+  tests"; `shouldYield` is asked in the fiber's run loop (`internal/effect.ts`). That no resumption `Deferred`,
+  `Queue`, `Semaphore`, `Fiber.join`, a fork and the test clock's `Effect.sleep` make needs a microtask or a timer of
+  the platform: **seen**, `driven by hand, every fiber resumes through the scheduler, that of the test clock included`,
+  and `the timers of the platform the test clock sets are all cleared by the end of a run`, in the spike, whose runs
+  end stepped by hand. That each waits in the queue for a pick: **seen** for a `Deferred` and an interruption, `fibers
+  a Deferred resumes inline run in the order the test picks` and `a fiber that yielded and is interrupted waits for its
+  turn, as one resumed inline does`; for the rest **read in the source**: a fiber is run only by a call to its
+  `evaluate`, whose run loop asks `shouldYield` before its first step, and the spike's scheduler lets through only a
+  fiber's first run and the one its own task starts (below). Not all of them reach it through `scheduleTask`: see
+  below. A fiber under
   `Scheduler.PreventSchedulerYield` is not asked, and runs on uncontrolled; neither Effect nor the library sets it
   (**read in the source**).
 - A run is deterministic once its choices are: **seen** for the spike's scenarios, its result included, `a run given
@@ -89,7 +94,7 @@ three: the read of a move after a wrapper, and the same read right after `yield*
 of a run, a guard that no run of the spike reaches.
 
 - **Two ways back into a fiber.** A fiber forked, one that yields, and one woken by a `Semaphore`, a `Queue` or a
-  `Latch` go through `scheduleTask`; one woken by a `Deferred`, a `Fiber.join` or any `Effect.callback` is resumed
+  `Latch` go through `scheduleTask` (the wake is a task, which resumes the waiters inline as it runs); one woken by a `Deferred`, a `Fiber.join` or any `Effect.callback` is resumed
   inline, on the stack of the fiber that completes it (`Deferred.doneUnsafe`, `callbackOptions` in
   `internal/effect.ts`, **read in the source**). Every fiber asks `shouldYield` before the first step of each run
   loop, so a scheduler that answers yes there makes an inline resumption wait in its queue, as a fork does: `fibers a
@@ -100,6 +105,13 @@ of a run, a guard that no run of the spike reaches.
   before it starts does not run, as under the scheduler of Effect`, which fails without it. Effect's scheduler never
   yields at a first step under a budget above 1 (`currentOpCount >= maxOpsBeforeYield`, **read in the source**); under
   1 it yields at every step and no fiber moves (seen, by a check not kept).
+- **Nor by an interruption.** An interruption runs the fiber it interrupts inline, on the stack of the fiber that
+  interrupts (`interruptUnsafe` in `internal/effect.ts`, **read in the source**); it is the one call that runs a fiber
+  which has yielded and waits for its task, since the yield's own task and an awaited callback are the only others
+  that resume a fiber, and a fiber that has yielded awaits no callback. A scheduler that lets a fiber through because
+  it yielded before runs it there unpicked, ahead of the fiber that interrupts, and leaves its task in the queue with
+  nothing to do; so a fiber that has yielded is let through only as the first fiber its task starts to run: `a fiber
+  that yielded and is interrupted waits for its turn, as one resumed inline does`, which fails without it.
 - **An interruption that races a resumption** ends as under Effect's scheduler: the fiber either goes on to its end or
   is interrupted without going on, never both or neither, and both ends are reached (`an interruption racing a
   resumption ends as under the scheduler of Effect, one way or the other`). Under Effect's scheduler both are reached
@@ -183,7 +195,7 @@ For the session that takes it, in order; each may change the ones after it.
    every schedule with at most `k` preemptions, and one under PCT. Keep it apart from what `index.ts` exports, as the
    probe is ([decision 0073](0073-what-the-runtime-did-is-told-to-a-probe.md)). It starts from the spike's
    `controlled`, which keeps the rules [What the spike saw](#what-the-spike-saw) found: a fiber's first run let
-   through, every later run made to yield once, a schedule as the picks and the answers of preemption, fibers named
+   through, every later run made to yield once unless it is the first its own task starts, a schedule as the picks and the answers of preemption, fibers named
    by their id less the run's first, and a cap on the steps of a run. A scenario under it waits for its fibers to be
    at their waits, with no preemption, before it moves the clock, and reads what a move did right after
    `yield* TestClock.adjust(...)`. To decide here: even with no preemption, which ready task runs is a choice at every

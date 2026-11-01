@@ -2,10 +2,10 @@
  * What decision 0104 asks of `effect` 4.1.1's `Scheduler`: whether a test can choose where every fiber yields and
  * which runs next. Read in the source: a fiber asks `shouldYield` before each step of its run loop, and one that
  * yields, is forked, or is woken by a `Semaphore`, a `Queue` or a `Latch` goes through `scheduleTask` of a dispatcher
- * its scheduler makes; but a `Deferred`, a `Fiber.join` and any `Effect.callback` resume their waiter inline, on the
- * stack of the fiber that completes them, without the dispatcher. Such a waiter still asks `shouldYield` before its
- * first step, so a scheduler that makes a fiber yield once as it starts to run again has each resumption wait in the
- * dispatcher's queue, where the test picks it.
+ * its scheduler makes (a wake is a task, which resumes the waiters inline when it runs); but a `Deferred`, a `Fiber.join` and any `Effect.callback` resume their waiter inline, on the
+ * stack of the fiber that completes them, without the dispatcher, and so does an interruption, on the stack of the fiber
+ * that interrupts. Such a fiber still asks `shouldYield` before its first step, so a scheduler that makes a fiber yield
+ * once as it starts to run again has each resumption wait in the dispatcher's queue, where the test picks it.
  *
  * Here the scheduler holds every task and the test runs them by hand, one at a time, synchronously: a run that ends
  * so needed nothing of the platform's, no timer and no microtask, or it would be left waiting.
@@ -34,9 +34,15 @@ const random = (seed: number) => () => {
  * ready when the test steps it. A fiber that starts to run again yields once first, so that a fiber resumed inline
  * waits for its turn as one forked does; `preempt` says at which other steps a fiber yields.
  *
- * A fiber's first run is not made to yield: it is a task of the queue already, its fork, unless it is interrupted
- * before it starts, and then Effect runs the interruption inline and the fork finds the fiber ended. Made to yield
- * there, the fork's task would run the fiber's body over the interruption.
+ * A fiber that yielded is let through only by the task that resumes it: the first fiber a task starts to run. An
+ * interruption runs the fiber that yielded inline, on the stack of the fiber that interrupts (`interruptUnsafe` in
+ * `internal/effect.ts`, read in the source); let through there, it would run without being picked, and its task would
+ * be left in the queue with nothing to do.
+ *
+ * A fiber's first run is not made to yield: it is a task of the queue already, its fork, or runs inline where Effect
+ * starts it, as the first fiber of the run does; unless it is interrupted before it starts, and then Effect runs the
+ * interruption inline and the fork finds the fiber ended. Made to yield there, the fork's task would run the fiber's
+ * body over the interruption.
  */
 const controlled = (
   choose: (ready: number) => number,
@@ -45,6 +51,8 @@ const controlled = (
   const ready: Array<() => void> = []
   const started = new WeakSet<Fiber.Fiber<unknown, unknown>>()
   const letThrough = new WeakSet<Fiber.Fiber<unknown, unknown>>()
+  // Whether a task has started and no fiber has started to run in it yet.
+  let entering = false
   // What the run did, by fiber: ids are counted from the first fiber of the run, since Effect counts them for the
   // process.
   const trace: Array<string> = []
@@ -55,7 +63,9 @@ const controlled = (
     shouldYield(fiber) {
       if (fiber.currentOpCount === 1) {
         const firstRun = !started.has(fiber)
-        if (firstRun || letThrough.delete(fiber)) {
+        const resumed = entering && letThrough.delete(fiber)
+        entering = false
+        if (firstRun || resumed) {
           started.add(fiber)
           trace.push(`runs ${id(fiber)}`)
           return false
@@ -79,7 +89,9 @@ const controlled = (
   }
   const step = () => {
     if (ready.length === 0) return false
-    ready.splice(choose(ready.length), 1)[0]!()
+    const task = ready.splice(choose(ready.length), 1)[0]!
+    entering = true
+    task()
     return true
   }
   return { scheduler, step, trace, firstId: () => first, ready: () => ready.length }
@@ -450,6 +462,42 @@ test('a fiber interrupted before it starts does not run, as under the scheduler 
   for (let seed = 0; seed < 100; seed++) {
     const exit = seeded(body, seed, Infinity).exit
     expect(exit !== undefined && Exit.isSuccess(exit) ? exit.value : undefined).toBe(false)
+  }
+})
+
+test('a fiber that yielded and is interrupted waits for its turn, as one resumed inline does', () => {
+  // The fiber is preempted at the third step of each run, and yields nowhere else: so it has always yielded when the
+  // fiber that forked it, never preempted, interrupts it. (Preempted at the second, it would never move: the first step
+  // of a run that resumes it goes to the yield.) From the interruption on no fiber is preempted, so that only a pick
+  // keeps the fiber from running to its end inline, before the one that interrupts goes on.
+  let interrupting = false
+  const body = Effect.gen(function*() {
+    let started = false
+    let finalized = false
+    const fiber = yield* Effect.forkChild(Effect.onInterrupt(
+      Effect.whileLoop({ while: () => true, body: () => Effect.sync(() => started = true), step: () => {} }),
+      () => Effect.sync(() => finalized = true)
+    ))
+    while (!started) yield* Effect.yieldNow
+    const finalizedInline = yield* Effect.sync(() => {
+      interrupting = true
+      fiber.interruptUnsafe()
+      return finalized
+    })
+    const exit = yield* Fiber.await(fiber)
+    return { finalizedInline, interrupted: Exit.hasInterrupts(exit), finalized }
+  })
+  for (let seed = 0; seed < 100; seed++) {
+    const next = random(seed)
+    let root: Fiber.Fiber<unknown, unknown> | undefined
+    interrupting = false
+    const exit = drive(body, (ready) => Math.floor(next() * ready), (fiber) =>
+      fiber !== (root ??= fiber) && !interrupting && fiber.currentOpCount >= 3).exit
+    expect(exit !== undefined && Exit.isSuccess(exit) ? exit.value : undefined).toEqual({
+      finalizedInline: false,
+      interrupted: true,
+      finalized: true
+    })
   }
 })
 
