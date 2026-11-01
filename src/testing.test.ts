@@ -240,7 +240,7 @@ test('every schedule within one deviation reaches the lost update, and names wha
   } catch (error) {
     named = error instanceof Error ? error.message : ''
   }
-  const found = /^under deviated\((\[\[\d+,1\]\])\)/.exec(named)
+  const found = /^under deviated\((\[\[\d+,1\]\]), 'queued'\)/.exec(named)
   expect(found).not.toBeNull()
   // What it names replays the lost update alone.
   expect(value(deviated(twoIncrements, JSON.parse(found![1]!)))).toBe(1)
@@ -378,4 +378,34 @@ test('a fiber that spins on its own yield starves no other under prioritized sch
   prioritizedSchedules(spins, { runs: 200, depth: 3 }, (exit) => {
     expect(Exit.isSuccess(exit) ? exit.value : undefined).toBe('woke')
   })
+})
+
+test('under inline resumptions a fiber a Deferred resumes runs before its resumer goes on, as under Effect', () => {
+  // Effect resumes the waiter on the stack of the fiber that completes the Deferred. Queued, the waiter waits for
+  // its pick, and the resumer goes on first.
+  const body = Effect.gen(function*() {
+    const log: Array<string> = []
+    const deferred = yield* Deferred.make<void>()
+    const waits = Effect.andThen(Deferred.await(deferred), Effect.sync(() => log.push('waiter')))
+    const waiter = yield* Effect.forkChild(waits)
+    yield* Effect.yieldNow
+    yield* Deferred.succeed(deferred, undefined)
+    log.push('resumer')
+    yield* Fiber.join(waiter)
+    return log.join(' ')
+  })
+  expect(Effect.runSync(body)).toBe('waiter resumer')
+  expect(value(scheduled(body, inOrder, 'inline'))).toBe('waiter resumer')
+  expect(value(scheduled(body, inOrder))).toBe('resumer waiter')
+  // Preempted, the waiter lets the resumer go on, as Effect's budget may make it: both orders inline. Queued, the
+  // waiter never runs before the resumer's next step, which Effect's own order is: so queued is no superset of it.
+  const orders = (resumptions: 'inline' | 'queued') => {
+    const ends = new Set<string>()
+    everySchedule(body, { bound: 1, resumptions }, (exit) => {
+      if (Exit.isSuccess(exit)) ends.add(exit.value)
+    })
+    return [...ends].sort()
+  }
+  expect(orders('inline')).toEqual(['resumer waiter', 'waiter resumer'])
+  expect(orders('queued')).toEqual(['resumer waiter'])
 })

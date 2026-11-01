@@ -44,14 +44,7 @@ import {
 import * as Library from './index.ts'
 import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
 import { createTables, storage } from './storage.ts'
-import {
-  everySchedule,
-  inOrder,
-  prioritized,
-  replayed as replayedSchedule,
-  scheduled,
-  type Strategy,
-} from './testing.ts'
+import { inOrder, prioritized, replayed as replayedSchedule, scheduled, type Strategy } from './testing.ts'
 
 // The toy of `machine.test.ts`, with the schemas a runtime needs: `a` is idempotent, `b` at most once, `c` at
 // least once, and `t` a timer. Each key's work ends by removing its key, unless a message brings it back.
@@ -3145,9 +3138,31 @@ test('a process runs to its end under the scheduler of the tests, which needs no
   }
 })
 
-test('a sender answered Suspended is woken by the resumption, wherever it falls, under every schedule within one deviation', () => {
+/**
+ * Runs `scenario` under 2,000 prioritized schedules at depth 4, with inline resumptions, so that each is an order
+ * Effect's own scheduler can give (decision 0104). It runs in order until the scenario sets `point.reached`, as its
+ * callers arrive: what comes before, a passivation the test clock moves among it, is followed, and PCT draws its
+ * changes of priority among the steps that count. Each run must end as `ended`; one that does not end fails.
+ */
+const fromPoint = <A, E>(scenario: Effect.Effect<A, E>, point: { reached: boolean }, ended: A) => {
+  const after = (strategy: Strategy): Strategy => ({
+    pick: (ready) => point.reached ? strategy.pick(ready) : 0,
+    preempt: (fiber, ready) => point.reached && strategy.preempt(fiber, ready),
+  })
+  // The steps PCT draws among: those a run in order is asked of preemption once the point is reached.
+  let steps = 0
+  scheduled(scenario, { pick: () => 0, preempt: () => (point.reached && (steps += 1), false) }, 'inline')
+  for (let seed = 0; seed < 2_000; seed++) {
+    const run = scheduled(scenario, after(prioritized(seed, 4, steps)), 'inline')
+    expect({ seed, ended: run.exit !== undefined && Exit.isSuccess(run.exit) ? run.exit.value : run.exit })
+      .toEqual({ seed, ended })
+  }
+}
+
+test('a sender answered Suspended is woken by the resumption, under prioritized schedules from its arrival', () => {
   // Decision 0063: a sender registers for the receiver's resumption before it sends. A resumption between its being
-  // answered `Suspended` and a registration made after it would wake no one, and the sender would wait for ever.
+  // answered `Suspended` and a registration made after it would wake no one, and the sender would wait for ever:
+  // with the registration moved after the answer, 27 seeds of 2,000 do not end.
   const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
     ...program,
     name: 'Sender',
@@ -3160,7 +3175,9 @@ test('a sender answered Suspended is woken by the resumption, wherever it falls,
       ),
     },
   }
-  const scenario = Effect.scoped(Effect.flatMap(createTables, () =>
+  const point = { reached: false }
+  const start = Effect.andThen(Effect.sync(() => (point.reached = false)), createTables)
+  const scenario = Effect.scoped(Effect.flatMap(start, () =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
       const at = yield* DateTime.now
@@ -3173,6 +3190,7 @@ test('a sender answered Suspended is woken by the resumption, wherever it falls,
           yield* runtime.settled
           yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester })
           // The sender's operation sends to the suspended toy while an operator discards what it died on.
+          yield* Effect.sync(() => (point.reached = true))
           yield* senders.create('s', { at }, { requestId: 's', sender: tester })
           yield* toy.discard(id)
           yield* runtime.settled
@@ -3183,21 +3201,15 @@ test('a sender answered Suspended is woken by the resumption, wherever it falls,
       Effect.provide(TestClock.layer()),
       Effect.orDie,
     )
-  // In order the toy applies the discard in the task that answers the sender, whose resumption waits for its pick:
-  // so the run in order reaches the resumption before a registration made after the answer. Under Effect's own
-  // scheduler the sender is resumed inline, and registers first, under every budget.
-  everySchedule(scenario, { bound: 1 }, (exit) => {
-    expect(Exit.isSuccess(exit) ? exit.value : exit).toEqual({ applied: ['sent'], wanted: 0 })
-  })
+  fromPoint(scenario, point, { applied: ['sent'], wanted: 0 })
 }, 60_000)
 
 test('callers of an unloaded entity build one machine for it, under prioritized schedules from their arrival', () => {
   // Decision 0067: an entity's lock is dropped by its last user only. One dropped while a caller waits for it lets a
   // new taker hold a lock of its own beside that caller, and both load the entity: two machines, two `Restart`s.
-  // The run goes in order until the callers arrive, so that the passivation before them is followed (decision 0104),
-  // and PCT explores from there: its changes of priority fall among the steps that count.
-  let arrived = false
-  const start = Effect.andThen(Effect.sync(() => (arrived = false)), createTables)
+  // With the lock dropped by any user, 67 seeds of 2,000 build two.
+  const point = { reached: false }
+  const start = Effect.andThen(Effect.sync(() => (point.reached = false)), createTables)
   const scenario = Effect.scoped(Effect.flatMap(start, () =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -3212,7 +3224,7 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
           yield* TestClock.adjust('5 millis')
           const want = (nonce: string) =>
             toy.send(id, { _tag: 'Want', key: 't', on: true, nonce }, { requestId: nonce, sender: tester })
-          yield* Effect.sync(() => (arrived = true))
+          yield* Effect.sync(() => (point.reached = true))
           yield* Effect.all([want('w-1'), want('w-2')], { concurrency: 'unbounded' })
           yield* runtime.settled
           return { unloaded: [...entities], restarts: events.filter((event) => event._tag === 'Restart').length }
@@ -3222,18 +3234,5 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
       Effect.provide(TestClock.layer()),
       Effect.orDie,
     )
-  const fromArrival = (strategy: Strategy): Strategy => ({
-    pick: (ready) => arrived ? strategy.pick(ready) : 0,
-    preempt: (fiber, ready) => arrived && strategy.preempt(fiber, ready),
-  })
-  // The steps PCT draws among: those a run in order is asked of preemption once the callers have arrived.
-  let steps = 0
-  scheduled(scenario, { pick: () => 0, preempt: () => (arrived && (steps += 1), false) })
-  // With the lock dropped by any user, 10 seeds of 2,000 build two machines at depth 4; a run finds it with a
-  // probability near 1 in 200, so that 2,000 runs miss it with one near e^-10 if the steps move.
-  for (let seed = 0; seed < 2_000; seed++) {
-    const run = scheduled(scenario, fromArrival(prioritized(seed, 4, steps)))
-    expect({ seed, ended: run.exit !== undefined && Exit.isSuccess(run.exit) ? run.exit.value : run.exit })
-      .toEqual({ seed, ended: { unloaded: [id], restarts: 1 } })
-  }
+  fromPoint(scenario, point, { unloaded: [id], restarts: 1 })
 }, 60_000)

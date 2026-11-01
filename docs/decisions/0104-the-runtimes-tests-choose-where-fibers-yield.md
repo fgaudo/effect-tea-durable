@@ -6,8 +6,9 @@ a way to reach interleavings that no budget of steps reaches. Written by the ses
 that a later one can take the step; everything below marked **to check** is not seen yet. Its first step, the spike,
 is taken: [`spikes/effect-scheduler-controlled.test.ts`](../../spikes/effect-scheduler-controlled.test.ts), and what
 it saw is in [What the spike saw](#what-the-spike-saw). Its second, the scheduler, is taken too: it is in
-[`src/testing.ts`](../../src/testing.ts), and [The scheduler](#the-scheduler) says what it decided. Of its third,
-both interleavings are reached: [The two interleavings](#the-two-interleavings) says how.
+[`src/testing.ts`](../../src/testing.ts), and [The scheduler](#the-scheduler) says what it decided, with
+[Two models](#two-models) of how a resumed fiber runs. Of its third, both interleavings are reached:
+[The two interleavings](#the-two-interleavings) says how.
 
 ## Context
 
@@ -83,16 +84,19 @@ What that leaves:
   included: **seen**, `adjust waits for what it wakes, and for what that sets going, whichever task is picked`, in
   8000 runs, given that every fiber it wakes is at its wait when the clock moves — which out of order is less often
   so, and for a sleeper is not seen by the test, below.
-- The scheduler gives no end Effect's own cannot give: **seen** for the cases the spike runs — a fiber interrupted
-  before it starts, and an interruption that races a resumption — and **reasoned** for the rest: a yield before a
-  fiber's first step after a resumption is one Effect's scheduler never makes, and Effect's code is written for yields
-  at any later step (the `Semaphore` checks again for its permit when its waiter runs, `takePermits` in
-  `Semaphore.ts`, read in the source). The two cases found where that yield changes an end, a fiber's first run and
-  the run of one that has ended and interrupts its children, are let through.
-- The two interleavings need a fiber to yield where the others do not: **reasoned**, in the review of 0061 to 0075, by
-  reading where the steps fall; the step confirms it or finds otherwise. For the first, **seen** otherwise: the yield
-  before a resumption reaches it in the run in order, with no preemption ([The two interleavings](#the-two-interleavings)).
-  For the second, **seen**: it takes changes of priority among the callers' steps, which PCT at depth 4 makes.
+- What the scheduler reaches, Effect can give. Under `inline` resumptions ([Two models](#two-models)) a run makes
+  only the yields Effect's scheduler makes, at steps a strategy picks instead of a budget, so each order is one Effect
+  gives: **seen** for a `Deferred`, `under inline resumptions a fiber a Deferred resumes runs before its resumer goes
+  on, as under Effect`, and for the rest **read in the source**, since Effect never yields at a fiber's first step
+  under a budget above 1. Under `queued` resumptions a fiber also yields before its first step after a resumption,
+  which Effect's scheduler never does at 4.1.1: those orders are not ones it gives, and that is what `queued` is for.
+  What makes them sound is that Effect promises no inline resumption: **documented**, by its absence, since neither
+  `Deferred`, nor `Effect.callback`, nor `Scheduler` says when a waiter resumes or on which stack, and
+  `Effect.callback`'s own example resumes from a microtask (`effect/src`, 4.1.1). The cases found where that yield
+  changes an end Effect's semantics fixes, a fiber's first run and the run of one that has ended and interrupts its
+  children, are let through.
+- The two interleavings need a fiber to yield where the others do not: **seen**, both under `inline` resumptions,
+  which PCT at depth 4 reaches and no budget does ([The two interleavings](#the-two-interleavings)).
 
 ## What the spike saw
 
@@ -274,31 +278,48 @@ Step 2 of [How to take the step](#how-to-take-the-step), in [`src/testing.ts`](.
   seconds; within two, about a million, which no suite runs. PCT at depth 2 ran 50 seeds in a quarter of a second,
   and each ended. So step 3 runs delay bounding at 1 and PCT above it, unless a scenario is made smaller.
 
+## Two models
+
+`scheduled` and its explorations take how a resumed fiber runs, `Resumptions` in
+[`src/testing.ts`](../../src/testing.ts):
+
+- **`queued`**, the default, is the spike's: a fiber a `Deferred`, a `Fiber.join` or a callback resumes yields first,
+  and waits for its pick. It reaches orders Effect gives only when resumptions are not inline, as with an asynchronous
+  driver.
+- **`inline`** lets it run on where Effect resumes it, so that a run gives only orders Effect's scheduler gives, but
+  for where the strategy preempts and what it picks.
+- **Neither holds the other.** Queued, a waiter never runs before the step in which its resumer completed the
+  `Deferred`, which inline it always does (`under inline resumptions a fiber a Deferred resumes runs before its resumer
+  goes on, as under Effect`). So a bug found under `inline` is one of Effect as it runs today, and one found only under
+  `queued` is one of a runtime whose resumptions are not inline, which Effect does not promise.
+
 ## The two interleavings
 
-Step 3 of [How to take the step](#how-to-take-the-step), in [`src/runtime.test.ts`](../../src/runtime.test.ts).
+Step 3 of [How to take the step](#how-to-take-the-step), in [`src/runtime.test.ts`](../../src/runtime.test.ts). Both
+are reached under `inline` resumptions, so each is a bug of the runtime on Effect as it runs today. Each test runs its
+scenario in order until its callers arrive, and PCT at depth 4 from there, over 2,000 seeds, with the steps counted from
+there too (`fromPoint`). PCT over the whole run spends its changes of priority among the steps of the creation and the
+passivation, and finds them far less often. Running in order before the callers also follows the passivation, which
+preempted it may not be ([What the spike saw](#what-the-spike-saw)). The strategy that waits for a point of the
+scenario is the tests' own: `src/testing.ts` has none yet.
 
-- **A sender that registers for the resumption only after it is answered `Suspended`** is reached, by `a sender
-  answered Suspended is woken by the resumption, wherever it falls, under every schedule within one deviation`. An
-  operation of a second program sends to a toy suspended on a message, while the test discards that message. With
-  the registration moved after the answer, the run in order does not end: **seen**, by a mutation not kept. The toy
-  applies the discard in the task that answers the sender, since the yield before a resumption queues the sender
-  there. Under Effect's own scheduler the same mutation passes under budgets 3, 4, 5, 8 and 2048 (**seen**, by a
-  check not kept): the sender is resumed inline, and registers before the toy goes on. So it is the yield before a
-  resumption that reaches it, and no deviation is needed. The test runs every schedule within one deviation all the
-  same, 2,085 runs in about ten seconds, so that the rule holds wherever the discard falls.
-- **An entity's lock dropped while others wait for it** is reached, by `callers of an unloaded entity build one
-  machine for it, under prioritized schedules from their arrival`. Two callers send at once to an entity just
-  passivated. With the lock dropped by any user, a caller that waits for the lock gets it while a new taker holds a
-  lock of its own, and both activate the entity: two `Restart`s for one passivation. **Seen**, by a mutation not kept,
-  traced to the two activations. Neither delay bounding at 1 nor Effect's own scheduler reaches it: under budgets 3
-  to 60 every run builds one machine (**seen**, by a check not kept). PCT over the whole run did, but rarely: at
-  depth 3 or 4, 1 to 4 seeds of 2,000, since its changes fell mostly among the steps of the creation and the
-  passivation. So the test runs in order until the callers arrive, and PCT from there, with its steps counted from
-  there too. At depth 4, 10 seeds of 2,000 build two machines. A run finds it with a probability near 1 in 200, so
-  2,000 runs, about five seconds, miss it with one near e^-10 if the steps move. Running in order before the callers
-  also follows the passivation, which preempted it may not be ([What the spike saw](#what-the-spike-saw)). The
-  strategy that waits for a point of the scenario is the test's own: `src/testing.ts` has none yet.
+- **A sender that registers for the resumption only after it is answered `Suspended`**: `a sender answered Suspended is
+  woken by the resumption, under prioritized schedules from its arrival`. An operation of a second program sends to a
+  toy suspended on a message, while the test discards that message. With the registration moved after the answer, 27
+  seeds of 2,000 do not end: the sender waits for ever (**seen**, by a mutation not kept). Under `queued` the run in
+  order does not end either: the toy applies the discard in the task that answers the sender, which waits for its
+  pick. Under Effect's own scheduler the mutation passes under budgets 3, 4, 5, 8 and 2048, and under `inline` within
+  one deviation (**seen**, by checks not kept): it takes a sender preempted between the answer and the registration,
+  while the toy runs on to the discard.
+- **An entity's lock dropped while others wait for it**: `callers of an unloaded entity build one machine for it, under
+  prioritized schedules from their arrival`. Two callers send at once to an entity just passivated. With the lock
+  dropped by any user, a caller that waits for the lock gets it while a new taker holds a lock of its own, and both
+  activate the entity: two `Restart`s for one passivation, in 67 seeds of 2,000 (**seen**, by a mutation not kept,
+  traced to the two activations). Under `queued` 10 seeds of 2,000 find it. Neither delay bounding at 1 nor Effect's
+  own scheduler under budgets 3 to 60 does (**seen**, by checks not kept).
+- **What a test of 2,000 runs misses.** A run finds the first with a probability near 1 in 75, and the second near 1
+  in 30. If the steps move, so that other seeds are drawn, 2,000 runs miss either with a probability below e^-25.
+  The two run in about thirteen seconds.
 
 ## Alternatives
 
