@@ -7,6 +7,11 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A commit made with an AI agent ends with an `Assisted-by: <model>` trailer, never `Co-Authored-By`.
 - A commit message stays short: a subject line of at most 72 characters in the imperative, and a body only
   where the diff cannot say it, four lines at most. Why a change was taken belongs in `docs/`, not in the message.
+- A commit's subject starts with the module or area it changes, then a concrete action:
+  `runtime: interrupt children when a run ends, without yielding`. The area is a module of `src/` without its
+  extension, or `docs`, `examples`, `spikes` or `scripts`. A commit across several names the one it is about.
+- Prose states its conclusion first, one sentence per idea, without chains of subordinate clauses. This holds for
+  `.md` files, comments and commit bodies.
 - A decision gets a note in `docs/decisions/`, numbered in order and never rewritten once taken: a decision
   that changes is a new note that says which one it replaces. A note made for a step of the roadmap is
   `proposed`, and is rewritten in place while the step is under way; it is taken, `accepted`, by the commit that
@@ -18,6 +23,7 @@ This repository is a design and its pure core, not a library yet: read [`README.
   [`docs/decisions/README.md`](docs/decisions/README.md) by what it decides, with the notes that changed it,
   updated by the commit that adds or changes a note. A question not decided yet goes in
   `docs/open-questions.md`, and leaves it when a note decides it. A step of the roadmap leaves it when done.
+  The roadmap holds only the steps ahead: what a done step decided is in its notes, and is not retold there.
 - A note lists, in a section `What it rests on`, each premise its decision falls without, and says of each whether it
   is tested (naming the test), documented, seen in a spike, read in a dependency's source, or only reasoned.
 - A spike is a test in `spikes/`, run by `bun test` at the pinned version. A premise about what a dependency does

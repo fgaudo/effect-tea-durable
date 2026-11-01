@@ -21,6 +21,7 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md) | The notes are reviewed every fifteen, by a reader that did not write them | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) |
 | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) | A dependency is checked by a spike the repository keeps, and the older notes are reviewed |  |
 | [0099](0099-a-library-on-unstable-modules-is-released-as-experimental.md) | A library on unstable modules is released as experimental |  |
+| [0105](0105-commits-prose-and-the-roadmap-are-written-for-a-reader.md) | Commits, prose and the roadmap are written for a reader |  |
 | [0024](0024-not-taken.md) | Not taken |  |
 
 ## The machine and the program
