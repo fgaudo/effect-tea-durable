@@ -130,13 +130,13 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   wait with `txRetry` while it is unchanged, with no set of senders to register and forget: `txRetry` checks what it
   read and registers its wait in one synchronous step (`awaitPendingTransaction` in `effect/src/Effect.ts`, read in
   the source). A rule stays: the count is read before the send, or a resumption between the answer and the read is
-  missed, and the sender waits for one that may never come. An entity's lock (`holding`) could be a `TxHashSet` of the entities held, taken by one
-  transaction that retries while the entity is in it and given back by another, held between the two across the
-  I/O, with no count of users to keep; whether it serves its waiters in order, as the `Semaphore` does, is not read
-  yet. Either way the interleavings stay to be reached by a test; what changes is the rule each test takes out. To
-  check first, in a spike under the scheduler of 0104: that a commit's wake goes through it (it calls `scheduleTask`,
-  read in the source), that `txRetry` misses no resumption in any order it picks, and how often a conflict runs a
-  body again.
+  missed, and the sender waits for one that may never come. An entity's lock (`holding`) could be a `TxHashSet` of
+  the entities held, taken by one transaction that retries while the entity is in it and given back by another, held
+  between the two across the I/O, with no count of users to keep; whether it serves its waiters in order, as the
+  `Semaphore` does, is not read yet. Either way the interleavings stay to be reached by a test; what changes is the
+  rule each test takes out. To check first, in a spike under the scheduler of 0104: that a commit's wake goes through
+  it (it calls `scheduleTask`, read in the source), that `txRetry` misses no resumption in any order it picks, and
+  how often a conflict runs a body again.
 
 ## Naming
 

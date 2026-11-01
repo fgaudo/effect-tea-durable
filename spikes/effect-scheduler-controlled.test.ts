@@ -2,10 +2,11 @@
  * What decision 0104 asks of `effect` 4.1.1's `Scheduler`: whether a test can choose where every fiber yields and
  * which runs next. Read in the source: a fiber asks `shouldYield` before each step of its run loop, and one that
  * yields, is forked, or is woken by a `Semaphore`, a `Queue` or a `Latch` goes through `scheduleTask` of a dispatcher
- * its scheduler makes (a wake is a task, which resumes the waiters inline when it runs); but a `Deferred`, a `Fiber.join` and any `Effect.callback` resume their waiter inline, on the
- * stack of the fiber that completes them, without the dispatcher, and so does an interruption, on the stack of the fiber
- * that interrupts. Such a fiber still asks `shouldYield` before its first step, so a scheduler that makes a fiber yield
- * once as it starts to run again has each resumption wait in the dispatcher's queue, where the test picks it.
+ * its scheduler makes (a wake is a task, which resumes the waiters inline when it runs); but a `Deferred`, a
+ * `Fiber.join` and any `Effect.callback` resume their waiter inline, on the stack of the fiber that completes them,
+ * without the dispatcher, and so does an interruption, on the stack of the fiber that interrupts. Such a fiber still
+ * asks `shouldYield` before its first step, so a scheduler that makes a fiber yield once as it starts to run again has
+ * each resumption wait in the dispatcher's queue, where the test picks it.
  *
  * Here the scheduler holds every task and the test runs them by hand, one at a time, synchronously: a run that ends
  * so needed nothing of the platform's, no timer and no microtask, or it would be left waiting.
@@ -36,8 +37,11 @@ const random = (seed: number) => () => {
  *
  * A fiber that yielded is let through only by the task that resumes it: the first fiber a task starts to run. An
  * interruption runs the fiber that yielded inline, on the stack of the fiber that interrupts (`interruptUnsafe` in
- * `internal/effect.ts`, read in the source); let through there, it would run without being picked, and its task would
- * be left in the queue with nothing to do.
+ * `internal/effect.ts`, read in the source); let through there, it would run without being picked.
+ *
+ * Nor is a fiber whose run has just ended made to yield: one with children Effect runs again at once, in the same
+ * task, to interrupt them (`evaluate` in `internal/effect.ts`, read in the source), and a yield there would let its
+ * children run on after its end. It is told by being the fiber let run last in the task under way.
  *
  * A fiber's first run is not made to yield: it is a task of the queue already, its fork, or runs inline where Effect
  * starts it, as the first fiber of the run does; unless it is interrupted before it starts, and then Effect runs the
@@ -53,30 +57,40 @@ const controlled = (
   const letThrough = new WeakSet<Fiber.Fiber<unknown, unknown>>()
   // Whether a task has started and no fiber has started to run in it yet.
   let entering = false
+  // The fiber let run last in the task under way. Forgotten as each task starts, so that a fiber resumed inline in a
+  // task that has run no fiber, as `TestClock` resumes the one that moves it as a task it follows ends, is not taken
+  // for one whose run has ended.
+  let running: Fiber.Fiber<unknown, unknown> | undefined
   // What the run did, by fiber: ids are counted from the first fiber of the run, since Effect counts them for the
   // process.
   const trace: Array<string> = []
   let first: number | undefined
   const id = (fiber: Fiber.Fiber<unknown, unknown>) => fiber.id - (first ??= fiber.id)
+  const yields = (fiber: Fiber.Fiber<unknown, unknown>) => {
+    if (fiber.currentOpCount === 1) {
+      const firstRun = !started.has(fiber)
+      const resumed = entering && letThrough.delete(fiber)
+      const ended = fiber === running
+      entering = false
+      if (firstRun || resumed || ended) {
+        started.add(fiber)
+        trace.push(`runs ${id(fiber)}`)
+        return false
+      }
+      letThrough.add(fiber)
+      return true
+    }
+    if (!preempt(fiber)) return false
+    trace.push(`preempts ${id(fiber)}`)
+    letThrough.add(fiber)
+    return true
+  }
   const scheduler: Scheduler.Scheduler = {
     executionMode: 'async',
     shouldYield(fiber) {
-      if (fiber.currentOpCount === 1) {
-        const firstRun = !started.has(fiber)
-        const resumed = entering && letThrough.delete(fiber)
-        entering = false
-        if (firstRun || resumed) {
-          started.add(fiber)
-          trace.push(`runs ${id(fiber)}`)
-          return false
-        }
-        letThrough.add(fiber)
-        return true
-      }
-      if (!preempt(fiber)) return false
-      trace.push(`preempts ${id(fiber)}`)
-      letThrough.add(fiber)
-      return true
+      const answer = yields(fiber)
+      if (!answer) running = fiber
+      return answer
     },
     makeDispatcher: () => ({
       scheduleTask: (task) => {
@@ -91,6 +105,7 @@ const controlled = (
     if (ready.length === 0) return false
     const task = ready.splice(choose(ready.length), 1)[0]!
     entering = true
+    running = undefined
     task()
     return true
   }
@@ -499,6 +514,31 @@ test('a fiber that yielded and is interrupted waits for its turn, as one resumed
       finalized: true
     })
   }
+})
+
+test('a fiber whose run ends interrupts its children before they go on, as under the scheduler of Effect', async () => {
+  // A child counts, a step at a time, while its parent waits for it to start; then the parent starts another child,
+  // which runs inline on its stack, and ends. Effect interrupts the children of a fiber that ends in the same run
+  // (`evaluate` in `internal/effect.ts`, read in the source), so the first child counts no further after the parent's
+  // last step. With no preemption only a yield of the parent there would let it; the second child is the last fiber
+  // let run but for the parent's steps after it.
+  const body = Effect.gen(function*() {
+    let count = 0
+    let atEnd = -1
+    const parent = yield* Effect.forkChild(Effect.gen(function*() {
+      yield* Effect.forkChild(Effect.forever(Effect.andThen(Effect.sync(() => count++), Effect.yieldNow)))
+      while (count === 0) yield* Effect.yieldNow
+      yield* Effect.forkChild(Effect.never, { startImmediately: true })
+      atEnd = count
+    }))
+    yield* Fiber.await(parent)
+    return count - atEnd
+  })
+  for (let seed = 0; seed < 200; seed++) {
+    const exit = seeded(body, seed, Infinity).exit
+    expect(exit !== undefined && Exit.isSuccess(exit) ? exit.value : undefined).toBe(0)
+  }
+  expect(await Effect.runPromise(body)).toBe(0)
 })
 
 test('an interruption racing a resumption ends as under the scheduler of Effect, one way or the other', () => {
