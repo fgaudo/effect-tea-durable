@@ -17,7 +17,7 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import fc from 'fast-check'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as Scheduler from 'effect/Scheduler'
@@ -3045,4 +3045,22 @@ test('a probe and its points are no part of what a user imports', () => {
   // @ts-expect-error `Said` too
   const said: Library.Said | null = null
   expect([point, said]).toEqual([null, null])
+})
+
+test('the library reads the time and sleeps through Effect alone, which a test moves', () => {
+  // A clock or a timer of the platform would not move with the test clock, nor with a wall clock run ahead of the
+  // sleeps (decisions 0066, 0103): what it read or waited for would be the real time's.
+  const platform = new RegExp(
+    [/\bDate\.now\b/, /\bnew Date\b/, /\bDate\(/, /\bperformance\.now\b/, /\bprocess\.hrtime\b/, /\bset(Timeout|Interval|Immediate)\b/]
+      .map((pattern) => pattern.source)
+      .join('|'),
+  )
+  const sources = readdirSync(import.meta.dir).filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
+  expect(sources).toContain('runtime.ts')
+  const found = sources.flatMap((file) =>
+    readFileSync(join(import.meta.dir, file), 'utf8')
+      .split('\n')
+      .flatMap((line, n) => platform.test(line) ? [`${file}:${n + 1}: ${line.trim()}`] : [])
+  )
+  expect(found).toEqual([])
 })
