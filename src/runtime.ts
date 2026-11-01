@@ -779,9 +779,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const crash = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>, cause: Cause.Cause<never>) =>
       Effect.gen(function*() {
         const { name, id } = loaded.machine.stored
-        // Its stored timers are the waker's again.
+        // Its stored timers are the waker's again. A crash may run where the step that died cannot be interrupted, as
+        // a creation's `onError` does: the fork's option keeps it stoppable by the scope (decision 0112).
         yield* leave(deployed, loaded)
-        yield* Effect.forkIn(stopAll(loaded), deployed.scope)
+        yield* Effect.forkIn(stopAll(loaded), deployed.scope, { uninterruptible: false })
         const address = addressOf({ name, id })
         const fail = <A>(waiting: Waiting<A>) =>
           Effect.gen(function*() {
@@ -820,6 +821,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             Effect.flatMap(() => next),
           )
         }
+        // The timeout wraps the take alone: Effect keeps an event offered as it fires only then, and a step after the
+        // take inside it would let the timeout win with the event taken, and lose it (decision 0111).
         return Effect.timeoutOption(Queue.take(loaded.events), `${passivate} millis`).pipe(
           Effect.flatMap((taken) => {
             // The wait ran out, or the entity was told to leave: it is unloaded if it has nothing to do.
@@ -876,16 +879,16 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * Runs `effect` in the deployment's scope, and waits for it. A caller that gives up stops waiting, and what the
      * effect sets going — an activation, a creation and its work — is finished all the same: only the process's
      * crash stops it halfway, as the crash table says (decision 0079). It is counted from the step that forks it
-     * to its end, so that the process is not settled while it runs: the step is uninterruptible, and the fiber it
-     * forks is not, as a fiber never is for the region it is forked from, so the scope still stops it. The count is
-     * given back by a fiber of the process's scope that waits for it: one the deployment's scope stops before its
-     * first step runs no finalizer of its own (decision 0110).
+     * to its end, so that the process is not settled while it runs: the step is uninterruptible, and the fibers it
+     * forks are not, which their option says rather than Effect's default (decision 0112), so the scope still stops
+     * them. The count is given back by a fiber of the process's scope that waits for it: one the deployment's scope
+     * stops before its first step runs no finalizer of its own (decision 0110).
      */
     const detached = <T extends Types, A, E>(deployed: Deployment<T>, effect: Effect.Effect<A, E>) =>
       Effect.flatMap(
         Effect.uninterruptible(Effect.gen(function*() {
           detachments += 1
-          const fiber = yield* Effect.forkIn(effect, deployed.scope)
+          const fiber = yield* Effect.forkIn(effect, deployed.scope, { uninterruptible: false })
           yield* Effect.forkIn(
             Effect.andThen(
               Fiber.await(fiber),
@@ -895,6 +898,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               }),
             ),
             scope,
+            { uninterruptible: false },
           )
           return fiber
         })),
@@ -1205,13 +1209,14 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         yield* deployed.storage.indexed
         for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)
         // Registered with its waker in one step: a deployment others can reach always has its timers woken. The
-        // waker is not forked uninterruptible with the step, so the scope that closes it stops it (decision 0078).
+        // waker is not forked uninterruptible with the step, so the scope that closes it stops it (decisions 0078,
+        // 0112).
         yield* Effect.uninterruptible(Effect.gen(function*() {
           deployments.set(program.name, deployed as unknown as Deployment<never>)
           const awaited = undeployed.get(program.name)
           undeployed.delete(program.name)
           if (awaited !== undefined) Deferred.doneUnsafe(awaited, Effect.void)
-          yield* Effect.forkIn(waking(deployed), deployed.scope)
+          yield* Effect.forkIn(waking(deployed), deployed.scope, { uninterruptible: false })
         }))
         const handle: Handle<T> = {
           create: (id, flags, request) =>

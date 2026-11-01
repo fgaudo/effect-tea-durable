@@ -10,7 +10,9 @@ and which only a spike or its source holds: of [decision 0002](0002-store-the-st
 [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md),
 [0101](0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md),
 [0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md) and
-[0104](0104-the-runtimes-tests-choose-where-fibers-yield.md).
+[0104](0104-the-runtimes-tests-choose-where-fibers-yield.md). The take a timeout interrupts is confirmed by Effect's
+maintainers, when the timeout wraps the take alone, by [decision 0111](0111-an-entity-s-wait-times-out-its-take-alone.md); the fork from a region that
+cannot be interrupted no longer rests on the default, by [decision 0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md).
 
 ## Context
 

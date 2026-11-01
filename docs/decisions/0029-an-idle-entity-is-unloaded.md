@@ -7,7 +7,9 @@
 the waker is corrected by [decision 0068](0068-what-another-fiber-reads-changes-in-one-step.md), how many
 entities a process holds is bounded too by
 [decision 0076](0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), and a waker that cannot load
-an entity goes on, by [decision 0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md).
+an entity goes on, by [decision 0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md). The timeout of an
+entity's wait wraps its take alone, which is what Effect promises an event offered as it fires, by
+[decision 0111](0111-an-entity-s-wait-times-out-its-take-alone.md).
 
 ## Context
 

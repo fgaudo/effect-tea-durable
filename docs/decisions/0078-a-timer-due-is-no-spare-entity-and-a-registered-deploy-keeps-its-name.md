@@ -5,7 +5,8 @@ on what a process over its capacity may unload, and [decision 0075](0075-a-name-
 when a deploy gives its name back. What a deploy interrupted before it registers leaves is corrected by
 [decision 0102](0102-a-deploy-interrupted-before-it-registers-undoes-itself.md), which tests an interruption between
 the registration and the end too; the readings of a timer due that this note says no test reaches are tested, by
-[decision 0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md).
+[decision 0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md). The waker is interruptible by the option of
+its fork, not by Effect's default, by [decision 0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md).
 
 ## Context
 

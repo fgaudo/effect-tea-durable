@@ -3269,3 +3269,30 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
         }))
     }), { unloaded: [id], restarts: 1 }, { open: false })
 }, 60_000)
+
+test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {
+  // Decision 0029: an entity waits for its next event under a timeout, and Effect keeps an item offered as the timeout
+  // fires only where the timeout wraps the take alone (decision 0111). A step after the take inside the timeout lets
+  // the timeout win once the take has its event, which is lost, and its caller waits for ever.
+  explored((window) =>
+    Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      return yield* process({ passivate: { millis: 5 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          // The message and the move that runs the wait out, at once. The window stays open across the move, where
+          // `adjusted` closes it: the race explored is the move's own, between the timeout it fires and the take.
+          yield* opened(window, true)
+          const [reply] = yield* together<unknown, unknown, never>([
+            toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'w' }, { requestId: 'w', sender: tester }),
+            Effect.asVoid(TestClock.adjust('5 millis')),
+          ])
+          yield* opened(window, false)
+          yield* runtime.settled
+          return reply
+        }))
+    }), { _tag: 'Accepted' }, { open: false })
+}, 60_000)
