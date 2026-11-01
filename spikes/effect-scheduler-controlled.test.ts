@@ -41,7 +41,8 @@ const random = (seed: number) => () => {
  *
  * Nor is a fiber whose run has just ended made to yield: one with children Effect runs again at once, in the same
  * task, to interrupt them (`evaluate` in `internal/effect.ts`, read in the source), and a yield there would let its
- * children run on after its end. It is told by being the fiber let run last in the task under way.
+ * children run on after its end. It is told by being the fiber let run last in the task under way; so a fiber resumed
+ * inline while it is still that one, as in the step of another fiber that ran it, runs on without being picked.
  *
  * A fiber's first run is not made to yield: it is a task of the queue already, its fork, or runs inline where Effect
  * starts it, as the first fiber of the run does; unless it is interrupted before it starts, and then Effect runs the
@@ -191,6 +192,7 @@ interface AtWake {
  * Effect.map, or right after yield*, stands as the effect ended, and after a wrapper may not`). Read a step later,
  * after a preemption of the test's fiber, it would see what the other fibers did after `adjust` returned, as though
  * `adjust` had waited for it.
+ *
  * `moverPreemptible` false runs the moves under `Scheduler.PreventSchedulerYield`, so that the fiber that moves the
  * clock is not preempted inside `adjust`.
  *
@@ -539,6 +541,46 @@ test('a fiber whose run ends interrupts its children before they go on, as under
     expect(exit !== undefined && Exit.isSuccess(exit) ? exit.value : undefined).toBe(0)
   }
   expect(await Effect.runPromise(body)).toBe(0)
+})
+
+test('a fiber resumed in the step of another that ran it runs on without a pick, taken for one whose run has ended', () => {
+  // In one step the root starts a fiber inline and then resumes it, by a Deferred or by an interruption, with no fiber
+  // let run between: the fiber is still the one let run last in the task, and is let through as the run of a fiber
+  // that has ended. The end is the one Effect's scheduler gives, which resumes it inline too; only the pick is lost.
+  // The fiber interrupted is preempted once at its third step, before the interruption, so that it has yielded.
+  let root: Fiber.Fiber<unknown, unknown> | undefined
+  let interrupting = false
+  const resumed = Effect.withFiber((parent) => {
+    root = parent
+    const deferred = Deferred.makeUnsafe<void>()
+    let continued = false
+    const fiber = Effect.runForkWith(parent.context)(Effect.andThen(Deferred.await(deferred), Effect.sync(() => {
+      continued = true
+    })))
+    Deferred.doneUnsafe(deferred, Exit.void)
+    return Effect.as(Fiber.await(fiber), continued)
+  })
+  const interrupted = Effect.withFiber((parent) => {
+    root = parent
+    let finalized = false
+    const fiber = Effect.runForkWith(parent.context)(Effect.onInterrupt(
+      Effect.forever(Effect.sync(() => {})),
+      () => Effect.sync(() => finalized = true)
+    ))
+    interrupting = true
+    fiber.interruptUnsafe()
+    return Effect.as(Fiber.await(fiber), finalized)
+  })
+  const inline = (effect: Effect.Effect<boolean>) => {
+    const exit = drive(effect, () => 0, (fiber) => fiber !== root && !interrupting && fiber.currentOpCount === 3).exit
+    return exit !== undefined && Exit.isSuccess(exit) ? exit.value : undefined
+  }
+  expect(inline(resumed)).toBe(true)
+  expect(inline(interrupted)).toBe(true)
+  root = undefined
+  interrupting = false
+  expect(Effect.runSync(resumed)).toBe(true)
+  expect(Effect.runSync(interrupted)).toBe(true)
 })
 
 test('an interruption racing a resumption ends as under the scheduler of Effect, one way or the other', () => {

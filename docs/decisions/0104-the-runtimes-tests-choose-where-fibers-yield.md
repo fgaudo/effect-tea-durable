@@ -59,7 +59,8 @@ What that leaves:
   turn, as one resumed inline does`; for the rest **read in the source**: a fiber is run only by a call to its
   `evaluate`, whose run loop asks `shouldYield` before its first step, and the spike's scheduler lets through only a
   fiber's first run, the one its own task starts, and the one Effect starts again in the same task as a run ends
-  (below). Not all of them reach it through `scheduleTask`: see below. A fiber under
+  (below), which also lets through one resumed while it is still the one let run last in its task, unpicked (below).
+  Not all of them reach it through `scheduleTask`: see below. A fiber under
   `Scheduler.PreventSchedulerYield` is not asked, and runs on uncontrolled; neither Effect nor the library sets it
   (**read in the source**).
 - A run is deterministic once its choices are: **seen** for the spike's scenarios, its result included, `a run given
@@ -123,8 +124,14 @@ run last, below, a guard as well.
   scheduler of Effect`, which fails without it. It forgets that fiber as each task starts, a guard no run of the spike
   reaches: `TestClock` resumes the fiber that moves it inline as a task it follows ends, and a task may have run no
   fiber, as the task of a yield an interruption has run through does not (**read in the source**). What the scheduler
-  cannot tell from this is a fiber resumed inline by one under `PreventSchedulerYield`, which is not asked: it is
-  taken for one whose run has ended.
+  cannot tell from this is a fiber resumed inline, by a callback or an interruption, while it is still the one let run
+  last in the task: it is taken for one whose run has ended, and runs on without being picked, to the end Effect's
+  scheduler gives it, which resumes it inline too. That takes a resumption before any other fiber is let run: in
+  the step of another fiber that ran it inline, as `runForkWith` does (`a fiber resumed in the step of another that
+  ran it runs on without a pick, taken for one whose run has ended`, which fails without the rule), or by a fiber
+  under `PreventSchedulerYield`, which is not asked and so never takes its place (seen, by a check not kept: resumed
+  by such a fiber after another was let run, a fiber waits for its pick). The runtime starts no fiber inline, by
+  `startImmediately` or a `runFork`, nor sets `PreventSchedulerYield` (`src/runtime.ts`, **read in the source**).
 - **An interruption that races a resumption** ends as under Effect's scheduler: the fiber either goes on to its end or
   is interrupted without going on, never both or neither, and both ends are reached (`an interruption racing a
   resumption ends as under the scheduler of Effect, one way or the other`). Under Effect's scheduler both are reached
