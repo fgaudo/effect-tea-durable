@@ -44,7 +44,14 @@ import {
 import * as Library from './index.ts'
 import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
 import { createTables, storage } from './storage.ts'
-import { everySchedule, inOrder, prioritized, replayed as replayedSchedule, scheduled } from './testing.ts'
+import {
+  everySchedule,
+  inOrder,
+  prioritized,
+  replayed as replayedSchedule,
+  scheduled,
+  type Strategy,
+} from './testing.ts'
 
 // The toy of `machine.test.ts`, with the schemas a runtime needs: `a` is idempotent, `b` at most once, `c` at
 // least once, and `t` a timer. Each key's work ends by removing its key, unless a message brings it back.
@@ -3182,4 +3189,51 @@ test('a sender answered Suspended is woken by the resumption, wherever it falls,
   everySchedule(scenario, { bound: 1 }, (exit) => {
     expect(Exit.isSuccess(exit) ? exit.value : exit).toEqual({ applied: ['sent'], wanted: 0 })
   })
+}, 60_000)
+
+test('callers of an unloaded entity build one machine for it, under prioritized schedules from their arrival', () => {
+  // Decision 0067: an entity's lock is dropped by its last user only. One dropped while a caller waits for it lets a
+  // new taker hold a lock of its own beside that caller, and both load the entity: two machines, two `Restart`s.
+  // The run goes in order until the callers arrive, so that the passivation before them is followed (decision 0104),
+  // and PCT explores from there: its changes of priority fall among the steps that count.
+  let arrived = false
+  const start = Effect.andThen(Effect.sync(() => (arrived = false)), createTables)
+  const scenario = Effect.scoped(Effect.flatMap(start, () =>
+    Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const { events, observe } = log()
+      const { entities, unloaded } = unloads()
+      const at = yield* DateTime.now
+      return yield* process({ observe, unloaded, passivate: { millis: 5 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          yield* TestClock.adjust('5 millis')
+          const want = (nonce: string) =>
+            toy.send(id, { _tag: 'Want', key: 't', on: true, nonce }, { requestId: nonce, sender: tester })
+          yield* Effect.sync(() => (arrived = true))
+          yield* Effect.all([want('w-1'), want('w-2')], { concurrency: 'unbounded' })
+          yield* runtime.settled
+          return { unloaded: [...entities], restarts: events.filter((event) => event._tag === 'Restart').length }
+        }))
+    }))).pipe(
+      Effect.provide(SqliteClient.layer({ filename: ':memory:' })),
+      Effect.provide(TestClock.layer()),
+      Effect.orDie,
+    )
+  const fromArrival = (strategy: Strategy): Strategy => ({
+    pick: (ready) => arrived ? strategy.pick(ready) : 0,
+    preempt: (fiber, ready) => arrived && strategy.preempt(fiber, ready),
+  })
+  // The steps PCT draws among: those a run in order is asked of preemption once the callers have arrived.
+  let steps = 0
+  scheduled(scenario, { pick: () => 0, preempt: () => (arrived && (steps += 1), false) })
+  // With the lock dropped by any user, 10 seeds of 2,000 build two machines at depth 4; a run finds it with a
+  // probability near 1 in 200, so that 2,000 runs miss it with one near e^-10 if the steps move.
+  for (let seed = 0; seed < 2_000; seed++) {
+    const run = scheduled(scenario, fromArrival(prioritized(seed, 4, steps)))
+    expect({ seed, ended: run.exit !== undefined && Exit.isSuccess(run.exit) ? run.exit.value : run.exit })
+      .toEqual({ seed, ended: { unloaded: [id], restarts: 1 } })
+  }
 }, 60_000)

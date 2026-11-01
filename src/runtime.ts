@@ -344,7 +344,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           Effect.sync(() => {
             lock.users -= 1
             // Dropped by its last user only: one dropped while others wait would let a new taker hold it beside
-            // them. No test reaches that interleaving, as the review of 0061 to 0075 says.
+            // them. `callers of an unloaded entity build one machine for it`, in the tests, reaches it (decision 0104).
             if (lock.users === 0) locks.delete(address)
           }),
       )

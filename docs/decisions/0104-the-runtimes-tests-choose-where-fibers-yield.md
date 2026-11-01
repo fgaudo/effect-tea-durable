@@ -7,7 +7,7 @@ that a later one can take the step; everything below marked **to check** is not 
 is taken: [`spikes/effect-scheduler-controlled.test.ts`](../../spikes/effect-scheduler-controlled.test.ts), and what
 it saw is in [What the spike saw](#what-the-spike-saw). Its second, the scheduler, is taken too: it is in
 [`src/testing.ts`](../../src/testing.ts), and [The scheduler](#the-scheduler) says what it decided. Of its third,
-the first interleaving is reached: [The two interleavings](#the-two-interleavings) says how.
+both interleavings are reached: [The two interleavings](#the-two-interleavings) says how.
 
 ## Context
 
@@ -92,6 +92,7 @@ What that leaves:
 - The two interleavings need a fiber to yield where the others do not: **reasoned**, in the review of 0061 to 0075, by
   reading where the steps fall; the step confirms it or finds otherwise. For the first, **seen** otherwise: the yield
   before a resumption reaches it in the run in order, with no preemption ([The two interleavings](#the-two-interleavings)).
+  For the second, **seen**: it takes changes of priority among the callers' steps, which PCT at depth 4 makes.
 
 ## What the spike saw
 
@@ -286,7 +287,18 @@ Step 3 of [How to take the step](#how-to-take-the-step), in [`src/runtime.test.t
   check not kept): the sender is resumed inline, and registers before the toy goes on. So it is the yield before a
   resumption that reaches it, and no deviation is needed. The test runs every schedule within one deviation all the
   same, 2,085 runs in about ten seconds, so that the rule holds wherever the discard falls.
-- **An entity's lock dropped while others wait for it**: not reached yet.
+- **An entity's lock dropped while others wait for it** is reached, by `callers of an unloaded entity build one
+  machine for it, under prioritized schedules from their arrival`. Two callers send at once to an entity just
+  passivated. With the lock dropped by any user, a caller that waits for the lock gets it while a new taker holds a
+  lock of its own, and both activate the entity: two `Restart`s for one passivation. **Seen**, by a mutation not kept,
+  traced to the two activations. Neither delay bounding at 1 nor Effect's own scheduler reaches it: under budgets 3
+  to 60 every run builds one machine (**seen**, by a check not kept). PCT over the whole run did, but rarely: at
+  depth 3 or 4, 1 to 4 seeds of 2,000, since its changes fell mostly among the steps of the creation and the
+  passivation. So the test runs in order until the callers arrive, and PCT from there, with its steps counted from
+  there too. At depth 4, 10 seeds of 2,000 build two machines. A run finds it with a probability near 1 in 200, so
+  2,000 runs, about five seconds, miss it with one near e^-10 if the steps move. Running in order before the callers
+  also follows the passivation, which preempted it may not be ([What the spike saw](#what-the-spike-saw)). The
+  strategy that waits for a point of the scenario is the test's own: `src/testing.ts` has none yet.
 
 ## Alternatives
 
