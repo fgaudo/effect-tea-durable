@@ -5,7 +5,8 @@
 a way to reach interleavings that no budget of steps reaches. Written by the session that reviewed 0076 to 0079, so
 that a later one can take the step; everything below marked **to check** is not seen yet. Its first step, the spike,
 is taken: [`spikes/effect-scheduler-controlled.test.ts`](../../spikes/effect-scheduler-controlled.test.ts), and what
-it saw is in [What the spike saw](#what-the-spike-saw).
+it saw is in [What the spike saw](#what-the-spike-saw). Its second, the scheduler, is taken too: it is in
+[`src/testing.ts`](../../src/testing.ts), and [The scheduler](#the-scheduler) says what it decided.
 
 ## Context
 
@@ -38,10 +39,12 @@ What that leaves:
   probe is added, and 0066's rejection stands.
 - **Exploration, not every schedule.** A schedule over a scenario of thousands of steps has too many orders to run them
   all. Two strategies, to be compared on the runtime:
-  - **preemption bounding** (as CHESS does): every schedule with at most `k` switches forced on a fiber that would have
-    run on, `k` of 1 or 2, which is exhaustive within the bound, and most bugs of concurrency need few;
-  - **PCT**, probabilistic concurrency testing: fibers given random priorities, changed at `d` random points, which
-    finds a bug of depth `d` with a probability the method bounds, in far fewer runs.
+  - **delay bounding**: every schedule that deviates at most `k` times from the run in order, `k` of 1 or 2, which is
+    exhaustive within the bound, and most bugs of concurrency need few. A deviation is a preemption, as in CHESS's
+    preemption bounding, or a pick of any task but the oldest. The picks are counted too, since a pick is a choice at
+    every step here, and the schedules would be unbounded otherwise ([The scheduler](#the-scheduler));
+  - **PCT**, probabilistic concurrency testing: fibers given random priorities, changed at `d - 1` random points,
+    which finds a bug of depth `d` with a probability the method bounds, in far fewer runs.
 - **The step is done when the two interleavings above are reached**, each by a test that fails or hangs once the rule
   that keeps it is taken out, and the tests under every budget that the new scheduler covers are moved onto it. What it
   does not cover stays under budgets, and says why.
@@ -64,7 +67,9 @@ What that leaves:
   `Scheduler.PreventSchedulerYield` is not asked, and runs on uncontrolled; neither Effect nor the library sets it
   (**read in the source**).
 - A run is deterministic once its choices are: **seen** for the spike's scenarios, its result included, `a run given
-  the same choices takes the same steps, its fibers counted from its first`; for the runtime's, **reasoned**: the
+  the same choices takes the same steps, its fibers counted from its first`; for a process of the runtime, **seen**
+  since step 2, in order and under PCT, the first run of the process included (`a process runs to its end under the
+  scheduler of the tests, which needs nothing of the platform`); for every scenario of it, **reasoned**: the
   SQLite client is synchronous, each call an `Effect.try` over `bun:sqlite` (**read in the source**,
   `@effect/sql-sqlite-bun` `SqliteClient.ts`), time is the test clock's, and the library reads no other clock (`the
   library reads the time and sleeps through Effect alone, which a test moves`, in
@@ -185,6 +190,75 @@ run last, below, a guard as well.
   which neither the library nor its tests call (**read in the source**: every other `scheduleTask` in `effect/src`
   passes 0); the scheduler ignores them.
 
+## The scheduler
+
+Step 2 of [How to take the step](#how-to-take-the-step), in [`src/testing.ts`](../../src/testing.ts), tested in
+[`src/testing.test.ts`](../../src/testing.test.ts). It is apart from what `index.ts` exports.
+
+- **`scheduled(effect, strategy)`** runs an effect under the spike's `controlled`, with its rules as they were
+  found, stepped by hand and synchronously until it ends, nothing is ready, or a million tasks have run. A
+  **strategy** answers two questions: which ready task runs, and whether the fiber running yields at a step. It is
+  asked the first only when more than one task is ready, and the second only when another is ready: elsewhere the
+  answer changes nothing, and asking would only make the schedules more. The answers, in order, are the run's
+  **schedule**, and `replayed` runs it again from them. A replay that asks more or fewer decisions than its schedule
+  holds did not take the same steps, and throws, as a pick of no task does. Fibers are counted from the root, which
+  asks the scheduler first, since Effect runs it inline as it forks it (`runForkWith`, **read in the source**). A run
+  ends with its root, and counts the tasks still ready then, which it does not run: a fiber the root did not wait
+  for stops where it was. A dispatcher of the scheduler refuses a `flush`: Effect flushes only those of its own
+  `runSync` and of a schema's standard validation, each with a scheduler of its own (**read in the source**), and a
+  flush inside a task would run other tasks within it, where the rules above read the task under way.
+- **The fiber of a task.** A strategy is told, for each ready task, the fiber it resumes, where the scheduler made
+  that fiber yield, by a preemption or by the yield before a resumption. Effect schedules the task of such a yield in
+  the same step as `shouldYield` answers (`runLoop` and `yieldNowWith` in `internal/effect.ts`, **read in the
+  source**), so the next task scheduled is its. Any other task names no fiber: a fork, the wake of a `Queue` or a
+  `Semaphore`, or a fiber's own `yieldNow`. Effect gives the dispatcher no fiber for those.
+- **`everySchedule(effect, { bound }, check)`** is delay bounding. It runs the schedule in order, the oldest task
+  first and no preemption. A fiber runs on until it waits there, as under Effect's scheduler with an unbounded
+  budget, but for the yield before each resumption, which queues a fiber Effect would resume inline. Then, for each decision after the
+  last deviation, it runs each other way that decision can go, up to `bound` deviations. The decisions before the
+  last deviation go the same way as in the run that found it, since a run is deterministic given its decisions.
+  Within the bound it is exhaustive, each schedule run once, which a count of its own checks (`every schedule within
+  two deviations is every one, each run once`). A failure names the deviations that replay it, which `deviated`
+  takes to run that schedule alone, and the exploration throws past
+  a cap on its runs, so that a bound too large for a scenario says so.
+- **`prioritizedSchedules(effect, { runs, depth }, check)`** is PCT. A fiber's priority is drawn as it is first
+  seen. The ready task of the highest fiber runs, and a fiber yields once a higher one is ready. At `depth - 1`
+  steps, drawn among those a run in order is asked of preemption, the fiber running is lowered beneath every first
+  priority. Two rules are added to the method, each held by a test:
+  - **A task that names no fiber has a priority between the lowered and the first.** Beneath the lowered, a fork
+    never runs while the fiber that forked it is ready, and a lost update needing one preemption is not reached at
+    depth 2 (`prioritized schedules reach the lost update at depth 2, and name the seed that replays it`).
+  - **After ten times the steps a run in order takes, the strategy runs in order.** A fiber lowered beneath one that
+    spins on `yieldNow` waiting for it never runs again under strict priorities. In order every ready task runs in
+    turn, so a run that ends under a fair scheduler ends here too, as Coyote's PCT turns fair after its unfair steps
+    (`a fiber that spins on its own yield starves no other under prioritized schedules`, which hangs to the cap
+    without the rule).
+- **The spike's rules hold under every schedule within 1 or 2 deviations**: fibers a `Deferred` resumes run in
+  either order, within 1; within 2, a fiber interrupted before it starts either ran to its end or did not run, a
+  fiber that yielded and is interrupted runs its finalizer only once picked, and a fiber whose run ends interrupts its
+  children before they go on. One guard is reached here and not in the spike: forgetting, as each task starts, the
+  fiber let run last. Kept from one task to the next, it has a fiber resumed in a later task taken for one whose run
+  has ended, which runs on without its pick, and `a fiber whose run ends interrupts its children before they go on,
+  under every schedule` fails.
+- **PCT's changes fall at distinct steps.** Two drawn at one step would be one change, and the run of a lower depth
+  than asked (`prioritized schedules change the priority at as many steps as their depth asks`).
+- **Each rule fails a test once taken out, but one.** Twenty-four rules of the scheduler and of its two strategies
+  were taken out one at a time with [`scripts/mutate.ts`](../../scripts/mutate.ts). Five failed no test at first: a
+  pick asked with one task ready, a task naming no fiber, a fiber not yielding to a higher one, a change of priority
+  without a yield, and a run that did not end passing its check. Each has a test now. The one left counts the fibers
+  from the first the scheduler names rather than from the root: the root is asked of preemption before any other
+  fiber in every run, as it forks before the others run, so the two count from the same fiber, and no test can
+  tell them apart.
+- **A process of the runtime runs to its end under it**, with nothing of the platform's: **seen**, `a process runs
+  to its end under the scheduler of the tests, which needs nothing of the platform`, in
+  [`src/runtime.test.ts`](../../src/runtime.test.ts), a creation, a passivation and a timer that wakes the entity.
+  So the premise that the SQLite client and the test clock need no microtask holds of a whole process, which it
+  was only reasoned of.
+- **What exploring that process costs**, seen by a check not kept: a run in order asks 14 picks and 1,434
+  preemptions, and takes about 5 milliseconds. Every schedule within one deviation is about 1,450 runs, some
+  seconds; within two, about a million, which no suite runs. PCT at depth 2 ran 50 seeds in a quarter of a second,
+  and each ended. So step 3 runs delay bounding at 1 and PCT above it, unless a scenario is made smaller.
+
 ## Alternatives
 
 - **Points of the probe where a test holds a fiber.** Rejected by [decision 0066](0066-the-runtimes-tests-move-time.md):
@@ -212,7 +286,7 @@ For the session that takes it, in order; each may change the ones after it.
    `Fiber.join`, `forkIn` and `Effect.sleep` under `TestClock.layer` all resume through it, that a schedule replays the
    same steps, and what a fiber id is across two runs. Update the premises above to **seen** or say what fails.
    **Done**: [What the spike saw](#what-the-spike-saw).
-2. **The scheduler**, in `src/testing.ts`: record and replay a schedule; an exploration that runs a scenario under
+2. **Done**: [The scheduler](#the-scheduler). **The scheduler**, in `src/testing.ts`: record and replay a schedule; an exploration that runs a scenario under
    every schedule with at most `k` preemptions, and one under PCT. Keep it apart from what `index.ts` exports, as the
    probe is ([decision 0073](0073-what-the-runtime-did-is-told-to-a-probe.md)). It starts from the spike's
    `controlled`, which keeps the rules [What the spike saw](#what-the-spike-saw) found: a fiber's first run let

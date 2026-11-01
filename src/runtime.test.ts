@@ -42,6 +42,7 @@ import {
 import * as Library from './index.ts'
 import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
 import { createTables, storage } from './storage.ts'
+import { inOrder, prioritized, replayed as replayedSchedule, scheduled } from './testing.ts'
 
 // The toy of `machine.test.ts`, with the schemas a runtime needs: `a` is idempotent, `b` at most once, `c` at
 // least once, and `t` a timer. Each key's work ends by removing its key, unless a message brings it back.
@@ -3094,4 +3095,43 @@ test('the library reads the time and sleeps through Effect alone, which a test m
       .flatMap((line, n) => platform.test(line) ? [`${file}:${n + 1}: ${line.trim()}`] : [])
   )
   expect(found).toEqual([])
+})
+
+test('a process runs to its end under the scheduler of the tests, which needs nothing of the platform', () => {
+  // Decision 0104: the controlled scheduler steps a run by hand and synchronously, so a run that ends there needed
+  // no timer and no microtask. The SQLite client is synchronous, and time is the test clock's.
+  const scenario = Effect.scoped(Effect.flatMap(createTables, () =>
+    Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const { entities, unloaded } = unloads()
+      const at = yield* DateTime.now
+      return yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+          yield* runtime.settled
+          yield* TestClock.adjust('5 millis')
+          yield* TestClock.adjust('60 millis')
+          yield* runtime.settled
+          return { read: yield* toy.read(id), unloaded: [...entities] }
+        }))
+    }))).pipe(
+      Effect.provide(SqliteClient.layer({ filename: ':memory:' })),
+      Effect.provide(TestClock.layer()),
+      Effect.orDie,
+    )
+  const ended = { read: 0, unloaded: [id, id] }
+  const run = scheduled(scenario, inOrder)
+  expect(run.exit !== undefined && Exit.isSuccess(run.exit) ? run.exit.value : run.exit).toEqual(ended)
+  expect(run.left).toBe(0)
+  // And a run of the process is the same each time, given the same decisions: nothing Effect or the library
+  // computes once for the process, as a cache, changes the steps of a later run.
+  for (const recorded of [run, scheduled(scenario, prioritized(1, 3, run.schedule.preemptions.length))]) {
+    const again = replayedSchedule(scenario, recorded.schedule)
+    expect({ schedule: again.schedule, steps: again.steps }).toEqual({
+      schedule: recorded.schedule,
+      steps: recorded.steps,
+    })
+    expect(again.exit !== undefined && Exit.isSuccess(again.exit) ? again.exit.value : again.exit).toEqual(ended)
+  }
 })

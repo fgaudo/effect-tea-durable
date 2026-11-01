@@ -1,0 +1,355 @@
+/**
+ * The scheduler the runtime's tests run under (decision 0104): its rules are its spike's,
+ * `spikes/effect-scheduler-controlled.test.ts`, which tests them one by one; here, what the explorations add.
+ */
+import { expect, test } from 'bun:test'
+import * as Deferred from 'effect/Deferred'
+import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
+import { TestClock } from 'effect/testing'
+import {
+  deviated,
+  everySchedule,
+  inOrder,
+  prioritized,
+  prioritizedSchedules,
+  replayed,
+  type Run,
+  scheduled,
+} from './testing.ts'
+
+const value = <A, E>(run: Run<A, E>) => run.exit !== undefined && Exit.isSuccess(run.exit) ? run.exit.value : undefined
+
+/** Two fibers that each write their letter four times, a step apart. */
+const twoWriters = Effect.gen(function*() {
+  const log: Array<string> = []
+  const write = (letter: string) => Effect.replicateEffect(Effect.sync(() => log.push(letter)), 4, { discard: true })
+  const a = yield* Effect.forkChild(write('a'))
+  const b = yield* Effect.forkChild(write('b'))
+  yield* Fiber.join(a)
+  yield* Fiber.join(b)
+  return log.join('')
+})
+
+/** Two fibers that each read a count in one step and write it one more in the next: an update one of them can lose. */
+const twoIncrements = Effect.gen(function*() {
+  let count = 0
+  const increment = Effect.flatMap(Effect.sync(() => count), (read) =>
+    Effect.sync(() => {
+      count = read + 1
+    }))
+  const a = yield* Effect.forkChild(increment)
+  const b = yield* Effect.forkChild(increment)
+  yield* Fiber.join(a)
+  yield* Fiber.join(b)
+  return count
+})
+
+const counted = (expected: number) => (exit: Exit.Exit<number>) => {
+  expect(Exit.isSuccess(exit) ? exit.value : undefined).toBe(expected)
+}
+
+test('a run in order runs each fiber to its wait before the next, the oldest first', () => {
+  expect(value(scheduled(twoWriters, inOrder))).toBe('aaaabbbb')
+  expect(value(scheduled(twoIncrements, inOrder))).toBe(2)
+})
+
+test('a run given the schedule another recorded takes the same decisions, and ends the same', () => {
+  for (let seed = 0; seed < 50; seed++) {
+    const run = scheduled(twoWriters, prioritized(seed, 3, 20))
+    const again = replayed(twoWriters, run.schedule)
+    expect(again.schedule).toEqual(run.schedule)
+    expect(again.steps).toBe(run.steps)
+    expect(value(again)).toBe(value(run)!)
+  }
+  // A schedule the run does not follow to its end is refused, and so is a pick of no task.
+  const { schedule } = scheduled(twoWriters, inOrder)
+  expect(() => replayed(twoWriters, { ...schedule, picks: [...schedule.picks, 0] })).toThrow(/asked/)
+  expect(() => scheduled(twoWriters, { ...inOrder, pick: (ready) => ready.length })).toThrow(/picked task/)
+})
+
+test('a strategy is asked only where its answer can change the run', () => {
+  // A pick with more than one task ready, a preemption with another ready; a run of one fiber asks nothing.
+  const asked: Array<string> = []
+  const run = scheduled(twoWriters, {
+    pick: (ready) => {
+      asked.push(`pick of ${ready.length}`)
+      return 0
+    },
+    preempt: (_fiber, ready) => {
+      asked.push(`preempt with ${ready.length}`)
+      return false
+    },
+  })
+  expect(value(run)).toBe('aaaabbbb')
+  expect(asked.length).toBeGreaterThan(0)
+  expect(asked.filter((question) => question === 'pick of 1' || question === 'preempt with 0')).toEqual([])
+  expect(scheduled(Effect.succeed(1), inOrder).schedule).toEqual({ picks: [], preemptions: [] })
+})
+
+test('a strategy is told the fiber a preemption made yield, among the tasks ready', () => {
+  let preempted: number | undefined
+  const seen: Array<ReadonlyArray<number | undefined>> = []
+  scheduled(twoWriters, {
+    pick: (ready) => {
+      seen.push(ready.map(({ fiber }) => fiber))
+      return 0
+    },
+    preempt: (fiber) => {
+      if (preempted !== undefined) return false
+      preempted = fiber
+      return true
+    },
+  })
+  expect(preempted).toBeDefined()
+  expect(seen.flat()).toContain(preempted)
+})
+
+test('a strategy is told the fibers counted from the root, and a fork names none', () => {
+  // The root, fiber 0, is preempted at its first two steps with another task ready: as it forks `a`, and as it
+  // forks `b`. Each time its own task is named, and the fork beside it names no fiber.
+  let preempted = 0
+  const seen: Array<ReadonlyArray<number | undefined>> = []
+  const run = scheduled(twoWriters, {
+    pick: (ready) => {
+      seen.push(ready.map(({ fiber }) => fiber))
+      return 0
+    },
+    preempt: (fiber) => fiber === 0 && preempted++ < 2,
+  })
+  expect(value(run)).toBe('aaaabbbb')
+  expect(preempted).toBeGreaterThanOrEqual(2)
+  expect(seen.filter((ready) => ready.length === 2 && ready[0] === undefined && ready[1] === 0).length).toBe(2)
+})
+
+test('a strategy is told the fiber a resumption made yield', () => {
+  // Two waiters a Deferred resumes inline, `a` then `b`, fibers 1 and 2: each yields before it goes on, its task
+  // named.
+  const body = Effect.gen(function*() {
+    const deferred = yield* Deferred.make<void>()
+    const a = yield* Effect.forkChild(Deferred.await(deferred))
+    const b = yield* Effect.forkChild(Deferred.await(deferred))
+    yield* Effect.yieldNow
+    yield* Deferred.succeed(deferred, undefined)
+    yield* Fiber.join(a)
+    yield* Fiber.join(b)
+  })
+  const seen: Array<ReadonlyArray<number | undefined>> = []
+  scheduled(body, {
+    pick: (ready) => {
+      seen.push(ready.map(({ fiber }) => fiber))
+      return 0
+    },
+    preempt: () => false,
+  })
+  expect(seen).toContainEqual([1, 2])
+})
+
+test('a run counts the tasks it leaves ready, which a fiber the root did not wait for leaves', () => {
+  expect(scheduled(twoWriters, inOrder).left).toBe(0)
+  const detached = Effect.andThen(Effect.forkDetach(Effect.forever(Effect.yieldNow)), Effect.yieldNow)
+  const run = scheduled(detached, inOrder)
+  expect(run.exit !== undefined && Exit.isSuccess(run.exit)).toBe(true)
+  expect(run.left).toBe(1)
+})
+
+test('a dispatcher of the scheduler refuses a flush inside a run', () => {
+  const flushes = Effect.withFiber((fiber) => Effect.sync(() => fiber.currentDispatcher.flush()))
+  const { exit } = scheduled(flushes, inOrder)
+  expect(exit !== undefined && Exit.isFailure(exit) ? String(exit.cause) : '').toMatch(/never flushed/)
+})
+
+test('every schedule within two deviations is every one, each run once', () => {
+  // An independent count: each decision of the run in order can deviate, each of the run that deviated once after
+  // its deviation, and the run in order is one.
+  const decisions = (deviation?: readonly [number, number]) => {
+    const asked: Array<number> = []
+    scheduled(twoIncrements, {
+      pick: (ready) => {
+        asked.push(ready.length)
+        return deviation !== undefined && deviation[0] === asked.length - 1 ? deviation[1] : 0
+      },
+      preempt: () => {
+        asked.push(2)
+        return deviation !== undefined && deviation[0] === asked.length - 1
+      },
+    })
+    return asked
+  }
+  const ways = (asked: ReadonlyArray<number>, after: number) =>
+    asked.slice(after + 1).reduce((sum, options) => sum + options - 1, 0)
+  let count = 1
+  decisions().forEach((options, decision) => {
+    for (let choice = 1; choice < options; choice++) count += 1 + ways(decisions([decision, choice]), decision)
+  })
+  expect(count).toBeGreaterThan(10)
+  expect(everySchedule(twoIncrements, { bound: 2 }, () => {})).toBe(count)
+  expect(everySchedule(twoIncrements, { bound: 1 }, () => {})).toBe(1 + ways(decisions(), -1))
+})
+
+test('a run that does not end fails its exploration', () => {
+  expect(() => everySchedule(Effect.never, { bound: 0 }, () => {})).toThrow(/did not end/)
+})
+
+test('under prioritized schedules a fiber yields to a higher one ready, and at a change of priority', () => {
+  for (let seed = 0; seed < 50; seed++) {
+    // With no change, of two fibers exactly one yields to the other.
+    const strategy = prioritized(seed, 1, 100)
+    expect(strategy.preempt(0, [{ fiber: 1 }])).not.toBe(strategy.preempt(1, [{ fiber: 0 }]))
+    // Its first priority above any task that names no fiber, a fiber yields to one only at its change.
+    expect(prioritized(seed, 2, 1).preempt(0, [{ fiber: undefined }])).toBe(true)
+    expect(prioritized(seed, 1, 1).preempt(0, [{ fiber: undefined }])).toBe(false)
+  }
+})
+
+test('every schedule within no deviation is the run in order alone', () => {
+  expect(everySchedule(twoIncrements, { bound: 0 }, counted(2))).toBe(1)
+})
+
+test('every schedule within one deviation reaches the lost update, and names what replays it', () => {
+  let named = ''
+  try {
+    everySchedule(twoIncrements, { bound: 1 }, counted(2))
+  } catch (error) {
+    named = error instanceof Error ? error.message : ''
+  }
+  const found = /^under deviated\((\[\[\d+,1\]\])\)/.exec(named)
+  expect(found).not.toBeNull()
+  // What it names replays the lost update alone.
+  expect(value(deviated(twoIncrements, JSON.parse(found![1]!)))).toBe(1)
+  // And it is exhaustive there: each end is reached, and the two orders of the writers.
+  const ends = new Set<number>()
+  everySchedule(twoIncrements, { bound: 1 }, (exit) => {
+    if (Exit.isSuccess(exit)) ends.add(exit.value)
+  })
+  expect([...ends].sort()).toEqual([1, 2])
+  const orders = new Set<string>()
+  everySchedule(twoWriters, { bound: 1 }, (exit) => {
+    if (Exit.isSuccess(exit)) orders.add(exit.value)
+  })
+  expect(orders).toContain('bbbbaaaa')
+  expect([...orders].some((order) => /a+b+a/.test(order))).toBe(true)
+})
+
+test('every schedule within a bound stops past its runs, rather than running for hours', () => {
+  expect(() => everySchedule(twoWriters, { bound: 3, runs: 10 }, () => {})).toThrow(/more than 10 schedules/)
+})
+
+test('prioritized schedules reach the lost update at depth 2, and name the seed that replays it', () => {
+  expect(() => prioritizedSchedules(twoIncrements, { runs: 50, depth: 2 }, counted(2)))
+    .toThrow(/^under prioritized\(\d+, 2, \d+\)/)
+  // At depth 1 no priority changes: a fiber is preempted only by a higher one woken, and none is here.
+  prioritizedSchedules(twoIncrements, { runs: 50, depth: 1 }, counted(2))
+})
+
+test('prioritized schedules change the priority at as many steps as their depth asks', () => {
+  // Over 2 steps, a depth of 3 changes the priority at both, whatever the seed. A fiber with only its own task
+  // ready yields at a change alone.
+  for (let seed = 0; seed < 50; seed++) {
+    const strategy = prioritized(seed, 3, 2)
+    expect([strategy.preempt(0, [{ fiber: 0 }]), strategy.preempt(0, [{ fiber: 0 }])]).toEqual([true, true])
+  }
+})
+
+test('fibers a Deferred resumes inline wait for their pick, in either order', () => {
+  const body = Effect.gen(function*() {
+    const log: Array<string> = []
+    const deferred = yield* Deferred.make<void>()
+    const waiter = (letter: string) => Effect.andThen(Deferred.await(deferred), Effect.sync(() => log.push(letter)))
+    const a = yield* Effect.forkChild(waiter('a'))
+    const b = yield* Effect.forkChild(waiter('b'))
+    yield* Effect.yieldNow
+    yield* Deferred.succeed(deferred, undefined)
+    yield* Fiber.join(a)
+    yield* Fiber.join(b)
+    return log.join('')
+  })
+  const orders = new Set<string>()
+  everySchedule(body, { bound: 1 }, (exit) => {
+    if (Exit.isSuccess(exit)) orders.add(exit.value)
+  })
+  expect([...orders].sort()).toEqual(['ab', 'ba'])
+})
+
+test('a fiber interrupted before it starts does not run, under every schedule', () => {
+  // A fiber of one step either ran to its end before the interruption, or is interrupted without running.
+  const body = Effect.gen(function*() {
+    let ran = false
+    const fiber = yield* Effect.forkChild(Effect.sync(() => {
+      ran = true
+    }))
+    yield* Fiber.interrupt(fiber)
+    const exit = yield* Fiber.await(fiber)
+    return `${Exit.isSuccess(exit) ? 'ended' : 'interrupted'}, ${ran ? 'ran' : 'did not run'}`
+  })
+  const ends = new Set<string>()
+  everySchedule(body, { bound: 2 }, (exit) => {
+    if (Exit.isSuccess(exit)) ends.add(exit.value)
+  })
+  expect([...ends].sort()).toEqual(['ended, ran', 'interrupted, did not run'])
+})
+
+test('a fiber that yielded and is interrupted runs its finalizer only once picked, under every schedule', () => {
+  const body = Effect.gen(function*() {
+    let started = false
+    let finalized = false
+    const fiber = yield* Effect.forkChild(Effect.onInterrupt(
+      Effect.forever(Effect.andThen(Effect.sync(() => started = true), Effect.yieldNow)),
+      () => Effect.sync(() => finalized = true),
+    ))
+    while (!started) yield* Effect.yieldNow
+    const finalizedInline = yield* Effect.sync(() => {
+      fiber.interruptUnsafe()
+      return finalized
+    })
+    const exit = yield* Fiber.await(fiber)
+    return { finalizedInline, interrupted: Exit.hasInterrupts(exit), finalized }
+  })
+  everySchedule(body, { bound: 2 }, (exit) => {
+    expect(Exit.isSuccess(exit) ? exit.value : undefined).toEqual({
+      finalizedInline: false,
+      interrupted: true,
+      finalized: true,
+    })
+  })
+})
+
+test('a fiber whose run ends interrupts its children before they go on, under every schedule', () => {
+  const body = Effect.gen(function*() {
+    let count = 0
+    let atEnd = -1
+    const parent = yield* Effect.forkChild(Effect.gen(function*() {
+      yield* Effect.forkChild(Effect.forever(Effect.andThen(Effect.sync(() => count++), Effect.yieldNow)))
+      while (count === 0) yield* Effect.yieldNow
+      atEnd = count
+    }))
+    yield* Fiber.await(parent)
+    return count - atEnd
+  })
+  const run = everySchedule(body, { bound: 2 }, (exit) => {
+    expect(Exit.isSuccess(exit) ? exit.value : undefined).toBe(0)
+  })
+  expect(run).toBeGreaterThan(1)
+})
+
+test('a fiber that spins on its own yield starves no other under prioritized schedules', () => {
+  // The root waits for a sleeper to call its sleep by yielding, then moves the test clock. Lowered beneath the root,
+  // the sleeper would never run again under strict priorities; the strategy turns fair, and it does.
+  const spins = Effect.gen(function*() {
+    const woke = yield* Deferred.make<void>()
+    let sleeping = false
+    yield* Effect.forkChild(Effect.andThen(
+      Effect.sync(() => {
+        sleeping = true
+      }),
+      Effect.andThen(Effect.sleep('10 millis'), Deferred.succeed(woke, undefined)),
+    ))
+    while (!sleeping) yield* Effect.yieldNow
+    while (!(yield* Deferred.isDone(woke))) yield* TestClock.adjust('10 millis')
+    return 'woke'
+  }).pipe(Effect.provide(TestClock.layer()))
+  prioritizedSchedules(spins, { runs: 200, depth: 3 }, (exit) => {
+    expect(Exit.isSuccess(exit) ? exit.value : undefined).toBe('woke')
+  })
+})
