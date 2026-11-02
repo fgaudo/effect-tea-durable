@@ -5,12 +5,18 @@
  *
  *     bun scripts/compare-docs.ts <old version> <new version>
  *
+ * Each declaration says why it is compared. An unstable one may change its promises in any release. A stable one whose
+ * documentation does not promise what a premise needs may promise it in any release, which makes the premise
+ * documented. A stable one whose documentation promises it can take the promise away only in a new major, as semantic
+ * versioning has it: within a major it is skipped, unless either release marks it other than stable.
+ *
  * Each release of `effect` and `@effect/sql-sqlite-bun` is packed from npm into a temporary folder. A declaration is
  * found by its name, at the top of its file or as a member, and all its distinct JSDoc comments are compared in order:
- * an overload with a comment of its own, or a member of the same name, is one more comment. One line per declaration is printed, tab separated:
- * the file, the name, and `same`, `changed`, `added` or `removed`; any but `same` is followed by the lines that
- * differ, `-` for the old release and `+` for the new. A declaration found in neither release is `missing`, and fails the run, since the list
- * names it wrong.
+ * an overload with a comment of its own, or a member of the same name, is one more comment. One line per declaration
+ * compared is printed, tab separated: the file, the name, and `same`, `changed`, `added` or `removed`; any but `same`
+ * is followed by the lines that differ, `-` for the old release and `+` for the new. A last line counts the declarations
+ * skipped. A declaration found in neither release is `missing`, skipped or not, and fails the run, since the list names
+ * it wrong.
  */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -18,44 +24,54 @@ import { join } from 'node:path'
 
 type Package = 'effect' | '@effect/sql-sqlite-bun'
 
-/** A declaration to compare: its package, its file under `src/`, and its name. */
-type Declaration = readonly [pkg: Package, file: string, name: string]
+/**
+ * Why a declaration is compared: `unstable`, marked so by Effect; `undocumented`, stable but not promising what a
+ * premise needs (decision 0107); `documented`, stable and promising it.
+ */
+type Why = 'unstable' | 'undocumented' | 'documented'
+
+/** A declaration to compare: its package, its file under `src/`, its name, and why it is compared. */
+type Declaration = readonly [pkg: Package, file: string, name: string, why: Why]
 
 const declarations: ReadonlyArray<Declaration> = [
-  ['effect', 'Semaphore.ts', 'withPermits'],
-  ['effect', 'Effect.ts', 'acquireUseRelease'],
-  ['effect', 'Effect.ts', 'ensuring'],
-  ['effect', 'Effect.ts', 'onExit'],
-  ['effect', 'Effect.ts', 'timeoutOption'],
-  ['effect', 'Effect.ts', 'raceFirst'],
-  ['effect', 'Effect.ts', 'uninterruptible'],
-  ['effect', 'Effect.ts', 'callback'],
-  ['effect', 'Effect.ts', 'forkChild'],
-  ['effect', 'Effect.ts', 'forkIn'],
-  ['effect', 'Effect.ts', 'forkDetach'],
-  ['effect', 'Scope.ts', 'close'],
-  ['effect', 'Scope.ts', 'fork'],
-  ['effect', 'Scheduler.ts', 'MixedScheduler'],
-  ['effect', 'Queue.ts', 'take'],
-  ['effect', 'Deferred.ts', 'await'],
-  ['effect', 'Deferred.ts', 'succeed'],
-  ['effect', 'Fiber.ts', 'join'],
-  ['effect', 'DateTime.ts', 'now'],
-  ['effect', 'testing/TestClock.ts', 'adjust'],
-  ['effect', 'testing/TestClock.ts', 'make'],
-  ['effect', 'testing/TestClock.ts', 'layer'],
-  ['effect', 'sql/SqlClient.ts', 'withTransaction'],
-  ['effect', 'Schema.ts', 'Record'],
-  ['effect', 'SchemaAST.ts', 'ParseOptions'],
-  ['effect', 'cluster/Entity.ts', 'toLayer'],
-  ['effect', 'cluster/Entity.ts', 'defectRetryPolicy'],
-  ['effect', 'cluster/Entity.ts', 'disableFatalDefects'],
-  ['effect', 'cluster/ClusterSchema.ts', 'Persisted'],
-  ['effect', 'cluster/ClusterSchema.ts', 'WithTransaction'],
-  ['effect', 'cluster/ClusterSchema.ts', 'Uninterruptible'],
-  ['effect', 'cluster/ShardingConfig.ts', 'entityRegistrationTimeout'],
-  ['@effect/sql-sqlite-bun', 'SqliteClient.ts', 'make'],
-  ['@effect/sql-sqlite-bun', 'SqliteClient.ts', 'layer'],
+  ['effect', 'Semaphore.ts', 'withPermits', 'documented'],
+  ['effect', 'Effect.ts', 'acquireUseRelease', 'documented'],
+  ['effect', 'Effect.ts', 'ensuring', 'documented'],
+  ['effect', 'Effect.ts', 'onExit', 'documented'],
+  ['effect', 'Effect.ts', 'timeoutOption', 'documented'],
+  ['effect', 'Effect.ts', 'raceFirst', 'documented'],
+  ['effect', 'Scope.ts', 'close', 'documented'],
+  ['effect', 'Scope.ts', 'fork', 'documented'],
+  ['effect', 'Scheduler.ts', 'MixedScheduler', 'documented'],
+  ['effect', 'DateTime.ts', 'now', 'documented'],
+  ['effect', 'testing/TestClock.ts', 'make', 'documented'],
+  ['effect', 'testing/TestClock.ts', 'layer', 'documented'],
+  ['effect', 'Schema.ts', 'Record', 'documented'],
+  ['effect', 'SchemaAST.ts', 'ParseOptions', 'documented'],
+  // What an interrupted take leaves in the queue.
+  ['effect', 'Queue.ts', 'take', 'undocumented'],
+  // That a fiber forked inside `uninterruptible` is interruptible, and that a joiner interrupted leaves it running.
+  ['effect', 'Effect.ts', 'uninterruptible', 'undocumented'],
+  ['effect', 'Effect.ts', 'forkChild', 'undocumented'],
+  ['effect', 'Effect.ts', 'forkIn', 'undocumented'],
+  ['effect', 'Effect.ts', 'forkDetach', 'undocumented'],
+  ['effect', 'Fiber.ts', 'join', 'undocumented'],
+  // When, and on which stack, a waiter resumes.
+  ['effect', 'Deferred.ts', 'await', 'undocumented'],
+  ['effect', 'Deferred.ts', 'succeed', 'undocumented'],
+  ['effect', 'Effect.ts', 'callback', 'undocumented'],
+  // That a fiber forked before the clock moves is given one turn.
+  ['effect', 'testing/TestClock.ts', 'adjust', 'undocumented'],
+  ['effect', 'sql/SqlClient.ts', 'withTransaction', 'unstable'],
+  ['effect', 'cluster/Entity.ts', 'toLayer', 'unstable'],
+  ['effect', 'cluster/Entity.ts', 'defectRetryPolicy', 'unstable'],
+  ['effect', 'cluster/Entity.ts', 'disableFatalDefects', 'unstable'],
+  ['effect', 'cluster/ClusterSchema.ts', 'Persisted', 'unstable'],
+  ['effect', 'cluster/ClusterSchema.ts', 'WithTransaction', 'unstable'],
+  ['effect', 'cluster/ClusterSchema.ts', 'Uninterruptible', 'unstable'],
+  ['effect', 'cluster/ShardingConfig.ts', 'entityRegistrationTimeout', 'unstable'],
+  ['@effect/sql-sqlite-bun', 'SqliteClient.ts', 'make', 'unstable'],
+  ['@effect/sql-sqlite-bun', 'SqliteClient.ts', 'layer', 'unstable'],
 ]
 
 /** Packs a release from npm into `into`, and gives the folder of its sources. */
@@ -132,8 +148,16 @@ if (oldVersion === undefined || newVersion === undefined) {
   process.exit(2)
 }
 
+/** The major of a version, the only release that semantic versioning lets take a stable promise away. */
+const major = (version: string) => version.split('.')[0]
+const sameMajor = major(oldVersion) === major(newVersion)
+
+/** Whether a comment marks its declaration other than stable. */
+const unstable = (doc: ReadonlyArray<string>) => doc.some((line) => /^@stability (?!stable\b)/.test(line))
+
 const folder = mkdtempSync(join(tmpdir(), 'effect-tea-durable-docs-'))
 let missing = 0
+let skipped = 0
 try {
   const sources = new Map<string, string>()
   for (const pkg of new Set(declarations.map(([pkg]) => pkg))) {
@@ -142,7 +166,7 @@ try {
       sources.set(`${pkg}@${version}`, unpack(pkg, version, into))
     }
   }
-  for (const [pkg, file, name] of declarations) {
+  for (const [pkg, file, name, why] of declarations) {
     const docs = (version: string) => {
       const text = read(join(sources.get(`${pkg}@${version}`)!, file))
       // An overload with the same comment as another adds nothing to compare.
@@ -161,8 +185,12 @@ try {
       : before.join('\n') === after.join('\n')
       ? 'same'
       : 'changed'
-    console.log([where, name, status].join('\t'))
     if (status === 'missing') missing++
+    else if (why === 'documented' && sameMajor && !unstable(before) && !unstable(after)) {
+      skipped++
+      continue
+    }
+    console.log([where, name, status].join('\t'))
     if (status === 'changed' || status === 'added' || status === 'removed') {
       for (const line of diff(before, after)) if (!line.startsWith('  ')) console.log(`\t${line}`)
     }
@@ -170,4 +198,5 @@ try {
 } finally {
   rmSync(folder, { recursive: true, force: true })
 }
+console.log(`skipped\t${skipped} documented stable declarations, within major ${major(newVersion)}`)
 process.exit(missing === 0 ? 0 : 1)

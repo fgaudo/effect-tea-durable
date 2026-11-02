@@ -21,8 +21,17 @@ the new. A spike tells when a behaviour changes; only the comparison tells when 
   and the new, and its note says what the comparison found. The script packs both releases from npm and compares the
   JSDoc of a list of declarations: those 0107 reads, `Effect.forkIn` and the forks of 0112, the annotations of Cluster
   the notes on Cluster rest on, and `entityRegistrationTimeout`. A note that rests on another declaration's
-  documentation adds it to the list.
-- **What the comparison found from 4.1.1 to 4.1.2**: 32 declarations keep their JSDoc, and two gain one, both on
+  documentation adds it to the list, with why it is compared.
+- **Each declaration of the list says why it is compared, and that decides when.**
+  - `unstable`: Effect marks it so, and any release may change its promises. `SqlClient.withTransaction` and
+    `@effect/sql-sqlite-bun` are unstable, as Cluster is. Compared at every move.
+  - `undocumented`: stable, but its documentation does not promise what a premise needs, as 0107 lists. Any release
+    may add the promise, which makes the premise **documented**. Compared at every move.
+  - `documented`: stable, and its documentation promises what the premise needs. Semantic versioning lets only a new
+    major take the promise away, so it is compared only when the major changes, or when either release marks it other
+    than stable.
+- **What the comparison found from 4.1.1 to 4.1.2**: the 14 `documented` declarations are skipped, within major 4, and
+  none is marked other than stable. Of the 20 compared, 18 keep their JSDoc, and two gain one, both on
   `Entity.toLayer`. `defectRetryPolicy` says that the default goes on once the policy ends, so restarts never stop.
   `disableFatalDefects` says that a defect then fails only its request. What 0095 read in the source is now
   **documented**, and 0107's "no documentation" no longer holds of either option.
@@ -41,6 +50,13 @@ the new. A spike tells when a behaviour changes; only the comparison tells when 
 ## What it rests on
 
 - The JSDoc compared: **documented**, by the run of `bun scripts/compare-docs.ts 4.1.1 4.1.2` on 2026-11-02.
+- That a stable declaration keeps its promises within a major: **documented** by Effect's repository, not by the
+  package pinned. Its release policy, `.agents/skills/changesets/authoring.md` on `main`, has APIs tagged
+  `@stability stable` follow strict semantic versioning, an `unstable` one break only in a minor, and an
+  `experimental` one in a patch. The JSDoc of `effect` 4.1.2 does not say what the tags mean. A stable promise taken
+  away within a major would be missed by the comparison, but not by the spikes, which run what the premises need.
+- That a patch may add a promise to an unstable declaration: **documented** by the same policy, which puts new
+  features of an unstable API in a patch, and seen: 4.1.2 documents `defectRetryPolicy`.
 - The source unchanged or changed as above: **read in the source**, the two releases packed from npm and compared file
   by file, with each pull request of Cluster in the range read.
 - The runtime's behaviour unchanged: **tested**, `bun run typecheck` and `bun test` on 4.1.2, the spikes included.
