@@ -176,6 +176,11 @@ which joined or left. So a shard can go from a new runner to an old one, and can
 health check and leaves the ring. The old runner fails every row the new version wrote
 ([decision 0043](decisions/0043-a-row-no-version-reads-fails-what-reads-it.md)).
 
+A request the new version persisted does not reach the runtime. Cluster decodes its payload first, and answers a
+payload its schema does not decode with a defect, which it stores, logging nothing. The request is then processed,
+and the new version never runs it again, as a spike on `SingleRunner` and `@effect/sql-sqlite-bun` sees
+([`cluster-older-runner-answers-a-newer-request`](../spikes/cluster-older-runner-answers-a-newer-request.test.ts)).
+
 Shard groups do not separate versions: an entity's group is chosen by its type, from its id (the `ShardGroup`
 annotation), and the group is part of its shard and so of its address: a group per version would change the
 address of every entity at each deploy, and leave its stored messages under the old one.
