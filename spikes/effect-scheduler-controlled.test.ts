@@ -1,5 +1,5 @@
 /**
- * What decision 0104 asks of `effect` 4.1.1's `Scheduler`: whether a test can choose where every fiber yields and
+ * What decision 0104 asks of `effect` 4.1.2's `Scheduler`: whether a test can choose where every fiber yields and
  * which runs next. Read in the source: a fiber asks `shouldYield` before each step of its run loop, and one that
  * yields, is forked, or is woken by a `Semaphore`, a `Queue` or a `Latch` goes through `scheduleTask` of a dispatcher
  * its scheduler makes (a wake is a task, which resumes the waiters inline when it runs); but a `Deferred`, a

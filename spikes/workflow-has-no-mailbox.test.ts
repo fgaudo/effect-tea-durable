@@ -1,5 +1,5 @@
 /**
- * What decision 0007 says of Effect Workflow, at `effect` 4.1.1, past what a run can show: that its signals are
+ * What decision 0007 says of Effect Workflow, at `effect` 4.1.2, past what a run can show: that its signals are
  * named wait points with no mailbox. A mailbox's absence is no behaviour; what is seen here is what a program does
  * without one, and what the modules are, so that a release that adds one fails here and 0007 is read again.
  */

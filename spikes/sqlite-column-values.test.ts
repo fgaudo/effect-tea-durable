@@ -1,5 +1,5 @@
 /**
- * What decision 0062 says of the rows SQLite gives, at `@effect/sql-sqlite-bun` 4.1.1: a declared type does not
+ * What decision 0062 says of the rows SQLite gives, at `@effect/sql-sqlite-bun` 4.1.2: a declared type does not
  * keep a column to it, so a row holds what was written into it, and only the row's schema can say it is no row the
  * runtime writes. An `INTEGER` column gives a number, `NULL` gives `null`, and a column given a fraction or a text
  * gives it back as it was written. And what decision 0071 reads: a `UNION` gives an id both readings find once.

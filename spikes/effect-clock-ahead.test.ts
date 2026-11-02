@@ -1,5 +1,5 @@
 /**
- * What decision 0103 says of a clock provided over the test clock, at `effect` 4.1.1: `DateTime.now` reads the `Clock`
+ * What decision 0103 says of a clock provided over the test clock, at `effect` 4.1.2: `DateTime.now` reads the `Clock`
  * the fiber is given, so a clock that adds to the test clock's time moves the wall clock, in one step, without waking
  * a sleep; a sleep it hands to the test clock wakes when the test clock's time comes, and not before. And
  * `TestClock.adjust` finds the test clock through the same `Clock`: under another one it fails, and it is called with

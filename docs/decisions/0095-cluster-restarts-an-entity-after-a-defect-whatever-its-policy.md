@@ -6,7 +6,8 @@ says of `defectRetryPolicy`; its decision stands. Found by the first review
 seen on a run, and the backoff found shared by the entities of a type, which never resets, by
 [decision 0113](0113-cluster-s-restart-backoff-is-shared-by-the-entities-of-a-type.md), reported as Effect-TS/effect#10252.
 The endless restart is documented in `effect` 4.1.2, and the shared backoff fixed there, by
-[decision 0115](0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md).
+[decision 0115](0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md). Its premise on the policy is
+**documented** since the project moved to 4.1.2, by [decision 0116](0116-effect-moves-to-4-1-2.md).
 
 ## Context
 

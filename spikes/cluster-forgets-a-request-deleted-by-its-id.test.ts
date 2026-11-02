@@ -1,5 +1,5 @@
 /**
- * What decision 0090 does to Cluster's rows, at `effect` 4.1.1, on `SingleRunner` over a SQLite file. Cluster's
+ * What decision 0090 does to Cluster's rows, at `effect` 4.1.2, on `SingleRunner` over a SQLite file. Cluster's
  * tables have the columns the runtime's statements name, and no foreign key. A processed request keeps its rows in
  * `cluster_messages` and `cluster_replies`, and the same primary key sent again is answered from them. A handler
  * under `WithTransaction` deletes in Cluster's transaction: a failure rolls the deletion back. Deleting a request's

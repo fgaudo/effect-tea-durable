@@ -126,7 +126,7 @@ export type Strategy = Readonly<{
 /**
  * How a run under `controlled` takes a fiber that a `Deferred`, a `Fiber.join` or a callback resumes:
  * - `queued`, the default: it yields first, and waits for its pick as a fork does. Effect resumes it inline, on the
- *   stack of the fiber that completes it, so this reaches orders Effect's scheduler does not give at 4.1.1, as one
+ *   stack of the fiber that completes it, so this reaches orders Effect's scheduler does not give at 4.1.2, as one
  *   whose resumptions were not inline would (decision 0104);
  * - `inline`: it runs on where Effect resumes it, as under Effect's scheduler, so that a run reaches only the orders
  *   it gives, but for the preemptions and picks a strategy decides.

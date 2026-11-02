@@ -1,5 +1,5 @@
 /**
- * What decisions 0078 and 0079 say of interruption, at `effect` 4.1.1. A region made `uninterruptible` runs to its
+ * What decisions 0078 and 0079 say of interruption, at `effect` 4.1.2. A region made `uninterruptible` runs to its
  * end when its fiber is interrupted inside it, and the fiber stops at the region's end, before the next step: a
  * deploy registers its deployment and starts its waker whole, and `detached` counts a fork with the fork. A fiber
  * forked inside such a region is interruptible, so the scope it is forked in still stops it: the waker, and what

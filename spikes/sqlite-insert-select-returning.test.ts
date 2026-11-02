@@ -1,5 +1,5 @@
 /**
- * What decision 0070 says of `reindex`'s write, at `@effect/sql-sqlite-bun` 4.1.1, written as the storage writes it:
+ * What decision 0070 says of `reindex`'s write, at `@effect/sql-sqlite-bun` 4.1.2, written as the storage writes it:
  * an `INSERT OR REPLACE … SELECT … WHERE … RETURNING` replaces the row only where the `WHERE` still holds, and
  * gives one row for each row it wrote, none where it wrote nothing. That one statement is atomic is SQLite's
  * (documented: "each SQL statement is a transaction" unless one is open, in its page on transactions).

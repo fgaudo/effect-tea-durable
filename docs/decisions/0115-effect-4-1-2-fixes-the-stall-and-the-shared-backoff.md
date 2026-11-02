@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-11-02. Says what came of the two reports of
 [decision 0083](0083-effect-moves-to-4-1-1.md) and [decision 0113](0113-cluster-s-restart-backoff-is-shared-by-the-entities-of-a-type.md):
 both are fixed in `effect` 4.1.2, and what [decision 0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md)
-read of `defectRetryPolicy` is documented there. The project stays at 4.1.1.
+read of `defectRetryPolicy` is documented there. The project stays at 4.1.1, and moves to 4.1.2 by
+[decision 0116](0116-effect-moves-to-4-1-2.md).
 
 ## Context
 

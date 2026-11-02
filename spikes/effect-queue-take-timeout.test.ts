@@ -1,5 +1,5 @@
 /**
- * What decision 0029 says of an entity's wait, at `effect` 4.1.1: a take from a queue that a timeout interrupts
+ * What decision 0029 says of an entity's wait, at `effect` 4.1.2: a take from a queue that a timeout interrupts
  * takes nothing, so an event offered as the wait runs out is either the take's or still in the queue, never lost.
  * An entity is unloaded when its wait runs out, and the unload finds the event in the queue.
  */

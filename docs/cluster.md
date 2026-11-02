@@ -3,7 +3,10 @@
 A study of `effect/cluster` at `effect` 4.1.0, the version the project pinned then
 ([decision 0019](decisions/0019-unstable-effect-modules.md)); 4.1.1, pinned since
 ([decision 0083](decisions/0083-effect-moves-to-4-1-1.md)), changes none of what it says, and saves a success reply
-under `WithTransaction` once instead of up to four times. Read from its source in `node_modules/effect/src/cluster`
+under `WithTransaction` once instead of up to four times. 4.1.2, pinned since
+([decision 0116](decisions/0116-effect-moves-to-4-1-2.md)), fixes the stall and the shared backoff below, documents
+`defectRetryPolicy` and `disableFatalDefects`, and wakes a runner for a send a `WithTransaction` handler discards only
+after the commit. Read from its source in `node_modules/effect/src/cluster`
 (and `HashRing.ts` beside it) and from `ai-docs/src/80_cluster`. It says what Cluster gives, what it leaves to the runtime, and which decisions
 it bears on. Nothing here is decided: each finding is decided in a note of its own, as the
 [roadmap](roadmap.md) says, and the list [at the end](#the-decisions-it-bears-on) links the notes taken.
@@ -71,13 +74,13 @@ The gap is reported to Effect, against 4.0.6, as
 [Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058): a runner that lost its shard lock still
 writes replies, requests and envelopes for the shard, and clears its replies and addresses, since none of these
 writes checks who owns it. Its repro is a reply saved by the stale runner after the new owner took the shard and ran
-the request again, which the check before a reply, in 4.1.0 and 4.1.1, narrows to the window above; the other writes
+the request again, which the check before a reply, since 4.1.0, narrows to the window above; the other writes
 are still not checked. It proposes a fence in Cluster: a table of shard epochs, raised by `resetShards` under an
 exclusive lock of the shard's row, and every write for a shard reading the epoch its writer acquired with under a
 shared lock of that row (`FOR SHARE`, `LOCK IN SHARE MODE`, `HOLDLOCK`), in the write's transaction, and failing
 with a typed error if it has moved on; a stale write either commits before the new owner's reset, or fails. On
 2026-10-31 it is open, with no answer, and its fix not merged.
-[#10226](https://github.com/Effect-TS/effect/pull/10226), merged that day and in no release yet, fences only the
+[#10226](https://github.com/Effect-TS/effect/pull/10226), merged that day and released in 4.1.2, fences only the
 workflow engine's reset of an activity, by comparing the reply it read, and says it is not that fence. Its
 companion, [#10059](https://github.com/Effect-TS/effect/issues/10059) — a frozen runner holding its advisory locks
 until TCP gave up — is closed, by the idle session timeout above.
@@ -244,4 +247,4 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
   [#10058](https://github.com/Effect-TS/effect/issues/10058) asks for
   ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
 - **[0019](decisions/0019-unstable-effect-modules.md)** — everything read here is `@stability unstable` in
-  `effect` 4.1.0 and 4.1.1.
+  `effect` 4.1.0, 4.1.1 and 4.1.2.

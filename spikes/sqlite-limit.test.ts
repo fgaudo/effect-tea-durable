@@ -1,5 +1,5 @@
 /**
- * What decision 0053 says of a limit, at `@effect/sql-sqlite-bun` 4.1.1, bound as the storage binds it: a negative
+ * What decision 0053 says of a limit, at `@effect/sql-sqlite-bun` 4.1.2, bound as the storage binds it: a negative
  * `LIMIT` is no limit, which a query left without one is given as `-1`, and a fractional one fails. A handle refuses
  * both before they reach SQLite.
  */

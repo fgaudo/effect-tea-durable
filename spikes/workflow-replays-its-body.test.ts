@@ -1,5 +1,5 @@
 /**
- * What decision 0007 says of Effect Workflow, at `effect` 4.1.1, on its engine in memory: a workflow that waits
+ * What decision 0007 says of Effect Workflow, at `effect` 4.1.2, on its engine in memory: a workflow that waits
  * on a signal is run again from the start of its body when the signal comes, its activities answered from what
  * they recorded, and a signal is one wait point that takes one value, which a second completion does not change.
  */
