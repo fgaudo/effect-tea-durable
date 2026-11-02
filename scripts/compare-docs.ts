@@ -1,22 +1,21 @@
 /**
  * Compares the JSDoc of the declarations the premises rest on, in two releases of Effect (decision 0108). A spike
- * tells when a behaviour changes; this tells when a promise is added or taken away. The declarations are those
- * decision 0107 reads, with the ones later notes rest on.
+ * tells when a behaviour changes; this tells when a promise is added or taken away. The declarations are those the
+ * premises rest on without a promise of a stable API: decision 0107 lists them, and later notes add theirs.
  *
  *     bun scripts/compare-docs.ts <old version> <new version>
  *
  * Each declaration says why it is compared. An unstable one may change its promises in any release. A stable one whose
  * documentation does not promise what a premise needs may promise it in any release, which makes the premise
- * documented. A stable one whose documentation promises it can take the promise away only in a new major, as semantic
- * versioning has it: within a major it is skipped, unless either release marks it other than stable.
+ * documented. A stable one whose documentation promises it is not listed: semantic versioning keeps the promise within
+ * the major, and a move to a new major reads every premise again (decision 0116).
  *
  * Each release of `effect` and `@effect/sql-sqlite-bun` is packed from npm into a temporary folder. A declaration is
  * found by its name, at the top of its file or as a member, and all its distinct JSDoc comments are compared in order:
  * an overload with a comment of its own, or a member of the same name, is one more comment. One line per declaration
- * compared is printed, tab separated: the file, the name, and `same`, `changed`, `added` or `removed`; any but `same`
- * is followed by the lines that differ, `-` for the old release and `+` for the new. A last line counts the declarations
- * skipped. A declaration found in neither release is `missing`, skipped or not, and fails the run, since the list names
- * it wrong.
+ * is printed, tab separated: the file, the name, and `same`, `changed`, `added` or `removed`; any but `same` is followed
+ * by the lines that differ, `-` for the old release and `+` for the new. A declaration found in neither release is
+ * `missing`, and fails the run, since the list names it wrong.
  */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -26,28 +25,14 @@ type Package = 'effect' | '@effect/sql-sqlite-bun'
 
 /**
  * Why a declaration is compared: `unstable`, marked so by Effect; `undocumented`, stable but not promising what a
- * premise needs (decision 0107); `documented`, stable and promising it.
+ * premise needs (decision 0107).
  */
-type Why = 'unstable' | 'undocumented' | 'documented'
+type Why = 'unstable' | 'undocumented'
 
 /** A declaration to compare: its package, its file under `src/`, its name, and why it is compared. */
 type Declaration = readonly [pkg: Package, file: string, name: string, why: Why]
 
 const declarations: ReadonlyArray<Declaration> = [
-  ['effect', 'Semaphore.ts', 'withPermits', 'documented'],
-  ['effect', 'Effect.ts', 'acquireUseRelease', 'documented'],
-  ['effect', 'Effect.ts', 'ensuring', 'documented'],
-  ['effect', 'Effect.ts', 'onExit', 'documented'],
-  ['effect', 'Effect.ts', 'timeoutOption', 'documented'],
-  ['effect', 'Effect.ts', 'raceFirst', 'documented'],
-  ['effect', 'Scope.ts', 'close', 'documented'],
-  ['effect', 'Scope.ts', 'fork', 'documented'],
-  ['effect', 'Scheduler.ts', 'MixedScheduler', 'documented'],
-  ['effect', 'DateTime.ts', 'now', 'documented'],
-  ['effect', 'testing/TestClock.ts', 'make', 'documented'],
-  ['effect', 'testing/TestClock.ts', 'layer', 'documented'],
-  ['effect', 'Schema.ts', 'Record', 'documented'],
-  ['effect', 'SchemaAST.ts', 'ParseOptions', 'documented'],
   // What an interrupted take leaves in the queue.
   ['effect', 'Queue.ts', 'take', 'undocumented'],
   // That a fiber forked inside `uninterruptible` is interruptible, and that a joiner interrupted leaves it running. The
@@ -150,16 +135,8 @@ if (oldVersion === undefined || newVersion === undefined) {
   process.exit(2)
 }
 
-/** The major of a version, the only release that semantic versioning lets take a stable promise away. */
-const major = (version: string) => version.split('.')[0]
-const sameMajor = major(oldVersion) === major(newVersion)
-
-/** Whether a comment marks its declaration other than stable. */
-const unstable = (doc: ReadonlyArray<string>) => doc.some((line) => /^@stability (?!stable\b)/.test(line))
-
 const folder = mkdtempSync(join(tmpdir(), 'effect-tea-durable-docs-'))
 let missing = 0
-let skipped = 0
 try {
   const sources = new Map<string, string>()
   for (const pkg of new Set(declarations.map(([pkg]) => pkg))) {
@@ -168,7 +145,7 @@ try {
       sources.set(`${pkg}@${version}`, unpack(pkg, version, into))
     }
   }
-  for (const [pkg, file, name, why] of declarations) {
+  for (const [pkg, file, name] of declarations) {
     const docs = (version: string) => {
       const text = read(join(sources.get(`${pkg}@${version}`)!, file))
       // An overload with the same comment as another adds nothing to compare.
@@ -188,10 +165,6 @@ try {
       ? 'same'
       : 'changed'
     if (status === 'missing') missing++
-    else if (why === 'documented' && sameMajor && !unstable(before) && !unstable(after)) {
-      skipped++
-      continue
-    }
     console.log([where, name, status].join('\t'))
     if (status === 'changed' || status === 'added' || status === 'removed') {
       for (const line of diff(before, after)) if (!line.startsWith('  ')) console.log(`\t${line}`)
@@ -200,5 +173,4 @@ try {
 } finally {
   rmSync(folder, { recursive: true, force: true })
 }
-console.log(`skipped\t${skipped} documented stable declarations, within major ${major(newVersion)}`)
 process.exit(missing === 0 ? 0 : 1)

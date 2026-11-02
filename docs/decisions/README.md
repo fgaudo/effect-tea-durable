@@ -16,7 +16,7 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0055](0055-the-public-surface-is-what-its-users-use.md) | The public surface is what its users use |  |
 | [0080](0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) |
 | [0083](0083-effect-moves-to-4-1-1.md) | Effect moves to 4.1.1 | [0115](0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md), [0116](0116-effect-moves-to-4-1-2.md) |
-| [0116](0116-effect-moves-to-4-1-2.md) | Effect moves to 4.1.2, and a move compares the JSDoc the premises rest on |  |
+| [0116](0116-effect-moves-to-4-1-2.md) | Effect moves to 4.1.2; a stable promise of Effect 4 is trusted, and a move compares the JSDoc of the rest |  |
 | [0089](0089-a-note-says-what-changed-it-and-is-taken-with-its-step.md) | A note says what changed it, and is taken with its step | [0106](0106-notes-the-design-covers-are-archived-at-each-release.md) |
 | [0107](0107-what-effect-documents-of-the-premises.md) | What Effect documents of the premises | [0111](0111-an-entity-s-wait-times-out-its-take-alone.md), [0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md), [0116](0116-effect-moves-to-4-1-2.md), [0117](0117-a-joined-fiber-outlives-its-joiner-by-effect-s-site.md) |
 | [0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md) | A premise about a dependency is looked up in its documentation first |  |

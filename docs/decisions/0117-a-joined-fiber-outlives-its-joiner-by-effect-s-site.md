@@ -37,8 +37,9 @@ interrupted, ends, and its child with it. `join` does not interrupt the child; t
 - **The premise is not put to Effect.** The lifetime of a fiber is documented by how it was forked, and joining adds
   nothing to it. What is missing is a word, "only", in the JSDoc of `forkIn`.
 - **`scripts/compare-docs.ts` keeps the forks and `Fiber.join` as `undocumented`.** The script compares the JSDoc, not
-  the site: as `documented` they would be skipped within a major, and a promise added to the JSDoc of `forkIn` would go
-  unseen. A comment beside them names the page of the site.
+  the site, and lists what the JSDoc of a stable declaration does not promise
+  ([decision 0116](0116-effect-moves-to-4-1-2.md)). A promise added to the JSDoc of `forkIn` is what it would show. A
+  comment beside them names the page of the site.
 
 ## What it rests on
 
@@ -55,8 +56,8 @@ interrupted, ends, and its child with it. `join` does not interrupt the child; t
 
 - **Asking Effect to document that `join` does not interrupt the fiber it joins.** The sentence is false for a parent
   that joins its own child, and what is true is already the model the site documents.
-- **Marking the forks `documented` in the script.** They would be skipped within a major, though the promise is not in
-  what the script reads.
+- **Taking the forks off the script's list**, as a stable promise is. The promise is on the site, not in the JSDoc the
+  script reads, and the site is not tied to a release.
 
 ## Consequences
 

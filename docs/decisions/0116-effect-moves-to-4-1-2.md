@@ -3,8 +3,9 @@
 **Status:** accepted, 2026-11-02. Moves the pinned version of [decision 0019](0019-unstable-effect-modules.md), after
 [decision 0083](0083-effect-moves-to-4-1-1.md). Takes the roadmap's step for a release past 4.1.1, which
 [decision 0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md) asked for: a script
-compares the JSDoc the premises rest on. Makes **documented** what [decision 0107](0107-what-effect-documents-of-the-premises.md)
-found undocumented of `defectRetryPolicy`.
+compares the JSDoc the premises rest on. Decides that a stable, documented promise of Effect 4 is trusted until the
+next major. Makes **documented** what [decision 0107](0107-what-effect-documents-of-the-premises.md) found undocumented
+of `defectRetryPolicy`.
 
 ## Context
 
@@ -17,22 +18,22 @@ the new. A spike tells when a behaviour changes; only the comparison tells when 
 ## Decision
 
 - **`effect` and `@effect/sql-sqlite-bun` are pinned at 4.1.2.** The runtime's code does not change with them.
+- **A promise of a stable API of Effect 4 is trusted, within the major.** A premise that rests on what a stable
+  declaration documents needs no spike and no test of Effect's, and no comparison between releases of 4. Semantic
+  versioning keeps the promise until the next major.
+- **A move to a new major of Effect reads every premise again**, as a review does: each is looked up in the
+  documentation of the new release, and the spikes run against it.
 - **A move of Effect's version runs [`scripts/compare-docs.ts`](../../scripts/compare-docs.ts)** with the old version
   and the new, and its note says what the comparison found. The script packs both releases from npm and compares the
-  JSDoc of a list of declarations: those 0107 reads, `Effect.forkIn` and the forks of 0112, the annotations of Cluster
-  the notes on Cluster rest on, and `entityRegistrationTimeout`. A note that rests on another declaration's
-  documentation adds it to the list, with why it is compared.
-- **Each declaration of the list says why it is compared, and that decides when.**
+  JSDoc of the declarations a premise rests on without a stable promise: those 0107 lists, `Effect.forkIn` and the
+  forks of 0112, the annotations of Cluster the notes on Cluster rest on, and `entityRegistrationTimeout`. A note that
+  rests on another such declaration adds it to the list, with why it is compared:
   - `unstable`: Effect marks it so, and any release may change its promises. `SqlClient.withTransaction` and
-    `@effect/sql-sqlite-bun` are unstable, as Cluster is. Compared at every move.
+    `@effect/sql-sqlite-bun` are unstable, as Cluster is;
   - `undocumented`: stable, but its documentation does not promise what a premise needs, as 0107 lists. Any release
-    may add the promise, which makes the premise **documented**. Compared at every move.
-  - `documented`: stable, and its documentation promises what the premise needs. Semantic versioning lets only a new
-    major take the promise away, so it is compared only when the major changes, or when either release marks it other
-    than stable.
-- **What the comparison found from 4.1.1 to 4.1.2**: the 14 `documented` declarations are skipped, within major 4, and
-  none is marked other than stable. Of the 20 compared, 18 keep their JSDoc, and two gain one, both on
-  `Entity.toLayer`. `defectRetryPolicy` says that the default goes on once the policy ends, so restarts never stop.
+    may add the promise, which makes the premise **documented**.
+- **What the comparison found from 4.1.1 to 4.1.2**: of the 20 declarations, 18 keep their JSDoc, and two gain one, both
+  on `Entity.toLayer`. `defectRetryPolicy` says that the default goes on once the policy ends, so restarts never stop.
   `disableFatalDefects` says that a defect then fails only its request. What 0095 read in the source is now
   **documented**, and 0107's "no documentation" no longer holds of either option.
 - **What else changed of what the notes read**, in the source:
@@ -53,8 +54,8 @@ the new. A spike tells when a behaviour changes; only the comparison tells when 
 - That a stable declaration keeps its promises within a major: **documented** by Effect's repository, not by the
   package pinned. Its release policy, `.agents/skills/changesets/authoring.md` on `main`, has APIs tagged
   `@stability stable` follow strict semantic versioning, an `unstable` one break only in a minor, and an
-  `experimental` one in a patch. The JSDoc of `effect` 4.1.2 does not say what the tags mean. A stable promise taken
-  away within a major would be missed by the comparison, but not by the spikes, which run what the premises need.
+  `experimental` one in a patch. The JSDoc of `effect` 4.1.2 does not say what the tags mean. A stable promise broken
+  within a major would be a bug of Effect's, which nothing here watches for.
 - That a patch may add a promise to an unstable declaration: **documented** by the same policy, which puts new
   features of an unstable API in a patch, and seen: 4.1.2 documents `defectRetryPolicy`.
 - The source unchanged or changed as above: **read in the source**, the two releases packed from npm and compared file
@@ -66,8 +67,14 @@ the new. A spike tells when a behaviour changes; only the comparison tells when 
 - **Staying at 4.1.1** until the runtime runs on Cluster. Reports to Effect would be against an old release, and the
   premise of 0095 would stay read in the source where the new release documents it.
 
+- **Comparing the stable, documented declarations too, at a move to a new major.** Such a move reads every premise
+  again anyway, and the comparison would only repeat a part of it.
+- **Keeping spikes and tests of stable, documented promises.** They check what Effect already promises.
+
 ## Consequences
 
 - The roadmap's step for a release past 4.1.1 is done, and leaves it.
 - The spikes, and the comment of `src/testing.ts` on Effect's scheduler, say they run at 4.1.2.
 - [`docs/cluster.md`](../cluster.md) says what 4.1.2 changes of it.
+- A spike that sees only a promise a stable declaration documents is no longer needed. Which spikes these are is
+  read by the review of the notes, and each one removed with the note it bears on.
