@@ -15,7 +15,7 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0019](0019-unstable-effect-modules.md) | The library depends on Effect's unstable modules | [0083](0083-effect-moves-to-4-1-1.md), [0099](0099-a-library-on-unstable-modules-is-released-as-experimental.md) |
 | [0055](0055-the-public-surface-is-what-its-users-use.md) | The public surface is what its users use |  |
 | [0080](0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) |
-| [0083](0083-effect-moves-to-4-1-1.md) | Effect moves to 4.1.1 |  |
+| [0083](0083-effect-moves-to-4-1-1.md) | Effect moves to 4.1.1 | [0115](0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md) |
 | [0089](0089-a-note-says-what-changed-it-and-is-taken-with-its-step.md) | A note says what changed it, and is taken with its step | [0106](0106-notes-the-design-covers-are-archived-at-each-release.md) |
 | [0107](0107-what-effect-documents-of-the-premises.md) | What Effect documents of the premises | [0111](0111-an-entity-s-wait-times-out-its-take-alone.md), [0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) |
 | [0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md) | A premise about a dependency is looked up in its documentation first |  |
@@ -170,10 +170,11 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it | [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md), [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), [0114](0114-the-cluster-rows-0090-deletes-are-checked-by-a-kept-spike.md) |
 | [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) | On Cluster, an interrupted caller leaves its request alone | [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) |
 | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each |  |
-| [0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md) | Cluster restarts an entity after a defect, whatever its policy | [0113](0113-cluster-s-restart-backoff-is-shared-by-the-entities-of-a-type.md) |
+| [0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md) | Cluster restarts an entity after a defect, whatever its policy | [0113](0113-cluster-s-restart-backoff-is-shared-by-the-entities-of-a-type.md), [0115](0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md) |
 | [0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) | Cluster stores an answer no step gave, for a type not registered | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
-| [0113](0113-cluster-s-restart-backoff-is-shared-by-the-entities-of-a-type.md) | Cluster's restart backoff is shared by the entities of a type |  |
+| [0113](0113-cluster-s-restart-backoff-is-shared-by-the-entities-of-a-type.md) | Cluster's restart backoff is shared by the entities of a type | [0115](0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md) |
 | [0114](0114-the-cluster-rows-0090-deletes-are-checked-by-a-kept-spike.md) | The Cluster rows 0090 deletes are checked by a spike the repository keeps |  |
+| [0115](0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md) | Effect 4.1.2 fixes the stall and the shared backoff |  |
 
 ## Reviews
 

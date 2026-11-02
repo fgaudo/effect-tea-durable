@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-10-31. Moves the pinned version of [decision 0019](0019-unstable-effect-modules.md), and
 corrects what [decision 0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md) said it did not know of
-the stall.
+the stall. The stall, reported as Effect-TS/effect#10238, is fixed in `effect` 4.1.2, by
+[decision 0115](0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md).
 
 ## Context
 

@@ -122,13 +122,18 @@ what the documentation of `WithTransaction` says. It found what a defect does to
   ([decision 0095](decisions/0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md)). The backoff is
   one for the entity type, stepped by every restart of any of its entities, and never reset
   ([decision 0113](decisions/0113-cluster-s-restart-backoff-is-shared-by-the-entities-of-a-type.md), Effect-TS/effect#10252).
+  4.1.2 fixes the backoff: it belongs to one entity, and resets once the entity completes a request. It documents the
+  endless restart as intended, with `disableFatalDefects` as the way out
+  ([decision 0115](decisions/0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md)).
 - **A bug, of 4.1.0 and 4.1.1.** Once that message's caller is interrupted, by a timeout, messages to the runner's
   other entities are never delivered, with or without `WithTransaction`, on `TestRunner` too; a request that is only
   slow does not do it. Traced with logs: the runner's read of storage delivers messages one at a time, and stops on
   the caller's `Interrupt`, which waits for the entity's handlers; each rebuild replays the message that dies and fails
   before it publishes them, so the wait lasts while the handler dies
   ([decision 0083](decisions/0083-effect-moves-to-4-1-1.md)). Reported as
-  [Effect-TS/effect#10238](https://github.com/Effect-TS/effect/issues/10238).
+  [Effect-TS/effect#10238](https://github.com/Effect-TS/effect/issues/10238), and fixed in 4.1.2: the `Interrupt` is
+  kept on the request, and the next handlers are given it in place of the request
+  ([decision 0115](decisions/0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md)).
 
 A caller that stops waiting is not a defect, and stores an answer too. A fiber interrupted while it waits for a
 persisted RPC has Cluster's client store an `Interrupt` under the request's id, unless Cluster is shutting down or

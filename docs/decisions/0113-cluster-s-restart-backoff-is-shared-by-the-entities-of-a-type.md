@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-11-01. Adds to [decision 0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md)
 what a run shows of Cluster's restarts after a defect: what 0095 read in the source is seen, and the backoff is one
 for the entity type, which never resets. Reported to Effect as
-[Effect-TS/effect#10252](https://github.com/Effect-TS/effect/issues/10252).
+[Effect-TS/effect#10252](https://github.com/Effect-TS/effect/issues/10252). Fixed in `effect` 4.1.2, where the backoff
+belongs to one entity and resets once it completes a request, and the endless restart is documented as intended, by
+[decision 0115](0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md).
 
 ## Context
 
