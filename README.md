@@ -30,20 +30,22 @@ flowchart LR
 
 ## Why
 
-The bugs of an entity that lives in time are the costly ones: a timer that fires after a cancellation, a payment
-taken twice, a process that died halfway through. The code that prevents them is the same for every entity —
-a request applied once, a timer that survives a restart, work resumed after a crash, an outbox, the migrations
-of what is stored — and this library writes it once, so that a program holds only its use case.
+An entity that lives in time, an order waiting for its payment or a booking held until a deadline, has the
+costly bugs: a timer that fires after a cancellation, a retry that pays twice, a process that died halfway
+through. The code that prevents them is the same for every entity: a request applied once, a timer that survives
+a restart, work resumed after a crash with the key a provider needs to act once, an outbox, a version that reads
+what the one before stored. This library writes it once, so that a program holds only its use case. A row with
+no life of its own, a profile or a product, does not need it.
 
-- **Written by an agent, checked by a person.** A program is pure functions over data, declared in one place,
-  with nothing of storage, locks, retries or timers to write: what an agent can get wrong is the use case, and a
-  type error or a scenario that fails tells it so without a database or a clock. A person then reads `update`,
-  `durable` and `project`, and the scenarios, which read as the use case does, crashes included. What holds
-  where the process may die is checked once, in the library, and not again in each program.
-- **Nothing is left to cancel.** There are no commands: the work under way is what the state says it is. A
-  state that holds no timer has no timer, and a cancellation that forgets one cannot be written.
+- **The state is the only truth.** There are no commands and no history to replay: the work under way is derived
+  from the state, by `durable`, and a state that holds no timer has no timer. A cancellation is a state change,
+  and the timer follows.
 - **Time is a value.** A timer is data, derived from the state, and a test fires it instead of waiting for it: a
   deadline a month away is tested as fast as one a second away.
+- **A program is read in one place.** `update`, `durable` and `project` are pure functions over data, with
+  nothing of storage, locks, retries or timers in them, and the scenarios read as the use case does, crashes
+  included. Whoever writes a program can get only the use case wrong, and a type error or a failed scenario says
+  so without a database or a clock. What holds where the process may die is checked once, in the library.
 - **One model, in the browser and on the server.** A program is written as in effect-tea: who writes the Elm
   architecture for a screen writes it the same way for an order.
 
