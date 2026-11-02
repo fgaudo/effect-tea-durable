@@ -8,8 +8,6 @@ process's crash. On Cluster an activation a request needs runs in the request's 
 detached is given back by a fiber that waits for it, by [decision 0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md).
 What runs detached is interruptible by the option of its fork, not by Effect's default, by
 [decision 0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md).
-That a caller interrupted leaves what it joined running is documented by effect.website, by
-[decision 0117](0117-a-joined-fiber-outlives-its-joiner-by-effect-s-site.md).
 
 ## Context
 

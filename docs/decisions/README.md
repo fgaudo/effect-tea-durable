@@ -18,7 +18,7 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0083](0083-effect-moves-to-4-1-1.md) | Effect moves to 4.1.1 | [0115](0115-effect-4-1-2-fixes-the-stall-and-the-shared-backoff.md), [0116](0116-effect-moves-to-4-1-2.md) |
 | [0116](0116-effect-moves-to-4-1-2.md) | Effect moves to 4.1.2; a stable promise of Effect 4 is trusted, and a move compares the JSDoc of the rest |  |
 | [0089](0089-a-note-says-what-changed-it-and-is-taken-with-its-step.md) | A note says what changed it, and is taken with its step | [0106](0106-notes-the-design-covers-are-archived-at-each-release.md) |
-| [0107](0107-what-effect-documents-of-the-premises.md) | What Effect documents of the premises | [0111](0111-an-entity-s-wait-times-out-its-take-alone.md), [0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md), [0116](0116-effect-moves-to-4-1-2.md), [0117](0117-a-joined-fiber-outlives-its-joiner-by-effect-s-site.md) |
+| [0107](0107-what-effect-documents-of-the-premises.md) | What Effect documents of the premises | [0111](0111-an-entity-s-wait-times-out-its-take-alone.md), [0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md), [0116](0116-effect-moves-to-4-1-2.md) |
 | [0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md) | A premise about a dependency is looked up in its documentation first |  |
 | [0093](0093-a-note-says-what-each-premise-rests-on.md) | A note says what each premise rests on | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md), [0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md) |
 | [0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md) | The notes are reviewed every fifteen, by a reader that did not write them | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) |
@@ -147,8 +147,8 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0074](0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md) | A message that finds the mailbox empty is handled as it arrives | [0081](0081-on-cluster-a-step-commits-with-its-reply.md) |
 | [0076](0076-a-process-over-its-capacity-unloads-the-least-recently-used.md) | A process over its capacity unloads the least recently used | [0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md), [0109](0109-settled-waits-for-an-entity-unloading.md) |
 | [0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md) | The waker tries an entity it cannot load again, after the retry |  |
-| [0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) | A timer due is no spare entity, and a registered deploy keeps its name | [0102](0102-a-deploy-interrupted-before-it-registers-undoes-itself.md), [0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md), [0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md), [0117](0117-a-joined-fiber-outlives-its-joiner-by-effect-s-site.md) |
-| [0079](0079-what-a-caller-sets-going-is-finished-without-it.md) | What a caller sets going is finished without it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), [0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md), [0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md), [0117](0117-a-joined-fiber-outlives-its-joiner-by-effect-s-site.md) |
+| [0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) | A timer due is no spare entity, and a registered deploy keeps its name | [0102](0102-a-deploy-interrupted-before-it-registers-undoes-itself.md), [0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md), [0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) |
+| [0079](0079-what-a-caller-sets-going-is-finished-without-it.md) | What a caller sets going is finished without it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), [0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md), [0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) |
 | [0101](0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) | A moved clock gives a fiber it did not wake one turn |  |
 | [0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md) | A test moves the wall clock ahead of the sleeps |  |
 | [0104](0104-the-runtimes-tests-choose-where-fibers-yield.md) | The runtime's tests choose where fibers yield, and none runs under budgets |  |
@@ -156,7 +156,6 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md) | Detached work is counted until it ends, however it ends |  |
 | [0111](0111-an-entity-s-wait-times-out-its-take-alone.md) | An entity's wait times out its take alone |  |
 | [0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) | A fork from a region that cannot be interrupted says it is interruptible |  |
-| [0117](0117-a-joined-fiber-outlives-its-joiner-by-effect-s-site.md) | A joined fiber outlives its joiner, by Effect's site, not by the JSDoc of `forkIn` |  |
 
 ## Effect Cluster
 

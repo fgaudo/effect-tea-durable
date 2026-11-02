@@ -14,8 +14,6 @@ and which only a spike or its source holds: of [decision 0002](0002-store-the-st
 maintainers, when the timeout wraps the take alone, by [decision 0111](0111-an-entity-s-wait-times-out-its-take-alone.md); the fork from a region that
 cannot be interrupted no longer rests on the default, by [decision 0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md).
 `defectRetryPolicy` and `disableFatalDefects` are documented at 4.1.2, by [decision 0116](0116-effect-moves-to-4-1-2.md).
-That a joiner interrupted leaves the fiber it joined running is documented by effect.website, not by the JSDoc of
-`forkIn`, by [decision 0117](0117-a-joined-fiber-outlives-its-joiner-by-effect-s-site.md).
 
 ## Context
 

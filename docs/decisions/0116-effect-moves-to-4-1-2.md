@@ -3,9 +3,9 @@
 **Status:** accepted, 2026-11-02. Moves the pinned version of [decision 0019](0019-unstable-effect-modules.md), after
 [decision 0083](0083-effect-moves-to-4-1-1.md). Takes the roadmap's step for a release past 4.1.1, which
 [decision 0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md) asked for: a script
-compares the JSDoc the premises rest on. Decides that a stable, documented promise of Effect 4 is trusted until the
-next major. Makes **documented** what [decision 0107](0107-what-effect-documents-of-the-premises.md) found undocumented
-of `defectRetryPolicy`.
+compares the JSDoc the premises rest on. Decides that a promise of a stable API of Effect 4, in the JSDoc of the version
+pinned, is trusted until the next major. Makes **documented** what
+[decision 0107](0107-what-effect-documents-of-the-premises.md) found undocumented of `defectRetryPolicy`.
 
 ## Context
 
@@ -21,6 +21,11 @@ the new. A spike tells when a behaviour changes; only the comparison tells when 
 - **A promise of a stable API of Effect 4 is trusted, within the major.** A premise that rests on what a stable
   declaration documents needs no spike and no test of Effect's, and no comparison between releases of 4. Semantic
   versioning keeps the promise until the next major.
+- **A promise is what the JSDoc of the version pinned says**, as `AGENTS.md` has it for Effect. effect.website,
+  Effect's blog and its maintainers' answers are not tied to a release, and make no premise **documented**; a note may
+  cite them as context. That a joiner interrupted leaves a fiber forked by `forkIn` running is on the Fibers page of
+  the site, and not in the JSDoc of `forkIn`: it stays as [decision 0107](0107-what-effect-documents-of-the-premises.md)
+  says, not documented and seen.
 - **A move to a new major of Effect reads every premise again**, as a review does: each is looked up in the
   documentation of the new release, and the spikes run against it.
 - **A move of Effect's version runs [`scripts/compare-docs.ts`](../../scripts/compare-docs.ts)** with the old version
@@ -51,12 +56,12 @@ the new. A spike tells when a behaviour changes; only the comparison tells when 
 ## What it rests on
 
 - The JSDoc compared: **documented**, by the run of `bun scripts/compare-docs.ts 4.1.1 4.1.2` on 2026-11-02.
-- That a stable declaration keeps its promises within a major: **documented** by Effect's repository, not by the
-  package pinned. Its release policy, `.agents/skills/changesets/authoring.md` on `main`, has APIs tagged
-  `@stability stable` follow strict semantic versioning, an `unstable` one break only in a minor, and an
-  `experimental` one in a patch. The JSDoc of `effect` 4.1.2 does not say what the tags mean. A stable promise broken
-  within a major would be a bug of Effect's, which nothing here watches for.
-- That a patch may add a promise to an unstable declaration: **documented** by the same policy, which puts new
+- That a stable declaration keeps its promises within a major: **read in the source** of Effect's repository, not
+  documented by the package pinned. The JSDoc tags each declaration `@stability stable`, `unstable` or `experimental`,
+  and does not say what the tags mean. Effect's release policy, `.agents/skills/changesets/authoring.md` on `main`, has
+  stable APIs follow strict semantic versioning, an `unstable` one break only in a minor, and an `experimental` one in a
+  patch. A stable promise broken within a major would be a bug of Effect's, which nothing here watches for.
+- That a patch may add a promise to an unstable declaration: **read in the source**, the same policy, which puts new
   features of an unstable API in a patch, and seen: 4.1.2 documents `defectRetryPolicy`.
 - The source unchanged or changed as above: **read in the source**, the two releases packed from npm and compared file
   by file, with each pull request of Cluster in the range read.

@@ -36,8 +36,8 @@ const declarations: ReadonlyArray<Declaration> = [
   // What an interrupted take leaves in the queue.
   ['effect', 'Queue.ts', 'take', 'undocumented'],
   // That a fiber forked inside `uninterruptible` is interruptible, and that a joiner interrupted leaves it running. The
-  // second is documented on effect.website, Fibers, Lifetime of Child Fibers, which this script does not read
-  // (decision 0117): a promise added to the JSDoc of `forkIn` is what to look for.
+  // second is said on effect.website, Fibers, Lifetime of Child Fibers, which is not the JSDoc (decision 0116): a
+  // promise added to the JSDoc of `forkIn` is what to look for.
   ['effect', 'Effect.ts', 'uninterruptible', 'undocumented'],
   ['effect', 'Effect.ts', 'forkChild', 'undocumented'],
   ['effect', 'Effect.ts', 'forkIn', 'undocumented'],
