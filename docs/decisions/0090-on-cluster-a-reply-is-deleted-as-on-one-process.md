@@ -7,6 +7,8 @@ with Cluster's defect for a type not registered, by [decision 0096](0096-cluster
 The id of a request answered with Cluster's defect is kept by the client given it, before it resets the request, an
 id already kept is not kept again, and the database holds a pending id for each transaction since the last step, not
 one, by [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md).
+What its spike saw of Cluster's rows, which the repository did not keep, is tested by a spike in `spikes/`, by
+[decision 0114](0114-the-cluster-rows-0090-deletes-are-checked-by-a-kept-spike.md).
 
 ## Context
 
