@@ -15,7 +15,14 @@
  * an overload with a comment of its own, or a member of the same name, is one more comment. One line per declaration
  * is printed, tab separated: the file, the name, and `same`, `changed`, `added` or `removed`; any but `same` is followed
  * by the lines that differ, `-` for the old release and `+` for the new. A declaration found in neither release is
- * `missing`, and fails the run, since the list names it wrong.
+ * `missing`, and fails the run, since the list names it wrong. So does one whose `@stability` in the new release, its
+ * own or its module's, is not what its reason says: an `unstable` one that is no longer, which may leave the list or
+ * be `undocumented`, or an `undocumented` one that is not stable (decision 0116).
+ *
+ * Then the sources of Cluster that say how its rows are written and read are compared whole, code included: a
+ * release that changes them may not read what an older one stored (decision 0116). Each is printed on a line of its
+ * own, first `storage`, then the file and its status, followed by the lines that differ. A change does not fail the
+ * run: its note says what it changes, and the spike of the fixtures runs it.
  */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -61,6 +68,21 @@ const declarations: ReadonlyArray<Declaration> = [
   ['@effect/sql-sqlite-bun', 'SqliteClient.ts', 'layer', 'unstable'],
 ]
 
+/** The sources of Cluster, under `effect`'s `src/`, that say how its rows are written and read. */
+const storage: ReadonlyArray<string> = [
+  // The tables, their migrations, and the statements that write and read them.
+  'cluster/SqlMessageStorage.ts',
+  'cluster/SqlRunnerStorage.ts',
+  // What a row encodes: a message, its envelope, its reply.
+  'cluster/MessageStorage.ts',
+  'cluster/Envelope.ts',
+  'cluster/Reply.ts',
+  'cluster/Message.ts',
+  // The ids and the shards a row is keyed by.
+  'cluster/Snowflake.ts',
+  'cluster/ShardId.ts',
+]
+
 /** Packs a release from npm into `into`, and gives the folder of its sources. */
 const unpack = (pkg: Package, version: string, into: string): string => {
   const run = (command: ReadonlyArray<string>) => {
@@ -93,6 +115,22 @@ const docsOf = (source: string, name: string): ReadonlyArray<ReadonlyArray<strin
     ))
   }
   return docs
+}
+
+const stabilityTag = /^@stability\s+(\w+)/
+
+/** The `@stability` of a declaration: the tag of its own comments, else the one of its module's first comment. */
+const stabilityOf = (source: string, docs: ReadonlyArray<string>): string | undefined => {
+  for (const line of docs) {
+    const found = stabilityTag.exec(line)
+    if (found !== null) return found[1]
+  }
+  const header = /\/\*\*([\s\S]*?)\*\//.exec(source.replaceAll('\r\n', '\n'))?.[1] ?? ''
+  for (const line of header.split('\n')) {
+    const found = stabilityTag.exec(line.replace(/^\s*\* ?/, ''))
+    if (found !== null) return found[1]
+  }
+  return undefined
 }
 
 const read = (path: string): string | undefined => {
@@ -136,7 +174,8 @@ if (oldVersion === undefined || newVersion === undefined) {
 }
 
 const folder = mkdtempSync(join(tmpdir(), 'effect-tea-durable-docs-'))
-let missing = 0
+/** The declarations and the files the lists name wrong. */
+let wrong = 0
 try {
   const sources = new Map<string, string>()
   for (const pkg of new Set(declarations.map(([pkg]) => pkg))) {
@@ -145,7 +184,7 @@ try {
       sources.set(`${pkg}@${version}`, unpack(pkg, version, into))
     }
   }
-  for (const [pkg, file, name] of declarations) {
+  for (const [pkg, file, name, why] of declarations) {
     const docs = (version: string) => {
       const text = read(join(sources.get(`${pkg}@${version}`)!, file))
       // An overload with the same comment as another adds nothing to compare.
@@ -164,13 +203,40 @@ try {
       : before.join('\n') === after.join('\n')
       ? 'same'
       : 'changed'
-    if (status === 'missing') missing++
+    if (status === 'missing') wrong++
     console.log([where, name, status].join('\t'))
     if (status === 'changed' || status === 'added' || status === 'removed') {
       for (const line of diff(before, after)) if (!line.startsWith('  ')) console.log(`\t${line}`)
+    }
+    if (after.length > 0) {
+      const stability = stabilityOf(read(join(sources.get(`${pkg}@${newVersion}`)!, file)) ?? '', after)
+      if ((why === 'unstable') === (stability === 'stable')) {
+        wrong++
+        console.log(`\tstability: ${stability ?? 'none'}, listed as ${why}`)
+      }
+    }
+  }
+  for (const file of storage) {
+    const lines = (version: string) => read(join(sources.get(`effect@${version}`)!, file))?.replaceAll('\r\n', '\n')
+    const before = lines(oldVersion)
+    const after = lines(newVersion)
+    const status = before === undefined && after === undefined
+      ? 'missing'
+      : before === undefined
+      ? 'added'
+      : after === undefined
+      ? 'removed'
+      : before === after
+      ? 'same'
+      : 'changed'
+    if (status === 'missing') wrong++
+    console.log(['storage', file, status].join('\t'))
+    if (status !== 'same' && status !== 'missing') {
+      const split = (text: string | undefined) => text === undefined ? [] : text.split('\n')
+      for (const line of diff(split(before), split(after))) if (!line.startsWith('  ')) console.log(`\t${line}`)
     }
   }
 } finally {
   rmSync(folder, { recursive: true, force: true })
 }
-process.exit(missing === 0 ? 0 : 1)
+process.exit(wrong === 0 ? 0 : 1)
