@@ -29,11 +29,11 @@ import {
 const held = new WeakSet<SqlClient.SqlClient>()
 
 /**
- * Holds the database for one runtime until the scope ends (decision 0080): the client in this process, claimed in
- * one synchronous step, and the file by SQLite's exclusive locking mode, which a write takes only while no other
- * connection has the file open, which keeps every other from opening it, and which the end of the process gives
- * back, however it ends. A database another runtime holds, or another connection has open, is the launcher's
- * defect.
+ * Holds the database for one runtime until the scope ends (decision 0080). The client is held in this process,
+ * claimed in one synchronous step. The file is held by SQLite's exclusive locking mode: a write takes it only
+ * while no other connection has the file open, it keeps every other from opening it, and the end of the process
+ * gives it back, however it ends. A database another runtime holds, or another connection has open, is the
+ * launcher's defect.
  */
 export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
@@ -149,10 +149,10 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     )
   `
   // The replies, by request: a retry gets the one stored (decision 0015). The request is its JSON as the machine
-  // keys it, read through its schema (decision 0059), and a row is keyed by the version that wrote it too: a
-  // migration may give one caller's request the text another's had, and two versions never share a row
-  // (decision 0069). A reply to another entity's operation holds the work that asked — its program, id, key and
-  // incarnation — and is deleted once that work no longer holds (decision 0021).
+  // keys it, read through its schema (decision 0059). A row is keyed by the version that wrote it too, since a
+  // migration may give one caller's request the text another's had: two versions never share a row
+  // (decision 0069). A reply to another entity's operation holds the work that asked, its program, id, key and
+  // incarnation, and is deleted once that work no longer holds (decision 0021).
   yield* sql`
     CREATE TABLE IF NOT EXISTS replies (
       name TEXT NOT NULL,
@@ -223,7 +223,7 @@ const decoder = <S extends Schema.Top & { readonly DecodingServices: never }>(ro
   Schema.decodeUnknownEffect(Schema.Array(row))
 
 /**
- * The rows of each table as the runtime writes them, which a reading takes through their schema: a row that is
+ * The rows of each table as the runtime writes them, which a reading takes through their schema. A row that is
  * none of them fails the call that meets it, as a row no version reads does (decisions 0043, 0062). The JSON a
  * column holds is the program's, and is read through the program's schemas.
  */
@@ -398,9 +398,9 @@ export interface Storage<T extends Types> {
   readonly write: (id: string, written: Machine.Written) => Effect.Effect<void>
   /**
    * The entities whose state holds an operation, or whose mailbox holds a message: what a process activates when
-   * it starts, so that an operation a crash interrupted runs again, and a message a crash left before its step is
-   * handled, without waiting for a caller. A timer needs no activation of its own — its time is stored, and `due`
-   * gives it — and a suspended entity runs nothing until an operator resumes it (decisions 0006, 0029, 0071).
+   * it starts, without waiting for a caller. So an operation a crash interrupted runs again, and a message a
+   * crash left before its step is handled. A timer needs no activation of its own, since its time is stored and
+   * `due` gives it. A suspended entity runs nothing until an operator resumes it (decisions 0006, 0029, 0071).
    */
   readonly interrupted: Effect.Effect<ReadonlyArray<string>>
   /**
@@ -416,33 +416,21 @@ export interface Storage<T extends Types> {
   /** The entities of the program whose indexes match, with what callers read of them (decision 0032). */
   readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
   /**
-   * Writes the row of every entity of the program again, from its stored state: what an index added or changed
-   * by a new version of the program needs, since a row is only written when its entity takes a step. Each row is
-   * its own write, so a crash leaves the rest to the next run, and gives how many were written. A row is written
-   * only if the state it was computed from is still the one stored: an entity that took a step since wrote its own
-   * (decision 0070).
+   * `Handle.reindex`, as the storage keeps it. Each row is its own write, so a crash leaves the rest to the next
+   * run, and it gives how many were written. A row is written only if the state it was computed from is still
+   * the one stored: an entity that took a step since wrote its own (decision 0070).
    */
   readonly reindex: Effect.Effect<number>
-  /**
-   * What the entities of the program did, from `after` on, in the order it was written (decision 0038). The
-   * cursor is the caller's: nothing of it is stored, so a reading here has no say in a prune (decision 0039).
-   */
+  /** `Handle.published`, as the storage keeps it: the rows from `after` on, in the order they were written. */
   readonly published: (after: number, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
-   * The same from the stored cursor of the consumer `consumer`, which its first reading stores at `0`: from then
+   * `Handle.feed`, as the storage keeps it. The consumer's first reading stores its cursor at `0`, and from then
    * on the consumer holds the log, acked or not, until it is forgotten (decision 0039).
    */
   readonly feed: (consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
-  /**
-   * Moves a consumer's cursor to `through`, never back, since what is behind it may be gone, and never past the
-   * last `seq` written, so that no row written later is behind it. An ack from a consumer that has not read
-   * stores its cursor too (decision 0039).
-   */
+  /** `Handle.ack`, as the storage keeps it: the last `seq` written is read first, and caps the cursor stored. */
   readonly ack: (consumer: string, through: number) => Effect.Effect<void>
-  /**
-   * Drops what every consumer has read — through the lowest stored cursor — and gives how many rows went. Where
-   * no consumer has stored one it drops nothing (decision 0039).
-   */
+  /** `Handle.prune`, as the storage keeps it: the cursors are read and the rows dropped in one transaction. */
   readonly prune: Effect.Effect<number>
   /** Every consumer that has stored a cursor, with how many rows are past it, by name. */
   readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
@@ -518,8 +506,8 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const upReason = (from: number) => (held: Json): Json => held === null ? held : up('rejection', from)(held)
 
   /**
-   * The expression that reads an index out of the row, written once: SQLite uses an index of an expression only
-   * where the query writes the expression the same way, so the index created and the query must share this. A
+   * The expression that reads an index out of the row, written once. The index created and the query must share
+   * it, since SQLite uses an index of an expression only where the query writes the expression the same way. A
    * program's indexes are words, which its check made sure of where it entered (decision 0054).
    */
   const expression = (index: string) => {
@@ -616,9 +604,9 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
     return null
   }
 
-  // A request is found by its text, as the machine keys it, and then, for a caller's request, among the rows
-  // other versions wrote under its request id: its sender as such a version wrote it may be another text. Each
-  // reading is by an index (decision 0065).
+  // A request is found by its text, as the machine keys it. A caller's request is then looked for among the rows
+  // other versions wrote under its request id, since its sender as such a version wrote it may be another text.
+  // Each reading is by an index (decision 0065).
   const reply = (id: string, asked: Request<T['sender']>) =>
     Effect.gen(function*() {
       const key = Machine.requestKey(program, asked)
@@ -743,9 +731,9 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         }
       }
       // A reply to another entity is kept while the work that asked holds (decision 0021). The work of this
-      // entity that ended takes the replies to its requests with it; a reply stored for work of another entity
-      // that already ended — an at-most-once operation that delivered `unknown` while its request waited in the
-      // mailbox — goes as it is stored, since only the storage sees the asker's keys. No machine holds a reply, so
+      // entity that ended takes the replies to its requests with it. A reply stored for work of another entity
+      // that already ended goes as it is stored, since only the storage sees the asker's keys: an at-most-once
+      // operation that delivered `unknown` while its request waited in the mailbox. No machine holds a reply, so
       // none is told (decision 0065).
       for (const reply of written.replies) {
         const { asked } = reply
@@ -882,9 +870,9 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       `)
       if (page.length === 0) return written
       for (const held of page) {
-        // The row is written only if the state it was computed from is still the one stored, in one statement:
-        // a step that committed since wrote its own row, which this would replace with a projection the entity
-        // has moved past (decision 0070).
+        // The row is written only if the state it was computed from is still the one stored, in one statement
+        // (decision 0070). A step that committed since wrote its own row, which this would replace with a
+        // projection the entity has moved past.
         const shown = Machine.shownOf(program, state.read(held.state, up('state', held.version)))
         const rewritten = yield* rows('projections', Rows.id)(sql`
           INSERT OR REPLACE INTO projections (name, id, projection, indexes, version)
