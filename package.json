@@ -8,6 +8,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "test:release": "SCHEDULES=all bun test",
     "links": "bun scripts/check-links.ts"
   },
   "devDependencies": {

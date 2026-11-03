@@ -138,7 +138,7 @@ the notes that changed each one.
 | [0079](0079-what-a-caller-sets-going-is-finished-without-it.md) | What a caller sets going is finished without it | [0092](../0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), [0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md), [0112](0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) |
 | [0101](0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) | A moved clock gives a fiber it did not wake one turn |  |
 | [0103](0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md) | A test moves the wall clock ahead of the sleeps |  |
-| [0104](0104-the-runtimes-tests-choose-where-fibers-yield.md) | The runtime's tests choose where fibers yield, and none runs under budgets |  |
+| [0104](0104-the-runtimes-tests-choose-where-fibers-yield.md) | The runtime's tests choose where fibers yield, and none runs under budgets | [0118](../0118-the-explored-tests-run-all-their-seeds-at-a-release.md) |
 | [0109](0109-settled-waits-for-an-entity-unloading.md) | `settled` waits for an entity unloading |  |
 | [0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md) | Detached work is counted until it ends, however it ends |  |
 | [0111](0111-an-entity-s-wait-times-out-its-take-alone.md) | An entity's wait times out its take alone |  |

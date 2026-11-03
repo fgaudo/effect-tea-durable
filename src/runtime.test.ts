@@ -293,12 +293,19 @@ const ran = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.flatMap(running(
 type Window = { open: boolean }
 
 /**
- * Runs `test` over a database of its own under `runs` prioritized schedules at `depth`, with inline resumptions, so
- * that each is an order Effect's own scheduler can give (decision 0104). Each run must give `ended`, and one that does
- * not end fails, with the seed that replays it. The window is open as each run starts, unless `open` is false. PCT draws
- * its changes of priority among the steps a run in order is asked of preemption with the window open. With `bound` 1
- * it runs instead every schedule that deviates once from the run in order within the window, a pick or a preemption,
- * as `everySchedule` does: exhaustive where PCT is not, for a point between two steps of one fiber.
+ * The share of its seeds a test under `explored` runs. The release's run, `bun run test:release`, runs them all; any
+ * other run of the tests runs one in twenty, from seed 0, so that the suite runs in seconds (decision 0118).
+ */
+const share = Bun.env['SCHEDULES'] === 'all' ? 1 : 1 / 20
+
+/**
+ * Runs `test` over a database of its own under `runs` prioritized schedules at `depth`, as `share` cuts them, with
+ * inline resumptions, so that each is an order Effect's own scheduler can give (decision 0104). Each run must give
+ * `ended`, and one that does not end fails, with the seed that replays it. The window is open as each run starts,
+ * unless `open` is false. PCT draws its changes of priority among the steps a run in order is asked of preemption with
+ * the window open. With `bound` 1 it runs instead every schedule that deviates once from the run in order within the
+ * window, a pick or a preemption, as `everySchedule` does: exhaustive where PCT is not, for a point between two steps
+ * of one fiber. That one runs whole, in every run of the tests.
  */
 const explored = <A>(
   test: (window: Window) => Effect.Effect<A, unknown, SqlClient.SqlClient | Scope.Scope>,
@@ -342,7 +349,7 @@ const explored = <A>(
   }
   let steps = 0
   scheduled(scenario, { pick: () => 0, preempt: () => (window.open && (steps += 1), false) }, 'inline')
-  for (let seed = 0; seed < runs; seed++) {
+  for (let seed = 0; seed < Math.ceil(runs * share); seed++) {
     const run = scheduled(scenario, within(prioritized(seed, depth, steps)), 'inline')
     expect({ seed, ended: ends(run) }).toEqual({ seed, ended })
   }

@@ -147,6 +147,10 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   wait in their first steps. Should the scheduler ask a fiber started inline even with nothing ready? It would know
   such a fiber by its first run happening outside a task of its own. To check first: how many more schedules it
   makes, and whether a test of `src/testing.test.ts` fails without it.
+- **How many seeds a bug needs.** A run of the tests runs 100 of the 2,000 seeds of each explored test, and a
+  release all of them ([decision 0118](decisions/0118-the-explored-tests-run-all-their-seeds-at-a-release.md)). That
+  most bugs are found within the first 100 is only reasoned. To check: take out, one at a time, the rules of
+  concurrency the explored tests keep, and count the seeds that fail each, out of 2,000.
 
 ## Naming
 

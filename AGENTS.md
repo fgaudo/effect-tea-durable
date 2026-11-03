@@ -56,10 +56,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   `reasoned` up, in a session that did not write them. What it finds is a note, a test, a fix or an open question,
   and the review is listed in [`docs/decisions/reviews.md`](docs/decisions/reviews.md).
   [`scripts/mutate.ts`](scripts/mutate.ts) takes out, one at a time, the rules a review writes as mutations, and runs
-  the tests and the compiler against each. A rule no mutation takes out is not checked by it: a review writes one for
-  each rule its notes decide that the code keeps, and keeps them outside the repository. A survivor is a rule no
-  test holds, or a mutation that changes nothing, which only reading tells apart; an `uncertain` one failed only
-  under load, and is read as a survivor.
+  the tests and the compiler against each. A review runs it with `SCHEDULES=all`, so that every seed runs. A rule no
+  mutation takes out is not checked by it: a review writes one for each rule its notes decide that the code keeps,
+  and keeps them outside the repository. A survivor is a rule no test holds, or a mutation that changes nothing,
+  which only reading tells apart; an `uncertain` one failed only under load, and is read as a survivor.
 - The examples import the library from `src/`. When the design changes, the code, its tests and the examples
   change with it, and `bun run typecheck`, `bun test` and `bun run links` pass.
 - [`src/machine.ts`](src/machine.ts) is the runtime's semantics. A rule it adds or changes is a decision, and

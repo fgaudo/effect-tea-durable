@@ -6,7 +6,8 @@ steps reaches, and moves the runtime's tests under budgets onto it. The spike is
 [`spikes/effect-scheduler-controlled.test.ts`](../../../spikes/effect-scheduler-controlled.test.ts), the scheduler is in
 [`src/testing.ts`](../../../src/testing.ts), and the tests are in [`src/runtime.test.ts`](../../../src/runtime.test.ts).
 Moving them found [decision 0109](0109-settled-waits-for-an-entity-unloading.md) and
-[decision 0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md).
+[decision 0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md). Its 2,000 seeds run only at a release,
+and a twentieth of them otherwise ([decision 0118](../0118-the-explored-tests-run-all-their-seeds-at-a-release.md)).
 
 ## Context
 

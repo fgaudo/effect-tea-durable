@@ -19,3 +19,9 @@ the notes, with what each read and found, are in [`reviews.md`](reviews.md).
 | [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
 | [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) | On Cluster, an interrupted caller leaves its request alone |  |
 | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each |  |
+
+## The tests
+
+| Note | Decides | Changed by |
+| --- | --- | --- |
+| [0118](0118-the-explored-tests-run-all-their-seeds-at-a-release.md) | The explored tests run all their seeds at a release, and a twentieth otherwise |  |
