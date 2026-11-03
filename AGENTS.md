@@ -86,6 +86,12 @@ This repository is a design and its pure core, not a library yet: read [`README.
 
 - The examples import the library from `src/`. When the design changes, the code, its tests and the examples
   change with it, and `bun run typecheck`, `bun test` and `bun run links` pass.
+- Before code adds a helper, a data structure or a coordination of fibers, it looks in `node_modules/effect/src`
+  for a module of the pinned version that does the same, among the modules marked `@stability unstable` too. A
+  primitive of Effect is used where it does the same, since its contract is in its JSDoc and needs no test of its
+  own. Code written by hand where such a module exists says, in a comment, what the module does not do. A module
+  marked `@stability unstable` that `src/` does not import yet is used only once the maintainer agrees, since
+  every unstable module the library depends on can change under it within the major.
 - [`src/machine.ts`](src/machine.ts) is the runtime's semantics. A rule it adds or changes is a decision, and
   [`src/machine.test.ts`](src/machine.test.ts) has a test that fails without it.
 - A change to [`src/runtime.ts`](src/runtime.ts) that adds or moves a wait, a lock, a fork, or state another
