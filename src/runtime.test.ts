@@ -831,6 +831,31 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // Each operator is answered by its own event, not by another operator's event applied first (decision 0114).
+  test('two operators who discard at once are each told what their own discard did', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const gate = yield* Deferred.make<void>()
+      yield* process({
+        at: (point, _entity, event) =>
+          point === 'BeforeCommit' && event._tag === 'Discard' ? Deferred.await(gate) : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          expect(yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester }))
+            .toEqual({ _tag: 'Suspended' })
+          // The first discard waits before its commit, and the second is offered behind it meanwhile.
+          const first = yield* running(toy.discard(id))
+          const second = yield* running(toy.discard(id))
+          yield* Deferred.succeed(gate, undefined)
+          expect(yield* Fiber.join(first)).toEqual({ _tag: 'Discarded' })
+          expect(yield* Fiber.join(second)).toEqual({ _tag: 'NotSuspended' })
+        }))
+    })))
+
   test('an at-most-once operation delivers unknown after a crash, and an idempotent one runs again', () =>
     database(Effect.gen(function*() {
       // The first process dies with its operations acted and no completion recorded: the hands never come back.

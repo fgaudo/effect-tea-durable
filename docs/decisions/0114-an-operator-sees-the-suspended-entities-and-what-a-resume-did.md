@@ -46,15 +46,27 @@ operation or an activation carries none.
   who waits. A deployment that wants an alarm reads `suspended`, as it reads `consumers` for a log that grows.
 - **`resume` and `discard` say what they did.** `resume` gives `Resumed`, `StillSuspended` with the new cause when
   the program deployed dies on the stored state, `NotSuspended`, or `NotFound`. `discard` gives `Discarded`,
-  `NotDiscarded` when the entity died on an internal message or in an operation, `StillSuspended` when the message
-  was dropped and the program then died on the state, `NotSuspended`, or `NotFound`. `Resumed` says that the entity
-  was activated: the message it died on is handled next, by the program deployed, and may suspend it again.
+  `NotDiscarded` when the entity died on an internal message, in an operation or on its activation,
+  `StillSuspended` when the program deployed dies on the stored state, `NotSuspended`, or `NotFound`. A discard that
+  gives `StillSuspended` keeps the message it would have dropped: the entity stays as it was, with the new cause.
+  `Resumed` says that the entity was activated: the message it died on is handled next, by the program deployed,
+  and may suspend it again.
+- **Each operator is told what the operator's own event did.** The runtime answers the operators of an entity in
+  the order their events were offered, one operator per event. Two operators who discard at once are answered
+  `Discarded` and `NotSuspended`, not `Discarded` both: the second event finds the entity resumed, and may drop the
+  next message if the entity died on that one too.
 
 ## What it rests on
 
 - That `suspended` lists an entity with what it died on, its cause, since when and who waits, and that `resume` and
   `discard` give each outcome: **tested**, `an operator sees the suspended entities, who waits for each, and what a
   resume or a discard did`, in [`src/runtime.test.ts`](../../src/runtime.test.ts).
+- That each operator is answered by the operator's own event: **tested**, `two operators who discard at once are
+  each told what their own discard did`, in [`src/runtime.test.ts`](../../src/runtime.test.ts).
+- That no operator stands in the line without an event offered: **reasoned**. The runtime registers the operator
+  and offers the event in one uninterruptible step, under the entity's lock. No test reaches an interruption
+  between the two, since no point of the scheduler of the tests falls there. An operator who gives up after that
+  step stays in the line, and the operator's own event takes the operator out of it.
 - That the time of a suspension is kept through a step while the entity stays suspended, and cleared with the
   suspension: **tested**, `a suspended entity is listed with what it died on, its cause and since when, kept while it
   stays suspended`, in [`src/storage.test.ts`](../../src/storage.test.ts).
@@ -80,7 +92,8 @@ operation or an activation carries none.
 - [`src/storage.ts`](../../src/storage.ts): the column `suspended_at`, written with the step that suspends the entity
   and kept while it stays suspended, and the reading `suspended`.
 - [`src/runtime.ts`](../../src/runtime.ts): `suspended` on the handle, with the waiting senders from the
-  registrations; `resume` and `discard` give an `Operated`, computed from the machine before and after the event.
+  registrations; `resume` and `discard` give an `Operated`, computed from the machine before and after the event, to the operators
+  of the entity in the order their events were offered.
 - The glossary's `Handle`, and the design's sections on defects and on where it runs, name `suspended` and the
   answers of `resume` and `discard`.
 - The open question `Suspended entities` leaves `docs/open-questions.md`, and the step leaves the roadmap.

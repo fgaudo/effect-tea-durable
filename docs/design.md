@@ -364,9 +364,10 @@ once, whichever retry finds it
 An operator finds the suspended entities with `suspended`, the longest suspended first: each with what it died on,
 the cause, since when, and the senders waiting for its resumption in this process. Nobody is told on a clock: a
 sender waits as long as it takes, and a deployment that wants an alarm reads the list. `resume` and `discard` say
-what they did: `Resumed` or `Discarded`; `NotDiscarded`, for an entity that died on an internal message or in an
-operation; `StillSuspended`, with the new cause, when the program deployed dies on the stored state; `NotSuspended`;
-or `NotFound` ([decision 0114](decisions/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)).
+what they did: `Resumed` or `Discarded`; `NotDiscarded`, for an entity that died on an internal message, in an
+operation or on its activation; `StillSuspended`, with the new cause, when the program deployed dies on the stored
+state, and a discard then keeps its message; `NotSuspended`; or `NotFound`. Each operator is told what the
+operator's own event did, even when two operate on one entity at once ([decision 0114](decisions/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)).
 
 ## Reading
 

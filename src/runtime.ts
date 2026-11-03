@@ -17,6 +17,7 @@ import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
+import * as MutableList from 'effect/MutableList'
 import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
@@ -71,9 +72,12 @@ export type Operated =
   | Readonly<{ _tag: 'Resumed' }>
   /** The inbound message the entity died on was dropped, and the entity activated again. */
   | Readonly<{ _tag: 'Discarded' }>
-  /** The entity died on an internal message, or in an operation: neither is discarded (decisions 0041, 0044). */
+  /**
+   * The entity died on an internal message, in an operation or on its activation: none is discarded (decisions 0041,
+   * 0044).
+   */
   | Readonly<{ _tag: 'NotDiscarded' }>
-  /** The program deployed dies on the stored state too, with this cause. */
+  /** The program deployed dies on the stored state too, with this cause. A discard then keeps its message. */
   | Readonly<{ _tag: 'StillSuspended'; cause: string }>
   | Readonly<{ _tag: 'NotSuspended' }>
   | Readonly<{ _tag: 'NotFound' }>
@@ -356,8 +360,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      */
     const messages: Callers<Answer<unknown>> = new Map()
     const creations: Callers<Creation> = new Map()
-    /** The operators waiting for what their `Resume` or `Discard` did, by entity and then by event (decision 0114). */
-    const operators: Callers<Operated> = new Map()
+    /**
+     * The operators waiting for what their `Resume` or `Discard` did, by entity, in the order their events were
+     * offered. Each event answers the first, so that an operator is told what its own event did, not what another
+     * operator's event applied before it did. One who gave up stays in the line, so that the next event still
+     * answers the operator who offered it (decision 0114).
+     */
+    const operators = new Map<string, MutableList.MutableList<Deferred.Deferred<Operated>>>()
     const addressOf = (entity: Address) => JSON.stringify([entity.name, entity.id])
     /**
      * What `settled` waits for. It is completed, and replaced, whenever something under way ends: a step, an
@@ -737,7 +746,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           wake(entity)
         }
         if (event._tag === 'Resume' || event._tag === 'Discard') {
-          yield* answer(operators, entity, event._tag, operated(event._tag, before, transition.machine))
+          const line = operators.get(addressOf(entity))
+          const operator = line === undefined ? MutableList.Empty : MutableList.take(line)
+          if (line?.length === 0) operators.delete(addressOf(entity))
+          if (operator !== MutableList.Empty) {
+            yield* Deferred.succeed(operator, operated(event._tag, before, transition.machine))
+          }
         }
         // An event is observed once it is written, and before anything is acted on; one that writes nothing is
         // observed at once. A crash before the commit leaves no event, and one after it an event that happened.
@@ -856,7 +870,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           })
         yield* fail(messages)
         yield* fail(creations)
-        yield* fail(operators)
+        const line = operators.get(address)
+        operators.delete(address)
+        for (const operator of line === undefined ? [] : MutableList.takeAll(line)) {
+          yield* Deferred.failCause(operator, cause)
+        }
       })
 
     /**
@@ -1010,11 +1028,19 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       event: Extract<Machine.Offered<T>, { _tag: 'Resume' | 'Discard' }>,
     ): Effect.Effect<Operated> =>
       Effect.flatMap(
-        withEntity(deployed, id, (loaded): Effect.Effect<Asked<Operated> | null> =>
-          loaded === null
-            ? Effect.succeed(null)
-            : ask(operators, loaded, { name: deployed.program.name, id }, event._tag, event)),
-        (asked) => asked === null ? Effect.succeed<Operated>({ _tag: 'NotFound' }) : answered(asked),
+        withEntity(deployed, id, (loaded): Effect.Effect<Deferred.Deferred<Operated> | null> =>
+          loaded === null ? Effect.succeed(null) : Effect.uninterruptible(Effect.gen(function*() {
+            // Registered and offered under the entity's lock, and in one step: the line keeps the order of the
+            // events, and an interruption cannot leave in it an operator whose event was never offered.
+            const operator = yield* Deferred.make<Operated>()
+            const address = addressOf({ name: deployed.program.name, id })
+            const line = operators.get(address) ?? MutableList.make<Deferred.Deferred<Operated>>()
+            MutableList.append(line, operator)
+            operators.set(address, line)
+            yield* offer(loaded, event)
+            return operator
+          }))),
+        (operator) => operator === null ? Effect.succeed<Operated>({ _tag: 'NotFound' }) : Deferred.await(operator),
       )
 
     const create = <T extends Types>(

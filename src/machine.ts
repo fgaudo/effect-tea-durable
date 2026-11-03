@@ -5,6 +5,7 @@
  * reply to send).
  */
 import * as DateTime from 'effect/DateTime'
+import * as Records from 'effect/Record'
 import * as Schema from 'effect/Schema'
 import {
   type Creation,
@@ -694,7 +695,11 @@ export const start = <T extends Types>(
  * operations stay: each runs to its end, and its completion is recorded behind the message (decision 0113).
  */
 const suspend = <T extends Types>(machine: Machine<T>, suspension: Suspension): Moved<T> => ({
-  machine: { ...machine, stored: { ...machine.stored, suspension }, running: operationsOf(machine.running) },
+  machine: {
+    ...machine,
+    stored: { ...machine.stored, suspension },
+    running: Records.filter(machine.running, (held) => held.kind === 'Operation'),
+  },
   outputs: [
     { _tag: 'Suspended', cause: suspension.cause },
     ...machine.stored.mailbox.flatMap((envelope): ReadonlyArray<Output<T>> =>
@@ -869,10 +874,6 @@ const discard = <T extends Types>(program: Program<T>, machine: Machine<T>): Mov
   if (stored.suspension?.on._tag !== 'Message' || head?._tag !== 'Inbound') return { machine, outputs: [] }
   return activate(program, machine, { ...machine, stored: { ...stored, mailbox: rest, suspension: null } }, true)
 }
-
-/** The operations among what runs: what a suspension keeps running (decision 0113). */
-const operationsOf = (running: Readonly<Record<string, Running>>): Readonly<Record<string, Running>> =>
-  Object.fromEntries(Object.entries(running).filter(([, held]) => held.kind === 'Operation'))
 
 /**
  * An operation died, or ended with a message that does not encode: it has left `machine.running`. The defect
