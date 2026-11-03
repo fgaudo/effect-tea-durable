@@ -3,6 +3,8 @@
 This repository is a design and its pure core, not a library yet: read [`README.md`](README.md), then
 [`docs/design.md`](docs/design.md), with [`docs/glossary.md`](docs/glossary.md) at hand. What to do next is the first step of [`docs/roadmap.md`](docs/roadmap.md).
 
+## Prose and commits
+
 - All code, comments, identifiers, commit messages and `.md` files are in **English**.
 - A commit made with an AI agent ends with an `Assisted-by: <model>` trailer, never `Co-Authored-By`.
 - A commit message stays short: a subject line of at most 72 characters in the imperative, and a body only
@@ -16,6 +18,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
   commit that adds a note which changes another reads the comments that cite the one changed, and moves the
   citation where the point moved. A rule is said once: the comment of the surface that promises it says the
   contract, and the comment of what keeps it says only what it adds.
+## Notes
+
 - A decision gets a note in `docs/decisions/` when a premise it rests on can fall, or when an API, a test or a
   semantics of the code keeps it: the design, the runtime and what the testing module promises are decided by notes.
   A note is numbered in order and never rewritten once taken: a decision that changes is a new note that says which
@@ -32,7 +36,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
   only says how another holds elsewhere links it from its own status line alone. Each note is listed in
   [`docs/decisions/README.md`](docs/decisions/README.md) by what it decides, with the notes that changed it,
   updated by the commit that adds or changes a note. A question not decided yet goes in
-  `docs/open-questions.md`, and leaves it when a note decides it. A step of the roadmap leaves it when done.
+  `docs/open-questions.md`, as the question in a few sentences and, as bullets, what would decide it; an
+  analysis longer than that is a spike. It leaves the file when a note decides it. A step of the roadmap leaves it when done.
   The roadmap holds only the steps ahead: what a done step decided is in its notes, and is not retold there.
 - A note moves to `docs/decisions/archive/` once the document that says what holds of it does: `docs/design.md`
   for the design, `README.md` for the project. A note of a step the roadmap still holds stays. A note a later note
@@ -58,12 +63,15 @@ This repository is a design and its pure core, not a library yet: read [`README.
   release it leaves; from then on every fixture stays. A move to a new major reads every premise again.
 - Once fifteen notes are taken since the last review, a review reads them before the next step starts, from
   `reasoned` up, in a session that did not write them. What it finds is a note, a test, a fix or an open question,
-  and the review is listed in [`docs/decisions/reviews.md`](docs/decisions/reviews.md).
+  and the review is a section of [`docs/decisions/reviews.md`](docs/decisions/reviews.md): its date and the notes
+  read, then one bullet per kind of finding.
   [`scripts/mutate.ts`](scripts/mutate.ts) takes out, one at a time, the rules a review writes as mutations, and runs
   the tests and the compiler against each. A review runs it with `SCHEDULES=all`, so that every seed runs. A rule no
   mutation takes out is not checked by it: a review writes one for each rule its notes decide that the code keeps,
   and keeps them outside the repository. A survivor is a rule no test holds, or a mutation that changes nothing,
   which only reading tells apart; an `uncertain` one failed only under load, and is read as a survivor.
+## Code and tests
+
 - The examples import the library from `src/`. When the design changes, the code, its tests and the examples
   change with it, and `bun run typecheck`, `bun test` and `bun run links` pass.
 - [`src/machine.ts`](src/machine.ts) is the runtime's semantics. A rule it adds or changes is a decision, and
@@ -75,6 +83,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   the change holds. A test under `explored` runs one seed in twenty, from seed 0, so that the suite runs in seconds;
   `bun run test:release` runs them all, and a release passes it. A schedule under `bound` 1 runs whole in every run,
   since it is exhaustive within its bound.
+- A word the design gives a meaning of its own is defined once, in [`docs/glossary.md`](docs/glossary.md); a change
+  that adds, renames or drops one changes it in the same commit. A section of `docs/design.md` longer than a screen
+  has subsections, so that a reader finds a rule by its heading.
 - The two diagrams in [`README.md`](README.md) show an entity's loop and the modules of `src/`. A change that
   adds, removes or renames a piece of a program, a message, a flow, a module or a table they show changes them
   in the same commit.
