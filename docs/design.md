@@ -1,5 +1,7 @@
 # Design
 
+The words it uses are defined in [`glossary.md`](glossary.md).
+
 ## What it is for
 
 A server holds two kinds of state:

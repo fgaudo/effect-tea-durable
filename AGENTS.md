@@ -1,7 +1,7 @@
 # effect-tea-durable — guide for coding agents
 
 This repository is a design and its pure core, not a library yet: read [`README.md`](README.md), then
-[`docs/design.md`](docs/design.md). What to do next is the first step of [`docs/roadmap.md`](docs/roadmap.md).
+[`docs/design.md`](docs/design.md), with [`docs/glossary.md`](docs/glossary.md) at hand. What to do next is the first step of [`docs/roadmap.md`](docs/roadmap.md).
 
 - All code, comments, identifiers, commit messages and `.md` files are in **English**.
 - A commit made with an AI agent ends with an `Assisted-by: <model>` trailer, never `Co-Authored-By`.
