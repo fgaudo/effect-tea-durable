@@ -90,10 +90,10 @@ export const encode = <A>(codec: Schema.Codec<A, Json>, value: A, what: string):
 }
 
 /**
- * How the JSON one version of a program wrote is read by the next, by kind of stored value: a pure function from
- * the JSON a version wrote to the JSON the one after it reads, and a kind left out is unchanged. It works on the
- * JSON, not on decoded values, because every schema encodes to what JSON holds (decision 0030): the types and
- * schemas of the version before do not live on in the code (decision 0036).
+ * How the JSON one version of a program wrote is read by the next, by kind of stored value. Each kind is a pure
+ * function from the JSON a version wrote to the JSON the one after it reads, and a kind left out is unchanged. It
+ * works on the JSON, not on decoded values, because every schema encodes to what JSON holds (decision 0030): the
+ * types and schemas of the version before do not live on in the code (decision 0036).
  */
 export type Migration = Readonly<{
   state?: (json: Json) => Json
@@ -127,8 +127,8 @@ export type Origin<Sender> =
 /**
  * A request, as it is stored and deduplicated: who asked, and what names the request among the ones it makes
  * (decision 0059). A caller's is its sender's, as the program's schema writes it, under the request id it chose
- * (decision 0048); another entity's is a run of one of its operations — its entity, key and incarnation — under the
- * name the operation gave the request (decisions 0015, 0047); the entity's own is the rehearsal's creation, which
+ * (decision 0048). Another entity's is a run of one of its operations, its entity, key and incarnation, under the
+ * name the operation gave the request (decisions 0015, 0047). The entity's own is the rehearsal's creation, which
  * no one retries.
  */
 export type Request<Sender> =
@@ -288,10 +288,10 @@ export type Runners<T extends Types> = {
 }
 
 /**
- * How everything that leaves the process is written: the flags and messages that arrive, the state and the
- * operations it holds, stored with each step, the reasons of rejections, stored with the replies, the sender of
- * a message waiting in the mailbox, and the projection, which callers read (decisions 0025, 0027). Each of them
- * encodes to what JSON holds (decision 0030).
+ * How everything that leaves the process is written (decisions 0025, 0027). That is the flags and messages that
+ * arrive; the state and the operations it holds, stored with each step; the reasons of rejections, stored with
+ * the replies; the sender of a message waiting in the mailbox; and the projection, which callers read. Each of
+ * them encodes to what JSON holds (decision 0030).
  */
 export type Schemas<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection> = Readonly<{
   state: Schema.Codec<State, Json>
@@ -367,8 +367,8 @@ const isWord = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
 
 /**
  * Refuses a program that cannot run as it is written: an empty name, a key declared twice, an index whose name is
- * not a word. It is pure, and called where a program enters — `deploy`, which a fix is too, and `rehearse` —
- * before anything is stored or run; a program is never mutated, so it holds for as long as the program runs
+ * not a word. It is pure, and called where a program enters, before anything is stored or run: `deploy`, which a
+ * fix is too, and `rehearse`. A program is never mutated, so the check holds for as long as the program runs
  * (decisions 0052, 0054). A missing runner is the machine's to find, where an operation is held.
  */
 export const checkProgram = <T extends Types>(program: Program<T>): void => {
@@ -459,10 +459,11 @@ type Inferred<
 /**
  * The one place a program is declared: its schemas, which give every type the program is written in, and then
  * what it does (decision 0035). An object literal typed `Program<T>` names each type twice, and holds neither
- * the keys `durable` may use nor the messages an operation answers; here the schemas say what the state, the
- * flags, the messages, the operations, the rejections, the senders and the projection are, `keys` the space of
- * keys the work is held under (decision 0033), each runner which messages its kind of operation answers and
- * which services it needs (decision 0034), and `indexes` what a query filters and orders by.
+ * the keys `durable` may use nor the messages an operation answers. Here each piece says its own type. The
+ * schemas say what the state, the flags, the messages, the operations, the rejections, the senders and the
+ * projection are. `keys` says the space of keys the work is held under (decision 0033). Each runner says which
+ * messages its kind of operation answers, and which services it needs (decision 0034). `indexes` says what a
+ * query filters and orders by.
  */
 export const program = <
   State extends object,
@@ -531,9 +532,9 @@ export class Entities extends Context.Service<Entities, {
 
 /**
  * Sends an inbound message to another entity from an operation, and waits for the reply. The request is the run of
- * the operation and `name`, which names it among those the operation makes: a restarted operation sends the same
- * requests, and gets the stored replies, and one that sends twice under the same name to the same entity dies
- * (decisions 0047, 0060). While the receiver is suspended, it waits, and it sends again when the receiver crashes
+ * the operation and `name`, which names it among those the operation makes (decisions 0047, 0060). So a restarted
+ * operation sends the same requests, and gets the stored replies. One that sends twice under the same name to the
+ * same entity dies. While the receiver is suspended, it waits, and it sends again when the receiver crashes
  * (decision 0046).
  */
 export const send = <T extends Types>(
