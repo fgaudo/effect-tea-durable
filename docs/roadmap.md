@@ -25,5 +25,4 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 - **The library's name and release**, once there is code to publish. It is released as experimental while it depends
   on Effect's unstable modules ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
   The release archives the notes the design has come to cover since the last archiving, as
-  [`AGENTS.md`](../AGENTS.md) says. It passes `bun run test:release`, which runs every seed of the explored tests
-  ([decision 0118](decisions/0118-the-explored-tests-run-all-their-seeds-at-a-release.md)).
+  [`AGENTS.md`](../AGENTS.md) says. It passes `bun run test:release`, which runs every seed of the explored tests.

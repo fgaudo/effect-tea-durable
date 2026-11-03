@@ -16,10 +16,12 @@ This repository is a design and its pure core, not a library yet: read [`README.
   commit that adds a note which changes another reads the comments that cite the one changed, and moves the
   citation where the point moved. A rule is said once: the comment of the surface that promises it says the
   contract, and the comment of what keeps it says only what it adds.
-- A decision about the design, the code, its tests or its tooling gets a note in `docs/decisions/`, numbered in
-  order and never rewritten once taken: a decision that changes is a new note that says which one it replaces. A
-  rule of work, which this file states, gets no note: a change of it is a commit to this file, and git keeps what
-  it was. A number is never given again, so a number with no note was a rule of work's, or never used. A note
+- A decision gets a note in `docs/decisions/` when a premise it rests on can fall, or when an API, a test or a
+  semantics of the code keeps it: the design, the runtime and what the testing module promises are decided by notes.
+  A note is numbered in order and never rewritten once taken: a decision that changes is a new note that says which
+  one it replaces. A threshold, a procedure or a choice of tooling whose reason fits in a sentence is a rule of
+  work: this file states it, a change of it is a commit to this file, and git keeps what it was. A number is never
+  given again, so a number with no note was a rule of work's, or never used. A note
   made for a step of the roadmap is `proposed`, and is rewritten in place while the step is under way; it is
   taken, `accepted`, by the commit that takes the step out of the roadmap. Any other note is taken by the commit
   that adds it, with the code it decides, if any. Once a note is taken, only a link a later rename breaks is fixed
@@ -68,7 +70,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   fiber reads has a test in [`src/runtime.test.ts`](src/runtime.test.ts) that fails or hangs without it, run
   against the code before the change. The scheduler of the tests, in [`src/testing.ts`](src/testing.ts), is how a
   test moves the points where fibers yield. Where the interleaving cannot be reached, the decision says why, and why
-  the change holds.
+  the change holds. A test under `explored` runs one seed in twenty, from seed 0, so that the suite runs in seconds;
+  `bun run test:release` runs them all, and a release passes it. A schedule under `bound` 1 runs whole in every run,
+  since it is exhaustive within its bound.
 - The two diagrams in [`README.md`](README.md) show an entity's loop and the modules of `src/`. A change that
   adds, removes or renames a piece of a program, a message, a flow, a module or a table they show changes them
   in the same commit.

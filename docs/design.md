@@ -457,7 +457,12 @@ the wall clock ahead of the sleeps, to stand for a clock that moved between two 
 where fibers yield: a scheduler of the tests' answers Effect's `Scheduler` from a schedule it records, so a run
 that fails is replayed exactly, and explores by random priorities over many seeds, or by delay bounding around one
 point; none runs under budgets of steps
-([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)). What the runtime did is told
+([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)). PCT finds a bug of depth
+`d` with a probability of at least `1 / (n k^(d - 1))`, for `n` fibers and `k` steps; the explored tests have 3 to 48
+fibers and 79 to 3,584 steps in their window, so no number of seeds guarantees a bug of depth 2, but the bound is the
+worst case, and a bug most schedules reach is found in a few runs. A run of the tests runs one seed in twenty of each
+explored test, and a release every one, as [`AGENTS.md`](../AGENTS.md) says; a schedule is drawn from its seed alone,
+so a failure in either names a seed that replays it in both. What the runtime did is told
 to a probe, a reference in the context with a default that does nothing, which a test provides and the library
 does not export ([decision 0073](decisions/archive/0073-what-the-runtime-did-is-told-to-a-probe.md)). A test waits for the
 process to settle, with nothing under way, an entity unloading included

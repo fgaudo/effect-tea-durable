@@ -294,7 +294,7 @@ type Window = { open: boolean }
 
 /**
  * The share of its seeds a test under `explored` runs. The release's run, `bun run test:release`, runs them all; any
- * other run of the tests runs one in twenty, from seed 0, so that the suite runs in seconds (decision 0118).
+ * other run of the tests runs one in twenty, from seed 0, so that the suite runs in seconds.
  */
 const share = Bun.env['SCHEDULES'] === 'all' ? 1 : 1 / 20
 
