@@ -132,6 +132,20 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   such a fiber by its first run happening outside a task of its own. To check first:
   - how many more schedules it makes;
   - whether a test of `src/testing.test.ts` fails without it.
+- **An event lost to the wait's timeout.** An entity waits for its next event with a timeout of the take alone,
+  which [decision 0111](decisions/archive/0111-an-entity-s-wait-times-out-its-take-alone.md) holds loses no event, on a
+  maintainer's word. It can lose one at `effect` 4.1.2: `timeoutOption` races the take and a sleep in two fibers, and
+  interrupts the loser only once the racing fiber runs again. A take woken in between takes the event, and nobody
+  gets it. `spikes/effect-queue-take-timeout-scheduled.test.ts` reaches it under `inline` resumptions, in orders
+  Effect's scheduler gives once a fiber runs out of its budget of steps. The runtime's test `a message that arrives
+  as the wait of its entity runs out is handled` reaches it under `queued` resumptions at seed 465, and under
+  `inline` ones once a lock taken through `RcMap` moves the schedules. The caller then waits for ever. The waker
+  races its poke the same way, and loses nothing by it, since it reads the stored timers again after every race.
+  What would decide it:
+  - whether Effect takes it as a bug of `raceAllFirst`, which could interrupt the loser as the winner ends;
+  - whether the passivation is offered to the entity's queue by a timer, as `Evict` is, so that the take never
+    times out, and what that costs at every event, which restarts the timer;
+  - that the runtime's test passes under `queued` resumptions with the fix, and fails without it.
 - **How many seeds a bug needs.** A run of the tests runs 100 of the 2,000 seeds of each explored test, and a
   release all of them ([`AGENTS.md`](../AGENTS.md)). That
   most bugs are found within the first 100 is only reasoned. To check: take out, one at a time, the rules of
