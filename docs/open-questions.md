@@ -123,30 +123,32 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   transaction does no I/O, so an entity's lock stays
   ([decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md)), and holds in one process only. Is it
   worth it once the runtime is whole, and once Effect Cluster says what bookkeeping a node keeps? The tests that
-  run the runtime under prioritized schedules are what such a rewrite is checked against.
-  The two interleavings [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) reached are
-  of the same kind. A sender's wait for its
-  receiver's resumption (`awaitResumption` in `src/runtime.ts`) could read a count of resumptions in a `TxRef`, and
-  wait with `txRetry` while it is unchanged, with no set of senders to register and forget: `txRetry` checks what it
-  read and registers its wait in one synchronous step (`awaitPendingTransaction` in `effect/src/Effect.ts`, read in
-  the source). A rule stays: the count is read before the send, or a resumption between the answer and the read is
-  missed, and the sender waits for one that may never come. An entity's lock (`holding`) could be a `TxHashSet` of
-  the entities held, taken by one transaction that retries while the entity is in it and given back by another, held
-  between the two across the I/O, with no count of users to keep; whether it serves its waiters in order, as the
-  `Semaphore` does, is not read yet. Either way the interleavings stay to be reached by a test; what changes is the
-  rule each test takes out. To check first, in a spike under the scheduler of 0104: that a commit's wake goes through
-  it (it calls `scheduleTask`, read in the source), that `txRetry` misses no resumption in any order it picks, and
-  how often a conflict runs a body again.
+  run the runtime under prioritized schedules are what such a rewrite is checked against, and the two interleavings
+  [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) reached are of the same kind:
+  either way they stay to be reached by a test, and what changes is the rule each test takes out. What a rewrite
+  would be, and what a spike under the scheduler of 0104 checks first:
+  - a sender's wait for its receiver's resumption (`awaitResumption` in `src/runtime.ts`) reads a count of
+    resumptions in a `TxRef`, and waits with `txRetry` while it is unchanged, with no set of senders to register and
+    forget: `txRetry` checks what it read and registers its wait in one synchronous step
+    (`awaitPendingTransaction` in `effect/src/Effect.ts`, read in the source). A rule stays: the count is read
+    before the send, or a resumption between the answer and the read is missed, and the sender waits for one that
+    may never come;
+  - an entity's lock (`holding`) is a `TxHashSet` of the entities held, taken by one transaction that retries while
+    the entity is in it and given back by another, held between the two across the I/O, with no count of users to
+    keep; whether it serves its waiters in order, as the `Semaphore` does, is not read yet;
+  - to check first: that a commit's wake goes through the scheduler (it calls `scheduleTask`, read in the source),
+    that `txRetry` misses no resumption in any order it picks, and how often a conflict runs a body again.
 - **A fiber started inline, under the scheduler of the tests.** Effect starts a child on its parent's stack in
   `raceFirst`, `timeoutOption`, the concurrent `forEach` behind `Effect.all` and parallel finalizers (`forkUnsafe`
-  with `startImmediately`, read in the source of `internal/effect.ts` at 4.1.1). The runtime does so through
+  with `startImmediately`, read in the source of `internal/effect.ts` at 4.1.1); the runtime does so through
   `timeoutOption` in an entity's loop and `raceFirst` in the waker. The scheduler of
   [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) asks a fiber to yield only while
   another task is ready, but a child started inline that yields gives its parent back, so that choice is never
   explored. The runtime's tests fork what they run at once (`together`), and the runtime's own children reach a
   wait in their first steps. Should the scheduler ask a fiber started inline even with nothing ready? It would know
-  such a fiber by its first run happening outside a task of its own. To check first: how many more schedules it
-  makes, and whether a test of `src/testing.test.ts` fails without it.
+  such a fiber by its first run happening outside a task of its own. To check first:
+  - how many more schedules it makes;
+  - whether a test of `src/testing.test.ts` fails without it.
 - **How many seeds a bug needs.** A run of the tests runs 100 of the 2,000 seeds of each explored test, and a
   release all of them ([`AGENTS.md`](../AGENTS.md)). That
   most bugs are found within the first 100 is only reasoned. To check: take out, one at a time, the rules of
