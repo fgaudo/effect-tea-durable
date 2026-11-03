@@ -1,11 +1,11 @@
 /**
  * The runtime on one process, over `SqlClient`: it drives the machine ([`machine.ts`](machine.ts)) and acts on its
- * outputs (decision 0013). An event is one transaction (decision 0007): what the machine says it writes is
- * written (decision 0057), and only then are the callers answered and the work started, so a crash before the
+ * outputs (decision 0013). An event is one transaction (decision 0007). What the machine says it writes is
+ * written (decision 0057), and only then are the callers answered and the work started. So a crash before the
  * commit leaves nothing of the event, and one after it is an activation away from the work the state holds.
  *
- * What is stored lives in the database ([`storage.ts`](storage.ts)); what is running — the operations' fibers, the
- * timers' sleeps, the entities loaded — lives in this process's scope, and a crash is that scope closing. An
+ * What is stored lives in the database ([`storage.ts`](storage.ts)). What is running lives in this process's
+ * scope: the operations' fibers, the timers' sleeps, the entities loaded. A crash is that scope closing. An
  * entity with nothing to do is unloaded, a crash this process chooses, and the stored time of its earliest timer
  * is what wakes it (decision 0029).
  */
@@ -65,8 +65,9 @@ export type Point =
   | 'AfterReply'
 
 /**
- * What the runtime says it did: a point of the crash table it reached with an event, an event it applied — in the
- * order they were applied, once written — and an entity it unloaded, once its timers have stopped.
+ * What the runtime says it did: a point of the crash table it reached with an event, an event it applied, and an
+ * entity it unloaded. An event is said once written, in the order the events were applied. An entity is said
+ * unloaded once its timers have stopped.
  */
 export type Said =
   | Readonly<{ _tag: 'Reached'; point: Point; entity: Address; event: Machine.Event<never> }>
@@ -74,9 +75,9 @@ export type Said =
   | Readonly<{ _tag: 'Unloaded'; entity: Address }>
 
 /**
- * Told what the runtime did, and waited for before it goes on: a test replays the events in the machine, counts
+ * Told what the runtime did, and waited for before it goes on. A test replays the events in the machine, counts
  * the passivations, or never returns at a point of the crash table, to crash the process there. The default does
- * nothing, as Effect's tracer does; a test provides another around `launch`, which reads it once. It is no
+ * nothing, as Effect's tracer does. A test provides another around `launch`, which reads it once. It is no
  * option, and no part of what a user imports (decisions 0055, 0073).
  */
 export const Probe = Context.Reference<(said: Said) => Effect.Effect<void>>('effect-tea-durable/Probe', {
@@ -126,17 +127,17 @@ export interface Handle<T extends Types> {
    */
   readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
   /**
-   * Writes the read model of every entity of the program again, from its stored state, and gives how many: what
-   * an index a new version of the program added or changed needs, since a row is written when its entity takes a
-   * step. An operator runs it after such a deploy (decision 0032). An entity that takes a step while it runs keeps
-   * the row its step wrote (decision 0070).
+   * Writes the read model of every entity of the program again, from its stored state, and gives how many. An
+   * index a new version of the program added or changed needs it, since a row is written only when its entity
+   * takes a step. An operator runs it after such a deploy (decision 0032). An entity that takes a step while it
+   * runs keeps the row its step wrote (decision 0070).
    */
   readonly reindex: Effect.Effect<number>
   /**
-   * What the entities of the program did, from the `seq` of `after` on, in the order the steps committed: each
+   * What the entities of the program did, from the `seq` of `after` on, in the order the steps committed. Each
    * row is the message an entity handled and what callers read of it afterwards, written in that step's
-   * transaction (decision 0038). The cursor is the caller's and nothing of it is stored, so a reading here —
-   * a test, an operator looking — has no say in a prune: `0` is the whole log. A consumer that keeps a cursor
+   * transaction (decision 0038). The cursor is the caller's, and nothing of it is stored: a reading here, by a
+   * test or an operator looking, has no say in a prune, and `0` is the whole log. A consumer that keeps a cursor
    * reads with `feed` instead (decision 0039).
    */
   readonly published: (after: number, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
@@ -147,14 +148,14 @@ export interface Handle<T extends Types> {
    */
   readonly feed: (consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
-   * Moves a consumer's cursor to `through`, never back, since what is behind it may be gone, and never past the
-   * last `seq` written, so that no row written later is behind it. An ack from a consumer that has not read
-   * stores its cursor too (decision 0039). A cursor and a limit are non-negative integers, here and in `query`,
-   * `published` and `feed`, and anything else is the caller's defect (decision 0053).
+   * Moves a consumer's cursor to `through`. It never moves back, since what is behind it may be gone, and never
+   * past the last `seq` written, so that no row written later is behind it. An ack from a consumer that has not
+   * read stores its cursor too (decision 0039). A cursor and a limit are non-negative integers, here and in
+   * `query`, `published` and `feed`. Anything else is the caller's defect (decision 0053).
    */
   readonly ack: (consumer: string, through: number) => Effect.Effect<void>
   /**
-   * Drops what every consumer has read — through the lowest stored cursor — and gives how many rows went. Where
+   * Drops what every consumer has read, through the lowest stored cursor, and gives how many rows went. Where
    * no consumer has read from the log, it drops nothing (decision 0039).
    */
   readonly prune: Effect.Effect<number>
@@ -182,16 +183,16 @@ export interface Runtime {
    * Runs a program's entities in this process. The operations' services are taken from here, and their fibers run
    * in the runtime's scope: a program is deployed where its services are. `Entities` is the runtime's own, filled
    * in with the entity each operation runs for, so a program that only talks to other entities needs nothing.
-   * A program that cannot run as written dies here, before anything is stored or run (decision 0054), and so does
+   * A program that cannot run as written dies here, before anything is stored or run (decision 0054). So does
    * one whose name this process has deployed already: a new version is deployed by a new process (decision 0075).
    */
   readonly deploy: <T extends Types>(
     program: Program<T>,
   ) => Effect.Effect<Handle<T>, never, Exclude<T['services'], Entities>>
   /**
-   * Waits until nothing is under way: no event waits, no mailbox holds a message, no operation runs, no entity
-   * told to leave is still held (decision 0076), none is still unloading (decision 0109), and no stored timer of an
-   * entity this process has unloaded is due (decision 0029).
+   * Waits until nothing is under way. Nothing is under way when no event waits, no mailbox holds a message and no
+   * operation runs; when no entity told to leave is still held (decision 0076), and none is still unloading
+   * (decision 0109); and when no stored timer of an entity this process has unloaded is due (decision 0029).
    */
   readonly settled: Effect.Effect<void>
 }
@@ -311,8 +312,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const creations: Waiting<Creation> = new Map()
     const addressOf = (entity: Address) => JSON.stringify([entity.name, entity.id])
     /**
-     * What `settled` waits for: it is completed, and replaced, whenever something under way ends — a step, an
-     * operation, a reading of the waker, an entity leaving the process — which is when the process may have become
+     * What `settled` waits for. It is completed, and replaced, whenever something under way ends: a step, an
+     * operation, a reading of the waker, an entity leaving the process. That is when the process may have become
      * settled. `settled` takes it before it looks, so that no ending between its look and its wait is missed
      * (decision 0063).
      */
@@ -325,14 +326,14 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     /** The operations waiting for a program not deployed yet, by its name: its deploy wakes them (decision 0045). */
     const undeployed = new Map<string, Deferred.Deferred<void>>()
     /**
-     * The senders waiting for an entity's resumption, by entity: each registers before it sends, so that a
-     * resumption between its being answered `Suspended` and its waiting is not missed (decisions 0010, 0063).
+     * The senders waiting for an entity's resumption, by entity. Each registers before it sends, so that a
+     * resumption between its being answered `Suspended` and its waiting is not missed (decisions 0023, 0063).
      */
     const resumptions = new Map<string, Set<Deferred.Deferred<void>>>()
     /**
-     * Each entity's lock, by entity, while someone holds or waits for it (decision 0067): what finds, loads, creates,
-     * unloads or crashes an entity holds it, so that no caller is between finding the entity and offering its event
-     * when it leaves the process, and two callers never build two machines for it (decisions 0029, 0042).
+     * Each entity's lock, by entity, while someone holds or waits for it (decision 0067). What finds, loads,
+     * creates, unloads or crashes an entity holds it. So no caller is between finding the entity and offering its
+     * event when it leaves the process, and two callers never build two machines for it (decisions 0029, 0042).
      */
     const locks = new Map<string, { readonly semaphore: Semaphore.Semaphore; users: number }>()
     const holding = (entity: Address) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
@@ -448,8 +449,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
 
     /**
      * An entity enters the process. Once the process holds more than its capacity, the least recently used of the
-     * spare entities are told to leave, as many as it holds too many, the one entering aside: their loops unload
-     * them, each under its own lock, so nothing here waits for another entity's lock while this one's is held
+     * spare entities are told to leave, as many as it holds too many, the one entering aside. Their loops unload
+     * them, each under its own lock: nothing here waits for another entity's lock while this one's is held
      * (decisions 0067, 0076).
      */
     const enter = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) =>
@@ -482,10 +483,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     }
 
     /**
-     * Registers a sender's wait for the entity's resumption, before it sends: `resumed` is what it waits on if it is
-     * answered `Suspended`, and `forget` takes it back whatever it is answered. A registration made after the answer
-     * would miss a resumption between the two, and wait for ever: `a sender answered Suspended is woken by the
-     * resumption`, in the tests, reaches it under the scheduler of the tests (decision 0104).
+     * Registers a sender's wait for the entity's resumption, before it sends. `resumed` is what it waits on if it
+     * is answered `Suspended`, and `forget` takes it back whatever it is answered. A registration made after the
+     * answer would miss a resumption between the two, and wait for ever. `a sender answered Suspended is woken by
+     * the resumption`, in the tests, reaches that under the scheduler of the tests (decision 0104).
      */
     const awaitResumption = (entity: Address) =>
       Effect.sync(() => {
@@ -520,9 +521,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /**
-     * Forks `effect` in `scope`, held under `id` while it runs. The forking fiber may yield between the fork and the
-     * registration, and the fiber end meanwhile: one that has ended is never held, and its end is told after it has
-     * left `held`, in one step, so nothing ended is counted as running (decision 0068).
+     * Forks `effect` in `scope`, held under `id` while it runs. Nothing ended is counted as running (decision 0068):
+     * the forking fiber may yield between the fork and the registration, and the fiber end meanwhile. So one that
+     * has ended is never held, and its end is told after it has left `held`, in one step.
      */
     const forkHeld = (
       held: Map<string, Fiber.Fiber<void>>,
@@ -678,8 +679,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         if (before.stored.suspension !== null && transition.machine.stored.suspension === null) {
           wake(entity)
         }
-        // An event is observed once it is written — at once when it writes nothing — and before anything is
-        // acted on: a crash before the commit leaves no event, and one after it an event that happened.
+        // An event is observed once it is written, and before anything is acted on; one that writes nothing is
+        // observed at once. A crash before the commit leaves no event, and one after it an event that happened.
         yield* observe(entity, event)
         if (written !== null) yield* at('AfterCommit', entity, event)
         yield* perform(deployed, loaded, entity, event, transition.outputs)
@@ -719,10 +720,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     }
 
     /**
-     * The entity leaves this process, and the waker is told in the same step (decision 0068): a reading of the
-     * stored timers that left the entity out as held is made again, and one made after counts its timers, so there
-     * is no moment at which they are neither armed here nor counted among the stored ones. The waker's flag and its
-     * poke are set together, and the waker clears them in one step too, so the process is never settled with a
+     * The entity leaves this process, and the waker is told in the same step (decision 0068). So there is no
+     * moment at which its timers are neither armed here nor counted among the stored ones: a reading of the stored
+     * timers that left the entity out as held is made again, and one made after counts them. The waker's flag and
+     * its poke are set together, and the waker clears them in one step too, so the process is never settled with a
      * poke nobody has taken.
      */
     const leave = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) =>
@@ -769,12 +770,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       }))
 
     /**
-     * An event the runtime could not finish — a write that failed, a probe that died — is a crash of its entity
-     * alone: the entity leaves this process, its work stops, and its waiting callers are given the defect, to
+     * An event the runtime could not finish is a crash of its entity alone: a write that failed, a probe that
+     * died. The entity leaves this process, its work stops, and its waiting callers are given the defect, to
      * retry. What is stored is what its next activation starts from, as after a crash of the process. Called
      * where the entity's lock is held, so that no caller is between finding the entity and offering its event
-     * (decisions 0042, 0067); the interruption of its work is forked, since it waits for the operations'
-     * finalizers, and nothing else waits for them under the lock (decision 0056).
+     * (decisions 0042, 0067). The interruption of its work is forked: it waits for the operations' finalizers,
+     * and nothing else waits for them under the lock (decision 0056).
      */
     const crash = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>, cause: Cause.Cause<never>) =>
       Effect.gen(function*() {
@@ -797,9 +798,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /**
-     * The entity's loop: while its mailbox holds a message, it is handled, one transaction each; otherwise the
-     * loop waits for an event, and the entity is unloaded if none comes for long enough, or once it is told to
-     * leave a process over its capacity (decision 0076). A suspended entity only waits (decision 0006). The wait
+     * The entity's loop. While its mailbox holds a message, it is handled, one transaction each. Otherwise the
+     * loop waits for an event. The entity is unloaded if none comes for long enough, or once it is told to leave
+     * a process over its capacity (decision 0076). A suspended entity only waits (decision 0006). The wait
      * times out, never the take: an event taken is always applied. A loop that dies crashes its entity, and an
      * interruption is the process's crash (decision 0042).
      */
@@ -821,8 +822,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             Effect.flatMap(() => next),
           )
         }
-        // The timeout wraps the take alone: Effect keeps an event offered as it fires only then, and a step after the
-        // take inside it would let the timeout win with the event taken, and lose it (decision 0111).
+        // The timeout wraps the take alone (decision 0111). Only then does Effect keep an event offered as it fires.
+        // A step after the take inside it would let the timeout win with the event taken, and lose it.
         return Effect.timeoutOption(Queue.take(loaded.events), `${passivate} millis`).pipe(
           Effect.flatMap((taken) => {
             // The wait ran out, or the entity was told to leave: it is unloaded if it has nothing to do.
@@ -877,12 +878,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
 
     /**
      * Runs `effect` in the deployment's scope, and waits for it. A caller that gives up stops waiting, and what the
-     * effect sets going — an activation, a creation and its work — is finished all the same: only the process's
-     * crash stops it halfway, as the crash table says (decision 0079). It is counted from the step that forks it
-     * to its end, so that the process is not settled while it runs: the step is uninterruptible, and the fibers it
-     * forks are not, which their option says rather than Effect's default (decision 0112), so the scope still stops
-     * them. The count is given back by a fiber of the process's scope that waits for it: one the deployment's scope
-     * stops before its first step runs no finalizer of its own (decision 0110).
+     * effect sets going is finished all the same: an activation, a creation and its work. Only the process's crash
+     * stops it halfway, as the crash table says (decision 0079). It is counted from the step that forks it to its
+     * end, so that the process is not settled while it runs. The step is uninterruptible, and the fibers it forks
+     * are not, so the scope still stops them: their option says so, rather than Effect's default (decision 0112).
+     * The count is given back by a fiber of the process's scope that waits for it, since one the deployment's
+     * scope stops before its first step runs no finalizer of its own (decision 0110).
      */
     const detached = <T extends Types, A, E>(deployed: Deployment<T>, effect: Effect.Effect<A, E>) =>
       Effect.flatMap(
@@ -906,11 +907,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       )
 
     /**
-     * Runs `found` on the entity `id` of `deployed`, loaded from storage when this process does not hold it, and
-     * while the entity is held: its lock is what keeps it from being unloaded meanwhile, and what makes a caller
-     * of an entity being activated wait for that activation (decisions 0029, 0067). An entity held is found in the
-     * caller's fiber; one to load is loaded detached from it, with `found`, under the same hold of its lock, so that
-     * the entity is never unloaded between its activation and its caller's event (decision 0079).
+     * Runs `found` on the entity `id` of `deployed`, while the entity is held. The entity is loaded from storage
+     * when this process does not hold it. Its lock is what keeps it from being unloaded meanwhile, and what makes
+     * a caller of an entity being activated wait for that activation (decisions 0029, 0067). An entity held is
+     * found in the caller's fiber. One to load is loaded detached from it, with `found`, under the same hold of its
+     * lock: so the entity is never unloaded between its activation and its caller's event (decision 0079).
      */
     const withEntity = <T extends Types, A>(
       deployed: Deployment<T>,
@@ -972,7 +973,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           const now = yield* DateTime.now
           const started = Machine.start(deployed.program, id, flags, now, request)
           // A defect at creation stores nothing: its creator is answered nothing but the defect itself
-          // (decision 0014, and the open question of who may create an entity).
+          // (decision 0014, and the open question `Who may send what`).
           if (started._tag === 'Defect') return yield* Effect.fail(new Faulted({ defect: started.cause }))
           const loaded: Loaded<T> = {
             machine: started.machine,
@@ -1028,9 +1029,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       })
 
     /**
-     * The deployment of `program`, once there is one: an operation that reaches a program not deployed yet waits
-     * for it, as for a suspended receiver, so that what runs does not depend on the order of the deploys
-     * (decision 0045).
+     * The deployment of `program`, once there is one. An operation that reaches a program not deployed yet waits
+     * for it, as for a suspended receiver: what runs does not depend on the order of the deploys (decision 0045).
      */
     const deployedAs = <T extends Types>(program: Program<T>): Effect.Effect<Deployment<T>> =>
       Effect.suspend(() => {
@@ -1051,12 +1051,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         Cause.hasInterruptsOnly(cause) || Cause.hasFails(cause) ? Effect.failCause(cause) : Effect.succeed(none))
 
     /**
-     * What one run of an operation sends with: its request is the run's — its entity, key and incarnation — with
-     * the name the operation gives it, so that a restarted operation gets the stored replies, and no operation can
-     * send under another's (decisions 0009, 0047, 0060). A name the run already used with the same entity would be
+     * What one run of an operation sends with. Its request is the run's, its entity, key and incarnation, with the
+     * name the operation gives it. So a restarted operation gets the stored replies, and no operation can send
+     * under another's (decisions 0009, 0047, 0060). A name the run already used with the same entity would be
      * answered the first one's reply, and is the operation's defect: for a message, and apart for a creation. A
-     * suspended receiver has no reply yet, and `send` waits for its resumption instead of giving up (decisions 0010,
-     * 0063); a receiver that crashed has none either, and is sent to again after `retry` (decision 0046); `send`
+     * suspended receiver has no reply yet, and `send` waits for its resumption instead of giving up (decisions 0023,
+     * 0063). A receiver that crashed has none either, and is sent to again after `retry` (decision 0046). `send`
      * and `create` wait for the deploy of a program not deployed yet (decisions 0045, 0063).
      */
     const entities = (entity: Address, key: string, incarnation: number) => {
@@ -1114,10 +1114,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     }
 
     /**
-     * The timers of the entities this process does not hold: it reads the earliest time one is due, activates the
-     * entities whose time has come — arming a timer already due fires it — and sleeps until the next, or until an
-     * entity is unloaded and brings an earlier one (decision 0029). An activation that fails crashes its entity
-     * alone, which is tried again after `retry`, as a receiver that crashed is sent to again (decisions 0046, 0077).
+     * The timers of the entities this process does not hold (decision 0029). It reads the earliest time one is
+     * due, and activates the entities whose time has come: arming a timer already due fires it. Then it sleeps
+     * until the next, or until an entity is unloaded and brings an earlier one. An activation that fails crashes
+     * its entity alone, which is tried again after `retry`, as a receiver that crashed is sent to again
+     * (decisions 0046, 0077).
      */
     const waking = <T extends Types>(deployed: Deployment<T>) => {
       const { waker } = deployed
