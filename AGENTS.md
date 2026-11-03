@@ -12,6 +12,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   extension, or `docs`, `examples`, `spikes` or `scripts`. A commit across several names the one it is about.
 - Prose states its conclusion first, one sentence per idea, without chains of subordinate clauses. This holds for
   `.md` files, comments and commit bodies.
+- A comment that keeps a rule cites the note that decides it, the latest on that point, as `decision 0029`. A
+  commit that adds a note which changes another reads the comments that cite the one changed, and moves the
+  citation where the point moved. A rule is said once: the comment of the surface that promises it says the
+  contract, and the comment of what keeps it says only what it adds.
 - A decision gets a note in `docs/decisions/`, numbered in order and never rewritten once taken: a decision
   that changes is a new note that says which one it replaces. A note made for a step of the roadmap is
   `proposed`, and is rewritten in place while the step is under way; it is taken, `accepted`, by the commit that

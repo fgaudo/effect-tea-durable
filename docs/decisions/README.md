@@ -24,7 +24,8 @@ each one; [`design.md`](../design.md) says what holds now. The rules are in [`AG
 | [0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md) | The notes are reviewed every fifteen, by a reader that did not write them | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) |
 | [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) | A dependency is checked by a spike the repository keeps, and the older notes are reviewed | [0108](0108-a-premise-about-a-dependency-is-looked-up-in-its-documentation-first.md) |
 | [0099](0099-a-library-on-unstable-modules-is-released-as-experimental.md) | A library on unstable modules is released as experimental |  |
-| [0105](0105-commits-prose-and-the-roadmap-are-written-for-a-reader.md) | Commits, prose and the roadmap are written for a reader |  |
+| [0105](0105-commits-prose-and-the-roadmap-are-written-for-a-reader.md) | Commits, prose and the roadmap are written for a reader | [0117](0117-a-comment-is-written-as-prose-is-and-cites-the-latest-note-on-its-point.md) |
+| [0117](0117-a-comment-is-written-as-prose-is-and-cites-the-latest-note-on-its-point.md) | A comment is written as prose is, and cites the latest note on its point |  |
 | [0106](0106-notes-the-design-covers-are-archived-at-each-release.md) | Notes the design covers are archived at each release |  |
 | [0024](0024-not-taken.md) | Not taken |  |
 

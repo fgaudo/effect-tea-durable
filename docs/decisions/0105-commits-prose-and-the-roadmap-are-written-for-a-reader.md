@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-11-01. Adds three rules to [`AGENTS.md`](../../AGENTS.md), and keeps the rules on notes
 that [decision 0089](0089-a-note-says-what-changed-it-and-is-taken-with-its-step.md),
 [0093](0093-a-note-says-what-each-premise-rests-on.md), [0094](0094-the-notes-are-reviewed-every-fifteen-by-a-reader-that-did-not-write-them.md)
-and [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) set.
+and [0097](0097-a-dependency-is-checked-by-a-spike-the-repository-keeps.md) set. What its rule of prose does to the
+comments written before it is decided by
+[decision 0117](0117-a-comment-is-written-as-prose-is-and-cites-the-latest-note-on-its-point.md).
 
 ## Context
 
