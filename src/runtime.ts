@@ -1201,19 +1201,15 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
                     ? Effect.as(resumed, null)
                     : Effect.succeed(reply),
               ).pipe(Effect.ensuring(forget)))
-            const waits = (): Effect.Effect<Reply<T['rejection']>, Faulted> =>
-              Effect.flatMap(attempt, (reply) => (reply === null ? waits() : Effect.succeed(reply)))
-            return faulted(waits())
+            return faulted(Effect.repeat(attempt, { until: (reply) => reply !== null }))
           }),
         create: <T extends Types>(program: Program<T>, id: string, flags: T['flags'], name: string) =>
           Effect.flatMap(named('creation', program, id, name), ({ deployed, request }) => {
-            const waits = (): Effect.Effect<Creation, Faulted> =>
-              Effect.flatMap(
-                unlessCrashed(create(deployed, id, flags, request), null),
-                (creation) =>
-                  creation === null ? Effect.flatMap(Effect.sleep(`${retry} millis`), waits) : Effect.succeed(creation),
-              )
-            return faulted(waits())
+            const attempt = Effect.tap(
+              unlessCrashed(create(deployed, id, flags, request), null),
+              (creation) => creation === null ? Effect.sleep(`${retry} millis`) : Effect.void,
+            )
+            return faulted(Effect.repeat(attempt, { until: (creation) => creation !== null }))
           }),
       })
     }
