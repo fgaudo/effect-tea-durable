@@ -210,6 +210,8 @@ It stores the state, not the messages that led to it: a fixed `update` changes w
 already happened ([decision 0002](decisions/archive/0002-store-the-state-not-the-messages.md)). The messages may be
 kept as an audit, but nothing replays them.
 
+### The tables
+
 The runtime on SQLite writes all of it through the program's schemas, as JSON, in seven tables — the entity, the
 keys with their incarnations and work, the mailbox in order, the replies by request, the read model, the
 outbox and the cursors of its consumers ([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
@@ -225,11 +227,15 @@ and reaches no entity ([decision 0040](decisions/archive/0040-what-is-stored-enc
 that do not encode: `init` sees only flags its schema takes
 ([decision 0049](decisions/archive/0049-flags-are-checked-by-their-schema.md)).
 
+### What the machine writes
+
 What an event writes is the machine's: besides the next machine, a transition gives the rows it writes, already
 encoded — the state when it changed, the keys that changed, the messages that leave the mailbox and the ones
 queued, the replies added, the work that ended, the read model's row and the outbox's — and the storage writes
 them and decides nothing. Each value is encoded once, and the projection of a state computed once
 ([decision 0057](decisions/archive/0057-the-machine-gives-what-is-written.md)).
+
+### Replies
 
 A reply to another entity is deleted in the transaction that ends the work that asked for it, which the machine
 names, or in the one that stores it, if that work has already ended: only the storage sees another entity's keys
@@ -409,6 +415,8 @@ schema changed is read through its migrations in the log too
 
 ## Testing
 
+### A program
+
 Most of a program is pure, so most tests need no runtime:
 
 - **`update`'s rules**, one test per message, for generated states;
@@ -418,6 +426,8 @@ Most of a program is pure, so most tests need no runtime:
   ([decision 0026](decisions/archive/0026-the-test-maps-a-projection-to-its-messages.md)).
   [`examples/order/order.test.ts`](../examples/order/order.test.ts) checks it for generated states;
 - **the defects**: an internal message in a state without its key.
+
+### Rehearsing
 
 `rehearse` runs a scenario on the program without storage, cluster or clock. It is the runtime's machine, which
 handles the mailbox to its end after each act of the test. Time stands at the start's, and moves to a timer's
@@ -444,6 +454,8 @@ A migration is a pure function on JSON, and `rehearse` encodes what a step store
 ([decision 0040](decisions/archive/0040-what-is-stored-encodes-to-json-as-it-is.md)) and never reads it back, so a
 rehearsed deploy does not exercise one: the runtime's tests deploy a version whose state, operation and
 projection schemas changed.
+
+### The machine and the runtime
 
 The machine is tested with properties, under random orders of messages, completions, timers, crashes and
 defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime is tested against it
@@ -497,6 +509,8 @@ a handle to one program's entities — `create`, `send`, `read`, and `resume` an
 the operations of a program are run with the services it was deployed with
 ([`src/runtime.ts`](../src/runtime.ts), [decision 0028](decisions/archive/0028-rules-the-runtime-settled.md)).
 
+### Entities in the process
+
 An entity with nothing to do is unloaded, and the earliest of its stored timers wakes it
 ([decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)); how long it stays loaded is an option of the
 runtime. An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
@@ -505,6 +519,9 @@ process, its callers are given the defect, and the next one loads it from what i
 for its operations to stop ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)).
 An activation the waker cannot finish crashes its entity alone too, and the waker tries it again after `retry`
 ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)).
+
+### Fibers and locks
+
 Each entity is found, loaded, unloaded and crashed under a lock of its own, so the callers of one entity never
 wait on another's activation ([decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md)). An
 activation and a creation run detached from their caller, which only waits for them: one that gives up leaves
@@ -519,13 +536,20 @@ it has not ended, and an entity leaves the process in one step
 ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). The timeout of an idle
 entity's wait wraps its take alone, so an event offered as the wait runs out is not lost
 ([decision 0111](decisions/archive/0111-an-entity-s-wait-times-out-its-take-alone.md)).
+
+### Deployments
+
 Everything a deployment runs runs in a scope of its own: a deploy that cannot finish before it registers its
 deployment, interrupted included, stops what it started, is never seen by other programs, and gives its name back
 ([decisions 0051](decisions/archive/0051-a-deploy-that-fails-leaves-nothing-running.md),
 [0102](decisions/archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)); one interrupted after keeps its
 name, with its deployment and its waker
 ([decision 0078](decisions/archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)). A process deploys a name once: a new version, a fix included, is deployed by
-a new process ([decision 0075](decisions/archive/0075-a-name-is-deployed-once-in-a-process.md)). The library exports
+a new process ([decision 0075](decisions/archive/0075-a-name-is-deployed-once-in-a-process.md)).
+
+### The public surface
+
+The library exports
 what a program, a test and an operator use, and nothing the runtime alone uses: the machine, the storage and
 their helpers may change without a note, and a runtime on another store imports them from their modules, as the
 tests do ([decision 0055](decisions/archive/0055-the-public-surface-is-what-its-users-use.md)). Effect Cluster's
