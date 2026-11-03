@@ -3,8 +3,8 @@
 **Status:** accepted, 2026-10-31. Corrects [decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md): a caller
 interrupted while it waits has Cluster store an answer no step gave. Found by the review of
 [decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md). That every answer Cluster stores for an
-entity is a step's does not hold of a type its runner did not register, by
-[decision 0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md).
+entity is a step's does not hold of a type its runner did not register
+([`cluster.md`](../cluster.md#the-decisions-it-bears-on)).
 
 ## Context
 
@@ -48,7 +48,7 @@ rolls back, and the interruption is saved after, the same answer.
   Cluster sends itself already leaves the request to be delivered again, and the caller's is the one the client
   annotation stops. It adds nothing the runtime needs.
 - **Leaving the default, and resetting an interruption as a `Suspended` is reset**
-  ([decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md)). Only a caller that sends again resets
+  ([decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)). Only a caller that sends again resets
   it; one whose work ended never does, and the answer stays for ever, deleted by nothing, since no step answered it
   ([decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). And the client would read a failure the
   RPC's schema says cannot happen.
@@ -60,9 +60,9 @@ rolls back, and the interruption is saved after, the same answer.
 - An at-least-once operation stopped by an unload sends its request again once it is restarted, and gets the answer
   the request was given meanwhile, from Cluster's stored reply.
 - The stall Cluster's bug causes once the caller of a message that dies is interrupted
-  ([decision 0083](0083-effect-moves-to-4-1-1.md)) needs that caller's `Interrupt`, which the runtime's RPCs no
+  (decision 0083) needs that caller's `Interrupt`, which the runtime's RPCs no
   longer send. The runtime still does not rely on it either way
-  ([decision 0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md)); no spike checked it.
+  (decision 0082); no spike checked it.
 - When the runtime runs on Cluster, the spike becomes a test of this repository, as decision 0082 says of Cluster's
   contract.
 - Nothing of this is code yet: the runtime on Cluster is a later step of the [roadmap](../roadmap.md).

@@ -1,14 +1,18 @@
 /**
- * Compares the JSDoc of the declarations the premises rest on, in two releases of Effect (decision 0108). A spike
- * tells when a behaviour changes; this tells when a promise is added or taken away. The declarations are those the
- * premises rest on without a promise of a stable API: decision 0107 lists them, and later notes add theirs.
+ * Compares the JSDoc of the declarations the premises rest on, in two releases of Effect, as `AGENTS.md` asks. A spike
+ * tells when a behaviour changes; this tells when a promise is added or taken away. The list is the ledger of the
+ * premises about Effect: which its documentation promises, and which only a spike or its source holds. A note whose
+ * premise rests on another declaration adds it, with why.
  *
  *     bun scripts/compare-docs.ts <old version> <new version>
  *
- * Each declaration says why it is compared. An unstable one may change its promises in any release. A stable one whose
+ * Each declaration says why it is listed. An unstable one may change its promises in any release. A stable one whose
  * documentation does not promise what a premise needs may promise it in any release, which makes the premise
- * documented. A stable one whose documentation promises it is not listed: semantic versioning keeps the promise within
- * the major, and a move to a new major reads every premise again (decision 0116).
+ * documented. A stable one whose documentation promises it is listed so that the ledger is whole, and only its tag is
+ * checked: semantic versioning keeps the promise within the major, and a move to a new major reads every premise again
+ * (`AGENTS.md`). Effect's release policy, `.agents/skills/changesets/authoring.md` at `1ec9509`, read on 2026-11-02,
+ * has a stable or untagged API follow strict semantic versioning, an `unstable` one break only in a minor, and an
+ * `experimental` one in a patch; it requires a tag on every module and importable export since Effect-TS/effect#8770.
  *
  * Each release of `effect` and `@effect/sql-sqlite-bun` is packed from npm into a temporary folder. A declaration is
  * found by its name, at the top of its file or as a member, and all its distinct JSDoc comments are compared in order:
@@ -17,10 +21,11 @@
  * by the lines that differ, `-` for the old release and `+` for the new. A declaration found in neither release is
  * `missing`, and fails the run, since the list names it wrong. So does one whose `@stability` in the new release, its
  * own or its module's, is not what its reason says: an `unstable` one that is no longer, which may leave the list or
- * be `undocumented`, or an `undocumented` one that is not stable (decision 0116).
+ * be `undocumented`, or an `undocumented` or `stable` one that is not stable (`AGENTS.md`). A `stable` one is
+ * printed as `stable`, with no lines compared.
  *
  * Then the sources of Cluster that say how its rows are written and read are compared whole, code included: a
- * release that changes them may not read what an older one stored (decision 0116). Each is printed on a line of its
+ * release that changes them may not read what an older one stored (`AGENTS.md`). Each is printed on a line of its
  * own, first `storage`, then the file and its status, followed by the lines that differ. A change does not fail the
  * run: its note says what it changes, and the spike of the fixtures runs it.
  */
@@ -31,19 +36,37 @@ import { join } from 'node:path'
 type Package = 'effect' | '@effect/sql-sqlite-bun'
 
 /**
- * Why a declaration is compared: `unstable`, marked so by Effect; `undocumented`, stable but not promising what a
- * premise needs (decision 0107).
+ * Why a declaration is listed: `unstable`, marked so by Effect; `undocumented`, stable but not promising what a
+ * premise needs; `stable`, promising it, so that a premise which rests on it is documented.
  */
-type Why = 'unstable' | 'undocumented'
+type Why = 'unstable' | 'undocumented' | 'stable'
 
-/** A declaration to compare: its package, its file under `src/`, its name, and why it is compared. */
+/** A declaration of the ledger: its package, its file under `src/`, its name, and why it is listed. */
 type Declaration = readonly [pkg: Package, file: string, name: string, why: Why]
 
 const declarations: ReadonlyArray<Declaration> = [
+  // Releases its permits when the effect it wraps exits, whichever way: the lock of an entity (decision 0067).
+  ['effect', 'Semaphore.ts', 'withPermits', 'stable'],
+  // Acquires uninterruptibly, and runs the release uninterruptibly once acquired: `holding` in `src/runtime.ts`.
+  ['effect', 'Effect.ts', 'acquireUseRelease', 'stable'],
+  // Run when the effect succeeds, fails or is interrupted: the finalizers of the runtime's forks (decision 0068).
+  ['effect', 'Effect.ts', 'ensuring', 'stable'],
+  ['effect', 'Effect.ts', 'onExit', 'stable'],
+  // Interrupt the effect when the time runs out, and the loser: an idle entity's wait (decision 0029), the tests.
+  ['effect', 'Effect.ts', 'timeoutOption', 'stable'],
+  ['effect', 'Effect.ts', 'raceFirst', 'stable'],
+  // Runs its finalizers uninterruptibly, so a fiber that closes a scope waits for them; and a child closes with its
+  // parent: a deployment's scope (decisions 0051 and 0102).
+  ['effect', 'Scope.ts', 'close', 'stable'],
+  ['effect', 'Scope.ts', 'fork', 'stable'],
+  // The default scheduler keeps the order of the tasks of one priority (decision 0101).
+  ['effect', 'Scheduler.ts', 'MixedScheduler', 'stable'],
+  // Reads the `Clock` service, which a test moves ahead of the sleeps (decision 0103).
+  ['effect', 'DateTime.ts', 'now', 'stable'],
   // What an interrupted take leaves in the queue.
   ['effect', 'Queue.ts', 'take', 'undocumented'],
   // That a fiber forked inside `uninterruptible` is interruptible, and that a joiner interrupted leaves it running. The
-  // second is said on effect.website, Fibers, Lifetime of Child Fibers, which is not the JSDoc (decision 0116): a
+  // second is said on effect.website, Fibers, Lifetime of Child Fibers, which is not the JSDoc (`AGENTS.md`): a
   // promise added to the JSDoc of `forkIn` is what to look for.
   ['effect', 'Effect.ts', 'uninterruptible', 'undocumented'],
   ['effect', 'Effect.ts', 'forkChild', 'undocumented'],
@@ -56,6 +79,7 @@ const declarations: ReadonlyArray<Declaration> = [
   ['effect', 'Effect.ts', 'callback', 'undocumented'],
   // That a fiber forked before the clock moves is given one turn.
   ['effect', 'testing/TestClock.ts', 'adjust', 'undocumented'],
+  // Rolls back when its effect fails or is interrupted, which its docs do not say when (decisions 0002 and 0013).
   ['effect', 'sql/SqlClient.ts', 'withTransaction', 'unstable'],
   ['effect', 'cluster/Entity.ts', 'toLayer', 'unstable'],
   ['effect', 'cluster/Entity.ts', 'defectRetryPolicy', 'unstable'],
@@ -64,6 +88,8 @@ const declarations: ReadonlyArray<Declaration> = [
   ['effect', 'cluster/ClusterSchema.ts', 'WithTransaction', 'unstable'],
   ['effect', 'cluster/ClusterSchema.ts', 'Uninterruptible', 'unstable'],
   ['effect', 'cluster/ShardingConfig.ts', 'entityRegistrationTimeout', 'unstable'],
+  // Serializes access to the database, opens it in WAL mode, and begins a transaction with `BEGIN IMMEDIATE`, which
+  // holds the write lock for its duration (decisions 0080 and 0092).
   ['@effect/sql-sqlite-bun', 'SqliteClient.ts', 'make', 'unstable'],
   ['@effect/sql-sqlite-bun', 'SqliteClient.ts', 'layer', 'unstable'],
 ]
@@ -196,6 +222,8 @@ try {
     const where = pkg === 'effect' ? file : `${pkg}/${file}`
     const status = before.length === 0 && after.length === 0
       ? 'missing'
+      : why === 'stable'
+      ? 'stable'
       : before.length === 0
       ? 'added'
       : after.length === 0

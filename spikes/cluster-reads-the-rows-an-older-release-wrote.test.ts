@@ -1,5 +1,5 @@
 /**
- * What decision 0116 checks at a move of Effect's version: the release installed reads the rows of Cluster that the
+ * What `AGENTS.md` asks at a move of Effect's version: the release installed reads the rows of Cluster that the
  * releases of the fixtures wrote, on `SingleRunner` over a SQLite file. Each fixture in `spikes/fixtures` was written by
  * `scripts/write-cluster-fixture.ts` at the release it names. Its migrations run, a handled request's primary key is
  * answered from its stored reply without the handler, and a request stored and not processed is delivered once.

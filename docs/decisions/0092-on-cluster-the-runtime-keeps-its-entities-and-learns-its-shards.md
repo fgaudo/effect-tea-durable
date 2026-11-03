@@ -5,10 +5,10 @@
 timers, an operation that waits for a program no runner deploys, a sender that waits on a suspended entity, and the
 step of a request queued behind the entity's own work. Changes what
 [decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md) says of what a step sets going, and how
-[decision 0079](0079-what-a-caller-sets-going-is-finished-without-it.md) holds for an activation on Cluster, and says
-how [decision 0056](0056-nothing-waits-for-an-operation-under-the-permit.md) holds for a shard that leaves. What it
+[decision 0079](archive/0079-what-a-caller-sets-going-is-finished-without-it.md) holds for an activation on Cluster, and says
+how [decision 0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md) holds for a shard that leaves. What it
 says of Cluster is read from its source at `effect` 4.1.1, and what the runtime relies on is checked by two spikes.
-Decides what [decision 0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md) left to it: who
+Decides what decision 0096 left to it: who
 keeps the Cluster id of a request answered with Cluster's defect, which changes which steps keep an id in
 [decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md); and corrects 0096's rule of what Cluster
 stores without a step. A pending id is written by more than a step, which changes how many decision 0090 says the
@@ -17,12 +17,12 @@ database holds.
 ## Context
 
 On one process, the runtime holds its entities in memory, unloads the idle ones after `passivate.millis`
-([decision 0029](0029-an-idle-entity-is-unloaded.md)) and the least recently used of them past a capacity
-([decision 0076](0076-a-process-over-its-capacity-unloads-the-least-recently-used.md),
-[decision 0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)), starts with the
-entities that hold an operation or a message ([decision 0071](0071-a-process-starts-the-entities-with-a-message.md)),
+([decision 0029](archive/0029-an-idle-entity-is-unloaded.md)) and the least recently used of them past a capacity
+([decision 0076](archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md),
+[decision 0078](archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)), starts with the
+entities that hold an operation or a message ([decision 0071](archive/0071-a-process-starts-the-entities-with-a-message.md)),
 wakes the unloaded ones from their stored timers, and signals in memory the operations waiting for a deploy or a
-resumption ([decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md)). Every one of these assumes that the
+resumption ([decision 0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md)). Every one of these assumes that the
 process holds every entity, for its whole life. On Cluster a runner holds the shards the `HashRing` gives it, and
 gains or loses them while it runs.
 
@@ -55,7 +55,7 @@ Cluster's source says:
   is saved under its request. A full mailbox, a runner that no longer holds the shard, and a
   request already being processed save nothing: the message stays in storage, and is read again. A defect of a
   handler is not saved, and restarts the entity
-  ([decision 0095](0095-cluster-restarts-an-entity-after-a-defect-whatever-its-policy.md)).
+  (decision 0095).
 - **A shard's lease on SQLite is a row of `cluster_locks`**, `shard_id`, `address` and `acquired_at`, and a runner
   takes it from another only by writing it, where `acquired_at` is more than 35 s (the `shardLockExpiration`) before
   `CURRENT_TIMESTAMP`, counted in whole seconds by `strftime('%s', …)`; the write waits for the file's one writer.
@@ -139,7 +139,7 @@ checks the shard; it said so of the RPCs alone.
   transaction at a time, so no other step of the entity runs meanwhile, and nothing else of the runtime takes a turn
   that a transaction could wait on. A door that must load the entity activates it in the handler's fiber and
   transaction too, not detached from it as on one process
-  ([decision 0079](0079-what-a-caller-sets-going-is-finished-without-it.md)): a detached activation would wait for
+  ([decision 0079](archive/0079-what-a-caller-sets-going-is-finished-without-it.md)): a detached activation would wait for
   the connection the handler holds.
 - **What is in memory is checked against what is stored, in each step's transaction.** Cluster commits the handler's
   transaction after the handler returns, may roll it back — a failed check of the shard, a `COMMIT` that fails —
@@ -163,7 +163,7 @@ checks the shard; it said so of the RPCs alone.
   ends, the runtime marks the shard as not held, so that neither the waker nor a door loads an entity of it again,
   takes it from the waker, and then crashes every entity of that shard it holds, forking the interruption of their
   operations without waiting for them to stop, as every crash does
-  ([decision 0056](0056-nothing-waits-for-an-operation-under-the-permit.md)): Cluster waits for the finalizer, with
+  ([decision 0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md)): Cluster waits for the finalizer, with
   no bound, and keeps the shard from every runner while it runs. The
   rows the waker and the activation read — the stored work and the mailbox — carry the shard of their entity,
   written with them.
@@ -175,7 +175,7 @@ checks the shard; it said so of the RPCs alone.
   `datetime(CURRENT_TIMESTAMP, '-<shardLockExpiration in seconds> seconds')`, the exact complement of the condition
   under which another runner takes it; otherwise it
   writes nothing, and the entity crashes, as an event the runtime cannot finish
-  ([decision 0042](0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). On SQLite the transaction holds
+  ([decision 0042](archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). On SQLite the transaction holds
   the file's one writer from `BEGIN IMMEDIATE`, so no runner takes the shard between the read and the commit: the
   commit makes the check, as decision 0084 asks.
 - **A transaction of the runtime waits on nothing but its own statements**: no operation, no other fiber, nothing of
@@ -185,18 +185,18 @@ checks the shard; it said so of the RPCs alone.
 - **A request whose message finds the mailbox holding the entity's own work handles the mailbox up to its message,
   in its own transaction**: the step of its arrival queues it, as the machine does, and the handler steps the head of
   the mailbox until its message is handled, then answers as that step answers. A suspension on the way answers it
-  `Suspended` ([decision 0023](0023-suspended-means-no-reply-yet.md)). Its transaction holds the connection
+  `Suspended` ([decision 0023](archive/0023-suspended-means-no-reply-yet.md)). Its transaction holds the connection
   throughout, so the loop steps nothing of the entity meanwhile; what the loop holds in memory and has not written is
   stepped after.
 - **A defect from Cluster is no reply.** The runtime never answers with one
   ([decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md)), and a defect of a receiver that escapes the
   runtime is not saved (decision 0095), so a defect saved under a request is Cluster's own: a type not registered in
   time, a payload the RPC's schema does not decode, or a delivery that died. The runtime's payload is JSON, which
-  that schema decodes as it is ([decision 0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md)), so the
+  that schema decodes as it is ([decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)), so the
   second needs a row Cluster's encoding did not write. An operation's client that is given one keeps the request's
   id and resets the request, as below, with the id of the stored defect as the reply expected
-  ([decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and sends again after `retry`, as it
-  does after a receiver that crashed ([decision 0046](0046-a-receiver-that-crashes-is-sent-again.md)). A defect
+  ([decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)), and sends again after `retry`, as it
+  does after a receiver that crashed ([decision 0046](archive/0046-a-receiver-that-crashes-is-sent-again.md)). A defect
   that died at the sender stored nothing, and is simply sent again. While the window lasts, the message waits, and
   the operation with it, at no cost.
 - **The client that is given Cluster's defect keeps the request's Cluster id before it resets the request.** The
@@ -287,7 +287,7 @@ checks the shard; it said so of the RPCs alone.
   nothing queues behind it in the runtime's mailbox. It checks the shard by Cluster's contract alone, but writes a
   request and a reply in Cluster's tables for every completion and every timer, for decision 0090 to delete.
 - **A request that waits, without answering, for the work queued before it.** It holds its transaction open while
-  it waits, the file's one writer (decision 0087).
+  it waits, the file's one writer (decision 0085).
 - **A sender to a suspended entity sending again on a clock.** Polling, which decision 0063 replaced.
 - **The asker's step that ends its work keeping the id of a request answered with Cluster's defect.** It never saw
   the id: only the client that was given the defect did.
@@ -319,7 +319,7 @@ checks the shard; it said so of the RPCs alone.
   transactions; on a database where transactions run side by side it is not, and decides again with the fence
   (decision 0084). The count of steps is a column the entity's row gains on Cluster. A burst of callers waits in Cluster's
   storage, where on one process it waits in memory
-  ([decision 0074](0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)).
+  ([decision 0074](archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)).
 - The shard a row carries is computed with `shardsPerGroup`, which Cluster's own rows depend on too: it cannot change
   while rows are stored.
 - The lease check reads a table of Cluster's, by columns a release may change, as decision 0090 writes them; the

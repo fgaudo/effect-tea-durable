@@ -3,7 +3,8 @@
  * schema's order, and drops what it does not declare; a record writes them in the order they were set. Two values
  * that encode alike may give their fields in another order, which is why the machine compares JSON with its fields
  * in any order, and only a record reaches that rule. The order is what 4.1.2 does, not what it promises: Schema
- * guarantees no order of the keys it encodes (`SchemaAST.ts`, decision 0107), and the machine relies on none.
+ * guarantees no order of the keys it encodes (`SchemaAST.ts`, the parse options, and `Schema.ts`, `Record`), and the
+ * machine relies on none.
  */
 import { expect, test } from 'bun:test'
 import * as Schema from 'effect/Schema'

@@ -1,12 +1,11 @@
 # 0081. On Cluster, a step commits with its reply
 
 **Status:** accepted, 2026-10-31. Decides the first of the [roadmap](../roadmap.md)'s findings from
-[Effect Cluster](../cluster.md#one-transaction-or-two); changes [decision 0007](0007-one-process-first.md)'s
-consequence for Cluster, and says that [decision 0074](0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)
+[Effect Cluster](../cluster.md#one-transaction-or-two); changes [decision 0007](archive/0007-one-process-first.md)'s
+consequence for Cluster, and says that [decision 0074](archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)
 does not hold there. Its reasons against letting a defect reach Cluster are corrected by
-[decision 0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md), what it says of a stored answer is changed
-by [decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md), and what it says of the runtime's mailbox
-there is corrected by [decision 0088](0088-on-cluster-the-message-an-entity-dies-on-stays-in-its-mailbox.md). An
+decision 0082, and what it says of a stored answer and of the runtime's mailbox there is changed by
+[decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md). An
 interrupted caller had Cluster store an answer no step gave, which
 [decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) corrects. What a step sets going
 is started from the machine, not from the step, since `afterCommit` runs once the connection is released, by
@@ -40,7 +39,7 @@ A spike checked this against `effect` 4.1.0, with `SingleRunner` on `@effect/sql
 - **Everything a step answers is a success of the RPC**: an accepted message, a rejection, `Suspended`. Its success
   schema encodes them all, and its failure schema is empty. A defect of the program is caught by the runtime, which
   stores the suspension in the step's transaction and answers it, as it does on one process
-  ([decision 0006](0006-a-defect-suspends-the-entity.md)).
+  ([decision 0006](archive/0006-a-defect-suspends-the-entity.md)).
 - **What a step sets going starts once the transaction commits**, through `SqlClient.afterCommit`: an operation, a
   timer, a wake-up. A commit that fails discards them, and the request is handled again from the state before it.
 - **The state records no message it handled.** A message delivered again is answered by Cluster from the reply it
@@ -62,7 +61,7 @@ A spike checked this against `effect` 4.1.0, with `SingleRunner` on `@effect/sql
 - On Cluster, a message is stored by Cluster, then handled: two transactions, and a message that finds the mailbox
   empty is no longer handled as it arrives. Decision 0074 still holds of the runtime on one process.
 - The runtime's mailbox, and what a process does to start the entities whose mailbox holds a message
-  ([decision 0071](0071-a-process-starts-the-entities-with-a-message.md)), are the one-process runtime's; on Cluster,
+  ([decision 0071](archive/0071-a-process-starts-the-entities-with-a-message.md)), are the one-process runtime's; on Cluster,
   Cluster reads its own mailbox per shard.
 - A step may run more than once for one message, when its commit fails or its runner loses the shard before the
   commit. The machine is pure and nothing of a step is seen before its commit, so it runs again from the same state.

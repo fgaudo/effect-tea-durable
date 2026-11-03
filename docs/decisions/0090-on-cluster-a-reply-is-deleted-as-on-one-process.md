@@ -2,20 +2,20 @@
 
 **Status:** accepted, 2026-10-31. Decides the [roadmap](../roadmap.md)'s finding on requests and replies from
 [Effect Cluster](../cluster.md#the-decisions-it-bears-on): what deletes a reply there. Corrects what
-[decision 0021](0021-a-reply-is-kept-while-the-work-that-asked-holds.md) says of Cluster in its consequences. That every id with rows to delete is kept does not hold of a request answered
-with Cluster's defect for a type not registered, by [decision 0096](0096-cluster-stores-an-answer-no-step-gave-for-a-type-not-registered.md).
+[decision 0021](archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md) says of Cluster in its consequences. That every id with rows to delete is kept does not hold of a request answered
+with Cluster's defect for a type not registered ([`cluster.md`](../cluster.md#the-decisions-it-bears-on)).
 The id of a request answered with Cluster's defect is kept by the client given it, before it resets the request, an
 id already kept is not kept again, and the database holds a pending id for each transaction since the last step, not
 one, by [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md).
-What its spike saw of Cluster's rows, which the repository did not keep, is tested by a spike in `spikes/`, by
-[decision 0114](0114-the-cluster-rows-0090-deletes-are-checked-by-a-kept-spike.md).
+What its spike saw of Cluster's rows, which the repository did not keep, is tested by
+[`spikes/cluster-forgets-a-request-deleted-by-its-id.test.ts`](../../spikes/cluster-forgets-a-request-deleted-by-its-id.test.ts).
 
 ## Context
 
 A reply to an entity is kept while the work that asked holds (decision 0021). On one process it is deleted in two
 places: a step whose work ended deletes the replies to the requests it sent, and a reply stored for work that
 already ended goes as it is stored, since only the storage sees the asker's keys
-([decision 0057](0057-the-machine-gives-what-is-written.md)). Decision 0021 and the [study](../cluster.md) say that on
+([decision 0057](archive/0057-the-machine-gives-what-is-written.md)). Decision 0021 and the [study](../cluster.md) say that on
 Cluster the sender's work and the receiver's replies are on different shards, so that one statement no longer reads
 both, and a deletion has to be a message, which may arrive before the request it ends.
 
@@ -32,7 +32,7 @@ then hold as they hold on one process:
 - **The two deletions see each other.** Either the step that stores the reply commits after the asker's step that
   ended its work, and finds the work ended, or before it, and the asker's step deletes the reply.
 - **Nothing sends under a key once its work ended.** An operation leaves only through its completion
-  ([decision 0005](0005-an-operation-leaves-only-by-completing.md)), so its fiber is done before the step that
+  ([decision 0005](archive/0005-an-operation-leaves-only-by-completing.md)), so its fiber is done before the step that
   delivers the completion ends the work, or died with its process when the completion is an at-most-once
   operation's `unknown`; a suspension or an unload stops the fiber, but the work still holds, and the request the
   fiber waited for is still handled ([decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
@@ -63,15 +63,15 @@ Cluster has no operation that forgets a processed request without delivering it 
   sent it.** Every step that answers such a request — a creation or a message, with a reply, `Suspended` or
   `NotFound` — stores its Cluster `request_id` with the asker's program, id, key and incarnation, once. A request
   answered `Suspended` or `NotFound` is reset and delivered again under the same id
-  ([decision 0087](0087-on-cluster-what-is-not-a-reply-is-handled-again.md)), and a retry across versions is a new
-  request to Cluster, under an id of its own ([decision 0086](0086-on-cluster-a-request-is-keyed-by-its-version-too.md)):
+  ([decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)), and a retry across versions is a new
+  request to Cluster, under an id of its own ([decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)):
   each id is kept. Every answer Cluster stores for an entity is a step's, since a caller that stops waiting stores
   none (decision 0091), so every id that has rows to delete is kept.
 - **The asker's step whose work ended deletes Cluster's rows with the runtime's replies**: every row in
   `cluster_messages` and `cluster_replies` under the ids kept for that work — the request, and any envelope stored
   under its id — and the ids, in its transaction. An id is kept by the step that answers its request, in Cluster's
   transaction, so its request is processed, but for one case: a request answered `Suspended` or `NotFound` and reset
-  by its asker's client (decision 0087), whose process died before it sent the request again. The asker's work then
+  by its asker's client (decision 0085), whose process died before it sent the request again. The asker's work then
   ends with an at-most-once operation's `unknown`, and its step deletes the rows of a request Cluster will deliver
   again. If Cluster has not read it yet, the message is lost, as `unknown` allows. If Cluster holds it in memory, a
   step handles it, finds the asker's work ended, and leaves its id pending, as below; Cluster's tables have no
@@ -90,7 +90,7 @@ Cluster has no operation that forgets a processed request without delivering it 
 
 - **The receiver asking the asker whether its work holds.** Right for ever once the answer is no, but nothing
   says when to ask: when the reply is stored, the asker still waits for it. Asking again later is polling, which
-  the runtime does not do ([decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md)).
+  the runtime does not do ([decision 0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md)).
 - **A message from the asker that its work ended.** It may arrive before the request it ends, so the receiver
   would keep a tombstone for it, and then need to know when the tombstone may go: the same question again.
 - **Cluster's rows deleted in `afterCommit` by the step that answers a request for ended work.** Cleaner while
@@ -117,7 +117,7 @@ Cluster has no operation that forgets a processed request without delivering it 
   id locks the asker's key row, and the asker's step writes its key row before it deletes, as it does on SQLite, so
   that one of the two sees the other.
 - Deleting a request's rows from Cluster's tables writes to tables that are Cluster's, which
-  [decision 0085](0085-on-cluster-a-request-is-keyed-as-the-machine-keys-it.md) avoided, by a column whose meaning a
+  [decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md) avoided, by a column whose meaning a
   release of Cluster may change; the spike is what checks it, at the version the project pins.
 - A caller waiting for a reply from storage would never get one whose rows are gone. Nothing waits for a request
   whose asker's work ended: its operation is done.

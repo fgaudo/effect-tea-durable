@@ -2,7 +2,7 @@
 
 **Status:** accepted, 2026-10-31. Decides the second of the [roadmap](../roadmap.md)'s findings from
 [Effect Cluster](../cluster.md#who-holds-an-entity), the fence; corrects what an alternative of
-[decision 0080](0080-a-database-is-held-by-one-runtime.md) says of Cluster's shard locks.
+[decision 0080](archive/0080-a-database-is-held-by-one-runtime.md) says of Cluster's shard locks.
 
 ## Context
 
@@ -39,7 +39,7 @@ The runtime on Cluster is not written yet: it is a later step of the roadmap, an
 - **On PostgreSQL and MySQL, the runtime waits for Cluster's fence.** Until Cluster's storage compares a token that the
   next holder of a shard changes, in the transaction of the write, the runtime does not run there. The fence it
   expects is the one #10058 proposes; once it is in a release, what the runtime relies on of it becomes a test of this
-  repository, as [decision 0082](0082-what-0081-saw-of-a-defect-is-not-cluster-s-contract.md) says of Cluster's
+  repository, as decision 0082 says of Cluster's
   contract.
 - **A fence of the runtime's own is the way out, decided in a note of its own** if Effect refuses #10058, or if the
   runtime is needed on PostgreSQL before it is fixed. Cluster's source, read for this note, shows where it would
@@ -53,7 +53,7 @@ The runtime on Cluster is not written yet: it is a later step of the roadmap, an
 - **The runtime's own fence, now.** It covers the step's writes alone, not Cluster's own: a stale `clearReplies` or
   `clearAddress` still deletes what the new owner wrote. It rests on an order of `Sharding` — acquire, reset, then
   read — that its source shows and no documentation says, of a module `@stability unstable`
-  ([decision 0019](0019-unstable-effect-modules.md)). The only way the source shows for a step that finds the epoch
+  ([decision 0019](archive/0019-unstable-effect-modules.md)). The only way the source shows for a step that finds the epoch
   moved to roll back without a reply is to die, which Cluster handles by its `defectRetryPolicy`, an option the
   runtime does not count on (decision 0082). And it would be written for a runtime on Cluster that does not exist
   yet, beside the table Cluster adds if #10058 is fixed.

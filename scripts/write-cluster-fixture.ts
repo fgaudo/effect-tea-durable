@@ -1,6 +1,6 @@
 /**
  * Writes the fixture of Cluster's rows at the version of `effect` installed, for
- * `spikes/cluster-reads-the-rows-an-older-release-wrote.test.ts` (decision 0116). A move of Effect's version runs it
+ * `spikes/cluster-reads-the-rows-an-older-release-wrote.test.ts` (`AGENTS.md`). A move of Effect's version runs it
  * once the spikes pass on the new release, and commits the fixture it writes.
  *
  *     bun scripts/write-cluster-fixture.ts
