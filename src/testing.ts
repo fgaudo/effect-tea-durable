@@ -31,11 +31,11 @@ export type ProjectionViolation<T extends Types> = Readonly<{ _tag: 'Rejected' |
 
 /**
  * Checks `program.project(state)` against `update` in `state`, both ways, as effect-tea's `dispatchViolations`
- * checks a view. Each of the `candidates`, the messages its reader could send, from the senders it speaks for (a
- * customer, for the customer's own order), is sent as a caller at `at`: one the projection allows must be
- * accepted, and one it does not allow must be rejected. Candidates of a kind `allows` leaves out are skipped. A
- * retry is answered from the stored reply, so nothing here checks that a message acts once. Returns every
- * violation, so that a test can assert there are none, for generated states.
+ * checks a view. The `candidates` are the messages the projection's reader could send, from the senders it
+ * speaks for: a customer, for the customer's own order. Each is sent as a caller at `at`. One the projection
+ * allows must be accepted, and one it does not allow must be rejected. Candidates of a kind `allows` leaves out
+ * are skipped. A retry is answered from the stored reply, so nothing here checks that a message acts once.
+ * Returns every violation, so that a test can assert there are none, for generated states.
  */
 export const projectionViolations = <T extends Types>(program: Program<T>, allows: NoInfer<Allows<T>>) =>
 (
@@ -108,15 +108,15 @@ export const freezing = <T extends Types>(program: Program<T>): Program<T> => {
 
 /**
  * A task ready to run, as a strategy sees it: the fiber that a preemption or a resumption made yield, by its id less
- * the run's first, or `undefined` for any other task — a fork, the wake of a `Queue` or a `Semaphore`, a fiber's own
- * `yieldNow` — which Effect schedules with no fiber this scheduler can name.
+ * the run's first. It is `undefined` for any other task, which Effect schedules with no fiber this scheduler can
+ * name: a fork, the wake of a `Queue` or a `Semaphore`, a fiber's own `yieldNow`.
  */
 export type Ready = Readonly<{ fiber: number | undefined }>
 
 /**
- * What decides a run under `controlled`: which ready task runs next, asked only when more than one is ready, and
- * whether the fiber running yields at a step, asked only when another task is ready, since a yield with none changes
- * nothing. The fiber is named by its id less the run's first, since Effect counts ids for the process.
+ * What decides a run under `controlled`. It is asked which ready task runs next, only when more than one is ready.
+ * It is asked whether the fiber running yields at a step, only when another task is ready, since a yield with none
+ * changes nothing. The fiber is named by its id less the run's first, since Effect counts ids for the process.
  */
 export type Strategy = Readonly<{
   pick: (ready: ReadonlyArray<Ready>) => number
@@ -305,7 +305,8 @@ export const scheduled = <A, E>(
 
 /**
  * The oldest task first and no preemption: a fiber runs on until it waits, as under Effect's own scheduler with an
- * unbounded budget, but for the yield before each resumption, which queues a fiber Effect would resume inline.
+ * unbounded budget. The one difference is the yield before each resumption, which queues a fiber Effect would
+ * resume inline.
  */
 export const inOrder: Strategy = { pick: () => 0, preempt: () => false }
 
