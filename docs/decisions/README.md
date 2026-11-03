@@ -5,7 +5,8 @@ code keeps. A note made for a step of the
 roadmap is `proposed`, and rewritten while the step is under way; once taken it is `accepted`, and never
 rewritten: a decision that changes is a later note, which the changed one's status line names. The rules of work
 have no note: [`AGENTS.md`](../../AGENTS.md) states them, and git keeps what they were. A number with no note was
-one of theirs, a record of a move of Effect's version, or never used; a number is never given again. Here the
+one of theirs, a record of a move of Effect's version, a note deleted once no document needed it, which git keeps
+and its citations sum up, or never used; a number is never given again. Here the
 notes are listed by what they decide, with the notes that changed each one; [`design.md`](../design.md) says what
 holds now, and the notes a document says what holds of are in [the archive](archive/README.md). The reviews of
 the notes, with what each read and found, are in [`reviews.md`](reviews.md).

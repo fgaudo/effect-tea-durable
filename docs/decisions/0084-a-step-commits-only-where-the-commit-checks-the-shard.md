@@ -39,8 +39,7 @@ The runtime on Cluster is not written yet: it is a later step of the roadmap, an
 - **On PostgreSQL and MySQL, the runtime waits for Cluster's fence.** Until Cluster's storage compares a token that the
   next holder of a shard changes, in the transaction of the write, the runtime does not run there. The fence it
   expects is the one #10058 proposes; once it is in a release, what the runtime relies on of it becomes a test of this
-  repository, as decision 0082 says of Cluster's
-  contract.
+  repository, as [`AGENTS.md`](../../AGENTS.md) asks of a premise about a dependency.
 - **A fence of the runtime's own is the way out, decided in a note of its own** if Effect refuses #10058, or if the
   runtime is needed on PostgreSQL before it is fixed. Cluster's source, read for this note, shows where it would
   sit: a wrapper of `RunnerStorage.acquire` raising an epoch per shard before Cluster resets the shard and reads its
@@ -55,7 +54,7 @@ The runtime on Cluster is not written yet: it is a later step of the roadmap, an
   read — that its source shows and no documentation says, of a module `@stability unstable`
   ([decision 0019](archive/0019-unstable-effect-modules.md)). The only way the source shows for a step that finds the epoch
   moved to roll back without a reply is to die, which Cluster handles by its `defectRetryPolicy`, an option the
-  runtime does not count on (decision 0082). And it would be written for a runtime on Cluster that does not exist
+  runtime does not count on (decision 0082, deleted; git keeps it). And it would be written for a runtime on Cluster that does not exist
   yet, beside the table Cluster adds if #10058 is fixed.
 - **Comparing the version of the entity's row in each step.** It keeps an older state from being written over a newer,
   but not a step from being applied twice: a stale runner that commits a message after the new owner has read it as

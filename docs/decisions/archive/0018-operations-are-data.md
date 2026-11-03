@@ -1,6 +1,6 @@
 # 0018. Operations are data, and their runners never see the state
 
-**Status:** accepted, 2026-10-30. Replaces decision 0016, and the
+**Status:** accepted, 2026-10-30. Replaces decision 0016 (deleted; git keeps it), and the
 way [decision 0011](0011-an-operation-declares-what-a-crash-does.md) builds an operation. Its comparison by
 `Equal.equals` is replaced by [decision 0058](0058-work-is-compared-by-what-is-stored.md): two works are the same
 when they encode to the same JSON.
@@ -37,7 +37,7 @@ is the one that was running. The machine's tests check it as a property.
 
 ## Alternatives
 
-- **Closures, and a rule for programs** (decision 0016). Nothing
+- **Closures, and a rule for programs** (decision 0016, deleted; git keeps it). Nothing
   checks the rule, and breaking it shows only after a crash.
 - **An input declared beside the closure.** The machine would compare the input, and the closure would still
   read what it likes.

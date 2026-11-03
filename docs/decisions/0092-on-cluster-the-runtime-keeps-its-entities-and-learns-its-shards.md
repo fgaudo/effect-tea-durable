@@ -8,7 +8,7 @@ step of a request queued behind the entity's own work. Changes what
 [decision 0079](archive/0079-what-a-caller-sets-going-is-finished-without-it.md) holds for an activation on Cluster, and says
 how [decision 0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md) holds for a shard that leaves. What it
 says of Cluster is read from its source at `effect` 4.1.1, and what the runtime relies on is checked by two spikes.
-Decides what decision 0096 left to it: who
+Decides what decision 0096 (deleted; git keeps it) left to it: who
 keeps the Cluster id of a request answered with Cluster's defect, which changes which steps keep an id in
 [decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md); and corrects 0096's rule of what Cluster
 stores without a step. A pending id is written by more than a step, which changes how many decision 0090 says the
@@ -54,8 +54,8 @@ Cluster's source says:
   not decode is answered `MalformedMessage`, as a defect, and a defect while a message read from storage is delivered
   is saved under its request. A full mailbox, a runner that no longer holds the shard, and a
   request already being processed save nothing: the message stays in storage, and is read again. A defect of a
-  handler is not saved, and restarts the entity
-  (decision 0095).
+  handler is not saved, and restarts the entity without end, whatever its `defectRetryPolicy`
+  ([`cluster.md`](../cluster.md#one-transaction-or-two); decision 0095, deleted; git keeps it).
 - **A shard's lease on SQLite is a row of `cluster_locks`**, `shard_id`, `address` and `acquired_at`, and a runner
   takes it from another only by writing it, where `acquired_at` is more than 35 s (the `shardLockExpiration`) before
   `CURRENT_TIMESTAMP`, counted in whole seconds by `strftime('%s', …)`; the write waits for the file's one writer.
@@ -190,7 +190,7 @@ checks the shard; it said so of the RPCs alone.
   stepped after.
 - **A defect from Cluster is no reply.** The runtime never answers with one
   ([decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md)), and a defect of a receiver that escapes the
-  runtime is not saved (decision 0095), so a defect saved under a request is Cluster's own: a type not registered in
+  runtime is not saved (decision 0095, deleted; git keeps it), so a defect saved under a request is Cluster's own: a type not registered in
   time, a payload the RPC's schema does not decode, or a delivery that died. The runtime's payload is JSON, which
   that schema decodes as it is ([decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)), so the
   second needs a row Cluster's encoding did not write. An operation's client that is given one keeps the request's
@@ -251,7 +251,8 @@ checks the shard; it said so of the RPCs alone.
   already being processed: **read in the source**, the storage read of `Sharding.ts` and `send` in
   `entityManager.ts`. A type not registered is **seen** in the first spike, a request that does not decode in the
   second; the others are not.
-- A defect of a handler is not saved: decision 0095, **read in the source**.
+- A defect of a handler is not saved: **read in the source**, the `Defect` case of the server's responses in
+  `entityManager.ts` at 4.1.1 (decision 0095, deleted; git keeps it).
 - The client is given the defect alone, and finds the request's id and the reply's from `MessageStorage`; the same
   key sent again is given the same defect under the same id; after a reset the handler is given that id: **seen** in
   the second spike.
@@ -329,7 +330,7 @@ checks the shard; it said so of the RPCs alone.
   the reaper's period, and a burst may open more doors than the capacity meanwhile.
 - `Resumed` and the rows of the senders that wait are new: the sender's request is the one decision 0090 keeps the
   Cluster ids of, and `Resumed`'s own rows are deleted as a request answered for work that ended.
-- The rows decision 0096 found left behind are left only in a window: a process that dies after its client is given
+- The rows the [first review](reviews.md) found left behind (decision 0096, deleted; git keeps it) are left only in a window: a process that dies after its client is given
   Cluster's defect and before it keeps the id, under an at-most-once operation whose work then ends with `unknown`.
   An operation run again sends under the same key, is given the same defect, and keeps the id then. A process that
   dies after the keep and before the reset leaves a defect under a kept id, deleted when the work ends.
@@ -337,6 +338,6 @@ checks the shard; it said so of the RPCs alone.
   not only by a step answering a request after its asker's work ended: the database holds one for each transaction
   committed since the last step of any entity, not one, as decision 0090 has it. That step deletes them all.
 - Every answer Cluster stores for an entity is a step's or a defect of Cluster's own, which corrects the rule of
-  decision 0096 that names only a type not registered: a request that does not decode, or whose delivery died, is
+  decision 0096 (deleted; git keeps it) that names only a type not registered: a request that does not decode, or whose delivery died, is
   answered the same way, and its id kept the same way.
 - Nothing of this is code yet: the runtime on Cluster is a later step of the [roadmap](../roadmap.md).

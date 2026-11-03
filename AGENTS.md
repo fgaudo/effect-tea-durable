@@ -21,7 +21,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   A note is numbered in order and never rewritten once taken: a decision that changes is a new note that says which
   one it replaces. A threshold, a procedure or a choice of tooling whose reason fits in a sentence is a rule of
   work: this file states it, a change of it is a commit to this file, and git keeps what it was. A number is never
-  given again, so a number with no note was a rule of work's, or never used. A note
+  given again, so a number with no note was a rule of work's, a record of a move of Effect's version, a note
+  deleted once no document needed it, or never used. A citation of a deleted note says what it decided, and reads
+  `decision 0082 (deleted; git keeps it)`; `bun run links` checks every citation, in prose as in a comment. A note
   made for a step of the roadmap is `proposed`, and is rewritten in place while the step is under way; it is
   taken, `accepted`, by the commit that takes the step out of the roadmap. Any other note is taken by the commit
   that adds it, with the code it decides, if any. Once a note is taken, only a link a later rename breaks is fixed

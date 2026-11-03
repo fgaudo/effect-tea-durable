@@ -59,10 +59,11 @@ rolls back, and the interruption is saved after, the same answer.
 
 - An at-least-once operation stopped by an unload sends its request again once it is restarted, and gets the answer
   the request was given meanwhile, from Cluster's stored reply.
-- The stall Cluster's bug causes once the caller of a message that dies is interrupted
-  (decision 0083) needs that caller's `Interrupt`, which the runtime's RPCs no
-  longer send. The runtime still does not rely on it either way
-  (decision 0082); no spike checked it.
-- When the runtime runs on Cluster, the spike becomes a test of this repository, as decision 0082 says of Cluster's
-  contract.
+- The stall Cluster's bug caused at 4.1.1 once the caller of a message that dies was interrupted
+  ([Effect-TS/effect#10238](https://github.com/Effect-TS/effect/issues/10238), fixed in 4.1.2:
+  [`cluster.md`](../cluster.md#one-transaction-or-two)) needs that caller's `Interrupt`, which the runtime's RPCs no
+  longer send. The runtime still does not rely on it either way (decision 0082, deleted; git keeps it); no spike
+  checked it.
+- When the runtime runs on Cluster, the spike becomes a test of this repository, as [`AGENTS.md`](../../AGENTS.md)
+  asks of a premise about a dependency.
 - Nothing of this is code yet: the runtime on Cluster is a later step of the [roadmap](../roadmap.md).

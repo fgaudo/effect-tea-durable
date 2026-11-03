@@ -16,7 +16,7 @@ which a creation's `onError` runs where it cannot be interrupted, and which fork
 work.
 
 That such a fiber is interruptible was seen in `spikes/effect-uninterruptible-fork.test.ts`, and is not in Effect's
-documentation (decision 0107). The project runs on Effect 4, but the
+documentation (decision 0107, deleted; git keeps it). The project runs on Effect 4, but the
 default has changed before: in Effect 3 a fiber took the interruptibility of the region it was forked from (its
 `unsafeMakeChildFiber` gives the child the parent's runtime flags, at 3.22.4). A fiber that could not be interrupted
 would hold its scope's closing for as long as it runs, and the waker runs for ever.

@@ -4,7 +4,9 @@
 [Effect Cluster](../cluster.md#one-transaction-or-two); changes [decision 0007](archive/0007-one-process-first.md)'s
 consequence for Cluster, and says that [decision 0074](archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)
 does not hold there. Its reasons against letting a defect reach Cluster are corrected by
-decision 0082, and what it says of a stored answer and of the runtime's mailbox there is changed by
+decision 0082 (deleted; git keeps it): the endless retry and the stall are what one release of Cluster does, not its
+contract, and the runtime does not count on what Cluster does with a defect. What it says of a stored answer and of
+the runtime's mailbox there is changed by
 [decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md). An
 interrupted caller had Cluster store an answer no step gave, which
 [decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) corrects. What a step sets going
