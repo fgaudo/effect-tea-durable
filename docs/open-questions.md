@@ -132,20 +132,22 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   such a fiber by its first run happening outside a task of its own. To check first:
   - how many more schedules it makes;
   - whether a test of `src/testing.test.ts` fails without it.
-- **An event lost to the wait's timeout.** An entity waits for its next event with a timeout of the take alone,
-  which [decision 0111](decisions/archive/0111-an-entity-s-wait-times-out-its-take-alone.md) holds loses no event, on a
-  maintainer's word. It can lose one at `effect` 4.1.2: `timeoutOption` races the take and a sleep in two fibers, and
-  interrupts the loser only once the racing fiber runs again. A take woken in between takes the event, and nobody
-  gets it. `spikes/effect-queue-take-timeout-scheduled.test.ts` reaches it under `inline` resumptions, in orders
-  Effect's scheduler gives once a fiber runs out of its budget of steps. The runtime's test `a message that arrives
-  as the wait of its entity runs out is handled` reaches it under `queued` resumptions at seed 465, and under
-  `inline` ones once a lock taken through `RcMap` moves the schedules. The caller then waits for ever. The waker
-  races its poke the same way, and loses nothing by it, since it reads the stored timers again after every race.
-  What would decide it:
-  - whether Effect takes it as a bug of `raceAllFirst`, which could interrupt the loser as the winner ends;
-  - whether the passivation is offered to the entity's queue by a timer, as `Evict` is, so that the take never
-    times out, and what that costs at every event, which restarts the timer;
-  - that the runtime's test passes under `queued` resumptions with the fix, and fails without it.
+- **A preemption as a fiber is resumed.** The scheduler of the tests preempts a fiber at any step, the first after
+  its resumption too. Effect's scheduler does not: it counts a fiber's steps from 0 at every run, so a fiber resumed
+  takes at least its budget less one before it yields, and under a budget of 2 or less no fiber gets on. So under
+  `inline` resumptions a test reaches orders Effect does not give, which
+  [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) holds it does not. One loses an
+  entity's event to the timeout of its wait. `timeoutOption` races the take and a sleep in two fibers, and the
+  racing fiber interrupts the loser once it is resumed. Preempted there, it lets the take, woken by an offer, take
+  the event after the sleep has won. `spikes/effect-queue-take-timeout-scheduled.test.ts` shows both: no loss under
+  Effect's scheduler at any budget that runs, and a loss under the scheduler of the tests. The runtime's test `a
+  message that arrives as the wait of its entity runs out is handled` reaches the loss under `queued` resumptions at
+  seed 465, and under `inline` ones at seed 140 once the entities' locks are taken through `RcMap`, which forks a
+  fiber where the lock was taken in one step. What would decide it:
+  - whether `prioritized` and `everySchedule` leave a fiber resumed its first steps, and how many: Effect gives at
+    least two, and any budget of a scheduler of Effect's could give more;
+  - whether the explored tests still fail, under the same rules taken out, with those steps left;
+  - whether the locks through `RcMap` then pass every seed, and are worth the fork they add to every `send`.
 - **How many seeds a bug needs.** A run of the tests runs 100 of the 2,000 seeds of each explored test, and a
   release all of them ([`AGENTS.md`](../AGENTS.md)). That
   most bugs are found within the first 100 is only reasoned. To check: take out, one at a time, the rules of

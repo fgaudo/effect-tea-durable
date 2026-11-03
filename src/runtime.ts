@@ -904,9 +904,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             Effect.flatMap(() => next),
           )
         }
-        // The timeout wraps the take alone (decision 0111). A step after the take inside it would let the timeout win
-        // with the event taken, and lose it. Effect can lose it even so, in rare orders: the open question `An event
-        // lost to the wait's timeout` says when.
+        // The timeout wraps the take alone (decision 0111). Only then does Effect keep an event offered as it fires.
+        // A step after the take inside it would let the timeout win with the event taken, and lose it.
         return Effect.timeoutOption(Queue.take(loaded.events), `${passivate} millis`).pipe(
           Effect.flatMap((taken) => {
             // The wait ran out, or the entity was told to leave: it is unloaded if it has nothing to do.

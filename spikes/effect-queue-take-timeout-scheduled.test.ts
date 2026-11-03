@@ -1,20 +1,26 @@
 /**
- * What decision 0111 rests on, at `effect` 4.1.2, under the scheduler of the tests: a timeout of a take alone can
- * lose the item offered as it fires. `timeoutOption` races the take and a sleep, each in a fiber of its own, and the
- * race interrupts the loser only once the racing fiber runs again (`timeoutOption`, `raceAllFirst` and
- * `onExitUnsafe` in `internal/effect.ts`, read in the source). The sleep's fiber ends first, and decides the race. The
- * take's fiber, woken by the offer, runs before the racing fiber does, and takes the item. Its end is not the race's,
- * and the item is in no place.
+ * What decision 0111 rests on, at `effect` 4.1.2: a timeout of a take alone loses the item offered as it fires only
+ * under a scheduler that makes a fiber yield as it is resumed. Effect's own scheduler never does.
  *
- * The orders are those of `inline` resumptions, which Effect's scheduler gives, with the preemptions its budget of
- * steps gives (decision 0104). `spikes/effect-queue-take-timeout.test.ts` runs the race under Effect's own scheduler,
- * where no fiber reaches its budget, and sees no loss.
+ * `timeoutOption` races the take and a sleep, each in a fiber of its own, and the racing fiber interrupts the loser
+ * once it is resumed (`timeoutOption`, `raceAllFirst` and `onExitUnsafe` in `internal/effect.ts`, read in the source).
+ * Under the scheduler of the tests, the sleep's fiber ends first and decides the race. The racing fiber is preempted
+ * as it is resumed, and the take's fiber, woken by the offer, runs before it and takes the item. Its end is not the
+ * race's, and the item is in no place.
+ *
+ * Effect's scheduler starts the count of a fiber's steps again at every run (`runLoop` in `internal/effect.ts`, read
+ * in the source), so a fiber resumed takes at least its budget of steps less one before it yields. Under a budget of
+ * 2 or less no fiber gets on: under 3 and above, the racing fiber interrupts the take first, and the item stays in
+ * the queue. The preemptions of the scheduler of the tests come at any step, so a test reaches this order where Effect
+ * does not.
  */
 import { expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
+import * as Latch from 'effect/Latch'
 import * as Queue from 'effect/Queue'
+import * as Scheduler from 'effect/Scheduler'
 import { TestClock } from 'effect/testing'
 import { prioritizedSchedules } from '../src/testing.ts'
 
@@ -34,7 +40,30 @@ const race = Effect.gen(function*() {
   return taken._tag === 'Some' ? 'taken' : left === 1 ? 'left' : 'lost'
 }).pipe(Effect.provide(TestClock.layer()))
 
-test('a take a timeout interrupts can lose the item offered as the timeout fires', () => {
+test('under the scheduler of Effect a race of a take loses no item, at any budget of steps that runs', async () => {
+  // The other side of the race ends and the item is offered in one synchronous step: the narrowest window there is.
+  const latched = (budget: number, before: number) =>
+    Effect.gen(function*() {
+      const queue = yield* Queue.unbounded<number>()
+      const latch = yield* Latch.make()
+      const wait = yield* Effect.forkChild(Effect.raceFirst(Effect.asSome(Queue.take(queue)), Effect.as(latch.await, null)))
+      yield* Effect.replicateEffect(Effect.yieldNow, before, { discard: true })
+      yield* Effect.sync(() => {
+        latch.openUnsafe()
+        Queue.offerUnsafe(queue, 1)
+      })
+      const taken = yield* Fiber.join(wait)
+      return taken !== null ? 'taken' : (yield* Queue.size(queue)) === 1 ? 'left' : 'lost'
+    }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget))
+  const ends = new Set<string>()
+  for (const budget of [3, 4, 5, 6, 8, 16, 2048]) {
+    for (let before = 0; before < 6; before++) ends.add(await Effect.runPromise(latched(budget, before)))
+  }
+  expect(ends.has('lost')).toBe(false)
+  expect(ends.has('left')).toBe(true)
+})
+
+test('a scheduler that preempts a fiber as it is resumed makes a take a timeout interrupts lose its item', () => {
   const ends = new Set<string>()
   prioritizedSchedules(race, { runs: 5000, depth: 3, resumptions: 'inline' }, (exit) => {
     expect(Exit.isSuccess(exit)).toBe(true)
