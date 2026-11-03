@@ -36,8 +36,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
   The roadmap holds only the steps ahead: what a done step decided is in its notes, and is not retold there.
 - A note moves to `docs/decisions/archive/` once the document that says what holds of it does: `docs/design.md`
   for the design, `README.md` for the project. A note of a step the roadmap still holds stays. A note a later note
-  changes may move without it: its status line links the note that changes it, wherever that one is. The archive
-  has an index of its own, and each release moves what has come to be covered since. `bun run links` checks every
+  changes may move without it: its status line links the note that changes it, wherever that one is. The index
+  lists an archived note under its path in `archive/`, and each release moves what has come to be covered since. `bun run links` checks every
   link of the `.md` files.
 - A note lists, in a section `What it rests on`, each premise its decision falls without, and says of each whether it
   is tested (naming the test), documented, seen in a spike, read in a dependency's source, or only reasoned.
