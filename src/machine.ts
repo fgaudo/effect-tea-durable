@@ -32,8 +32,8 @@ import {
 
 /**
  * What the program threw, or a rule of the design it broke: the one exception that suspends the entity. Anything
- * else thrown while an event is applied is the runtime's — a bug of the machine, or a machine the runtime gave it
- * corrupted — and leaves the step, which a runtime crashes the entity on (decisions 0042, 0061).
+ * else thrown while an event is applied is the runtime's, and leaves the step: a bug of the machine, or a machine
+ * the runtime gave it corrupted. A runtime crashes the entity on it (decisions 0042, 0061).
  */
 class Defect extends Error {
   // Legible where it leaves the machine: `shownOf`, which `reindex` calls, throws it too.
@@ -185,10 +185,10 @@ export const shownOf = <T extends Types>(
 }
 
 /**
- * The work of a state the machine may store, and everything a runtime writes of it checked: `durable`, what
- * callers read, with the indexes a query reads it by, and the state, its work and its projection encoded to what
- * JSON holds. Any of them may die, and one that does suspends the entity. What is encoded here is kept, and is
- * what the step writes (decisions 0014, 0032, 0040, 0057).
+ * The work of a state the machine may store, with everything a runtime writes of it checked. The checks are
+ * `durable`, what callers read with the indexes a query reads it by, and the encoding of the state, its work and
+ * its projection to what JSON holds. Any of them may die, and one that does suspends the entity. What is encoded
+ * here is kept, and is what the step writes (decisions 0014, 0032, 0040, 0057).
  */
 const admitted = <T extends Types>(program: Program<T>, state: T['state']): Held<T> => {
   const work = workUnder(program, state)
@@ -531,8 +531,8 @@ const renew = <T extends Types>(
 const kindOf = (work: unknown): Running['kind'] => (isTimer(work) ? 'Timer' : 'Operation')
 
 /**
- * Whether `next` is the work `previous` was: the same JSON, as the program stores them — an operation by its
- * schema, a timer by its time and its message — which is what a crash compares (decisions 0018, 0058).
+ * Whether `next` is the work `previous` was: the same JSON, as the program stores them. An operation is stored
+ * by its schema, a timer by its time and its message. That JSON is what a crash compares (decisions 0018, 0058).
  */
 const isSame = <T extends Types>(
   program: Program<T>,
@@ -592,12 +592,13 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
 
 /**
  * Starts what the stored state says, with nothing under way, as `program` computes it: the work under each key,
- * unless its message is already in the mailbox. An at-most-once operation that may have run before (`mayHaveRun`:
- * after a crash, or a suspension, and never at a creation) may have acted, so its `unknown` is recorded instead of
- * running it again; one that is new work at this activation, in an incarnation the stored work did not hold, never
- * ran, and starts. A suspended entity starts nothing: a deploy of a fix leaves it as it is (decision 0064). A defect,
- * of the program on the stored state or of an `unknown` that dies or does not encode (decision 0040), leaves the
- * entity as it was before the event, `before`, suspended on what suspended it, or on the activation.
+ * unless its message is already in the mailbox. An at-most-once operation that may have run before may have
+ * acted, so its `unknown` is recorded instead of running it again. `mayHaveRun` says so after a crash or a
+ * suspension, and never at a creation. One that is new work at this activation never ran, and starts: its
+ * incarnation is one the stored work did not hold. A suspended entity starts nothing: a deploy of a fix leaves it
+ * as it is (decision 0064). A defect leaves the entity as it was before the event, `before`, suspended on what
+ * suspended it, or on the activation. The defect is the program's on the stored state, or an `unknown` that dies
+ * or does not encode (decision 0040).
  *
  * A passivation is a `Restart` the runtime chooses, with an empty mailbox and only timers under way: activating
  * again arms the same timers, in the same incarnations, which the stored work holds while it is unloaded.
@@ -890,10 +891,10 @@ const askerOf = <Sender>(request: Request<Sender>): Asker | null =>
     : null
 
 /**
- * What an event writes, from what was stored before it (null for a new entity) to what is stored after it, with
- * the message it handled and the reply it stored for it: nothing for an event that changed nothing stored
- * (decisions 0057, 0065). Only a step that handles a message changes the state of an entity that exists, so the
- * row it publishes is that message's.
+ * What an event writes: the difference from what was stored before it, null for a new entity, to what is stored
+ * after it. It carries the message the event handled and the reply it stored for it, and is nothing for an event
+ * that changed nothing stored (decisions 0057, 0065). Only a step that handles a message changes the state of an
+ * entity that exists, so the row it publishes is that message's.
  */
 export const writes = <T extends Types>(
   program: Program<T>,
