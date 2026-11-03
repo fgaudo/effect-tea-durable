@@ -396,6 +396,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * creates, unloads or crashes an entity holds it. So no caller is between finding the entity and offering its
      * event when it leaves the process, and two callers never build two machines for it (decisions 0029, 0042).
      */
+    // Counted by hand: `RcMap` counts its users the same way, but forks a fiber for each lock it makes, so a caller
+    // that finds no lock would wait for that fiber before it holds one.
     const locks = new Map<string, { readonly semaphore: Semaphore.Semaphore; users: number }>()
     const holding = (entity: Address) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
       const address = addressOf(entity)
