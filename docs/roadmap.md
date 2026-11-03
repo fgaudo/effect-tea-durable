@@ -7,9 +7,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
-2. **Suspended entities** ([open question](open-questions.md#running)): how an operator sees, resumes and discards
-   them, and who is told that a sender waits. It does not wait on Cluster, and is taken before it if an operator
-   needs it first.
 
 ## Later
 

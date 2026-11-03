@@ -548,11 +548,16 @@ describe('the machine', () => {
   test('what runs is what the stored state says, unless its message is already in the mailbox', () =>
     property(({ trace }) => {
       for (const { after } of trace) {
+        const work = Machine.workOf(after.stored)
         if (after.stored.suspension !== null) {
-          expect(after.running).toEqual({})
+          // Only operations run, each one the stored work holds in its incarnation (decision 0113).
+          for (const [key, running] of Object.entries(after.running)) {
+            expect(running.kind).toBe('Operation')
+            expect(work[key] !== undefined && !isTimer(work[key])).toBe(true)
+            expect(after.stored.keys[key]?.incarnation).toBe(running.incarnation)
+          }
           continue
         }
-        const work = Machine.workOf(after.stored)
         for (const [key, durable] of Object.entries(work)) {
           const incarnation = after.stored.keys[key]?.incarnation ?? -1
           if (!queued(after, key, incarnation)) {
@@ -725,16 +730,36 @@ describe('the machine', () => {
           : []
         expect({ ...after.stored, suspension: null })
           .toEqual({ ...before.stored, mailbox: [...before.stored.mailbox, ...received], suspension: null })
-        expect(after.running).toEqual({})
+        // The timers leave what runs. The operations stay, but the one that died, and none survives a restart
+        // (decision 0113).
+        const died = event._tag === 'Die' || event._tag === 'Complete' ? event.key : null
+        const kept = event._tag === 'Restart' ? {} : Object.fromEntries(
+          Object.entries(before.running).filter(([key, running]) => running.kind === 'Operation' && key !== died),
+        )
+        expect(after.running).toEqual(kept)
       }
     }))
 
-  test('a suspended entity takes nothing, and runs nothing, until an operator resumes it', () =>
+  test('a suspended entity handles nothing, and its operations run to their end', () =>
     property(({ trace }) => {
-      for (const { event, before, after } of trace) {
+      for (const { event, before, after, outputs } of trace) {
         if (before.stored.suspension === null || event._tag === 'Resume' || event._tag === 'Discard') continue
-        expect(after.stored).toEqual(before.stored)
-        expect(after.running).toEqual({})
+        const { mailbox, ...stored } = after.stored
+        const { mailbox: previous, ...was } = before.stored
+        expect(stored).toEqual(was)
+        expect(mailbox.slice(0, previous.length)).toEqual([...previous])
+        // What is recorded behind the message is the completion of an operation that was running (decision 0113).
+        for (const envelope of mailbox.slice(previous.length)) {
+          expect(envelope._tag).toBe('Internal')
+          if (envelope._tag === 'Internal') {
+            expect(before.running[envelope.key]).toEqual({ kind: 'Operation', incarnation: envelope.incarnation })
+          }
+        }
+        for (const [key, running] of Object.entries(after.running)) {
+          expect(running.kind).toBe('Operation')
+          expect(before.running[key]).toEqual(running)
+        }
+        expect(outputs.some((output) => output._tag === 'Started' || output._tag === 'Armed')).toBe(false)
       }
     }))
 
@@ -1275,6 +1300,65 @@ describe('what a runtime writes', () => {
     const transition = stepped({ ...created.machine, program, replies: new Map() }, { _tag: 'Restart' })
     expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
     expect(transition.machine.stored.mailbox).toEqual([])
+  })
+})
+
+// A suspension stops the handling of messages and the timers, and the operations run to their end (decision 0113).
+describe('what a suspension stops', () => {
+  const bugs = (message: string) => (message === 'bug' ? defect('bug') : message)
+  const working = (state: string): TinyWork =>
+    state === 'start'
+      ? { charge: 'operation', mail: 'operation', deadline: 'later timer' }
+      : state === 'charged'
+      ? { mail: 'operation', deadline: 'later timer' }
+      : {}
+  const suspended = () => handled(checked(bugs, working), { _tag: 'Receive', request: by('r'), message: 'bug' })
+
+  test('an operation under way when the entity suspends runs to its end, and is kept at the resumption', () => {
+    const died = suspended()
+    // The timer leaves what runs, and the operations stay.
+    expect(died.machine.running).toEqual({
+      charge: { kind: 'Operation', incarnation: 1 },
+      mail: { kind: 'Operation', incarnation: 1 },
+    })
+    const completed = stepped(died.machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'charged' })
+    expect(completed.outputs).toEqual([{ _tag: 'Recorded', key: 'charge', incarnation: 1 }])
+    expect(completed.machine.stored.mailbox.map((envelope) => envelope._tag)).toEqual(['Inbound', 'Internal'])
+    expect(completed.machine.stored.suspension).toEqual(died.machine.stored.suspension)
+    // Nothing is handled meanwhile.
+    expect(stepped(completed.machine, { _tag: 'Handle', at }).machine).toBe(completed.machine)
+    // The discard drops the message. The completion waits in the mailbox and `mail` still runs: neither is started
+    // again, and the timer is armed again.
+    const resumed = stepped(completed.machine, { _tag: 'Discard' })
+    expect(resumed.machine.stored.suspension).toBeNull()
+    expect(resumed.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+    expect(resumed.outputs).toContainEqual(expect.objectContaining({ _tag: 'Armed', key: 'deadline', incarnation: 1 }))
+    expect(resumed.machine.running['mail']).toEqual({ kind: 'Operation', incarnation: 1 })
+    const after = stepped(resumed.machine, { _tag: 'Handle', at })
+    expect(after.machine.stored.state).toEqual({ last: 'charged' })
+    expect(after.outputs).toContainEqual({ _tag: 'Delivered', key: 'charge', incarnation: 1 })
+  })
+
+  test('an operation that dies while the entity is suspended leaves the suspension as it is, and runs again once resumed', () => {
+    const died = suspended()
+    const again = stepped(died.machine, { _tag: 'Die', key: 'charge', incarnation: 1, cause: 'died too' })
+    expect(again.outputs).toEqual([])
+    expect(again.written).toBeNull()
+    expect(again.machine.stored).toEqual(died.machine.stored)
+    expect(again.machine.running).toEqual({ mail: { kind: 'Operation', incarnation: 1 } })
+    const resumed = stepped(again.machine, { _tag: 'Discard' })
+    const started = resumed.outputs.flatMap((output) => (output._tag === 'Started' ? [output.key] : []))
+    expect(started).toEqual(['charge'])
+  })
+
+  test('a restart keeps no operation of a suspended entity running, and the resumption starts them again', () => {
+    const died = suspended()
+    const restarted = stepped(died.machine, { _tag: 'Restart' })
+    expect(restarted.machine.running).toEqual({})
+    expect(restarted.machine.stored).toEqual(died.machine.stored)
+    const resumed = stepped(restarted.machine, { _tag: 'Discard' })
+    const started = resumed.outputs.flatMap((output) => (output._tag === 'Started' ? [output.key] : []))
+    expect(started.sort()).toEqual(['charge', 'mail'])
   })
 })
 

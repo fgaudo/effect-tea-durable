@@ -36,7 +36,16 @@ export {
   type Work,
 } from './program.ts'
 export { accepted, type Pending, type Rehearsal, rehearse, rejected } from './rehearse.ts'
-export { type Answer, type Handle, launch, type Options, type Runtime } from './runtime.ts'
+export {
+  type Answer,
+  type Handle,
+  launch,
+  type Operated,
+  type Options,
+  type Runtime,
+  type Suspended,
+  type Waiting,
+} from './runtime.ts'
 export {
   type Comparison,
   type Consumer,
@@ -45,5 +54,6 @@ export {
   type Found,
   type Published,
   type Query,
+  type Suspension,
 } from './storage.ts'
 export { type Allows, type Candidate, projectionViolations, type ProjectionViolation } from './testing.ts'

@@ -77,23 +77,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   two processes share a store. On Effect Cluster a runner carries no version, and a shard may go from a new runner
   back to an old one ([Cluster](cluster.md#two-versions-at-once)): the choice is between deploys that replace every
   runner before a new one writes, forward compatibility for one version, or a change to Cluster.
-- **Suspended entities.** A caller gets `Suspended`, and an operation that sends waits, keeping its own entity
-  waiting with it ([decision 0010](decisions/archive/0010-a-rejection-may-carry-a-reason.md)), as it waits for a
-  program not deployed yet ([decision 0045](decisions/archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md)),
-  for ever if it never is, and for a receiver that crashes
-  ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)), for ever if it keeps crashing.
-  How does an operator see, resume and discard? And how long may a sender wait before someone is told? It
-  waits for the receiver's resumption, and costs nothing meanwhile
-  ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)), but nothing says it waits.
-  A suspension stops every operation of the entity, and drops what they deliver meanwhile
-  ([decision 0006](decisions/archive/0006-a-defect-suspends-the-entity.md)): a charge interrupted because another
-  operation died runs again, or delivers `unknown` if at most once. Should a suspension stop only the handling
-  of messages, and let the work under way record its completions? And an operation that dies cannot be
-  discarded, only resumed: one that dies on a reply stored by another entity dies again on every resume, and
-  only a new version of the program gets it out. Neither can a completion or a firing `update` dies on
-  ([decision 0041](decisions/archive/0041-a-completion-is-not-discarded.md),
-  [decision 0044](decisions/archive/0044-a-firing-is-not-discarded.md)), and the runtime's `discard` does not say that it
-  did nothing.
 - **A planned stop.** An at-most-once operation under way when its process stops delivers `unknown` at the next
   activation, and [decision 0011](decisions/archive/0011-an-operation-declares-what-a-crash-does.md) says the runtime
   should drain them before a planned stop. Nothing does: a process ends when the scope it was launched in

@@ -5,6 +5,7 @@
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
+import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Schema from 'effect/Schema'
@@ -113,9 +114,10 @@ test('a reply asked by work that no longer holds goes as it is stored, and one w
       yield* storage(asker, sql).write(
         'a',
         created({ keys: [{ key: 'ask', incarnation: 1, work, delivery: 'Idempotent', due: null }] }),
+        0,
       )
       const store = storage(receiver, sql)
-      yield* store.write('r', created({ replies: [reply('held', 1), reply('ended', 2)] }))
+      yield* store.write('r', created({ replies: [reply('held', 1), reply('ended', 2)] }), 0)
       expect(yield* store.reply('r', asked('held', 1))).toEqual({ _tag: 'Accepted' })
       expect(yield* store.reply('r', asked('ended', 2))).toBeNull()
     })))
@@ -127,12 +129,13 @@ test('the work that ended takes the replies to its requests with it, and no othe
       yield* storage(asker, sql).write(
         'a',
         created({ keys: [{ key: 'ask', incarnation: 1, work, delivery: 'Idempotent', due: null }] }),
+        0,
       )
       const store = storage(receiver, sql)
-      yield* store.write('r', created({ replies: [reply('first', 1)] }))
-      yield* store.write('s', created({ replies: [reply('other', 1)] }))
+      yield* store.write('r', created({ replies: [reply('first', 1)] }), 0)
+      yield* store.write('s', created({ replies: [reply('other', 1)] }), 0)
       // Work of another incarnation asked nothing that is stored.
-      yield* storage(asker, sql).write('a', written({ ended: [{ key: 'ask', incarnation: 2 }] }))
+      yield* storage(asker, sql).write('a', written({ ended: [{ key: 'ask', incarnation: 2 }] }), 0)
       expect(yield* store.reply('r', asked('first', 1))).toEqual({ _tag: 'Accepted' })
       yield* storage(asker, sql).write(
         'a',
@@ -140,6 +143,7 @@ test('the work that ended takes the replies to its requests with it, and no othe
           keys: [{ key: 'ask', incarnation: 1, work: null, delivery: null, due: null }],
           ended: [{ key: 'ask', incarnation: 1 }],
         }),
+        0,
       )
       expect(yield* store.reply('r', asked('first', 1))).toBeNull()
       expect(yield* store.reply('s', asked('other', 1))).toBeNull()
@@ -157,7 +161,7 @@ test('a reply is read by its request alone, and a caller is given its own', () =
         reason: null,
         asked: null,
       })
-      yield* store.write('r', created({ replies: [accepted('one')] }))
+      yield* store.write('r', created({ replies: [accepted('one')] }), 0)
       expect(yield* store.reply('r', caller('one'))).toEqual({ _tag: 'Accepted' })
       expect(yield* store.reply('r', caller('two'))).toBeNull()
       expect(yield* store.reply('s', caller('one'))).toBeNull()
@@ -180,12 +184,12 @@ test('a process starts the entities holding an operation or a message, and none 
       }] as const
       const queued = [inbound('one')]
       const suspension = { on: { _tag: 'Message' }, cause: 'broken' } as const
-      yield* store.write('operation', created({ keys }))
-      yield* store.write('message', created({ queued }))
-      yield* store.write('both', created({ keys, queued }))
-      yield* store.write('idle', created())
-      yield* store.write('suspended operation', created({ keys, suspension }))
-      yield* store.write('suspended message', created({ queued, suspension }))
+      yield* store.write('operation', created({ keys }), 0)
+      yield* store.write('message', created({ queued }), 0)
+      yield* store.write('both', created({ keys, queued }), 0)
+      yield* store.write('idle', created(), 0)
+      yield* store.write('suspended operation', created({ keys, suspension }), 0)
+      yield* store.write('suspended message', created({ queued, suspension }), 0)
       expect(yield* store.interrupted).toEqual(['both', 'message', 'operation'])
     })))
 
@@ -193,10 +197,10 @@ test('the mailbox keeps the order its messages were queued in, as its head is ha
   database((sql) =>
     Effect.gen(function*() {
       const store = storage(receiver, sql)
-      yield* store.write('r', created({ queued: [inbound('one'), inbound('two')] }))
-      yield* store.write('r', written({ handled: 1, queued: [inbound('three')] }))
-      yield* store.write('r', written({ queued: [inbound('four')] }))
-      yield* store.write('r', written({ handled: 1 }))
+      yield* store.write('r', created({ queued: [inbound('one'), inbound('two')] }), 0)
+      yield* store.write('r', written({ handled: 1, queued: [inbound('three')] }), 0)
+      yield* store.write('r', written({ queued: [inbound('four')] }), 0)
+      yield* store.write('r', written({ handled: 1 }), 0)
       const mailbox = (yield* store.load('r'))?.mailbox ?? []
       expect(mailbox.map((envelope) => envelope.message)).toEqual(['three', 'four'])
     })))
@@ -205,13 +209,13 @@ test('the state is written with the request that created the entity, and only wh
   database((sql) =>
     Effect.gen(function*() {
       const store = storage(receiver, sql)
-      yield* store.write('r', created())
-      yield* store.write('r', written({ suspension: { on: { _tag: 'Message' }, cause: 'broken' } }))
+      yield* store.write('r', created(), 0)
+      yield* store.write('r', written({ suspension: { on: { _tag: 'Message' }, cause: 'broken' } }), 0)
       expect(yield* store.load('r')).toMatchObject({
         state: { last: 'start' },
         suspension: { on: { _tag: 'Message' }, cause: 'broken' },
       })
-      yield* store.write('r', written({ entity: { state: { last: 'next' }, creation } }))
+      yield* store.write('r', written({ entity: { state: { last: 'next' }, creation } }), 0)
       expect(yield* store.load('r')).toMatchObject({
         state: { last: 'next' },
         creation,
@@ -224,7 +228,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
   database((sql) =>
     Effect.gen(function*() {
       const store = storage(receiver, sql)
-      yield* store.write('r', created({ queued: [inbound('one')] }))
+      yield* store.write('r', created({ queued: [inbound('one')] }), 0)
       const caller = { _tag: 'Caller', sender: null, id: 'x' } as const
       // Each row is broken by hand in one of the ways a reading used to fill in or cast, and read by what reads it.
       const broken = [
@@ -334,7 +338,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
         ],
         [
           sql`UPDATE mailbox SET seq = -5 WHERE name = 'Receiver' AND id = 'r'`,
-          store.write('r', written({ queued: [inbound('two')] })),
+          store.write('r', written({ queued: [inbound('two')] }), 0),
         ],
         [sql`INSERT INTO cursors ${sql.insert({ name: 'Receiver', consumer: 'c', seq: -1 })}`, store.feed('c')],
         [sql`INSERT INTO cursors ${sql.insert({ name: 'Receiver', consumer: 'c', seq: -1 })}`, store.consumers],
@@ -402,11 +406,11 @@ test('a caller whose request a migration gives the text of another caller’s ro
         reason: null,
         asked: null,
       })
-      yield* storage(first, sql).write('r', created({ replies: [accepted(first, 'a')] }))
+      yield* storage(first, sql).write('r', created({ replies: [accepted(first, 'a')] }), 0)
       const after = storage(second, sql)
       // The caller that is 'a' in version 2 has the text of the row of 'a' in version 1, and is not answered by it.
       expect(yield* after.reply('r', caller('a'))).toBeNull()
-      yield* after.write('r', written({ replies: [accepted(second, 'a')] }))
+      yield* after.write('r', written({ replies: [accepted(second, 'a')] }), 0)
       expect(yield* after.reply('r', caller('a'))).toEqual({ _tag: 'Accepted' })
       // The caller version 1 stored as 'a' is 'b' now, and its retry still finds its own reply.
       expect(yield* after.reply('r', caller('b'))).toEqual({ _tag: 'Accepted' })
@@ -456,8 +460,8 @@ test('a version reads through its migrations the work, the mailbox and the log a
   database((sql) =>
     Effect.gen(function*() {
       const first = storage(receiver, sql)
-      yield* first.write('r', busy)
-      yield* first.write('r', written({ published: { kind: 'Inbound', message: 'hello', projection: 'hello' } }))
+      yield* first.write('r', busy, 0)
+      yield* first.write('r', written({ published: { kind: 'Inbound', message: 'hello', projection: 'hello' } }), 0)
       const after = storage(marked, sql)
       const stored = yield* after.load('r')
       const work = stored?.keys['ask']?.work
@@ -475,8 +479,8 @@ test('reindex skips an entity that a step wrote since, though its state has the 
   database((sql) =>
     Effect.gen(function*() {
       const first = storage(receiver, sql)
-      yield* first.write('a', created({ entity: { state: { last: 'x' }, creation } }))
-      yield* first.write('b', created({ entity: { state: { last: 'x' }, creation } }))
+      yield* first.write('a', created({ entity: { state: { last: 'x' }, creation } }), 0)
+      yield* first.write('b', created({ entity: { state: { last: 'x' }, creation } }), 0)
       // As 'a''s row is written, version 2 steps 'b' to the state it writes as the same text, which it reads as
       // its own, with no migration: the step lands between the reading of 'b' and the writing of its row.
       yield* sql.unsafe(`
@@ -508,7 +512,7 @@ test('a row is written at the version that writes it, and read back as it was wr
       // Version 2 writes every row of the entity: one stamped with another version would be read through a
       // migration it never needed, and come back marked.
       const after = storage(marked, sql)
-      yield* after.write('r', busy)
+      yield* after.write('r', busy, 0)
       const stored = yield* after.load('r')
       expect(stored?.state).toEqual({ last: 'start' })
       const work = stored?.keys['ask']?.work
@@ -516,4 +520,40 @@ test('a row is written at the version that writes it, and read back as it was wr
       expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello', 'done'])
       expect((yield* after.published(0)).map(({ projection }) => projection)).toEqual(['start'])
       expect(yield* after.query({})).toEqual([{ id: 'r', projection: 'start' }])
+    })))
+
+// The time an entity suspended is kept while it stays suspended, and read with what it died on (decision 0114).
+test('a suspended entity is listed with what it died on, its cause and since when, kept while it stays suspended', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(receiver, sql)
+      const listed = Effect.map(store.suspended, (entities) =>
+        entities.map(({ since, ...rest }) => ({ ...rest, since: DateTime.toEpochMillis(since) })))
+      const onMessage = { on: { _tag: 'Message' }, cause: 'broken' } as const
+      const onOperation = { on: { _tag: 'Operation', key: 'ask', incarnation: 1 }, cause: 'died' } as const
+      yield* store.write('fine', created(), 1)
+      yield* store.write('inbound', created({ queued: [inbound('one')], suspension: onMessage }), 5)
+      yield* store.write('operation', created({ suspension: onOperation }), 3)
+      // The longest suspended first, each with the tag of the message it died on.
+      expect(yield* listed).toEqual([
+        { id: 'operation', on: onOperation.on, cause: 'died', since: 3 },
+        { id: 'inbound', on: { _tag: 'Message', kind: 'Inbound' }, cause: 'broken', since: 5 },
+      ])
+      // A step while the entity stays suspended, a completion recorded or a state written, keeps the time.
+      const completion: Machine.EnvelopeRow = { _tag: 'Internal', message: 'done', key: 'ask', incarnation: 1 }
+      yield* store.write('inbound', written({ queued: [completion], suspension: onMessage }), 9)
+      yield* store.write(
+        'operation',
+        written({ entity: { state: { last: 'again' }, creation }, suspension: onOperation }),
+        10,
+      )
+      expect((yield* listed).map(({ id, since }) => [id, since])).toEqual([['operation', 3], ['inbound', 5]])
+      // The step that takes the entity out of its suspension clears it, and a later suspension is timed anew.
+      yield* store.write('inbound', written({ handled: 1 }), 12)
+      expect((yield* listed).map(({ id }) => id)).toEqual(['operation'])
+      yield* store.write('inbound', written({ suspension: onMessage }), 20)
+      expect(yield* listed).toEqual([
+        { id: 'operation', on: onOperation.on, cause: 'died', since: 3 },
+        { id: 'inbound', on: { _tag: 'Message', kind: 'Internal' }, cause: 'broken', since: 20 },
+      ])
     })))

@@ -24,7 +24,7 @@ Cluster's says so.
   process dying, an operator resuming or discarding.
 - **Flags.** What an entity is created with, which `init` reads and nothing else keeps.
 - **Handle.** What `deploy` gives: `create`, `send`, `read` and `query` for callers, `feed`, `ack` and the rest of the
-  outbox for its consumers, `reindex`, and `resume` and `discard` for an operator.
+  outbox for its consumers, `reindex`, and `suspended`, `resume` and `discard` for an operator.
 - **Hold, lock.** Each entity is found, loaded, unloaded and crashed under a lock of its own. A caller holds the entity
   while it waits for its activation, and nothing under one entity's lock waits for another's.
 - **Idempotency key.** The entity's program and id, the operation's key and its incarnation, given to an idempotent
@@ -77,8 +77,9 @@ Cluster's says so.
 - **State.** The one truth of an entity, an object, stored after each step. Everything durable is derived from it.
 - **Step.** `update` applied to one message: the next state, checked, and stored in one transaction with the message,
   its reply, the work that changed, and the rows a query and the outbox read.
-- **Suspended.** An entity after a defect: its state stays, the message stays unhandled, and nothing is delivered to it
-  until an operator resumes it or discards the message. A caller meanwhile is answered `Suspended`, which is no reply.
+- **Suspended.** An entity after a defect: its state stays, the message stays unhandled, its timers are disarmed, and
+  nothing is handled until an operator resumes it or discards the message. Its operations run to their end, and
+  their completions wait behind the message. A caller meanwhile is answered `Suspended`, which is no reply.
 - **Timer.** Work that delivers one internal message at its time, derived from the state. It may be dropped in any
   state, and one that changes is armed again as new work.
 - **Version.** Of a program: how many migrations it carries, plus one. Every row carries the version that wrote it,

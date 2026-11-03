@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-10-31. Replaces the bullet of [decision 0041](0041-a-completion-is-not-discarded.md)
 that discards a timer's firing, and what [decision 0014](0014-rules-the-machine-settled.md) said of discarding an
 internal message. How a fixed program is brought is changed by
-[decision 0064](0064-the-program-is-not-the-machines-state.md): it is deployed, and `Resume` takes no program.
+[decision 0064](0064-the-program-is-not-the-machines-state.md): it is deployed, and `Resume` takes no program. What a
+`discard` that drops nothing answers is added by [decision
+0114](../0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md).
 
 ## Context
 

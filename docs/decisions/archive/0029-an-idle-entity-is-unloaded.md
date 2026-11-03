@@ -9,7 +9,9 @@ entities a process holds is bounded too by
 [decision 0076](0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), and a waker that cannot load
 an entity goes on, by [decision 0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md). The timeout of an
 entity's wait wraps its take alone, which is what Effect promises an event offered as it fires, by
-[decision 0111](0111-an-entity-s-wait-times-out-its-take-alone.md).
+[decision 0111](0111-an-entity-s-wait-times-out-its-take-alone.md). That nothing of a suspended entity runs is changed
+by [decision 0113](../0113-a-suspended-entitys-operations-run-to-their-end.md): its operations run to their end, and
+it is unloaded once they have ended.
 
 ## Context
 

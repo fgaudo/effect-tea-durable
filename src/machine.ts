@@ -378,7 +378,7 @@ export type Output<T extends Types> =
   }>
   | Readonly<{ _tag: 'Armed'; key: string; incarnation: number; timer: Timer<T['internal']> }>
   | Readonly<{ _tag: 'Disarmed'; key: string; incarnation: number }>
-  /** The entity is suspended: everything under way stops. */
+  /** The entity is suspended: its timers stop, and its operations run to their end (decision 0113). */
   | Readonly<{ _tag: 'Suspended'; cause: unknown }>
 
 /** A key's row: its incarnation and the work it holds, as stored, with how it is delivered and when it is due. */
@@ -591,14 +591,14 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
 }
 
 /**
- * Starts what the stored state says, with nothing under way, as `program` computes it: the work under each key,
- * unless its message is already in the mailbox. An at-most-once operation that may have run before may have
- * acted, so its `unknown` is recorded instead of running it again. `mayHaveRun` says so after a crash or a
- * suspension, and never at a creation. One that is new work at this activation never ran, and starts: its
- * incarnation is one the stored work did not hold. A suspended entity starts nothing: a deploy of a fix leaves it
- * as it is (decision 0064). A defect leaves the entity as it was before the event, `before`, suspended on what
- * suspended it, or on the activation. The defect is the program's on the stored state, or an `unknown` that dies
- * or does not encode (decision 0040).
+ * Starts what the stored state says, as `program` computes it: the work under each key, unless its message is
+ * already in the mailbox, or its operation is still running in `machine`, which a resumption keeps (decision 0113).
+ * An at-most-once operation that may have run before may have acted, so its `unknown` is recorded instead of
+ * running it again. `mayHaveRun` says so after a crash or a suspension, and never at a creation. One that is new
+ * work at this activation never ran, and starts: its incarnation is one the stored work did not hold. A suspended
+ * entity starts nothing: a deploy of a fix leaves it as it is (decision 0064). A defect leaves the entity as it was
+ * before the event, `before`, suspended on what suspended it, or on the activation. The defect is the program's on
+ * the stored state, or an `unknown` that dies or does not encode (decision 0040).
  *
  * A passivation is a `Restart` the runtime chooses, with an empty mailbox and only timers under way: activating
  * again arms the same timers, in the same incarnations, which the stored work holds while it is unloaded.
@@ -619,6 +619,12 @@ const activate = <T extends Types>(
       if (work === undefined || isQueued(stored, key, incarnation)) continue
       const runner = isTimer(work) ? null : runnerOf(program, work)
       const started = incarnation === machine.stored.keys[key]?.incarnation
+      const kept = machine.running[key]
+      if (started && runner !== null && kept?.kind === 'Operation' && kept.incarnation === incarnation) {
+        // Still running since before the suspension: `reconcile` checked that the program keeps it as it was.
+        running[key] = kept
+        continue
+      }
       if (started && mayHaveRun && runner?.delivery === 'AtMostOnce') {
         const message = byProgram(() => runner.unknown(work as T['operation']))
         encodeBy(program.schemas.internal, message, `unknown of the operation under '${key}'`)
@@ -684,10 +690,11 @@ export const start = <T extends Types>(
 
 /**
  * Suspends the entity, and answers `Suspended` to every caller whose message waits in the mailbox: it has no reply
- * yet, and gets one by retrying once the entity is resumed (decision 0023).
+ * yet, and gets one by retrying once the entity is resumed (decision 0023). The timers leave what runs, and the
+ * operations stay: each runs to its end, and its completion is recorded behind the message (decision 0113).
  */
 const suspend = <T extends Types>(machine: Machine<T>, suspension: Suspension): Moved<T> => ({
-  machine: { ...machine, stored: { ...machine.stored, suspension }, running: {} },
+  machine: { ...machine, stored: { ...machine.stored, suspension }, running: operationsOf(machine.running) },
   outputs: [
     { _tag: 'Suspended', cause: suspension.cause },
     ...machine.stored.mailbox.flatMap((envelope): ReadonlyArray<Output<T>> =>
@@ -740,14 +747,14 @@ const record = <T extends Types>(
     return { machine, outputs: [{ _tag: 'Dropped', key, incarnation }] }
   }
   const recorded = message(work)
+  const { [key]: _, ...others } = machine.running
   if (kind === 'Operation') {
     try {
       encodeBy(program.schemas.internal, recorded, `message of the operation under '${key}'`)
     } catch (thrown) {
-      return suspend(machine, { cause: defectOf(thrown), on: { _tag: 'Operation', key, incarnation } })
+      return died({ ...machine, running: others }, { cause: defectOf(thrown), on: { _tag: 'Operation', key, incarnation } })
     }
   }
-  const { [key]: _, ...others } = machine.running
   const envelope: Envelope<T> = { _tag: 'Internal', key, incarnation, message: recorded }
   return {
     machine: {
@@ -842,8 +849,8 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
 
 /**
  * Activates a suspended entity again, as after a crash, by the program that runs it, which a fix deployed
- * (decision 0064). A program whose `durable`, `project` or index dies on the stored state, or that changes an
- * operation under way, leaves it suspended, with that cause.
+ * (decision 0064), keeping the operations still running (decision 0113). A program whose `durable`, `project` or
+ * index dies on the stored state, or that changes an operation under way, leaves it suspended, with that cause.
  */
 const resume = <T extends Types>(program: Program<T>, machine: Machine<T>): Moved<T> => {
   if (machine.stored.suspension === null) return { machine, outputs: [] }
@@ -863,8 +870,20 @@ const discard = <T extends Types>(program: Program<T>, machine: Machine<T>): Mov
   return activate(program, machine, { ...machine, stored: { ...stored, mailbox: rest, suspension: null } }, true)
 }
 
+/** The operations among what runs: what a suspension keeps running (decision 0113). */
+const operationsOf = (running: Readonly<Record<string, Running>>): Readonly<Record<string, Running>> =>
+  Object.fromEntries(Object.entries(running).filter(([, held]) => held.kind === 'Operation'))
+
+/**
+ * An operation died, or ended with a message that does not encode: it has left `machine.running`. The defect
+ * suspends the entity, unless it is suspended already: then the suspension keeps its first cause, and the operation
+ * is started again at the resumption, as after a crash (decision 0113).
+ */
+const died = <T extends Types>(machine: Machine<T>, suspension: Suspension): Moved<T> =>
+  machine.stored.suspension === null ? suspend(machine, suspension) : { machine, outputs: [] }
+
 /** A defect's cause as an operator reads it: a suspension stores this, not the value (decision 0028). */
-const render = (cause: unknown): string =>
+export const render = (cause: unknown): string =>
   cause instanceof Error ? `${cause.name}: ${cause.message}` : typeof cause === 'string' ? cause : String(cause)
 
 const envelopeRow = <T extends Types>(program: Program<T>, envelope: Envelope<T>): EnvelopeRow =>
@@ -1009,13 +1028,16 @@ const move = <T extends Types>(program: Program<T>, machine: Machine<T>, event: 
       return handle(program, machine, event.at)
     case 'Die': {
       const { key, incarnation, cause } = event
-      const running = machine.running[key]
+      const { [key]: running, ...others } = machine.running
       return running?.kind === 'Operation' && running.incarnation === incarnation
-        ? suspend(machine, { cause, on: { _tag: 'Operation', key, incarnation } })
+        ? died({ ...machine, running: others }, { cause, on: { _tag: 'Operation', key, incarnation } })
         : { machine, outputs: [] }
     }
-    case 'Restart':
-      return activate(program, machine, { ...machine, running: {} }, true)
+    case 'Restart': {
+      // The process died, and its operations with it: none is kept running (decision 0113).
+      const restarted = { ...machine, running: {} }
+      return activate(program, restarted, restarted, true)
+    }
     case 'Resume':
       return resume(program, machine)
     case 'Discard':

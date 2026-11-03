@@ -501,6 +501,20 @@ const timed: Program<T> = {
   init: (_flags, at) => ({ want: ['t'], applied: [], since: at, rings: DateTime.addDuration(at, '40 millis') }),
 }
 
+/** A program whose `c` sends `Want a off` to the toy `id`, named `want`, and ends once answered: a sender to it. */
+const sending: Program<Omit<T, 'services'> & { services: Entities }> = {
+  ...program,
+  name: 'Sender',
+  init: (_flags, at) => ({ want: ['c'], applied: [], since: at, rings: at }),
+  operations: {
+    A: operation(() => Effect.succeed(done('a'))),
+    B: operation.atMostOnce(({ key }) => Effect.succeed(done(key)), ({ key }): Internal => ({ _tag: 'Unknown', key })),
+    C: operation.atLeastOnce(({ key }) =>
+      Effect.as(send(program, id, { _tag: 'Want', key: 'a', on: false, nonce: 'sent' }, 'want'), done(key))
+    ),
+  },
+}
+
 /** Collects every event the runtime commits, in order. */
 const log = () => {
   const events: Array<Machine.Event<T>> = []
@@ -679,6 +693,141 @@ describe('the runtime on SQLite', () => {
           const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
           expect(stored?.suspension).toBe(null)
           expect(stored?.mailbox.length).toBe(0)
+        }))
+    })))
+
+  // A suspension stops the handling of messages and the timers, not the operations (decision 0113).
+  test('an operation under way when its entity suspends runs to its end, and is not run again once resumed', () =>
+    database(Effect.gen(function*() {
+      // `b` acts, and comes back only once the test lets it: an operation under way while its entity suspends.
+      const release = yield* Deferred.make<void>()
+      const acted: Array<string> = []
+      const layer = Layer.succeed(
+        Hands,
+        Hands.of({
+          act: (key) =>
+            Effect.gen(function*() {
+              acted.push(key)
+              if (key === 'b') yield* Deferred.await(release)
+            }),
+        }),
+      )
+      const { entities, unloaded } = unloads()
+      const at = yield* DateTime.now
+      const store = storage(program, yield* SqlClient.SqlClient)
+      yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* ran(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          expect(yield* ran(toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester })))
+            .toEqual({ _tag: 'Suspended' })
+          // `b` is not interrupted, and keeps the entity loaded; the timer is disarmed, and its time passes.
+          expect(acted.filter((key) => key === 'b')).toEqual(['b'])
+          yield* TestClock.adjust('50 millis')
+          expect(entities).toEqual([])
+          // Its completion is recorded behind the message the entity died on, and nothing is handled.
+          yield* Deferred.succeed(release, undefined)
+          yield* runtime.settled
+          const stored = yield* store.load(id)
+          expect(stored?.mailbox.map((envelope) => envelope._tag)).toEqual(['Inbound', 'Internal'])
+          expect(stored?.suspension?.on).toEqual({ _tag: 'Message' })
+          // With its operations ended, the entity is unloaded. The discard loads it again: the completion waits in
+          // the mailbox, so `b` is not started again, and the timer, due by now, fires.
+          yield* TestClock.adjust('5 millis')
+          expect(entities).toEqual([id])
+          expect(yield* toy.discard(id)).toEqual({ _tag: 'Discarded' })
+          yield* runtime.settled
+          expect(acted.filter((key) => key === 'b')).toEqual(['b'])
+          const handled = (yield* toy.published(0)).flatMap((row) => (row.message === null ? [] : [row.message._tag]))
+          expect(handled.filter((tag) => tag === 'Done').length).toBe(3)
+          expect(handled).not.toContain('Unknown')
+          // The timer is armed again, at a time that has passed: it fires with the clock's next move.
+          expect((yield* store.load(id))?.state.want).toEqual(['t'])
+          yield* TestClock.adjust('1 millis')
+          yield* runtime.settled
+          expect((yield* store.load(id))?.state.want).toEqual([])
+        }))
+    })))
+
+  test('an operator sees the suspended entities, who waits for each, and what a resume or a discard did', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const store = storage(program, yield* SqlClient.SqlClient)
+      const listed = (toy: Library.Handle<T>) =>
+        Effect.map(toy.suspended, (entities) =>
+          entities.map(({ since, ...rest }) => ({ ...rest, since: DateTime.toEpochMillis(since) })))
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const senders = yield* runtime.deploy(sending)
+          expect(yield* toy.suspended).toEqual([])
+          expect(yield* toy.resume('nobody')).toEqual({ _tag: 'NotFound' })
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          expect(yield* toy.discard(id)).toEqual({ _tag: 'NotSuspended' })
+          yield* TestClock.adjust('7 millis')
+          expect(yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester }))
+            .toEqual({ _tag: 'Suspended' })
+          // A sender's operation sends to the suspended toy, and waits for its resumption.
+          yield* ran(senders.create('s', { at }, { requestId: 's', sender: tester }))
+          expect(yield* listed(toy)).toEqual([{
+            id,
+            on: { _tag: 'Message', kind: 'Inbound' },
+            cause: expect.stringContaining('broken'),
+            since: DateTime.toEpochMillis(at) + 7,
+            waiting: [{ entity: { name: 'Sender', id: 's' }, key: 'c', incarnation: 1, name: 'want' }],
+          }])
+          // Resumed by the program that died on the message, it is activated, and dies on it again. `settled` would
+          // wait for the sender's operation, which waits for the resumption: the test lets the step run instead.
+          expect(yield* toy.resume(id)).toEqual({ _tag: 'Resumed' })
+          yield* ran(Effect.void)
+          const again = yield* listed(toy)
+          expect(again.map(({ id, on }) => [id, on])).toEqual([[id, { _tag: 'Message', kind: 'Inbound' }]])
+          expect(again[0]?.since).toBeGreaterThanOrEqual(DateTime.toEpochMillis(at) + 7)
+          // The discard drops the message, and the sender is woken, sends again and is answered.
+          expect(yield* toy.discard(id)).toEqual({ _tag: 'Discarded' })
+          yield* runtime.settled
+          expect(yield* toy.suspended).toEqual([])
+          expect(yield* senders.read('s')).toBe(0)
+          expect((yield* store.load(id))?.state.applied).toContain('sent')
+        }))
+      // A version whose `update` dies on the completion of `b`: an internal message, which no discard drops.
+      const breaking: Program<T> = {
+        ...program,
+        update: (message, meta) => (state) =>
+          message._tag === 'Done' && message.key === 'b' ? defect('broken on b') : program.update(message, meta)(state),
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(breaking), layer)
+          const now = DateTime.toEpochMillis(yield* DateTime.now)
+          yield* toy.create('toy-2', { at }, { requestId: 'c2', sender: tester })
+          yield* runtime.settled
+          expect(yield* listed(toy)).toEqual([{
+            id: 'toy-2',
+            on: { _tag: 'Message', kind: 'Internal' },
+            cause: expect.stringContaining('broken on b'),
+            since: now,
+            waiting: [],
+          }])
+          expect(yield* toy.discard('toy-2')).toEqual({ _tag: 'NotDiscarded' })
+        }))
+      // A version whose `durable` dies on the stored state: the resume leaves the entity suspended, with the new cause.
+      const dying: Program<T> = { ...program, durable: () => defect('durable died') }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(dying), layer)
+          expect(yield* toy.resume('toy-2')).toEqual({
+            _tag: 'StillSuspended',
+            cause: expect.stringContaining('durable died'),
+          })
+          // Suspended since the first time: a resume that fails keeps it.
+          expect((yield* listed(toy)).map(({ id, cause, since }) => [id, cause, since])).toEqual([[
+            'toy-2',
+            expect.stringContaining('durable died'),
+            DateTime.toEpochMillis(yield* DateTime.now),
+          ]])
         }))
     })))
 
@@ -1527,7 +1676,7 @@ describe('the crash table', () => {
         ended: [],
         shown: null,
         published: null,
-      }))
+      }, 0))
       expect((yield* store.load(id))?.mailbox.length).toBe(1)
       // Nobody retries: the process that starts next handles the message on its own.
       yield* process({}, (runtime) =>

@@ -44,6 +44,7 @@ import {
   type Query,
   storage,
   type Storage,
+  type Suspension,
 } from './storage.ts'
 
 /**
@@ -52,8 +53,45 @@ import {
  */
 export type Answer<Reason> = Reply<Reason> | Readonly<{ _tag: 'Suspended' }>
 
+/**
+ * An operation of another entity whose `send` waits for the entity's resumption: its run, and the name it sent
+ * under (decision 0114).
+ */
+export type Waiting = Readonly<{ entity: Address; key: string; incarnation: number; name: string }>
+
+/**
+ * A suspended entity, as `Handle.suspended` lists it: what the storage holds of the suspension, and the senders
+ * waiting for its resumption in this process (decision 0114).
+ */
+export type Suspended = Suspension & Readonly<{ waiting: ReadonlyArray<Waiting> }>
+
+/** What an operator's `resume` or `discard` did (decision 0114). */
+export type Operated =
+  /** The entity was activated again: the message it died on is handled next, by the program deployed. */
+  | Readonly<{ _tag: 'Resumed' }>
+  /** The inbound message the entity died on was dropped, and the entity activated again. */
+  | Readonly<{ _tag: 'Discarded' }>
+  /** The entity died on an internal message, or in an operation: neither is discarded (decisions 0041, 0044). */
+  | Readonly<{ _tag: 'NotDiscarded' }>
+  /** The program deployed dies on the stored state too, with this cause. */
+  | Readonly<{ _tag: 'StillSuspended'; cause: string }>
+  | Readonly<{ _tag: 'NotSuspended' }>
+  | Readonly<{ _tag: 'NotFound' }>
+
+/** What a `Resume` or a `Discard` did, read off the machine before and after it (decision 0114). */
+const operated = <T extends Types>(
+  event: 'Resume' | 'Discard',
+  before: Machine.Machine<T>,
+  after: Machine.Machine<T>,
+): Operated => {
+  if (before.stored.suspension === null) return { _tag: 'NotSuspended' }
+  if (after.stored.suspension === null) return { _tag: event === 'Resume' ? 'Resumed' : 'Discarded' }
+  if (after === before) return { _tag: 'NotDiscarded' }
+  return { _tag: 'StillSuspended', cause: Machine.render(after.stored.suspension.cause) }
+}
+
 /** The callers waiting for a reply of one kind, by entity and then by request. */
-type Waiting<A> = Map<string, Map<string, Set<Deferred.Deferred<A>>>>
+type Callers<A> = Map<string, Map<string, Set<Deferred.Deferred<A>>>>
 
 /** A point of the design's crash table, where a test dies to see what survives. */
 export type Point =
@@ -167,15 +205,23 @@ export interface Handle<T extends Types> {
    */
   readonly forget: (consumer: string) => Effect.Effect<void>
   /**
-   * An operator resumes a suspended entity (decision 0006), with the program deployed: a fixed program is a deploy
-   * of it, which the resume follows (decision 0064).
+   * The suspended entities of the program, the longest suspended first: each with what it died on, the cause, since
+   * when, and the senders waiting for its resumption in this process. Read from what is stored, so an entity this
+   * process does not hold is listed too (decision 0114).
    */
-  readonly resume: (id: string) => Effect.Effect<void>
+  readonly suspended: Effect.Effect<ReadonlyArray<Suspended>>
+  /**
+   * An operator resumes a suspended entity (decision 0006), with the program deployed: a fixed program is a deploy
+   * of it, which the resume follows (decision 0064). It gives `Resumed`, `StillSuspended`, `NotSuspended` or
+   * `NotFound` (decision 0114).
+   */
+  readonly resume: (id: string) => Effect.Effect<Operated>
   /**
    * An operator discards the inbound message a suspended entity died on (decision 0014). An internal one is not
-   * discarded, and the entity stays suspended (decisions 0041, 0044).
+   * discarded, and the entity stays suspended (decisions 0041, 0044). It gives `Discarded`, `NotDiscarded`,
+   * `StillSuspended`, `NotSuspended` or `NotFound` (decision 0114).
    */
-  readonly discard: (id: string) => Effect.Effect<void>
+  readonly discard: (id: string) => Effect.Effect<Operated>
 }
 
 export interface Runtime {
@@ -308,8 +354,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * first, and a crash of the entity reaches every caller of it (decision 0042). A creation's callers wait apart
      * from a message's, since the two share request ids (decisions 0017, 0050).
      */
-    const messages: Waiting<Answer<unknown>> = new Map()
-    const creations: Waiting<Creation> = new Map()
+    const messages: Callers<Answer<unknown>> = new Map()
+    const creations: Callers<Creation> = new Map()
+    /** The operators waiting for what their `Resume` or `Discard` did, by entity and then by event (decision 0114). */
+    const operators: Callers<Operated> = new Map()
     const addressOf = (entity: Address) => JSON.stringify([entity.name, entity.id])
     /**
      * What `settled` waits for. It is completed, and replaced, whenever something under way ends: a step, an
@@ -329,7 +377,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * The senders waiting for an entity's resumption, by entity. Each registers before it sends, so that a
      * resumption between its being answered `Suspended` and its waiting is not missed (decisions 0023, 0063).
      */
-    const resumptions = new Map<string, Set<Deferred.Deferred<void>>>()
+    const resumptions = new Map<string, Map<Deferred.Deferred<void>, Waiting>>()
+    /** The senders waiting for the entity's resumption, as `suspended` lists them (decision 0114). */
+    const waitingFor = (entity: Address): ReadonlyArray<Waiting> => [
+      ...(resumptions.get(addressOf(entity))?.values() ?? []),
+    ]
     /**
      * Each entity's lock, by entity, while someone holds or waits for it (decision 0067). What finds, loads,
      * creates, unloads or crashes an entity holds it. So no caller is between finding the entity and offering its
@@ -384,7 +436,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const deployment = <T extends Types>(name: string): Deployment<T> | undefined =>
       deployments.get(name) as Deployment<T> | undefined
 
-    const answer = <A>(waiting: Waiting<A>, entity: Address, request: string, reply: A) =>
+    const answer = <A>(waiting: Callers<A>, entity: Address, request: string, reply: A) =>
       Effect.suspend(() => {
         const requests = waiting.get(addressOf(entity))
         const callers = requests?.get(request)
@@ -405,7 +457,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * is never unloaded between a caller finding it and its event being offered (decisions 0029, 0067).
      */
     const ask = <T extends Types, A>(
-      waiting: Waiting<A>,
+      waiting: Callers<A>,
       loaded: Loaded<T>,
       entity: Address,
       request: string,
@@ -479,21 +531,22 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       const senders = resumptions.get(address)
       if (senders === undefined) return
       resumptions.delete(address)
-      for (const sender of senders) Deferred.doneUnsafe(sender, Effect.void)
+      for (const sender of senders.keys()) Deferred.doneUnsafe(sender, Effect.void)
     }
 
     /**
      * Registers a sender's wait for the entity's resumption, before it sends. `resumed` is what it waits on if it
      * is answered `Suspended`, and `forget` takes it back whatever it is answered. A registration made after the
      * answer would miss a resumption between the two, and wait for ever. `a sender answered Suspended is woken by
-     * the resumption`, in the tests, reaches that under the scheduler of the tests (decision 0104).
+     * the resumption`, in the tests, reaches that under the scheduler of the tests (decision 0104). `waiting` is
+     * who registers, for `suspended` to list (decision 0114).
      */
-    const awaitResumption = (entity: Address) =>
+    const awaitResumption = (entity: Address, waiting: Waiting) =>
       Effect.sync(() => {
         const address = addressOf(entity)
         const sender = Deferred.makeUnsafe<void>()
-        const senders = resumptions.get(address) ?? new Set<Deferred.Deferred<void>>()
-        senders.add(sender)
+        const senders = resumptions.get(address) ?? new Map<Deferred.Deferred<void>, Waiting>()
+        senders.set(sender, waiting)
         resumptions.set(address, senders)
         const forget = Effect.sync(() => {
           senders.delete(sender)
@@ -640,8 +693,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               yield* stop(loaded.timers, under(output.key, output.incarnation))
               break
             case 'Suspended':
-              // Everything under way stops, and what it would deliver is dropped (decision 0006).
-              yield* stopAll(loaded)
+              // The timers stop. The operations run to their end, and their completions are recorded behind the
+              // message the entity died on (decision 0113).
+              for (const id of [...loaded.timers.keys()]) yield* stop(loaded.timers, id)
               break
             default:
               // The replies, `Recorded`, `Delivered` and `Dropped` are what the commit already said.
@@ -664,8 +718,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       Effect.gen(function*() {
         loaded.applying = true
         const entity: Address = { name: loaded.machine.stored.name, id: loaded.machine.stored.id }
+        const now = yield* DateTime.now
         const event: Machine.Event<T> = offered._tag === 'Receive'
-          ? { ...offered, reply: yield* deployed.storage.reply(entity.id, offered.request), at: yield* DateTime.now }
+          ? { ...offered, reply: yield* deployed.storage.reply(entity.id, offered.request), at: now }
           : offered
         const before = loaded.machine
         const transition = Machine.step(deployed.program, before, event)
@@ -673,11 +728,16 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         if (written !== null) {
           yield* at('BeforeCommit', entity, event)
           // What the event writes is the machine's, encoded: the storage decides nothing (decision 0057).
-          yield* sql.withTransaction(deployed.storage.write(entity.id, written)).pipe(Effect.orDie)
+          yield* sql.withTransaction(deployed.storage.write(entity.id, written, DateTime.toEpochMillis(now))).pipe(
+            Effect.orDie,
+          )
         }
         loaded.machine = transition.machine
         if (before.stored.suspension !== null && transition.machine.stored.suspension === null) {
           wake(entity)
+        }
+        if (event._tag === 'Resume' || event._tag === 'Discard') {
+          yield* answer(operators, entity, event._tag, operated(event._tag, before, transition.machine))
         }
         // An event is observed once it is written, and before anything is acted on; one that writes nothing is
         // observed at once. A crash before the commit leaves no event, and one after it an event that happened.
@@ -696,7 +756,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const nothingToDo = <T extends Types>(loaded: Loaded<T>) => {
       const { stored } = loaded.machine
       if (loaded.applying || loaded.pending > 0 || loaded.operations.size > 0) return false
-      // A suspended entity runs nothing and comes back suspended, with the message it died on (decision 0006).
+      // A suspended entity whose operations have ended handles nothing, and comes back suspended, with the message
+      // it died on and the completions behind it (decisions 0006, 0113).
       if (stored.suspension !== null) return true
       if (stored.mailbox.length > 0) return false
       // What the state holds is what the next activation starts, so only timers may be left: an operation with
@@ -785,7 +846,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         yield* leave(deployed, loaded)
         yield* Effect.forkIn(stopAll(loaded), deployed.scope, { uninterruptible: false })
         const address = addressOf({ name, id })
-        const fail = <A>(waiting: Waiting<A>) =>
+        const fail = <A>(waiting: Callers<A>) =>
           Effect.gen(function*() {
             const requests = waiting.get(address)
             waiting.delete(address)
@@ -795,14 +856,15 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           })
         yield* fail(messages)
         yield* fail(creations)
+        yield* fail(operators)
       })
 
     /**
      * The entity's loop. While its mailbox holds a message, it is handled, one transaction each. Otherwise the
      * loop waits for an event. The entity is unloaded if none comes for long enough, or once it is told to leave
-     * a process over its capacity (decision 0076). A suspended entity only waits (decision 0006). The wait
-     * times out, never the take: an event taken is always applied. A loop that dies crashes its entity, and an
-     * interruption is the process's crash (decision 0042).
+     * a process over its capacity (decision 0076). A suspended entity handles nothing, and waits (decisions 0006,
+     * 0113). The wait times out, never the take: an event taken is always applied. A loop that dies crashes its
+     * entity, and an interruption is the process's crash (decision 0042).
      */
     const loop = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>): Effect.Effect<void> =>
       steps(deployed, loaded).pipe(
@@ -938,8 +1000,22 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const loads = <T extends Types>(deployed: Deployment<T>, id: string) =>
       withEntity(deployed, id, () => Effect.void)
 
-    const operate = <T extends Types>(deployed: Deployment<T>, id: string, event: Machine.Offered<T>) =>
-      withEntity(deployed, id, (loaded) => loaded === null ? Effect.void : offer(loaded, event))
+    /**
+     * An operator's `Resume` or `Discard`: offered while the entity is held, as a caller's message is, and answered
+     * with what it did once applied (decision 0114).
+     */
+    const operate = <T extends Types>(
+      deployed: Deployment<T>,
+      id: string,
+      event: Extract<Machine.Offered<T>, { _tag: 'Resume' | 'Discard' }>,
+    ): Effect.Effect<Operated> =>
+      Effect.flatMap(
+        withEntity(deployed, id, (loaded): Effect.Effect<Asked<Operated> | null> =>
+          loaded === null
+            ? Effect.succeed(null)
+            : ask(operators, loaded, { name: deployed.program.name, id }, event._tag, event)),
+        (asked) => asked === null ? Effect.succeed<Operated>({ _tag: 'NotFound' }) : answered(asked),
+      )
 
     const create = <T extends Types>(
       deployed: Deployment<T>,
@@ -986,7 +1062,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           }
           const creation: Machine.Event<T> = { _tag: 'Create', request }
           yield* at('BeforeCommit', entity, creation)
-          yield* sql.withTransaction(deployed.storage.write(id, started.written)).pipe(Effect.orDie)
+          yield* sql.withTransaction(deployed.storage.write(id, started.written, DateTime.toEpochMillis(now))).pipe(
+            Effect.orDie,
+          )
           // The entity exists from here: its creation is the first event committed for it.
           yield* observe(entity, creation)
           yield* at('AfterCommit', entity, creation)
@@ -1086,7 +1164,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         send: <T extends Types>(program: Program<T>, id: string, message: T['inbound'], name: string) =>
           Effect.flatMap(named('message', program, id, name), ({ deployed, request }) => {
             // `null` is no reply yet: the receiver crashed, or is suspended and has been resumed since.
-            const attempt = Effect.flatMap(awaitResumption({ name: program.name, id }), ({ resumed, forget }) =>
+            const waiting: Waiting = { entity, key, incarnation, name }
+            const attempt = Effect.flatMap(awaitResumption({ name: program.name, id }, waiting), ({ resumed, forget }) =>
               Effect.flatMap(
                 unlessCrashed(send(deployed, id, message, request), null),
                 (reply): Effect.Effect<Reply<T['rejection']> | null> =>
@@ -1239,6 +1318,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           prune: deployed.storage.prune,
           consumers: deployed.storage.consumers,
           forget: (consumer) => deployed.storage.forget(consumer),
+          suspended: Effect.map(deployed.storage.suspended, (listed) =>
+            listed.map((suspension): Suspended => ({
+              ...suspension,
+              waiting: waitingFor({ name: program.name, id: suspension.id }),
+            }))),
           resume: (id) => operate(deployed, id, { _tag: 'Resume' }),
           discard: (id) => operate(deployed, id, { _tag: 'Discard' }),
         }

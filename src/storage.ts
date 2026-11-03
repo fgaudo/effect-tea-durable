@@ -66,7 +66,8 @@ export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope>
  */
 export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
-  // The state, the request that created the entity and the suspension: one row per entity.
+  // The state, the request that created the entity and the suspension: one row per entity. `suspended_at` is the
+  // time the entity suspended, kept while it stays suspended, which an operator reads (decision 0114).
   yield* sql`
     CREATE TABLE IF NOT EXISTS entities (
       name TEXT NOT NULL,
@@ -76,6 +77,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       creation TEXT NOT NULL,
       suspended_on TEXT,
       suspended_cause TEXT,
+      suspended_at INTEGER,
       PRIMARY KEY (name, id)
     )
   `
@@ -245,6 +247,14 @@ const Rows = {
       suspended_cause: Schema.String,
     }),
   ])),
+  /** A suspended entity, with the tag of its mailbox's first message, if any (decision 0114). */
+  suspended: decoder(Schema.Struct({
+    id: Schema.String,
+    suspended_on: Schema.String,
+    suspended_cause: Schema.String,
+    suspended_at: Count,
+    head: Schema.NullOr(Schema.Literals(['Inbound', 'Internal'])),
+  })),
   /** A key that holds no work has no delivery either. */
   key: decoder(Schema.Union([
     Schema.Struct({
@@ -357,6 +367,21 @@ export type Published<T extends Types> = Readonly<{
   projection: T['projection']
 }>
 
+/**
+ * A suspended entity, as an operator sees it: what it died on, the cause as it was rendered when the entity
+ * suspended, and since when, by the runtime's clock (decision 0114).
+ */
+export type Suspension = Readonly<{
+  id: string
+  /** The mailbox's first message, with its kind, an operation, or the activation of the stored state. */
+  on:
+    | Readonly<{ _tag: 'Message'; kind: 'Inbound' | 'Internal' }>
+    | Readonly<{ _tag: 'Operation'; key: string; incarnation: number }>
+    | Readonly<{ _tag: 'Activation' }>
+  cause: string
+  since: DateTime.Utc
+}>
+
 /** A consumer of the outbox, as an operator sees it: where it has read to, and what is waiting (decision 0039). */
 export type Consumer = Readonly<{
   consumer: string
@@ -393,19 +418,21 @@ export interface Storage<T extends Types> {
   ) => Effect.Effect<Machine.StoredReply<T['rejection']> | null>
   /**
    * Writes what an event wrote, as the machine encoded it (decision 0057). The caller wraps it in the transaction
-   * of the event (decision 0007).
+   * of the event (decision 0007). `at` is the time of the event, in milliseconds: the time the entity suspended,
+   * where the event suspends it (decision 0114).
    */
-  readonly write: (id: string, written: Machine.Written) => Effect.Effect<void>
+  readonly write: (id: string, written: Machine.Written, at: number) => Effect.Effect<void>
   /**
    * The entities whose state holds an operation, or whose mailbox holds a message: what a process activates when
    * it starts, without waiting for a caller. So an operation a crash interrupted runs again, and a message a
    * crash left before its step is handled. A timer needs no activation of its own, since its time is stored and
-   * `due` gives it. A suspended entity runs nothing until an operator resumes it (decisions 0006, 0029, 0071).
+   * `due` gives it. A suspended entity handles nothing until an operator resumes it, and is left out (decisions 0006,
+   * 0029, 0071).
    */
   readonly interrupted: Effect.Effect<ReadonlyArray<string>>
   /**
    * The stored timers of the entities this process does not hold: `loaded` are the ones it does, whose timers are
-   * armed in it, and a suspended entity is left out, since nothing of its runs (decision 0029).
+   * armed in it, and a suspended entity is left out, since no timer of its fires (decision 0029).
    */
   readonly due: (now: number, loaded: ReadonlyArray<string>) => Effect.Effect<Due>
   /**
@@ -436,6 +463,8 @@ export interface Storage<T extends Types> {
   readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
   /** Drops a consumer's cursor, so that the next prune passes what it never read (decision 0039). */
   readonly forget: (consumer: string) => Effect.Effect<void>
+  /** The suspended entities of the program, the longest suspended first (decision 0114). */
+  readonly suspended: Effect.Effect<ReadonlyArray<Suspension>>
 }
 
 /** The storage of one program's entities, on one client, with its schemas read once. */
@@ -627,7 +656,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       )
     }).pipe(Effect.orDie)
 
-  const write = (id: string, written: Machine.Written) =>
+  const write = (id: string, written: Machine.Written, at: number) =>
     Effect.gen(function*() {
       const { entity, suspension } = written
       const on = suspension === null ? null : JSON.stringify(suspension.on)
@@ -643,20 +672,27 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             creation: JSON.stringify(entity.creation),
             suspended_on: on,
             suspended_cause: cause,
+            suspended_at: on === null ? null : at,
           })
         }`
       } else if (entity !== null) {
-        // The request that created the entity is written with the state, at the version that reads both.
+        // The request that created the entity is written with the state, at the version that reads both. The time
+        // of the suspension is the first step's that suspended the entity, kept while it stays suspended (decision
+        // 0114).
         yield* sql`
           UPDATE entities
           SET state = ${JSON.stringify(entity.state)}, version = ${version},
               creation = ${JSON.stringify(entity.creation)},
-              suspended_on = ${on}, suspended_cause = ${cause}
+              suspended_on = ${on}, suspended_cause = ${cause},
+              suspended_at = CASE WHEN ${on} IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
           WHERE name = ${name} AND id = ${id}
         `
       } else {
         yield* sql`
-          UPDATE entities SET suspended_on = ${on}, suspended_cause = ${cause} WHERE name = ${name} AND id = ${id}
+          UPDATE entities
+          SET suspended_on = ${on}, suspended_cause = ${cause},
+              suspended_at = CASE WHEN ${on} IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
+          WHERE name = ${name} AND id = ${id}
         `
       }
       if (written.shown !== null) yield* row(id, written.shown)
@@ -771,7 +807,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       }
     }).pipe(Effect.orDie)
 
-  /** The entities of the program an operator has to resume: nothing of theirs runs, and no timer of theirs fires. */
+  /** The entities of the program an operator has to resume: nothing of theirs is handled, and no timer of theirs fires. */
   const onHold = sql`(SELECT id FROM entities WHERE name = ${name} AND suspended_on IS NOT NULL)`
 
   // A key holding an operation has no `due`: the time of a timer is what that column is for.
@@ -964,5 +1000,48 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const forget = (consumer: string) =>
     Effect.asVoid(sql`DELETE FROM cursors WHERE name = ${name} AND consumer = ${consumer}`).pipe(Effect.orDie)
 
-  return { load, reply, write, interrupted, due, indexed, query, reindex, published, feed, ack, prune, consumers, forget }
+  // The tag of the mailbox's first message says what a `Message` the entity died on is: an inbound one is
+  // discarded, an internal one is not (decisions 0041, 0044, 0114).
+  const suspensions = Effect.gen(function*() {
+    const held = yield* rows('entities', Rows.suspended)(sql`
+      SELECT id, suspended_on, suspended_cause, suspended_at, (
+        SELECT tag FROM mailbox WHERE mailbox.name = entities.name AND mailbox.id = entities.id ORDER BY seq LIMIT 1
+      ) AS head
+      FROM entities WHERE name = ${name} AND suspended_on IS NOT NULL ORDER BY suspended_at, id
+    `)
+    const listed: Array<Suspension> = []
+    for (const row of held) {
+      const on = suspended.read(row.suspended_on)
+      if (on._tag === 'Message' && row.head === null) {
+        return yield* Effect.die(
+          new Error(`the entity '${name}' '${row.id}' is suspended on a message, and its mailbox is empty`),
+        )
+      }
+      listed.push({
+        id: row.id,
+        on: on._tag === 'Message' ? { _tag: 'Message', kind: row.head ?? 'Inbound' } : on,
+        cause: row.suspended_cause,
+        since: DateTime.makeUnsafe(row.suspended_at),
+      })
+    }
+    return listed
+  }).pipe(Effect.orDie)
+
+  return {
+    load,
+    reply,
+    write,
+    interrupted,
+    due,
+    indexed,
+    query,
+    reindex,
+    published,
+    feed,
+    ack,
+    prune,
+    consumers,
+    forget,
+    suspended: suspensions,
+  }
 }

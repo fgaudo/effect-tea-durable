@@ -75,8 +75,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0011](archive/0011-an-operation-declares-what-a-crash-does.md) | An operation declares what a crash does to it | [0018](archive/0018-operations-are-data.md) |
 | [0018](archive/0018-operations-are-data.md) | Operations are data, and their runners never see the state | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0034](archive/0034-an-operation-answers-the-messages-of-its-runner.md) | An operation answers the messages of its runner |  |
-| [0041](archive/0041-a-completion-is-not-discarded.md) | A completion is not discarded | [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md) |
-| [0044](archive/0044-a-firing-is-not-discarded.md) | A timer's firing is not discarded | [0064](archive/0064-the-program-is-not-the-machines-state.md) |
+| [0041](archive/0041-a-completion-is-not-discarded.md) | A completion is not discarded | [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0114](0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) |
+| [0044](archive/0044-a-firing-is-not-discarded.md) | A timer's firing is not discarded | [0064](archive/0064-the-program-is-not-the-machines-state.md), [0114](0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) |
 | [0045](archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md) | An operation waits for a program not deployed yet | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) |
 | [0046](archive/0046-a-receiver-that-crashes-is-sent-again.md) | A receiver that crashes is sent to again | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) |
 | [0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md) | Nothing waits for an operation under the permit | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md) |
@@ -94,9 +94,11 @@ each read and found, are in [`reviews.md`](reviews.md).
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0006](archive/0006-a-defect-suspends-the-entity.md) | A defect suspends the entity | [0046](archive/0046-a-receiver-that-crashes-is-sent-again.md), [0061](archive/0061-only-what-the-program-does-is-its-defect.md) |
+| [0006](archive/0006-a-defect-suspends-the-entity.md) | A defect suspends the entity | [0046](archive/0046-a-receiver-that-crashes-is-sent-again.md), [0061](archive/0061-only-what-the-program-does-is-its-defect.md), [0113](0113-a-suspended-entitys-operations-run-to-their-end.md), [0114](0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) |
 | [0042](archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md) | An event the runtime cannot finish crashes its entity | [0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md), [0067](archive/0067-each-entity-is-held-by-its-own-lock.md), [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) |
 | [0061](archive/0061-only-what-the-program-does-is-its-defect.md) | Only what the program does is its defect |  |
+| [0113](0113-a-suspended-entitys-operations-run-to-their-end.md) | A suspended entity's operations run to their end |  |
+| [0114](0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) | An operator sees the suspended entities, and what a resume or a discard did |  |
 
 ## Versions and deploys
 
@@ -142,7 +144,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | Note | Decides | Changed by |
 | --- | --- | --- |
 | [0028](archive/0028-rules-the-runtime-settled.md) | Rules the runtime settled | [0029](archive/0029-an-idle-entity-is-unloaded.md), [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md) |
-| [0029](archive/0029-an-idle-entity-is-unloaded.md) | An idle entity is unloaded, and what is stored wakes it | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md), [0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md), [0071](archive/0071-a-process-starts-the-entities-with-a-message.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md), [0076](archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0111](archive/0111-an-entity-s-wait-times-out-its-take-alone.md) |
+| [0029](archive/0029-an-idle-entity-is-unloaded.md) | An idle entity is unloaded, and what is stored wakes it | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md), [0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md), [0071](archive/0071-a-process-starts-the-entities-with-a-message.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md), [0076](archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0111](archive/0111-an-entity-s-wait-times-out-its-take-alone.md), [0113](0113-a-suspended-entitys-operations-run-to-their-end.md) |
 | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) | The runtime waits for what it waits for, and polls nothing |  |
 | [0066](archive/0066-the-runtimes-tests-move-time.md) | The runtime's tests move time, and wait for nothing on a clock | [0101](archive/0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md), [0103](archive/0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md), [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) |
 | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md) | Each entity is held by its own lock | [0079](archive/0079-what-a-caller-sets-going-is-finished-without-it.md) |

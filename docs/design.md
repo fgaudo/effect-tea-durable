@@ -293,8 +293,9 @@ it can read ([decision 0043](decisions/archive/0043-a-row-no-version-reads-fails
   received and handled in one event, and one transaction; the runtime takes a caller's message only once the
   mailbox is empty, so a burst waits in memory, unstored, and nothing bounds it but the server in front of the
   process ([decision 0074](decisions/archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)).
-- **Passivation.** An entity with no message for a while is unloaded. An operation under way keeps it loaded; a
-  suspended entity, which runs nothing, is unloaded with the message it died on. To the machine, a passivation is
+- **Passivation.** An entity with no message for a while is unloaded. An operation under way keeps it loaded, a
+  suspended entity's too; a suspended entity whose operations have ended is unloaded with the message it died on,
+  and the completions recorded behind it. To the machine, a passivation is
   a crash the runtime chose: a `Restart` activates the entity again, and arms the same timers in the same
   incarnations. The timers stored are the stored work's, which says each one's time: the earliest wakes the
   entity, and nothing else needs storing. So a process starts with the entities whose state holds an operation,
@@ -334,8 +335,12 @@ exactly once, with its stored replies ([decision 0009](decisions/archive/0009-en
 
 On a phone, a defect ends the app. On a server it must not end the process, and an entity whose message died
 would receive it again and die again, forever. So a defect **suspends** the entity: its state stays as it was
-before the message, the message stays unhandled, and nothing is delivered to it until someone resumes it or
-discards the message ([decision 0006](decisions/archive/0006-a-defect-suspends-the-entity.md)). A defect in an
+before the message, the message stays unhandled, its timers are disarmed, and nothing is handled until someone
+resumes it or discards the message ([decision 0006](decisions/archive/0006-a-defect-suspends-the-entity.md)). Its
+operations under way run to their end: each completion is recorded behind the message the entity died on, and is
+handled once the entity is resumed, so a charge under way when an unrelated message dies is neither run again nor
+left `unknown`. An operation still running at the resumption is kept. One that dies meanwhile leaves the suspension
+as it is, and runs again at the resumption ([decision 0113](decisions/0113-a-suspended-entitys-operations-run-to-their-end.md)). A defect in an
 operation, in `durable` or `project` on a step's next state, or in a new program activating the stored state,
 suspends it too. A defect is what the program does: what one of its functions or schemas throws, each caught on
 its own, or a rule of the design it breaks. Anything else thrown while an event is applied — a bug of the machine,
@@ -355,6 +360,13 @@ retries under the same request id, and gets the stored reply once the entity is 
 once, whichever retry finds it
 ([decision 0010](decisions/archive/0010-a-rejection-may-carry-a-reason.md),
 [decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)).
+
+An operator finds the suspended entities with `suspended`, the longest suspended first: each with what it died on,
+the cause, since when, and the senders waiting for its resumption in this process. Nobody is told on a clock: a
+sender waits as long as it takes, and a deployment that wants an alarm reads the list. `resume` and `discard` say
+what they did: `Resumed` or `Discarded`; `NotDiscarded`, for an entity that died on an internal message or in an
+operation; `StillSuspended`, with the new cause, when the program deployed dies on the stored state; `NotSuspended`;
+or `NotFound` ([decision 0114](decisions/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)).
 
 ## Reading
 
@@ -505,7 +517,8 @@ On one process, with SQLite: the mailbox, the states and the timers sit in one d
 transaction ([decision 0007](decisions/archive/0007-one-process-first.md)). A runtime holds its database until it
 ends: a second runtime on it, or a launch while another connection has the file open, dies as it launches
 ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). `launch` gives a runtime, `deploy(program)`
-a handle to one program's entities — `create`, `send`, `read`, and `resume` and `discard` for an operator — and
+a handle to one program's entities — `create`, `send`, `read`, and `suspended`, `resume` and `discard` for an
+operator — and
 the operations of a program are run with the services it was deployed with
 ([`src/runtime.ts`](../src/runtime.ts), [decision 0028](decisions/archive/0028-rules-the-runtime-settled.md)).
 
