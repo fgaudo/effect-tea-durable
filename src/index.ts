@@ -36,7 +36,16 @@ export {
   versionOf,
   type Work,
 } from './program.ts'
-export { accepted, type Pending, type Rehearsal, rehearse, rejected } from './rehearse.ts'
+export {
+  accepted,
+  type Member,
+  type Outside,
+  type Pending,
+  type Rehearsal,
+  rehearse,
+  rejected,
+  type World,
+} from './rehearse.ts'
 export {
   type Answer,
   type Handle,

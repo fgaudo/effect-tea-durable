@@ -531,6 +531,34 @@ A migration is a pure function on JSON, and `rehearse` encodes what a step store
 rehearsed deploy does not exercise one: the runtime's tests deploy a version whose state, operation and
 projection schemas changed.
 
+### Rehearsing a world
+
+`rehearse` runs one entity, and the test answers for the entities it talks to. So two programs that disagree on
+what a state accepts pass both rehearsals. `rehearse.together(at, scenario)` runs a world of entities on the
+machine, with one time and one process for all of them
+([decision 0131](decisions/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md)):
+
+- `world.create(program, id, flags)` creates an entity, and gives a member of the world: the surface of `rehearse`
+  without `restart` and `deploy`, and with `run`. A world runs one program under each name, as a process does, so a
+  creation by another program under a name the world runs fails the test;
+- `run(pending)` runs the operation's runner, with `Entities` provided by the world and the other services by the
+  scenario, and completes the operation with its message, as `answer` does;
+- what the runner sends reaches the receiver's machine, which handles its mailbox to its end before `send`
+  returns. The world keeps the reply under the run's request while the work that asked is stored, so a run after a
+  restart is given the stored reply. A receiver that does not exist answers `NotFound`, and `create` creates an
+  entity in the world;
+- `run(pending, { crash: true })` runs the runner to its end, drops its message, and restarts the world: the
+  process died between the replies and the completion;
+- `world.restart` restarts every entity, and `world.deploy(program)` restarts them with a new version of one
+  program.
+
+What the runtime makes a defect fails the test: a run that sends twice under one name to one entity, a droppable
+operation that sends, and a defect of the sender or of the receiver. A suspended receiver is never reached, since
+its defect has failed the test first. A world does not choose the order of steps of the entities: each act of the
+test runs to its end before the next, which is one order the runtime can take.
+[`examples/booking/scenarios.test.ts`](../examples/booking/scenarios.test.ts) rehearses the booking and the inventory
+together.
+
 ### The machine and the runtime
 
 The machine is tested with properties, under random orders of messages, completions, timers, crashes and

@@ -2,11 +2,13 @@
  * The booking's and the inventory's scenarios, rehearsed.
  *
  * `rehearse` runs one entity. In the booking's scenarios the test answers for the inventory, and in the
- * inventory's it sends as the bookings would.
+ * inventory's it sends as the bookings would. `rehearse.together` runs both, and the booking's runners with them.
  */
 import { describe, expect, test } from 'bun:test'
+import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import { accepted, type Address, rehearse, rejected } from '../../src/index.ts'
 import { booking, type Sender } from './booking.ts'
 import { inventory } from './inventory.ts'
@@ -145,4 +147,96 @@ describe('inventory', () => {
           .toMatchObject(rejected)
       }),
     )))
+})
+
+const reasonOf = (exit: Exit.Exit<unknown>) => (Exit.isFailure(exit) ? Cause.squash(exit.cause) : null)
+
+describe('booking and inventory together', () => {
+  test('held seats are confirmed, and sold', () =>
+    Effect.runPromise(rehearse.together(
+      bookedAt,
+      Effect.fnUntraced(function*(world) {
+        const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
+        const ada1 = yield* world.create(booking, 'booking-1', start.flags)
+        expect(yield* ada1.run(yield* ada1.pending('hold'))).toBe('Delivered')
+        expect((yield* seats.projection).available).toBe(2)
+        expect(yield* ada1.send({ _tag: 'ConfirmRequested' }, ada)).toEqual(accepted)
+        yield* ada1.run(yield* ada1.pending('confirm'))
+        expect((yield* ada1.state)._tag).toBe('Confirmed')
+        expect((yield* seats.state).sold).toEqual({ 'booking-1': 2 })
+      }),
+    )))
+
+  test('a booking the inventory cannot seat is cancelled, and holds nothing', () =>
+    Effect.runPromise(rehearse.together(
+      bookedAt,
+      Effect.fnUntraced(function*(world) {
+        const seats = yield* world.create(inventory, 'concert-1', { capacity: 1 })
+        const ada1 = yield* world.create(booking, 'booking-1', start.flags)
+        yield* ada1.run(yield* ada1.pending('hold'))
+        expect(yield* ada1.state).toMatchObject({ _tag: 'Cancelled', reason: 'SoldOut' })
+        expect((yield* seats.projection).available).toBe(1)
+      }),
+    )))
+
+  test('a booking of an event with no inventory is cancelled', () =>
+    Effect.runPromise(rehearse.together(
+      bookedAt,
+      Effect.fnUntraced(function*(world) {
+        const ada1 = yield* world.create(booking, 'booking-1', start.flags)
+        yield* ada1.run(yield* ada1.pending('hold'))
+        expect(yield* ada1.state).toMatchObject({ _tag: 'Cancelled', reason: 'NoSuchEvent' })
+      }),
+    )))
+
+  test('a cancellation during the hold gives the seats back to the inventory', () =>
+    Effect.runPromise(rehearse.together(
+      bookedAt,
+      Effect.fnUntraced(function*(world) {
+        const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
+        const ada1 = yield* world.create(booking, 'booking-1', start.flags)
+        yield* ada1.send({ _tag: 'CancelRequested' }, ada)
+        yield* ada1.run(yield* ada1.pending('hold'))
+        expect((yield* seats.projection).available).toBe(2)
+        yield* ada1.run(yield* ada1.pending('release'))
+        expect(yield* ada1.state).toMatchObject({ _tag: 'Cancelled', reason: 'ByCustomer' })
+        expect((yield* seats.projection).available).toBe(4)
+      }),
+    )))
+
+  // The inventory takes one hold per booking: a hold sent again were refused, had it no stored reply.
+  test('a hold the process died on is sent again, and given its stored reply', () =>
+    Effect.runPromise(rehearse.together(
+      bookedAt,
+      Effect.fnUntraced(function*(world) {
+        const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
+        const ada1 = yield* world.create(booking, 'booking-1', start.flags)
+        yield* ada1.run(yield* ada1.pending('hold'), { crash: true })
+        expect((yield* ada1.state)._tag).toBe('Holding')
+        expect(yield* ada1.run(yield* ada1.pending('hold'))).toBe('Delivered')
+        expect((yield* ada1.state)._tag).toBe('Held')
+        expect((yield* seats.projection).available).toBe(2)
+      }),
+    )))
+
+  // A test that answers for the inventory answers `SeatsConfirmed`, and passes: only the inventory rejects it.
+  test('a booking that confirms seats it could not hold fails, where the inventory rejects the confirmation', async () => {
+    const hopeful: typeof booking = {
+      ...booking,
+      update: (message, meta) => (state) =>
+        message._tag === 'SeatsUnavailable' && state._tag === 'Holding'
+          ? { _tag: 'Confirming', booking: state.booking }
+          : booking.update(message, meta)(state),
+    }
+    const exit = await Effect.runPromiseExit(rehearse.together(
+      bookedAt,
+      Effect.fnUntraced(function*(world) {
+        yield* world.create(inventory, 'concert-1', { capacity: 1 })
+        const ada1 = yield* world.create(hopeful, 'booking-1', start.flags)
+        yield* ada1.run(yield* ada1.pending('hold'))
+        yield* ada1.run(yield* ada1.pending('confirm'))
+      }),
+    ))
+    expect(reasonOf(exit)).toBe('the inventory did not accept the confirmation of its own hold')
+  })
 })

@@ -4,12 +4,17 @@ import * as Machine from './machine.ts'
 import {
   type Address,
   checkProgram,
+  type Creation,
   type Durable,
   encode,
+  Entities,
   type IdempotencyKey,
+  InvariantDefect,
   isTimer,
   type Program,
+  type Reply,
   type Request,
+  runnerOf,
   type Types,
 } from './program.ts'
 
@@ -32,13 +37,16 @@ export interface Pending<Work = unknown> {
   readonly work: Work
 }
 
-export interface Rehearsal<T extends Types> {
+/** What a rehearsal does to one entity, whether it runs alone or in a world. */
+interface Acts<T extends Types> {
   readonly state: Effect.Effect<T['state']>
   readonly projection: Effect.Effect<T['projection']>
   /** Delivers an inbound message, with a new request id. */
   readonly send: (message: T['inbound'], sender: T['sender']) => Effect.Effect<Machine.StoredReply<T['rejection']>>
-  /** Delivers an inbound message from another entity's operation, as a new run of it (decision 0059). */
-
+  /**
+   * Delivers an inbound message from another entity's operation, as a new run of it (decision 0059). The entity
+   * need not exist: the test answers for it.
+   */
   readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /** The work under way under `key`, one of the program's own (decision 0033). Fails the test when there is none. */
   readonly pending: (key: T['key']) => Effect.Effect<Pending<Durable<T['operation'], T['internal']>>>
@@ -49,6 +57,9 @@ export interface Rehearsal<T extends Types> {
   readonly answer: (pending: Pending, message: T['internal']) => Effect.Effect<'Delivered' | 'Dropped'>
   /** The time of a timer comes. */
   readonly fire: (pending: Pending) => Effect.Effect<'Delivered' | 'Dropped'>
+}
+
+export interface Rehearsal<T extends Types> extends Acts<T> {
   /**
    * The process dies after the last commit, and the entity is activated again from what was stored. At-most-once
    * operations under way deliver their `unknown` message instead of running again.
@@ -63,8 +74,336 @@ export interface Rehearsal<T extends Types> {
   readonly deploy: (program: Program<T>) => Effect.Effect<void>
 }
 
-/** The entity's id in a rehearsal, part of its idempotency keys. */
-const id = 'rehearsal'
+/** The services a runner of `T` needs from the scenario: all of them but `Entities`, which the world provides. */
+export type Outside<T extends Types> = Exclude<T['services'], Entities>
+
+/** An entity of a world: what a rehearsal does to one entity, and the runs of its operations (decision 0131). */
+export interface Member<T extends Types> extends Acts<T> {
+  /**
+   * Runs the operation's runner, and completes the operation with its message, as `answer` does. What the runner
+   * sends reaches the entities of the world, and each receiver handles its mailbox to its end before `send` returns.
+   * It fails the test when the work under `pending` is not an operation running in that incarnation.
+   */
+  readonly run: {
+    (pending: Pending): Effect.Effect<'Delivered' | 'Dropped', never, Outside<T>>
+    /**
+     * Runs the runner to its end, drops its message, and restarts the world: the process died between the replies
+     * the runner was given and the completion. The next run of the operation is given the stored replies.
+     */
+    (pending: Pending, options: Readonly<{ crash: true }>): Effect.Effect<void, never, Outside<T>>
+  }
+}
+
+/** Entities on the machine together, with one time and one process for all of them (decision 0131). */
+export interface World {
+  /**
+   * Creates an entity of `program`, which the world runs under its name from then on. It fails the test when the
+   * world runs another program under that name, as a second deploy of a name fails in the runtime (decision 0075).
+   */
+  readonly create: <T extends Types>(program: Program<T>, id: string, flags: T['flags']) => Effect.Effect<Member<T>>
+  /** The process dies after the last commit, and every entity is activated again from what was stored. */
+  readonly restart: Effect.Effect<void>
+  /**
+   * A deploy of a new version of a program: the process dies, and the program's entities are activated by it. A
+   * program that cannot run as written fails the test before the process dies (decision 0054).
+   */
+  readonly deploy: <T extends Types>(program: Program<T>) => Effect.Effect<void>
+}
+
+/** A reply stored under a request of another entity's operation, kept while that work holds (decision 0021). */
+type Kept = Readonly<{ reply: Machine.StoredReply<unknown>; asked: Machine.Asker }>
+
+/** An entity of the world: what is stored of it, what its process does, and the replies stored under its requests. */
+type Entity<T extends Types> = {
+  readonly address: Address
+  machine: Machine.Machine<T>
+  readonly replies: Map<string, Kept>
+}
+
+const addressKey = ({ name, id }: Address) => JSON.stringify([name, id])
+
+/** A program's own deaths, with the reason the runtime gives them. */
+const invariant = (reason: string) => Effect.die(new InvariantDefect({ reason }))
+
+/**
+ * The world of a rehearsal: the entities, the programs they run by name, and the time, which every entity shares.
+ * Nothing happens by itself: after each act of the test, every mailbox it reached is handled to its end.
+ */
+const makeWorld = (at: DateTime.Utc) => {
+  const programs = new Map<string, Program<Types>>()
+  const entities = new Map<string, Entity<Types>>()
+  let now = at
+  let requests = 0
+
+  // A world holds entities of many programs: each is stepped by the one deployed under its name (decision 0064).
+  const programOf = <T extends Types>(entity: Entity<T>) => programs.get(entity.address.name) as unknown as Program<T>
+
+  /** The program the world runs under `program`'s name, which `program` becomes when it runs none. */
+  const deployedAs = <T extends Types>(program: Program<T>): Program<T> => {
+    const held = programs.get(program.name)
+    if (held !== undefined) return held as unknown as Program<T>
+    checkProgram(program)
+    programs.set(program.name, program as unknown as Program<Types>)
+    return program
+  }
+
+  /**
+   * What the runtime stores of a step that only the world keeps: the replies to other entities' operations, and
+   * their deletion once the work that asked ends (decision 0021). A caller's request here is never sent twice, so
+   * its reply is not kept.
+   */
+  const keep = <T extends Types>(entity: Entity<T>, transition: Machine.Transition<T>) => {
+    const program = programOf(entity)
+    for (const output of transition.outputs) {
+      if (output._tag !== 'Replied' || output.request._tag !== 'Operation' || output.reply._tag === 'Suspended') continue
+      const { entity: asker, key, incarnation } = output.request
+      entity.replies.set(Machine.requestKey(program, output.request), {
+        reply: output.reply,
+        asked: { name: asker.name, id: asker.id, key, incarnation },
+      })
+    }
+    for (const ended of transition.written?.ended ?? []) {
+      for (const other of entities.values()) {
+        for (const [request, { asked }] of other.replies) {
+          if (
+            asked.name === entity.address.name && asked.id === entity.address.id && asked.key === ended.key &&
+            asked.incarnation === ended.incarnation
+          ) other.replies.delete(request)
+        }
+      }
+    }
+  }
+
+  /** Applies an event to an entity, then handles its mailbox to its end. A defect that suspends it fails the test. */
+  const apply = <T extends Types>(
+    entity: Entity<T>,
+    event: Machine.Event<T>,
+  ): Effect.Effect<ReadonlyArray<Machine.Output<T>>> =>
+    Effect.suspend(() => {
+      const program = programOf(entity)
+      let transition = Machine.step(program, entity.machine, event)
+      keep(entity, transition)
+      const outputs = [...transition.outputs]
+      while (transition.machine.stored.suspension === null && transition.machine.stored.mailbox.length > 0) {
+        transition = Machine.step(program, transition.machine, { _tag: 'Handle', at: now })
+        keep(entity, transition)
+        outputs.push(...transition.outputs)
+      }
+      entity.machine = transition.machine
+      const { suspension } = entity.machine.stored
+      return suspension === null ? Effect.succeed(outputs) : Effect.die(suspension.cause)
+    })
+
+  /**
+   * Delivers an inbound message under `request`, with the reply stored under it, and returns the reply. A message
+   * the runtime could not store fails the test, as it is the caller's defect there (decision 0040).
+   */
+  const receive = <T extends Types>(
+    entity: Entity<T>,
+    message: T['inbound'],
+    request: Request<T['sender']>,
+  ): Effect.Effect<Machine.StoredReply<T['rejection']>> =>
+    Effect.flatMap(Effect.sync(() => {
+      const program = programOf(entity)
+      encode(program.schemas.inbound, message, 'inbound message')
+      if (request._tag === 'Caller') encode(program.schemas.sender, request.sender, 'sender')
+      const key = Machine.requestKey(program, request)
+      const stored = entity.replies.get(key)?.reply ?? null
+      return { key, stored: stored as Machine.StoredReply<T['rejection']> | null }
+    }), ({ key, stored }) =>
+      Effect.flatMap(apply(entity, { _tag: 'Receive', request, message, reply: stored, at: now }), (outputs) => {
+        const program = programOf(entity)
+        for (const output of outputs) {
+          if (output._tag !== 'Replied' || Machine.requestKey(program, output.request) !== key) continue
+          const { reply } = output
+          if (reply._tag === 'Accepted' || reply._tag === 'Rejected') {
+            return Effect.succeed<Machine.StoredReply<T['rejection']>>(reply)
+          }
+        }
+        return Effect.die(`the request ${key} was not answered`)
+      }))
+
+  /** The kind of the work under way under `pending`'s key, in `pending`'s incarnation. */
+  const kindOf = <T extends Types>(entity: Entity<T>, { key, incarnation }: Pending) => {
+    const running = entity.machine.running[key]
+    return running?.incarnation === incarnation ? running.kind : undefined
+  }
+
+  const outcome = ({ key, incarnation }: Pending) => (outputs: ReadonlyArray<Machine.Output<Types>>) =>
+    outputs.some((output) => output._tag === 'Delivered' && output.key === key && output.incarnation === incarnation)
+      ? 'Delivered' as const
+      : 'Dropped' as const
+
+  /** Completes an operation with `message`, as `answer` and `run` do. */
+  const complete = <T extends Types>(entity: Entity<T>, pending: Pending, message: T['internal']) =>
+    Effect.suspend(() => {
+      const { key, incarnation } = pending
+      const before = entity.machine.stored.keys[key]?.work
+      return Effect.flatMap(apply(entity, { _tag: 'Complete', key, incarnation, message }), (outputs) => {
+        const delivered = outcome(pending)(outputs)
+        // The runtime cannot tell an operation that loops on its completion from a program that wants it, so the
+        // rehearsal fails (decision 0130).
+        const again = outputs.find((output) => output._tag === 'Started' && output.key === key)
+        return delivered === 'Delivered' && again?._tag === 'Started' && before !== undefined &&
+            Machine.isSame(programOf(entity), key, before, again.operation)
+          ? Effect.die(`the operation under '${key}' came back the same on its completion, and runs again at once`)
+          : Effect.succeed(delivered)
+      })
+    })
+
+  const restart: Effect.Effect<void> = Effect.suspend(() =>
+    Effect.forEach([...entities.values()], (entity) => apply(entity, { _tag: 'Restart' }), { discard: true })
+  )
+
+  /**
+   * What one run of an operation sends with, as the runtime's: its request is the run's, with the name the operation
+   * gives it, so a run after a restart is given the stored replies (decisions 0047, 0060). A name the run already
+   * used with an entity, and a droppable operation that sends, are the operation's defects (decision 0128).
+   */
+  const entitiesOf = (sender: Address, key: string, incarnation: number, droppable: boolean) => {
+    const used = { message: new Set<string>(), creation: new Set<string>() }
+    const named = (kind: keyof typeof used, program: Program<Types>, id: string, name: string) =>
+      Effect.suspend(() => {
+        if (droppable) return invariant(`the droppable operation under '${key}' sent to ${program.name} '${id}'`)
+        const to = JSON.stringify([program.name, id, name])
+        if (used[kind].has(to)) {
+          return invariant(`the operation ${kind === 'message' ? 'sent' : 'created'} '${name}' to ${program.name} '${id}' twice`)
+        }
+        used[kind].add(to)
+        return Effect.succeed<Request<never>>({ _tag: 'Operation', entity: sender, key, incarnation, name })
+      })
+    return Entities.of({
+      send: <R extends Types>(program: Program<R>, id: string, message: R['inbound'], name: string) =>
+        Effect.flatMap(named('message', program as unknown as Program<Types>, id, name), (request) => {
+          const receiver = entities.get(addressKey({ name: program.name, id })) as Entity<R> | undefined
+          // A receiver that does not exist answers `NotFound`, and stores nothing.
+          return receiver === undefined
+            ? Effect.succeed<Reply<R['rejection']>>({ _tag: 'NotFound' })
+            : receive(receiver, message, request)
+        }),
+      create: <R extends Types>(program: Program<R>, id: string, flags: R['flags'], name: string) =>
+        Effect.flatMap(named('creation', program as unknown as Program<Types>, id, name), (request) =>
+          Effect.suspend((): Effect.Effect<Creation> => {
+            const existing = entities.get(addressKey({ name: program.name, id })) as Entity<R> | undefined
+            if (existing === undefined) {
+              // A creation that cannot be stored is the creator's defect, as in the runtime (decision 0049).
+              return Effect.as(born(deployedAs(program), id, flags, request), { _tag: 'Created' })
+            }
+            return Effect.flatMap(apply(existing, { _tag: 'Create', request }), (outputs) => {
+              for (const output of outputs) if (output._tag === 'CreationReplied') return Effect.succeed(output.reply)
+              return Effect.die(`the creation of ${program.name} '${id}' was not answered`)
+            })
+          })),
+    })
+  }
+
+  /** Creates an entity in the world, from what `Machine.start` gives. A defect at creation fails the test. */
+  const born = <T extends Types>(
+    program: Program<T>,
+    id: string,
+    flags: T['flags'],
+    request: Request<T['sender']>,
+  ): Effect.Effect<Entity<T>> =>
+    Effect.suspend(() => {
+      const created = Machine.start(program, id, flags, now, request)
+      if (created._tag === 'Defect') return Effect.die(created.cause)
+      const entity: Entity<T> = { address: { name: program.name, id }, machine: created.machine, replies: new Map() }
+      entities.set(addressKey(entity.address), entity as unknown as Entity<Types>)
+      return Effect.succeed(entity)
+    })
+
+  const memberOf = <T extends Types>(entity: Entity<T>): Member<T> => {
+    const run = (pending: Pending, options?: Readonly<{ crash: true }>) =>
+      Effect.suspend(() => {
+        const { key, incarnation } = pending
+        if (kindOf(entity, pending) !== 'Operation') {
+          return invariant(`no operation is running under '${key}' in incarnation ${incarnation}`)
+        }
+        const program = programOf(entity)
+        const operation = entity.machine.stored.keys[key]?.work as T['operation']
+        // The work was admitted when it was stored, so the program has a runner for it.
+        const runner = runnerOf(program, operation)!
+        const given = Machine.idempotencyKeyOf(entity.machine, key, incarnation)
+        const running = runner.delivery === 'Idempotent' || runner.delivery === 'IdempotentDigest'
+          ? runner.run(operation, given)
+          : runner.run(operation)
+        const services = entitiesOf(entity.address, key, incarnation, runner.delivery === 'Droppable')
+        return Effect.flatMap(
+          Effect.provideService(running, Entities, services),
+          (message): Effect.Effect<'Delivered' | 'Dropped' | void> =>
+            options?.crash === true ? restart : complete(entity, pending, message),
+        )
+      })
+    return {
+      state: Effect.sync(() => entity.machine.stored.state),
+      projection: Effect.sync(() => programOf(entity).project(entity.machine.stored.state)),
+      send: (message, sender) => receive(entity, message, { _tag: 'Caller', sender, id: `request-${++requests}` }),
+      // A request of another entity is a run of one of its operations: each one here is a run of its own.
+      sendFrom: (message, from) =>
+        receive(entity, message, {
+          _tag: 'Operation',
+          entity: from,
+          key: 'rehearsal',
+          incarnation: ++requests,
+          name: 'request',
+        }),
+      pending: (key) =>
+        Effect.suspend(() => {
+          const running = entity.machine.running[key]
+          const work = entity.machine.stored.keys[key]?.work
+          return running === undefined || work === undefined
+            ? Effect.die(`no work is under way under '${key}'`)
+            : Effect.succeed({
+              key,
+              incarnation: running.incarnation,
+              idempotencyKey: Machine.idempotencyKeyOf(entity.machine, key, running.incarnation),
+              work,
+            })
+        }),
+      answer: (pending, message) =>
+        Effect.suspend(() =>
+          kindOf(entity, pending) === 'Timer'
+            ? Effect.die(`the work under '${pending.key}' is a timer: it fires`)
+            : complete(entity, pending, message)
+        ),
+      fire: (pending) =>
+        Effect.suspend(() => {
+          const kind = kindOf(entity, pending)
+          if (kind === 'Operation') return Effect.die(`the work under '${pending.key}' is an operation: it is answered`)
+          const work = entity.machine.stored.keys[pending.key]?.work
+          if (kind === 'Timer' && isTimer(work)) now = DateTime.max(now, work.at)
+          const { key, incarnation } = pending
+          return Effect.map(apply(entity, { _tag: 'Fire', key, incarnation }), outcome(pending))
+        }),
+      run: run as Member<T>['run'],
+    }
+  }
+
+  const world: World = {
+    create: (program, id, flags) =>
+      Effect.suspend(() => {
+        // A runner's `create` reaches the program by name, as in the runtime. The test names the program itself, so
+        // another one under that name is the test's mistake, and is not run in silence.
+        const deployed = deployedAs(program)
+        if (deployed !== program) return Effect.die(`the world runs another program under the name '${program.name}'`)
+        if (entities.has(addressKey({ name: program.name, id }))) {
+          return Effect.die(`${program.name} '${id}' exists in the world already`)
+        }
+        // No one retries the test's creation, so it is the entity's own request: no sender is needed.
+        return Effect.map(born(deployed, id, flags, { _tag: 'Self', id: 'creation' }), memberOf)
+      }),
+    restart,
+    deploy: (program) =>
+      Effect.andThen(
+        Effect.sync(() => {
+          checkProgram(program)
+          programs.set(program.name, program as unknown as Program<Types>)
+        }),
+        restart,
+      ),
+  }
+  return world
+}
 
 /**
  * Runs a scenario without storage, cluster or clock. Nothing happens by itself: the test answers operations,
@@ -74,120 +413,35 @@ const id = 'rehearsal'
  * Time stands still at `start.at`, and moves to a timer's time when it fires later: a message is handled at the
  * latest time the scenario reached.
  */
-export const rehearse = <T extends Types, E>(
+const rehearseOne = <T extends Types, E>(
   program: Program<T>,
   start: Readonly<{ flags: T['flags']; at: DateTime.Utc }>,
   scenario: (rehearsal: Rehearsal<T>) => Effect.Effect<void, E>,
 ): Effect.Effect<void, E> =>
   // A program the runtime would refuse is refused here too, before the scenario runs (decision 0054).
   Effect.andThen(Effect.sync(() => checkProgram(program)), () => {
-    // No one retries the rehearsal's creation, so it is the entity's own request: no sender is needed.
-    const created = Machine.start(program, id, start.flags, start.at, { _tag: 'Self', id: 'creation' })
-    if (created._tag === 'Defect') return Effect.die(created.cause)
-    let machine = created.machine
-    // The program that runs the entity, which a deploy replaces, and steps every event (decision 0064).
-    let deployed = program
-    let now = start.at
-    let requests = 0
-
-    const apply = (event: Machine.Event<T>): Effect.Effect<ReadonlyArray<Machine.Output<T>>> =>
-      Effect.suspend(() => {
-        let transition = Machine.step(deployed, machine, event)
-        const outputs = [...transition.outputs]
-        while (transition.machine.stored.suspension === null && transition.machine.stored.mailbox.length > 0) {
-          transition = Machine.step(deployed, transition.machine, { _tag: 'Handle', at: now })
-          outputs.push(...transition.outputs)
-        }
-        machine = transition.machine
-        const { suspension } = machine.stored
-        return suspension === null ? Effect.succeed(outputs) : Effect.die(suspension.cause)
-      })
-
-    // A message the runtime could not store fails the test, as it is the caller's defect there (decision 0040).
-    const deliver = (message: T['inbound'], request: (n: number) => Request<T['sender']>) =>
-      Effect.flatMap(Effect.sync(() => {
-        const made = request(++requests)
-        encode(deployed.schemas.inbound, message, 'inbound message')
-        if (made._tag === 'Caller') encode(deployed.schemas.sender, made.sender, 'sender')
-        return made
-      }), (request) =>
-        // Each request is a new one, so none has a reply stored yet (decision 0065).
-        Effect.flatMap(apply({ _tag: 'Receive', request, message, reply: null, at: now }), (outputs) => {
-          const key = Machine.requestKey(deployed, request)
-          for (const output of outputs) {
-            if (output._tag !== 'Replied' || Machine.requestKey(deployed, output.request) !== key) continue
-            const { reply } = output
-            if (reply._tag === 'Accepted' || reply._tag === 'Rejected') {
-              return Effect.succeed<Machine.StoredReply<T['rejection']>>(reply)
-            }
-          }
-          return Effect.die(`the request ${key} was not answered`)
-        }))
-
-    const outcome = ({ key, incarnation }: Pending) => (outputs: ReadonlyArray<Machine.Output<T>>) =>
-      outputs.some((output) => output._tag === 'Delivered' && output.key === key && output.incarnation === incarnation)
-        ? 'Delivered' as const
-        : 'Dropped' as const
-
-    const kindOf = ({ key, incarnation }: Pending) => {
-      const running = machine.running[key]
-      return running?.incarnation === incarnation ? running.kind : undefined
-    }
-
-    return scenario({
-      state: Effect.sync(() => machine.stored.state),
-      projection: Effect.sync(() => deployed.project(machine.stored.state)),
-      send: (message, sender) => deliver(message, (n) => ({ _tag: 'Caller', sender, id: `request-${n}` })),
-      // A request of another entity is a run of one of its operations: each one here is a run of its own.
-      sendFrom: (message, entity) =>
-        deliver(message, (n) => ({ _tag: 'Operation', entity, key: 'rehearsal', incarnation: n, name: 'request' })),
-
-      pending: (key) =>
-        Effect.suspend(() => {
-          const running = machine.running[key]
-          const work = machine.stored.keys[key]?.work
-          return running === undefined || work === undefined
-            ? Effect.die(`no work is under way under '${key}'`)
-            : Effect.succeed({
-              key,
-              incarnation: running.incarnation,
-              idempotencyKey: Machine.idempotencyKeyOf(machine, key, running.incarnation),
-              work,
-            })
-        }),
-      answer: (pending, message) =>
-        Effect.suspend(() => {
-          if (kindOf(pending) === 'Timer') return Effect.die(`the work under '${pending.key}' is a timer: it fires`)
-          const { key, incarnation } = pending
-          const before = machine.stored.keys[key]?.work
-          return Effect.flatMap(apply({ _tag: 'Complete', key, incarnation, message }), (outputs) => {
-            const delivered = outcome(pending)(outputs)
-            // The runtime cannot tell an operation that loops on its completion from a program that wants it, so the
-            // rehearsal fails (decision 0130).
-            const again = outputs.find((output) => output._tag === 'Started' && output.key === key)
-            return delivered === 'Delivered' && again?._tag === 'Started' && before !== undefined &&
-                Machine.isSame(deployed, key, before, again.operation)
-              ? Effect.die(`the operation under '${key}' came back the same on its completion, and runs again at once`)
-              : Effect.succeed(delivered)
-          })
-        }),
-      fire: (pending) =>
-        Effect.suspend(() => {
-          const kind = kindOf(pending)
-          if (kind === 'Operation') return Effect.die(`the work under '${pending.key}' is an operation: it is answered`)
-          const work = machine.stored.keys[pending.key]?.work
-          if (kind === 'Timer' && isTimer(work)) now = DateTime.max(now, work.at)
-          const { key, incarnation } = pending
-          return Effect.map(apply({ _tag: 'Fire', key, incarnation }), outcome(pending))
-        }),
-      restart: Effect.asVoid(apply({ _tag: 'Restart' })),
-      deploy: (program) =>
-        Effect.andThen(
-          Effect.sync(() => {
-            checkProgram(program)
-            deployed = program
-          }),
-          Effect.asVoid(apply({ _tag: 'Restart' })),
-        ),
-    })
+    const world = makeWorld(start.at)
+    return Effect.flatMap(world.create(program, 'rehearsal', start.flags), ({ run: _, ...acts }) =>
+      scenario({
+        ...acts,
+        restart: world.restart,
+        deploy: (next) =>
+          next.name === program.name
+            ? world.deploy(next)
+            // A deploy under another name reaches the entity in the runtime as a defect of the activation.
+            : invariant(`the program '${next.name}' replaces the entity's program '${program.name}'`),
+      }))
   })
+
+/**
+ * Runs a scenario on a world of entities, without storage, cluster or clock, with one time and one process for all
+ * of them (decision 0131). The scenario creates the entities, and runs the operations' runners with `run`, or
+ * answers them as `rehearse` does. What a runner sends reaches the receiver's machine. A defect of any entity fails
+ * the test, and so does a run that sends twice under one name to one entity.
+ */
+const together = <E, R>(at: DateTime.Utc, scenario: (world: World) => Effect.Effect<void, E, R>): Effect.Effect<void, E, R> =>
+  Effect.suspend(() => scenario(makeWorld(at)))
+
+export const rehearse: typeof rehearseOne & { readonly together: typeof together } = Object.assign(rehearseOne, {
+  together,
+})

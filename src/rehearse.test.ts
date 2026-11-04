@@ -7,8 +7,20 @@ import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Schema from 'effect/Schema'
+import { booking } from '../examples/booking/booking.ts'
+import { inventory } from '../examples/booking/inventory.ts'
 import { order, type Sender } from '../examples/order/order.ts'
-import { InvariantDefect, isTimer, type Program, timer } from './program.ts'
+import {
+  create,
+  type Entities,
+  InvariantDefect,
+  isTimer,
+  operation,
+  type Program,
+  type Runner,
+  send,
+  timer,
+} from './program.ts'
 import { rehearse } from './rehearse.ts'
 
 const placedAt = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
@@ -16,6 +28,8 @@ const placedAt = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
 const start = { flags: { order: { customer: 'ada', totalInCents: 4_200 } }, at: placedAt }
 
 const ada: Sender = { _tag: 'Customer', id: 'ada' }
+
+const warehouse: Sender = { _tag: 'Warehouse' }
 
 // A new version that gives an hour more to pay.
 const patient: typeof order = {
@@ -299,4 +313,133 @@ describe('a rehearsal', () => {
         expect(second.work).toMatchObject({ payment: 'card-2' })
       }),
     )))
+})
+
+describe('a world', () => {
+  const at = placedAt
+  const flags = { customer: 'ada', event: 'concert-1', seats: 2 }
+  const reasonOf = (exit: Exit.Exit<unknown>) => {
+    const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+    return cause instanceof InvariantDefect ? cause.reason : cause
+  }
+  // A booking whose hold is the runner given: the rest of the booking is the example's.
+  // A new version of the booking, which shows callers no cancellation: it keeps every work the same.
+  const tacit: typeof booking = { ...booking, project: (state) => ({ ...booking.project(state), canCancel: false }) }
+  const holdingBy = (hold: Runner<{ _tag: 'Hold'; event: string; seats: number }, unknown, Entities>) =>
+    ({ ...booking, operations: { ...booking.operations, Hold: hold } }) as unknown as typeof booking
+
+  // The runtime answers a second request under one name with the first one's reply, so it is a defect (decision 0047).
+  test('fails a run that sends twice under one name to one entity', async () => {
+    const twice = holdingBy(operation.atLeastOnce(({ event, seats }) =>
+      Effect.as(
+        Effect.andThen(
+          send(inventory, event, { _tag: 'HoldRequested', seats }, 'hold'),
+          send(inventory, event, { _tag: 'HoldRequested', seats }, 'hold'),
+        ),
+        { _tag: 'SeatsHeld' } as const,
+      )
+    ))
+    const exit = await Effect.runPromiseExit(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        yield* world.create(inventory, 'concert-1', { capacity: 4 })
+        const held = yield* world.create(twice, 'booking-1', flags)
+        yield* held.run(yield* held.pending('hold'))
+      }),
+    ))
+    expect(reasonOf(exit)).toBe("the operation sent 'hold' to Inventory 'concert-1' twice")
+  })
+
+  // A creation is stored under its request, so a run after a crash is answered `Created` again (decision 0017).
+  test('creates an entity from a run, and answers the run sent again after a crash as the first', () => {
+    const creating = holdingBy(operation.atLeastOnce(({ event, seats }) =>
+      Effect.gen(function*() {
+        const created = yield* create(inventory, event, { capacity: 4 }, 'inventory')
+        if (created._tag !== 'Created') return yield* Effect.die('the inventory was there already')
+        const reply = yield* send(inventory, event, { _tag: 'HoldRequested', seats }, 'hold')
+        return reply._tag === 'Accepted' ? { _tag: 'SeatsHeld' } as const : yield* Effect.die('no hold')
+      })
+    ))
+    return Effect.runPromise(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        const held = yield* world.create(creating, 'booking-1', flags)
+        yield* held.run(yield* held.pending('hold'), { crash: true })
+        expect(yield* held.run(yield* held.pending('hold'))).toBe('Delivered')
+        expect((yield* held.state)._tag).toBe('Held')
+        const exit = yield* Effect.exit(world.create(inventory, 'concert-1', { capacity: 4 }))
+        expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe("Inventory 'concert-1' exists in the world already")
+      }),
+    ))
+  })
+
+  test('fails a run of an operation no longer under way', async () => {
+    const exit = await Effect.runPromiseExit(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        yield* world.create(inventory, 'concert-1', { capacity: 4 })
+        const held = yield* world.create(booking, 'booking-1', flags)
+        const hold = yield* held.pending('hold')
+        yield* held.run(hold)
+        yield* held.run(hold)
+      }),
+    ))
+    expect(reasonOf(exit)).toBe("no operation is running under 'hold' in incarnation 1")
+  })
+
+  test('restarts every entity of the world, each keeping its charge under the same key', () =>
+    Effect.runPromise(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        const placed = [
+          yield* world.create(order, 'order-1', start.flags),
+          yield* world.create(order, 'order-2', start.flags),
+        ]
+        const before: Array<string> = []
+        for (const one of placed) {
+          yield* one.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+          before.push((yield* one.pending('charge')).idempotencyKey)
+        }
+        yield* world.restart
+        const after: Array<string> = []
+        for (const one of placed) after.push((yield* one.pending('charge')).idempotencyKey)
+        expect(after).toEqual(before)
+        expect(new Set(after).size).toBe(2)
+      }),
+    )))
+
+  // One process holds every entity, so a deploy of one program restarts the entities of the others too.
+  test('deploys a new version of one program, and restarts the entities of the others', () =>
+    Effect.runPromise(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
+        const held = yield* world.create(booking, 'booking-1', flags)
+        yield* held.run(yield* held.pending('hold'))
+        const deadline = yield* held.pending('deadline')
+        const shipped = yield* world.create(order, 'order-1', start.flags)
+        yield* shipped.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* shipped.answer(yield* shipped.pending('charge'), { _tag: 'ChargeSucceeded', charge: 'ch-1' })
+        yield* shipped.answer(yield* shipped.pending('tell-warehouse'), { _tag: 'WarehouseTold' })
+        yield* shipped.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse)
+        yield* world.deploy(tacit)
+        // The order's at-most-once email delivers its `unknown` message: the order was restarted.
+        expect(yield* shipped.state).toMatchObject({ _tag: 'Shipped', email: 'Unsure' })
+        expect(yield* held.pending('deadline')).toEqual(deadline)
+        expect((yield* seats.projection).available).toBe(2)
+      }),
+    )))
+
+  // The runtime refuses a second deploy of a name (decision 0075): a test that creates by the old version is told.
+  test('fails a creation by a program the world runs another version of', async () => {
+    const exit = await Effect.runPromiseExit(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        yield* world.create(booking, 'booking-1', flags)
+        yield* world.deploy(tacit)
+        yield* world.create(booking, 'booking-2', flags)
+      }),
+    ))
+    expect(reasonOf(exit)).toBe("the world runs another program under the name 'Booking'")
+  })
 })

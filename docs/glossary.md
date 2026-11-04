@@ -71,7 +71,8 @@ Cluster's says so.
 - **Projection, read model.** `project(state)`: what a caller reads of an entity, with the actions it allows. Stored as
   a row with the value of each index, which `read` and a query read.
 - **Rehearsal, `rehearse`.** A scenario run on the machine without storage, cluster or clock, where the test answers
-  the operations, fires the timers, kills the process and deploys new versions.
+  or runs the operations, fires the timers, kills the process and deploys new versions. `rehearse` runs one entity,
+  and `rehearse.together` a world.
 - **Reply.** The stored answer to a request, which a retry under the same request id reads. A caller's is kept for
   the `keep` its boundary gave `send`, from the step that answers, and for ever without one. Another entity's is kept
   while the work that asked is stored.
@@ -98,3 +99,6 @@ Cluster's says so.
   and is read by migrating its JSON to the program's.
 - **Waker.** The runtime's fiber that reads the stored timers due and activates their entities, and tries again after
   `retry` one it could not load.
+- **World, member.** In a rehearsal: entities on the machine together, with one time and one process for all of them,
+  made by `rehearse.together`. A member is one entity of a world, whose `run` runs an operation's runner, and what
+  the runner sends reaches the receiver's machine.

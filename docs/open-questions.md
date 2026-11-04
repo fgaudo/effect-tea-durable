@@ -13,10 +13,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   for it — two state machines compose into one, with laws a test can check — and is worth reading before this is
   designed, although it stores the events where this design stores the state
   ([decision 0002](decisions/archive/0002-store-the-state-not-the-messages.md)).
-- **Rehearsing entities together.** `rehearse` runs one entity, and the test answers for the others. A booking
-  that sends a confirmation the inventory would reject passes both rehearsals
-  ([decision 0009](decisions/archive/0009-entities-talk-through-operations.md)). Is a rehearsal of several entities
-  needed, where `send` reaches the other program, or a check that two programs agree on their messages?
 
 ## Storage and reading
 
