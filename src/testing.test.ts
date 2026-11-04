@@ -485,4 +485,12 @@ test('a fiber started inline yields with no task ready, and gives its parent bac
     expect([...ends]).toContain('c1 p c2 c3 c4')
     expect([...ends]).toContain('c1 c2 c3 p c4')
   }
+  // Under prioritized schedules the child yields with no task ready at a change of priority alone: so a run in which
+  // no change falls on the child keeps it going, and one in which a change does gives its parent back.
+  const ends = new Set<string>()
+  prioritizedSchedules(body, { runs: 200, depth: 2, resumptions: 'inline' }, (exit) => {
+    if (Exit.isSuccess(exit)) ends.add(exit.value)
+  })
+  expect([...ends]).toContain('c1 c2 c3 c4 p')
+  expect([...ends]).toContain('c1 p c2 c3 c4')
 })
