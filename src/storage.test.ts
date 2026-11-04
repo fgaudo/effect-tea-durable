@@ -84,7 +84,7 @@ const creation = { _tag: 'Caller', sender: null, id: 'creation' } as const
 
 /** The request named `name` of the asker's work in `incarnation`, as the machine keys its reply (decision 0059). */
 const asked = (name: string, incarnation: number) =>
-  ({ _tag: 'Operation', entity: { name: 'Asker', id: 'a' }, key: 'ask', incarnation, name }) as const
+  ({ _tag: 'Operation', entity: { name: 'Asker', id: 'a' }, key: { name: 'ask' }, incarnation, name }) as const
 
 const sent = (name: string, incarnation: number) => Machine.requestKey(receiver, asked(name, incarnation))
 
@@ -92,7 +92,7 @@ const reply = (name: string, incarnation: number): Machine.ReplyRow => ({
   request: sent(name, incarnation),
   tag: 'Accepted',
   reason: null,
-  asked: { name: 'Asker', id: 'a', key: 'ask', incarnation },
+  asked: { name: 'Asker', id: 'a', key: { name: 'ask' }, incarnation },
   until: null,
 })
 
@@ -118,13 +118,62 @@ test('a reply asked by work that no longer holds goes as it is stored, and one w
       const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
       yield* storage(asker, sql).write(
         'a',
-        created({ keys: [{ key: 'ask', incarnation: 1, work, delivery: 'Idempotent', due: null }] }),
+        created({ keys: [{ key: { name: 'ask' }, incarnation: 1, work, delivery: 'Idempotent', due: null }] }),
         0,
       )
       const store = storage(receiver, sql)
       yield* store.write('r', created({ replies: [reply('held', 1), reply('ended', 2)] }), 0)
       expect(yield* store.reply('r', asked('held', 1), 0)).toEqual({ _tag: 'Accepted' })
       expect(yield* store.reply('r', asked('ended', 2), 0)).toBeNull()
+    })))
+
+// A key without a parameter has none, which no parameter's JSON is: its row and its parameter's never meet
+// (decision 0136).
+test('a key is stored as its name and its parameter, apart from a key of the same name without one', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
+      const row = (key: Machine.KeyRow['key'], incarnation: number): Machine.KeyRow =>
+        ({ key, incarnation, work, delivery: 'Idempotent', due: null })
+      const plain = { name: 'ask' }
+      const empty = { name: 'ask', parameter: '' }
+      const nothing = { name: 'ask', parameter: null }
+      const record = { name: 'ask', parameter: { a: 1, b: [2] } }
+      const suspension = { on: { _tag: 'Operation', key: record, incarnation: 4 }, cause: 'died' } as const
+      const store = storage(asker, sql)
+      yield* store.write('a', created({
+        keys: [row(plain, 1), row(empty, 2), row(nothing, 3), row(record, 4)],
+        queued: [{ _tag: 'Internal', message: 'done', key: empty, incarnation: 2 }],
+        incarnations: 4,
+        suspension,
+      }), 0)
+      const loaded = yield* store.load('a')
+      expect(Object.values(loaded?.keys ?? {}).map(({ key, incarnation }) => ({ key, incarnation }))).toEqual([
+        { key: plain, incarnation: 1 },
+        { key: empty, incarnation: 2 },
+        { key: nothing, incarnation: 3 },
+        { key: record, incarnation: 4 },
+      ])
+      expect(loaded?.mailbox).toEqual([{ _tag: 'Internal', message: 'done', key: empty, incarnation: 2 }])
+      expect(loaded?.suspension?.on).toEqual(suspension.on)
+      // A reply kept for the work under one of them goes with that work alone.
+      const receiving = storage(receiver, sql)
+      const asking = (key: Machine.KeyRow['key'], incarnation: number) =>
+        ({ _tag: 'Operation', entity: { name: 'Asker', id: 'a' }, key, incarnation, name: 'n' }) as const
+      const kept = (key: Machine.KeyRow['key'], incarnation: number): Machine.ReplyRow => ({
+        request: Machine.requestKey(receiver, asking(key, incarnation)),
+        tag: 'Accepted',
+        reason: null,
+        asked: { name: 'Asker', id: 'a', key, incarnation },
+        until: null,
+      })
+      yield* receiving.write('r', created({ replies: [kept(plain, 1), kept(empty, 2), kept(record, 4)] }), 0)
+      yield* store.write('a', written({ gone: [empty], incarnations: 4, ended: [{ key: empty, incarnation: 2 }] }), 0)
+      expect(yield* receiving.reply('r', asking(plain, 1), 0)).toEqual({ _tag: 'Accepted' })
+      expect(yield* receiving.reply('r', asking(empty, 2), 0)).toBeNull()
+      expect(yield* receiving.reply('r', asking(record, 4), 0)).toEqual({ _tag: 'Accepted' })
+      const after = yield* store.load('a')
+      expect(Object.values(after?.keys ?? {}).map(({ key }) => key)).toEqual([plain, nothing, record])
     })))
 
 test('an operation given the digest of its idempotency key is loaded as delivered so (decision 0123)', () =>
@@ -134,10 +183,10 @@ test('an operation given the digest of its idempotency key is loaded as delivere
       const store = storage(asker, sql)
       yield* store.write(
         'a',
-        created({ keys: [{ key: 'ask', incarnation: 1, work, delivery: 'IdempotentDigest', due: null }] }),
+        created({ keys: [{ key: { name: 'ask' }, incarnation: 1, work, delivery: 'IdempotentDigest', due: null }] }),
         0,
       )
-      expect((yield* store.load('a'))?.keys['ask']?.delivery).toBe('IdempotentDigest')
+      expect((yield* store.load('a'))?.keys[Machine.keyText({ name: 'ask' })]?.delivery).toBe('IdempotentDigest')
     })))
 
 test('the work that ended takes the replies to its requests with it, and no others', () =>
@@ -146,18 +195,18 @@ test('the work that ended takes the replies to its requests with it, and no othe
       const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
       yield* storage(asker, sql).write(
         'a',
-        created({ keys: [{ key: 'ask', incarnation: 1, work, delivery: 'Idempotent', due: null }], incarnations: 1 }),
+        created({ keys: [{ key: { name: 'ask' }, incarnation: 1, work, delivery: 'Idempotent', due: null }], incarnations: 1 }),
         0,
       )
       const store = storage(receiver, sql)
       yield* store.write('r', created({ replies: [reply('first', 1)] }), 0)
       yield* store.write('s', created({ replies: [reply('other', 1)] }), 0)
       // Work of another incarnation asked nothing that is stored.
-      yield* storage(asker, sql).write('a', written({ ended: [{ key: 'ask', incarnation: 2 }] }), 0)
+      yield* storage(asker, sql).write('a', written({ ended: [{ key: { name: 'ask' }, incarnation: 2 }] }), 0)
       expect(yield* store.reply('r', asked('first', 1), 0)).toEqual({ _tag: 'Accepted' })
       yield* storage(asker, sql).write(
         'a',
-        written({ gone: ['ask'], incarnations: 1, ended: [{ key: 'ask', incarnation: 1 }] }),
+        written({ gone: [{ name: 'ask' }], incarnations: 1, ended: [{ key: { name: 'ask' }, incarnation: 1 }] }),
         0,
       )
       expect(yield* store.reply('r', asked('first', 1), 0)).toBeNull()
@@ -281,7 +330,7 @@ test('a process starts the entities holding an operation or a message, and none 
     Effect.gen(function*() {
       const store = storage(receiver, sql)
       const keys = [{
-        key: 'ask',
+        key: { name: 'ask' },
         incarnation: 1,
         work: { _tag: 'Operation', operation: { _tag: 'Ask' } },
         delivery: 'Idempotent',
@@ -364,6 +413,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               name: 'Receiver',
               id: 'r',
               key: 'ask',
+              parameter: '',
               incarnation: 1,
               version: 1,
               work: '{"_tag":"Operation","operation":{"_tag":"Ask"}}',
@@ -405,6 +455,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               name: 'Receiver',
               id: 'r',
               key: 'ask',
+              parameter: '',
               incarnation: -1,
               version: 1,
               work: '{"_tag":"Operation","operation":{"_tag":"Ask"}}',
@@ -428,6 +479,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               name: 'Receiver',
               id: 'r',
               key: 'ask',
+              parameter: '',
               incarnation: 1,
               version: 1,
               work: '{"_tag":"Timer","at":1,"message":"rang"}',
@@ -530,8 +582,8 @@ const marked: Program<T> = {
 
 /** The rows of a creation with a timer under way, two messages queued, and a row of the log. */
 const busy = created({
-  keys: [{ key: 'ask', incarnation: 1, work: { _tag: 'Timer', at: 0, message: 'rang' }, delivery: null, due: 0 }],
-  queued: [inbound('hello'), { _tag: 'Internal', message: 'done', key: 'ask', incarnation: 1 }],
+  keys: [{ key: { name: 'ask' }, incarnation: 1, work: { _tag: 'Timer', at: 0, message: 'rang' }, delivery: null, due: 0 }],
+  queued: [inbound('hello'), { _tag: 'Internal', message: 'done', key: { name: 'ask' }, incarnation: 1 }],
   published: { kind: 'Creation', message: null, projection: 'start' },
 })
 
@@ -543,7 +595,7 @@ test('a version reads through its migrations the work, the mailbox and the log a
       yield* first.write('r', written({ published: { kind: 'Inbound', message: 'hello', projection: 'hello' } }), 0)
       const after = storage(marked, sql)
       const stored = yield* after.load('r')
-      const work = stored?.keys['ask']?.work
+      const work = stored?.keys[Machine.keyText({ name: 'ask' })]?.work
       expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang (internal)')
       expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello (inbound)', 'done (internal)'])
       expect((yield* after.published(0)).map(({ message, projection }) => ({ message, projection }))).toEqual([
@@ -630,7 +682,7 @@ test('a row is written at the version that writes it, and read back as it was wr
       yield* after.write('r', busy, 0)
       const stored = yield* after.load('r')
       expect(stored?.state).toEqual({ last: 'start' })
-      const work = stored?.keys['ask']?.work
+      const work = stored?.keys[Machine.keyText({ name: 'ask' })]?.work
       expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang')
       expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello', 'done'])
       expect((yield* after.published(0)).map(({ projection }) => projection)).toEqual(['start'])
@@ -645,7 +697,7 @@ test('a suspended entity is listed with what it died on, its cause and since whe
       const listed = Effect.map(store.suspended, (entities) =>
         entities.map(({ since, ...rest }) => ({ ...rest, since: DateTime.toEpochMillis(since) })))
       const onMessage = { on: { _tag: 'Message' }, cause: 'broken' } as const
-      const onOperation = { on: { _tag: 'Operation', key: 'ask', incarnation: 1 }, cause: 'died' } as const
+      const onOperation = { on: { _tag: 'Operation', key: { name: 'ask' }, incarnation: 1 }, cause: 'died' } as const
       yield* store.write('fine', created(), 1)
       yield* store.write('inbound', created({ queued: [inbound('one')], suspension: onMessage }), 5)
       yield* store.write('operation', created({ suspension: onOperation }), 3)
@@ -655,7 +707,7 @@ test('a suspended entity is listed with what it died on, its cause and since whe
         { id: 'inbound', on: { _tag: 'Message', kind: 'Inbound' }, cause: 'broken', since: 5 },
       ])
       // A step while the entity stays suspended, a completion recorded or a state written, keeps the time.
-      const completion: Machine.EnvelopeRow = { _tag: 'Internal', message: 'done', key: 'ask', incarnation: 1 }
+      const completion: Machine.EnvelopeRow = { _tag: 'Internal', message: 'done', key: { name: 'ask' }, incarnation: 1 }
       yield* store.write('inbound', written({ queued: [completion], suspension: onMessage }), 9)
       yield* store.write(
         'operation',

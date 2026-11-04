@@ -119,6 +119,20 @@ export type Scalar = string | number | boolean | null
 /** An entity: the name of its program and its id. */
 export type Address = Readonly<{ name: string; id: string }>
 
+/**
+ * A key of an entity's work, as the machine, the storage and the runtime hold it: the name the program declares,
+ * and for a key that takes one, its parameter as the key's schema encodes it, with the fields of each object in
+ * order. Two keys are one when their names are the same and their parameters encode alike. A key without a
+ * parameter has no `parameter`, so nothing reads a key's text to tell the two kinds apart (decision 0136).
+ */
+export type Key = Readonly<{ name: string; parameter?: Json }>
+
+/** How a key is stored: in a suspension, and in a request that another entity's operation sent. */
+export const KeyCodec = Schema.Struct({
+  name: Schema.String,
+  parameter: Schema.optionalKey(Schema.Json),
+}) as unknown as Schema.Codec<Key, Json>
+
 /** Who sent a message: a caller, another entity, or the entity's own durable work. */
 export type Origin<Sender> =
   | Readonly<{ _tag: 'Self' }>
@@ -135,7 +149,7 @@ export type Origin<Sender> =
  */
 export type Request<Sender> =
   | Readonly<{ _tag: 'Caller'; sender: Sender; id: string }>
-  | Readonly<{ _tag: 'Operation'; entity: Address; key: string; incarnation: number; name: string }>
+  | Readonly<{ _tag: 'Operation'; entity: Address; key: Key; incarnation: number; name: string }>
   | Readonly<{ _tag: 'Self'; id: string }>
 
 /** Who sent a request, as `update` reads it in `meta.from`. */
@@ -178,19 +192,17 @@ export type Update<State, Message, Sender, Reason> = (
 export type IdempotencyKey = string & Brand.Brand<'IdempotencyKey'>
 
 /**
- * The idempotency key of the work under `key`, as the machine writes a key: a name, or the canonical JSON of a name
- * and a parameter, which the key holds as JSON and not as a string of it (decision 0132).
+ * The idempotency key of the work under `key`. It holds the key's name, or for a key with a parameter the name and
+ * the parameter's JSON, as JSON in place and not as a string of it: `["Order","o-1",["charge","line-7"],4]`
+ * (decisions 0132, 0136).
  */
-export const idempotencyKey = (entity: Address, key: string, incarnation: number): IdempotencyKey =>
-  `[${JSON.stringify(entity.name)},${JSON.stringify(entity.id)},${
-    isParameterized(key) ? key : JSON.stringify(key)
-  },${incarnation}]` as IdempotencyKey
-
-/**
- * Whether the machine's text of a key is a name with a parameter, `["charge","line-7"]`. A declared name never
- * starts with `[`, which `checkProgram` refuses, so a name is never read as one (decision 0132).
- */
-export const isParameterized = (key: string): boolean => key.startsWith('[')
+export const idempotencyKey = (entity: Address, key: Key, incarnation: number): IdempotencyKey =>
+  JSON.stringify([
+    entity.name,
+    entity.id,
+    key.parameter === undefined ? key.name : [key.name, key.parameter],
+    incarnation,
+  ]) as IdempotencyKey
 
 /**
  * The digest of an idempotency key, for a service that caps a key's length: the SHA-256 of its UTF-8 bytes, in
@@ -457,8 +469,7 @@ export const migrationOf = <T extends Types>(
 const isWord = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
 
 /**
- * Refuses a program that cannot run as it is written: an empty name, a key whose name starts with `[`, which the
- * machine would read as a key with a parameter (decision 0132), an index whose name is not a word. It is pure, and
+ * Refuses a program that cannot run as it is written: an empty name, an index whose name is not a word. It is pure, and
  * called where a program enters, before anything is stored or run: `deploy`, which a fix is too, and `rehearse`. A
  * program is never mutated, so the check holds for as long as the program runs (decisions 0052, 0054). A missing
  * runner is the machine's to find, where an operation is held.
@@ -468,9 +479,6 @@ export const checkProgram = <T extends Types>(program: Program<T>): void => {
     throw new InvariantDefect({ reason: `the program '${program.name}' ${reason}` })
   }
   if (program.name.length === 0) refuse('has an empty name')
-  for (const key of Object.keys(program.keys)) {
-    if (isParameterized(key)) refuse(`declares the key '${key}', whose name starts with '['`)
-  }
   for (const index of Object.keys(program.indexes)) {
     if (!isWord(index)) refuse(`has an index '${index}' whose name is not a word`)
   }

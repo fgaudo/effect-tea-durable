@@ -206,7 +206,8 @@ const shape = (stored: Machine.Stored<T> | null, replies: ReadonlyArray<Answered
     replies: Object.fromEntries(replies.map(({ request, tag, reason }) => [request, { tag, reason }])),
     state: stored.state,
     keys: Object.fromEntries(
-      Object.entries(stored.keys).map(([key, held]) => [key, {
+      Object.entries(stored.keys).map(([text, held]) => [text, {
+        key: held.key,
         incarnation: held.incarnation,
         work: held.work === undefined
           ? null
@@ -889,7 +890,7 @@ describe('the runtime on SQLite', () => {
           yield* ran(from.create('sender', { at }, { requestId: 'creation', sender: tester }))
           yield* runtime.settled
           const stored = yield* storage(sender, yield* SqlClient.SqlClient).load('sender')
-          expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: 'c', incarnation: 1 })
+          expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: { name: 'c' }, incarnation: 1 })
           expect(yield* storage(program, yield* SqlClient.SqlClient).load(id)).toBeNull()
         }))
     })))
@@ -996,7 +997,7 @@ describe('the runtime on SQLite', () => {
             on: { _tag: 'Message', kind: 'Inbound' },
             cause: expect.stringContaining('broken'),
             since: DateTime.toEpochMillis(at) + 7,
-            waiting: [{ entity: { name: 'Sender', id: 's' }, key: 'c', incarnation: 1, name: 'want' }],
+            waiting: [{ entity: { name: 'Sender', id: 's' }, key: { name: 'c' }, incarnation: 1, name: 'want' }],
           }])
           // Resumed by the program that died on the message, it is activated, and dies on it again. `settled` would
           // wait for the sender's operation, which waits for the resumption: the test lets the step run instead.
@@ -1982,6 +1983,7 @@ describe('passivation', () => {
             name: program.name,
             id: entity,
             key: 't',
+            parameter: '',
             incarnation: 1,
             version: 1,
             work: '{}',
@@ -2019,8 +2021,7 @@ describe('passivation', () => {
           expect(stored?.suspension?.on).toEqual({ _tag: 'Message' })
           expect(stored?.mailbox.length).toBe(1)
           // It holds its timer still, and is left out of both readings a process makes of what has to run.
-          expect(Object.keys(stored?.keys ?? {}).filter((key) => stored?.keys[key]?.work !== undefined))
-            .toEqual(['t'])
+          expect(Object.values(stored?.keys ?? {}).map((held) => held.key)).toEqual([{ name: 't' }])
           expect(yield* store.interrupted).toEqual([])
           expect(yield* store.due(DateTime.toEpochMillis(yield* DateTime.now) + 1_000, [])).toEqual({
             ready: [],
@@ -3685,7 +3686,7 @@ describe('what the runtime cannot finish', () => {
             .toEqual({ _tag: 'Suspended' })
         }))
       const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
-      expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: 'c', incarnation: 3 })
+      expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: { name: 'c' }, incarnation: 3 })
     })))
 
   test('a program that cannot run as written is refused where it enters, before anything is stored', () =>
@@ -3710,9 +3711,8 @@ describe('what the runtime cannot finish', () => {
           // A fix is a deploy, checked as any (decision 0064): the entities go on with the program deployed.
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
-          const bracketed = { ...program, keys: { ...program.keys, '[a]': null } } as Program<T>
-          expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy(bracketed), layer))))
-            .toBe("the program 'Toy' declares the key '[a]', whose name starts with '['")
+          expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy(unworded), layer))))
+            .toBe("the program 'Toy' has an index 'wanted;' whose name is not a word")
           expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester })).toEqual({ _tag: 'Accepted' })
           yield* runtime.settled
         }))

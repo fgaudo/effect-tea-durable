@@ -4,7 +4,9 @@
 [decision 0033](archive/0033-a-program-declares-its-keys.md) left open. Changes decision 0033, the checks of
 [decision 0037](archive/0037-the-machine-checks-the-declared-keys.md) and
 [decision 0054](archive/0054-a-program-is-checked-where-it-enters.md), and the counter of
-[decision 0004](archive/0004-incarnations-guard-internal-messages.md).
+[decision 0004](archive/0004-incarnations-guard-internal-messages.md). A key is a name and a parameter as data, not
+the text `["charge","line-7"]`, and a name may start with `[`, since
+[decision 0136](0136-a-key-is-a-name-and-a-parameter-as-data.md).
 
 ## Context
 

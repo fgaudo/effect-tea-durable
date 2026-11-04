@@ -155,10 +155,6 @@ describe('a program that cannot run as written', () => {
     const refused: ReadonlyArray<readonly [typeof order, string]> = [
       [{ ...order, name: '' }, "the program '' has an empty name"],
       [
-        { ...order, keys: { ...order.keys, '[charge]': null } as typeof order.keys },
-        "the program 'Order' declares the key '[charge]', whose name starts with '['",
-      ],
-      [
         { ...order, indexes: { ...order.indexes, 'not a word': () => null } as typeof order.indexes },
         "the program 'Order' has an index 'not a word' whose name is not a word",
       ],
@@ -174,10 +170,10 @@ describe('a program that cannot run as written', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.deploy({ ...order, keys: { ...order.keys, '[refund]': null } as typeof order.keys })
+        yield* rehearsal.deploy({ ...order, indexes: { ...order.indexes, 'not a word': () => null } as typeof order.indexes })
       }),
     ))
-    expect(reasonOf(exit)).toBe("the program 'Order' declares the key '[refund]', whose name starts with '['")
+    expect(reasonOf(exit)).toBe("the program 'Order' has an index 'not a word' whose name is not a word")
   })
 })
 
@@ -482,6 +478,7 @@ describe('a rehearsal of keys with a parameter', () => {
         yield* rehearsal.send('+a', null)
         yield* rehearsal.send('+b', null)
         const a = yield* rehearsal.pending('charge', 'a')
+        expect(a.key).toEqual({ name: 'charge', parameter: 'a' })
         expect(a.work).toEqual({ _tag: 'Charge', line: 'a' })
         expect(String(a.idempotencyKey)).toBe('["Lines","rehearsal",["charge","a"],1]')
         expect(yield* rehearsal.answer(a, 'charged a')).toBe('Delivered')

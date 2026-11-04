@@ -267,7 +267,7 @@ test('the work under a key with a parameter is a list of pairs typed by its sche
 // The digests were computed apart from this code, with Python's `hashlib` and `base64.urlsafe_b64encode`: a
 // digest that changed would run an operation under way again under a new key (decision 0123).
 test('the digest of an idempotency key is the SHA-256 of its JSON, in unpadded base64url (decision 0123)', () => {
-  const of = (id: string): string => digestOf(idempotencyKey({ name: 'Order', id }, 'charge', 1))
+  const of = (id: string): string => digestOf(idempotencyKey({ name: 'Order', id }, { name: 'charge' }, 1))
   expect(of('42')).toBe('HCSqboASEfxZ9VbqnZMHHhT3RAKlBw43wTMZfFDyotw')
   expect(of('caf\u00e9 \u2713')).toBe('3Hq7WV5mz3BQ1-DHpJ_MmRiZTcPfyVJqXEzyGfsxlhE')
   // JSON escapes a lone surrogate, which UTF-8 would turn into U+FFFD: two such ids keep two digests.

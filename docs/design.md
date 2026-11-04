@@ -63,10 +63,10 @@ read, and an operation changed in place is never seen to change — and, as for 
 ([decision 0052](decisions/archive/0052-what-crosses-the-library-is-never-mutated.md)).
 
 A program is checked where it enters — `deploy`, which a fix is too, and `rehearse` — before anything is stored
-or run: one whose name is empty, which declares a key whose name starts with `[`, or one of whose indexes is
-not a word, is refused. The check is pure and made once, since a program is never mutated
+or run: one whose name is empty, or one of whose indexes is not a word, is refused. The check is pure and made
+once, since a program is never mutated
 ([decision 0054](decisions/archive/0054-a-program-is-checked-where-it-enters.md),
-[decision 0132](decisions/0132-a-key-may-take-a-parameter.md)).
+[decision 0136](decisions/0136-a-key-is-a-name-and-a-parameter-as-data.md)).
 
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
 
@@ -205,12 +205,13 @@ without one, as in `keys: { fee: null, charge: Schema.String }`. Under a key wit
 list of pairs, each a parameter and the piece of work under it. An order holds a charge for each of its lines so,
 in the step that changes the order ([decision 0132](decisions/0132-a-key-may-take-a-parameter.md)).
 
-The machine reads such a key as the canonical JSON of its name and its encoded parameter, `["charge","line-7"]`,
-and a key without a parameter as its name. So two parameters that encode alike are one key, as two pieces of work
-that encode alike are one piece of work. A parameter its schema refuses is a defect, and so are two pieces of work
-whose parameters encode alike. A name that starts with `[` is refused where the program enters, since the machine
-would read it as a key with a parameter. The idempotency key holds the key's JSON in place:
-`["Order","o-1",["charge","line-7"],4]`.
+A key is a name and a parameter, as data: the declared name, and the parameter as its schema encodes it, with the
+fields of each object in order. A key without a parameter has none. So two parameters that encode alike are one
+key, as two pieces of work that encode alike are one piece of work. A parameter its schema refuses is a defect, and
+so are two pieces of work whose parameters encode alike. Every output, message, suspension and row that names a key
+holds the name and the parameter apart, and nothing reads a key's text to tell them apart
+([decision 0136](decisions/0136-a-key-is-a-name-and-a-parameter-as-data.md)). The idempotency key holds the name,
+or the name and the parameter's JSON, in place: `["Order","o-1",["charge","line-7"],4]`.
 
 ### Incarnations
 

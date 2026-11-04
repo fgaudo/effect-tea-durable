@@ -25,6 +25,7 @@ import { SqlClient } from 'effect/sql'
 import * as Machine from './machine.ts'
 import {
   type Address,
+  type Key,
   checkProgram,
   type Creation,
   encode,
@@ -59,7 +60,7 @@ export type Answer<Reason> = Reply<Reason> | Readonly<{ _tag: 'Suspended' }>
  * An operation of another entity whose `send` waits for the entity's resumption: its run, and the name it sent
  * under (decision 0114).
  */
-export type Waiting = Readonly<{ entity: Address; key: string; incarnation: number; name: string }>
+export type Waiting = Readonly<{ entity: Address; key: Key; incarnation: number; name: string }>
 
 /**
  * A suspended entity, as `Handle.suspended` lists it: what the storage holds of the suspension, and the senders
@@ -304,7 +305,7 @@ interface Loaded<T extends Types> {
    * event taken off the queue and not yet applied is still under way (decision 0063).
    */
   pending: number
-  /** By `${key}@${incarnation}`: a timer's sleep is not work the runtime waits for. */
+  /** By `under`: a timer's sleep is not work the runtime waits for. */
   readonly operations: Map<string, Fiber.Fiber<void>>
   /**
    * The operations among `operations` that run again at the next activation, idempotent and at least once: a
@@ -354,7 +355,8 @@ interface Deployment<T extends Types> {
   readonly run: (operation: Effect.Effect<void, never, T['services'] | Entities>) => Effect.Effect<void>
 }
 
-const under = (key: string, incarnation: number) => `${key}@${incarnation}`
+/** The run of the work under `key` in `incarnation`, as the fibers of a loaded entity are kept by it. */
+const under = (key: Key, incarnation: number) => `${Machine.keyText(key)}@${incarnation}`
 
 /**
  * A defect that is its caller's, not the receiver's: a message or flags that do not encode, a creation that
@@ -1287,7 +1289,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * 0063). A receiver that crashed has none either, and is sent to again after `retry` (decision 0046). `send`
      * and `create` wait for the deploy of a program not deployed yet (decisions 0045, 0063).
      */
-    const entities = (entity: Address, key: string, incarnation: number, droppable: boolean) => {
+    const entities = (entity: Address, key: Key, incarnation: number, droppable: boolean) => {
       const used = { message: new Set<string>(), creation: new Set<string>() }
       /** The request named `name` to the entity `id` of `program`, or the run's defect if it made it already. */
       const named = <T extends Types>(
@@ -1301,7 +1303,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           // (decision 0128).
           if (droppable) {
             return Effect.die(
-              new InvariantDefect({ reason: `the droppable operation under '${key}' sent to ${program.name} '${id}'` }),
+              new InvariantDefect({
+                reason: `the droppable operation under '${Machine.shownKey(key)}' sent to ${program.name} '${id}'`,
+              }),
             )
           }
           const to = JSON.stringify([program.name, id, name])

@@ -15,6 +15,8 @@ import {
   type Durable,
   InvariantDefect,
   type Json,
+  type Key,
+  KeyCodec,
   type Migrated,
   migrationOf,
   type Program,
@@ -85,23 +87,27 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   `
   // One row per key the state holds work under, with its incarnation. A key whose work is gone has no row, since
   // the entity's counter keeps its incarnations from going back (decision 0132). `due` is a timer's time, by which
-  // an entity nothing else holds loaded is woken (decision 0029).
+  // an entity nothing else holds loaded is woken (decision 0029). `key` is the key's name and `parameter` the JSON
+  // of its parameter, or '' for a key without one: no JSON is empty, and a NULL in a primary key would let two rows
+  // of one key coexist (decision 0136).
   yield* sql`
     CREATE TABLE IF NOT EXISTS entity_keys (
       name TEXT NOT NULL,
       id TEXT NOT NULL,
       key TEXT NOT NULL,
+      parameter TEXT NOT NULL,
       incarnation INTEGER NOT NULL,
       version INTEGER NOT NULL,
       work TEXT NOT NULL,
       delivery TEXT,
       due INTEGER,
-      PRIMARY KEY (name, id, key)
+      PRIMARY KEY (name, id, key, parameter)
     )
   `
   yield* sql`CREATE INDEX IF NOT EXISTS entity_keys_due ON entity_keys (due)`
   // The mailbox, in order: `seq` is given as a message is queued, and the first message is the lowest. `keep` is
-  // how long a caller's reply is kept once its message is answered, null for ever (decision 0125).
+  // how long a caller's reply is kept once its message is answered, null for ever (decision 0125). An internal
+  // message holds the key of its work as `entity_keys` does (decision 0136).
   yield* sql`
     CREATE TABLE IF NOT EXISTS mailbox (
       name TEXT NOT NULL,
@@ -113,6 +119,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       request TEXT,
       keep INTEGER,
       key TEXT,
+      parameter TEXT,
       incarnation INTEGER,
       PRIMARY KEY (name, id, seq)
     )
@@ -158,8 +165,8 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // keys it, read through its schema (decision 0059). A row is keyed by the version that wrote it too, since a
   // migration may give one caller's request the text another's had: two versions never share a row
   // (decision 0069). A reply to another entity's operation holds the work that asked, its program, id, key and
-  // incarnation, and is deleted once that work no longer holds (decision 0021). A caller's reply with an `until`
-  // is read before that time only (decision 0125).
+  // incarnation, and is deleted once that work no longer holds (decision 0021). The key is held as `entity_keys`
+  // holds it (decision 0136). A caller's reply with an `until` is read before that time only (decision 0125).
   yield* sql`
     CREATE TABLE IF NOT EXISTS replies (
       name TEXT NOT NULL,
@@ -172,6 +179,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       sender_name TEXT,
       sender_id TEXT,
       sender_key TEXT,
+      sender_parameter TEXT,
       sender_incarnation INTEGER,
       PRIMARY KEY (name, id, request, version)
     )
@@ -216,7 +224,7 @@ const reasonOf = <Reason>(rejection: Schema.Codec<Reason, Json>) =>
 /** A suspension's `on`: which event the defect happened on. Its cause is rendered, not stored as a value. */
 const Suspended = Schema.Union([
   Schema.TaggedStruct('Message', {}),
-  Schema.TaggedStruct('Operation', { key: Schema.String, incarnation: Schema.Int }),
+  Schema.TaggedStruct('Operation', { key: KeyCodec, incarnation: Schema.Int }),
   Schema.TaggedStruct('Activation', {}),
 ]) as unknown as Schema.Codec<Machine.Suspension['on'], Json>
 
@@ -228,6 +236,20 @@ const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
 
 /** How an operation is delivered, as its runner declared (decisions 0011, 0123). */
 const Delivery = Schema.Literals(['Idempotent', 'IdempotentDigest', 'AtLeastOnce', 'AtMostOnce', 'Droppable'])
+
+/**
+ * A key as its columns hold it: its name, and the JSON of its parameter, or '' for a key without one. No JSON is
+ * empty, so '' is never a parameter's, and the column is never NULL, which a primary key would not compare
+ * (decision 0136).
+ */
+const keyRow = (key: Key): Readonly<{ key: string; parameter: string }> => ({
+  key: key.name,
+  parameter: key.parameter === undefined ? '' : JSON.stringify(key.parameter),
+})
+
+/** A key read from its columns, as `keyRow` writes them. */
+const keyOfRow = (name: string, parameter: string): Key =>
+  parameter === '' ? { name } : { name, parameter: JSON.parse(parameter) as Json }
 
 /** The rows a reading gives, decoded by the schema of one: built once, for every reading of its kind. */
 const decoder = <S extends Schema.Top & { readonly DecodingServices: never }>(row: S) =>
@@ -269,6 +291,7 @@ const Rows = {
   /** A timer has no delivery. */
   key: decoder(Schema.Struct({
     key: Schema.String,
+    parameter: Schema.String,
     incarnation: Count,
     version: Version,
     work: Schema.String,
@@ -283,6 +306,7 @@ const Rows = {
       request: Schema.String,
       keep: Schema.NullOr(Count),
       key: Schema.Null,
+      parameter: Schema.Null,
       incarnation: Schema.Null,
     }),
     Schema.Struct({
@@ -292,6 +316,7 @@ const Rows = {
       request: Schema.Null,
       keep: Schema.Null,
       key: Schema.String,
+      parameter: Schema.String,
       incarnation: Count,
     }),
   ])),
@@ -389,7 +414,7 @@ export type Suspension = Readonly<{
   /** The mailbox's first message, with its kind, an operation, or the activation of the stored state. */
   on:
     | Readonly<{ _tag: 'Message'; kind: 'Inbound' | 'Internal' }>
-    | Readonly<{ _tag: 'Operation'; key: string; incarnation: number }>
+    | Readonly<{ _tag: 'Operation'; key: Key; incarnation: number }>
     | Readonly<{ _tag: 'Activation' }>
   cause: string
   since: DateTime.Utc
@@ -593,18 +618,21 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       const row = entities[0]
       if (row === undefined) return null
       const held = yield* rows('entity_keys', Rows.key)(
-        sql`SELECT key, incarnation, version, work, delivery FROM entity_keys WHERE name = ${name} AND id = ${id}`,
+        sql`SELECT key, parameter, incarnation, version, work, delivery FROM entity_keys
+            WHERE name = ${name} AND id = ${id}`,
       )
       const queued = yield* rows('mailbox', Rows.envelope)(
-        sql`SELECT tag, version, message, request, keep, key, incarnation FROM mailbox
+        sql`SELECT tag, version, message, request, keep, key, parameter, incarnation FROM mailbox
             WHERE name = ${name} AND id = ${id} ORDER BY seq`,
       )
-      const keys: Record<string, Machine.Key<T>> = {}
-      for (const key of held) {
-        keys[key.key] = {
-          incarnation: key.incarnation,
-          work: readWork(key.work, key.version),
-          ...(key.delivery === null ? {} : { delivery: key.delivery }),
+      const keys: Record<string, Machine.Run<T>> = {}
+      for (const row of held) {
+        const key = keyOfRow(row.key, row.parameter)
+        keys[Machine.keyText(key)] = {
+          key,
+          incarnation: row.incarnation,
+          work: readWork(row.work, row.version),
+          ...(row.delivery === null ? {} : { delivery: row.delivery }),
         }
       }
       const mailbox = queued.map((envelope): Machine.Envelope<T> =>
@@ -617,7 +645,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
           }
           : {
             _tag: 'Internal',
-            key: envelope.key,
+            key: keyOfRow(envelope.key, envelope.parameter),
             incarnation: envelope.incarnation,
             message: internal.read(envelope.message, up('internal', envelope.version)),
           }
@@ -739,7 +767,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
           sql.insert({
             name,
             id,
-            key: held.key,
+            ...keyRow(held.key),
             incarnation: held.incarnation,
             version,
             work: JSON.stringify(held.work),
@@ -749,7 +777,10 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         }`
       }
       for (const key of written.gone) {
-        yield* sql`DELETE FROM entity_keys WHERE name = ${name} AND id = ${id} AND key = ${key}`
+        const { key: held, parameter } = keyRow(key)
+        yield* sql`
+          DELETE FROM entity_keys WHERE name = ${name} AND id = ${id} AND key = ${held} AND parameter = ${parameter}
+        `
       }
       // The mailbox's rows are numbered as they are queued: its first message is the lowest.
       if (written.handled > 0) {
@@ -778,6 +809,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
                   request: JSON.stringify(envelope.request),
                   keep: envelope.keep,
                   key: null,
+                  parameter: null,
                   incarnation: null,
                 }
                 : {
@@ -789,7 +821,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
                   message: JSON.stringify(envelope.message),
                   request: null,
                   keep: null,
-                  key: envelope.key,
+                  ...keyRow(envelope.key),
                   incarnation: envelope.incarnation,
                 },
             )
@@ -803,6 +835,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       // none is told (decision 0065).
       for (const reply of written.replies) {
         const { asked } = reply
+        const asking = asked === null ? null : keyRow(asked.key)
         yield* sql`INSERT OR REPLACE INTO replies ${
           sql.insert({
             name,
@@ -814,26 +847,28 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             until: reply.until,
             sender_name: asked?.name ?? null,
             sender_id: asked?.id ?? null,
-            sender_key: asked?.key ?? null,
+            sender_key: asking?.key ?? null,
+            sender_parameter: asking?.parameter ?? null,
             sender_incarnation: asked?.incarnation ?? null,
           })
         }`
-        if (asked === null) continue
+        if (asked === null || asking === null) continue
         yield* sql`
           DELETE FROM replies
           WHERE name = ${name} AND id = ${id} AND request = ${reply.request} AND version = ${version}
             AND NOT EXISTS (
               SELECT 1 FROM entity_keys AS asking
-              WHERE asking.name = ${asked.name} AND asking.id = ${asked.id} AND asking.key = ${asked.key}
-                AND asking.incarnation = ${asked.incarnation}
+              WHERE asking.name = ${asked.name} AND asking.id = ${asked.id} AND asking.key = ${asking.key}
+                AND asking.parameter = ${asking.parameter} AND asking.incarnation = ${asked.incarnation}
             )
         `
       }
       for (const { key, incarnation } of written.ended) {
+        const ended = keyRow(key)
         yield* sql`
           DELETE FROM replies
-          WHERE sender_name = ${name} AND sender_id = ${id} AND sender_key = ${key}
-            AND sender_incarnation = ${incarnation}
+          WHERE sender_name = ${name} AND sender_id = ${id} AND sender_key = ${ended.key}
+            AND sender_parameter = ${ended.parameter} AND sender_incarnation = ${incarnation}
         `
       }
       // A step that answers a caller takes its entity's replies past their time with it (decision 0125).

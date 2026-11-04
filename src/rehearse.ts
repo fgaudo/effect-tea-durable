@@ -10,6 +10,7 @@ import {
   Entities,
   type IdempotencyKey,
   InvariantDefect,
+  type Key,
   isTimer,
   type Program,
   type Reply,
@@ -24,9 +25,12 @@ export const accepted: Readonly<{ _tag: 'Accepted' }> = { _tag: 'Accepted' }
 /** Matches any rejection, whatever its reason. */
 export const rejected: Readonly<{ _tag: 'Rejected' }> = { _tag: 'Rejected' }
 
-/** Work under way under a key, in one incarnation. */
+/**
+ * Work under way under a key, in one incarnation. The key is its name, and the parameter as its schema encodes it
+ * for a key that takes one (decision 0136).
+ */
 export interface Pending<Work = unknown> {
-  readonly key: string
+  readonly key: Key
   readonly incarnation: number
   /**
    * The idempotency key the operation's runner is given: its digest for a runner declared with
@@ -172,8 +176,8 @@ const makeWorld = (at: DateTime.Utc) => {
       for (const other of entities.values()) {
         for (const [request, { asked }] of other.replies) {
           if (
-            asked.name === entity.address.name && asked.id === entity.address.id && asked.key === ended.key &&
-            asked.incarnation === ended.incarnation
+            asked.name === entity.address.name && asked.id === entity.address.id &&
+            Machine.keyText(asked.key) === Machine.keyText(ended.key) && asked.incarnation === ended.incarnation
           ) other.replies.delete(request)
         }
       }
@@ -231,12 +235,15 @@ const makeWorld = (at: DateTime.Utc) => {
 
   /** The kind of the work under way under `pending`'s key, in `pending`'s incarnation. */
   const kindOf = <T extends Types>(entity: Entity<T>, { key, incarnation }: Pending) => {
-    const running = entity.machine.running[key]
+    const running = entity.machine.running[Machine.keyText(key)]
     return running?.incarnation === incarnation ? running.kind : undefined
   }
 
   const outcome = ({ key, incarnation }: Pending) => (outputs: ReadonlyArray<Machine.Output<Types>>) =>
-    outputs.some((output) => output._tag === 'Delivered' && output.key === key && output.incarnation === incarnation)
+    outputs.some((output) =>
+      output._tag === 'Delivered' && Machine.keyText(output.key) === Machine.keyText(key) &&
+      output.incarnation === incarnation
+    )
       ? 'Delivered' as const
       : 'Dropped' as const
 
@@ -244,15 +251,19 @@ const makeWorld = (at: DateTime.Utc) => {
   const complete = <T extends Types>(entity: Entity<T>, pending: Pending, message: T['internal']) =>
     Effect.suspend(() => {
       const { key, incarnation } = pending
-      const before = entity.machine.stored.keys[key]?.work
+      const before = entity.machine.stored.keys[Machine.keyText(key)]?.work
       return Effect.flatMap(apply(entity, { _tag: 'Complete', key, incarnation, message }), (outputs) => {
         const delivered = outcome(pending)(outputs)
         // The runtime cannot tell an operation that loops on its completion from a program that wants it, so the
         // rehearsal fails (decision 0130).
-        const again = outputs.find((output) => output._tag === 'Started' && output.key === key)
+        const again = outputs.find((output) =>
+          output._tag === 'Started' && Machine.keyText(output.key) === Machine.keyText(key)
+        )
         return delivered === 'Delivered' && again?._tag === 'Started' && before !== undefined &&
             Machine.isSame(programOf(entity), key, before, again.operation)
-          ? Effect.die(`the operation under '${key}' came back the same on its completion, and runs again at once`)
+          ? Effect.die(
+            `the operation under '${Machine.shownKey(key)}' came back the same on its completion, and runs again at once`,
+          )
           : Effect.succeed(delivered)
       })
     })
@@ -266,11 +277,13 @@ const makeWorld = (at: DateTime.Utc) => {
    * gives it, so a run after a restart is given the stored replies (decisions 0047, 0060). A name the run already
    * used with an entity, and a droppable operation that sends, are the operation's defects (decision 0128).
    */
-  const entitiesOf = (sender: Address, key: string, incarnation: number, droppable: boolean) => {
+  const entitiesOf = (sender: Address, key: Key, incarnation: number, droppable: boolean) => {
     const used = { message: new Set<string>(), creation: new Set<string>() }
     const named = (kind: keyof typeof used, program: Program<Types>, id: string, name: string) =>
       Effect.suspend(() => {
-        if (droppable) return invariant(`the droppable operation under '${key}' sent to ${program.name} '${id}'`)
+        if (droppable) {
+          return invariant(`the droppable operation under '${Machine.shownKey(key)}' sent to ${program.name} '${id}'`)
+        }
         const to = JSON.stringify([program.name, id, name])
         if (used[kind].has(to)) {
           return invariant(`the operation ${kind === 'message' ? 'sent' : 'created'} '${name}' to ${program.name} '${id}' twice`)
@@ -323,10 +336,10 @@ const makeWorld = (at: DateTime.Utc) => {
       Effect.suspend(() => {
         const { key, incarnation } = pending
         if (kindOf(entity, pending) !== 'Operation') {
-          return invariant(`no operation is running under '${key}' in incarnation ${incarnation}`)
+          return invariant(`no operation is running under '${Machine.shownKey(key)}' in incarnation ${incarnation}`)
         }
         const program = programOf(entity)
-        const operation = entity.machine.stored.keys[key]?.work as T['operation']
+        const operation = entity.machine.stored.keys[Machine.keyText(key)]?.work as T['operation']
         // The work was admitted when it was stored, so the program has a runner for it.
         const runner = runnerOf(program, operation)!
         const given = Machine.idempotencyKeyOf(entity.machine, key, incarnation)
@@ -349,17 +362,17 @@ const makeWorld = (at: DateTime.Utc) => {
         receive(entity, message, {
           _tag: 'Operation',
           entity: from,
-          key: 'rehearsal',
+          key: { name: 'rehearsal' },
           incarnation: ++requests,
           name: 'request',
         }),
       pending: (name, ...parameter) =>
         Effect.suspend(() => {
           const key = Machine.keyOf(programOf(entity), name, parameter[0])
-          const running = entity.machine.running[key]
-          const work = entity.machine.stored.keys[key]?.work
+          const running = entity.machine.running[Machine.keyText(key)]
+          const work = entity.machine.stored.keys[Machine.keyText(key)]?.work
           return running === undefined || work === undefined
-            ? Effect.die(`no work is under way under '${key}'`)
+            ? Effect.die(`no work is under way under '${Machine.shownKey(key)}'`)
             : Effect.succeed({
               key,
               incarnation: running.incarnation,
@@ -370,14 +383,16 @@ const makeWorld = (at: DateTime.Utc) => {
       answer: (pending, message) =>
         Effect.suspend(() =>
           kindOf(entity, pending) === 'Timer'
-            ? Effect.die(`the work under '${pending.key}' is a timer: it fires`)
+            ? Effect.die(`the work under '${Machine.shownKey(pending.key)}' is a timer: it fires`)
             : complete(entity, pending, message)
         ),
       fire: (pending) =>
         Effect.suspend(() => {
           const kind = kindOf(entity, pending)
-          if (kind === 'Operation') return Effect.die(`the work under '${pending.key}' is an operation: it is answered`)
-          const work = entity.machine.stored.keys[pending.key]?.work
+          if (kind === 'Operation') {
+            return Effect.die(`the work under '${Machine.shownKey(pending.key)}' is an operation: it is answered`)
+          }
+          const work = entity.machine.stored.keys[Machine.keyText(pending.key)]?.work
           if (kind === 'Timer' && isTimer(work)) now = DateTime.max(now, work.at)
           const { key, incarnation } = pending
           return Effect.map(apply(entity, { _tag: 'Fire', key, incarnation }), outcome(pending))
