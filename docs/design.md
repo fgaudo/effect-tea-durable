@@ -160,6 +160,11 @@ Two kinds of work exist.
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
   nothing yet.
 
+A stream from a socket or a feed is no work of a program, since it dies with the process. The boundary reads it,
+and sends each item as an inbound message, under a request id it derives from the item's offset or id, so that an
+item sent again after a crash gets the stored reply. `update` rejects an item the state does not want
+([decision 0127](decisions/0127-a-live-stream-feeds-its-entities-from-the-boundary.md)).
+
 A kept key keeps its work only if the work is the same as it is stored: an operation that encodes to the JSON of
 the one under way, a timer at the same time whose message encodes alike. A property a schema does not declare is
 not stored, and makes no difference: what a step compares is what a crash compares
@@ -550,6 +555,7 @@ that what an event writes, applied to the rows before it, gives the rows after i
 | subscriptions, by key                            | operations and timers, by key, with incarnations                     | work outlives the process, and its answers are delivered at least once   |
 | a subscription whose value changes starts anew   | an operation whose value changes while it runs is a defect           | an operation cannot be interrupted, and a crash would restart it changed |
 | an ended subscription waits for its key to leave | a key kept after its work delivered is new work                      | kept, it would not run again until a crash, which starts it anew         |
+| a subscription listens to a service's connection | the boundary reads the stream, and sends each item as a message      | a listening dies with the process, and a sent item is stored             |
 | a model, with the messages the view sends        | a projection, with the actions it allows                             | a caller is remote: it receives data, never functions                    |
 | a defect ends the run                            | a defect suspends the entity                                         | one entity's bug must not stop the others                                |
 | one program, a tree of children                  | many entities, by id; children inside an entity are an open question | an entity is the unit of storage and of concurrency                      |

@@ -10,11 +10,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   large state does, or is there a kind of work held under keys a state computes?
 - **Work that may be abandoned.** An operation leaves only through its completion. Is there a kind of work with
   no effect on the world (a computation, a read) that a state may drop, as effect-tea drops a subscription?
-- **Live streams.** A timer and an operation survive passivation. A stream from a socket or a feed does not.
-  Are they allowed, keeping the entity loaded while their key is present, or left out? A process over its
-  capacity unloads only entities with nothing to do
-  ([decision 0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md)), so a stream
-  that keeps its entity loaded would count as something to do, and hold a place under the capacity.
 - **Children inside an entity.** effect-tea composes programs into a tree. Does an entity's program compose
   children the same way, stored as one state? The decider pattern (Jérémie Chassaing's `Decider`) has an algebra
   for it — two state machines compose into one, with laws a test can check — and is worth reading before this is
