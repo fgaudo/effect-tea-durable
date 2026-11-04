@@ -887,6 +887,12 @@ const died = <T extends Types>(machine: Machine<T>, suspension: Suspension): Mov
 export const render = (cause: unknown): string =>
   cause instanceof Error ? `${cause.name}: ${cause.message}` : typeof cause === 'string' ? cause : String(cause)
 
+/**
+ * The cause of the program's defect `thrown`, as a suspension stores it. Anything else is thrown again, as the
+ * runtime's (decision 0061).
+ */
+export const programCause = (thrown: unknown): string => render(defectOf(thrown))
+
 const envelopeRow = <T extends Types>(program: Program<T>, envelope: Envelope<T>): EnvelopeRow =>
   envelope._tag === 'Inbound'
     ? {

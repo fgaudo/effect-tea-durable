@@ -186,6 +186,8 @@ const json = <A>(codec: Schema.Codec<A, Json>) => {
     /** `up` is how the version that wrote the text is read at the program's, and is identity for its own. */
     read: (text: string, up: (json: Json) => Json = (json) => json): A =>
       decode(up(JSON.parse(text) as Json) as never),
+    /** JSON already parsed, at the program's version. */
+    decode: (json: Json): A => decode(json as never),
   }
 }
 
@@ -356,6 +358,15 @@ export type Query<T extends Types> = Readonly<{
 /** An entity a query found, as a caller reads it. */
 export type Found<T extends Types> = Readonly<{ id: string; projection: T['projection'] }>
 
+/**
+ * What a `reindex` did: how many rows it wrote, and the entities whose row it could not compute, each with the
+ * cause, rendered as a suspension's is. The row of such an entity is left as it was (decision 0122).
+ */
+export type Reindexed = Readonly<{
+  written: number
+  failed: ReadonlyArray<Readonly<{ id: string; cause: string }>>
+}>
+
 /** What a step published: the message it handled, and what callers read of the entity after it (decision 0038). */
 export type Published<T extends Types> = Readonly<{
   /** Rises with each row of the database, and is never reused: what a consumer acks, and deduplicates by. */
@@ -446,10 +457,11 @@ export interface Storage<T extends Types> {
   readonly projected: (id: string) => Effect.Effect<T['projection'] | null>
   /**
    * `Handle.reindex`, as the storage keeps it. Each row is its own write, so a crash leaves the rest to the next
-   * run, and it gives how many were written. A row is written only if the state it was computed from is still
-   * the one stored: an entity that took a step since wrote its own (decision 0070).
+   * run. It gives how many were written, and the entities whose row the program could not compute, which keep
+   * theirs (decision 0122). A row is written only if the state it was computed from is still the one stored: an
+   * entity that took a step since wrote its own (decision 0070).
    */
-  readonly reindex: Effect.Effect<number>
+  readonly reindex: Effect.Effect<Reindexed>
   /** `Handle.published`, as the storage keeps it: the rows from `after` on, in the order they were written. */
   readonly published: (after: number, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
@@ -910,17 +922,38 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const reindex = Effect.gen(function*() {
     let cursor = ''
     let written = 0
+    const failed: Array<Readonly<{ id: string; cause: string }>> = []
     while (true) {
       const page = yield* rows('entities', Rows.state)(sql`
         SELECT id, state, version FROM entities
         WHERE name = ${name} AND id > ${cursor} ORDER BY id LIMIT ${batch}
       `)
-      if (page.length === 0) return written
+      if (page.length === 0) return { written, failed } satisfies Reindexed
       for (const held of page) {
+        cursor = held.id
+        // What the program computes of the row is caught for each entity, and leaves that entity's row: a state no
+        // version reads, a migration or the state's schema that dies on it, or the program's defect in `shownOf`.
+        // The others are written (decision 0122). What the runtime throws still fails the whole call (decision
+        // 0061): a statement, a text that is no JSON, which only a corrupted row holds, and anything `shownOf`
+        // throws that is not the program's.
+        const text = JSON.parse(held.state) as Json
+        let read: T['state']
+        try {
+          read = state.decode(up('state', held.version)(text))
+        } catch (thrown) {
+          failed.push({ id: held.id, cause: Machine.render(thrown) })
+          continue
+        }
+        let shown: Machine.Shown
+        try {
+          shown = Machine.shownOf(program, read)
+        } catch (thrown) {
+          failed.push({ id: held.id, cause: Machine.programCause(thrown) })
+          continue
+        }
         // The row is written only if the state it was computed from is still the one stored, in one statement
         // (decision 0070). A step that committed since wrote its own row, which this would replace with a
         // projection the entity has moved past.
-        const shown = Machine.shownOf(program, state.read(held.state, up('state', held.version)))
         const rewritten = yield* rows('projections', Rows.id)(sql`
           INSERT OR REPLACE INTO projections (name, id, projection, indexes, version)
           SELECT name, id, ${JSON.stringify(shown.projection)}, ${JSON.stringify(shown.indexes)}, ${version}
@@ -928,7 +961,6 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             AND version = ${held.version}
           RETURNING id
         `)
-        cursor = held.id
         written += rewritten.length
       }
     }

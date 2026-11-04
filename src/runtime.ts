@@ -43,6 +43,7 @@ import {
   type Published,
   hold,
   type Query,
+  type Reindexed,
   storage,
   type Storage,
   type Suspension,
@@ -183,12 +184,15 @@ export interface Handle<T extends Types> {
    */
   readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
   /**
-   * Writes the read model of every entity of the program again, from its stored state, and gives how many. An
-   * index a new version of the program added or changed needs it, since a row is written only when its entity
+   * Writes the read model of every entity of the program again, from its stored state, and gives how many rows it
+   * wrote and which entities it passed over. An index a new version of the program added or changed needs it, since a row is written only when its entity
    * takes a step. An operator runs it after such a deploy (decision 0032). An entity that takes a step while it
-   * runs keeps the row its step wrote (decision 0070).
+   * runs keeps the row its step wrote (decision 0070). An entity whose row the program cannot compute, since its
+   * state is one no version reads, or a migration, a schema, `project` or an index dies on it, keeps the row it
+   * had, and is listed in `failed` with the cause. The rest are written all the same. What the runtime throws, a
+   * corrupted row's included, fails the whole call (decision 0122).
    */
-  readonly reindex: Effect.Effect<number>
+  readonly reindex: Effect.Effect<Reindexed>
   /**
    * What the entities of the program did, from the `seq` of `after` on, in the order the steps committed. Each
    * row is the message an entity handled and what callers read of it afterwards, written in that step's

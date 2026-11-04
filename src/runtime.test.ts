@@ -2445,6 +2445,36 @@ describe('the read model', () => {
         }))
     })))
 
+  test('reindex leaves the row of an entity whose state the new project dies on, names it, and writes the rest', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) => Effect.asVoid(settled(runtime, at)))
+      yield* process({}, (runtime) => Effect.asVoid(working(runtime, program)))
+      // A new version that counts the other way, and dies on the state of 't-2', which wants nothing. 't-1' and
+      // 't-3' are activated by the deploy, and their projection is computed there; 't-2' is not loaded.
+      const dies: Program<T> = {
+        ...negated,
+        project: (state) => {
+          const shown = program.project(state)
+          if (shown === 0) throw new Error('project dies on nothing wanted')
+          return shown
+        },
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(dies), layer)
+          expect(yield* toy.reindex).toEqual({
+            written: 2,
+            failed: [{ id: 't-2', cause: 'Error: project dies on nothing wanted' }],
+          })
+          // The rows of 't-1' and 't-3' are the new version's, and the row of 't-2' is the one before (decision 0122).
+          expect((yield* toy.query({ where: [{ index: 'wanted', is: '=', value: -1 }] })).map(({ id }) => id))
+            .toEqual(held)
+          expect(yield* toy.read('t-2')).toBe(0)
+        }))
+    })))
+
   test('a deploy leaves SQLite an index of the expression the query reads', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
@@ -2469,7 +2499,7 @@ describe('the read model', () => {
         Effect.gen(function*() {
           const toy = yield* working(runtime, negated)
           expect(yield* toy.query({ where: [{ index: 'wanted', is: '<', value: 0 }] })).toEqual([])
-          expect(yield* toy.reindex).toBe(3)
+          expect(yield* toy.reindex).toEqual({ written: 3, failed: [] })
           expect((yield* toy.query({ where: [{ index: 'wanted', is: '=', value: -1 }] })).map(({ id }) => id))
             .toEqual(held)
         }))
@@ -3054,7 +3084,7 @@ describe('a schema that changes', () => {
           const stored = yield* storage(next, yield* SqlClient.SqlClient).load('m-2')
           expect(stored?.state.log).toEqual(['w'])
           // The rows are version 2's once they are written again, and the index reads the struct.
-          expect(yield* toy.reindex).toBe(2)
+          expect(yield* toy.reindex).toEqual({ written: 2, failed: [] })
           expect(yield* toy.query({ where: [{ index: 'wanted', is: '=', value: 0 }] }))
             .toEqual([{ id: 'm-1', projection: { wanted: 0 } }])
         }))
@@ -3107,6 +3137,11 @@ describe('a schema that changes', () => {
             .toBe("'Toy' is version 1, and has no reading of version 2")
           expect(yield* toy.send('m-4', want, { requestId: 'r-4', sender: tester })).toEqual({ _tag: 'Accepted' })
           expect(yield* toy.read('m-4')).toBe(1)
+          // A reindex passes over the entity version 2 wrote, names it, and writes the one it reads (decision 0122).
+          expect(yield* toy.reindex).toEqual({
+            written: 1,
+            failed: [{ id: 'm-5', cause: "Error: 'Toy' is version 1, and has no reading of version 2" }],
+          })
         }))
     })))
 })

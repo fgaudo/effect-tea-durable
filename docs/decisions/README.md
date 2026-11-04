@@ -107,7 +107,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0020](archive/0020-a-new-program-is-checked-against-the-stored-work.md) | A new program is checked against the work it finds stored | [0064](archive/0064-the-program-is-not-the-machines-state.md) |
 | [0022](archive/0022-a-new-program-keeps-what-work-started-with.md) | A new program keeps how its work is delivered, and its name |  |
 | [0036](archive/0036-a-migration-is-a-function-on-the-json.md) | A program carries its migrations, and a migration is a function on the JSON | [0043](archive/0043-a-row-no-version-reads-fails-what-reads-it.md), [0058](archive/0058-work-is-compared-by-what-is-stored.md), [0100](archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md) |
-| [0043](archive/0043-a-row-no-version-reads-fails-what-reads-it.md) | A row no version reads fails what reads it, not the process | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) |
+| [0043](archive/0043-a-row-no-version-reads-fails-what-reads-it.md) | A row no version reads fails what reads it, not the process | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) |
 | [0100](archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md) | A rejection's reason is kept as long as a reply of its version is stored |  |
 | [0051](archive/0051-a-deploy-that-fails-leaves-nothing-running.md) | A deploy that fails leaves nothing running | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0102](archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md) |
 | [0058](archive/0058-work-is-compared-by-what-is-stored.md) | Work is compared by what is stored |  |
@@ -118,7 +118,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0121](0121-a-read-answers-from-the-row-of-the-read-model.md) | A read answers from the row of the read model, and calls no `project` |  |
+| [0121](0121-a-read-answers-from-the-row-of-the-read-model.md) | A read answers from the row of the read model, and calls no `project` | [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) |
+| [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) | `reindex` leaves a row it cannot compute, and names its entity |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for |  |
 | [0027](archive/0027-a-program-gives-the-schema-of-its-senders.md) | A program gives the schema of its senders |  |

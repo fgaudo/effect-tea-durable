@@ -1,6 +1,9 @@
 # 0121. A read answers from the row of the read model
 
 **Status:** accepted, 2026-11-04. Decides the open question on reading with a program that dies on the state.
+Its consequence that `reindex` dies on the first state the new `project` dies on is changed by
+[decision 0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md): `reindex` passes over that
+entity, and names it.
 
 ## Context
 

@@ -490,8 +490,44 @@ test('reindex skips an entity that a step wrote since, though its state has the 
         END
       `)
       const after = storage(marked, sql)
-      expect(yield* after.reindex).toBe(1)
+      expect(yield* after.reindex).toEqual({ written: 1, failed: [] })
       expect(yield* after.query({})).toEqual([{ id: 'a', projection: 'migrated' }, { id: 'b', projection: 'x' }])
+    }).pipe(Effect.orDie)))
+
+// What the program computes of a row leaves that entity's row, and what the runtime throws fails the call
+// (decisions 0061, 0122).
+test('reindex passes over a state a migration or the schema dies on, and fails on a text that is no JSON', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const first = storage(receiver, sql)
+      for (const id of ['a', 'b', 'c']) {
+        yield* first.write(id, created({ entity: { state: { last: id }, creation } }), 0)
+      }
+      // Version 2 dies on 'b' in its migration, and migrates 'c' to a state its schema refuses.
+      const dying: Program<T> = {
+        ...receiver,
+        migrations: [{
+          state: (json) => {
+            const { last } = json as Readonly<{ last: string }>
+            if (last === 'b') throw new Error('the migration dies')
+            return last === 'c' ? { last: 3 } : json
+          },
+        }],
+      }
+      const after = storage(dying, sql)
+      const reindexed = yield* after.reindex
+      expect(reindexed.written).toBe(1)
+      expect(reindexed.failed.map(({ id }) => id)).toEqual(['b', 'c'])
+      expect(reindexed.failed[0]?.cause).toBe('Error: the migration dies')
+      // The rows passed over are the ones version 1 wrote.
+      expect(yield* after.query({})).toEqual([
+        { id: 'a', projection: 'a' },
+        { id: 'b', projection: 'start' },
+        { id: 'c', projection: 'start' },
+      ])
+      yield* sql`UPDATE entities SET state = 'no json' WHERE name = 'Receiver' AND id = 'a'`
+      const exit = yield* Effect.exit(after.reindex)
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof SyntaxError).toBe(true)
     }).pipe(Effect.orDie)))
 
 test('a query by an index the program does not declare dies, naming it', () =>

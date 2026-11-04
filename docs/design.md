@@ -279,7 +279,9 @@ the one the new `durable` computes from the migrated state, and a migration that
 entity at its activation, as a program that changes an operation does
 ([decision 0020](decisions/archive/0020-a-new-program-is-checked-against-the-stored-work.md)). A row written by a version
 the program does not have is not read at all: the call that meets it fails, and the process serves the entities
-it can read ([decision 0043](decisions/archive/0043-a-row-no-version-reads-fails-what-reads-it.md)).
+it can read ([decision 0043](decisions/archive/0043-a-row-no-version-reads-fails-what-reads-it.md)). `reindex` is
+the exception, since it meets every row: it passes over such an entity, and names it
+([decision 0122](decisions/0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md)).
 
 ## Execution
 
@@ -393,7 +395,11 @@ the row, `read` or `query` ([decision 0121](decisions/0121-a-read-answers-from-t
 projections; `reindex` writes every row again from the stored states, which is what an index added or changed
 by a new version of the program needs. It runs while entities step, and writes a row only if the state it was
 computed from is still the one stored, in one statement: a step that committed since keeps the row it wrote
-([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)).
+([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). An entity whose row the program
+cannot compute keeps the row it had: its state is one no version reads, or a migration, a schema, `project` or an
+index dies on it. `reindex` writes the rest, and gives how many it wrote and the entities it passed over, each with
+the cause. What the runtime throws, a corrupted row's included, still fails the whole call
+([decision 0122](decisions/0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md)).
 [`examples/order/runtime.test.ts`](../examples/order/runtime.test.ts) asks for the orders still awaiting their
 payment.
 

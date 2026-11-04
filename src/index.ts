@@ -54,6 +54,7 @@ export {
   type Found,
   type Published,
   type Query,
+  type Reindexed,
   type Suspension,
 } from './storage.ts'
 export { type Allows, type Candidate, projectionViolations, type ProjectionViolation } from './testing.ts'
