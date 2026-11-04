@@ -3239,6 +3239,31 @@ describe('what the runtime cannot finish', () => {
         }))
     })))
 
+  // A defect is no reply: nothing is stored for it, so the creator's retry after a fix creates the entity (decision 0124).
+  test('a creation init dies on gives its creator the defect, and a retry after a fix creates the entity', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { layer } = yield* hands()
+      const dying: Program<T> = { ...program, init: () => defect('init died') }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(dying), layer)
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const exit = yield* Effect.exit(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+            const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+            expect(cause instanceof InvariantDefect && cause.reason).toBe('init died')
+          }
+          expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester })).toEqual({ _tag: 'NotFound' })
+          yield* runtime.settled
+        }))
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          expect(yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })).toEqual({ _tag: 'Created' })
+          yield* runtime.settled
+        }))
+    })))
+
   test('an entity the waker cannot activate is tried again after the retry, and the other timers fire', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now

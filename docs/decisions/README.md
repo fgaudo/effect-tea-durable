@@ -41,7 +41,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0002](archive/0002-store-the-state-not-the-messages.md) | Store the state after each message, never replay messages |  |
 | [0003](archive/0003-durable-work-derived-from-state.md) | All durable work is derived from the state |  |
 | [0013](archive/0013-the-runtime-is-a-pure-machine.md) | The runtime's semantics are a pure machine | [0065](archive/0065-the-machine-holds-no-replies.md) |
-| [0014](archive/0014-rules-the-machine-settled.md) | The rules the pure machine settled | [0023](archive/0023-suspended-means-no-reply-yet.md), [0041](archive/0041-a-completion-is-not-discarded.md), [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md) |
+| [0014](archive/0014-rules-the-machine-settled.md) | The rules the pure machine settled | [0023](archive/0023-suspended-means-no-reply-yet.md), [0041](archive/0041-a-completion-is-not-discarded.md), [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0124](0124-the-boundary-authenticates-and-update-authorizes.md) |
 | [0031](archive/0031-a-state-is-an-object.md) | A state is an object |  |
 | [0033](archive/0033-a-program-declares-its-keys.md) | A program declares its keys |  |
 | [0035](archive/0035-one-place-where-a-program-is-declared.md) | One place where a program is declared |  |
@@ -60,11 +60,12 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0021](archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md) | A reply to an entity is kept while the work that asked is stored | [0057](archive/0057-the-machine-gives-what-is-written.md), [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) |
 | [0023](archive/0023-suspended-means-no-reply-yet.md) | `Suspended` means no reply yet |  |
 | [0047](archive/0047-a-request-of-an-operation-has-a-name.md) | A request of an operation has a name | [0059](archive/0059-a-request-is-a-value.md), [0060](archive/0060-send-and-create-take-no-key.md) |
-| [0048](archive/0048-a-callers-request-belongs-to-its-sender.md) | A caller's request belongs to its sender | [0059](archive/0059-a-request-is-a-value.md), [0065](archive/0065-the-machine-holds-no-replies.md), [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) |
+| [0048](archive/0048-a-callers-request-belongs-to-its-sender.md) | A caller's request belongs to its sender | [0059](archive/0059-a-request-is-a-value.md), [0065](archive/0065-the-machine-holds-no-replies.md), [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md), [0124](0124-the-boundary-authenticates-and-update-authorizes.md) |
 | [0059](archive/0059-a-request-is-a-value.md) | A request is a value | [0065](archive/0065-the-machine-holds-no-replies.md), [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) |
 | [0060](archive/0060-send-and-create-take-no-key.md) | `send` and `create` take no key |  |
 | [0065](archive/0065-the-machine-holds-no-replies.md) | The machine holds no replies, and a receive is given the one it asks for |  |
 | [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) | A reply is keyed by the version that wrote it |  |
+| [0124](0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes |  |
 
 ## Operations and timers
 
@@ -86,7 +87,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0012](archive/0012-creation-is-a-request-of-its-own.md) | Creating an entity is a request of its own | [0049](archive/0049-flags-are-checked-by-their-schema.md), [0060](archive/0060-send-and-create-take-no-key.md) |
+| [0012](archive/0012-creation-is-a-request-of-its-own.md) | Creating an entity is a request of its own | [0049](archive/0049-flags-are-checked-by-their-schema.md), [0060](archive/0060-send-and-create-take-no-key.md), [0124](0124-the-boundary-authenticates-and-update-authorizes.md) |
 | [0017](archive/0017-creation-in-the-machine.md) | Creation is part of the machine | [0047](archive/0047-a-request-of-an-operation-has-a-name.md), [0060](archive/0060-send-and-create-take-no-key.md) |
 | [0049](archive/0049-flags-are-checked-by-their-schema.md) | Flags are checked by their schema |  |
 | [0050](archive/0050-a-creation-is-answered-apart-from-a-message.md) | A creation is answered apart from a message |  |

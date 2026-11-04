@@ -5,6 +5,7 @@
 [decision 0041](0041-a-completion-is-not-discarded.md) and [decision 0044](0044-a-firing-is-not-discarded.md).
 That a resumption may bring a fixed program is replaced by
 [decision 0064](0064-the-program-is-not-the-machines-state.md): a fix is a deploy, and the resumption follows it.
+What a creator is answered for a defect at creation is decided by [decision 0124](../0124-the-boundary-authenticates-and-update-authorizes.md): the defect, with nothing stored.
 
 ## Context
 

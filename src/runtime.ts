@@ -1153,8 +1153,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           }
           const now = yield* DateTime.now
           const started = Machine.start(deployed.program, id, flags, now, request)
-          // A defect at creation stores nothing: its creator is answered nothing but the defect itself
-          // (decision 0014, and the open question `Who may send what`).
+          // A defect at creation stores nothing (decision 0014): its creator is given the defect itself, and a
+          // retry after a fix creates the entity (decision 0124).
           if (started._tag === 'Defect') return yield* Effect.fail(new Faulted({ defect: started.cause }))
           const loaded: Loaded<T> = {
             machine: started.machine,

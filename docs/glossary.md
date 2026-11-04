@@ -5,6 +5,8 @@ Cluster's says so.
 
 - **Activation.** The runtime loads an entity: it reads the state, the incarnations and the stored work, computes
   `durable(state)`, starts its operations and arms its timers. A restart, a passivation and a deploy each end in one.
+- **Boundary.** The code that calls a deployment's `create`, `send` and `read` for a caller: it authenticates the
+  caller, and writes the sender. The runtime trusts the sender the boundary gives, and `read` takes none.
 - **Capacity.** How many entities a process keeps loaded, an option of the runtime. Over it, the least recently used
   of the idle ones is unloaded; a busy entity, or one whose timer is due, never is.
 - **Consumer.** A name under which the outbox is read, with a stored cursor that `ack` moves forward and never back.
@@ -75,7 +77,7 @@ Cluster's says so.
 - **Schedule, seed.** In the runtime's tests: the recorded sequence of choices of where fibers yield, drawn from a seed.
   A run that fails is replayed exactly from it.
 - **Sender.** Who sent an inbound message, as the program's schema writes it, read in `update` as `meta.from`. Request
-  ids are their sender's.
+  ids are their sender's. A caller's sender is the identity the boundary authenticated.
 - **Settled.** The runtime's wait for the process to have nothing under way, an entity unloading included, which the
   tests use.
 - **Spike.** A test in [`spikes/`](../spikes) that shows what a dependency does at the pinned version.

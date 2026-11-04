@@ -86,6 +86,11 @@ A message is one of two kinds, and the rule for a message that does not apply fo
   `meta.from` says who sent it, read off the request, so that
   `update` decides who may do what. An inbound message may arrive in any state: a slow client, a retry, a second
   device, a malicious caller. One that does not apply is rejected.
+  The runtime trusts the sender it is given: whoever calls `create` and `send` is the boundary, which
+  authenticates the caller and writes the sender as the identity it authenticated. A caller the boundary does not
+  authenticate never reaches the runtime, and nothing is stored for it. What a sender may do is domain, so a sender
+  that may not is rejected, never a defect
+  ([decision 0124](decisions/0124-the-boundary-authenticates-and-update-authorizes.md)).
   A caller may be another entity's operation: `meta.from` is then `Entity`, with the sender's name and id,
   filled in by the runtime (see [entities that talk](#entities-that-talk)).
 - **Internal** messages come from the entity's own durable work: an operation's completion, a timer's firing.
@@ -102,7 +107,11 @@ An entity is created by a request of its own, with its flags, answered `Created`
 after. A message to an entity that does not exist is answered `NotFound`, and creates nothing
 ([decision 0012](decisions/archive/0012-creation-is-a-request-of-its-own.md),
 [decision 0017](decisions/archive/0017-creation-in-the-machine.md)). A creation and a message may share a request id,
-and each is answered apart ([decision 0050](decisions/archive/0050-a-creation-is-answered-apart-from-a-message.md)).
+and each is answered apart ([decision 0050](decisions/archive/0050-a-creation-is-answered-apart-from-a-message.md)). `init`
+sees no sender, so the program does not decide who may create an entity. The boundary decides it, or an entity
+does: the entity's `update` rejects the request, or keeps work whose operation calls `create`. A defect at creation
+is given to its creator, and nothing is stored, so a retry after a fix creates the entity
+([decision 0124](decisions/0124-the-boundary-authenticates-and-update-authorizes.md)).
 
 ## Durable work
 
@@ -388,7 +397,9 @@ pure function from the projection to a scalar, which is what a query filters and
 with the values a caller reads of a single entity, and nothing is queried that a caller cannot read
 ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md)). A time is its milliseconds, as a stored time is.
 
-`read` gives the same row for one entity, and never calls `project`. A new `project` that dies on a stored state
+`read` gives the same row for one entity, and never calls `project`. It takes no sender, so the boundary alone
+decides who may read a projection
+([decision 0124](decisions/0124-the-boundary-authenticates-and-update-authorizes.md)). A new `project` that dies on a stored state
 is then no reader's defect. The entity suspends at its activation or its next step, as on any defect of the
 program, and a reader meanwhile gets the projection its last event wrote. After a deploy that changes `project`,
 `read` and `query` both give the rows as they are, until a step or `reindex` writes them again. A row is read

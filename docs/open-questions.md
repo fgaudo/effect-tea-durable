@@ -24,15 +24,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   that sends a confirmation the inventory would reject passes both rehearsals
   ([decision 0009](decisions/archive/0009-entities-talk-through-operations.md)). Is a rehearsal of several entities
   needed, where `send` reaches the other program, or a check that two programs agree on their messages?
-- **Who may send what.** `update` reads `meta.from` and rejects what a sender may not do. Should authorization
-  that is not domain (a valid token) happen before the mailbox, and what does the caller get then? Flags and
-  messages that do not encode are the caller's defect, not a reply
-  ([decision 0049](decisions/archive/0049-flags-are-checked-by-their-schema.md)). And who may create an entity, since
-  `init` sees no sender ([decision 0012](decisions/archive/0012-creation-is-a-request-of-its-own.md))? A defect at
-  creation stores nothing ([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)): what is its creator
-  answered? A caller's requests are its sender's
-  ([decision 0048](decisions/archive/0048-a-callers-request-belongs-to-its-sender.md)), so how fine a sender is says
-  whose request ids are whose.
 
 ## Storage and reading
 
@@ -73,8 +64,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   back to an old one ([Cluster](cluster.md#two-versions-at-once)): the choice is between deploys that replace every
   runner before a new one writes, forward compatibility for one version, or a change to Cluster.
 - **Callers' stored replies.** A caller's reply is stored so that a retry gets it, and is kept for ever: a time
-  after which a retry is applied again would depend on the protocol, and on who callers are
-  ([who may send what](#programs)). Replies to entities are kept while the work that asked is stored
+  after which a retry is applied again would depend on the protocol. A caller is the identity the boundary
+  authenticated ([decision 0124](decisions/0124-the-boundary-authenticates-and-update-authorizes.md)). Replies to
+  entities are kept while the work that asked is stored
   ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
 - **Failing operations.** A transient failure (a timeout) is retried inside the operation, or becomes a
   message. After how many retries does it become a defect, if ever? And

@@ -1,7 +1,9 @@
 # 0049. Flags are checked by their schema
 
 **Status:** accepted, 2026-10-31. Replaces the consequence of
-[decision 0012](0012-creation-is-a-request-of-its-own.md) that flags are decoded before anything is stored.
+[decision 0012](0012-creation-is-a-request-of-its-own.md) that flags are decoded before anything is stored. Who
+decodes what arrives from outside the process, the boundary, is decided by
+[decision 0124](../0124-the-boundary-authenticates-and-update-authorizes.md).
 
 ## Context
 
