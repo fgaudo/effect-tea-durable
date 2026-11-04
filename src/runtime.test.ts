@@ -2349,6 +2349,9 @@ describe('random sequences of events', () => {
             // The time the test moved through was acted on: a timer it passed would be due still.
             expect((yield* store.due(DateTime.toEpochMillis(yield* DateTime.now), [])).ready).toEqual([])
             expect(yield* persisted).toEqual(replayed(since, events))
+            // A read gives the row, which every event that changed the state wrote again (decision 0121).
+            const last = yield* store.load(id)
+            expect(yield* store.projected(id)).toEqual(last === null ? null : program.project(last.state))
             expect(
               (yield* store.published(0)).map(({ kind, message, projection }) => ({ kind, message, projection })),
             ).toEqual(publishedOf(since, events))
@@ -2415,6 +2418,30 @@ describe('the read model', () => {
           expect((yield* toy.query({ order: { index: 'wanted', descending: true }, limit: 2 })).map(({ id }) => id))
             .toEqual(held)
           expect(yield* toy.query({ where: [{ index: 'wanted', is: '>', value: 9 }] })).toEqual([])
+        }))
+    })))
+
+  test('a read answers from the row, with a new program whose project dies on the state', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) => Effect.asVoid(settled(runtime, at)))
+      yield* process({}, (runtime) => Effect.asVoid(working(runtime, program)))
+      const dies: Program<T> = {
+        ...program,
+        project: () => {
+          throw new Error('project dies')
+        },
+      }
+      // 't-1' and 't-3' hold an operation, so the deploy activates them, and the new program suspends them on their
+      // activation. 't-2' is not loaded. A read calls no program, and each reads the row its last step wrote
+      // (decision 0121).
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(dies), layer)
+          expect((yield* toy.suspended).map(({ id }) => id)).toEqual(held)
+          expect(yield* Effect.forEach(ids, toy.read)).toEqual([1, 0, 1])
+          expect(yield* toy.read('t-4')).toBeNull()
         }))
     })))
 

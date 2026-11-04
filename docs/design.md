@@ -382,6 +382,13 @@ pure function from the projection to a scalar, which is what a query filters and
 with the values a caller reads of a single entity, and nothing is queried that a caller cannot read
 ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md)). A time is its milliseconds, as a stored time is.
 
+`read` gives the same row for one entity, and never calls `project`. A new `project` that dies on a stored state
+is then no reader's defect. The entity suspends at its activation or its next step, as on any defect of the
+program, and a reader meanwhile gets the projection its last event wrote. After a deploy that changes `project`,
+`read` and `query` both give the rows as they are, until a step or `reindex` writes them again. A row is read
+through the projection's migrations and schema, and one of them that dies on it gives the defect to whoever reads
+the row, `read` or `query` ([decision 0121](decisions/0121-a-read-answers-from-the-row-of-the-read-model.md)).
+
 `query` takes the criteria that hold, an index to order by and a limit, and gives the ids found with their
 projections; `reindex` writes every row again from the stored states, which is what an index added or changed
 by a new version of the program needs. It runs while entities step, and writes a row only if the state it was

@@ -63,11 +63,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   newer and fails loudly ([decision 0043](decisions/archive/0043-a-row-no-version-reads-fails-what-reads-it.md)). Nothing
   either checks that a migration once deployed is never changed, which a function cannot be compared for. Is it
   worth it, and once replies are no longer kept for ever?
-- **Reading with a program that dies on the state.** `read` calls `project` on the stored state outside the
-  machine. A new program whose `project` dies on it gives the reader a defect, where an activation would suspend
-  the entity ([decision 0020](decisions/archive/0020-a-new-program-is-checked-against-the-stored-work.md)). Should a
-  read activate the entity, answer from the read model, or say that the entity is suspended? A `read` of an
-  entity this process does not hold also loads all of it, its keys and its mailbox, to read its state alone.
+- **Reindexing with a program that dies on the state.** `reindex` is the one place that calls `project` outside
+  the machine, since `read` gives the row ([decision 0121](decisions/0121-a-read-answers-from-the-row-of-the-read-model.md)).
+  A new `project` that dies on one stored state makes the whole `reindex` die there, with the rows before it
+  written and the rows after it not. Should it leave that entity's row as it is and go on, and tell the operator
+  which entities it passed over?
 
 ## Running
 

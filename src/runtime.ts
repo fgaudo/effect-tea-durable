@@ -169,7 +169,13 @@ export interface Handle<T extends Types> {
     message: T['inbound'],
     request: Readonly<{ requestId: string; sender: T['sender'] }>,
   ) => Effect.Effect<Answer<T['rejection']>>
-  /** What callers read of the entity, or null when there is none. */
+  /**
+   * What callers read of the entity, or null when there is none: the row written by its last event that changed
+   * its state, which a query reads too. `project` is not called, so a new `project` that dies on the stored state
+   * is no reader's defect. A new `project` reaches the row at the entity's next step that changes it, or at
+   * `reindex`. The row is read through the projection's migrations and schema, as a query reads it, and a reader
+   * is given the defect where they die (decision 0121).
+   */
   readonly read: (id: string) => Effect.Effect<T['projection'] | null>
   /**
    * What callers read of the entities whose indexes match, across the program: the read model is written in each
@@ -1399,13 +1405,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             admitted(faulted(
               send(deployed, id, message, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
             )),
-          read: (id) =>
-            Effect.gen(function*() {
-              const held = deployed.loaded.get(id)
-              if (held !== undefined) return program.project(held.machine.stored.state)
-              const stored = yield* deployed.storage.load(id)
-              return stored === null ? null : program.project(stored.state)
-            }),
+          read: (id) => deployed.storage.projected(id),
           query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
           reindex: deployed.storage.reindex,
           published: (after, limit) => counted({ cursor: after, limit }, deployed.storage.published(after, limit)),

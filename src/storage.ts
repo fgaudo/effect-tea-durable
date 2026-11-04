@@ -442,6 +442,8 @@ export interface Storage<T extends Types> {
   readonly indexed: Effect.Effect<void>
   /** The entities of the program whose indexes match, with what callers read of them (decision 0032). */
   readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
+  /** `Handle.read`, as the storage keeps it: the projection of the entity's row, or null for none (decision 0121). */
+  readonly projected: (id: string) => Effect.Effect<T['projection'] | null>
   /**
    * `Handle.reindex`, as the storage keeps it. Each row is its own write, so a crash leaves the rest to the next
    * run, and it gives how many were written. A row is written only if the state it was computed from is still
@@ -896,6 +898,15 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       }))
     }).pipe(Effect.orDie)
 
+  const projected = (id: string) =>
+    Effect.gen(function*() {
+      const found = yield* rows('projections', Rows.projection)(
+        sql`SELECT id, projection, version FROM projections WHERE name = ${name} AND id = ${id}`,
+      )
+      const held = found[0]
+      return held === undefined ? null : projection.read(held.projection, up('projection', held.version))
+    }).pipe(Effect.orDie)
+
   const reindex = Effect.gen(function*() {
     let cursor = ''
     let written = 0
@@ -1035,6 +1046,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
     due,
     indexed,
     query,
+    projected,
     reindex,
     published,
     feed,

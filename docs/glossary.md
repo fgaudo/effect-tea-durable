@@ -61,7 +61,7 @@ Cluster's says so.
 - **Program.** Everything declared in `program(schemas)(…)`: `name`, `keys`, `init`, `update`, `durable`,
   `operations`, `project`, `indexes` and `migrations`.
 - **Projection, read model.** `project(state)`: what a caller reads of an entity, with the actions it allows. Stored as
-  a row with the value of each index, which a query reads.
+  a row with the value of each index, which `read` and a query read.
 - **Rehearsal, `rehearse`.** A scenario run on the machine without storage, cluster or clock, where the test answers
   the operations, fires the timers, kills the process and deploys new versions.
 - **Reply.** The stored answer to a request, which a retry under the same request id reads. A caller's is kept for
