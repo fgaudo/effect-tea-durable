@@ -378,8 +378,8 @@ const explored = <A>(
 
 /**
  * Runs `effects` at once, each forked as a task of its own, and gives what each gives. `Effect.all` starts its
- * children inline, on the stack of its own fiber, and the scheduler of the tests asks a fiber to yield only while
- * another task is ready: so the first child would run to its first wait before the second is forked (decision 0104).
+ * children inline, on the stack of its own fiber. So the second child would be forked only once the first one has
+ * waited or yielded, and a child that waits before its third step never yields (decisions 0104, 0115, 0117).
  */
 const together = <A, E, R>(effects: ReadonlyArray<Effect.Effect<A, E, R>>) =>
   Effect.flatMap(Effect.forEach(effects, (effect) => Effect.forkChild(effect)), (fibers) => Effect.forEach(fibers, Fiber.join))
@@ -3504,8 +3504,8 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
 
 test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {
   // Decision 0116: an entity's wait ends with an item of its queue, and nothing races its take. A take raced against a
-  // timeout loses the event at seed 147, when the racing fiber is preempted at the third step after its resumption,
-  // and its caller waits for ever.
+  // timeout loses the event at seed 203, pinned, when the racing fiber is preempted at the third step after its
+  // resumption, and its caller waits for ever. The seed is that of the scheduler of decision 0117.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -3526,5 +3526,5 @@ test('a message that arrives as the wait of its entity runs out is handled, unde
           yield* runtime.settled
           return reply
         }))
-    }), { _tag: 'Accepted' }, { open: false })
+    }), { _tag: 'Accepted' }, { open: false, pinned: [203] })
 }, 60_000)

@@ -456,3 +456,33 @@ test('a strategy is never asked to preempt a fiber before the third step of its 
   expect(steps.length).toBeGreaterThan(0)
   expect(Math.min(...steps)).toBe(3)
 })
+
+test('a fiber started inline yields with no task ready, and gives its parent back as a budget of Effect does', () => {
+  // A child started inline, on its parent's stack, gives its parent back when it yields. Effect does so under a
+  // budget the child reaches first, which gives the two orders below (spikes/effect-inline-start-yields.test.ts).
+  // The scheduler of the tests asks the child even with no task ready, and so reaches both (decision 0117).
+  const body = Effect.gen(function*() {
+    const log: Array<string> = []
+    const step = (name: string) => Effect.sync(() => log.push(name))
+    const child = yield* Effect.forkChild(
+      Effect.gen(function*() {
+        yield* step('c1')
+        yield* step('c2')
+        yield* step('c3')
+        yield* step('c4')
+      }),
+      { startImmediately: true },
+    )
+    log.push('p')
+    yield* Fiber.join(child)
+    return log.join(' ')
+  })
+  for (const resumptions of ['inline', 'queued'] as const) {
+    const ends = new Set<string>()
+    everySchedule(body, { bound: 1, resumptions }, (exit) => {
+      if (Exit.isSuccess(exit)) ends.add(exit.value)
+    })
+    expect([...ends]).toContain('c1 p c2 c3 c4')
+    expect([...ends]).toContain('c1 c2 c3 p c4')
+  }
+})

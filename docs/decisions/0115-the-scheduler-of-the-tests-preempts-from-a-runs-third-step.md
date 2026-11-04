@@ -4,6 +4,8 @@
 [decision 0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) holds of the preemptions of the scheduler
 of the tests: under `inline` resumptions they gave orders Effect's scheduler does not. Found with
 [decision 0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md), which the corrected scheduler made necessary.
+A fiber on another's stack is asked of preemption even with no task ready, by
+[decision 0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md).
 
 ## Context
 

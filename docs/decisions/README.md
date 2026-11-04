@@ -158,10 +158,11 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0079](archive/0079-what-a-caller-sets-going-is-finished-without-it.md) | What a caller sets going is finished without it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), [0110](archive/0110-detached-work-is-counted-until-it-ends-however-it-ends.md), [0112](archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) |
 | [0101](archive/0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) | A moved clock gives a fiber it did not wake one turn |  |
 | [0103](archive/0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md) | A test moves the wall clock ahead of the sleeps |  |
-| [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) | The runtime's tests choose where fibers yield, and none runs under budgets | [0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md) |
+| [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) | The runtime's tests choose where fibers yield, and none runs under budgets | [0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md), [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) |
 | [0109](archive/0109-settled-waits-for-an-entity-unloading.md) | `settled` waits for an entity unloading |  |
 | [0110](archive/0110-detached-work-is-counted-until-it-ends-however-it-ends.md) | Detached work is counted until it ends, however it ends |  |
 | [0111](archive/0111-an-entity-s-wait-times-out-its-take-alone.md) | An entity's wait times out its take alone | [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) |
 | [0112](archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) | A fork from a region that cannot be interrupted says it is interruptible |  |
-| [0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md) | The scheduler of the tests preempts from a run's third step, where Effect first can |  |
-| [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) | An entity's wait ends with an item of its queue, and nothing races its take |  |
+| [0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md) | The scheduler of the tests preempts from a run's third step, where Effect first can | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) |
+| [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) | An entity's wait ends with an item of its queue, and nothing races its take | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) |
+| [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) | A fiber on another's stack yields with no task ready |  |

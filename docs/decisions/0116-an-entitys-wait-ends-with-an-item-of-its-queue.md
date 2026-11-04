@@ -3,6 +3,8 @@
 **Status:** accepted, 2026-11-04. Replaces
 [decision 0111](archive/0111-an-entity-s-wait-times-out-its-take-alone.md): an entity's wait no longer times out its
 take. Changes how the wait of [decision 0029](archive/0029-an-idle-entity-is-unloaded.md) runs out, and not when.
+The seeds its premises name fail no more under the scheduler of
+[decision 0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md), which names the seeds that fail there.
 
 ## Context
 

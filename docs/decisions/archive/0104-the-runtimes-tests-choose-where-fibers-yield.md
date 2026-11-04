@@ -10,7 +10,8 @@ Moving them found [decision 0109](0109-settled-waits-for-an-entity-unloading.md)
 and a twentieth of them otherwise, as [`AGENTS.md`](../../../AGENTS.md) says.
 Its preemptions under `inline` resumptions are changed by
 [decision 0115](../0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md): none comes before a run's
-third step, where Effect never makes a fiber yield.
+third step, where Effect never makes a fiber yield. A fiber on another's stack is asked even with no task ready, by
+[decision 0117](../0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md).
 
 ## Context
 

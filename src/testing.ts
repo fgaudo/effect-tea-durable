@@ -115,8 +115,10 @@ export type Ready = Readonly<{ fiber: number | undefined }>
 
 /**
  * What decides a run under `controlled`. It is asked which ready task runs next, only when more than one is ready.
- * It is asked whether the fiber running yields at a step, only when another task is ready, since a yield with none
- * changes nothing. The fiber is named by its id less the run's first, since Effect counts ids for the process.
+ * It is asked whether the fiber running yields at a step, only when another task is ready or the fiber runs on the
+ * stack of another, which its yield gives back (decision 0117). Elsewhere a yield with no task ready would let the
+ * same fiber run on, so it is not asked. So `ready` may be empty for `preempt`. The fiber is named by its id less the run's first, since Effect counts ids
+ * for the process.
  */
 export type Strategy = Readonly<{
   pick: (ready: ReadonlyArray<Ready>) => number
@@ -169,6 +171,11 @@ export type Run<A, E> = Readonly<{
  *   interrupt its children. So a fiber resumed inline while it is still that one runs on unpicked, which takes a
  *   fiber started inline, by `startImmediately` or a `runFork`, as the runtime does not.
  * Under `inline` resumptions none of these yields is made, and a fiber is asked only of preemption.
+ *
+ * A fiber that began its run on the stack of another, started or resumed inline, is asked of preemption even with no
+ * task ready, since its yield gives the other fiber back. The other fiber then goes on as the strategy decides. That
+ * reaches every order Effect's budgets give such a pair, and some no budget gives this program, as the picks do
+ * (decision 0117).
  */
 const controlled = (strategy: Strategy, resumptions: Resumptions) => {
   const ready: Array<Readonly<{ task: () => void; fiber: number | undefined }>> = []
@@ -180,6 +187,10 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
   let entering = false
   // The fiber let run last in the task under way, forgotten as each task starts.
   let running: Fiber.Fiber<unknown, unknown> | undefined
+  // How many tasks have started. A record below names its task, and is stale in any other.
+  let tasks = 0
+  // A fiber that began its run on the stack of another, by the task it began in: its yield gives that other one back.
+  const nested = new WeakMap<Fiber.Fiber<unknown, unknown>, number>()
   // The fiber this scheduler has just made yield: the task Effect schedules next is its yield's.
   let yielding: number | undefined
   let first: number | undefined
@@ -191,12 +202,14 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
   let failure: Readonly<{ error: unknown }> | undefined
   const stopped = () => spun || failure !== undefined
   const id =(fiber: Fiber.Fiber<unknown, unknown>) => fiber.id - first!
-  const tasks = () => ready.map(({ fiber }) => ({ fiber }))
+  const readyTasks = () => ready.map(({ fiber }) => ({ fiber }))
   const yields = (fiber: Fiber.Fiber<unknown, unknown>) => {
     if (fiber.currentOpCount === 1) {
       const firstRun = !started.has(fiber)
       const resumed = entering && letThrough.delete(fiber)
       const ended = fiber === running
+      // A run that begins after another fiber's, in the same task, begins on that fiber's stack.
+      if (!entering && running !== undefined && !ended) nested.set(fiber, tasks)
       entering = false
       // Under `inline`, no fiber yields at its first step, as under Effect's scheduler with a budget above 1.
       if (resumptions === 'inline' || firstRun || resumed || ended) {
@@ -208,8 +221,8 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
       // yields the step a fiber was resumed for, at every run, and the fiber never gets on: so the least that runs is
       // 3, and no preemption comes before a run's third step (decision 0115).
       if (fiber.currentOpCount < leastBudget) return false
-      if (ready.length === 0) return false
-      const preempts = strategy.preempt(id(fiber), tasks())
+      if (ready.length === 0 && nested.get(fiber) !== tasks) return false
+      const preempts = strategy.preempt(id(fiber), readyTasks())
       preemptions.push(preempts)
       if (!preempts) return false
     }
@@ -258,7 +271,7 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
     if (stopped() || ready.length === 0) return false
     let index = 0
     if (ready.length > 1) {
-      index = strategy.pick(tasks())
+      index = strategy.pick(readyTasks())
       if (!Number.isInteger(index) || index < 0 || index >= ready.length) {
         throw new Error(`a strategy picked task ${index} of ${ready.length}`)
       }
@@ -267,6 +280,7 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
     const { task } = ready.splice(index, 1)[0]!
     entering = true
     running = undefined
+    tasks += 1
     ops = 0
     task()
     return true
@@ -463,6 +477,8 @@ export const prioritized = (seed: number, depth: number, steps: number): Strateg
         priorities.set(fiber, (depth - 1 - change) / depth)
         return true
       }
+      // A fiber on the stack of another is asked with no task ready, and yields there at a change alone.
+      if (ready.length === 0) return false
       return priority(ready[highest(ready)]!.fiber) > priority(fiber)
     },
   }

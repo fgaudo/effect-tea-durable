@@ -121,17 +121,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     keep; whether it serves its waiters in order, as the `Semaphore` does, is not read yet;
   - to check first: that a commit's wake goes through the scheduler (it calls `scheduleTask`, read in the source),
     that `txRetry` misses no resumption in any order it picks, and how often a conflict runs a body again.
-- **A fiber started inline, under the scheduler of the tests.** Effect starts a child on its parent's stack in
-  `raceFirst`, `timeoutOption`, the concurrent `forEach` behind `Effect.all` and parallel finalizers (`forkUnsafe`
-  with `startImmediately`, read in the source of `internal/effect.ts` at 4.1.1); the runtime does so through
-  `raceFirst` in the waker. The scheduler of
-  [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) asks a fiber to yield only while
-  another task is ready, but a child started inline that yields gives its parent back, so that choice is never
-  explored. The runtime's tests fork what they run at once (`together`), and the runtime's own children reach a
-  wait in their first steps. Should the scheduler ask a fiber started inline even with nothing ready? It would know
-  such a fiber by its first run happening outside a task of its own. To check first:
-  - how many more schedules it makes;
-  - whether a test of `src/testing.test.ts` fails without it.
 - **How many seeds a bug needs.** A run of the tests runs 100 of the 2,000 seeds of each explored test, and a
   release all of them ([`AGENTS.md`](../AGENTS.md)). That
   most bugs are found within the first 100 is only reasoned. One bug was much rarer: the event lost to the timeout
