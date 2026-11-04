@@ -10,6 +10,7 @@ export {
   type Indexes,
   InvariantDefect,
   type Json,
+  type Keys,
   type Meta,
   type Migrated,
   type Migration,

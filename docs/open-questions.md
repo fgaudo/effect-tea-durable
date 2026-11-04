@@ -4,10 +4,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Programs
 
-- **Work under many keys.** A program declares its keys, so an entity holds as many pieces of work as it has
-  keys, and no more ([decision 0033](decisions/archive/0033-a-program-declares-its-keys.md)). A state that would hold one
-  operation per line of an order has nowhere to put them. Do such items want to be entities of their own, as a
-  large state does, or is there a kind of work held under keys a state computes?
 - **Children inside an entity.** effect-tea composes programs into a tree. Does an entity's program compose
   children the same way, stored as one state? The decider pattern (Jérémie Chassaing's `Decider`) has an algebra
   for it — two state machines compose into one, with laws a test can check — and is worth reading before this is

@@ -68,6 +68,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   const sql = yield* SqlClient.SqlClient
   // The state, the request that created the entity and the suspension: one row per entity. `suspended_at` is the
   // time the entity suspended, kept while it stays suspended, which an operator reads (decision 0114).
+  // `incarnations` is the last incarnation the entity drew, which never goes back (decision 0132).
   yield* sql`
     CREATE TABLE IF NOT EXISTS entities (
       name TEXT NOT NULL,
@@ -75,15 +76,16 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       state TEXT NOT NULL,
       version INTEGER NOT NULL,
       creation TEXT NOT NULL,
+      incarnations INTEGER NOT NULL,
       suspended_on TEXT,
       suspended_cause TEXT,
       suspended_at INTEGER,
       PRIMARY KEY (name, id)
     )
   `
-  // One row per key the state ever held, with its incarnation: a key that holds no work keeps its own
-  // (decision 0004). `due` is a timer's time, by which an entity nothing else holds loaded is woken
-  // (decision 0029).
+  // One row per key the state holds work under, with its incarnation. A key whose work is gone has no row, since
+  // the entity's counter keeps its incarnations from going back (decision 0132). `due` is a timer's time, by which
+  // an entity nothing else holds loaded is woken (decision 0029).
   yield* sql`
     CREATE TABLE IF NOT EXISTS entity_keys (
       name TEXT NOT NULL,
@@ -91,7 +93,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       key TEXT NOT NULL,
       incarnation INTEGER NOT NULL,
       version INTEGER NOT NULL,
-      work TEXT,
+      work TEXT NOT NULL,
       delivery TEXT,
       due INTEGER,
       PRIMARY KEY (name, id, key)
@@ -243,6 +245,7 @@ const Rows = {
       state: Schema.String,
       version: Version,
       creation: Schema.String,
+      incarnations: Count,
       suspended_on: Schema.Null,
       suspended_cause: Schema.Null,
     }),
@@ -250,6 +253,7 @@ const Rows = {
       state: Schema.String,
       version: Version,
       creation: Schema.String,
+      incarnations: Count,
       suspended_on: Schema.String,
       suspended_cause: Schema.String,
     }),
@@ -262,23 +266,14 @@ const Rows = {
     suspended_at: Count,
     head: Schema.NullOr(Schema.Literals(['Inbound', 'Internal'])),
   })),
-  /** A key that holds no work has no delivery either. */
-  key: decoder(Schema.Union([
-    Schema.Struct({
-      key: Schema.String,
-      incarnation: Count,
-      version: Version,
-      work: Schema.Null,
-      delivery: Schema.Null,
-    }),
-    Schema.Struct({
-      key: Schema.String,
-      incarnation: Count,
-      version: Version,
-      work: Schema.String,
-      delivery: Schema.NullOr(Delivery),
-    }),
-  ])),
+  /** A timer has no delivery. */
+  key: decoder(Schema.Struct({
+    key: Schema.String,
+    incarnation: Count,
+    version: Version,
+    work: Schema.String,
+    delivery: Schema.NullOr(Delivery),
+  })),
   /** An inbound message carries its request, an internal one the key and incarnation of the work that sent it. */
   envelope: decoder(Schema.Union([
     Schema.Struct({
@@ -592,7 +587,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const load = (id: string) =>
     Effect.gen(function*() {
       const entities = yield* rows('entities', Rows.entity)(
-        sql`SELECT state, version, creation, suspended_on, suspended_cause
+        sql`SELECT state, version, creation, incarnations, suspended_on, suspended_cause
             FROM entities WHERE name = ${name} AND id = ${id}`,
       )
       const row = entities[0]
@@ -608,7 +603,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       for (const key of held) {
         keys[key.key] = {
           incarnation: key.incarnation,
-          ...(key.work === null ? {} : { work: readWork(key.work, key.version) }),
+          work: readWork(key.work, key.version),
           ...(key.delivery === null ? {} : { delivery: key.delivery }),
         }
       }
@@ -632,6 +627,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         id,
         state: state.read(row.state, up('state', row.version)),
         keys,
+        incarnations: row.incarnations,
         mailbox,
         creation: request.read(row.creation, upRequest(row.version)),
         // The cause is what was rendered when the entity suspended: an operator reads it, nothing acts on it.
@@ -698,6 +694,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             state: JSON.stringify(entity.state),
             version,
             creation: JSON.stringify(entity.creation),
+            incarnations: written.incarnations,
             suspended_on: on,
             suspended_cause: cause,
             suspended_at: on === null ? null : at,
@@ -710,7 +707,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         yield* sql`
           UPDATE entities
           SET state = ${JSON.stringify(entity.state)}, version = ${version},
-              creation = ${JSON.stringify(entity.creation)},
+              creation = ${JSON.stringify(entity.creation)}, incarnations = ${written.incarnations},
               suspended_on = ${on}, suspended_cause = ${cause},
               suspended_at = CASE WHEN ${on} IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
           WHERE name = ${name} AND id = ${id}
@@ -718,7 +715,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       } else {
         yield* sql`
           UPDATE entities
-          SET suspended_on = ${on}, suspended_cause = ${cause},
+          SET incarnations = ${written.incarnations}, suspended_on = ${on}, suspended_cause = ${cause},
               suspended_at = CASE WHEN ${on} IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
           WHERE name = ${name} AND id = ${id}
         `
@@ -745,11 +742,14 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             key: held.key,
             incarnation: held.incarnation,
             version,
-            work: held.work === null ? null : JSON.stringify(held.work),
+            work: JSON.stringify(held.work),
             delivery: held.delivery,
             due: held.due,
           })
         }`
+      }
+      for (const key of written.gone) {
+        yield* sql`DELETE FROM entity_keys WHERE name = ${name} AND id = ${id} AND key = ${key}`
       }
       // The mailbox's rows are numbered as they are queued: its first message is the lowest.
       if (written.handled > 0) {
@@ -825,7 +825,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             AND NOT EXISTS (
               SELECT 1 FROM entity_keys AS asking
               WHERE asking.name = ${asked.name} AND asking.id = ${asked.id} AND asking.key = ${asked.key}
-                AND asking.incarnation = ${asked.incarnation} AND asking.work IS NOT NULL
+                AND asking.incarnation = ${asked.incarnation}
             )
         `
       }
@@ -857,7 +857,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const interrupted = Effect.gen(function*() {
     const found = yield* rows('entity_keys', Rows.id)(sql`
       SELECT id FROM entity_keys
-      WHERE name = ${name} AND work IS NOT NULL AND due IS NULL AND id NOT IN ${onHold}
+      WHERE name = ${name} AND due IS NULL AND id NOT IN ${onHold}
       UNION
       SELECT id FROM mailbox WHERE name = ${name} AND id NOT IN ${onHold}
       ORDER BY id
@@ -875,7 +875,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       while (ready.length < batch) {
         const page = yield* rows('entity_keys', Rows.id)(sql`
           SELECT DISTINCT id FROM entity_keys
-          WHERE name = ${name} AND work IS NOT NULL AND due IS NOT NULL AND due <= ${now}
+          WHERE name = ${name} AND due IS NOT NULL AND due <= ${now}
             AND id > ${after} AND id NOT IN ${onHold}
           ORDER BY id LIMIT ${batch}
         `)
@@ -889,7 +889,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       while (next === null) {
         const page: ReadonlyArray<{ id: string; at: number }> = yield* rows('entity_keys', Rows.due)(sql`
           SELECT id, MIN(due) AS at FROM entity_keys
-          WHERE name = ${name} AND work IS NOT NULL AND due > ${now} AND id NOT IN ${onHold}
+          WHERE name = ${name} AND due > ${now} AND id NOT IN ${onHold}
           GROUP BY id
           ${from === null ? sql`` : sql`HAVING at > ${from.at} OR (at = ${from.at} AND id > ${from.id})`}
           ORDER BY at, id LIMIT ${batch}

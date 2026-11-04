@@ -63,7 +63,7 @@ const room = <P>(name: string, projection: Schema.Codec<P, any>, project: (state
     projection,
   })({
     name,
-    keys: [],
+    keys: {},
     init: ({ size }) => ({
       items: Array.from({ length: size }, (_, id) => ({ id, label: `item number ${id} of the room` })),
     }),

@@ -68,27 +68,76 @@ const defectOf = (thrown: unknown): unknown => {
 const encodeBy = <A>(codec: Schema.Codec<A, Json>, value: A, what: string): Json =>
   byProgram(() => encode(codec, value, what))
 
+/** The schema of each key's parameter, or null for a key without one, by its name. */
+const declaredKeys = <T extends Types>(program: Program<T>) =>
+  program.keys as unknown as Readonly<Record<string, Schema.Codec<unknown, Json> | null>>
+
 /**
- * The work the state holds, under the keys the program declares and no others: a key it does not declare is a
- * defect, where the state holding it is read (decision 0037). The types catch a key a program never declared
- * where the state holds that key alone, and not where it holds a declared key beside a misspelt one. So is an
- * operation the program gives no runner for, which a cast lets through (decision 0054), and anything a cast lets
- * through that is no work at all.
+ * The machine's text of the key `name` with `parameter`: the name for a key without one, and otherwise the canonical
+ * JSON of the name and the parameter as its schema encodes it, `["charge","line-7"]` (decision 0132). A parameter
+ * its schema refuses is a defect.
+ */
+const textOf = (name: string, schema: Schema.Codec<unknown, Json> | null, parameter: unknown): string =>
+  schema === null ? name : canonical([name, encodeBy(schema, parameter, `parameter of the key '${name}'`)])
+
+/**
+ * The machine's text of the key `name`, with its parameter for a key that takes one: what the work under it is
+ * held under, in the outputs, the mailbox and the idempotency key (decision 0132). A key the program does not
+ * declare, or a parameter its schema refuses, throws.
+ */
+export const keyOf = <T extends Types>(program: Program<T>, name: T['key'], parameter?: unknown): string => {
+  const keys = declaredKeys(program)
+  if (!Object.hasOwn(keys, name)) throw new Error(`the program '${program.name}' declares no key '${name}'`)
+  return textOf(name, keys[name] ?? null, parameter)
+}
+
+/** Whether `work` is a piece of work the program can run: a timer, or an operation it gives a runner for. */
+const checkWork = <T extends Types>(program: Program<T>, key: string, work: unknown): void => {
+  if (isTimer(work)) return
+  const tag: unknown = typeof work === 'object' && work !== null ? (work as { _tag?: unknown })._tag : undefined
+  if (typeof tag !== 'string') broken(`the state holds what is no work under '${key}'`)
+  if (runnerOf(program, work as T['operation']) === undefined) {
+    broken(`the state holds the operation '${tag}' under '${key}', which the program has no runner for`)
+  }
+}
+
+/**
+ * The work the state holds, by the machine's text of each key, under the keys the program declares and no others:
+ * a key it does not declare is a defect, where the state holding it is read (decision 0037). The types catch a key a
+ * program never declared where the state holds that key alone, and not where it holds a declared key beside a
+ * misspelt one. So is an operation the program gives no runner for, which a cast lets through (decision 0054), and
+ * anything a cast lets through that is no work at all. Under a key with a parameter, a parameter its schema refuses
+ * is a defect, and so are two pieces of work whose parameters encode alike (decision 0132).
  */
 const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Held<T> => {
   const work: unknown = byProgram(() => program.durable(state))
   if (typeof work !== 'object' || work === null) return broken('durable gave no record of work')
-  const declared = new Set<string>(program.keys)
-  for (const [key, held] of Object.entries(work)) {
-    if (!declared.has(key)) broken(`the state holds work under '${key}', which the program does not declare`)
-    if (held === undefined || isTimer(held)) continue
-    const tag: unknown = typeof held === 'object' && held !== null ? (held as { _tag?: unknown })._tag : undefined
-    if (typeof tag !== 'string') broken(`the state holds what is no work under '${key}'`)
-    if (runnerOf(program, held as T['operation']) === undefined) {
-      broken(`the state holds the operation '${tag}' under '${key}', which the program has no runner for`)
+  const keys = declaredKeys(program)
+  const held: Record<string, Durable<T['operation'], T['internal']>> = {}
+  for (const [name, returned] of Object.entries(work)) {
+    if (!Object.hasOwn(keys, name)) {
+      broken(`the state holds work under '${name}', which the program does not declare`)
+    }
+    if (returned === undefined) continue
+    const schema = keys[name] ?? null
+    if (schema === null) {
+      checkWork(program, name, returned)
+      held[name] = returned as Durable<T['operation'], T['internal']>
+      continue
+    }
+    if (!Array.isArray(returned)) broken(`the state holds no list of work under '${name}', which takes a parameter`)
+    for (const entry of returned as ReadonlyArray<unknown>) {
+      if (!Array.isArray(entry) || entry.length !== 2) {
+        broken(`the state holds what is no pair of a parameter and its work under '${name}'`)
+      }
+      const [parameter, piece] = entry as unknown as readonly [unknown, unknown]
+      const key = textOf(name, schema, parameter)
+      if (Object.hasOwn(held, key)) broken(`the state holds two pieces of work under '${key}'`)
+      checkWork(program, key, piece)
+      held[key] = piece as Durable<T['operation'], T['internal']>
     }
   }
-  return work as Held<T>
+  return held
 }
 
 /**
@@ -272,14 +321,17 @@ export const requestKey = <T extends Types>(program: Program<T>, request: Reques
   return text
 }
 
-/** A key ever returned by `durable`: one that holds no work once was returned, and left. */
+/**
+ * A key the state holds work under. A key whose work is gone has no row, since its incarnation is drawn from the
+ * entity's counter, which never goes back (decision 0132).
+ */
 export type Key<T extends Types> = Readonly<{
   incarnation: number
   /**
    * The work the state holds under the key, as the program that stored it computed it: what an activation compares
    * a new program's work with (decision 0020).
    */
-  work?: Durable<T['operation'], T['internal']>
+  work: Durable<T['operation'], T['internal']>
   /**
    * How the operation under the key is delivered, as the program that started it declared: what an activation
    * compares a new program's runners with (decision 0022).
@@ -297,7 +349,13 @@ export type Stored<T extends Types> = Readonly<{
   name: string
   id: string
   state: T['state']
+  /** The work under way, by the machine's text of each key (decision 0132). */
   keys: Readonly<Record<string, Key<T>>>
+  /**
+   * The last incarnation the entity drew. Each piece of work that starts anew, under any key, draws the next one,
+   * so no two runs of the entity's work share an incarnation (decision 0132).
+   */
+  incarnations: number
   mailbox: ReadonlyArray<Envelope<T>>
   /** The request that created the entity: its retries are answered `Created` (decision 0017). */
   creation: Request<T['sender']>
@@ -394,7 +452,7 @@ export type Output<T extends Types> =
 export type KeyRow = Readonly<{
   key: string
   incarnation: number
-  work: Json | null
+  work: Json
   delivery: Delivery | null
   /** A timer's time, in milliseconds, by which an entity nothing else holds loaded is woken (decision 0029). */
   due: number | null
@@ -446,6 +504,10 @@ export type Written = Readonly<{
   suspension: Readonly<{ on: Suspension['on']; cause: string }> | null
   /** The keys that changed, whole. */
   keys: ReadonlyArray<KeyRow>
+  /** The keys whose work is gone: their rows are deleted (decision 0132). */
+  gone: ReadonlyArray<string>
+  /** The last incarnation the entity drew, after the event. */
+  incarnations: number
   /** How many messages leave the head of the mailbox, before `queued` is added at its end. */
   handled: number
   queued: ReadonlyArray<EnvelopeRow>
@@ -478,10 +540,8 @@ type Moved<T extends Types> =
  * Whether the work under `key` in `incarnation` is stored, and not yet done. Once it is not, it never is again, and
  * its idempotency key is never used again: a reply stored for a request it sent may be deleted (decision 0021).
  */
-export const holds = <T extends Types>(stored: Stored<T>, key: string, incarnation: number) => {
-  const held = stored.keys[key]
-  return held?.work !== undefined && held.incarnation === incarnation
-}
+export const holds = <T extends Types>(stored: Stored<T>, key: string, incarnation: number) =>
+  stored.keys[key]?.incarnation === incarnation
 
 /**
  * The idempotency key a runner of `delivery` is given for the work under `key` in `incarnation`: the readable one,
@@ -505,7 +565,7 @@ export type Held<T extends Types> = Readonly<Record<string, Durable<T['operation
 /** The work the stored state holds, by key. */
 export const workOf = <T extends Types>(stored: Stored<T>): Held<T> => {
   const work: Record<string, Durable<T['operation'], T['internal']>> = {}
-  for (const [key, held] of Object.entries(stored.keys)) if (held.work !== undefined) work[key] = held.work
+  for (const [key, held] of Object.entries(stored.keys)) work[key] = held.work
   return work
 }
 
@@ -517,36 +577,32 @@ const deliveryOf = <T extends Types>(program: Program<T>, work: Durable<T['opera
 
 /**
  * The keys once the state holds `next`, as `program` delivers it: what is the same as in `previous` keeps its
- * incarnation, and anything else is new work, in the next one. A key `next` leaves keeps its incarnation. A key
- * that does not change is the same object, so that only the keys that changed are written (decision 0057).
+ * incarnation, and anything else is new work, which draws the next incarnation of the entity's counter. A key that
+ * `next` leaves has no row (decision 0132). A key that does not change is the same object, so that only the keys
+ * that changed are written (decision 0057).
  */
 const renew = <T extends Types>(
   program: Program<T>,
-  keys: Stored<T>['keys'],
+  stored: Pick<Stored<T>, 'keys' | 'incarnations'>,
   previous: Held<T>,
   next: Held<T>,
-): Stored<T>['keys'] => {
+): Pick<Stored<T>, 'keys' | 'incarnations'> => {
   const renewed: Record<string, Key<T>> = {}
-  for (const key of new Set([...Object.keys(keys), ...Object.keys(next)])) {
-    const held = keys[key]
+  let incarnations = stored.incarnations
+  for (const [key, work] of Object.entries(next)) {
+    const held = stored.keys[key]
     const was = previous[key]
-    const work = next[key]
-    const incarnation = held?.incarnation ?? 0
-    if (work === undefined) {
-      renewed[key] = held !== undefined && held.work === undefined ? held : { incarnation }
-      continue
-    }
     const delivery = deliveryOf(program, work)
-    const same = was !== undefined && isSame(program, key, was, work)
-    renewed[key] = same && held !== undefined && held.work === was && held.delivery === delivery
+    const same = held !== undefined && was !== undefined && isSame(program, key, was, work)
+    renewed[key] = same && held.work === was && held.delivery === delivery
       ? held
       : {
-        incarnation: same ? incarnation : incarnation + 1,
+        incarnation: same ? held.incarnation : ++incarnations,
         work,
         ...(delivery === undefined ? {} : { delivery }),
       }
   }
-  return renewed
+  return { keys: renewed, incarnations }
 }
 
 const kindOf = (work: unknown): Running['kind'] => (isTimer(work) ? 'Timer' : 'Operation')
@@ -594,11 +650,11 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
     broken(`the program '${program.name}' replaces the entity's program '${stored.name}'`)
   }
   const work = admitted(program, stored.state)
-  const keys = renew(program, stored.keys, workOf(stored), work)
+  const { keys, incarnations } = renew(program, stored, workOf(stored), work)
   for (const [key, { work: was, delivery }] of Object.entries(stored.keys)) {
     // A droppable operation acts on nothing, so a new program may drop it, change it or deliver it otherwise
     // (decision 0128).
-    if (was === undefined || isTimer(was) || delivery === 'Droppable') continue
+    if (isTimer(was) || delivery === 'Droppable') continue
     const next = work[key]
     if (!isSame(program, key, was, next)) {
       broken(
@@ -611,7 +667,7 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
       broken(`the program changed how the operation under '${key}' is delivered before its completion`)
     }
   }
-  return { ...stored, keys }
+  return { ...stored, keys, incarnations }
 }
 
 /**
@@ -640,7 +696,7 @@ const activate = <T extends Types>(
     const mailbox = [...stored.mailbox]
     const outputs: Array<Output<T>> = []
     for (const [key, { incarnation, work }] of Object.entries(stored.keys)) {
-      if (work === undefined || isQueued(stored, key, incarnation)) continue
+      if (isQueued(stored, key, incarnation)) continue
       const runner = isTimer(work) ? null : runnerOf(program, work)
       const started = incarnation === machine.stored.keys[key]?.incarnation
       const kept = machine.running[key]
@@ -698,7 +754,7 @@ export const start = <T extends Types>(
     name: program.name,
     id,
     state,
-    keys: renew(program, {}, {}, work),
+    ...renew(program, { keys: {}, incarnations: 0 }, {}, work),
     mailbox: [],
     creation: request,
     suspension: null,
@@ -834,7 +890,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
     const previous: Record<string, Durable<T['operation'], T['internal']>> = { ...workOf(stored) }
     if (head._tag === 'Internal') delete previous[head.key]
 
-    const keys = renew(program, stored.keys, previous, after)
+    const { keys, incarnations } = renew(program, stored, previous, after)
     const running = { ...machine.running }
     const outputs: Array<Output<T>> = head._tag === 'Internal'
       ? [{ _tag: 'Delivered', key: head.key, incarnation: head.incarnation }]
@@ -862,13 +918,13 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
       if (was !== undefined && isSame(program, key, was, work)) continue
       const incarnation = keys[key]?.incarnation ?? 0
       running[key] = { kind: kindOf(work), incarnation }
-      outputs.push(startWork({ ...stored, keys }, key, incarnation, work))
+      outputs.push(startWork({ ...stored, keys, incarnations }, key, incarnation, work))
     }
     if (head._tag === 'Inbound') {
       outputs.unshift({ _tag: 'Replied', request: head.request, reply: { _tag: 'Accepted' } })
     }
     return {
-      machine: { ...machine, stored: { ...stored, state, keys, mailbox: rest }, running },
+      machine: { ...machine, stored: { ...stored, state, keys, incarnations, mailbox: rest }, running },
       outputs,
       handled: head,
       ...(head._tag === 'Inbound' ? { answered: { _tag: 'Accepted' } as const, at } : {}),
@@ -965,11 +1021,12 @@ export const writes = <T extends Types>(
     keys.push({
       key,
       incarnation: held.incarnation,
-      work: held.work === undefined ? null : encodeWork(program, key, held.work).json,
+      work: encodeWork(program, key, held.work).json,
       delivery: held.delivery ?? null,
-      due: held.work !== undefined && isTimer(held.work) ? DateTime.toEpochMillis(held.work.at) : null,
+      due: isTimer(held.work) ? DateTime.toEpochMillis(held.work.at) : null,
     })
   }
+  const gone = Object.keys(before?.keys ?? {}).filter((key) => !Object.hasOwn(after.keys, key))
   // An event takes at most the mailbox's first message, and queues what it records at its end.
   const was = before?.mailbox ?? []
   const left = was.length > 0 && after.mailbox[0] !== was[0] ? 1 : 0
@@ -987,7 +1044,7 @@ export const writes = <T extends Types>(
   }]
   const ended: Array<Readonly<{ key: string; incarnation: number }>> = []
   for (const [key, held] of Object.entries(before?.keys ?? {})) {
-    if (held.work === undefined || holds(after, key, held.incarnation)) continue
+    if (holds(after, key, held.incarnation)) continue
     ended.push({ key, incarnation: held.incarnation })
   }
   const row = changed ? shownOf(program, after.state) : null
@@ -1003,7 +1060,7 @@ export const writes = <T extends Types>(
     }
   }
   if (
-    before !== null && !changed && keys.length === 0 && left === 0 && queued.length === 0 &&
+    before !== null && !changed && keys.length === 0 && gone.length === 0 && left === 0 && queued.length === 0 &&
     replies.length === 0 && ended.length === 0 && before.suspension === after.suspension
   ) {
     return null
@@ -1020,6 +1077,8 @@ export const writes = <T extends Types>(
       ? null
       : { on: after.suspension.on, cause: render(after.suspension.cause) },
     keys,
+    gone,
+    incarnations: after.incarnations,
     handled: left,
     queued,
     replies,

@@ -5,15 +5,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Work under many keys** ([open question](open-questions.md#programs)). A key may take a parameter, and an
-   incarnation is drawn from one counter of the entity, as
-   [decision 0132](decisions/0132-a-key-may-take-a-parameter.md) proposes.
-2. **Children inside an entity** ([open question](open-questions.md#programs)). A parent declares its children as
+1. **Children inside an entity** ([open question](open-questions.md#programs)). A parent declares its children as
    effect-tea does, and their keys take the child's id as parameter, as
    [decision 0133](decisions/0133-an-entity-composes-children-as-effect-tea-does.md) proposes. A step that writes a
    large state warns of it, and the program splits it, as
    [decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) proposes.
-3. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later

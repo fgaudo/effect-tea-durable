@@ -48,8 +48,14 @@ interface Acts<T extends Types> {
    * need not exist: the test answers for it.
    */
   readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Machine.StoredReply<T['rejection']>>
-  /** The work under way under `key`, one of the program's own (decision 0033). Fails the test when there is none. */
-  readonly pending: (key: T['key']) => Effect.Effect<Pending<Durable<T['operation'], T['internal']>>>
+  /**
+   * The work under way under `key`, one of the program's own (decision 0033), with its parameter for a key that
+   * takes one (decision 0132). Fails the test when there is none.
+   */
+  readonly pending: <K extends T['key']>(
+    key: K,
+    ...parameter: K extends keyof T['parameter'] ? [parameter: T['parameter'][K]] : []
+  ) => Effect.Effect<Pending<Durable<T['operation'], T['internal']>>>
   /**
    * Completes an operation with `message`. It is dropped when the operation's incarnation has moved on. It fails the
    * test when the step that handles it returns the same operation under its key, which would run again at once.
@@ -347,8 +353,9 @@ const makeWorld = (at: DateTime.Utc) => {
           incarnation: ++requests,
           name: 'request',
         }),
-      pending: (key) =>
+      pending: (name, ...parameter) =>
         Effect.suspend(() => {
+          const key = Machine.keyOf(programOf(entity), name, parameter[0])
           const running = entity.machine.running[key]
           const work = entity.machine.stored.keys[key]?.work
           return running === undefined || work === undefined

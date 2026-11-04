@@ -162,7 +162,7 @@ export const subscription = program({
 })({
   name: 'Subscription',
 
-  keys: ['renewal', 'charge', 'retry'],
+  keys: { renewal: null, charge: null, retry: null },
 
   // The first period is charged at once.
   init: ({ customer, payment, plan }, at) =>

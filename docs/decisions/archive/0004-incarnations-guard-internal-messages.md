@@ -1,6 +1,7 @@
 # 0004. Incarnations guard internal messages
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. An incarnation is drawn from one counter of the entity, and a key whose work is
+gone has no row, since [decision 0132](../0132-a-key-may-take-a-parameter.md).
 
 ## Context
 

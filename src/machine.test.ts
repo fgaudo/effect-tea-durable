@@ -19,6 +19,7 @@ import {
   noWork,
   operation,
   type Program,
+  program as declare,
   reject,
   type Request,
   rejectWith,
@@ -55,6 +56,7 @@ type T = {
   internal: Internal
   operation: Readonly<{ _tag: 'A'; tune: number }> | Readonly<{ _tag: 'B' | 'C'; key: Key }>
   key: Key
+  parameter: {}
   rejection: 'Refused'
   sender: 'ann' | 'bob'
   projection: number
@@ -96,7 +98,7 @@ const schemas: Program<T>['schemas'] = {
 
 const program: Program<T> = {
   name: 'Toy',
-  keys,
+  keys: { a: null, b: null, c: null, t: null },
   schemas,
   init: () => ({ want: keys, applied: [], tune: 0 }),
   update: (message) => (state) => {
@@ -850,6 +852,7 @@ type Tiny = {
   internal: string
   operation: Readonly<{ _tag: 'Work'; size: number }>
   key: string
+  parameter: {}
   rejection: never
   sender: null
   projection: string
@@ -880,7 +883,7 @@ const tiny = (
   name,
   // Every key these tests hold work under: the machine checks what `durable` returns against them
   // (decision 0037).
-  keys: ['charge', 'deadline', 'work', 'reminder', 'mail'],
+  keys: { charge: null, deadline: null, work: null, reminder: null, mail: null },
   schemas: {
     state: Schema.Struct({ last: Schema.String }),
     flags: Schema.Null,
@@ -1155,9 +1158,10 @@ describe('what the program throws', () => {
   const corrupt = (): Entity => {
     const machine = checked((message) => message, () => ({ deadline: 'timer' }))
     const held = machine.stored.keys['deadline']
+    if (held === undefined) throw new Error('the state holds no timer under deadline')
     const deadline = {
-      incarnation: held?.incarnation ?? 0,
-      ...(held?.work === undefined ? {} : { work: held.work }),
+      incarnation: held.incarnation,
+      work: held.work,
       get delivery(): never {
         throw new TypeError('a row the runtime corrupted')
       },
@@ -1354,7 +1358,7 @@ describe('what a suspension stops', () => {
     // The timer leaves what runs, and the operations stay.
     expect(died.machine.running).toEqual({
       charge: { kind: 'Operation', incarnation: 1 },
-      mail: { kind: 'Operation', incarnation: 1 },
+      mail: { kind: 'Operation', incarnation: 2 },
     })
     const completed = stepped(died.machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'charged' })
     expect(completed.outputs).toEqual([{ _tag: 'Recorded', key: 'charge', incarnation: 1 }])
@@ -1367,8 +1371,8 @@ describe('what a suspension stops', () => {
     const resumed = stepped(completed.machine, { _tag: 'Discard' })
     expect(resumed.machine.stored.suspension).toBeNull()
     expect(resumed.outputs.filter((output) => output._tag === 'Started')).toEqual([])
-    expect(resumed.outputs).toContainEqual(expect.objectContaining({ _tag: 'Armed', key: 'deadline', incarnation: 1 }))
-    expect(resumed.machine.running['mail']).toEqual({ kind: 'Operation', incarnation: 1 })
+    expect(resumed.outputs).toContainEqual(expect.objectContaining({ _tag: 'Armed', key: 'deadline', incarnation: 3 }))
+    expect(resumed.machine.running['mail']).toEqual({ kind: 'Operation', incarnation: 2 })
     const after = stepped(resumed.machine, { _tag: 'Handle', at })
     expect(after.machine.stored.state).toEqual({ last: 'charged' })
     expect(after.outputs).toContainEqual({ _tag: 'Delivered', key: 'charge', incarnation: 1 })
@@ -1380,7 +1384,7 @@ describe('what a suspension stops', () => {
     expect(again.outputs).toEqual([])
     expect(again.written).toBeNull()
     expect(again.machine.stored).toEqual(died.machine.stored)
-    expect(again.machine.running).toEqual({ mail: { kind: 'Operation', incarnation: 1 } })
+    expect(again.machine.running).toEqual({ mail: { kind: 'Operation', incarnation: 2 } })
     const resumed = stepped(again.machine, { _tag: 'Discard' })
     const started = resumed.outputs.flatMap((output) => (output._tag === 'Started' ? [output.key] : []))
     expect(started).toEqual(['charge'])
@@ -1491,7 +1495,7 @@ describe('the keys a program declares', () => {
 
   test('a deploy that stops declaring a key the state holds leaves the entity as it was', () => {
     const machine = checked((message) => message, () => ({ deadline: 'timer' }))
-    const transition = stepped(machine, { _tag: 'Restart' }, { ...machine.program, keys: [] })
+    const transition = stepped(machine, { _tag: 'Restart' }, { ...machine.program, keys: {} })
     expect(reasonOfSuspension(transition)).toBe(
       "the state holds work under 'deadline', which the program does not declare",
     )
@@ -1594,7 +1598,7 @@ describe('a suspended entity', () => {
   test('an operation that dies answers Suspended every caller waiting', () => {
     const machine = checked((message) => message, () => ({ charge: 'operation', work: 'operation' }))
     // A completion is ahead of the message, which waits behind it (decision 0074).
-    const completed = stepped(machine, { _tag: 'Complete', key: 'work', incarnation: 1, message: 'done' })
+    const completed = stepped(machine, { _tag: 'Complete', key: 'work', incarnation: 2, message: 'done' })
     const queued = stepped(completed.machine, { _tag: 'Receive', request: by('r'), message: 'go' })
     const died = stepped(queued.machine, { _tag: 'Die', key: 'charge', incarnation: 1, cause: 'died' })
     expect(died.outputs).toContainEqual({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } })
@@ -1650,7 +1654,7 @@ describe('passivation', () => {
     expect(transition.machine.running).toEqual(machine.running)
     expect(transition.outputs).toEqual([
       { _tag: 'Armed', key: 'deadline', incarnation: 1, timer: timer(at, 'rang') },
-      { _tag: 'Armed', key: 'reminder', incarnation: 1, timer: timer(epoch, 'rang') },
+      { _tag: 'Armed', key: 'reminder', incarnation: 2, timer: timer(epoch, 'rang') },
     ])
   })
 })
@@ -1745,7 +1749,7 @@ describe('a new program', () => {
       durable: (state) => ({ ...program.durable(state), mail: { _tag: 'Work', size: 1 } as const }),
       operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => '?') },
     })
-    expect(transition.outputs).toContainEqual(expect.objectContaining({ _tag: 'Started', key: 'mail', incarnation: 1 }))
+    expect(transition.outputs).toContainEqual(expect.objectContaining({ _tag: 'Started', key: 'mail', incarnation: 2 }))
     expect(transition.machine.stored.mailbox).toEqual([])
   })
 
@@ -2044,6 +2048,7 @@ describe('what an event writes', () => {
       entity: written.entity,
       suspension: written.suspension?.on ?? null,
       keys: Object.fromEntries(written.keys.map((row) => [row.key, row])),
+      incarnations: written.incarnations,
       mailbox: written.queued,
     }
   }
@@ -2053,7 +2058,11 @@ describe('what an event writes', () => {
   const applied = (rows: Table, written: Machine.Written): Table => ({
     entity: written.entity ?? rows.entity,
     suspension: written.suspension?.on ?? null,
-    keys: { ...rows.keys, ...Object.fromEntries(written.keys.map((row) => [row.key, row])) },
+    keys: Object.fromEntries(
+      Object.entries({ ...rows.keys, ...Object.fromEntries(written.keys.map((row) => [row.key, row])) })
+        .filter(([key]) => !written.gone.includes(key)),
+    ),
+    incarnations: written.incarnations,
     mailbox: [...rows.mailbox.slice(written.handled), ...written.queued],
   })
 
@@ -2087,7 +2096,7 @@ describe('what an event writes', () => {
     property(({ trace }) => {
       for (const { before, after, written } of trace.slice(1)) {
         const ended = Object.entries(before.stored.keys)
-          .filter(([key, held]) => held.work !== undefined && !Machine.holds(after.stored, key, held.incarnation))
+          .filter(([key, held]) => !Machine.holds(after.stored, key, held.incarnation))
           .map(([key, held]) => ({ key, incarnation: held.incarnation }))
         expect(written?.ended ?? []).toEqual(ended)
       }
@@ -2118,4 +2127,137 @@ describe('what an event writes', () => {
         )
       }
     }))
+})
+
+// A key may take a parameter, and every piece of work of an entity draws its incarnation from one counter
+// (decision 0132).
+describe('keys with a parameter', () => {
+  // A message `+x` charges the line `x`, whose charge leaves once it completes with `charged x`. The shipment of
+  // each line charged is a timer under `ship`, whose parameter `flip` writes with its properties in the other
+  // order. `fee` arms or drops a timer under a key without a parameter.
+  const lines = declare({
+    state: Schema.Struct({ lines: Schema.Array(Schema.String), fee: Schema.Boolean, flipped: Schema.Boolean }),
+    flags: Schema.Null,
+    inbound: Schema.String,
+    internal: Schema.String,
+    operation: Schema.TaggedStruct('Charge', { line: Schema.String }),
+    rejection: Schema.Never,
+    sender: Schema.Null,
+    projection: Schema.Number,
+  })({
+    name: 'Lines',
+    keys: { fee: null, charge: Schema.String, ship: Schema.Record(Schema.String, Schema.String) },
+    init: () => ({ lines: [], fee: false, flipped: false }),
+    update: (message) => (state) =>
+      message === 'fee'
+        ? { ...state, fee: !state.fee }
+        : message === 'flip'
+        ? { ...state, flipped: !state.flipped }
+        : message.startsWith('+')
+        ? { ...state, lines: [...state.lines, message.slice(1)] }
+        : message.startsWith('charged ')
+        ? { ...state, lines: state.lines.filter((line) => line !== message.slice('charged '.length)) }
+        : state,
+    durable: (state) => ({
+      fee: state.fee ? timer(at, 'due') : undefined,
+      charge: state.lines.map((line) => [line, { _tag: 'Charge', line }] as const),
+      ship: state.lines.map((line) => [state.flipped ? { box: 'one', line } : { line, box: 'one' }, timer(at, 'ship')]),
+    }),
+    operations: { Charge: operation(() => Effect.succeed('charged')) },
+    project: (state) => state.lines.length,
+    indexes: {},
+  })
+  type L = typeof lines extends Program<infer T> ? T : never
+
+  let requests = 0
+  /** A message from a caller, handled as it arrives. */
+  const send = (message: string): Machine.Event<L> =>
+    ({ _tag: 'Receive', request: by(`r-${++requests}`), message, reply: null, at })
+  /** The events, stepped in order, from the creation of the entity. */
+  const run = (events: ReadonlyArray<Machine.Event<L>>) => {
+    const created = Machine.start(lines, 'l', null, epoch, by('creation'))
+    if (created._tag === 'Defect') throw created.cause
+    let machine = created.machine
+    const transitions: Array<Machine.Transition<L>> = []
+    for (const event of events) {
+      const transition = Machine.step(lines, machine, event)
+      transitions.push(transition)
+      machine = transition.machine
+    }
+    return { machine, transitions }
+  }
+  const begun = (transition: Machine.Transition<L> | undefined) =>
+    (transition?.outputs ?? []).flatMap((output) =>
+      output._tag === 'Started' || output._tag === 'Armed' ? [[output.key, output.incarnation]] : []
+    )
+  const charge = '["charge","a"]'
+  const ship = '["ship",{"box":"one","line":"a"}]'
+
+  test('holds a piece of work for each parameter, under the name and the parameter as JSON', () => {
+    const { machine, transitions } = run([send('+a'), send('+b')])
+    expect(Object.keys(machine.stored.keys).sort()).toEqual([
+      charge,
+      '["charge","b"]',
+      ship,
+      '["ship",{"box":"one","line":"b"}]',
+    ])
+    expect(begun(transitions[1])).toEqual([['["charge","b"]', 3], ['["ship",{"box":"one","line":"b"}]', 4]])
+    // The key is JSON in the idempotency key, not a string of it, and a key without a parameter is its name.
+    expect(String(Machine.idempotencyKeyOf(machine, charge, 1))).toBe('["Lines","l",["charge","a"],1]')
+    expect(String(idempotencyKey({ name: 'Lines', id: 'l' }, 'fee', 5))).toBe('["Lines","l","fee",5]')
+    expect(Machine.keyOf(lines, 'charge', 'a')).toBe(charge)
+    expect(Machine.keyOf(lines, 'fee')).toBe('fee')
+  })
+
+  test('a key that leaves loses its row, and comes back in an incarnation no run of it had', () => {
+    const { machine, transitions } = run([
+      send('+a'),
+      send('fee'),
+      { _tag: 'Complete', key: charge, incarnation: 1, message: 'charged a' },
+      { _tag: 'Handle', at },
+      send('fee'),
+      send('+a'),
+      send('fee'),
+    ])
+    const [added, paid, , charged, unpaid, again, repaid] = transitions
+    expect(begun(added)).toEqual([[charge, 1], [ship, 2]])
+    expect(begun(paid)).toEqual([['fee', 3]])
+    expect(charged?.machine.stored.keys[charge]).toBeUndefined()
+    expect(charged?.written?.gone).toEqual([charge, ship])
+    expect(unpaid?.written?.gone).toEqual(['fee'])
+    expect(unpaid?.machine.stored.keys).toEqual({})
+    expect(begun(again)).toEqual([[charge, 4], [ship, 5]])
+    expect(begun(repaid)).toEqual([['fee', 6]])
+    expect(machine.stored.incarnations).toBe(6)
+    // A late message of a first run is dropped, since its incarnation is no longer the key's.
+    for (const [key, incarnation] of [[charge, 1], [ship, 2], ['fee', 3]] as const) {
+      const late = Machine.step(lines, machine, { _tag: 'Complete', key, incarnation, message: 'charged a' })
+      expect(late.outputs).toEqual([{ _tag: 'Dropped', key, incarnation }])
+    }
+  })
+
+  test('a parameter is compared by its JSON: one that encodes alike keeps its work', () => {
+    const { transitions } = run([send('+a'), send('flip')])
+    const [added, flipped] = transitions
+    expect(begun(flipped)).toEqual([])
+    expect(flipped?.machine.stored.keys).toEqual(added?.machine.stored.keys)
+    expect(flipped?.written?.keys).toEqual([])
+  })
+
+  test('a parameter its schema refuses, two that encode alike, or no list under such a key is a defect', () => {
+    const work = { _tag: 'Charge', line: 'a' } as const
+    const broken: ReadonlyArray<readonly [() => unknown, string]> = [
+      [() => ({ charge: [[7, work]] }), "parameter of the key 'charge'"],
+      [() => ({ charge: [['a', work], ['a', work]] }), `the state holds two pieces of work under '${charge}'`],
+      [() => ({ charge: work }), "the state holds no list of work under 'charge', which takes a parameter"],
+      [() => ({ fee: [['a', work]] }), "the state holds what is no work under 'fee'"],
+      [() => ({ charge: [['a']] }), "the state holds what is no pair of a parameter and its work under 'charge'"],
+    ]
+    for (const [durable, reason] of broken) {
+      const program = { ...lines, durable: durable as Program<L>['durable'] }
+      const created = Machine.start(program, 'l', null, epoch, by('creation'))
+      const cause = created._tag === 'Defect' ? created.cause : null
+      expect(cause instanceof InvariantDefect ? cause.reason : String(cause)).toContain(reason)
+    }
+  })
 })

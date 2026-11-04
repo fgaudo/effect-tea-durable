@@ -17,6 +17,7 @@ import {
   isTimer,
   operation,
   type Program,
+  program as declare,
   type Runner,
   send,
   timer,
@@ -49,7 +50,7 @@ const greedy: typeof order = {
   durable: (state) => {
     const work = order.durable(state)
     const charge = work['charge']
-    return charge === undefined || isTimer(charge) || charge._tag !== 'Charge'
+    return charge === undefined || isTimer(charge) || !('_tag' in charge) || charge._tag !== 'Charge'
       ? work
       : { ...work, charge: { ...charge, totalInCents: charge.totalInCents + 1 } }
   },
@@ -153,7 +154,10 @@ describe('a program that cannot run as written', () => {
   test('is refused before its scenario runs, as the runtime refuses it (decision 0054)', async () => {
     const refused: ReadonlyArray<readonly [typeof order, string]> = [
       [{ ...order, name: '' }, "the program '' has an empty name"],
-      [{ ...order, keys: [...order.keys, 'charge'] }, "the program 'Order' declares the key 'charge' twice"],
+      [
+        { ...order, keys: { ...order.keys, '[charge]': null } as typeof order.keys },
+        "the program 'Order' declares the key '[charge]', whose name starts with '['",
+      ],
       [
         { ...order, indexes: { ...order.indexes, 'not a word': () => null } as typeof order.indexes },
         "the program 'Order' has an index 'not a word' whose name is not a word",
@@ -170,10 +174,10 @@ describe('a program that cannot run as written', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.deploy({ ...order, keys: [...order.keys, 'refund'] })
+        yield* rehearsal.deploy({ ...order, keys: { ...order.keys, '[refund]': null } as typeof order.keys })
       }),
     ))
-    expect(reasonOf(exit)).toBe("the program 'Order' declares the key 'refund' twice")
+    expect(reasonOf(exit)).toBe("the program 'Order' declares the key '[refund]', whose name starts with '['")
   })
 })
 
@@ -230,6 +234,7 @@ describe('a rehearsal', () => {
       internal: Readonly<{ _tag: 'Rang'; key: typeof Timer.Type }>
       operation: never
       key: typeof Timer.Type
+      parameter: {}
       rejection: never
       sender: Readonly<{ _tag: 'Tester' }>
       projection: number
@@ -238,7 +243,7 @@ describe('a rehearsal', () => {
     }
     const clock: Program<Clocked> = {
       name: 'Clock',
-      keys: timers,
+      keys: { early: null, late: null },
       schemas: {
         state: Schema.Struct({ pending: Schema.Array(Timer), seen: Schema.Array(Schema.DateTimeUtcFromMillis) }),
         flags: Schema.Struct({}),
@@ -442,4 +447,46 @@ describe('a world', () => {
     ))
     expect(reasonOf(exit)).toBe("the world runs another program under the name 'Booking'")
   })
+})
+
+// A test finds the work under a key with a parameter by the key's name and the parameter (decision 0132).
+describe('a rehearsal of keys with a parameter', () => {
+  const lines = declare({
+    state: Schema.Struct({ lines: Schema.Array(Schema.String) }),
+    flags: Schema.Null,
+    inbound: Schema.String,
+    internal: Schema.String,
+    operation: Schema.TaggedStruct('Charge', { line: Schema.String }),
+    rejection: Schema.Never,
+    sender: Schema.Null,
+    projection: Schema.Number,
+  })({
+    name: 'Lines',
+    keys: { charge: Schema.String },
+    init: () => ({ lines: [] }),
+    update: (message) => (state) =>
+      message.startsWith('+')
+        ? { lines: [...state.lines, message.slice(1)] }
+        : { lines: state.lines.filter((line) => `charged ${line}` !== message) },
+    durable: (state) => ({ charge: state.lines.map((line) => [line, { _tag: 'Charge', line }] as const) }),
+    operations: { Charge: operation(() => Effect.succeed('charged')) },
+    project: (state) => state.lines.length,
+    indexes: {},
+  })
+
+  test('gives the work under each parameter, and answers it alone', () =>
+    Effect.runPromise(rehearse(
+      lines,
+      { flags: null, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send('+a', null)
+        yield* rehearsal.send('+b', null)
+        const a = yield* rehearsal.pending('charge', 'a')
+        expect(a.work).toEqual({ _tag: 'Charge', line: 'a' })
+        expect(String(a.idempotencyKey)).toBe('["Lines","rehearsal",["charge","a"],1]')
+        expect(yield* rehearsal.answer(a, 'charged a')).toBe('Delivered')
+        expect(yield* rehearsal.state).toEqual({ lines: ['b'] })
+        expect((yield* rehearsal.pending('charge', 'b')).incarnation).toBe(2)
+      }),
+    )))
 })

@@ -34,12 +34,14 @@ Cluster's says so.
 - **Idempotency key.** The entity's program and id, the operation's key and its incarnation, given to an idempotent
   operation, which passes it to the service it calls. A restarted operation gets the same one. Its *digest*, 43
   characters whatever the id's length, is given instead to a runner declared with `operation.digest`.
-- **Incarnation.** A counter stored with each key, which grows each time the key's work starts anew. An internal
-  message carries the incarnation of the work that sent it, and is dropped once the key's has moved on.
+- **Incarnation.** The number of a run of a key's work, drawn from one counter of the entity each time work starts
+  anew under any key, so it never goes back. An internal message carries the incarnation of the work that sent it,
+  and is dropped once the key's has moved on.
 - **Index.** A pure function from the projection to a scalar, named by the program, which a query filters and orders
   by. Its values are stored with the projection's row.
-- **Key.** A name the program declares, under which `durable` holds one piece of work. The keys are finite, and one
-  the program does not declare is a defect.
+- **Key.** A name the program declares, under which `durable` holds one piece of work, or one piece for each
+  *parameter* of a key declared with a schema for it. Two parameters are one when they encode alike. The names are
+  finite, and one the program does not declare is a defect.
 - **Machine.** The runtime's semantics as a pure state machine, in [`src/machine.ts`](../src/machine.ts): from an event
   to the next machine and the rows it writes. `rehearse` runs it, and the runtime interprets it.
 - **Mailbox.** The entity's stored queue of messages, in order. A message that finds it empty is received and handled

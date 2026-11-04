@@ -1,6 +1,7 @@
 # 0037. The machine checks the declared keys
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. The machine checks the parameter of a key that takes one too, since
+[decision 0132](../0132-a-key-may-take-a-parameter.md).
 
 ## Context
 

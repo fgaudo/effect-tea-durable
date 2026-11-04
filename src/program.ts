@@ -177,8 +177,20 @@ export type Update<State, Message, Sender, Reason> = (
  */
 export type IdempotencyKey = string & Brand.Brand<'IdempotencyKey'>
 
+/**
+ * The idempotency key of the work under `key`, as the machine writes a key: a name, or the canonical JSON of a name
+ * and a parameter, which the key holds as JSON and not as a string of it (decision 0132).
+ */
 export const idempotencyKey = (entity: Address, key: string, incarnation: number): IdempotencyKey =>
-  JSON.stringify([entity.name, entity.id, key, incarnation]) as IdempotencyKey
+  `[${JSON.stringify(entity.name)},${JSON.stringify(entity.id)},${
+    isParameterized(key) ? key : JSON.stringify(key)
+  },${incarnation}]` as IdempotencyKey
+
+/**
+ * Whether the machine's text of a key is a name with a parameter, `["charge","line-7"]`. A declared name never
+ * starts with `[`, which `checkProgram` refuses, so a name is never read as one (decision 0132).
+ */
+export const isParameterized = (key: string): boolean => key.startsWith('[')
 
 /**
  * The digest of an idempotency key, for a service that caps a key's length: the SHA-256 of its UTF-8 bytes, in
@@ -301,10 +313,28 @@ export type Durable<Operation, Message> = Operation | Timer<Message>
 
 /**
  * The work a state holds, by key. A program's keys are declared, so a state holds work under those and no
- * others (decision 0033).
+ * others (decision 0033). Under a key with a parameter, the work is a piece for each parameter, as pairs: two
+ * parameters are the same when they encode alike, which a map does not compare by (decision 0132). A key whose
+ * value is `undefined` holds no work, as a key left out does.
  */
-export type Work<Key extends string, Operation, Message> = {
-  readonly [K in Key]?: Durable<Operation, Message>
+export type Work<Key extends string, Parameter, Operation, Message> = {
+  readonly [K in Key]?:
+    | (K extends keyof Parameter ? ReadonlyArray<readonly [Parameter[K], Durable<Operation, Message>]>
+      : Durable<Operation, Message>)
+    | undefined
+}
+
+/** The work under a key as `durable` may return it: one piece, or a piece for each parameter. */
+export type Returned<Operation, Message> =
+  | Durable<Operation, Message>
+  | ReadonlyArray<readonly [unknown, Durable<Operation, Message>]>
+
+/**
+ * How a program declares its keys: for each name, the schema of its parameter, or null for a key without one
+ * (decision 0132).
+ */
+export type Keys<Key extends string, Parameter> = {
+  readonly [K in Key]: K extends keyof Parameter ? Schema.Codec<Parameter[K], Json> : null
 }
 
 export const noWork: Readonly<Record<string, never>> = Object.freeze({})
@@ -316,8 +346,10 @@ export type Types = Readonly<{
   internal: unknown
   /** The operations a state may hold, as data: a union tagged by `_tag`, with its schema. */
   operation: Readonly<{ _tag: string }>
-  /** The keys the work under way is held under: a program declares them all (decision 0033). */
+  /** The names of the keys the work under way is held under: a program declares them all (decision 0033). */
   key: string
+  /** The parameter of each key that takes one, by its name (decision 0132). */
+  parameter: object
   rejection: unknown
   sender: unknown
   projection: unknown
@@ -364,10 +396,11 @@ export interface Program<T extends Types> {
   /** What other entities read in `Address.name`, and the runtime stores the entity under. */
   readonly name: string
   /**
-   * Every key the program's work is held under. The machine checks `durable` against them (decision 0037), and
-   * a deploy that renames one is a change of the type (decision 0033).
+   * Every key the program's work is held under, with the schema of its parameter, or null for a key without one.
+   * The machine checks `durable` against them (decisions 0037, 0132), and a deploy that renames one is a change of
+   * the type (decision 0033).
    */
-  readonly keys: ReadonlyArray<T['key']>
+  readonly keys: Keys<T['key'], T['parameter']>
   readonly schemas: Schemas<
     T['state'],
     T['flags'],
@@ -381,7 +414,9 @@ export interface Program<T extends Types> {
   readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state']
   readonly update: Update<T['state'], T['inbound'] | T['internal'], T['sender'], T['rejection']>
   /** The work each state holds, which the machine reads by key, under the keys the program declares. */
-  readonly durable: (state: T['state']) => Readonly<Record<string, Durable<T['operation'], T['internal']>>>
+  readonly durable: (
+    state: T['state'],
+  ) => Readonly<Record<string, Returned<T['operation'], T['internal']> | undefined>>
   readonly operations: Runners<T>
   readonly project: (state: T['state']) => T['projection']
   /**
@@ -422,20 +457,19 @@ export const migrationOf = <T extends Types>(
 const isWord = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
 
 /**
- * Refuses a program that cannot run as it is written: an empty name, a key declared twice, an index whose name is
- * not a word. It is pure, and called where a program enters, before anything is stored or run: `deploy`, which a
- * fix is too, and `rehearse`. A program is never mutated, so the check holds for as long as the program runs
- * (decisions 0052, 0054). A missing runner is the machine's to find, where an operation is held.
+ * Refuses a program that cannot run as it is written: an empty name, a key whose name starts with `[`, which the
+ * machine would read as a key with a parameter (decision 0132), an index whose name is not a word. It is pure, and
+ * called where a program enters, before anything is stored or run: `deploy`, which a fix is too, and `rehearse`. A
+ * program is never mutated, so the check holds for as long as the program runs (decisions 0052, 0054). A missing
+ * runner is the machine's to find, where an operation is held.
  */
 export const checkProgram = <T extends Types>(program: Program<T>): void => {
   const refuse = (reason: string): never => {
     throw new InvariantDefect({ reason: `the program '${program.name}' ${reason}` })
   }
   if (program.name.length === 0) refuse('has an empty name')
-  const keys = new Set<string>()
-  for (const key of program.keys) {
-    if (keys.has(key)) refuse(`declares the key '${key}' twice`)
-    keys.add(key)
+  for (const key of Object.keys(program.keys)) {
+    if (isParameterized(key)) refuse(`declares the key '${key}', whose name starts with '['`)
   }
   for (const index of Object.keys(program.indexes)) {
     if (!isWord(index)) refuse(`has an index '${index}' whose name is not a word`)
@@ -485,6 +519,12 @@ type ServicesOf<Operations> = Effect.Services<
   Operations[keyof Operations] extends Readonly<{ run: (...args: never[]) => infer Running }> ? Running : never
 >
 
+/** The parameter of each key a declaration gives a schema, by its name. */
+type ParametersOf<Keys> = {
+  readonly [K in keyof Keys as Keys[K] extends null ? never : K]: Keys[K] extends Schema.Codec<infer P, Json> ? P
+    : never
+}
+
 /** The types `program` reads off a declaration, which an object literal typed `Program<T>` writes out by hand. */
 type Inferred<
   State extends object,
@@ -495,7 +535,7 @@ type Inferred<
   Rejection,
   Sender,
   Projection,
-  Keys extends ReadonlyArray<string>,
+  Keys,
   Operations,
   Indexes,
 > = Readonly<{
@@ -504,7 +544,8 @@ type Inferred<
   inbound: Inbound
   internal: Internal
   operation: Operation
-  key: Keys[number]
+  key: Extract<keyof Keys, string>
+  parameter: ParametersOf<Keys>
   rejection: Rejection
   sender: Sender
   projection: Projection
@@ -532,17 +573,20 @@ export const program = <
   Projection,
 >(schemas: Schemas<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection>) =>
 <
-  const Keys extends ReadonlyArray<string>,
+  const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>>,
   Operations extends Declared<Operation, Internal>,
   Indexes extends Readonly<Record<string, (projection: Projection) => Scalar>>,
 >(
   declaration: Readonly<{
     name: string
-    /** Every key `durable` holds work under: work under any other key is a type error (decision 0033). */
+    /**
+     * Every key `durable` holds work under, with the schema of its parameter or null: work under any other key is a
+     * type error (decisions 0033, 0132).
+     */
     keys: Keys
     init: (flags: Flags, at: DateTime.Utc) => State
     update: Update<State, Inbound | Internal, Sender, Rejection>
-    durable: (state: State) => Work<Keys[number], Operation, Internal>
+    durable: (state: State) => Work<Extract<keyof Keys, string>, ParametersOf<Keys>, Operation, Internal>
     operations: Operations
     project: (state: State) => Projection
     indexes: Indexes
@@ -555,6 +599,8 @@ export const program = <
   type Of = Inferred<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, Indexes>
   return {
     ...declaration,
+    // Each key's schema gives the parameter's type, which `Keys` writes out of it.
+    keys: declaration.keys as unknown as Program<Of>['keys'],
     schemas,
     // Work held under the declared keys is the record by key the machine reads.
     durable: declaration.durable as Program<Of>['durable'],

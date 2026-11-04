@@ -1,6 +1,7 @@
 # 0033. A program declares its keys
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. A key may take a parameter, declared with its schema, and the keys are a record
+of names, since [decision 0132](../0132-a-key-may-take-a-parameter.md).
 
 ## Context
 

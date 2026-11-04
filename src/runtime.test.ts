@@ -104,6 +104,7 @@ type T = {
   internal: Internal
   operation: Operation
   key: Key
+  parameter: {}
   rejection: 'Refused'
   sender: Sender
   projection: number
@@ -118,7 +119,7 @@ const acts = (key: Key, idempotencyKey: IdempotencyKey | null) =>
 
 const program: Program<T> = {
   name: 'Toy',
-  keys,
+  keys: { a: null, b: null, c: null, t: null },
   schemas: {
     state: State,
     flags: Schema.Struct({ at: Schema.DateTimeUtcFromMillis }),
@@ -2270,6 +2271,8 @@ describe('the crash table', () => {
         entity: null,
         suspension: null,
         keys: [],
+        gone: [],
+        incarnations: 0,
         handled: 0,
         queued: [{
           _tag: 'Inbound',
@@ -3124,6 +3127,7 @@ describe('a schema that changes', () => {
     internal: Internal
     operation: Operation2
     key: Key
+    parameter: {}
     rejection: Rejection2
     sender: Sender2
     projection: Projection2
@@ -3133,7 +3137,7 @@ describe('a schema that changes', () => {
 
   const next: Program<T2> = {
     name: 'Toy',
-    keys,
+    keys: { a: null, b: null, c: null, t: null },
     schemas: {
       ...program.schemas,
       state: State2,
@@ -3681,7 +3685,7 @@ describe('what the runtime cannot finish', () => {
             .toEqual({ _tag: 'Suspended' })
         }))
       const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
-      expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: 'c', incarnation: 1 })
+      expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: 'c', incarnation: 3 })
     })))
 
   test('a program that cannot run as written is refused where it enters, before anything is stored', () =>
@@ -3706,9 +3710,9 @@ describe('what the runtime cannot finish', () => {
           // A fix is a deploy, checked as any (decision 0064): the entities go on with the program deployed.
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
-          const twice = { ...program, keys: [...program.keys, 'a'] } as Program<T>
-          expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy(twice), layer))))
-            .toBe("the program 'Toy' declares the key 'a' twice")
+          const bracketed = { ...program, keys: { ...program.keys, '[a]': null } } as Program<T>
+          expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy(bracketed), layer))))
+            .toBe("the program 'Toy' declares the key '[a]', whose name starts with '['")
           expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester })).toEqual({ _tag: 'Accepted' })
           yield* runtime.settled
         }))

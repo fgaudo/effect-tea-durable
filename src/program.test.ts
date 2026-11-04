@@ -73,7 +73,7 @@ test('a state is an object: a program whose state is a string does not compile',
 test('work under a key the program does not declare does not compile where the state holds that key alone', () => {
   const pieces = {
     name: 'Charges',
-    keys: ['charge'],
+    keys: { charge: null },
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
     operations: { Charge: operation(() => Effect.succeed('Charged' as const)) },
@@ -96,7 +96,7 @@ test('work under a key the program does not declare does not compile where the s
 test('a runner that answers a message the program does not have does not compile', () => {
   const pieces = {
     name: 'Charges',
-    keys: ['charge'],
+    keys: { charge: null },
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
     durable: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
@@ -126,7 +126,7 @@ test('a droppable runner whose services hold `Entities` does not compile (decisi
   )
   const pieces = {
     name: 'Charges',
-    keys: ['charge'],
+    keys: { charge: null },
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
     durable: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
@@ -164,7 +164,7 @@ test('the schemas applied first type the pieces, where one call would widen a ta
   const State = Schema.Union([Schema.TaggedStruct('Open', {}), Schema.TaggedStruct('Closed', {})])
   const pieces = {
     name: 'Doors',
-    keys: [],
+    keys: {},
     update: () => (state: typeof State.Type) => state,
     durable: () => noWork,
     operations: {},
@@ -187,7 +187,7 @@ test('the schemas applied first type the pieces, where one call would widen a ta
 test('a rehearsal and a query name only the keys and the indexes the program declares (decisions 0032, 0033)', () => {
   const pieces = {
     name: 'Charges',
-    keys: ['charge'],
+    keys: { charge: null },
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
     durable: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
@@ -210,6 +210,58 @@ test('a rehearsal and a query name only the keys and the indexes the program dec
     indexes: { charging: () => ({ charging: true }) },
   })
   expect([pending, found, misnamed, unstored]).toHaveLength(4)
+})
+
+// A key with a parameter: `durable` returns a list of pairs under it and one piece under a key without, the
+// parameter is the schema's type, and `pending` takes it for such a key alone (decision 0132).
+test('the work under a key with a parameter is a list of pairs typed by its schema, and pending takes the parameter', () => {
+  const pieces = {
+    name: 'Lines',
+    keys: { fee: null, charge: Schema.String },
+    init: () => ({ lines: ['a'] }),
+    update: () => () => ({ lines: [] }),
+    operations: { Charge: operation(() => Effect.succeed('Charged' as const)) },
+    project: () => null,
+    indexes: {},
+  } as const
+  const declare = program({ ...schemas, state: Schema.Struct({ lines: Schema.Array(Schema.String) }) })
+  const lines = declare({
+    ...pieces,
+    durable: ({ lines }) => ({ fee: charge, charge: lines.map((line) => [line, charge] as const) }),
+  })
+  const piece = declare({
+    ...pieces,
+    // @ts-expect-error one piece under a key that takes a parameter
+    durable: () => ({ charge }),
+  })
+  const list = declare({
+    ...pieces,
+    // @ts-expect-error a list under a key that takes no parameter
+    durable: () => ({ fee: [['a', charge]] }),
+  })
+  const mistyped = declare({
+    ...pieces,
+    // @ts-expect-error a parameter of the key's schema, a string, not a number
+    durable: () => ({ charge: [[7, charge]] }),
+  })
+  const undeclared = declare({
+    ...pieces,
+    // @ts-expect-error a parameter's schema encodes to what JSON holds, as every schema of a program does
+    keys: { fee: null, charge: Schema.DateTimeUtc },
+    durable: () => noWork,
+  })
+  type Of = typeof lines extends Program<infer T> ? T : never
+  const pending = (rehearsal: Rehearsal<Of>) => [
+    rehearsal.pending('charge', 'a'),
+    rehearsal.pending('fee'),
+    // @ts-expect-error a key with a parameter is found with it
+    rehearsal.pending('charge'),
+    // @ts-expect-error a key without a parameter is found by its name alone
+    rehearsal.pending('fee', 'a'),
+    // @ts-expect-error the parameter is the schema's type
+    rehearsal.pending('charge', 7),
+  ]
+  expect([lines, piece, list, mistyped, undeclared, pending]).toHaveLength(6)
 })
 
 // The digests were computed apart from this code, with Python's `hashlib` and `base64.urlsafe_b64encode`: a

@@ -508,6 +508,7 @@ describe('migrationViolations (decision 0126)', () => {
     internal: string
     operation: Readonly<{ _tag: 'Ask' }>
     key: 'ask'
+    parameter: {}
     rejection: never
     sender: null
     projection: string
@@ -523,7 +524,7 @@ describe('migrationViolations (decision 0126)', () => {
 
   const counter = (migrations: ReadonlyArray<Migration>): Program<T> => ({
     name: 'Counter',
-    keys: ['ask'],
+    keys: { ask: null },
     schemas: {
       state: Schema.Struct({ count: Schema.Number, label: Schema.String }),
       flags: Schema.Null,

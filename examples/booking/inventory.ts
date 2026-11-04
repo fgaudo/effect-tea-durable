@@ -65,7 +65,7 @@ export const inventory = program({
   name: 'Inventory',
 
   // The inventory holds no work: it has no key.
-  keys: [],
+  keys: {},
 
   init: ({ capacity }) => ({ open: true, capacity, held: {}, sold: {} }),
 

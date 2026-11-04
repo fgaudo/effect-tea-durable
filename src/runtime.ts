@@ -871,7 +871,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       if (stored.mailbox.length > 0) return false
       // What the state holds is what the next activation starts, so only timers may be left: an operation with
       // nothing running for it would come back as its `unknown`, and an at-most-once one would lose its act.
-      return Object.values(stored.keys).every((key) => key.work === undefined || isTimer(key.work))
+      return Object.values(stored.keys).every((key) => isTimer(key.work))
     }
 
     /**
@@ -885,7 +885,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       // A suspended entity's timers are not armed, and nothing of it fires (decision 0029).
       if (stored.suspension !== null) return true
       return Object.values(stored.keys).every((key) =>
-        key.work === undefined || !isTimer(key.work) || DateTime.toEpochMillis(key.work.at) > now
+        !isTimer(key.work) || DateTime.toEpochMillis(key.work.at) > now
       )
     }
 

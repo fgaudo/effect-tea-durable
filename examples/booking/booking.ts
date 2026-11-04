@@ -137,7 +137,7 @@ export const booking = program({
 })({
   name: 'Booking',
 
-  keys: ['hold', 'deadline', 'confirm', 'release'],
+  keys: { hold: null, deadline: null, confirm: null, release: null },
 
   // The deadline counts from the booking, not from the hold: a slow inventory shortens the customer's wait.
   init: ({ customer, event, seats }, at) => ({

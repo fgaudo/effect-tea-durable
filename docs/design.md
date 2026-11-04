@@ -28,7 +28,7 @@ tested by calling pure functions, crashes included.
 | ------------ | ----------------------------------------------------------------------------------------- |
 | `schemas`    | how the state, flags, messages, operations, reasons and projection leave the process      |
 | `name`       | what the runtime stores the entity under, and what other entities see it as               |
-| `keys`       | every key the work under way is held under                                                |
+| `keys`       | every key the work under way is held under, with the schema of its parameter or `null`    |
 | `init`       | the first state, from the flags the entity is created with and the time of its creation   |
 | `update`     | `(message, meta) => (state) =>` the next state, a rejection, or a defect                  |
 | `durable`    | the work under way in each state, by key: operations, as data, and timers                 |
@@ -63,9 +63,10 @@ read, and an operation changed in place is never seen to change — and, as for 
 ([decision 0052](decisions/archive/0052-what-crosses-the-library-is-never-mutated.md)).
 
 A program is checked where it enters — `deploy`, which a fix is too, and `rehearse` — before anything is stored
-or run: one whose name is empty, which declares a key twice, or one of whose indexes is not a word, is
-refused. The check is pure and made once, since a program is never mutated
-([decision 0054](decisions/archive/0054-a-program-is-checked-where-it-enters.md)).
+or run: one whose name is empty, which declares a key whose name starts with `[`, or one of whose indexes is
+not a word, is refused. The check is pure and made once, since a program is never mutated
+([decision 0054](decisions/archive/0054-a-program-is-checked-where-it-enters.md),
+[decision 0132](decisions/0132-a-key-may-take-a-parameter.md)).
 
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
 
@@ -120,9 +121,10 @@ is given to its creator, and nothing is stored, so a retry after a fix creates t
 
 ## Durable work
 
-`durable(state)` returns the work of the state, under the keys the program declares and no others: the space of
-keys is finite, and a key a program computes is not one of them
-([decision 0033](decisions/archive/0033-a-program-declares-its-keys.md)). The types catch a key never declared; a
+`durable(state)` returns the work of the state, under the keys the program declares and no others: the names of
+the keys are finite, and a name a program computes is not one of them
+([decision 0033](decisions/archive/0033-a-program-declares-its-keys.md)). A key may take a parameter, which is data,
+as the subsections below say. The types catch a key never declared; a
 declared key beside a misspelt one they accept, so the machine checks what `durable` returns against `keys`
 wherever it reads it, and a key the program does not declare is a defect
 ([decision 0037](decisions/archive/0037-the-machine-checks-the-declared-keys.md)). So is an operation the program gives
@@ -196,12 +198,28 @@ changes or drops an operation under way, delivers it otherwise, or bears another
 ([decision 0020](decisions/archive/0020-a-new-program-is-checked-against-the-stored-work.md),
 [decision 0022](decisions/archive/0022-a-new-program-keeps-what-work-started-with.md)).
 
+### Keys with a parameter
+
+A program declares its keys as a record: each name maps to the schema of its parameter, or to `null` for a key
+without one, as in `keys: { fee: null, charge: Schema.String }`. Under a key with a parameter, `durable` returns a
+list of pairs, each a parameter and the piece of work under it. An order holds a charge for each of its lines so,
+in the step that changes the order ([decision 0132](decisions/0132-a-key-may-take-a-parameter.md)).
+
+The machine reads such a key as the canonical JSON of its name and its encoded parameter, `["charge","line-7"]`,
+and a key without a parameter as its name. So two parameters that encode alike are one key, as two pieces of work
+that encode alike are one piece of work. A parameter its schema refuses is a defect, and so are two pieces of work
+whose parameters encode alike. A name that starts with `[` is refused where the program enters, since the machine
+would read it as a key with a parameter. The idempotency key holds the key's JSON in place:
+`["Order","o-1",["charge","line-7"],4]`.
+
 ### Incarnations
 
-Each key has an incarnation, a counter stored with the state. It grows each time the key comes back after
-leaving, stays after its work delivered, changes kind, or keeps a timer that changed. An internal message
-carries the incarnation of the work that sent it, and the runtime drops it when the key's incarnation has moved
-on.
+Each run of a key's work has an incarnation, drawn from one counter of the entity, stored with its row. Work that
+starts anew under any key draws the next one: work under a key that comes back after leaving, that comes back after
+its work delivered, that changes kind, or a timer that changed. An internal message carries the incarnation of the
+work that sent it, and the runtime drops it when the key's incarnation has moved on. The counter never goes back,
+so a key whose work is gone has no row: when it comes back, it draws an incarnation no run of it had
+([decision 0132](decisions/0132-a-key-may-take-a-parameter.md)).
 
 Without it, the second attempt of a payment could receive the late answer of the first. The runtime makes this
 impossible, so that no program has to remember attempt numbers.
@@ -233,7 +251,8 @@ the booking is cancelled or expires.
 After each message the runtime stores, in one transaction:
 
 - the new state, when the step changed it;
-- the incarnations of the keys, and the work the state holds, with how each operation is delivered;
+- the work the state holds, by key, with its incarnation and how each operation is delivered, and the last
+  incarnation the entity drew;
 - the message, marked as handled, with its reply for an inbound one;
 - and, when the state changed, the row a query reads: the projection, and the value of each index on it
   ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md));
@@ -509,7 +528,8 @@ dies:
 
 - `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity;
 - `pending(key)` finds the work under way under one of the program's keys, with its idempotency key and its
-  value, which a test asserts as it asserts a command in effect-tea;
+  value, which a test asserts as it asserts a command in effect-tea. A key with a parameter takes it too:
+  `pending('charge', 'line-7')`;
 - `answer(pending, message)` completes an operation, and says whether the message was delivered or dropped. It
   fails the test when the step that handles the message returns the same operation under its key, since that
   operation would run again at once, turn after turn, with no pause
@@ -603,6 +623,7 @@ that what an event writes, applied to the rows before it, gives the rows after i
 | a model, with the messages the view sends        | a projection, with the actions it allows                             | a caller is remote: it receives data, never functions                    |
 | a defect ends the run                            | a defect suspends the entity                                         | one entity's bug must not stop the others                                |
 | one program, a tree of children                  | many entities, by id; children inside an entity are an open question | an entity is the unit of storage and of concurrency                      |
+| the ids of children, compared with `Equal`       | the parameters of a key, compared by their canonical JSON            | the machine compares work by what is stored, and `Equal` is not stored   |
 | no persistence                                   | the state after each message                                         | the state is the data                                                    |
 
 ## Where it runs

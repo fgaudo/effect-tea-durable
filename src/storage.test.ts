@@ -21,6 +21,7 @@ type T = {
   internal: string
   operation: Readonly<{ _tag: 'Ask' }>
   key: 'ask'
+  parameter: {}
   rejection: never
   sender: null
   projection: string
@@ -30,7 +31,7 @@ type T = {
 
 const named = (name: string): Program<T> => ({
   name,
-  keys: ['ask'],
+  keys: { ask: null },
   schemas: {
     state: Schema.Struct({ last: Schema.String }),
     flags: Schema.Null,
@@ -58,6 +59,8 @@ const written = (rows: Partial<Machine.Written>): Machine.Written => ({
   entity: null,
   suspension: null,
   keys: [],
+  gone: [],
+  incarnations: 0,
   handled: 0,
   queued: [],
   replies: [],
@@ -143,7 +146,7 @@ test('the work that ended takes the replies to its requests with it, and no othe
       const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
       yield* storage(asker, sql).write(
         'a',
-        created({ keys: [{ key: 'ask', incarnation: 1, work, delivery: 'Idempotent', due: null }] }),
+        created({ keys: [{ key: 'ask', incarnation: 1, work, delivery: 'Idempotent', due: null }], incarnations: 1 }),
         0,
       )
       const store = storage(receiver, sql)
@@ -154,14 +157,15 @@ test('the work that ended takes the replies to its requests with it, and no othe
       expect(yield* store.reply('r', asked('first', 1), 0)).toEqual({ _tag: 'Accepted' })
       yield* storage(asker, sql).write(
         'a',
-        written({
-          keys: [{ key: 'ask', incarnation: 1, work: null, delivery: null, due: null }],
-          ended: [{ key: 'ask', incarnation: 1 }],
-        }),
+        written({ gone: ['ask'], incarnations: 1, ended: [{ key: 'ask', incarnation: 1 }] }),
         0,
       )
       expect(yield* store.reply('r', asked('first', 1), 0)).toBeNull()
       expect(yield* store.reply('s', asked('other', 1), 0)).toBeNull()
+      // A key whose work is gone has no row, and the entity keeps the last incarnation it drew (decision 0132).
+      const loaded = yield* storage(asker, sql).load('a')
+      expect(loaded?.keys).toEqual({})
+      expect(loaded?.incarnations).toBe(1)
     })))
 
 // A request is found by its text, and a caller's by its sender as a version before stored it (decision 0065).
@@ -352,36 +356,8 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           }`,
           store.reply('r', caller, 0),
         ],
-        [
-          sql`INSERT INTO entity_keys ${
-            sql.insert({
-              name: 'Receiver',
-              id: 'r',
-              key: 'ask',
-              incarnation: 1,
-              version: 1,
-              work: null,
-              delivery: 'Twice',
-            })
-          }`,
-          store.load('r'),
-        ],
-        // The columns that go together: a key with no work has no delivery, an inbound message has no key, an
-        // internal one no request, and only a rejection a reason.
-        [
-          sql`INSERT INTO entity_keys ${
-            sql.insert({
-              name: 'Receiver',
-              id: 'r',
-              key: 'ask',
-              incarnation: 1,
-              version: 1,
-              work: null,
-              delivery: 'Idempotent',
-            })
-          }`,
-          store.load('r'),
-        ],
+        // The columns that go together: an inbound message has no key, an internal one no request, and only a
+        // rejection a reason.
         [
           sql`INSERT INTO entity_keys ${
             sql.insert({
@@ -431,12 +407,13 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               key: 'ask',
               incarnation: -1,
               version: 1,
-              work: null,
-              delivery: null,
+              work: '{"_tag":"Operation","operation":{"_tag":"Ask"}}',
+              delivery: 'Idempotent',
             })
           }`,
           store.load('r'),
         ],
+        [sql`UPDATE entities SET incarnations = -1 WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
         [
           sql`UPDATE mailbox SET seq = -5 WHERE name = 'Receiver' AND id = 'r'`,
           store.write('r', written({ queued: [inbound('two')] }), 0),
