@@ -602,6 +602,8 @@ test('a version reads through its migrations the work, the mailbox and the log a
         { message: null, projection: 'start (projection)' },
         { message: 'hello (inbound)', projection: 'hello (projection)' },
       ])
+      // A read gives the row through the projection's migrations, as a query does (decision 0121).
+      expect(yield* after.projected('r')).toBe('start (projection)')
     })))
 
 // A state is compared by its text and the version that wrote it: one text is another state at another version

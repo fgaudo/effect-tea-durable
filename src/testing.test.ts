@@ -553,6 +553,11 @@ describe('migrationViolations (decision 0126)', () => {
     expect(migrationViolations(counter(migrations), cases)).toEqual([])
   })
 
+  test('a case is compared by its content, whatever the order of its keys', () => {
+    const reordered: MigrationCase = { from: 2, of: 'state', written: { count: 2 }, read: { label: 'none', count: 2 } }
+    expect(migrationViolations(counter(migrations), [cases[0]!, reordered])).toEqual([])
+  })
+
   test('a migration changed since its case was recorded is named, with what it reads now', () => {
     const changed = [{ state: (json: Json) => ({ count: (json as Readonly<{ n: number }>).n * 10 }) }, migrations[1]!]
     expect(migrationViolations(counter(changed), cases)).toEqual([
@@ -567,8 +572,10 @@ describe('migrationViolations (decision 0126)', () => {
 
   test('a migration of a kind no case records is unrecorded, and a case from no migration is unknown', () => {
     const unknown: MigrationCase = { from: 3, of: 'state', written: {}, read: {} }
-    expect(migrationViolations(counter(migrations), [cases[1]!, unknown])).toEqual([
+    const none: MigrationCase = { from: 0, of: 'state', written: {}, read: {} }
+    expect(migrationViolations(counter(migrations), [cases[1]!, unknown, none])).toEqual([
       { _tag: 'Unknown', example: unknown },
+      { _tag: 'Unknown', example: none },
       { _tag: 'Unrecorded', from: 1, of: 'state' },
     ])
   })

@@ -5,6 +5,8 @@
 take. Changes how the wait of [decision 0029](archive/0029-an-idle-entity-is-unloaded.md) runs out, and not when.
 The seeds its premises name fail no more under the scheduler of
 [decision 0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md), which names the seeds that fail there.
+Those seeds fail no more once [decision 0134](0134-an-entitys-loop-yields-between-two-steps.md) makes the loop yield,
+and the test of this note pins the seed `bun run test:explore` found in their place.
 
 ## Context
 

@@ -1000,6 +1000,16 @@ describe('the checks of a step', () => {
     expect(late.machine.stored.mailbox).toEqual([])
   })
 
+  // Run twice, it has acted on nothing twice, so a crash runs it again as an at-least-once one (decision 0128).
+  test('a crash runs a droppable operation again, in the same incarnation', () => {
+    const machine = droppable((message) => message, () => ({ charge: 'operation' }))
+    const restarted = stepped(machine, { _tag: 'Restart' })
+    expect(restarted.outputs).toContainEqual(
+      expect.objectContaining({ _tag: 'Started', key: { name: 'charge' }, incarnation: 1 }),
+    )
+    expect(restarted.machine.stored.mailbox).toEqual([])
+  })
+
   test('a step may change a droppable operation, which starts again as new work', () => {
     const machine = droppable(
       (message) => message,
@@ -2285,6 +2295,7 @@ describe('keys with a parameter', () => {
       [() => ({ charge: work }), "the state holds no list of work under 'charge', which takes a parameter"],
       [() => ({ fee: [['a', work]] }), "the state holds what is no work under 'fee'"],
       [() => ({ charge: [['a']] }), "the state holds what is no pair of a parameter and its work under 'charge'"],
+      [() => ({ charge: [['a', work, work]] }), "the state holds what is no pair of a parameter and its work under 'charge'"],
     ]
     for (const [durable, reason] of broken) {
       const program = { ...lines, durable: durable as Program<L>['durable'] }

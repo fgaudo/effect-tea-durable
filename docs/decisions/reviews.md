@@ -327,3 +327,45 @@ written for the code the review reads, and are not kept.
   fiber which gives the count back runs, in the process's scope; 0114's that no operator stands in the line without
   an event, an uninterruptible step no point of the scheduler falls in; 0117's that a run beginning after another's
   in one task is on that fiber's stack.
+
+## 2026-11-04: 0120 to 0132, 0134 and 0136; 0133 and 0135, proposed for their step, are left to it
+
+- Fixed: the status lines of [0054](archive/0054-a-program-is-checked-where-it-enters.md),
+  [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) and
+  [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) did not say that
+  [0136](0136-a-key-is-a-name-and-a-parameter-as-data.md) took out the check of a name that starts with `[`, which
+  [0132](0132-a-key-may-take-a-parameter.md) had put there, nor that
+  [0134](0134-an-entitys-loop-yields-between-two-steps.md) moved the seeds the two notes name. The index lists
+  those changes too.
+- Documented at 4.1.2, as the notes say: `Scope.fork`'s strategy that defaults to sequential, and `Scope.close`'s
+  finalizers run uninterruptibly (0120); `Base64Url.encode`, unpadded and `@stability stable` (0123); `Fiber.interrupt`
+  completing once the fiber has (0128); `Effect.retry` giving the last failure once its policy ends (0130);
+  `MaxOpsBeforeYield` of 2048 (0134). `Equal.equals` compares plain objects by their keys recursively (0126), and a
+  run at the pinned version finds two objects equal whatever the order of their keys.
+- Then every rule of these notes that the code keeps was taken out, one at a time, with `scripts/mutate.ts` under
+  `SCHEDULES=all`: of 62, 10 survived, and none was uncertain. One, that a crash runs a droppable operation again
+  (0128), was killed by a type error of its own, which tells nothing. Written again so that it compiles, it
+  survived too.
+- Tested now, which no test was: `read` gives the row through the projection's migrations (0121); a case is compared
+  by its content, whatever the order of its keys, and a case from version 0 is `Unknown` (0126); a world fails a run
+  of a droppable operation that sends (0128), as the runtime does; an entry of three items under a key with a
+  parameter is no pair (0132); a crash runs a droppable operation again, in the same incarnation (0128). Each of
+  the six mutations those tests are for now fails a test.
+- Three change nothing a test can see: a cause of `reindex` that is not the program's, since `shownOf` throws only
+  the program's defect (0122); and the parameter in the deletion of the replies of work that ended and in the check
+  of an asker (0136), since an entity draws each incarnation once, so the key's name and the incarnation already name
+  one run (0132).
+- Two are left, as rules no test reaches. A world that deletes a reply once the work that asked ends (0131), which
+  0131 says no run can ask for. And the loop's yield after a step that leaves a message in its mailbox and nothing in
+  its queue (0134): a mailbox holds more than one message the entity can handle only after an activation or a
+  resumption, and no test sets another entity waiting there.
+- Reasoned, and left so: 0123's that 43 characters fit the services a program calls, and that two keys never share
+  a digest; 0124's that every deployment has a boundary that authenticates; 0125's that a boundary knows how long its
+  protocol retries for, and that its clock agrees with the runtime's; 0126's that a migration is pure, and that its
+  cases stand for every row; 0127's that a source gives each item an id that stays, and that the boundary
+  acknowledges after `send`; 0128's that a runner declared droppable acts on nothing; 0129's that a runner reaches
+  `Entities` only through its services; 0130's that an operation returned the same on its completion is a mistake;
+  0136's that the order of a parameter's fields survives storage.
+- Read again, and left so: 0128 says that an operation a new program delivers otherwise keeps its idempotency key.
+  It keeps its incarnation, and a runner given the digest is given another form of the same key. No harm follows,
+  since the incarnation stopped has acted on nothing.

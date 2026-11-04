@@ -152,7 +152,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | --- | --- | --- |
 | [0052](archive/0052-what-crosses-the-library-is-never-mutated.md) | What crosses the library is never mutated |  |
 | [0053](archive/0053-what-a-handle-is-given-is-checked.md) | What a handle is given is checked |  |
-| [0054](archive/0054-a-program-is-checked-where-it-enters.md) | A program is checked where it enters | [0064](archive/0064-the-program-is-not-the-machines-state.md), [0132](0132-a-key-may-take-a-parameter.md) |
+| [0054](archive/0054-a-program-is-checked-where-it-enters.md) | A program is checked where it enters | [0064](archive/0064-the-program-is-not-the-machines-state.md), [0132](0132-a-key-may-take-a-parameter.md), [0136](0136-a-key-is-a-name-and-a-parameter-as-data.md) |
 
 ## The runtime
 
@@ -179,8 +179,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0111](archive/0111-an-entity-s-wait-times-out-its-take-alone.md) | An entity's wait times out its take alone | [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) |
 | [0112](archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) | A fork from a region that cannot be interrupted says it is interruptible |  |
 | [0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md) | The scheduler of the tests preempts from a run's third step, where Effect first can | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) |
-| [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) | An entity's wait ends with an item of its queue, and nothing races its take | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) |
-| [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) | A fiber on another's stack yields with no task ready |  |
+| [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) | An entity's wait ends with an item of its queue, and nothing races its take | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md), [0134](0134-an-entitys-loop-yields-between-two-steps.md) |
+| [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) | A fiber on another's stack yields with no task ready | [0134](0134-an-entitys-loop-yields-between-two-steps.md) |
 | [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md) | A planned stop drains the at-most-once operations, and stops the rest at once | [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) |
 | [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) | The runtime closes a sequential scope of its own, whatever its caller's |  |
 | [0134](0134-an-entitys-loop-yields-between-two-steps.md) | An entity's loop yields after a step that leaves it more to do, so that a busy entity holds no other for more than a step |  |

@@ -351,6 +351,28 @@ describe('a world', () => {
     expect(reasonOf(exit)).toBe("the operation sent 'hold' to Inventory 'concert-1' twice")
   })
 
+  // A droppable operation interrupted between a request and its reply would leave the receiver acted on, so the
+  // runtime makes its send a defect, and the world fails the test (decision 0128).
+  test('fails a run of a droppable operation that sends', async () => {
+    const dropping = holdingBy(operation.droppable(({ event, seats }) =>
+      // The type refuses a droppable runner that sends (decision 0129), and the world is what a cast meets.
+      // @ts-expect-error a droppable operation sends to no entity
+      Effect.as(
+        send(inventory, event, { _tag: 'HoldRequested', seats }, 'hold'),
+        { _tag: 'SeatsHeld' } as const,
+      )
+    ))
+    const exit = await Effect.runPromiseExit(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        yield* world.create(inventory, 'concert-1', { capacity: 4 })
+        const held = yield* world.create(dropping, 'booking-1', flags)
+        yield* held.run(yield* held.pending('hold'))
+      }),
+    ))
+    expect(reasonOf(exit)).toBe("the droppable operation under 'hold' sent to Inventory 'concert-1'")
+  })
+
   // A creation is stored under its request, so a run after a crash is answered `Created` again (decision 0017).
   test('creates an entity from a run, and answers the run sent again after a crash as the first', () => {
     const creating = holdingBy(operation.atLeastOnce(({ event, seats }) =>
