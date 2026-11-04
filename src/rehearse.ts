@@ -42,7 +42,10 @@ export interface Rehearsal<T extends Types> {
   readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /** The work under way under `key`, one of the program's own (decision 0033). Fails the test when there is none. */
   readonly pending: (key: T['key']) => Effect.Effect<Pending<Durable<T['operation'], T['internal']>>>
-  /** Completes an operation with `message`. It is dropped when the operation's incarnation has moved on. */
+  /**
+   * Completes an operation with `message`. It is dropped when the operation's incarnation has moved on. It fails the
+   * test when the step that handles it returns the same operation under its key, which would run again at once.
+   */
   readonly answer: (pending: Pending, message: T['internal']) => Effect.Effect<'Delivered' | 'Dropped'>
   /** The time of a timer comes. */
   readonly fire: (pending: Pending) => Effect.Effect<'Delivered' | 'Dropped'>
@@ -66,7 +69,7 @@ const id = 'rehearsal'
 /**
  * Runs a scenario without storage, cluster or clock. Nothing happens by itself: the test answers operations,
  * fires timers and restarts the process. After each of them, the mailbox is handled to its end. It fails when a
- * defect suspends the entity.
+ * defect suspends the entity, and when an operation's completion returns the same operation.
  *
  * Time stands still at `start.at`, and moves to a timer's time when it fires later: a message is handled at the
  * latest time the scenario reached.
@@ -153,14 +156,21 @@ export const rehearse = <T extends Types, E>(
             })
         }),
       answer: (pending, message) =>
-        Effect.suspend(() =>
-          kindOf(pending) === 'Timer'
-            ? Effect.die(`the work under '${pending.key}' is a timer: it fires`)
-            : Effect.map(
-              apply({ _tag: 'Complete', key: pending.key, incarnation: pending.incarnation, message }),
-              outcome(pending),
-            )
-        ),
+        Effect.suspend(() => {
+          if (kindOf(pending) === 'Timer') return Effect.die(`the work under '${pending.key}' is a timer: it fires`)
+          const { key, incarnation } = pending
+          const before = machine.stored.keys[key]?.work
+          return Effect.flatMap(apply({ _tag: 'Complete', key, incarnation, message }), (outputs) => {
+            const delivered = outcome(pending)(outputs)
+            // The runtime cannot tell an operation that loops on its completion from a program that wants it, so the
+            // rehearsal fails (decision 0130).
+            const again = outputs.find((output) => output._tag === 'Started' && output.key === key)
+            return delivered === 'Delivered' && again?._tag === 'Started' && before !== undefined &&
+                Machine.isSame(deployed, key, before, again.operation)
+              ? Effect.die(`the operation under '${key}' came back the same on its completion, and runs again at once`)
+              : Effect.succeed(delivered)
+          })
+        }),
       fire: (pending) =>
         Effect.suspend(() => {
           const kind = kindOf(pending)

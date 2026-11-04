@@ -260,4 +260,43 @@ describe('a rehearsal', () => {
       }),
     ))
   })
+
+  // A retry belongs inside the runner, or behind a timer: one with no pause loops (decision 0130).
+  test('fails when a completion returns the same operation, which would run again at once', async () => {
+    const insistent: typeof order = {
+      ...order,
+      update: (message, meta) => (state) =>
+        message._tag === 'ChargeDeclined' && state._tag === 'Charging' ? state : order.update(message, meta)(state),
+    }
+    const exit = await Effect.runPromiseExit(rehearse(
+      insistent,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeDeclined' })
+      }),
+    ))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause))
+      .toBe("the operation under 'charge' came back the same on its completion, and runs again at once")
+  })
+
+  test('takes an operation its completion returns changed, as a new attempt', () =>
+    Effect.runPromise(rehearse(
+      {
+        ...order,
+        update: (message, meta) => (state) =>
+          message._tag === 'ChargeDeclined' && state._tag === 'Charging'
+            ? { ...state, payment: 'card-2' }
+            : order.update(message, meta)(state),
+      },
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        const first = yield* rehearsal.pending('charge')
+        expect(yield* rehearsal.answer(first, { _tag: 'ChargeDeclined' })).toBe('Delivered')
+        const second = yield* rehearsal.pending('charge')
+        expect(second.incarnation).toBe(first.incarnation + 1)
+        expect(second.work).toMatchObject({ payment: 'card-2' })
+      }),
+    )))
 })

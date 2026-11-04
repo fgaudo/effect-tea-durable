@@ -144,7 +144,12 @@ Two kinds of work exist.
   The program's `operations` give a runner for each tag, which turns it into an effect that ends with one of the
   internal messages its kind of operation answers
   ([decision 0034](decisions/archive/0034-an-operation-answers-the-messages-of-its-runner.md)). Expected failures become
-  messages, as in effect-tea's commands. The runner says what a crash does to it
+  messages, as in effect-tea's commands. A transient failure is retried inside the runner, with `Effect.retry` and
+  a schedule that ends, under the same idempotency key. Once the schedule ends, the runner delivers a message
+  that says so, and the state decides what follows: a new attempt behind a timer, with a count of attempts the
+  state holds, or an end. The runtime counts no retries, and never makes a defect of them
+  ([decision 0130](decisions/0130-a-runner-retries-and-the-state-counts-the-attempts.md)). The runner says what a
+  crash does to it
   ([decision 0011](decisions/archive/0011-an-operation-declares-what-a-crash-does.md)): an idempotent
   one receives an **idempotency key** (the entity's program and id, the operation's key and its incarnation:
   [decision 0015](decisions/archive/0015-a-request-belongs-to-its-sender.md)), and passes it on; one that may
@@ -505,7 +510,10 @@ dies:
 - `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity;
 - `pending(key)` finds the work under way under one of the program's keys, with its idempotency key and its
   value, which a test asserts as it asserts a command in effect-tea;
-- `answer(pending, message)` completes an operation, and says whether the message was delivered or dropped;
+- `answer(pending, message)` completes an operation, and says whether the message was delivered or dropped. It
+  fails the test when the step that handles the message returns the same operation under its key, since that
+  operation would run again at once, turn after turn, with no pause
+  ([decision 0130](decisions/0130-a-runner-retries-and-the-state-counts-the-attempts.md));
 - `fire(pending)` fires a timer;
 - `restart` drops everything that is not stored, and activates the entity again: an at-most-once operation
   under way delivers its `unknown` message. It rehearses a passivation too, which is the same thing — on an

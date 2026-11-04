@@ -57,10 +57,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   two processes share a store. On Effect Cluster a runner carries no version, and a shard may go from a new runner
   back to an old one ([Cluster](cluster.md#two-versions-at-once)): the choice is between deploys that replace every
   runner before a new one writes, forward compatibility for one version, or a change to Cluster.
-- **Failing operations.** A transient failure (a timeout) is retried inside the operation, or becomes a
-  message. After how many retries does it become a defect, if ever? And
-  should the runtime notice work that comes back at once, turn after turn: a timer kept at a time already past,
-  an operation kept on its own completion ([decision 0008](decisions/archive/0008-delivered-work-is-done.md))?
 - **Bookkeeping in transactions.** What another fiber reads changes in one synchronous step
   ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)): a rule kept by hand, which
   a step that waits cannot keep. The waker reads the entities held and then waits for a poke, and only the steps

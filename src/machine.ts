@@ -555,7 +555,7 @@ const kindOf = (work: unknown): Running['kind'] => (isTimer(work) ? 'Timer' : 'O
  * Whether `next` is the work `previous` was: the same JSON, as the program stores them. An operation is stored
  * by its schema, a timer by its time and its message. That JSON is what a crash compares (decisions 0018, 0058).
  */
-const isSame = <T extends Types>(
+export const isSame = <T extends Types>(
   program: Program<T>,
   key: string,
   previous: Durable<T['operation'], T['internal']>,
