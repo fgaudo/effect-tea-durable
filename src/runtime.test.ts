@@ -4150,8 +4150,9 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
 
 test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {
   // Decision 0116: an entity's wait ends with an item of its queue, and nothing races its take. A take raced against a
-  // timeout loses the event at seed 203, pinned, when the racing fiber is preempted at the third step after its
-  // resumption, and its caller waits for ever. The seed is that of the scheduler of decision 0117.
+  // timeout loses the event when the racing fiber is preempted at the third step after its resumption, and its caller
+  // waits for ever. Under the yields of decision 0134, no seed of the first 2,000 reaches that loss. `bun run
+  // test:explore` found seed 286016936, which reaches it and is pinned.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -4172,7 +4173,7 @@ test('a message that arrives as the wait of its entity runs out is handled, unde
           yield* runtime.settled
           return reply
         }))
-    }), { _tag: 'Accepted' }, { open: false, pinned: [203] })
+    }), { _tag: 'Accepted' }, { open: false, pinned: [286016936] })
 }, 60_000)
 
 test('settled never returns between a crash and the activation its due timer brings, under prioritized schedules', () => {
@@ -4180,7 +4181,7 @@ test('settled never returns between a crash and the activation its due timer bri
   // crash makes its entity leave without counting it as unloading, so it leaves and pokes the waker in one step. A
   // `settled` that looked between two steps would find the entity neither held nor known to the waker, with its timer
   // due. The message's commit waits at a gate while the timer comes due, then dies once the window is open. A leave
-  // split in two steps returns early at 11 seeds of 2,000, the first 172, pinned, under the scheduler of decision 0117.
+  // split in two steps returns early at 18 seeds of 2,000, the first 39, pinned, under the yields of decision 0134.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -4218,7 +4219,7 @@ test('settled never returns between a crash and the activation its due timer bri
           yield* runtime.settled
           return { early, restarted }
         }))
-    }), { early: false, restarted: true }, { open: false, pinned: [172] })
+    }), { early: false, restarted: true }, { open: false, pinned: [39] })
 }, 60_000)
 
 test('settled never returns while the waker rests from a reading another entity left during, under bounded schedules', () => {
