@@ -53,6 +53,9 @@ Cluster's says so.
   and the projection left, with a `seq` that never repeats. A consumer reads it from its cursor.
 - **Passivation.** The runtime unloads an entity that has nothing to do. It writes nothing, and the earliest of the
   stored timers wakes the entity.
+- **Planned stop, drain.** The closing of the scope a runtime was launched in with the option `drain`. The runtime
+  takes no caller's request, stops its timers and the operations that run again, and waits up to `drain.millis` for
+  its at-most-once operations and the steps of their completions. Without the option, the closing is a crash.
 - **Probe.** A reference in the context that the runtime tells what it did, which a test provides and the library does
   not export.
 - **Program.** Everything declared in `program(schemas)(…)`: `name`, `keys`, `init`, `update`, `durable`,

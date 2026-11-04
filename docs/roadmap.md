@@ -11,8 +11,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    before a planned stop. Today a process ends when the scope it was launched in closes, which interrupts everything
    as a crash does, so every deploy delivers `unknown` for each one under way
    ([decision 0075](decisions/archive/0075-a-name-is-deployed-once-in-a-process.md)). The step decides the drain in a
-   note, `proposed` while the step is under way, and writes it with its tests. What was proposed, and recommended by a
-   review, for the maintainer to confirm before the note is taken:
+   note, `proposed` while the step is under way, and writes it with its tests.
+   [Decision 0119](decisions/0119-a-planned-stop-drains-the-at-most-once-operations.md) is that note, with the code
+   and the tests of `a planned stop` in [`src/runtime.test.ts`](../src/runtime.test.ts). The maintainer confirms it
+   before it is taken, and the commit that takes it says in `docs/design.md` what a planned stop does. What was
+   proposed, and recommended by a review:
    - **A drain bound to the scope**, as an option of `launch`, `drain: { millis }`, that acts when the scope the
      runtime was launched in closes. There is no `stop` of its own: the runtime's life is already its scope, and a
      caller that wants it stopped earlier closes a scope of its own.

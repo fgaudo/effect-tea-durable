@@ -145,6 +145,14 @@ export interface Options {
    * 0076, 0078).
    */
   readonly capacity?: Readonly<{ entities: number }>
+  /**
+   * How long a planned stop waits for the at-most-once operations under way, once the scope the runtime was launched
+   * in closes. Meanwhile no caller's message, creation, resume or discard is taken, the timers stop, and so do the
+   * operations that run again at the next activation. The at-most-once operations and the steps of their
+   * completions run on, and an at-most-once operation such a step starts runs too. Whatever is under way after
+   * `millis` stops as in a crash. None by default: the scope's closing is a crash (decision 0119).
+   */
+  readonly drain?: Readonly<{ millis: number }>
 }
 
 /** What a caller does with one program's entities. */
@@ -277,6 +285,11 @@ interface Loaded<T extends Types> {
   pending: number
   /** By `${key}@${incarnation}`: a timer's sleep is not work the runtime waits for. */
   readonly operations: Map<string, Fiber.Fiber<void>>
+  /**
+   * The operations among `operations` that run again at the next activation, idempotent and at least once: a
+   * planned stop interrupts them at once (decision 0119).
+   */
+  readonly rerun: Set<string>
   readonly timers: Map<string, Fiber.Fiber<void>>
 }
 
@@ -314,6 +327,8 @@ interface Deployment<T extends Types> {
   readonly scope: Scope.Closeable
   readonly loaded: Map<string, Loaded<T>>
   readonly waker: Waker
+  /** The waker's fiber, once it is forked: a planned stop interrupts it (decision 0119). */
+  waking: Fiber.Fiber<void, never> | null
   /** The services the program was deployed with, which its operations run in. */
   readonly run: (operation: Effect.Effect<void, never, T['services'] | Entities>) => Effect.Effect<void>
 }
@@ -353,6 +368,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     // One runtime holds the database, before anything of this one runs, and lets it go after everything of it has
     // stopped: the scope ends what it was given last first (decision 0080).
     yield* hold
+    // Everything the runtime runs is forked in `running`, which closes after the drain: a scope runs its finalizers
+    // in the reverse order of their adding, so the drain, added after it, runs first (decision 0119).
+    const running = yield* Scope.fork(scope)
     const deployments = new Map<string, Deployment<never>>()
     /** The names deployed in this process, or being deployed: each is deployed once (decision 0075). */
     const names = new Set<string>()
@@ -437,6 +455,18 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const retry = options.retry?.millis ?? 10
     const passivate = options.passivate?.millis ?? 30_000
     const capacity = options.capacity?.entities
+    const drain = options.drain?.millis
+    if (drain !== undefined && !(Number.isSafeInteger(drain) && drain >= 0)) {
+      const reason = `the drain is ${drain} millis, which is no non-negative integer`
+      return yield* Effect.die(new InvariantDefect({ reason }))
+    }
+    /** A planned stop is under way: the scope closes, and the drain waits (decision 0119). */
+    let draining = false
+    /** What a caller that arrives during the drain waits for: it is interrupted once the drain ends. */
+    const stopped = Deferred.makeUnsafe<never>()
+    /** A caller's effect, unless a planned stop is under way. */
+    const admitted = <A>(effect: Effect.Effect<A>): Effect.Effect<A> =>
+      Effect.suspend(() => draining ? Deferred.await(stopped) : effect)
     if (capacity !== undefined && !(Number.isSafeInteger(capacity) && capacity > 0)) {
       const reason = `the capacity is ${capacity}, which is no positive integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
@@ -643,13 +673,21 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const run = Effect.suspend(() =>
           runner.delivery === 'Idempotent' ? runner.run(operation, idempotencyKey) : runner.run(operation)
         )
+        const id = under(key, incarnation)
+        // An operation that runs again at the next activation is not started during a planned stop: it is stored,
+        // and starts there. An at-most-once one is started, since one stored and never started would deliver its
+        // `unknown` without having run (decision 0119).
+        if (runner.delivery !== 'AtMostOnce') {
+          if (draining) return
+          loaded.rerun.add(id)
+        }
         yield* forkHeld(
           loaded.operations,
-          under(key, incarnation),
+          id,
           deployed.scope,
           deployed.run(
             Effect.gen(function*() {
-              const exit = yield* Effect.exit(run)
+              const exit = yield* Effect.exit(Effect.ensuring(run, Effect.sync(() => loaded.rerun.delete(id))))
               if (exit._tag === 'Success') {
                 yield* offer(loaded, { _tag: 'Complete', key, incarnation, message: exit.value })
               } else if (!Cause.hasInterruptsOnly(exit.cause)) {
@@ -672,6 +710,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     ) =>
       Effect.gen(function*() {
         const { key, incarnation, timer } = output
+        // A planned stop arms no timer: the stored time wakes the entity in the next process (decision 0119).
+        if (draining) return
         const now = yield* DateTime.now
         const millis = Math.max(0, DateTime.toEpochMillis(timer.at) - DateTime.toEpochMillis(now))
         yield* forkHeld(
@@ -967,6 +1007,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           waits: 0,
           pending: 0,
           operations: new Map(),
+          rerun: new Set(),
           timers: new Map(),
         }
         yield* enter(deployed, loaded)
@@ -1002,7 +1043,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
                 end()
               }),
             ),
-            scope,
+            running,
             { uninterruptible: false },
           )
           return fiber
@@ -1109,6 +1150,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             waits: 0,
             pending: 0,
             operations: new Map(),
+            rerun: new Set(),
             timers: new Map(),
           }
           const creation: Machine.Event<T> = { _tag: 'Create', request }
@@ -1307,10 +1349,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             const deployed: Deployment<T> = {
               program,
               storage: storage(program, sql),
-              scope: yield* Scope.fork(scope),
+              scope: yield* Scope.fork(running),
               loaded: new Map(),
               // Nothing is known of the stored timers until the waker has read them once.
               waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1), failed: new Map() },
+              waking: null,
               run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
             }
             return yield* Effect.onError(restore(deploying(deployed)), () =>
@@ -1343,13 +1386,17 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           const awaited = undeployed.get(program.name)
           undeployed.delete(program.name)
           if (awaited !== undefined) Deferred.doneUnsafe(awaited, Effect.void)
-          yield* Effect.forkIn(waking(deployed), deployed.scope, { uninterruptible: false })
+          deployed.waking = yield* Effect.forkIn(waking(deployed), deployed.scope, { uninterruptible: false })
         }))
         const handle: Handle<T> = {
           create: (id, flags, request) =>
-            faulted(create(deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId })),
+            admitted(faulted(
+              create(deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
+            )),
           send: (id, message, request) =>
-            faulted(send(deployed, id, message, { _tag: 'Caller', sender: request.sender, id: request.requestId })),
+            admitted(faulted(
+              send(deployed, id, message, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
+            )),
           read: (id) =>
             Effect.gen(function*() {
               const held = deployed.loaded.get(id)
@@ -1370,8 +1417,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               ...suspension,
               waiting: waitingFor({ name: program.name, id: suspension.id }),
             }))),
-          resume: (id) => operate(deployed, id, { _tag: 'Resume' }),
-          discard: (id) => operate(deployed, id, { _tag: 'Discard' }),
+          resume: (id) => admitted(operate(deployed, id, { _tag: 'Resume' })),
+          discard: (id) => admitted(operate(deployed, id, { _tag: 'Discard' })),
         }
         return handle
       })
@@ -1403,6 +1450,45 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           ? Effect.void
           : Effect.flatMap(Deferred.await(next), () => settled))
     })
+
+    /**
+     * Whether a planned stop has nothing left to wait for: no operation runs, no event waits or is applied, and
+     * nothing runs detached from a caller, such as a creation committed whose work has not started. The operations
+     * still running are at most once, since the drain stopped the others. A completion recorded in a mailbox is
+     * committed, and is handled at the next activation (decision 0119).
+     */
+    const drained = () => {
+      if (detachments > 0) return false
+      for (const deployed of deployments.values()) {
+        for (const loaded of deployed.loaded.values()) {
+          if (loaded.applying || loaded.pending > 0 || loaded.operations.size > 0) return false
+        }
+      }
+      return true
+    }
+
+    // The signal is taken before the look, as `settled` takes it: whatever ends after it completes it.
+    const emptied: Effect.Effect<void> = Effect.suspend(() => {
+      const next = ended
+      return drained() ? Effect.void : Effect.flatMap(Deferred.await(next), () => emptied)
+    })
+
+    // A planned stop, added after `running` and so run before it closes (decision 0119). Its wait is made
+    // interruptible, so that the timeout ends it even if a finalizer runs uninterruptibly.
+    if (drain !== undefined) {
+      yield* Scope.addFinalizer(scope, Effect.gen(function*() {
+        draining = true
+        for (const deployed of [...deployments.values()]) {
+          if (deployed.waking !== null) yield* Fiber.interrupt(deployed.waking)
+          for (const loaded of [...deployed.loaded.values()]) {
+            for (const id of [...loaded.timers.keys()]) yield* stop(loaded.timers, id)
+            for (const id of [...loaded.rerun]) yield* stop(loaded.operations, id)
+          }
+        }
+        yield* Effect.interruptible(Effect.timeoutOption(emptied, `${drain} millis`))
+        Deferred.doneUnsafe(stopped, Effect.interrupt)
+      }))
+    }
 
     return { deploy, settled }
   })

@@ -907,6 +907,242 @@ describe('the runtime on SQLite', () => {
 })
 
 /**
+ * A planned stop: a process launched with `drain` waits, as its scope closes, for its at-most-once operations under
+ * way, and stops the rest at once (decision 0119).
+ */
+describe('a planned stop', () => {
+  /**
+   * Hands that record each act, and come back once `open` is run. `interrupted` is done once `interrupts` acts are
+   * interrupted: how a test knows that the drain has stopped what runs again.
+   */
+  const held = (interrupts: number) =>
+    Effect.sync(() => {
+      const acted: Array<string> = []
+      const gate = Deferred.makeUnsafe<void>()
+      const interrupted = Deferred.makeUnsafe<void>()
+      let seen = 0
+      return {
+        acted,
+        open: Deferred.succeed(gate, undefined),
+        interrupted: Deferred.await(interrupted),
+        layer: Layer.succeed(
+          Hands,
+          Hands.of({
+            act: (key, idempotencyKey) =>
+              Effect.andThen(
+                Effect.sync(() => acted.push(idempotencyKey === null ? key : `${key}:${idempotencyKey}`)),
+                Effect.onInterrupt(
+                  Deferred.await(gate),
+                  () => ++seen === interrupts ? Deferred.succeed(interrupted, undefined) : Effect.void,
+                ),
+              ),
+          }),
+        ),
+      }
+    })
+
+  /**
+   * A first process, with `drain`, that creates the entity and ends with its work under way, in a fiber of its own.
+   * `during` runs once the drain has interrupted the `interrupts` operations that run again, with the handle, while
+   * the scope's closing waits. A second process without the option then activates the entity, and gives what it
+   * acted and what the entity published.
+   */
+  const stopped = <A>(
+    options: Options & Hooks,
+    during: (toy: Library.Handle<T>, open: Effect.Effect<boolean>) => Effect.Effect<A>,
+    { program: deployed = program, interrupts = 2 }: Readonly<{ program?: Program<T>; interrupts?: number }> = {},
+  ) =>
+    Effect.gen(function*() {
+      const first = yield* held(interrupts)
+      const at = yield* DateTime.now
+      const handle = yield* Deferred.make<Library.Handle<T>>()
+      const stopping = yield* Effect.forkChild(process(options, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(deployed), first.layer)
+          yield* ran(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          yield* Deferred.succeed(handle, toy)
+        })))
+      const toy = yield* Deferred.await(handle)
+      yield* first.interrupted
+      const during_ = yield* during(toy, first.open)
+      yield* Fiber.join(stopping)
+      const second = yield* hands()
+      const after = yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(deployed), second.layer)
+          yield* runtime.settled
+          return { toy, published: yield* toy.published(0) }
+        }))
+      return { first: first.acted, second: second.acted, published: after.published, during: during_ }
+    })
+
+  const unknown = (published: ReadonlyArray<Library.Published<T>>) =>
+    published.filter((row) => row.message !== null && row.message._tag === 'Unknown').map((row) => row.message)
+
+  test('an at-most-once operation under way ends, and the others run again at the next activation', () =>
+    database(Effect.gen(function*() {
+      const { first, second, published } = yield* stopped({ drain: { millis: 100 } }, (_toy, open) => open)
+      expect(first.filter((act) => act === 'b').length).toBe(1)
+      // `b` ended in the drain, and its completion was committed: it is neither run again nor delivered `unknown`.
+      expect(second.filter((act) => act === 'b').length).toBe(0)
+      expect(unknown(published)).toEqual([])
+      // `a` and `c` were interrupted at once, before the gate opened, and run again.
+      expect(second.filter((act) => act.startsWith('a:')).length).toBe(1)
+      expect(second.filter((act) => act === 'c').length).toBe(1)
+    })))
+
+  test('the drain waits for the completion of an at-most-once operation, under prioritized schedules', () => {
+    // Decision 0119: the drain looks whether anything is left after it takes the signal of `settled`, so an
+    // operation's end or a step's between the look and the wait is not missed, and its completion is committed.
+    explored((window) =>
+      Effect.map(
+        stopped({ drain: { millis: 100 } }, (_toy, open) => Effect.andThen(opened(window, true), open)),
+        ({ second, published }) => ({ rerun: second.filter((act) => act === 'b').length, unknown: unknown(published) }),
+      ), { rerun: 0, unknown: [] }, { open: false })
+  }, 60_000)
+
+  test('a completion in the drain starts no operation that runs again, and arms no timer', () =>
+    database(Effect.gen(function*() {
+      // `b`'s completion brings `a`, and `t`, due at once: both wait for the next activation.
+      const chained: Program<T> = {
+        ...program,
+        name: 'Chained',
+        init: (_flags, at) => ({ want: ['b', 'c'], applied: [], since: at, rings: at }),
+        update: (message, meta) => (state) =>
+          message._tag === 'Done' && message.key === 'b'
+            ? { ...state, want: ['c', 'a', 't'] }
+            : program.update(message, meta)(state),
+      }
+      const { events, observe } = log()
+      // The clock moves once the gate is open, so that a timer armed in the drain would fire there.
+      const { first, second } = yield* stopped({ drain: { millis: 100 }, observe }, (_toy, open) =>
+        Effect.andThen(open, TestClock.adjust('1 millis')), {
+        program: chained,
+        interrupts: 1,
+      })
+      expect(first.filter((act) => act.startsWith('a:')).length).toBe(0)
+      expect(events.filter((event) => event._tag === 'Fire').length).toBe(0)
+      expect(second.filter((act) => act.startsWith('a:')).length).toBe(1)
+    })))
+
+  test('an at-most-once operation that outlasts the drain delivers unknown, as after a crash', () =>
+    database(Effect.gen(function*() {
+      const { events, observe } = log()
+      const { second, published } = yield* stopped(
+        { drain: { millis: 100 }, observe },
+        // The closing fiber reaches its wait, and then the drain's time runs out, past the time of `t`.
+        () => Effect.andThen(TestClock.adjust('1 millis'), TestClock.adjust('100 millis')),
+      )
+      // The drain stopped the timer: its time came in the drain, and it fires in the next process.
+      expect(events.filter((event) => event._tag === 'Fire').length).toBe(0)
+      expect(second.filter((act) => act === 'b').length).toBe(0)
+      expect(unknown(published)).toEqual([{ _tag: 'Unknown', key: 'b' }])
+    })))
+
+  test('a creation committed before the drain starts its at-most-once operation, and the drain waits for it', () =>
+    database(Effect.gen(function*() {
+      // The creation commits and holds before its work starts. Stopped there, `b` would be stored and never started,
+      // and deliver `unknown` without having run.
+      const first = yield* hands()
+      const at = yield* DateTime.now
+      const gate = yield* Deferred.make<void>()
+      const reached = yield* Deferred.make<void>()
+      const stopping = yield* Effect.forkChild(process({
+        drain: { millis: 100 },
+        at: (point, _entity, event) =>
+          point === 'AfterCommit' && event._tag === 'Create'
+            ? Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(gate))
+            : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), first.layer)
+          yield* Effect.forkChild(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          yield* Deferred.await(reached)
+        })))
+      yield* Deferred.await(reached)
+      // The closing fiber reaches the drain's wait, and the creation goes on.
+      yield* TestClock.adjust('1 millis')
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(stopping)
+      expect(first.acted.filter((act) => act === 'b').length).toBe(1)
+      const second = yield* hands()
+      const published = yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), second.layer)
+          yield* runtime.settled
+          return yield* toy.published(0)
+        }))
+      expect(second.acted.filter((act) => act === 'b').length).toBe(0)
+      expect(unknown(published)).toEqual([])
+    })))
+
+  test('the waker activates no entity in the drain', () =>
+    database(Effect.gen(function*() {
+      const first = yield* held(2)
+      const at = yield* DateTime.now
+      const restarted: Array<string> = []
+      const ending = yield* Deferred.make<void>()
+      const stopping = yield* Effect.forkChild(process({
+        drain: { millis: 100 },
+        passivate: { millis: 5 },
+        observe: (entity, event) =>
+          Effect.sync(() => {
+            if (event._tag === 'Restart') restarted.push(entity.id)
+          }),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          // `timed` is unloaded with its timer stored, due at 40 millis: the waker's to activate.
+          const timers = yield* Effect.provide(runtime.deploy(timed), first.layer)
+          yield* timers.create('timed', { at }, { requestId: 'creation', sender: tester })
+          yield* TestClock.adjust('5 millis')
+          const toy = yield* Effect.provide(runtime.deploy(program), first.layer)
+          yield* ran(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          yield* Deferred.succeed(ending, undefined)
+        })))
+      yield* Deferred.await(ending)
+      yield* first.interrupted
+      // The drain outlasts the time of `timed`.
+      yield* TestClock.adjust('1 millis')
+      yield* TestClock.adjust('100 millis')
+      yield* Fiber.join(stopping)
+      expect(restarted).toEqual([])
+    })))
+
+  test('a caller that arrives during the drain waits, is interrupted, and a retry is answered after the restart', () =>
+    database(Effect.gen(function*() {
+      const want = { _tag: 'Want', key: 'a', on: false, nonce: 'late' } as const
+      const request = { requestId: 'late', sender: tester }
+      const { during } = yield* stopped({ drain: { millis: 100 } }, (toy, open) =>
+        Effect.gen(function*() {
+          const callers: Array<Fiber.Fiber<unknown>> = [
+            yield* running(toy.send(id, want, request)),
+            yield* running(toy.create('late', { at: yield* DateTime.now }, request)),
+            yield* running(toy.discard(id)),
+          ]
+          // Nothing answers them while the at-most-once operation holds the drain.
+          const waiting = callers.map((caller) => caller.pollUnsafe() === undefined)
+          yield* open
+          return { waiting, exits: yield* Effect.forEach(callers, Fiber.await) }
+        }))
+      expect(during.waiting).toEqual([true, true, true])
+      expect(during.exits.map(Exit.hasInterrupts)).toEqual([true, true, true])
+      // The message was never taken, so the retry of the next process is applied.
+      const replies = yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
+          return { sent: yield* toy.send(id, want, request), late: yield* toy.read('late') }
+        }))
+      expect(replies).toEqual({ sent: { _tag: 'Accepted' }, late: null })
+    })))
+
+  test('a drain of no whole number of millis is the caller defect', () =>
+    database(Effect.gen(function*() {
+      const exit = yield* Effect.exit(process({ drain: { millis: 1.5 } }, () => Effect.void))
+      expect(Exit.hasDies(exit)).toBe(true)
+    })))
+})
+
+/**
  * Passivation: an entity with nothing to do is unloaded, and what is stored wakes it (decision 0029). To the
  * machine it is a `Restart`, so the comparison with the replay is what says the passivation lost nothing.
  */

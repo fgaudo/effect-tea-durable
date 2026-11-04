@@ -166,3 +166,4 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md) | The scheduler of the tests preempts from a run's third step, where Effect first can | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) |
 | [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) | An entity's wait ends with an item of its queue, and nothing races its take | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) |
 | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) | A fiber on another's stack yields with no task ready |  |
+| [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md) | A planned stop drains the at-most-once operations, and stops the rest at once (proposed) |  |
