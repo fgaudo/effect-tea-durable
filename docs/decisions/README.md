@@ -67,6 +67,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) | A reply is keyed by the version that wrote it |  |
 | [0124](0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes |  |
 | [0125](0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) | A caller's reply is kept as long as its boundary says, from the step that answers |  |
+| [0131](0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to (proposed) |  |
 
 ## Operations and timers
 

@@ -5,7 +5,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Rehearsing entities together** ([open question](open-questions.md#programs)). A rehearsal runs a world of
+   entities, where an operation's runner sends to the receiver's machine, as
+   [decision 0131](decisions/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) proposes.
+2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
