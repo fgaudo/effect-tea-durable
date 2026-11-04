@@ -561,6 +561,18 @@ name, with its deployment and its waker
 ([decision 0078](decisions/archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)). A process deploys a name once: a new version, a fix included, is deployed by
 a new process ([decision 0075](decisions/archive/0075-a-name-is-deployed-once-in-a-process.md)).
 
+### A planned stop
+
+A process launched with `drain: { millis }` drains its at-most-once operations when the scope it was launched in
+closes, so that a deploy does not deliver `unknown` for each one under way. During the drain, the runtime takes no
+caller's message, creation, resume or discard: a caller that arrives waits, is interrupted when the drain ends, and
+its retry is answered by the next process. The timers, the waker, and the operations that run again at the next
+activation stop at once, and a step of the drain starts no such operation and arms no timer. The drain waits, up to
+`millis`, for the at-most-once operations under way and the commits of their completions, for an at-most-once
+operation such a step starts, and for a creation committed whose work has not started. Whatever is under way after
+`millis` stops as in a crash. A process launched without the option ends with a crash, as it always did
+([decision 0119](decisions/0119-a-planned-stop-drains-the-at-most-once-operations.md)).
+
 ### The public surface
 
 The library exports

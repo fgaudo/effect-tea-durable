@@ -77,14 +77,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   two processes share a store. On Effect Cluster a runner carries no version, and a shard may go from a new runner
   back to an old one ([Cluster](cluster.md#two-versions-at-once)): the choice is between deploys that replace every
   runner before a new one writes, forward compatibility for one version, or a change to Cluster.
-- **A planned stop.** An at-most-once operation under way when its process stops delivers `unknown` at the next
-  activation, and [decision 0011](decisions/archive/0011-an-operation-declares-what-a-crash-does.md) says the runtime
-  should drain them before a planned stop. Nothing does: a process ends when the scope it was launched in
-  closes, which interrupts every operation as a crash does (the runtime's test `an at-most-once operation delivers
-  unknown after a crash` ends its first process so), and a new version is a new process
-  ([decision 0075](decisions/archive/0075-a-name-is-deployed-once-in-a-process.md)), so every deploy delivers `unknown`
-  for each one under way. Should a process stop taking messages and wait for its at-most-once operations, and for
-  how long, before it ends?
 - **Callers' stored replies.** A caller's reply is stored so that a retry gets it, and is kept for ever: a time
   after which a retry is applied again would depend on the protocol, and on who callers are
   ([who may send what](#programs)). Replies to entities are kept while the work that asked is stored

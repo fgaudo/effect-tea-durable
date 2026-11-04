@@ -1,7 +1,8 @@
 # 0011. An operation declares what a crash does to it
 
 **Status:** accepted, 2026-10-30. The way it builds an operation is replaced by
-[decision 0018](0018-operations-are-data.md).
+[decision 0018](0018-operations-are-data.md). The drain before a planned stop is decided by
+[decision 0119](../0119-a-planned-stop-drains-the-at-most-once-operations.md).
 
 ## Context
 

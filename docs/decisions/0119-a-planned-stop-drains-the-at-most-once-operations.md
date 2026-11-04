@@ -1,6 +1,6 @@
 # 0119. A planned stop drains the at-most-once operations
 
-**Status:** proposed, 2026-11-04. Decides the drain that
+**Status:** accepted, 2026-11-04. Decides the drain that
 [decision 0011](archive/0011-an-operation-declares-what-a-crash-does.md) says the runtime should run before a planned
 stop.
 
@@ -99,4 +99,4 @@ at-most-once operation under way, though the operation might have ended a moment
   waker's fiber held by its deployment, the operations that run again held apart on each loaded entity, a guard on a
   caller's requests, and the drain as a finalizer.
 - [`src/runtime.test.ts`](../../src/runtime.test.ts): the tests of `a planned stop`.
-- `docs/design.md` says what a planned stop does, once this note is taken.
+- `docs/design.md` says what a planned stop does.
