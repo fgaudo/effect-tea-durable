@@ -54,5 +54,7 @@ test('a race of a take loses no item when the racing fiber has a budget above 3'
 })
 
 test('a race of a take loses the item when the racing fiber has a budget of 3', async () => {
+  // Reported as Effect-TS/effect#10365. Failing here means a release keeps the item: decision 0116 can then be read
+  // again, and an entity's wait may go back to a timeout once Effect's JSDoc promises it.
   expect(await ends([3])).toContain('lost')
 })
