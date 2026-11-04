@@ -99,7 +99,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   against the code before the change. The scheduler of the tests, in [`src/testing.ts`](src/testing.ts), is how a
   test moves the points where fibers yield. Where the interleaving cannot be reached, the decision says why, and why
   the change holds. A test under `explored` runs one seed in twenty, from seed 0, so that the suite runs in seconds;
-  `bun run test:release` runs them all, and a release passes it. A schedule under `bound` 1 runs whole in every run,
+  `bun run test:release` runs them all, and a release passes it. A step of the roadmap that changes `src/runtime.ts`
+  or `src/testing.ts` passes `bun run test:release` before it is taken, since some rules of concurrency fail only
+  past the first hundred seeds. A schedule under `bound` 1 runs whole in every run,
   since it is exhaustive within its bound. `bun test` and the release start from seed 0, so that each of their runs
   replays the same schedules. `bun run test:explore` looks for the bugs those schedules miss: it runs every seed of
   the explored tests from a random first seed, again and again, until a run fails or it is stopped. A failure names

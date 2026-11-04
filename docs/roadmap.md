@@ -5,15 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **The seeds a step runs before it is taken** ([open question](open-questions.md#running), `How many seeds a bug
-   needs`). The count of 2026-11-04 found that 3 of the 15 rules of concurrency the explored tests hold fail only at a
-   release, never within the first 100 seeds. A review of that count recommended keeping a twentieth of the seeds
-   for a run of the tests, and adding a rule of work to [`AGENTS.md`](../AGENTS.md): a step of the roadmap that changes
-   [`src/runtime.ts`](../src/runtime.ts) or [`src/testing.ts`](../src/testing.ts) passes `bun run test:release` before
-   it is taken. That run takes about 150 seconds. The step writes the rule in the section `Code and tests`, takes the
-   open question out of `docs/open-questions.md`, and needs no note, since the rule's reason fits in a sentence. The
-   maintainer confirms the rule before it is written.
-2. **A planned stop** ([open question](open-questions.md#running), `A planned stop`). An at-most-once operation under
+1. **A planned stop** ([open question](open-questions.md#running), `A planned stop`). An at-most-once operation under
    way when its process stops delivers `unknown` at the next activation, and
    [decision 0011](decisions/archive/0011-an-operation-declares-what-a-crash-does.md) says the runtime should drain them
    before a planned stop. Today a process ends when the scope it was launched in closes, which interrupts everything
@@ -42,7 +34,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      restart. The test `an at-most-once operation delivers unknown after a crash, and an idempotent one runs
      again` stays, for a process launched without the option. A change to `src/runtime.ts` that adds a wait or a fork has a test under `explored` that
      fails without it, as [`AGENTS.md`](../AGENTS.md) says.
-3. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later

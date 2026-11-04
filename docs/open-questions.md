@@ -121,44 +121,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     keep; whether it serves its waiters in order, as the `Semaphore` does, is not read yet;
   - to check first: that a commit's wake goes through the scheduler (it calls `scheduleTask`, read in the source),
     that `txRetry` misses no resumption in any order it picks, and how often a conflict runs a body again.
-- **How many seeds a bug needs.** A run of the tests runs 100 of the 2,000 seeds of each explored test, and a
-  release all of them ([`AGENTS.md`](../AGENTS.md)). A count on 2026-11-04 took out, one at a time, 18 rules of
-  concurrency of [`src/runtime.ts`](../src/runtime.ts) that the explored tests keep. For each it counted the seeds
-  that fail, out of 2,000, under the scheduler of
-  [decision 0115](decisions/0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md) and again under that
-  of [decision 0117](decisions/0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md). The mutations are kept
-  outside the repository, as a review's are.
-  - 15 of the 18 fail an explored test under the scheduler of decision 0115. Only 2 of them fail a test that is not
-    explored as well: a step that never signals `settled`, and detached work counted back by a fiber the
-    deployment's scope stops. Both hang the tests that wait for `settled`. Under decision 0117 the step that never
-    signals was not counted, since it hangs 46 tests that are not explored whatever the scheduler; the other 14 fail
-    as before.
-  - 11 of the 15 fail within the first 100 seeds under decision 0115, and 12 under decision 0117. The difference is
-    one mutation whose first failing seed moved from 862 to 57, and several others fail on a single seed of the
-    first 100: it is the schedules moving, not a better scheduler. 3 fail only at a release under both: a sender
-    that registers for the resumption after it sends (15 seeds of 2,000, the first at 146), an event counted only
-    until its step starts (11 seeds, the first at 187 under decision 0117), and a deployment registered apart from
-    its waker (1 seed, the first at 1,526 under decision 0117 and 409 under decision 0115).
-  - A take raced against a timeout, as before
-    [decision 0116](decisions/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md), fails 20 seeds of 2,000 under
-    decision 0115, where the bug 0116 found failed 1. The tests written with that note reach it more often, so the
-    count says how well those tests hold the rule, not how rare the bug was.
-  - 3 rules failed no seed and no test. An entity that leaves in one step and pokes the waker in the next, of
-    [decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md), with no yield forced
-    between the two: a crash makes its entity leave without counting it as unloading, so `settled` could return
-    with the entity's due timer known to nobody. The test `settled never returns between a crash and the
-    activation its due timer brings`, in [`src/runtime.test.ts`](../src/runtime.test.ts), now takes it out, at 11
-    seeds of 2,000 under decision 0117, the first at 172, which it pins. A waker that reads its poke in one step and
-    clears its flag in the next, of the same note, fails the test `settled never returns while the waker rests from a
-    reading another entity left during`, which runs every schedule within one preemption. And the signal of an entity
-    told to leave that stays, of [decision 0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), which
-    the review of 2026-11-01 found another signal always follows.
-
-  Is a twentieth of the seeds enough for a run of the tests, and should a step of the roadmap run the release's seeds
-  before it is taken? What would decide it:
-  - how long a run of the tests may take: all the seeds of `src/runtime.test.ts` take about 150 seconds alone, and a
-    twentieth of them about 40, under load;
-  - how often `bun run test:explore` is run, which tries new seeds and finds what the first 100 miss.
 
 ## Naming
 
