@@ -134,8 +134,13 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - whether a test of `src/testing.test.ts` fails without it.
 - **How many seeds a bug needs.** A run of the tests runs 100 of the 2,000 seeds of each explored test, and a
   release all of them ([`AGENTS.md`](../AGENTS.md)). That
-  most bugs are found within the first 100 is only reasoned. To check: take out, one at a time, the rules of
-  concurrency the explored tests keep, and count the seeds that fail each, out of 2,000.
+  most bugs are found within the first 100 is only reasoned. One bug was much rarer: the event lost to the timeout
+  of an entity's wait ([decision 0116](decisions/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md)) failed 1
+  seed of 2,000 under the scheduler of [decision 0115](decisions/0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md),
+  and none under the one before it. It was found only because a change of the locks moved the schedules the seeds
+  give, and 3 seeds of 2,000 failed then. 2,000 seeds find a bug of that rate about twice in three. To check: take
+  out, one at a time, the rules of concurrency the explored tests keep, and count the seeds that fail each, out of
+  2,000.
 
 ## Naming
 
