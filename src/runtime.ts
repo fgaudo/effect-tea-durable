@@ -641,6 +641,19 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         return Fiber.interrupt(fiber)
       })
 
+    /**
+     * Stops the operation under `id` without waiting for it: a droppable one's finalizers are the runner's, and the
+     * entity's next event does not wait behind them. A completion it offers before the interruption lands is dropped,
+     * since the step that stopped it moved its incarnation on or dropped its key (decision 0128).
+     */
+    const drop = (held: Map<string, Fiber.Fiber<void>>, id: string, scope: Scope.Scope) =>
+      Effect.suspend(() => {
+        const fiber = held.get(id)
+        if (fiber === undefined) return Effect.void
+        held.delete(id)
+        return Effect.asVoid(Effect.forkIn(Fiber.interrupt(fiber), scope))
+      })
+
     const stopAll = <T extends Types>(loaded: Loaded<T>) =>
       Effect.gen(function*() {
         for (const id of [...loaded.operations.keys()]) yield* stop(loaded.operations, id)
@@ -721,7 +734,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             }).pipe(
               // The requests it sends are this run's: an entity cannot pass for another, nor an operation for
               // another (decisions 0009, 0060).
-              Effect.provideService(Entities, entities(entity, key, incarnation)),
+              Effect.provideService(Entities, entities(entity, key, incarnation, runner.delivery === 'Droppable')),
             ),
           ),
         )
@@ -777,6 +790,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               break
             case 'Disarmed':
               yield* stop(loaded.timers, under(output.key, output.incarnation))
+              yield* drop(loaded.operations, under(output.key, output.incarnation), deployed.scope)
               break
             case 'Suspended':
               // The timers stop. The operations run to their end, and their completions are recorded behind the
@@ -1266,7 +1280,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * 0063). A receiver that crashed has none either, and is sent to again after `retry` (decision 0046). `send`
      * and `create` wait for the deploy of a program not deployed yet (decisions 0045, 0063).
      */
-    const entities = (entity: Address, key: string, incarnation: number) => {
+    const entities = (entity: Address, key: string, incarnation: number, droppable: boolean) => {
       const used = { message: new Set<string>(), creation: new Set<string>() }
       /** The request named `name` to the entity `id` of `program`, or the run's defect if it made it already. */
       const named = <T extends Types>(
@@ -1276,6 +1290,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         name: string,
       ): Effect.Effect<Readonly<{ deployed: Deployment<T>; request: Request<T['sender']> }>> =>
         Effect.suspend(() => {
+          // A request acts on its receiver, which a droppable operation interrupted halfway would leave acted on
+          // (decision 0128).
+          if (droppable) {
+            return Effect.die(
+              new InvariantDefect({ reason: `the droppable operation under '${key}' sent to ${program.name} '${id}'` }),
+            )
+          }
           const to = JSON.stringify([program.name, id, name])
           if (used[kind].has(to)) {
             const verb = kind === 'message' ? 'sent' : 'created'

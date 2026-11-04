@@ -385,6 +385,7 @@ export type Output<T extends Types> =
     operation: T['operation']
   }>
   | Readonly<{ _tag: 'Armed'; key: string; incarnation: number; timer: Timer<T['internal']> }>
+  /** A timer, or a droppable operation, that the step dropped or changed: it stops (decision 0128). */
   | Readonly<{ _tag: 'Disarmed'; key: string; incarnation: number }>
   /** The entity is suspended: its timers stop, and its operations run to their end (decision 0113). */
   | Readonly<{ _tag: 'Suspended'; cause: unknown }>
@@ -595,7 +596,9 @@ const reconcile = <T extends Types>(program: Program<T>, stored: Stored<T>): Sto
   const work = admitted(program, stored.state)
   const keys = renew(program, stored.keys, workOf(stored), work)
   for (const [key, { work: was, delivery }] of Object.entries(stored.keys)) {
-    if (was === undefined || isTimer(was)) continue
+    // A droppable operation acts on nothing, so a new program may drop it, change it or deliver it otherwise
+    // (decision 0128).
+    if (was === undefined || isTimer(was) || delivery === 'Droppable') continue
     const next = work[key]
     if (!isSame(program, key, was, next)) {
       broken(
@@ -839,8 +842,8 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
     for (const [key, work] of Object.entries(previous)) {
       if (isSame(program, key, work, after[key])) continue
       // An operation leaves only through its completion, and does not change while it runs (decisions 0005,
-      // 0018); a timer has done nothing yet.
-      if (!isTimer(work)) {
+      // 0018); a timer has done nothing yet, and a droppable operation acts on nothing (decision 0128).
+      if (!isTimer(work) && stored.keys[key]?.delivery !== 'Droppable') {
         const next = after[key]
         broken(
           next === undefined || isTimer(next)

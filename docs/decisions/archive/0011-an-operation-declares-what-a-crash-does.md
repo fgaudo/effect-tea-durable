@@ -4,6 +4,7 @@
 [decision 0018](0018-operations-are-data.md). The drain before a planned stop is decided by
 [decision 0119](../0119-a-planned-stop-drains-the-at-most-once-operations.md). A fourth delivery, idempotent and
 given the digest of its key, is added by [decision 0123](../0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md).
+A fifth, droppable, is added by [decision 0128](../0128-an-operation-that-acts-on-nothing-may-be-dropped.md).
 
 ## Context
 

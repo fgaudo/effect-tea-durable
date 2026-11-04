@@ -950,6 +950,15 @@ const handled = (machine: Entity, event: Machine.Offered<Tiny>) =>
     ? stepped(machine, event)
     : stepped(stepped(machine, event).machine, { _tag: 'Handle', at })
 
+/** An entity of a tiny program whose operations are droppable (decision 0128). */
+const droppable = (...args: Parameters<typeof tiny>): Entity => {
+  const base = tiny(...args)
+  const program: Program<Tiny> = { ...base, operations: { Work: operation.droppable(() => Effect.succeed('done')) } }
+  const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
+  if (created._tag === 'Defect') throw created.cause
+  return { ...created.machine, program, replies: new Map() }
+}
+
 const reasonOfSuspension = (transition: Machine.Transition<Tiny>) => {
   const cause = transition.machine.stored.suspension?.cause
   return cause instanceof InvariantDefect ? cause.reason : cause === undefined ? null : String(cause)
@@ -962,6 +971,30 @@ describe('the checks of a step', () => {
     const machine = checked((message) => message, (state) => (state === 'start' ? { charge: 'operation' } : {}))
     expect(reasonOfSuspension(handled(machine, inbound))).toBe(
       "the step dropped the operation under 'charge' before its completion",
+    )
+  })
+
+  test('a step may drop a droppable operation, which is disarmed, and its late completion is dropped', () => {
+    const machine = droppable((message) => message, (state) => (state === 'start' ? { charge: 'operation' } : {}))
+    const transition = handled(machine, inbound)
+    expect(transition.machine.stored.suspension).toBeNull()
+    expect(transition.outputs).toContainEqual({ _tag: 'Disarmed', key: 'charge', incarnation: 1 })
+    // The runtime interrupts it, and a completion that lands before the interruption is dropped.
+    const late = stepped(transition.machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'done' })
+    expect(late.outputs).toEqual([{ _tag: 'Dropped', key: 'charge', incarnation: 1 }])
+    expect(late.machine.stored.mailbox).toEqual([])
+  })
+
+  test('a step may change a droppable operation, which starts again as new work', () => {
+    const machine = droppable(
+      (message) => message,
+      (state) => (state === 'start' ? { charge: 'operation' } : { charge: 'larger operation' }),
+    )
+    const transition = handled(machine, inbound)
+    expect(transition.machine.stored.suspension).toBeNull()
+    expect(transition.outputs).toContainEqual({ _tag: 'Disarmed', key: 'charge', incarnation: 1 })
+    expect(transition.outputs).toContainEqual(
+      expect.objectContaining({ _tag: 'Started', key: 'charge', incarnation: 2, operation: { _tag: 'Work', size: 2 } }),
     )
   })
 
@@ -1670,6 +1703,38 @@ describe('a new program', () => {
     expect(changed.outputs.filter((output) => output._tag === 'Started')).toEqual([])
     const dropped = deployed(machine, () => ({}))
     expect(reasonOfSuspension(dropped)).toBe("the program dropped the operation under 'charge' before its completion")
+  })
+
+  test('a droppable operation under way may be changed or dropped by a new program', () => {
+    const machine = droppable((message) => message, () => ({ charge: 'operation' }))
+    const by = (durable: (state: string) => TinyWork) => {
+      const base = tiny((message) => message, durable)
+      return stepped(machine, { _tag: 'Restart' }, {
+        ...base,
+        operations: { Work: operation.droppable(() => Effect.succeed('done')) },
+      })
+    }
+    const changed = by(() => ({ charge: 'larger operation' }))
+    expect(changed.machine.stored.suspension).toBeNull()
+    expect(changed.outputs).toContainEqual(expect.objectContaining({ _tag: 'Started', key: 'charge', incarnation: 2 }))
+    const dropped = by(() => ({}))
+    expect(dropped.machine.stored.suspension).toBeNull()
+    expect(dropped.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+    // A program that delivers it otherwise starts it as the delivery it now declares, in the same incarnation: the
+    // one stopped acted on nothing.
+    const delivered = deployed(machine, () => ({ charge: 'operation' }))
+    expect(delivered.machine.stored.suspension).toBeNull()
+    expect(delivered.machine.stored.keys['charge']).toMatchObject({ incarnation: 1, delivery: 'Idempotent' })
+    expect(delivered.outputs).toContainEqual(expect.objectContaining({ _tag: 'Started', key: 'charge', incarnation: 1 }))
+    // The other way is a defect: an operation delivered otherwise may have acted.
+    const plain = checked((message) => message, () => ({ charge: 'operation' }))
+    const declared = stepped(plain, { _tag: 'Restart' }, {
+      ...plain.program,
+      operations: { Work: operation.droppable(() => Effect.succeed('done')) },
+    })
+    expect(reasonOfSuspension(declared)).toBe(
+      "the program changed how the operation under 'charge' is delivered before its completion",
+    )
   })
 
   test('an at-most-once operation that is new work at an activation starts: it never ran', () => {

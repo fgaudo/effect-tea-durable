@@ -157,6 +157,11 @@ Two kinds of work exist.
   ([decision 0123](decisions/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md)). An
   operation leaves the state only through its completion: a step whose next state drops the key of an operation
   still running is a defect ([decision 0005](decisions/archive/0005-an-operation-leaves-only-by-completing.md)).
+  A droppable operation, declared with `operation.droppable`, is the exception. It acts on nothing, a computation
+  or a read, so a step may drop it or change it while it runs: the runtime interrupts it without waiting for its
+  finalizers, and a change starts it again as new work. A crash runs it again. It sends to no entity and creates
+  none, since a request acts on its receiver: one that does dies
+  ([decision 0128](decisions/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)).
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
   nothing yet.
 
@@ -554,6 +559,7 @@ that what an event writes, applied to the rows before it, gives the rows after i
 | commands, started by a step                      | none: operations are derived from the state                          | a command started before a crash would be lost                           |
 | subscriptions, by key                            | operations and timers, by key, with incarnations                     | work outlives the process, and its answers are delivered at least once   |
 | a subscription whose value changes starts anew   | an operation whose value changes while it runs is a defect           | an operation cannot be interrupted, and a crash would restart it changed |
+| work that should stop is a subscription          | a droppable operation, which acts on nothing                         | only work with no act in the world can be cut halfway, and run again     |
 | an ended subscription waits for its key to leave | a key kept after its work delivered is new work                      | kept, it would not run again until a crash, which starts it anew         |
 | a subscription listens to a service's connection | the boundary reads the stream, and sends each item as a message      | a listening dies with the process, and a sent item is stored             |
 | a model, with the messages the view sends        | a projection, with the actions it allows                             | a caller is remote: it receives data, never functions                    |

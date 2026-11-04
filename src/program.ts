@@ -214,6 +214,11 @@ export type Runner<Operation, Message, R> =
     run: (operation: Operation) => Effect.Effect<Message, never, R>
     unknown: (operation: Operation) => Message
   }>
+  /**
+   * Acts on nothing: a state may drop it or change it while it runs, which interrupts it, and a crash runs it again.
+   * It sends to no entity and creates none, since a request is an act on the receiver (decision 0128).
+   */
+  | Readonly<{ delivery: 'Droppable'; run: (operation: Operation) => Effect.Effect<Message, never, R> }>
 
 export const operation: {
   /** An idempotent operation, which passes its idempotency key on. */
@@ -231,6 +236,10 @@ export const operation: {
     run: (operation: Operation) => Effect.Effect<Message, never, R>,
     unknown: (operation: Operation) => Message,
   ) => Runner<Operation, Message, R>
+  /** An operation that acts on nothing, which a state may drop or change while it runs (decision 0128). */
+  readonly droppable: <Operation, Message, R>(
+    run: (operation: Operation) => Effect.Effect<Message, never, R>,
+  ) => Runner<Operation, Message, R>
 } = Object.assign(
   <Operation, Message, R>(
     run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>,
@@ -246,6 +255,9 @@ export const operation: {
       run: (operation: Operation) => Effect.Effect<Message, never, R>,
       unknown: (operation: Operation) => Message,
     ): Runner<Operation, Message, R> => ({ delivery: 'AtMostOnce', run, unknown }),
+    droppable: <Operation, Message, R>(
+      run: (operation: Operation) => Effect.Effect<Message, never, R>,
+    ): Runner<Operation, Message, R> => ({ delivery: 'Droppable', run }),
   },
 )
 

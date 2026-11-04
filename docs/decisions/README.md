@@ -72,9 +72,9 @@ each read and found, are in [`reviews.md`](reviews.md).
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0005](archive/0005-an-operation-leaves-only-by-completing.md) | An operation leaves the state only through its completion |  |
+| [0005](archive/0005-an-operation-leaves-only-by-completing.md) | An operation leaves the state only through its completion | [0128](0128-an-operation-that-acts-on-nothing-may-be-dropped.md) |
 | [0008](archive/0008-delivered-work-is-done.md) | Work that has delivered its message is done | [0041](archive/0041-a-completion-is-not-discarded.md) |
-| [0011](archive/0011-an-operation-declares-what-a-crash-does.md) | An operation declares what a crash does to it | [0018](archive/0018-operations-are-data.md), [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md), [0123](0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) |
+| [0011](archive/0011-an-operation-declares-what-a-crash-does.md) | An operation declares what a crash does to it | [0018](archive/0018-operations-are-data.md), [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md), [0123](0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md), [0128](0128-an-operation-that-acts-on-nothing-may-be-dropped.md) |
 | [0018](archive/0018-operations-are-data.md) | Operations are data, and their runners never see the state | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0034](archive/0034-an-operation-answers-the-messages-of-its-runner.md) | An operation answers the messages of its runner |  |
 | [0041](archive/0041-a-completion-is-not-discarded.md) | A completion is not discarded | [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0114](0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) |
@@ -84,6 +84,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md) | Nothing waits for an operation under the permit | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md) |
 | [0123](0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) | An idempotent runner may be given the digest of its key, as its delivery |  |
 | [0127](0127-a-live-stream-feeds-its-entities-from-the-boundary.md) | A live stream is no work of a program: the boundary reads it, and sends each item |  |
+| [0128](0128-an-operation-that-acts-on-nothing-may-be-dropped.md) | An operation that acts on nothing may be dropped or changed while it runs |  |
 
 ## Creation
 

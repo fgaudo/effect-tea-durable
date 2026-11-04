@@ -16,7 +16,8 @@ Cluster's says so.
   design it breaks. A defect suspends the entity. A bug of the runtime's crashes it instead.
 - **Delivery.** What a crash does to an operation, and what an idempotent one is given, declared by its runner:
   *idempotent*, run again with the same idempotency key, readable or as its digest; *at least once*, run again; *at
-  most once*, not run again, its `unknown` message delivered instead.
+  most once*, not run again, its `unknown` message delivered instead; *droppable*, acting on nothing, run again, and
+  interrupted when a step drops it or changes it.
 - **Deploy, deployment.** `deploy(program)` gives a handle to one program's entities, under the program's name, in a
   scope of its own. A new version, a fix included, is deployed by a new process.
 - **Durable work, work.** What the state holds under its keys, operations and timers, computed by `durable(state)` and
@@ -54,7 +55,8 @@ Cluster's says so.
 - **Note.** A decision, numbered, in [`decisions/`](decisions); what one is, and when it is taken, is in
   [`AGENTS.md`](../AGENTS.md).
 - **Operation.** Work that acts on the world, as a value of the program's own type. Its runner turns it into an effect
-  that ends with an internal message. It leaves the state only through its completion.
+  that ends with an internal message. It leaves the state only through its completion, unless it is droppable: one
+  that acts on nothing, which a step may drop or change while it runs.
 - **Outbox, log.** One row per step that changed what callers read, holding the entity's address, the message handled
   and the projection left, with a `seq` that never repeats. A consumer reads it from its cursor.
 - **Passivation.** The runtime unloads an entity that has nothing to do. It writes nothing, and the earliest of the

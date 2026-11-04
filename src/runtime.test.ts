@@ -786,6 +786,73 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // A step that drops a droppable operation interrupts it, and does not wait for its finalizers (decision 0128).
+  test('a droppable operation the state drops is interrupted, and the entity does not wait for its finalizer', () =>
+    database(Effect.gen(function*() {
+      // `c` acts and never comes back, and its finalizer ends only once the test opens the gate.
+      const gate = yield* Deferred.make<void>()
+      const interrupted: Array<string> = []
+      const dropping: Program<T> = {
+        ...program,
+        name: 'Dropping',
+        init: (_flags, at) => ({ want: ['c'], applied: [], since: at, rings: at }),
+        operations: {
+          ...program.operations,
+          C: operation.droppable(({ key }) =>
+            Effect.andThen(acts(key, null), Effect.never).pipe(
+              Effect.onInterrupt(() =>
+                Effect.andThen(Effect.sync(() => interrupted.push(key)), Deferred.await(gate))
+              ),
+            )
+          ),
+        },
+      }
+      const { acted, layer } = yield* hands()
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(dropping), layer)
+          yield* ran(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          expect(acted).toEqual(['c'])
+          const off = { _tag: 'Want', key: 'c', on: false, nonce: 'off' } as const
+          expect(yield* ran(toy.send(id, off, { requestId: 'off', sender: tester }))).toEqual({ _tag: 'Accepted' })
+          expect(interrupted).toEqual(['c'])
+          // The finalizer still waits on the gate, and the next message is handled meanwhile.
+          const on = { _tag: 'Want', key: 'a', on: true, nonce: 'on' } as const
+          expect(yield* ran(toy.send(id, on, { requestId: 'on', sender: tester }))).toEqual({ _tag: 'Accepted' })
+          yield* Deferred.succeed(gate, undefined)
+          yield* runtime.settled
+          const handled = (yield* toy.published(0)).flatMap((row) => (row.message === null ? [] : [row.message]))
+          expect(handled).not.toContainEqual({ _tag: 'Done', key: 'c' })
+          expect(acted.filter((act) => act === 'c')).toEqual(['c'])
+        }))
+    })))
+
+  test('a droppable operation that sends to an entity dies, and suspends its entity', () =>
+    database(Effect.gen(function*() {
+      const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
+        ...sending,
+        operations: {
+          ...sending.operations,
+          C: operation.droppable(({ key }) =>
+            Effect.as(send(program, id, { _tag: 'Want', key: 'a', on: false, nonce: 'sent' }, 'want'), done(key))
+          ),
+        },
+      }
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          yield* Effect.provide(runtime.deploy(program), layer)
+          const from = yield* runtime.deploy(sender)
+          yield* ran(from.create('sender', { at }, { requestId: 'creation', sender: tester }))
+          yield* runtime.settled
+          const stored = yield* storage(sender, yield* SqlClient.SqlClient).load('sender')
+          expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: 'c', incarnation: 1 })
+          expect(yield* storage(program, yield* SqlClient.SqlClient).load(id)).toBeNull()
+        }))
+    })))
+
   // A suspension stops the handling of messages and the timers, not the operations (decision 0113).
   test('an operation under way when its entity suspends runs to its end, and is not run again once resumed', () =>
     database(Effect.gen(function*() {

@@ -1,6 +1,7 @@
 # 0005. An operation leaves the state only through its completion
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. An operation that acts on nothing, which a step may drop or change while it runs,
+is decided by [decision 0128](../0128-an-operation-that-acts-on-nothing-may-be-dropped.md).
 
 ## Context
 

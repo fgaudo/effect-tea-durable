@@ -225,7 +225,7 @@ const Version = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1)))
 const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
 
 /** How an operation is delivered, as its runner declared (decisions 0011, 0123). */
-const Delivery = Schema.Literals(['Idempotent', 'IdempotentDigest', 'AtLeastOnce', 'AtMostOnce'])
+const Delivery = Schema.Literals(['Idempotent', 'IdempotentDigest', 'AtLeastOnce', 'AtMostOnce', 'Droppable'])
 
 /** The rows a reading gives, decoded by the schema of one: built once, for every reading of its kind. */
 const decoder = <S extends Schema.Top & { readonly DecodingServices: never }>(row: S) =>
