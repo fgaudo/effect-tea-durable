@@ -5,7 +5,9 @@
 [decision 0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md) decide, the orders in which a
 fiber started inline gives its parent back. Moves the seeds that
 [decision 0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) names. Decides the open question `A fiber
-started inline, under the scheduler of the tests`.
+started inline, under the scheduler of the tests`. The open question it leaves its count of seeds in, `How many seeds a
+bug needs`, was answered by a rule of work: a step that changes the runtime runs the release's seeds
+([`AGENTS.md`](../../AGENTS.md)).
 
 ## Context
 

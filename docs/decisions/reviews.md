@@ -279,3 +279,51 @@ written for the code the review reads, and are not kept.
   no behaviour: 0076's telling raced with the take, its refusal to load past the capacity and its bound per program;
   0077's suspension of an entity the waker cannot load; 0078's exclusion of the entity just woken, and its name given
   back by the deployment's scope, which it says holds the name exactly as long.
+
+## 2026-11-04: 0098 to 0104, 0109 to 0117, and 0119
+
+- [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md): the order of the finalizers that
+  [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md)'s drain and
+  [0080](archive/0080-a-database-is-held-by-one-runtime.md)'s hold rest on holds only in a sequential scope, and a
+  caller may launch the runtime in a parallel one. The runtime forks a sequential scope of its own, and
+  `a drain holds in a scope that closes its finalizers in parallel` does not end without it. Found too: at 4.1.2,
+  `Scope.close` documents that a finalizer runs uninterruptibly, which 0119 said it did not.
+- Fixed: the status lines of [0101](archive/0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) and
+  [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) did not say that
+  [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) moved every test off budgets, nor that the open
+  question 0117 left its count of seeds in was answered by a rule of work.
+- Documented at 4.1.2, as the notes say: `Schema.Json` (0098); `acquireUseRelease`, `ensuring` and `Fiber.await`
+  (0109, 0110); the option `uninterruptible` of a fork, read in `forkUnsafe` (0112); `MaxOpsBeforeYield` as a
+  `Context.Reference` and the count of steps in `runLoop` (0115, 0117); `forkChild` (0116); `timeoutOption` (0119).
+- Then every rule of these notes that the code keeps was taken out, one at a time, with `scripts/mutate.ts` under
+  `SCHEDULES=all`: of 76, 19 survived, and none was uncertain.
+- Tested now, which no test was: a suspended entity offers no firing, since the runtime stops its timers (0113,
+  where it was said tested); an operator whose resume the runtime cannot finish is given the defect, as a caller is
+  (0114); a fiber on another's stack yields at a change of priority with no task ready, under prioritized schedules
+  (0117); a step the drain handles starts no operation that runs again and arms no timer (0119, which said the first
+  tested and the second reasoned: the test it named ends its drain before that step); a drain of 0 millis is no
+  defect (0119).
+- Tested too, of 0119's reasoned premises: a message an at-most-once operation sends to another entity in the drain
+  is delivered. The test fails once the guard of a caller's request is put around that send.
+- The two rules of [0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md) that 0104 and 0109 left to
+  this review each fail a test now: `leave` setting the waker's flag with its poke, and the waker clearing its flag in
+  the step it finds no poke.
+- One mutation told nothing: 0109's count given back and taken again in one step, which nothing can look between.
+  Written with a yield between, it fails `a process over its capacity unloads its least recently used idle entity`.
+- Ten change nothing a test can see: 0109's count taken right after `leave`, which sets the waker busy in its own
+  step; the crash's fork made uninterruptible or inheriting (0112), since it only interrupts and ends at once; a kept
+  operation of any incarnation (0113), since `reconcile` refuses a change to a running one; the wait's sleep not
+  interrupted, or forked in the deployment's scope (0116), whose stray end is passed over, as 0116 says; an
+  operation left among those that run again after its end, which a stop then finds ended; the drain not reading
+  `applying`, since an operation's end is offered and counted before it ends; the drain's wait not made
+  `interruptible` (0119), the guard 0119 keeps against a release; and PCT yielding at every step with no task ready
+  (0117), which reaches the same orders with more schedules.
+- Two are left, as rules no test reaches. A deploy interrupted after it registers, undone whole (0102): this test
+  sees it as a second deploy that runs the entities once, and only a sender that found the first deployment in the
+  step between could tell. A `leave` that pokes the waker a step after it sets the flag (0068): the waker would have
+  to be reading as the entity leaves and reach its rest in that gap, two deviations, past the bound of the test that
+  reaches a reading left during.
+- Reasoned, and left so: 0099's that a library promises no more stability than what it is built on; 0110's that the
+  fiber which gives the count back runs, in the process's scope; 0114's that no operator stands in the line without
+  an event, an uninterruptible step no point of the scheduler falls in; 0117's that a run beginning after another's
+  in one task is on that fiber's stack.

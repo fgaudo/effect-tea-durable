@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-10-31. Corrects a premise of
 [decision 0066](0066-the-runtimes-tests-move-time.md): `TestClock.adjust` runs until they wait only the fibers it
-wakes and what they set going; its decision stands.
+wakes and what they set going; its decision stands. No test of the runtime runs under a budget since
+[decision 0104](0104-the-runtimes-tests-choose-where-fibers-yield.md), which runs them under the scheduler of the tests.
 
 ## Context
 
