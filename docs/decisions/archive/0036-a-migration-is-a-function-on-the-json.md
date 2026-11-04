@@ -4,7 +4,9 @@
 [decision 0043](0043-a-row-no-version-reads-fails-what-reads-it.md). Its consequence that a stored operation, migrated,
 must be `Equal.equals` to the new one is changed by [decision 0058](0058-work-is-compared-by-what-is-stored.md): the
 two must encode to the same JSON. That a rejection's reason is kept for ever, which holds of a caller's reply alone, is
-corrected by [decision 0100](0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md).
+corrected by [decision 0100](0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md). Its rule that a deployed
+migration is never changed is checked by the cases a test records of it, and a program keeps every migration
+([decision 0126](../0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md)).
 
 ## Context
 

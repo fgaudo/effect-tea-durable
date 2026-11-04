@@ -1,9 +1,11 @@
 import type * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Equal from 'effect/Equal'
 import type * as Exit from 'effect/Exit'
 import type * as Fiber from 'effect/Fiber'
 import type * as Scheduler from 'effect/Scheduler'
-import { isRejected, type Program, type Types } from './program.ts'
+import * as Schema from 'effect/Schema'
+import { isRejected, type Json, type Migrated, migrationOf, type Program, type Types, versionOf } from './program.ts'
 
 type TagOf<Message> = Message extends Readonly<{ _tag: infer Tag extends string }> ? Tag : never
 
@@ -56,6 +58,68 @@ export const projectionViolations = <T extends Types>(program: Program<T>, allow
     if (shown && !accepted) violations.push({ _tag: 'Rejected', message, sender })
     if (!shown && accepted) violations.push({ _tag: 'Missing', message, sender })
   }
+  return violations
+}
+
+/**
+ * A case of a migration, recorded when the migration was written: version `from` wrote `written` of the kind `of`,
+ * and version `from + 1` reads `read`. A migration that is deployed is never changed, so a case holds for as long
+ * as the program carries the migration (decision 0126).
+ */
+export type MigrationCase = Readonly<{ from: number; of: Migrated; written: Json; read: Json }>
+
+/**
+ * How a program breaks the cases a test recorded of its migrations:
+ * - `Changed`: the migration from `from` now reads `written` as `got`, not as the recorded `read`;
+ * - `Failed`: the migration from `from`, the migrations after it, or the program's schema of the kind, die on
+ *   `written`, so a row it wrote cannot be read at the program's version;
+ * - `Unrecorded`: the migration from `from` changes the kind `of`, and no case records what it does;
+ * - `Unknown`: a case from a version the program has no migration from.
+ */
+export type MigrationViolation =
+  | Readonly<{ _tag: 'Changed'; example: MigrationCase; got: Json }>
+  | Readonly<{ _tag: 'Failed'; example: MigrationCase; reason: string }>
+  | Readonly<{ _tag: 'Unrecorded'; from: number; of: Migrated }>
+  | Readonly<{ _tag: 'Unknown'; example: MigrationCase }>
+
+/**
+ * Checks a program's migrations against the cases a test recorded of them. Each case must still be read as it
+ * recorded, and what it wrote must still be read at the program's version: migrated through every migration after
+ * it, and decoded by the program's schema. Each function a migration declares must have a case, so that a
+ * migration nobody recorded is not changed in silence. Returns every violation, so that a test can assert there
+ * are none (decision 0126).
+ */
+export const migrationViolations = <T extends Types>(
+  program: Program<T>,
+  cases: Iterable<MigrationCase>,
+): ReadonlyArray<MigrationViolation> => {
+  const migrations = program.migrations ?? []
+  const violations: Array<MigrationViolation> = []
+  const recorded = new Set<string>()
+  for (const example of cases) {
+    const { from, of, written, read } = example
+    if (!Number.isInteger(from) || from < 1 || from >= versionOf(program)) {
+      violations.push({ _tag: 'Unknown', example })
+      continue
+    }
+    recorded.add(`${of}@${from}`)
+    const up = migrations[from - 1]?.[of] ?? ((json: Json) => json)
+    try {
+      const got = up(written)
+      if (!Equal.equals(got, read)) violations.push({ _tag: 'Changed', example, got })
+      Schema.decodeSync(program.schemas[of] as Schema.Codec<unknown, Json>)(migrationOf(program, of, from)(written))
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message.split('\n')[0] ?? '' : String(cause)
+      violations.push({ _tag: 'Failed', example, reason })
+    }
+  }
+  migrations.forEach((migration, at) => {
+    for (const of of Object.keys(migration) as ReadonlyArray<Migrated>) {
+      if (migration[of] !== undefined && !recorded.has(`${of}@${at + 1}`)) {
+        violations.push({ _tag: 'Unrecorded', from: at + 1, of })
+      }
+    }
+  })
   return violations
 }
 

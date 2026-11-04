@@ -1,17 +1,22 @@
 /**
  * The scheduler the runtime's tests run under (decision 0104): its rules are its spike's,
  * `spikes/effect-scheduler-controlled.test.ts`, which tests them one by one; here, what the explorations add.
+ * Then the check of a program's migrations against the cases a test recorded (decision 0126).
  */
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
+import * as Schema from 'effect/Schema'
 import { TestClock } from 'effect/testing'
+import { type Json, type Migration, noWork, operation, type Program } from './program.ts'
 import {
   deviated,
   everySchedule,
   inOrder,
+  type MigrationCase,
+  migrationViolations,
   prioritized,
   prioritizedSchedules,
   replayed,
@@ -493,4 +498,77 @@ test('a fiber started inline yields with no task ready, and gives its parent bac
   })
   expect([...ends]).toContain('c1 c2 c3 c4 p')
   expect([...ends]).toContain('c1 p c2 c3 c4')
+})
+
+describe('migrationViolations (decision 0126)', () => {
+  type T = {
+    state: Readonly<{ count: number; label: string }>
+    flags: null
+    inbound: string
+    internal: string
+    operation: Readonly<{ _tag: 'Ask' }>
+    key: 'ask'
+    rejection: never
+    sender: null
+    projection: string
+    index: never
+    services: never
+  }
+
+  /** Version 1 stored `{ n }`, version 2 `{ count }`, and version 3, this one, adds a label. */
+  const migrations: ReadonlyArray<Migration> = [
+    { state: (json) => ({ count: (json as Readonly<{ n: number }>).n }) },
+    { state: (json) => ({ ...json as Readonly<Record<string, Json>>, label: 'none' }) },
+  ]
+
+  const counter = (migrations: ReadonlyArray<Migration>): Program<T> => ({
+    name: 'Counter',
+    keys: ['ask'],
+    schemas: {
+      state: Schema.Struct({ count: Schema.Number, label: Schema.String }),
+      flags: Schema.Null,
+      inbound: Schema.String,
+      internal: Schema.String,
+      operation: Schema.TaggedStruct('Ask', {}),
+      rejection: Schema.Never,
+      sender: Schema.Null,
+      projection: Schema.String,
+    },
+    init: () => ({ count: 0, label: 'none' }),
+    update: () => (state) => state,
+    durable: () => noWork,
+    operations: { Ask: operation(() => Effect.succeed('asked')) },
+    project: ({ label }) => label,
+    indexes: {},
+    migrations,
+  })
+
+  const cases: ReadonlyArray<MigrationCase> = [
+    { from: 1, of: 'state', written: { n: 2 }, read: { count: 2 } },
+    { from: 2, of: 'state', written: { count: 2 }, read: { count: 2, label: 'none' } },
+  ]
+
+  test('a program whose migrations read what their cases recorded breaks none', () => {
+    expect(migrationViolations(counter(migrations), cases)).toEqual([])
+  })
+
+  test('a migration changed since its case was recorded is named, with what it reads now', () => {
+    const changed = [{ state: (json: Json) => ({ count: (json as Readonly<{ n: number }>).n * 10 }) }, migrations[1]!]
+    expect(migrationViolations(counter(changed), cases)).toEqual([
+      { _tag: 'Changed', example: cases[0]!, got: { count: 20 } },
+    ])
+  })
+
+  test('a case whose row the program’s version cannot read fails, though the migration still reads it', () => {
+    const dropped = [migrations[0]!, {}]
+    expect(migrationViolations(counter(dropped), [cases[0]!]).map(({ _tag }) => _tag)).toEqual(['Failed'])
+  })
+
+  test('a migration of a kind no case records is unrecorded, and a case from no migration is unknown', () => {
+    const unknown: MigrationCase = { from: 3, of: 'state', written: {}, read: {} }
+    expect(migrationViolations(counter(migrations), [cases[1]!, unknown])).toEqual([
+      { _tag: 'Unknown', example: unknown },
+      { _tag: 'Unrecorded', from: 1, of: 'state' },
+    ])
+  })
 })

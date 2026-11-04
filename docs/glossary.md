@@ -47,6 +47,8 @@ Cluster's says so.
   or *internal*, from the entity's own work, a completion or a firing, carrying an incarnation.
 - **Migration.** A record of pure functions from the JSON a version wrote to the JSON the next one reads, by kind of
   stored value. A program carries every migration it ever had, in order.
+- **Migration case.** A JSON value a version wrote of one kind, and the JSON value the next version reads of it,
+  recorded by a test when the migration is written. `migrationViolations` checks a program against its cases.
 - **Name.** What the runtime stores a program's entities under, and what other entities address them by. A process
   deploys a name once.
 - **Note.** A decision, numbered, in [`decisions/`](decisions); what one is, and when it is taken, is in

@@ -302,6 +302,12 @@ it can read ([decision 0043](decisions/archive/0043-a-row-no-version-reads-fails
 the exception, since it meets every row: it passes over such an entity, and names it
 ([decision 0122](decisions/0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md)).
 
+A program keeps every migration it ever had, since a row is migrated only when it is written again
+([decision 0126](decisions/0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md)). A migration
+once deployed is never changed, since it is how a version that exists in storage is read. A test records cases of
+each migration: a JSON value a version wrote of one kind, and the JSON value the next version reads of it.
+`migrationViolations` checks the program against them.
+
 ## Execution
 
 - **Activation.** The runtime loads the state, the incarnations and the stored work, computes `durable(state)`,
@@ -472,6 +478,9 @@ Most of a program is pure, so most tests need no runtime:
   the messages its reader could send, once the test says which field of the projection stands for which message
   ([decision 0026](decisions/archive/0026-the-test-maps-a-projection-to-its-messages.md)).
   [`examples/order/order.test.ts`](../examples/order/order.test.ts) checks it for generated states;
+- **the migrations**: each migration still reads the cases recorded when it was written, and what a version wrote is
+  still read at the program's version. `migrationViolations` checks it, and names a migration no case records
+  ([decision 0126](decisions/0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md));
 - **the defects**: an internal message in a state without its key.
 
 ### Rehearsing

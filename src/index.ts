@@ -58,4 +58,12 @@ export {
   type Reindexed,
   type Suspension,
 } from './storage.ts'
-export { type Allows, type Candidate, projectionViolations, type ProjectionViolation } from './testing.ts'
+export {
+  type Allows,
+  type Candidate,
+  type MigrationCase,
+  migrationViolations,
+  type MigrationViolation,
+  projectionViolations,
+  type ProjectionViolation,
+} from './testing.ts'
