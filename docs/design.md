@@ -643,6 +643,10 @@ it has not ended, and an entity leaves the process in one step
 ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). An idle entity's wait
 ends with an item a sleep puts in the entity's queue, and nothing races its take, so an event offered as the wait
 runs out is not lost ([decision 0116](decisions/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md)).
+An entity's loop yields after a step that leaves it more to do, so that another entity waits for one step of a busy
+one at most. Effect yields a fiber after a count of operations, and a step whose encoding and write take long is few
+operations. A loop with nothing to do starts its wait at once
+([decision 0134](decisions/0134-an-entitys-loop-yields-between-two-steps.md)).
 
 ### Deployments
 

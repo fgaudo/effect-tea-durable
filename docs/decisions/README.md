@@ -156,7 +156,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0028](archive/0028-rules-the-runtime-settled.md) | Rules the runtime settled | [0029](archive/0029-an-idle-entity-is-unloaded.md), [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md) |
+| [0028](archive/0028-rules-the-runtime-settled.md) | Rules the runtime settled | [0029](archive/0029-an-idle-entity-is-unloaded.md), [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md), [0134](0134-an-entitys-loop-yields-between-two-steps.md) |
 | [0029](archive/0029-an-idle-entity-is-unloaded.md) | An idle entity is unloaded, and what is stored wakes it | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md), [0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md), [0071](archive/0071-a-process-starts-the-entities-with-a-message.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md), [0076](archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0111](archive/0111-an-entity-s-wait-times-out-its-take-alone.md), [0113](0113-a-suspended-entitys-operations-run-to-their-end.md), [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) |
 | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) | The runtime waits for what it waits for, and polls nothing |  |
 | [0066](archive/0066-the-runtimes-tests-move-time.md) | The runtime's tests move time, and wait for nothing on a clock | [0101](archive/0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md), [0103](archive/0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md), [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) |
@@ -181,3 +181,4 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) | A fiber on another's stack yields with no task ready |  |
 | [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md) | A planned stop drains the at-most-once operations, and stops the rest at once | [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) |
 | [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) | The runtime closes a sequential scope of its own, whatever its caller's |  |
+| [0134](0134-an-entitys-loop-yields-between-two-steps.md) | An entity's loop yields after a step that leaves it more to do, so that a busy entity holds no other for more than a step |  |

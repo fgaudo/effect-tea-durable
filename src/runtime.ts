@@ -989,12 +989,19 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       )
 
     const steps = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>): Effect.Effect<void> => {
+      const handles = () => loaded.machine.stored.suspension === null && loaded.machine.stored.mailbox.length > 0
+      // The loop yields after a step that leaves it more to do, so that another entity steps between two of this
+      // one's. Effect yields a fiber after a count of operations, and a step whose encoding and write take long is
+      // few operations. A loop with nothing to do starts its wait at once, so that `settled` finds the wait's sleep
+      // started (decision 0134).
+      const again: Effect.Effect<void> = Effect.suspend(() =>
+        handles() || Queue.sizeUnsafe(loaded.events) > 0 ? Effect.andThen(Effect.yieldNow, next) : next
+      )
       const next: Effect.Effect<void> = Effect.suspend(() => {
-        const { stored } = loaded.machine
-        if (stored.suspension === null && stored.mailbox.length > 0) {
+        if (handles()) {
           return DateTime.now.pipe(
             Effect.flatMap((now) => apply(deployed, loaded, { _tag: 'Handle', at: now })),
-            Effect.flatMap(() => next),
+            Effect.flatMap(() => again),
           )
         }
         // The wait's end is put in the queue by a sleep of its own, and the take is raced against nothing: a take a
@@ -1031,7 +1038,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
                 loaded.pending -= 1
                 end()
               }))),
-              () => next,
+              () => again,
             )
           }),
         )

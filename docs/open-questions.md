@@ -29,9 +29,12 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 - **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
   large state do: split into entities, or store a difference? A step that changes what callers read also writes
   the projection twice: in its row, and whole in a row of the outbox, which stays until every consumer has read it.
-  The spike `spikes/large-states.test.ts` saw a step take about 5 ms with a state of 48 KB, 20 ms with 0.5 MB, and
+  The spike `spikes/large-states.test.ts` saw a step take about 5 ms with a state of 48 KB, 21 ms with 0.5 MB, and
   240 ms with 5 MB, when the projection holds the state. From 0.5 MB up, a step took about a third of that when the
-  projection holds a count. Most of the time is SQLite's write and the schema's encoding, not the machine.
+  projection holds a count. Most of the time is SQLite's write and the schema's encoding, not the machine. Both are
+  synchronous, so a step holds every other entity of the process for as long as it takes: beside a state of 5 MB,
+  the spike saw a step of a small entity take 345 ms at worst, where it takes 2 ms alone
+  ([decision 0134](decisions/0134-an-entitys-loop-yields-between-two-steps.md) keeps it to one step).
   [Decision 0133](decisions/0133-an-entity-composes-children-as-effect-tea-does.md) keeps the children in the parent's
   state, so it makes this question more pressing. It would be decided by:
   - whether the runtime states a limit, as a warning or a refusal past a size of the state's JSON, or whether only

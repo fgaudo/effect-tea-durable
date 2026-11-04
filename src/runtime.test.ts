@@ -712,6 +712,7 @@ describe('the runtime on SQLite', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender })
+          yield* runtime.settled
           const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 'a', on: false, nonce })
           const first = yield* running(toy.send(id, want('n1'), { requestId: 'first', sender }))
           // Both wait behind the first: a second message, and a retry of the first.
@@ -721,6 +722,8 @@ describe('the runtime on SQLite', () => {
           const released = DateTime.toEpochMillis(yield* DateTime.now)
           yield* Deferred.succeed(gate, undefined)
           for (const fiber of [first, second, retry]) expect(yield* Fiber.join(fiber)).toEqual({ _tag: 'Accepted' })
+          // The retry may be answered before its own message is applied, so the events are read once it is.
+          yield* runtime.settled
           const times = events.flatMap((event) =>
             event._tag === 'Receive' && event.request._tag === 'Caller'
               ? [[event.request.id, DateTime.toEpochMillis(event.at), event.reply]]
@@ -733,6 +736,40 @@ describe('the runtime on SQLite', () => {
             ['first', released, { _tag: 'Accepted' }],
           ])
           expect((yield* storage(program, yield* SqlClient.SqlClient).load(id))?.state.applied).toEqual(['n1', 'n2'])
+        }))
+    })))
+
+  test('an entity whose messages keep coming lets another step between two of its steps', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const received: Array<string> = []
+      const started = yield* Deferred.make<void>()
+      const observe: Hooks['observe'] = (entity, event) =>
+        Effect.suspend(() => {
+          if (event._tag !== 'Receive') return Effect.void
+          received.push(entity.id)
+          return entity.id === 'busy' ? Deferred.succeed(started, undefined) : Effect.void
+        })
+      const at = yield* DateTime.now
+      yield* process({ observe }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('busy', { at }, { requestId: 'c-busy', sender: tester })
+          yield* toy.create('quiet', { at }, { requestId: 'c-quiet', sender: tester })
+          yield* runtime.settled
+          // Each reply resumes the sender at once, and its next message is in the queue before the busy entity's
+          // loop takes from it: the loop never waits, and yields only where it yields on its own.
+          yield* Effect.forkChild(Effect.forEach(
+            Array.from({ length: 100 }, (_, n) => n),
+            (n) => toy.send('busy', { _tag: 'Refuse', nonce: `${n}` }, { requestId: `busy-${n}`, sender: tester }),
+            { discard: true },
+          ))
+          yield* Deferred.await(started)
+          const before = received.length
+          yield* toy.send('quiet', { _tag: 'Refuse', nonce: 'q' }, { requestId: 'quiet', sender: tester })
+          // The quiet entity's message waits for one step of the busy entity, and the start of the next, at most.
+          const between = received.slice(before, received.indexOf('quiet'))
+          expect(between.length).toBeLessThanOrEqual(2)
         }))
     })))
 
@@ -904,10 +941,12 @@ describe('the runtime on SQLite', () => {
           const handled = (yield* toy.published(0)).flatMap((row) => (row.message === null ? [] : [row.message._tag]))
           expect(handled.filter((tag) => tag === 'Done').length).toBe(3)
           expect(handled).not.toContain('Unknown')
-          // The timer is armed again, at a time that has passed: it fires with the clock's next move.
-          expect((yield* store.load(id))?.state.want).toEqual(['t'])
+          // The timer is armed again, at a time that has passed, and fires: at once, or with the clock's next move,
+          // as soon as the fiber of its sleep runs.
           yield* TestClock.adjust('1 millis')
           yield* runtime.settled
+          expect(events.slice(events.findIndex((event) => event._tag === 'Discard')).map((event) => event._tag))
+            .toContain('Fire')
           expect((yield* store.load(id))?.state.want).toEqual([])
         }))
     })))
@@ -2007,6 +2046,7 @@ describe('passivation', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+          yield* runtime.settled
           const callers = yield* running(Effect.forEach(
             nonces,
             (nth) =>
