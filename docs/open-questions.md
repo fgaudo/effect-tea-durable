@@ -27,7 +27,21 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   a cluster, or a store that allows it — a row with a lower `seq` may commit after one a consumer has read, and
   be stepped over. What orders the log then, and what a consumer reads from, is not decided.
 - **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
-  large state do: split into entities, or store a difference?
+  large state do: split into entities, or store a difference? A step that changes what callers read also writes
+  the projection twice: in its row, and whole in a row of the outbox, which stays until every consumer has read it.
+  The spike `spikes/large-states.test.ts` saw a step take about 5 ms with a state of 48 KB, 20 ms with 0.5 MB, and
+  240 ms with 5 MB, when the projection holds the state. From 0.5 MB up, a step took about a third of that when the
+  projection holds a count. Most of the time is SQLite's write and the schema's encoding, not the machine.
+  [Decision 0133](decisions/0133-an-entity-composes-children-as-effect-tea-does.md) keeps the children in the parent's
+  state, so it makes this question more pressing. It would be decided by:
+  - whether the runtime states a limit, as a warning or a refusal past a size of the state's JSON, or whether only
+    the design advises a split into entities;
+  - whether a row of the outbox needs the projection whole, or whether the message and a version would do. A large
+    projection doubles what a step writes, and the outbox keeps it;
+  - an example whose state grows with use, such as an order of many lines under decisions 0132 and 0133, and what
+    its steps cost;
+  - what writing a difference would cost the machine, which decision 0028 put aside as a second place for the
+    machine's rules.
 - **Renaming a program.** A program's name is the entities' address, and a schema's migration does not move
   what is stored under it: its entities, and the replies stored for them by other entities
   ([decision 0022](decisions/archive/0022-a-new-program-keeps-what-work-started-with.md)). How a rename is run, and
