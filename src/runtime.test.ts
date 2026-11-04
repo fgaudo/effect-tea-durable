@@ -43,7 +43,15 @@ import {
 import * as Library from './index.ts'
 import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
 import { createTables, storage } from './storage.ts'
-import { inOrder, prioritized, replayed as replayedSchedule, type Run, scheduled, type Strategy } from './testing.ts'
+import {
+  inOrder,
+  prioritized,
+  replayed as replayedSchedule,
+  type Run,
+  scheduled,
+  seeds,
+  type Strategy,
+} from './testing.ts'
 
 // The toy of `machine.test.ts`, with the schemas a runtime needs: `a` is idempotent, `b` at most once, `c` at
 // least once, and `t` a timer. Each key's work ends by removing its key, unless a message brings it back.
@@ -294,9 +302,19 @@ type Window = { open: boolean }
 
 /**
  * The share of its seeds a test under `explored` runs. The release's run, `bun run test:release`, runs them all; any
- * other run of the tests runs one in twenty, from seed 0, so that the suite runs in seconds.
+ * other run of the tests runs one in twenty, so that the suite runs in seconds.
  */
 const share = Bun.env['SCHEDULES'] === 'all' ? 1 : 1 / 20
+
+/**
+ * The seed a test under `explored` starts from: 0, so that `bun test` and the release replay the same schedules,
+ * unless `SEED` names another. `bun run test:explore` draws it at random, so that each of its runs tries new schedules.
+ */
+const first = (() => {
+  const seed = Number(Bun.env['SEED'] ?? 0)
+  if (!Number.isSafeInteger(seed)) throw new Error(`SEED is not an integer: ${Bun.env['SEED']}`)
+  return seed
+})()
 
 /**
  * Runs `test` over a database of its own under `runs` prioritized schedules at `depth`, as `share` cuts them, with
@@ -305,13 +323,16 @@ const share = Bun.env['SCHEDULES'] === 'all' ? 1 : 1 / 20
  * unless `open` is false. PCT draws its changes of priority among the steps a run in order is asked of preemption with
  * the window open. With `bound` 1 it runs instead every schedule that deviates once from the run in order within the
  * window, a pick or a preemption, as `everySchedule` does: exhaustive where PCT is not, for a point between two steps
- * of one fiber. That one runs whole, in every run of the tests.
+ * of one fiber. That one runs whole, in every run of the tests. Under PCT, the seeds `pinned` run in every run,
+ * before the others: each is a seed a run once failed on, kept once its bug is fixed.
  */
 const explored = <A>(
   test: (window: Window) => Effect.Effect<A, unknown, SqlClient.SqlClient | Scope.Scope>,
   ended: A,
-  { runs = 2_000, depth = 4, open = true, bound }: Readonly<
-    { runs?: number; depth?: number; open?: boolean; bound?: 1 }
+  { runs = 2_000, depth = 4, open = true, bound, pinned = [] }: Readonly<
+    & { runs?: number; depth?: number; open?: boolean }
+    // A schedule under `bound` 1 has no seed, so it pins none.
+    & ({ bound?: never; pinned?: ReadonlyArray<number> } | { bound: 1; pinned?: never })
   > = {},
 ) => {
   const window: Window = { open }
@@ -349,7 +370,7 @@ const explored = <A>(
   }
   let steps = 0
   scheduled(scenario, { pick: () => 0, preempt: () => (window.open && (steps += 1), false) }, 'inline')
-  for (let seed = 0; seed < Math.ceil(runs * share); seed++) {
+  for (const seed of seeds({ first, count: Math.ceil(runs * share), pinned })) {
     const run = scheduled(scenario, within(prioritized(seed, depth, steps)), 'inline')
     expect({ seed, ended: ends(run) }).toEqual({ seed, ended })
   }

@@ -17,6 +17,7 @@ import {
   replayed,
   type Run,
   scheduled,
+  seeds,
   type Strategy,
 } from './testing.ts'
 
@@ -267,6 +268,25 @@ test('prioritized schedules reach the lost update at depth 2, and name the seed 
     .toThrow(/^under prioritized\(\d+, 2, \d+\)/)
   // At depth 1 no priority changes: a fiber is preempted only by a higher one woken, and none is here.
   prioritizedSchedules(twoIncrements, { runs: 50, depth: 1 }, counted(2))
+})
+
+test('the seeds of prioritized schedules are those pinned, each once, then the range from the first', () => {
+  expect(seeds({ count: 3 })).toEqual([0, 1, 2])
+  expect(seeds({ first: 1_000, count: 3, pinned: [7, 1_001, 7] })).toEqual([7, 1_001, 1_000, 1_002])
+})
+
+test('prioritized schedules run the seeds pinned, then those from the first seed given, and name each that fails', () => {
+  // A seed of the first 50 that reaches the lost update fails again alone, as the first or as a seed pinned.
+  let failed = -1
+  try {
+    prioritizedSchedules(twoIncrements, { runs: 50, depth: 2 }, counted(2))
+  } catch (error) {
+    failed = Number(/^under prioritized\((\d+),/.exec((error as Error).message)?.[1])
+  }
+  expect(failed).toBeGreaterThanOrEqual(0)
+  const alone = new RegExp(`^under prioritized\\(${failed}, 2,`)
+  expect(() => prioritizedSchedules(twoIncrements, { runs: 1, depth: 2, first: failed }, counted(2))).toThrow(alone)
+  expect(() => prioritizedSchedules(twoIncrements, { runs: 0, depth: 2, pinned: [failed] }, counted(2))).toThrow(alone)
 })
 
 test('prioritized schedules change the priority at as many steps as their depth asks', () => {

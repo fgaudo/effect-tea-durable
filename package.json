@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:release": "SCHEDULES=all bun test",
+    "test:explore": "bun scripts/explore.ts",
     "links": "bun scripts/check-links.ts"
   },
   "devDependencies": {

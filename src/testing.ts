@@ -469,18 +469,31 @@ export const prioritized = (seed: number, depth: number, steps: number): Strateg
 }
 
 /**
- * Runs `effect` under `runs` schedules of `prioritized` at `depth`, from seed 0, and has `check` read each end. A bug
- * of depth `d`, `d` orderings that must all fall one way, is found by each run with a probability of at least
- * 1 / (n k^(d - 1)), for n fibers and k steps. The steps are those a run `inOrder` is asked of preemption. A failure
- * names the seed that replays it.
+ * The seeds a run of prioritized schedules runs: `pinned` first, each once, then `count` seeds from `first` on. A
+ * seed pinned is one a run once failed on, kept as a check against its bug's return whatever range the run explores.
+ */
+export const seeds = (
+  { first = 0, count, pinned = [] }: Readonly<{ first?: number; count: number; pinned?: ReadonlyArray<number> }>,
+): ReadonlyArray<number> => {
+  const range = Array.from({ length: count }, (_, index) => first + index)
+  return [...new Set([...pinned, ...range])]
+}
+
+/**
+ * Runs `effect` under `runs` schedules of `prioritized` at `depth`, from seed `first` (0 unless given), after the
+ * seeds `pinned`, and has `check` read each end. A bug of depth `d`, `d` orderings that must all fall one way, is
+ * found by each run with a probability of at least 1 / (n k^(d - 1)), for n fibers and k steps. The steps are those
+ * a run `inOrder` is asked of preemption. A failure names the seed that replays it.
  */
 export const prioritizedSchedules = <A, E>(
   effect: Effect.Effect<A, E>,
-  { runs, depth, resumptions = 'queued' }: Readonly<{ runs: number; depth: number; resumptions?: Resumptions }>,
+  { runs, depth, first = 0, pinned = [], resumptions = 'queued' }: Readonly<
+    { runs: number; depth: number; first?: number; pinned?: ReadonlyArray<number>; resumptions?: Resumptions }
+  >,
   check: (exit: Exit.Exit<A, E>) => void,
 ): void => {
   const steps = Math.max(1, scheduled(effect, inOrder, resumptions).schedule.preemptions.length)
-  for (let seed = 0; seed < runs; seed++) {
+  for (const seed of seeds({ first, count: runs, pinned })) {
     checked(
       scheduled(effect, prioritized(seed, depth, steps), resumptions),
       check,

@@ -100,7 +100,11 @@ This repository is a design and its pure core, not a library yet: read [`README.
   test moves the points where fibers yield. Where the interleaving cannot be reached, the decision says why, and why
   the change holds. A test under `explored` runs one seed in twenty, from seed 0, so that the suite runs in seconds;
   `bun run test:release` runs them all, and a release passes it. A schedule under `bound` 1 runs whole in every run,
-  since it is exhaustive within its bound.
+  since it is exhaustive within its bound. `bun test` and the release start from seed 0, so that each of their runs
+  replays the same schedules. `bun run test:explore` looks for the bugs those schedules miss: it runs every seed of
+  the explored tests from a random first seed, again and again, until a run fails or it is stopped. A failure names
+  its seed, and `SEED=<seed> bun test` runs that seed first. Once the bug a seed found is fixed, the seed is listed
+  under `pinned` in its test, so that every run of the tests runs it.
 - A word the design gives a meaning of its own is defined once, in [`docs/glossary.md`](docs/glossary.md); a change
   that adds, renames or drops one changes it in the same commit. A section of `docs/design.md` longer than a screen
   has subsections, so that a reader finds a rule by its heading.
