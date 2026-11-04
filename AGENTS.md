@@ -106,7 +106,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   replays the same schedules. `bun run test:explore` looks for the bugs those schedules miss: it runs every seed of
   the explored tests from a random first seed, again and again, until a run fails or it is stopped. A failure names
   its seed, and `SEED=<seed> bun test` runs that seed first. Once the bug a seed found is fixed, the seed is listed
-  under `pinned` in its test, so that every run of the tests runs it.
+  under `pinned` in its test, so that every run of the tests runs it. A seed draws its schedule from the yields of
+  the code it runs, so a change that adds or moves a yield in `src/runtime.ts` or `src/testing.ts` finds the pinned
+  seeds again: for each, it takes out the fix the test's comment names, runs `bun run test:explore -t <test>` until
+  a seed fails, and pins that seed, with the comment saying the form of the code it fails against.
 - A word the design gives a meaning of its own is defined once, in [`docs/glossary.md`](docs/glossary.md); a change
   that adds, renames or drops one changes it in the same commit. A section of `docs/design.md` longer than a screen
   has subsections, so that a reader finds a rule by its heading.
