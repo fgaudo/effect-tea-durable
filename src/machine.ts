@@ -200,9 +200,13 @@ const admitted = <T extends Types>(program: Program<T>, state: T['state']): Held
   return work
 }
 
-/** A message waiting in the mailbox: from a caller, or from the entity's own work in one incarnation. */
+/**
+ * A message waiting in the mailbox: from a caller, or from the entity's own work in one incarnation. A caller's
+ * message may carry `keep`, how many milliseconds its reply is kept once it is answered. Without it the reply is
+ * kept for ever (decision 0125).
+ */
 export type Envelope<T extends Types> =
-  | Readonly<{ _tag: 'Inbound'; request: Request<T['sender']>; message: T['inbound'] }>
+  | Readonly<{ _tag: 'Inbound'; request: Request<T['sender']>; message: T['inbound']; keep?: number }>
   | Readonly<{ _tag: 'Internal'; key: string; incarnation: number; message: T['internal'] }>
 
 /**
@@ -316,8 +320,9 @@ export type Machine<T extends Types> = Readonly<{
 export type Event<T extends Types> =
   /**
    * An inbound message arrives, under its request, with the reply stored under that request, or null for none: a
-   * runtime reads it just before the step, where no other event of the entity is applied (decision 0065). One that
-   * finds the mailbox empty is handled at `at` in the same event: one transaction (decision 0074).
+   * runtime reads it just before the step, where no other event of the entity is applied (decision 0065). A reply
+   * past its time is none (decision 0125). One that finds the mailbox empty is handled at `at` in the same event:
+   * one transaction (decision 0074). `keep` is how long a caller's reply is kept once it is answered.
    */
   | Readonly<{
     _tag: 'Receive'
@@ -325,6 +330,7 @@ export type Event<T extends Types> =
     message: T['inbound']
     reply: StoredReply<T['rejection']> | null
     at: DateTime.Utc
+    keep?: number
   }>
   /** A request to create the entity, which exists. Its flags do not matter (decision 0012). */
   | Readonly<{ _tag: 'Create'; request: Request<T['sender']> }>
@@ -395,7 +401,7 @@ export type KeyRow = Readonly<{
 
 /** A message queued at the end of the mailbox, encoded, with an inbound message's request (decision 0059). */
 export type EnvelopeRow =
-  | Readonly<{ _tag: 'Inbound'; message: Json; request: Json }>
+  | Readonly<{ _tag: 'Inbound'; message: Json; request: Json; keep: number | null }>
   | Readonly<{ _tag: 'Internal'; message: Json; key: string; incarnation: number }>
 
 /** The work of another entity that sent a request: its reply is kept while that work holds (decision 0021). */
@@ -404,13 +410,15 @@ export type Asker = Readonly<{ name: string; id: string; key: string; incarnatio
 /**
  * A reply stored under a request: `request` is its `requestKey`, the request's JSON as text, which the reply is
  * found by. A rejection's reason is null for a bare `reject`, and `asked` is the operation of another entity that
- * sent the request, read off it (decision 0059).
+ * sent the request, read off it (decision 0059). `until` is the time in milliseconds from which a caller's reply
+ * is no longer read, or null for one kept for ever (decision 0125).
  */
 export type ReplyRow = Readonly<{
   request: string
   tag: StoredReply<unknown>['_tag']
   reason: Json | null
   asked: Asker | null
+  until: number | null
 }>
 
 /**
@@ -463,7 +471,7 @@ export type Transition<T extends Types> = Readonly<{
  */
 type Moved<T extends Types> =
   & Omit<Transition<T>, 'written'>
-  & Readonly<{ handled?: Envelope<T>; answered?: StoredReply<T['rejection']> }>
+  & Readonly<{ handled?: Envelope<T>; answered?: StoredReply<T['rejection']>; at?: DateTime.Utc }>
 
 /**
  * Whether the work under `key` in `incarnation` is stored, and not yet done. Once it is not, it never is again, and
@@ -740,7 +748,10 @@ const receive = <T extends Types>(
   if (stored.mailbox.some((envelope) => envelope._tag === 'Inbound' && requestKey(program, envelope.request) === key)) {
     return { machine, outputs: [] }
   }
-  const envelope: Envelope<T> = { _tag: 'Inbound', request, message: event.message }
+  // Only a caller's reply has a time: another entity's is kept while the work that asked holds (decision 0021).
+  const envelope: Envelope<T> = event.keep === undefined || request._tag !== 'Caller'
+    ? { _tag: 'Inbound', request, message: event.message }
+    : { _tag: 'Inbound', request, message: event.message, keep: event.keep }
   const queued: Machine<T> = { ...machine, stored: { ...stored, mailbox: [...stored.mailbox, envelope] } }
   // Nothing is ahead of it: it is handled as it arrives, and never written to the mailbox (decision 0074).
   return stored.mailbox.length === 0 ? handle(program, queued, event.at) : { machine: queued, outputs: [] }
@@ -810,6 +821,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
         outputs: [{ _tag: 'Replied', request: head.request, reply }],
         handled: head,
         answered: reply,
+        at,
       }
     }
     const state: T['state'] = result
@@ -856,7 +868,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
       machine: { ...machine, stored: { ...stored, state, keys, mailbox: rest }, running },
       outputs,
       handled: head,
-      ...(head._tag === 'Inbound' ? { answered: { _tag: 'Accepted' } as const } : {}),
+      ...(head._tag === 'Inbound' ? { answered: { _tag: 'Accepted' } as const, at } : {}),
     }
   } catch (thrown) {
     return suspend(machine, { cause: defectOf(thrown), on: { _tag: 'Message' } })
@@ -911,6 +923,7 @@ const envelopeRow = <T extends Types>(program: Program<T>, envelope: Envelope<T>
       _tag: 'Inbound',
       message: encodeOnce(program.schemas.inbound, envelope.message, 'inbound message'),
       request: encodeOnce(requestCodec(program), envelope.request, 'request'),
+      keep: envelope.keep ?? null,
     }
     : {
       _tag: 'Internal',
@@ -940,6 +953,7 @@ export const writes = <T extends Types>(
   after: Stored<T>,
   handled: Envelope<T> | null,
   answered: StoredReply<T['rejection']> | null,
+  at: DateTime.Utc | null = null,
 ): Written | null => {
   const changed = before === null || before.state !== after.state
   const keys: Array<KeyRow> = []
@@ -965,6 +979,8 @@ export const writes = <T extends Types>(
       ? encodeOnce(program.schemas.rejection, answered.reason, 'reason of the rejection')
       : null,
     asked: askerOf(handled.request),
+    // Counted from the step that answers, so a message that waited in the mailbox loses none of its time.
+    until: handled.keep === undefined || at === null ? null : DateTime.toEpochMillis(at) + handled.keep,
   }]
   const ended: Array<Readonly<{ key: string; incarnation: number }>> = []
   for (const [key, held] of Object.entries(before?.keys ?? {})) {
@@ -1015,12 +1031,12 @@ export const writes = <T extends Types>(
  * by, and every event after it until the next (decision 0064).
  */
 export const step = <T extends Types>(program: Program<T>, machine: Machine<T>, event: Event<T>): Transition<T> => {
-  const { handled = null, answered = null, ...moved } = move(program, machine, event)
+  const { handled = null, answered = null, at = null, ...moved } = move(program, machine, event)
   return {
     ...moved,
     written: moved.machine.stored === machine.stored
       ? null
-      : writes(program, machine.stored, moved.machine.stored, handled, answered),
+      : writes(program, machine.stored, moved.machine.stored, handled, answered, at),
   }
 }
 

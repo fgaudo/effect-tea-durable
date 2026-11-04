@@ -3,7 +3,7 @@
  * entity's keys (decision 0057). Here it is given rows by hand, and what it holds afterwards is read back.
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
@@ -90,12 +90,14 @@ const reply = (name: string, incarnation: number): Machine.ReplyRow => ({
   tag: 'Accepted',
   reason: null,
   asked: { name: 'Asker', id: 'a', key: 'ask', incarnation },
+  until: null,
 })
 
 const inbound = (message: string): Machine.EnvelopeRow => ({
   _tag: 'Inbound',
   message,
   request: { _tag: 'Caller', sender: null, id: message },
+  keep: null,
 })
 
 const database = <A>(body: (sql: SqlClient.SqlClient) => Effect.Effect<A>) =>
@@ -118,8 +120,8 @@ test('a reply asked by work that no longer holds goes as it is stored, and one w
       )
       const store = storage(receiver, sql)
       yield* store.write('r', created({ replies: [reply('held', 1), reply('ended', 2)] }), 0)
-      expect(yield* store.reply('r', asked('held', 1))).toEqual({ _tag: 'Accepted' })
-      expect(yield* store.reply('r', asked('ended', 2))).toBeNull()
+      expect(yield* store.reply('r', asked('held', 1), 0)).toEqual({ _tag: 'Accepted' })
+      expect(yield* store.reply('r', asked('ended', 2), 0)).toBeNull()
     })))
 
 test('an operation given the digest of its idempotency key is loaded as delivered so (decision 0123)', () =>
@@ -149,7 +151,7 @@ test('the work that ended takes the replies to its requests with it, and no othe
       yield* store.write('s', created({ replies: [reply('other', 1)] }), 0)
       // Work of another incarnation asked nothing that is stored.
       yield* storage(asker, sql).write('a', written({ ended: [{ key: 'ask', incarnation: 2 }] }), 0)
-      expect(yield* store.reply('r', asked('first', 1))).toEqual({ _tag: 'Accepted' })
+      expect(yield* store.reply('r', asked('first', 1), 0)).toEqual({ _tag: 'Accepted' })
       yield* storage(asker, sql).write(
         'a',
         written({
@@ -158,8 +160,8 @@ test('the work that ended takes the replies to its requests with it, and no othe
         }),
         0,
       )
-      expect(yield* store.reply('r', asked('first', 1))).toBeNull()
-      expect(yield* store.reply('s', asked('other', 1))).toBeNull()
+      expect(yield* store.reply('r', asked('first', 1), 0)).toBeNull()
+      expect(yield* store.reply('s', asked('other', 1), 0)).toBeNull()
     })))
 
 // A request is found by its text, and a caller's by its sender as a version before stored it (decision 0065).
@@ -173,14 +175,100 @@ test('a reply is read by its request alone, and a caller is given its own', () =
         tag: 'Accepted',
         reason: null,
         asked: null,
+        until: null,
       })
       yield* store.write('r', created({ replies: [accepted('one')] }), 0)
-      expect(yield* store.reply('r', caller('one'))).toEqual({ _tag: 'Accepted' })
-      expect(yield* store.reply('r', caller('two'))).toBeNull()
-      expect(yield* store.reply('s', caller('one'))).toBeNull()
+      expect(yield* store.reply('r', caller('one'), 0)).toEqual({ _tag: 'Accepted' })
+      expect(yield* store.reply('r', caller('two'), 0)).toBeNull()
+      expect(yield* store.reply('s', caller('one'), 0)).toBeNull()
       // An operation's request named as the caller's request id is another request.
-      expect(yield* store.reply('r', asked('one', 1))).toBeNull()
+      expect(yield* store.reply('r', asked('one', 1), 0)).toBeNull()
     })))
+
+describe('how long a caller’s reply is kept (decision 0125)', () => {
+  const caller = (id: string) => ({ _tag: 'Caller', sender: null, id }) as const
+  const until = (id: string, time: number | null): Machine.ReplyRow => ({
+    request: Machine.requestKey(receiver, caller(id)),
+    tag: 'Accepted',
+    reason: null,
+    asked: null,
+    until: time,
+  })
+
+  test('a reply is read before its time only, whether its row is deleted yet or not', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(receiver, sql)
+        yield* store.write('r', created({ replies: [until('kept', 500), until('forever', null)] }), 0)
+        expect(yield* store.reply('r', caller('kept'), 499)).toEqual({ _tag: 'Accepted' })
+        expect(yield* store.reply('r', caller('kept'), 500)).toBeNull()
+        expect(yield* store.reply('r', caller('forever'), Number.MAX_SAFE_INTEGER)).toEqual({ _tag: 'Accepted' })
+      })))
+
+  test('a reply a version before stored is read before its time only, as one this version stored', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        type Named = Omit<T, 'sender'> & { sender: string }
+        const callers = (migrations: ReadonlyArray<Migration>): Program<Named> => ({
+          ...receiver,
+          schemas: { ...receiver.schemas, sender: Schema.String },
+          update: (message) => () => ({ last: message }),
+          migrations,
+        })
+        const first = callers([])
+        const by = (sender: string) => ({ _tag: 'Caller', sender, id: 'r' }) as const
+        yield* storage(first, sql).write('r', created({
+          replies: [{ request: Machine.requestKey(first, by('a')), tag: 'Accepted', reason: null, asked: null, until: 500 }],
+        }), 0)
+        // Version 2 renames the sender 'a' to 'b', so its retry is found by its request id (decision 0065).
+        const after = storage(callers([{ sender: (json) => json === 'a' ? 'b' : json }]), sql)
+        expect(yield* after.reply('r', by('b'), 499)).toEqual({ _tag: 'Accepted' })
+        expect(yield* after.reply('r', by('b'), 500)).toBeNull()
+      })))
+
+  test('a step that stores a reply deletes the replies of its entity past their time, and no others', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(receiver, sql)
+        yield* store.write('r', created({ replies: [until('gone', 500), until('kept', 900)] }), 0)
+        yield* store.write('s', created({ replies: [until('other', 500)] }), 0)
+        // A step that stores no reply deletes nothing.
+        yield* store.write('r', written({ shown: { projection: 'start', indexes: {} } }), 600)
+        const left = () => sql<{ id: string; request: string }>`SELECT id, request FROM replies ORDER BY id, request`
+        expect((yield* left()).length).toBe(3)
+        yield* store.write('r', written({ replies: [until('new', 1_600)] }), 600)
+        expect((yield* left()).map(({ id, request }) => [id, JSON.parse(request).id])).toEqual([
+          ['r', 'kept'],
+          ['r', 'new'],
+          ['s', 'other'],
+        ])
+      }).pipe(Effect.orDie)))
+
+  test('expire deletes the replies of the program past their time, counts them, and leaves the rest', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(receiver, sql)
+        yield* store.write('r', created({ replies: [until('gone', 500), until('kept', 900), until('ever', null)] }), 0)
+        yield* store.write('s', created({ replies: [until('gone', 500)] }), 0)
+        yield* storage(asker, sql).write('a', created({ replies: [until('gone', 500)] }), 0)
+        expect(yield* store.expire(600)).toBe(2)
+        expect(yield* store.reply('r', caller('kept'), 600)).toEqual({ _tag: 'Accepted' })
+        expect(yield* store.reply('r', caller('ever'), 600)).toEqual({ _tag: 'Accepted' })
+        expect(yield* storage(asker, sql).expire(0)).toBe(0)
+        expect(yield* storage(asker, sql).expire(600)).toBe(1)
+      })))
+
+  test('a message in the mailbox is loaded with the keep it was queued with', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(receiver, sql)
+        const kept: Machine.EnvelopeRow = { _tag: 'Inbound', message: 'kept', request: caller('kept'), keep: 500 }
+        yield* store.write('r', created({ queued: [kept, inbound('forever')] }), 0)
+        const mailbox = (yield* store.load('r'))?.mailbox ?? []
+        expect(mailbox.map((envelope) => envelope._tag === 'Inbound' ? envelope.keep : null))
+          .toEqual([500, undefined])
+      })))
+})
 
 // A process starts what holds an operation or a message, unless an operator has to resume it first (decisions
 // 0006, 0029, 0071).
@@ -262,7 +350,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               reason: null,
             })
           }`,
-          store.reply('r', caller),
+          store.reply('r', caller, 0),
         ],
         [
           sql`INSERT INTO entity_keys ${
@@ -329,7 +417,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               reason: '"why"',
             })
           }`,
-          store.reply('r', caller),
+          store.reply('r', caller, 0),
         ],
         // A version from 1, and a count from 0, wherever they are read.
         [sql`UPDATE entities SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
@@ -418,15 +506,16 @@ test('a caller whose request a migration gives the text of another caller’s ro
         tag: 'Accepted',
         reason: null,
         asked: null,
+        until: null,
       })
       yield* storage(first, sql).write('r', created({ replies: [accepted(first, 'a')] }), 0)
       const after = storage(second, sql)
       // The caller that is 'a' in version 2 has the text of the row of 'a' in version 1, and is not answered by it.
-      expect(yield* after.reply('r', caller('a'))).toBeNull()
+      expect(yield* after.reply('r', caller('a'), 0)).toBeNull()
       yield* after.write('r', written({ replies: [accepted(second, 'a')] }), 0)
-      expect(yield* after.reply('r', caller('a'))).toEqual({ _tag: 'Accepted' })
+      expect(yield* after.reply('r', caller('a'), 0)).toEqual({ _tag: 'Accepted' })
       // The caller version 1 stored as 'a' is 'b' now, and its retry still finds its own reply.
-      expect(yield* after.reply('r', caller('b'))).toEqual({ _tag: 'Accepted' })
+      expect(yield* after.reply('r', caller('b'), 0)).toEqual({ _tag: 'Accepted' })
     })))
 
 // A message costs a reading by the table's key, and a caller's that finds nothing one more, by its request id: each

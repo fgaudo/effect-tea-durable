@@ -76,7 +76,12 @@ A message is one of two kinds, and the rule for a message that does not apply fo
 - **Inbound** messages come from callers. Each one carries a request id chosen by the caller, and is answered
   `Accepted` or `Rejected`, with the reason `update` gave, if any
   ([decision 0010](decisions/archive/0010-a-rejection-may-carry-a-reason.md)). A caller that retries with the same id
-  gets the same answer, and the message is applied once. Request ids are their sender's: another entity's are
+  gets the same answer, and the message is applied once. The boundary may give `send` a `keep`, the time its
+  protocol retries for. The reply is then kept for that time from the step that answers, and a retry after it is a
+  new request, applied again. Without `keep` the reply is kept for ever. A step that stores a reply deletes its
+  entity's replies past their time, and `Handle.expire` those of the whole program
+  ([decision 0125](decisions/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). Request ids are their
+  sender's: another entity's are
   stored under its address, apart from everyone else's
   ([decision 0015](decisions/archive/0015-a-request-belongs-to-its-sender.md)), and a caller's under its sender, as the
   program's schema writes it ([decision 0048](decisions/archive/0048-a-callers-request-belongs-to-its-sender.md)). A
@@ -269,8 +274,9 @@ A program's schemas are what is stored, so a version of the program that changes
 in the database. `migrations` is how it reads it, in order: the first is the step from version 1 to version 2,
 and **the program's version is how many migrations it carries, plus one** — a migration is the bump, and there is
 none to declare ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)). A rejection's reason
-is kept as long as the reply that carries it, a caller's for ever and an entity's until the work that asked ends,
-and the migrations of `rejection` as long as a reply of a version they read is stored
+is kept as long as the reply that carries it: a caller's for the time its boundary gave, or for ever
+([decision 0125](decisions/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)), and an entity's until the work
+that asked ends. The migrations of `rejection` are kept as long as a reply of a version they read is stored
 ([decision 0100](decisions/archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md)).
 
 A migration is a record of pure functions **from the JSON a version wrote to the JSON the next one reads**, by

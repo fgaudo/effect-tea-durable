@@ -98,7 +98,8 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     )
   `
   yield* sql`CREATE INDEX IF NOT EXISTS entity_keys_due ON entity_keys (due)`
-  // The mailbox, in order: `seq` is given as a message is queued, and the first message is the lowest.
+  // The mailbox, in order: `seq` is given as a message is queued, and the first message is the lowest. `keep` is
+  // how long a caller's reply is kept once its message is answered, null for ever (decision 0125).
   yield* sql`
     CREATE TABLE IF NOT EXISTS mailbox (
       name TEXT NOT NULL,
@@ -108,6 +109,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       version INTEGER NOT NULL,
       message TEXT NOT NULL,
       request TEXT,
+      keep INTEGER,
       key TEXT,
       incarnation INTEGER,
       PRIMARY KEY (name, id, seq)
@@ -154,7 +156,8 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // keys it, read through its schema (decision 0059). A row is keyed by the version that wrote it too, since a
   // migration may give one caller's request the text another's had: two versions never share a row
   // (decision 0069). A reply to another entity's operation holds the work that asked, its program, id, key and
-  // incarnation, and is deleted once that work no longer holds (decision 0021).
+  // incarnation, and is deleted once that work no longer holds (decision 0021). A caller's reply with an `until`
+  // is read before that time only (decision 0125).
   yield* sql`
     CREATE TABLE IF NOT EXISTS replies (
       name TEXT NOT NULL,
@@ -163,6 +166,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       tag TEXT NOT NULL,
       version INTEGER NOT NULL,
       reason TEXT,
+      until INTEGER,
       sender_name TEXT,
       sender_id TEXT,
       sender_key TEXT,
@@ -171,6 +175,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     )
   `
   yield* sql`CREATE INDEX IF NOT EXISTS replies_sender ON replies (sender_name, sender_id)`
+  yield* sql`CREATE INDEX IF NOT EXISTS replies_until ON replies (name, until) WHERE until IS NOT NULL`
   // A caller's request a version before stored is found by its request id: its sender may be migrated since
   // (decision 0065).
   yield* sql`CREATE INDEX IF NOT EXISTS replies_request_id ON replies (name, id, json_extract(request, '$.id'))`
@@ -281,6 +286,7 @@ const Rows = {
       version: Version,
       message: Schema.String,
       request: Schema.String,
+      keep: Schema.NullOr(Count),
       key: Schema.Null,
       incarnation: Schema.Null,
     }),
@@ -289,6 +295,7 @@ const Rows = {
       version: Version,
       message: Schema.String,
       request: Schema.Null,
+      keep: Schema.Null,
       key: Schema.String,
       incarnation: Count,
     }),
@@ -421,11 +428,12 @@ export interface Storage<T extends Types> {
   readonly load: (id: string) => Effect.Effect<Machine.Stored<T> | null>
   /**
    * The reply stored for the entity `id` under `request`, or null for none: what a `Receive` is given
-   * (decision 0065).
+   * (decision 0065). A caller's reply past its time at `at`, in milliseconds, is none (decision 0125).
    */
   readonly reply: (
     id: string,
     request: Request<T['sender']>,
+    at: number,
   ) => Effect.Effect<Machine.StoredReply<T['rejection']> | null>
   /**
    * Writes what an event wrote, as the machine encoded it (decision 0057). The caller wraps it in the transaction
@@ -477,6 +485,8 @@ export interface Storage<T extends Types> {
   readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
   /** Drops a consumer's cursor, so that the next prune passes what it never read (decision 0039). */
   readonly forget: (consumer: string) => Effect.Effect<void>
+  /** `Handle.expire`: deletes the callers' replies past their time at `at`, in milliseconds, and counts them. */
+  readonly expire: (at: number) => Effect.Effect<number>
   /** The suspended entities of the program, the longest suspended first (decision 0114). */
   readonly suspended: Effect.Effect<ReadonlyArray<Suspension>>
 }
@@ -591,7 +601,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         sql`SELECT key, incarnation, version, work, delivery FROM entity_keys WHERE name = ${name} AND id = ${id}`,
       )
       const queued = yield* rows('mailbox', Rows.envelope)(
-        sql`SELECT tag, version, message, request, key, incarnation FROM mailbox
+        sql`SELECT tag, version, message, request, keep, key, incarnation FROM mailbox
             WHERE name = ${name} AND id = ${id} ORDER BY seq`,
       )
       const keys: Record<string, Machine.Key<T>> = {}
@@ -608,6 +618,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             _tag: 'Inbound',
             request: request.read(envelope.request, upRequest(envelope.version)),
             message: inbound.read(envelope.message, up('inbound', envelope.version)),
+            ...(envelope.keep === null ? {} : { keep: envelope.keep }),
           }
           : {
             _tag: 'Internal',
@@ -649,13 +660,15 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
 
   // A request is found by its text, as the machine keys it. A caller's request is then looked for among the rows
   // other versions wrote under its request id, since its sender as such a version wrote it may be another text.
-  // Each reading is by an index (decision 0065).
-  const reply = (id: string, asked: Request<T['sender']>) =>
+  // Each reading is by an index (decision 0065). A reply past its time at `at` is not read, whether its row is
+  // deleted yet or not (decision 0125).
+  const reply = (id: string, asked: Request<T['sender']>, at: number) =>
     Effect.gen(function*() {
       const key = Machine.requestKey(program, asked)
       const exact = replyOf(
         yield* rows('replies', Rows.reply)(sql`
-          SELECT request, tag, version, reason FROM replies WHERE name = ${name} AND id = ${id} AND request = ${key}
+          SELECT request, tag, version, reason FROM replies
+          WHERE name = ${name} AND id = ${id} AND request = ${key} AND (until IS NULL OR until > ${at})
         `),
         key,
       )
@@ -665,6 +678,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
           SELECT request, tag, version, reason FROM replies
           WHERE name = ${name} AND id = ${id} AND json_extract(request, '$.id') = ${asked.id}
             AND version <> ${version} AND json_extract(request, '$._tag') = 'Caller'
+            AND (until IS NULL OR until > ${at})
         `),
         key,
       )
@@ -762,6 +776,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
                   version,
                   message: JSON.stringify(envelope.message),
                   request: JSON.stringify(envelope.request),
+                  keep: envelope.keep,
                   key: null,
                   incarnation: null,
                 }
@@ -773,6 +788,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
                   version,
                   message: JSON.stringify(envelope.message),
                   request: null,
+                  keep: null,
                   key: envelope.key,
                   incarnation: envelope.incarnation,
                 },
@@ -795,6 +811,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             tag: reply.tag,
             version,
             reason: reply.reason === null ? null : JSON.stringify(reply.reason),
+            until: reply.until,
             sender_name: asked?.name ?? null,
             sender_id: asked?.id ?? null,
             sender_key: asked?.key ?? null,
@@ -819,6 +836,18 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             AND sender_incarnation = ${incarnation}
         `
       }
+      // A step that answers a caller takes its entity's replies past their time with it (decision 0125).
+      if (written.replies.length > 0) {
+        yield* sql`DELETE FROM replies WHERE name = ${name} AND id = ${id} AND until IS NOT NULL AND until <= ${at}`
+      }
+    }).pipe(Effect.orDie)
+
+  const expire = (at: number) =>
+    Effect.gen(function*() {
+      const gone = yield* rows('replies', Rows.id)(sql`
+        DELETE FROM replies WHERE name = ${name} AND until IS NOT NULL AND until <= ${at} RETURNING id
+      `)
+      return gone.length
     }).pipe(Effect.orDie)
 
   /** The entities of the program an operator has to resume: nothing of theirs is handled, and no timer of theirs fires. */
@@ -1086,6 +1115,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
     prune,
     consumers,
     forget,
+    expire,
     suspended: suspensions,
   }
 }

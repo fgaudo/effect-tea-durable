@@ -1880,6 +1880,37 @@ describe('who a request belongs to', () => {
   })
 })
 
+describe('how long a reply is kept (decision 0125)', () => {
+  test("a caller's reply is kept for its keep from the step that answers it, and for ever without one", () => {
+    const machine = checked((message) => message, () => ({}))
+    const kept = handled(machine, { _tag: 'Receive', request: by('r'), message: 'go', keep: 500 })
+    expect(kept.written?.replies.map((reply) => reply.until)).toEqual([DateTime.toEpochMillis(at) + 500])
+    const forever = handled(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
+    expect(forever.written?.replies.map((reply) => reply.until)).toEqual([null])
+  })
+
+  test("another entity's reply has no time, whatever keep it is given: it goes with the work that asked", () => {
+    const machine = checked((message) => message, () => ({}))
+    const operation = handled(machine, { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'go', keep: 500 })
+    expect(operation.written?.replies.map((reply) => reply.until)).toEqual([null])
+  })
+
+  test('a message that waits in the mailbox keeps its keep there, and its time counts from the step', () => {
+    const machine = checked(
+      (message) => message,
+      (state) => (state === 'start' ? { charge: 'operation' } : {}),
+    )
+    // The operation's completion is ahead of it, so the message waits in the mailbox (decision 0074).
+    const completed = stepped(machine, { _tag: 'Complete', key: 'charge', incarnation: 1, message: 'done' })
+    const queued = stepped(completed.machine, { _tag: 'Receive', request: by('r'), message: 'go', keep: 500 })
+    expect(queued.written?.queued).toEqual([expect.objectContaining({ _tag: 'Inbound', keep: 500 })])
+    const later = DateTime.makeUnsafe(9_000)
+    const first = stepped(queued.machine, { _tag: 'Handle', at: later })
+    const second = stepped(first.machine, { _tag: 'Handle', at: later })
+    expect(second.written?.replies.map((reply) => reply.until)).toEqual([9_500])
+  })
+})
+
 describe('creation', () => {
   test('answers the request that created the entity Created, and stores nothing for the others', () => {
     const machine = checked((message) => message, () => ({}))

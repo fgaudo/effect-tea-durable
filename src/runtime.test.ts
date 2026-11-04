@@ -605,6 +605,67 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  test('a retry within the keep its boundary gives is answered from storage, and one after it is applied again', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const sender = { _tag: 'Tester' } as const
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender })
+          const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+          const request = { requestId: 'r', sender, keep: { millis: 100 } }
+          yield* toy.send(id, want, request)
+          yield* TestClock.adjust('99 millis')
+          yield* toy.send(id, want, request)
+          const applied = () =>
+            Effect.map(
+              Effect.flatMap(SqlClient.SqlClient, (sql) => storage(program, sql).load(id)),
+              (stored) => stored?.state.applied,
+            )
+          expect(yield* applied()).toEqual(['w'])
+          // The reply is past its time: no operator has deleted it, and the retry is a new request.
+          yield* TestClock.adjust('1 millis')
+          yield* toy.send(id, want, request)
+          expect(yield* applied()).toEqual(['w', 'w'])
+          // The step deleted the reply past its time, so only the new reply is left for an operator to expire.
+          expect(yield* toy.expire).toBe(0)
+          yield* TestClock.adjust('100 millis')
+          expect(yield* toy.expire).toBe(1)
+          // A reply with no keep is kept for ever.
+          yield* toy.send(id, want, { requestId: 'ever', sender })
+          yield* TestClock.adjust('1 days')
+          expect(yield* toy.expire).toBe(0)
+          yield* toy.send(id, want, { requestId: 'ever', sender })
+          expect(yield* applied()).toEqual(['w', 'w', 'w'])
+        }))
+    })))
+
+  test('a keep of no whole number of millis is the caller’s defect, and reaches no entity', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const sender = { _tag: 'Tester' } as const
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender })
+          const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+          for (const millis of [-1, 1.5]) {
+            const exit = yield* Effect.exit(toy.send(id, want, { requestId: 'r', sender, keep: { millis } }))
+            expect(Exit.hasDies(exit)).toBe(true)
+          }
+          const stored = yield* Effect.flatMap(SqlClient.SqlClient, (sql) => storage(program, sql).load(id))
+          expect(stored?.state.applied).toEqual([])
+          // A keep of 0 millis keeps no reply: a retry is applied again.
+          yield* toy.send(id, want, { requestId: 'r', sender, keep: { millis: 0 } })
+          expect(yield* toy.send(id, want, { requestId: 'r', sender, keep: { millis: 0 } })).toEqual({ _tag: 'Accepted' })
+          const after = yield* Effect.flatMap(SqlClient.SqlClient, (sql) => storage(program, sql).load(id))
+          expect(after?.state.applied).toEqual(['w', 'w'])
+        }))
+    })))
+
   // A message waits in the mailbox behind another while a creation under its request id is answered: the
   // creation's reply must not reach the message's caller (decision 0050).
   test('a creation and a message under one request id are answered each its own reply', () =>
@@ -2104,6 +2165,7 @@ describe('the crash table', () => {
           _tag: 'Inbound',
           message: { _tag: 'Want', key: 'a', on: false, nonce: 'left' },
           request: Schema.encodeSync(Machine.requestCodec(program))(request),
+          keep: null,
         }],
         replies: [],
         ended: [],
@@ -3017,7 +3079,7 @@ describe('a schema that changes', () => {
         return held._tag === 'A' ? { ...held, why: 'kept' } : held
       },
       projection: (json) => ({ wanted: json }),
-      // A reason is kept as long as its reply, which is for ever: a retry reads it through this.
+      // A reason is kept as long as its reply, here for ever, since the caller gives no keep: a retry reads it through this.
       rejection: (json) => ({ why: json }),
       // A caller's requests are stored under its sender, so a retry finds its reply through this (decision 0048).
       sender: (json) => ({ ...json as Readonly<Record<string, Json>>, team: 'core' }),

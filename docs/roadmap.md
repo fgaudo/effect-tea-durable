@@ -19,6 +19,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)), which a resumption told by a
     message changes ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md));
   - an entity's lock dropped while others wait for it ([decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md)).
+
+  A caller's reply past its time ([decision 0125](decisions/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md))
+  is deleted on Cluster with Cluster's rows of its request, as an entity's reply is
+  ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)).
 - **The library's name and release**, once there is code to publish. It is released as experimental while it depends
   on Effect's unstable modules ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
   The release archives the notes the design has come to cover since the last archiving, as

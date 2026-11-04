@@ -47,13 +47,14 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 - **Migrations that never leave.** A program's version is how many migrations it carries, plus one
   ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)): nothing is declared, and no bump is
   forgotten. But a migration can never be dropped, since dropping the first renumbers every version after it, and
-  a row is migrated only when it is written again, while a caller's reply is kept for ever
-  ([callers' stored replies](#running)). So a program carries every migration it ever had. Dropping them would
+  a row is migrated only when it is written again. A caller's reply is kept for the time its boundary gives, and
+  for ever where it gives none ([decision 0125](decisions/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)).
+  So a program carries every migration it ever had. Dropping them would
   need every row written again at the program's version — what `reindex` does for the read model alone — and a
   version that starts past 1, which a program then declares: one that forgets to raise it reads its own rows as
   newer and fails loudly ([decision 0043](decisions/archive/0043-a-row-no-version-reads-fails-what-reads-it.md)). Nothing
   either checks that a migration once deployed is never changed, which a function cannot be compared for. Is it
-  worth it, and once replies are no longer kept for ever?
+  worth it, now that a caller's reply can be kept for a time only?
 
 ## Running
 
@@ -63,11 +64,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   two processes share a store. On Effect Cluster a runner carries no version, and a shard may go from a new runner
   back to an old one ([Cluster](cluster.md#two-versions-at-once)): the choice is between deploys that replace every
   runner before a new one writes, forward compatibility for one version, or a change to Cluster.
-- **Callers' stored replies.** A caller's reply is stored so that a retry gets it, and is kept for ever: a time
-  after which a retry is applied again would depend on the protocol. A caller is the identity the boundary
-  authenticated ([decision 0124](decisions/0124-the-boundary-authenticates-and-update-authorizes.md)). Replies to
-  entities are kept while the work that asked is stored
-  ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
 - **Failing operations.** A transient failure (a timeout) is retried inside the operation, or becomes a
   message. After how many retries does it become a defect, if ever? And
   should the runtime notice work that comes back at once, turn after turn: a timer kept at a time already past,

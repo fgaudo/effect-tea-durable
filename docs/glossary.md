@@ -69,9 +69,10 @@ Cluster's says so.
 - **Rehearsal, `rehearse`.** A scenario run on the machine without storage, cluster or clock, where the test answers
   the operations, fires the timers, kills the process and deploys new versions.
 - **Reply.** The stored answer to a request, which a retry under the same request id reads. A caller's is kept for
-  ever; another entity's while the work that asked is stored.
+  the `keep` its boundary gave `send`, from the step that answers, and for ever without one. Another entity's is kept
+  while the work that asked is stored.
 - **Request.** What identifies an inbound message: a caller's sender and request id, or the run of an operation and the
-  name it gave `send`. A request is applied once, whichever retry finds it.
+  name it gave `send`. A request is applied once, whichever retry finds it while its reply is kept.
 - **Runner.** Of an operation: the function in `operations` that runs its kind. Of Cluster: a process that serves
   entities ([`cluster.md`](cluster.md)).
 - **Schedule, seed.** In the runtime's tests: the recorded sequence of choices of where fibers yield, drawn from a seed.

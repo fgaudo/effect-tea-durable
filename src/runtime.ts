@@ -164,11 +164,16 @@ export interface Handle<T extends Types> {
     flags: T['flags'],
     request: Readonly<{ requestId: string; sender: T['sender'] }>,
   ) => Effect.Effect<Creation>
-  /** Sends an inbound message, and waits for the reply. */
+  /**
+   * Sends an inbound message, and waits for the reply. A retry under the same request id gets the reply stored for
+   * it. The boundary gives `keep`, the time its protocol retries for. The reply is then kept for `keep.millis` from
+   * the step that answers, and a retry after that is a new request, applied again. Without `keep` the reply is kept
+   * for ever. `keep.millis` is a non-negative integer, and anything else is the caller's defect (decision 0125).
+   */
   readonly send: (
     id: string,
     message: T['inbound'],
-    request: Readonly<{ requestId: string; sender: T['sender'] }>,
+    request: Readonly<{ requestId: string; sender: T['sender']; keep?: Readonly<{ millis: number }> }>,
   ) => Effect.Effect<Answer<T['rejection']>>
   /**
    * What callers read of the entity, or null when there is none: the row written by its last event that changed
@@ -226,6 +231,12 @@ export interface Handle<T extends Types> {
    * or a name misspelt once, stops holding the log (decision 0039).
    */
   readonly forget: (consumer: string) => Effect.Effect<void>
+  /**
+   * Deletes the callers' replies of the program past their time, and gives how many went. A reply past its time is
+   * never read, so this frees only their rows: those of an entity that takes no step, since a step deletes its own
+   * entity's (decision 0125).
+   */
+  readonly expire: Effect.Effect<number>
   /**
    * The suspended entities of the program, the longest suspended first: each with what it died on, the cause, since
    * when, and the senders waiting for its resumption in this process. Read from what is stored, so an entity this
@@ -795,7 +806,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const entity: Address = { name: loaded.machine.stored.name, id: loaded.machine.stored.id }
         const now = yield* DateTime.now
         const event: Machine.Event<T> = offered._tag === 'Receive'
-          ? { ...offered, reply: yield* deployed.storage.reply(entity.id, offered.request), at: now }
+          ? {
+            ...offered,
+            reply: yield* deployed.storage.reply(entity.id, offered.request, DateTime.toEpochMillis(now)),
+            at: now,
+          }
           : offered
         const before = loaded.machine
         const transition = Machine.step(deployed.program, before, event)
@@ -1191,6 +1206,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       id: string,
       message: T['inbound'],
       request: Request<T['sender']>,
+      keep?: number,
     ): Effect.Effect<Answer<T['rejection']>, Faulted> =>
       Effect.gen(function*() {
         const entity: Address = { name: deployed.program.name, id }
@@ -1208,7 +1224,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const asked = yield* withEntity(deployed, id, (loaded) =>
           loaded === null
             ? Effect.succeed(null)
-            : ask(messages, loaded, entity, requested, { _tag: 'Receive', request, message }))
+            : ask(
+              messages,
+              loaded,
+              entity,
+              requested,
+              keep === undefined ? { _tag: 'Receive', request, message } : { _tag: 'Receive', request, message, keep },
+            ))
         if (asked === null) return { _tag: 'NotFound' }
         return (yield* answered(asked)) as Answer<T['rejection']>
       })
@@ -1408,9 +1430,18 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               create(deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
             )),
           send: (id, message, request) =>
-            admitted(faulted(
-              send(deployed, id, message, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
-            )),
+            counted(
+              { keep: request.keep?.millis },
+              admitted(faulted(
+                send(
+                  deployed,
+                  id,
+                  message,
+                  { _tag: 'Caller', sender: request.sender, id: request.requestId },
+                  request.keep?.millis,
+                ),
+              )),
+            ),
           read: (id) => deployed.storage.projected(id),
           query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
           reindex: deployed.storage.reindex,
@@ -1420,6 +1451,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           prune: deployed.storage.prune,
           consumers: deployed.storage.consumers,
           forget: (consumer) => deployed.storage.forget(consumer),
+          expire: Effect.flatMap(DateTime.now, (now) => deployed.storage.expire(DateTime.toEpochMillis(now))),
           suspended: Effect.map(deployed.storage.suspended, (listed) =>
             listed.map((suspension): Suspended => ({
               ...suspension,

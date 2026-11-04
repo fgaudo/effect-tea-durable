@@ -57,7 +57,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0009](archive/0009-entities-talk-through-operations.md) | Entities talk through operations, as themselves | [0047](archive/0047-a-request-of-an-operation-has-a-name.md), [0060](archive/0060-send-and-create-take-no-key.md) |
 | [0010](archive/0010-a-rejection-may-carry-a-reason.md) | A rejection may carry a reason, an acceptance never carries data | [0023](archive/0023-suspended-means-no-reply-yet.md) |
 | [0015](archive/0015-a-request-belongs-to-its-sender.md) | A request belongs to its sender, and work to its entity | [0022](archive/0022-a-new-program-keeps-what-work-started-with.md), [0048](archive/0048-a-callers-request-belongs-to-its-sender.md), [0123](0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) |
-| [0021](archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md) | A reply to an entity is kept while the work that asked is stored | [0057](archive/0057-the-machine-gives-what-is-written.md), [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) |
+| [0021](archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md) | A reply to an entity is kept while the work that asked is stored | [0057](archive/0057-the-machine-gives-what-is-written.md), [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md), [0125](0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) |
 | [0023](archive/0023-suspended-means-no-reply-yet.md) | `Suspended` means no reply yet |  |
 | [0047](archive/0047-a-request-of-an-operation-has-a-name.md) | A request of an operation has a name | [0059](archive/0059-a-request-is-a-value.md), [0060](archive/0060-send-and-create-take-no-key.md) |
 | [0048](archive/0048-a-callers-request-belongs-to-its-sender.md) | A caller's request belongs to its sender | [0059](archive/0059-a-request-is-a-value.md), [0065](archive/0065-the-machine-holds-no-replies.md), [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md), [0124](0124-the-boundary-authenticates-and-update-authorizes.md) |
@@ -66,6 +66,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0065](archive/0065-the-machine-holds-no-replies.md) | The machine holds no replies, and a receive is given the one it asks for |  |
 | [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) | A reply is keyed by the version that wrote it |  |
 | [0124](0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes |  |
+| [0125](0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) | A caller's reply is kept as long as its boundary says, from the step that answers |  |
 
 ## Operations and timers
 
