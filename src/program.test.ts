@@ -4,12 +4,15 @@
  * declared keys (decisions 0033, 0037), and an operation answers the messages of its runner (decision 0034).
  */
 import { expect, test } from 'bun:test'
+import * as Context from 'effect/Context'
 import type * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
 import {
   digestOf,
   encode,
+  Entities,
   idempotencyKey,
   InvariantDefect,
   type Json,
@@ -111,6 +114,50 @@ test('a runner that answers a message the program does not have does not compile
     operations: { Charge: operation.atMostOnce(() => Effect.succeed('Charged' as const), () => 'Lost' as const) },
   })
   expect([answered, unknown]).toHaveLength(2)
+})
+
+test('a droppable runner whose services hold `Entities` does not compile (decision 0129)', () => {
+  class Rates extends Context.Service<Rates, { readonly rate: Effect.Effect<number> }>()('test/Rates') {}
+  class Notices extends Context.Service<Notices, { readonly notice: Effect.Effect<void> }>()('test/Notices') {}
+  // A layer that builds its service from `Entities`, which a runner may provide to itself.
+  const NoticesFromEntities = Layer.effect(
+    Notices,
+    Effect.map(Effect.service(Entities), () => ({ notice: Effect.void })),
+  )
+  const pieces = {
+    name: 'Charges',
+    keys: ['charge'],
+    init: () => ({ charging: true }),
+    update: () => () => ({ charging: false }),
+    durable: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
+    project: () => null,
+    indexes: {},
+  } as const
+  const reads = program(schemas)({
+    ...pieces,
+    operations: { Charge: operation.droppable(() => Effect.as(Effect.service(Rates), 'Charged' as const)) },
+  })
+  // The services a droppable runner needs are still inferred, and are the program's: `Rates`, not `never` or `unknown`.
+  const services: typeof reads extends Program<infer T>
+    ? [T['services']] extends [Rates] ? [Rates] extends [T['services']] ? true : false : false
+    : false = true
+  const sends = program(schemas)({
+    ...pieces,
+    operations: {
+      // @ts-expect-error a droppable operation sends to no entity
+      Charge: operation.droppable(() => Effect.as(Effect.service(Entities), 'Charged' as const)),
+    },
+  })
+  const provides = program(schemas)({
+    ...pieces,
+    operations: {
+      Charge: operation.droppable(() =>
+        // @ts-expect-error a layer built from `Entities` leaves `Entities` among the runner's services
+        Effect.provide(Effect.as(Effect.service(Notices), 'Charged' as const), NoticesFromEntities)
+      ),
+    },
+  })
+  expect([reads, services, sends, provides]).toHaveLength(4)
 })
 
 test('the schemas applied first type the pieces, where one call would widen a tag to a string (decision 0035)', () => {

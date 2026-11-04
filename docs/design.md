@@ -161,7 +161,9 @@ Two kinds of work exist.
   or a read, so a step may drop it or change it while it runs: the runtime interrupts it without waiting for its
   finalizers, and a change starts it again as new work. A crash runs it again. It sends to no entity and creates
   none, since a request acts on its receiver: one that does dies
-  ([decision 0128](decisions/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)).
+  ([decision 0128](decisions/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)). A droppable runner whose
+  services hold `Entities` does not compile, and the runtime's check is for one that escapes the type
+  ([decision 0129](decisions/0129-a-droppable-runner-that-sends-does-not-compile.md)).
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
   nothing yet.
 

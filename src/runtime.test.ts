@@ -835,6 +835,9 @@ describe('the runtime on SQLite', () => {
         operations: {
           ...sending.operations,
           C: operation.droppable(({ key }) =>
+            // The type refuses a droppable runner that sends (decision 0129), and the runtime is what a runner
+            // that escapes the type meets.
+            // @ts-expect-error a droppable operation sends to no entity
             Effect.as(send(program, id, { _tag: 'Want', key: 'a', on: false, nonce: 'sent' }, 'want'), done(key))
           ),
         },

@@ -8,16 +8,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   keys, and no more ([decision 0033](decisions/archive/0033-a-program-declares-its-keys.md)). A state that would hold one
   operation per line of an order has nowhere to put them. Do such items want to be entities of their own, as a
   large state does, or is there a kind of work held under keys a state computes?
-- **A droppable runner that cannot send, by its type.** A droppable operation that calls `send` or `create` dies,
-  and the runtime is the only check
-  ([decision 0128](decisions/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)). The type of
-  `operation.droppable` could refuse a runner whose services include `Entities`, so that the mistake is a
-  compile error, as effect-tea has a test assert a command by its type. The bound on `R` that says so is
-  involved, and may read worse than the defect it prevents. What would decide it:
-  - whether a bound such as `[Extract<R, Entities>] extends [never] ? R : never` infers `R` for a runner that
-    sends nothing, and refuses one that sends, with a message a reader understands;
-  - whether a service that itself depends on `Entities`, provided by a layer, escapes the bound, which would make it
-    a promise the type does not keep.
 - **Children inside an entity.** effect-tea composes programs into a tree. Does an entity's program compose
   children the same way, stored as one state? The decider pattern (Jérémie Chassaing's `Decider`) has an algebra
   for it — two state machines compose into one, with laws a test can check — and is worth reading before this is

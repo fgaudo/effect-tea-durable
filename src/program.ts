@@ -220,6 +220,17 @@ export type Runner<Operation, Message, R> =
    */
   | Readonly<{ delivery: 'Droppable'; run: (operation: Operation) => Effect.Effect<Message, never, R> }>
 
+/** What a droppable runner's effect is checked against where its services `R` hold `Entities` (decision 0129). */
+interface SendsToNoEntity {
+  readonly 'a droppable operation sends to no entity, and creates none': unique symbol
+}
+
+/**
+ * The services `R` of a droppable runner, or `SendsToNoEntity` where `R` holds `Entities`. The runner's effect is
+ * checked against it, and the compiler's message names the rule. TypeScript still infers `R` from the runner.
+ */
+type WithoutEntities<R> = [Extract<R, Entities>] extends [never] ? R : SendsToNoEntity
+
 export const operation: {
   /** An idempotent operation, which passes its idempotency key on. */
   <Operation, Message, R>(
@@ -236,9 +247,12 @@ export const operation: {
     run: (operation: Operation) => Effect.Effect<Message, never, R>,
     unknown: (operation: Operation) => Message,
   ) => Runner<Operation, Message, R>
-  /** An operation that acts on nothing, which a state may drop or change while it runs (decision 0128). */
+  /**
+   * An operation that acts on nothing, which a state may drop or change while it runs (decision 0128). A runner
+   * whose services hold `Entities` does not compile, since a droppable operation sends to no entity (decision 0129).
+   */
   readonly droppable: <Operation, Message, R>(
-    run: (operation: Operation) => Effect.Effect<Message, never, R>,
+    run: (operation: Operation) => Effect.Effect<Message, never, WithoutEntities<R>>,
   ) => Runner<Operation, Message, R>
 } = Object.assign(
   <Operation, Message, R>(
@@ -256,8 +270,12 @@ export const operation: {
       unknown: (operation: Operation) => Message,
     ): Runner<Operation, Message, R> => ({ delivery: 'AtMostOnce', run, unknown }),
     droppable: <Operation, Message, R>(
-      run: (operation: Operation) => Effect.Effect<Message, never, R>,
-    ): Runner<Operation, Message, R> => ({ delivery: 'Droppable', run }),
+      run: (operation: Operation) => Effect.Effect<Message, never, WithoutEntities<R>>,
+    ): Runner<Operation, Message, R> => ({
+      delivery: 'Droppable',
+      // The runner that compiles needs `R`, since where `R` holds `Entities` no runner compiles.
+      run: run as (operation: Operation) => Effect.Effect<Message, never, R>,
+    }),
   },
 )
 

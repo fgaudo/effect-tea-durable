@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-04. Decides the open question on work that may be abandoned. Makes an exception to
 [decision 0005](archive/0005-an-operation-leaves-only-by-completing.md), and adds a fifth delivery to
-[decision 0011](archive/0011-an-operation-declares-what-a-crash-does.md).
+[decision 0011](archive/0011-an-operation-declares-what-a-crash-does.md). A droppable runner whose services hold
+`Entities` does not compile: [decision 0129](0129-a-droppable-runner-that-sends-does-not-compile.md).
 
 ## Context
 
