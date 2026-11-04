@@ -3528,3 +3528,49 @@ test('a message that arrives as the wait of its entity runs out is handled, unde
         }))
     }), { _tag: 'Accepted' }, { open: false, pinned: [203] })
 }, 60_000)
+
+test('settled never returns between a crash and the activation its due timer brings, under prioritized schedules', () => {
+  // Decisions 0029 and 0068: the process is not settled while a stored timer of an entity it does not hold is due. A
+  // crash makes its entity leave without counting it as unloading, so it leaves and pokes the waker in one step. A
+  // `settled` that looked between two steps would find the entity neither held nor known to the waker, with its timer
+  // due. The message's commit waits at a gate while the timer comes due, then dies once the window is open. A leave
+  // split in two steps returns early at 11 seeds of 2,000, the first 172, pinned, under the scheduler of decision 0117.
+  explored((window) =>
+    Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const gate = yield* Deferred.make<void>()
+      let crashed = false
+      let restarted = false
+      return yield* process({
+        at: (point, _entity, event) =>
+          point === 'BeforeCommit' && received(event) === 'r-1' && !crashed
+            ? Effect.andThen(Deferred.await(gate), Effect.suspend(() => {
+              crashed = true
+              return Effect.die('the runtime failed')
+            }))
+            : Effect.void,
+        observe: (_entity, event) =>
+          Effect.sync(() => {
+            if (crashed && event._tag === 'Restart') restarted = true
+          }),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const at = yield* DateTime.now
+          const toy = yield* Effect.provide(runtime.deploy(timed), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          const sent = yield* Effect.forkChild(Effect.exit(toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'n-1' }, { requestId: 'r-1', sender: tester })))
+          // The timer rings at 40 millis, while the message waits at the gate: its firing waits behind the message.
+          yield* adjusted(window, '40 millis')
+          yield* opened(window, true)
+          const [, early] = yield* together<boolean | void, never, never>([
+            Deferred.succeed(gate, undefined),
+            Effect.andThen(runtime.settled, Effect.sync(() => crashed && !restarted)),
+          ])
+          yield* opened(window, false)
+          yield* Fiber.join(sent)
+          yield* runtime.settled
+          return { early, restarted }
+        }))
+    }), { early: false, restarted: true }, { open: false, pinned: [172] })
+}, 60_000)
