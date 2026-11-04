@@ -64,6 +64,11 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A spike is a test in `spikes/`, run by `bun test` at the pinned version. A premise about what a dependency does
   when it runs is tested, documented or seen in one before its note is taken; what no spike can run yet says what
   would check it, and goes in `docs/open-questions.md`.
+- A dependency is never changed by hand: not in `node_modules`, not in bun's cache, not with a patch of the package
+  manager, not for a spike. A fix the library needs is waited for in a release of the library. Until then the code
+  works around it, as [decision 0116](docs/decisions/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) does,
+  and the premise goes in `docs/open-questions.md`. A test run against a changed dependency proves nothing: a seed
+  draws its schedule from the code it runs, and the suite is red or green for a reason the repository does not hold.
 - A promise of a stable API of Effect, in the JSDoc of the version pinned, is trusted within the major: a premise
   that rests on it needs no spike, no test and no comparison between releases. effect.website, Effect's blog and its
   maintainers' answers are tied to no release, and make no premise documented. A move of Effect's version pins
