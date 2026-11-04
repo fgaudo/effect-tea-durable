@@ -4151,8 +4151,11 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
 test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {
   // Decision 0116: an entity's wait ends with an item of its queue, and nothing races its take. A take raced against a
   // timeout loses the event when the racing fiber is preempted at the third step after its resumption, and its caller
-  // waits for ever. Under the yields of decision 0134, no seed of the first 2,000 reaches that loss. `bun run
-  // test:explore` found seed 286016936, which reaches it and is pinned.
+  // waits for ever. Under the yields of decision 0134, no seed of the first 2,000 reaches that loss. Seed 286016936,
+  // pinned, reaches it against the wait written as `Effect.timeoutOption` of the take, mapped to a `Passivate` where
+  // it runs out, with the sleep and the pass-over left in place unused. A seed draws its schedule from the yields of
+  // the code it runs, so another form of the old wait needs a seed of its own, which `bun run test:explore` finds in
+  // a round or two.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
