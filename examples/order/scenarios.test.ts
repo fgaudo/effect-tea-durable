@@ -71,6 +71,8 @@ describe('order', () => {
         yield* rehearsal.restart
         const after = yield* rehearsal.pending('charge')
         expect(after.idempotencyKey).toBe(before.idempotencyKey)
+        // The payment provider is given the key's digest, which fits the length it caps a key at.
+        expect(after.idempotencyKey).toMatch(/^[A-Za-z0-9_-]{43}$/)
       }),
     )))
 

@@ -23,6 +23,10 @@ export const rejected: Readonly<{ _tag: 'Rejected' }> = { _tag: 'Rejected' }
 export interface Pending<Work = unknown> {
   readonly key: string
   readonly incarnation: number
+  /**
+   * The idempotency key the operation's runner is given: its digest for a runner declared with
+   * `operation.digest` (decision 0123). A timer's is the readable one, which nothing is given.
+   */
   readonly idempotencyKey: IdempotencyKey
   /** The operation or the timer, as the stored state holds it: a test asserts it by value. */
   readonly work: Work

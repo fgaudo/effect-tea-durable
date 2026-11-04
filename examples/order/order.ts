@@ -263,11 +263,13 @@ export const order = program({
     }),
 
   operations: {
-    Charge: operation(charge),
+    // A payment provider caps the length of an idempotency key, and an order's id may be long: the provider is
+    // given the key's digest.
+    Charge: operation.digest(charge),
     TellWarehouse: operation(tellWarehouse),
     // Sent at most once: a second email is worse than none, and the state says when it is not known.
     EmailShipment: operation.atMostOnce(emailShipment, (): Internal => ({ _tag: 'ShipmentEmailUnsure' })),
-    Refund: operation(refund),
+    Refund: operation.digest(refund),
   },
 
   project: (state) => ({

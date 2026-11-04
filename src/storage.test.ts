@@ -122,6 +122,19 @@ test('a reply asked by work that no longer holds goes as it is stored, and one w
       expect(yield* store.reply('r', asked('ended', 2))).toBeNull()
     })))
 
+test('an operation given the digest of its idempotency key is loaded as delivered so (decision 0123)', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
+      const store = storage(asker, sql)
+      yield* store.write(
+        'a',
+        created({ keys: [{ key: 'ask', incarnation: 1, work, delivery: 'IdempotentDigest', due: null }] }),
+        0,
+      )
+      expect((yield* store.load('a'))?.keys['ask']?.delivery).toBe('IdempotentDigest')
+    })))
+
 test('the work that ended takes the replies to its requests with it, and no others', () =>
   database((sql) =>
     Effect.gen(function*() {

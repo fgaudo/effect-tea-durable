@@ -11,7 +11,9 @@ import fc from 'fast-check'
 import * as Machine from './machine.ts'
 import {
   defect,
+  digestOf,
   type IdempotencyKey,
+  idempotencyKey,
   InvariantDefect,
   isTimer,
   noWork,
@@ -1688,6 +1690,33 @@ describe('a new program', () => {
     const transition = stepped(machine, { _tag: 'Restart' }, {
       ...program,
       operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => '?') },
+    })
+    expect(reasonOfSuspension(transition)).toBe(
+      "the program changed how the operation under 'charge' is delivered before its completion",
+    )
+    expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
+  })
+
+  test('an operation declared with its digest is started with the digest of its idempotency key', () => {
+    const plain = checked((message) => message, () => ({ charge: 'operation' }))
+    const program = { ...plain.program, operations: { Work: operation.digest(() => Effect.succeed('done')) } }
+    const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
+    if (created._tag === 'Defect') throw created.cause
+    const digest = digestOf(idempotencyKey({ name: 'Tiny', id: 'tiny' }, 'charge', 1))
+    const keysOf = (outputs: ReadonlyArray<Machine.Output<Tiny>>) =>
+      outputs.flatMap((output) => (output._tag === 'Started' ? [output.idempotencyKey] : []))
+    expect(keysOf(created.outputs)).toEqual([digest])
+    // A restart starts the operation again under the same digest, as the stored delivery says.
+    const machine: Entity = { ...created.machine, program, replies: new Map() }
+    expect(keysOf(stepped(machine, { _tag: 'Restart' }).outputs)).toEqual([digest])
+    expect(Machine.idempotencyKeyOf(machine, 'charge', 1)).toBe(digest)
+  })
+
+  test('declaring the digest of an operation under way is a defect, as changing its delivery is', () => {
+    const machine = checked((message) => message, () => ({ charge: 'operation' }))
+    const transition = stepped(machine, { _tag: 'Restart' }, {
+      ...machine.program,
+      operations: { Work: operation.digest(() => Effect.succeed('done')) },
     })
     expect(reasonOfSuspension(transition)).toBe(
       "the program changed how the operation under 'charge' is delivered before its completion",

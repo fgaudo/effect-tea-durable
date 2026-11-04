@@ -12,8 +12,9 @@ Cluster's says so.
   cannot finish. To the machine, a passivation is a crash the runtime chose.
 - **Defect.** What the program does that it should not: a function or a schema of its that throws, or a rule of the
   design it breaks. A defect suspends the entity. A bug of the runtime's crashes it instead.
-- **Delivery.** What a crash does to an operation, declared by its runner: *idempotent*, run again with the same
-  idempotency key; *at least once*, run again; *at most once*, not run again, its `unknown` message delivered instead.
+- **Delivery.** What a crash does to an operation, and what an idempotent one is given, declared by its runner:
+  *idempotent*, run again with the same idempotency key, readable or as its digest; *at least once*, run again; *at
+  most once*, not run again, its `unknown` message delivered instead.
 - **Deploy, deployment.** `deploy(program)` gives a handle to one program's entities, under the program's name, in a
   scope of its own. A new version, a fix included, is deployed by a new process.
 - **Durable work, work.** What the state holds under its keys, operations and timers, computed by `durable(state)` and
@@ -28,7 +29,8 @@ Cluster's says so.
 - **Hold, lock.** Each entity is found, loaded, unloaded and crashed under a lock of its own. A caller holds the entity
   while it waits for its activation, and nothing under one entity's lock waits for another's.
 - **Idempotency key.** The entity's program and id, the operation's key and its incarnation, given to an idempotent
-  operation, which passes it to the service it calls. A restarted operation gets the same one.
+  operation, which passes it to the service it calls. A restarted operation gets the same one. Its *digest*, 43
+  characters whatever the id's length, is given instead to a runner declared with `operation.digest`.
 - **Incarnation.** A counter stored with each key, which grows each time the key's work starts anew. An internal
   message carries the incarnation of the work that sent it, and is dropped once the key's has moved on.
 - **Index.** A pure function from the projection to a scalar, named by the program, which a query filters and orders

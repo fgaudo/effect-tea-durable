@@ -3,7 +3,9 @@ import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import type * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import { Base64Url } from 'effect/encoding'
 import * as Schema from 'effect/Schema'
+import { createHash } from 'node:crypto'
 
 /** What `update` returns for an inbound message that does not apply in the state, with no reason given. */
 export const reject: unique symbol = Symbol.for('effect-tea-durable/Rejected')
@@ -169,13 +171,25 @@ export type Update<State, Message, Sender, Reason> = (
 
 /**
  * The entity's program and id, the work's key and its incarnation: the same when a crash restarts the work, and
- * different for every other piece of work of every entity. An idempotent runner passes it on to a service outside;
- * nothing of the library reads it back, and a request to another entity is a value of its own (decision 0059).
+ * different for every other piece of work of every entity. An idempotent runner passes it on to a service outside,
+ * readable as JSON, or as its digest when the runner is declared with `operation.digest` (decision 0123). Nothing
+ * of the library reads it back, and a request to another entity is a value of its own (decision 0059).
  */
 export type IdempotencyKey = string & Brand.Brand<'IdempotencyKey'>
 
 export const idempotencyKey = (entity: Address, key: string, incarnation: number): IdempotencyKey =>
   JSON.stringify([entity.name, entity.id, key, incarnation]) as IdempotencyKey
+
+/**
+ * The digest of an idempotency key, for a service that caps a key's length: the SHA-256 of its UTF-8 bytes, in
+ * unpadded base64url, 43 characters of `[A-Za-z0-9_-]`. It never changes: a digest that did would run an
+ * operation under way again under a new key (decision 0123).
+ */
+export const digestOf = (key: IdempotencyKey): IdempotencyKey =>
+  // Effect's `Digest` runs SHA-256 only on `crypto.subtle`, which answers with a promise. The key a runner is
+  // given is a pure function of what is stored, computed by the machine, so its digest is synchronous
+  // (decision 0123).
+  Base64Url.encode(createHash('sha256').update(key, 'utf8').digest()) as IdempotencyKey
 
 /**
  * How an operation runs, and what a crash does to it, declared for each kind of operation (decision 0011). It sees
@@ -185,6 +199,11 @@ export type Runner<Operation, Message, R> =
   /** Runs again with the same idempotency key, which it passes on: the world recognises it. */
   | Readonly<{
     delivery: 'Idempotent'
+    run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>
+  }>
+  /** Runs again as an idempotent one does, given the digest of its idempotency key (decision 0123). */
+  | Readonly<{
+    delivery: 'IdempotentDigest'
     run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>
   }>
   /** Runs again, and may act twice. */
@@ -201,6 +220,10 @@ export const operation: {
   <Operation, Message, R>(
     run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>,
   ): Runner<Operation, Message, R>
+  /** An idempotent operation given the digest of its idempotency key, for a service that caps a key's length. */
+  readonly digest: <Operation, Message, R>(
+    run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>,
+  ) => Runner<Operation, Message, R>
   readonly atLeastOnce: <Operation, Message, R>(
     run: (operation: Operation) => Effect.Effect<Message, never, R>,
   ) => Runner<Operation, Message, R>
@@ -213,6 +236,9 @@ export const operation: {
     run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>,
   ): Runner<Operation, Message, R> => ({ delivery: 'Idempotent', run }),
   {
+    digest: <Operation, Message, R>(
+      run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>,
+    ): Runner<Operation, Message, R> => ({ delivery: 'IdempotentDigest', run }),
     atLeastOnce: <Operation, Message, R>(
       run: (operation: Operation) => Effect.Effect<Message, never, R>,
     ): Runner<Operation, Message, R> => ({ delivery: 'AtLeastOnce', run }),

@@ -3,6 +3,7 @@ export {
   create,
   type Creation,
   defect,
+  digestOf,
   type Durable,
   Entities,
   type IdempotencyKey,

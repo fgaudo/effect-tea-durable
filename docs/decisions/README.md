@@ -56,7 +56,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0004](archive/0004-incarnations-guard-internal-messages.md) | Incarnations guard internal messages |  |
 | [0009](archive/0009-entities-talk-through-operations.md) | Entities talk through operations, as themselves | [0047](archive/0047-a-request-of-an-operation-has-a-name.md), [0060](archive/0060-send-and-create-take-no-key.md) |
 | [0010](archive/0010-a-rejection-may-carry-a-reason.md) | A rejection may carry a reason, an acceptance never carries data | [0023](archive/0023-suspended-means-no-reply-yet.md) |
-| [0015](archive/0015-a-request-belongs-to-its-sender.md) | A request belongs to its sender, and work to its entity | [0022](archive/0022-a-new-program-keeps-what-work-started-with.md), [0048](archive/0048-a-callers-request-belongs-to-its-sender.md) |
+| [0015](archive/0015-a-request-belongs-to-its-sender.md) | A request belongs to its sender, and work to its entity | [0022](archive/0022-a-new-program-keeps-what-work-started-with.md), [0048](archive/0048-a-callers-request-belongs-to-its-sender.md), [0123](0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) |
 | [0021](archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md) | A reply to an entity is kept while the work that asked is stored | [0057](archive/0057-the-machine-gives-what-is-written.md), [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) |
 | [0023](archive/0023-suspended-means-no-reply-yet.md) | `Suspended` means no reply yet |  |
 | [0047](archive/0047-a-request-of-an-operation-has-a-name.md) | A request of an operation has a name | [0059](archive/0059-a-request-is-a-value.md), [0060](archive/0060-send-and-create-take-no-key.md) |
@@ -72,7 +72,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | --- | --- | --- |
 | [0005](archive/0005-an-operation-leaves-only-by-completing.md) | An operation leaves the state only through its completion |  |
 | [0008](archive/0008-delivered-work-is-done.md) | Work that has delivered its message is done | [0041](archive/0041-a-completion-is-not-discarded.md) |
-| [0011](archive/0011-an-operation-declares-what-a-crash-does.md) | An operation declares what a crash does to it | [0018](archive/0018-operations-are-data.md), [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md) |
+| [0011](archive/0011-an-operation-declares-what-a-crash-does.md) | An operation declares what a crash does to it | [0018](archive/0018-operations-are-data.md), [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md), [0123](0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) |
 | [0018](archive/0018-operations-are-data.md) | Operations are data, and their runners never see the state | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0034](archive/0034-an-operation-answers-the-messages-of-its-runner.md) | An operation answers the messages of its runner |  |
 | [0041](archive/0041-a-completion-is-not-discarded.md) | A completion is not discarded | [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0114](0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) |
@@ -80,6 +80,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0045](archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md) | An operation waits for a program not deployed yet | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) |
 | [0046](archive/0046-a-receiver-that-crashes-is-sent-again.md) | A receiver that crashes is sent to again | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) |
 | [0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md) | Nothing waits for an operation under the permit | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md) |
+| [0123](0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) | An idempotent runner may be given the digest of its key, as its delivery |  |
 
 ## Creation
 

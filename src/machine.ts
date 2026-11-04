@@ -9,6 +9,7 @@ import * as Records from 'effect/Record'
 import * as Schema from 'effect/Schema'
 import {
   type Creation,
+  digestOf,
   type Durable,
   encode,
   type IdempotencyKey,
@@ -473,8 +474,18 @@ export const holds = <T extends Types>(stored: Stored<T>, key: string, incarnati
   return held?.work !== undefined && held.incarnation === incarnation
 }
 
+/**
+ * The idempotency key a runner of `delivery` is given for the work under `key` in `incarnation`: the readable one,
+ * or its digest. It is a pure function of what is stored, so a restart gives the same one (decision 0123).
+ */
+const givenKey = <T extends Types>(stored: Stored<T>, key: string, incarnation: number, delivery?: Delivery) => {
+  const readable = idempotencyKey({ name: stored.name, id: stored.id }, key, incarnation)
+  return delivery === 'IdempotentDigest' ? digestOf(readable) : readable
+}
+
+/** The idempotency key the runner of the work under `key` is given, as its stored delivery says. */
 export const idempotencyKeyOf = <T extends Types>(machine: Machine<T>, key: string, incarnation: number) =>
-  idempotencyKey({ name: machine.stored.name, id: machine.stored.id }, key, incarnation)
+  givenKey(machine.stored, key, incarnation, machine.stored.keys[key]?.delivery)
 
 /**
  * The work a state holds, by key, as the machine reads it: a record of any key, which `workUnder` checks against
@@ -547,8 +558,9 @@ const isQueued = <T extends Types>(stored: Stored<T>, key: string, incarnation: 
     envelope._tag === 'Internal' && envelope.key === key && envelope.incarnation === incarnation
   )
 
+/** Starts the work under `key`, held in `stored` with how it is delivered. */
 const startWork = <T extends Types>(
-  machine: Machine<T>,
+  stored: Stored<T>,
   key: string,
   incarnation: number,
   work: Durable<T['operation'], T['internal']>,
@@ -559,7 +571,7 @@ const startWork = <T extends Types>(
       _tag: 'Started',
       key,
       incarnation,
-      idempotencyKey: idempotencyKeyOf(machine, key, incarnation),
+      idempotencyKey: givenKey(stored, key, incarnation, stored.keys[key]?.delivery),
       operation: work,
     }
 
@@ -633,7 +645,7 @@ const activate = <T extends Types>(
         outputs.push({ _tag: 'Recorded', key, incarnation })
       } else {
         running[key] = { kind: kindOf(work), incarnation }
-        outputs.push(startWork(machine, key, incarnation, work))
+        outputs.push(startWork(stored, key, incarnation, work))
       }
     }
     return { machine: { ...machine, stored: { ...stored, mailbox }, running }, outputs }
@@ -835,7 +847,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
       if (was !== undefined && isSame(program, key, was, work)) continue
       const incarnation = keys[key]?.incarnation ?? 0
       running[key] = { kind: kindOf(work), incarnation }
-      outputs.push(startWork(machine, key, incarnation, work))
+      outputs.push(startWork({ ...stored, keys }, key, incarnation, work))
     }
     if (head._tag === 'Inbound') {
       outputs.unshift({ _tag: 'Replied', request: head.request, reply: { _tag: 'Accepted' } })

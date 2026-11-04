@@ -7,7 +7,17 @@ import { expect, test } from 'bun:test'
 import type * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
-import { encode, InvariantDefect, type Json, noWork, operation, type Program, program } from './program.ts'
+import {
+  digestOf,
+  encode,
+  idempotencyKey,
+  InvariantDefect,
+  type Json,
+  noWork,
+  operation,
+  type Program,
+  program,
+} from './program.ts'
 import type { Rehearsal } from './rehearse.ts'
 import type { Query } from './storage.ts'
 
@@ -153,4 +163,16 @@ test('a rehearsal and a query name only the keys and the indexes the program dec
     indexes: { charging: () => ({ charging: true }) },
   })
   expect([pending, found, misnamed, unstored]).toHaveLength(4)
+})
+
+// The digests were computed apart from this code, with Python's `hashlib` and `base64.urlsafe_b64encode`: a
+// digest that changed would run an operation under way again under a new key (decision 0123).
+test('the digest of an idempotency key is the SHA-256 of its JSON, in unpadded base64url (decision 0123)', () => {
+  const of = (id: string): string => digestOf(idempotencyKey({ name: 'Order', id }, 'charge', 1))
+  expect(of('42')).toBe('HCSqboASEfxZ9VbqnZMHHhT3RAKlBw43wTMZfFDyotw')
+  expect(of('caf\u00e9 \u2713')).toBe('3Hq7WV5mz3BQ1-DHpJ_MmRiZTcPfyVJqXEzyGfsxlhE')
+  // JSON escapes a lone surrogate, which UTF-8 would turn into U+FFFD: two such ids keep two digests.
+  expect(of('\ud800')).toBe('UShS5of2cuLYI16He18FfxZFLveZ8HXnS11ev3539r0')
+  expect(of('\udbff')).not.toBe(of('\ud800'))
+  expect(of('x'.repeat(1000))).toMatch(/^[A-Za-z0-9_-]{43}$/)
 })

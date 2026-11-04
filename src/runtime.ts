@@ -683,7 +683,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         // Built in the operation's fiber: a runner that throws while it builds its effect dies as the operation,
         // and suspends the entity, instead of the event that started it (decision 0042).
         const run = Effect.suspend(() =>
-          runner.delivery === 'Idempotent' ? runner.run(operation, idempotencyKey) : runner.run(operation)
+          runner.delivery === 'Idempotent' || runner.delivery === 'IdempotentDigest'
+            ? runner.run(operation, idempotencyKey)
+            : runner.run(operation)
         )
         const id = under(key, incarnation)
         // An operation that runs again at the next activation is not started during a planned stop: it is stored,

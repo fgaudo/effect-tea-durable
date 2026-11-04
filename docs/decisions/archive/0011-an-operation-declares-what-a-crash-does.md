@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-10-30. The way it builds an operation is replaced by
 [decision 0018](0018-operations-are-data.md). The drain before a planned stop is decided by
-[decision 0119](../0119-a-planned-stop-drains-the-at-most-once-operations.md).
+[decision 0119](../0119-a-planned-stop-drains-the-at-most-once-operations.md). A fourth delivery, idempotent and
+given the digest of its key, is added by [decision 0123](../0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md).
 
 ## Context
 

@@ -136,7 +136,11 @@ Two kinds of work exist.
   [decision 0015](decisions/archive/0015-a-request-belongs-to-its-sender.md)), and passes it on; one that may
   act twice runs again; one that must act at most once is not run again after a crash, and delivers its
   `unknown` message.
-  A restarted operation gets the same idempotency key. A new attempt in a later incarnation gets another. An
+  A restarted operation gets the same idempotency key. A new attempt in a later incarnation gets another. A
+  service that caps a key's length gets its digest: a runner declared with `operation.digest` is given the SHA-256
+  of the key, in 43 characters of base64url. The key's form is part of the delivery stored with the operation, so a
+  deploy cannot change it under an operation under way
+  ([decision 0123](decisions/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md)). An
   operation leaves the state only through its completion: a step whose next state drops the key of an operation
   still running is a defect ([decision 0005](decisions/archive/0005-an-operation-leaves-only-by-completing.md)).
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
