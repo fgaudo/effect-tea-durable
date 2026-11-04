@@ -364,10 +364,12 @@ const counted = <A>(
 export const launch = (options: Options = {}): Effect.Effect<Runtime, never, SqlClient.SqlClient | Scope.Scope> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
-    const scope = yield* Effect.scope
+    // The runtime's own scope, sequential whatever its caller's: a parallel scope would run the drain, the closing of
+    // `running` and the release of the database at once (decision 0120).
+    const scope = yield* Scope.fork(yield* Effect.scope, 'sequential')
     // One runtime holds the database, before anything of this one runs, and lets it go after everything of it has
     // stopped: the scope ends what it was given last first (decision 0080).
-    yield* hold
+    yield* Scope.provide(hold, scope)
     // Everything the runtime runs is forked in `running`, which closes after the drain: a scope runs its finalizers
     // in the reverse order of their adding, so the drain, added after it, runs first (decision 0119).
     const running = yield* Scope.fork(scope)

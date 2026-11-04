@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-11-04. Decides the drain that
 [decision 0011](archive/0011-an-operation-declares-what-a-crash-does.md) says the runtime should run before a planned
-stop.
+stop. Its order of finalizers holds in a sequential scope alone, and the runtime forks one of its own, by
+[decision 0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md), which also finds that `Scope.close` documents
+finalizers as uninterruptible.
 
 ## Context
 

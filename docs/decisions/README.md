@@ -31,7 +31,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0007](archive/0007-one-process-first.md) | One process with SQL first, Effect Cluster later | [0080](archive/0080-a-database-is-held-by-one-runtime.md), [0081](0081-on-cluster-a-step-commits-with-its-reply.md) |
 | [0019](archive/0019-unstable-effect-modules.md) | The library depends on Effect's unstable modules | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) |
 | [0055](archive/0055-the-public-surface-is-what-its-users-use.md) | The public surface is what its users use |  |
-| [0080](archive/0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) |
+| [0080](archive/0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md), [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) |
 | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) | A library on unstable modules is released as experimental |  |
 
 ## The machine and the program
@@ -156,7 +156,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) | The waker tries an entity it cannot load again, after the retry |  |
 | [0078](archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) | A timer due is no spare entity, and a registered deploy keeps its name | [0102](archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md), [0103](archive/0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md), [0112](archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) |
 | [0079](archive/0079-what-a-caller-sets-going-is-finished-without-it.md) | What a caller sets going is finished without it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), [0110](archive/0110-detached-work-is-counted-until-it-ends-however-it-ends.md), [0112](archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) |
-| [0101](archive/0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) | A moved clock gives a fiber it did not wake one turn |  |
+| [0101](archive/0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) | A moved clock gives a fiber it did not wake one turn | [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) |
 | [0103](archive/0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md) | A test moves the wall clock ahead of the sleeps |  |
 | [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) | The runtime's tests choose where fibers yield, and none runs under budgets | [0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md), [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) |
 | [0109](archive/0109-settled-waits-for-an-entity-unloading.md) | `settled` waits for an entity unloading |  |
@@ -166,4 +166,5 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md) | The scheduler of the tests preempts from a run's third step, where Effect first can | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) |
 | [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) | An entity's wait ends with an item of its queue, and nothing races its take | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) |
 | [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) | A fiber on another's stack yields with no task ready |  |
-| [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md) | A planned stop drains the at-most-once operations, and stops the rest at once |  |
+| [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md) | A planned stop drains the at-most-once operations, and stops the rest at once | [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) |
+| [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) | The runtime closes a sequential scope of its own, whatever its caller's |  |

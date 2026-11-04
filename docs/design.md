@@ -571,7 +571,9 @@ activation stop at once, and a step of the drain starts no such operation and ar
 `millis`, for the at-most-once operations under way and the commits of their completions, for an at-most-once
 operation such a step starts, and for a creation committed whose work has not started. Whatever is under way after
 `millis` stops as in a crash. A process launched without the option ends with a crash, as it always did
-([decision 0119](decisions/0119-a-planned-stop-drains-the-at-most-once-operations.md)).
+([decision 0119](decisions/0119-a-planned-stop-drains-the-at-most-once-operations.md)). The runtime closes a sequential
+scope of its own, so that the drain runs first and the database is let go last whatever the strategy of the scope it
+was launched in ([decision 0120](decisions/0120-the-runtime-closes-a-sequential-scope-of-its-own.md)).
 
 ### The public surface
 

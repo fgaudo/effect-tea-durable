@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-10-31. Makes [decision 0007](0007-one-process-first.md)'s one process a rule the runtime
 keeps. What an alternative says of Cluster's shard locks is corrected by
-[decision 0084](../0084-a-step-commits-only-where-the-commit-checks-the-shard.md).
+[decision 0084](../0084-a-step-commits-only-where-the-commit-checks-the-shard.md). The hold is let go last only in a
+sequential scope, which the runtime forks of its own since
+[decision 0120](../0120-the-runtime-closes-a-sequential-scope-of-its-own.md).
 
 ## Context
 
