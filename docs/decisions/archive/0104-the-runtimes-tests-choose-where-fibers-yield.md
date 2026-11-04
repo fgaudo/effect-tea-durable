@@ -8,6 +8,9 @@ steps reaches, and moves the runtime's tests under budgets onto it. The spike is
 Moving them found [decision 0109](0109-settled-waits-for-an-entity-unloading.md) and
 [decision 0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md). Its 2,000 seeds run only at a release,
 and a twentieth of them otherwise, as [`AGENTS.md`](../../../AGENTS.md) says.
+Its preemptions under `inline` resumptions are changed by
+[decision 0115](../0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md): none comes before a run's
+third step, where Effect never makes a fiber yield.
 
 ## Context
 

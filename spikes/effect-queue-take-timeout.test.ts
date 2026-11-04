@@ -1,7 +1,8 @@
 /**
- * What decision 0029 says of an entity's wait, at `effect` 4.1.2: a take from a queue that a timeout interrupts
- * takes nothing, so an event offered as the wait runs out is either the take's or still in the queue, never lost.
- * An entity is unloaded when its wait runs out, and the unload finds the event in the queue.
+ * A take from a queue that a timeout interrupts, at `effect` 4.1.2 under the default budget of steps: an item offered
+ * as the timeout fires is either the take's or still in the queue, and never lost. Under a budget of 3 it can be lost,
+ * which `spikes/effect-queue-take-timeout-scheduled.test.ts` sees, so an entity's wait no longer races its take
+ * (decision 0116).
  */
 import { expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'

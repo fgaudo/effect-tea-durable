@@ -547,9 +547,9 @@ a region that cannot be interrupted says it is interruptible, whatever Effect's 
 ([decision 0112](decisions/archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md)).
 Bookkeeping another fiber reads changes in one synchronous step, never across a yield: a fiber is held only while
 it has not ended, and an entity leaves the process in one step
-([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). The timeout of an idle
-entity's wait wraps its take alone, so an event offered as the wait runs out is not lost
-([decision 0111](decisions/archive/0111-an-entity-s-wait-times-out-its-take-alone.md)).
+([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). An idle entity's wait
+ends with an item a sleep puts in the entity's queue, and nothing races its take, so an event offered as the wait
+runs out is not lost ([decision 0116](decisions/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md)).
 
 ### Deployments
 

@@ -3424,6 +3424,36 @@ test('a sender answered Suspended is woken by the resumption, under prioritized 
     }), { applied: ['sent'], wanted: 0 }, { open: false })
 }, 60_000)
 
+test('an entity whose wait runs out as an event arrives waits again from the event, under prioritized schedules', () => {
+  // Decision 0116: the wait's end is put in the entity's queue, and one put there just before the event that ended the
+  // wait is passed over. Taken for the next wait's end, it would unload the entity as soon as the event is applied,
+  // 2 millis after it: an unload no activation follows. The event applied first waits again, and the wait run out
+  // first is followed by the message's activation, so either order pairs each unload with an activation.
+  explored((window) =>
+    Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const { events, observe } = log()
+      const { entities, unloaded } = unloads()
+      const at = yield* DateTime.now
+      return yield* process({ observe, unloaded, passivate: { millis: 5 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          // The wait runs out at 5 millis. An event applied before, at 3, starts it again until 8.
+          yield* TestClock.adjust('3 millis')
+          yield* opened(window, true)
+          yield* together<unknown, unknown, never>([
+            toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'w' }, { requestId: 'w', sender: tester }),
+            Effect.asVoid(TestClock.adjust('2 millis')),
+          ])
+          yield* opened(window, false)
+          yield* runtime.settled
+          return entities.length - events.filter((event) => event._tag === 'Restart').length
+        }))
+    }), 0, { open: false })
+}, 60_000)
+
 test('callers of an unloaded entity build one machine for it, under prioritized schedules from their arrival', () => {
   // Decision 0067: an entity's lock is dropped by its last user only. One dropped while a caller waits for it lets a
   // new taker hold a lock of its own beside that caller, and both load the entity: two machines, two `Restart`s.
@@ -3452,9 +3482,9 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
 }, 60_000)
 
 test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {
-  // Decision 0029: an entity waits for its next event under a timeout, and Effect keeps an item offered as the timeout
-  // fires only where the timeout wraps the take alone (decision 0111). A step after the take inside the timeout lets
-  // the timeout win once the take has its event, which is lost, and its caller waits for ever.
+  // Decision 0116: an entity's wait ends with an item of its queue, and nothing races its take. A take raced against a
+  // timeout loses the event at seed 147, when the racing fiber is preempted at the third step after its resumption,
+  // and its caller waits for ever.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()

@@ -124,7 +124,7 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 - **A fiber started inline, under the scheduler of the tests.** Effect starts a child on its parent's stack in
   `raceFirst`, `timeoutOption`, the concurrent `forEach` behind `Effect.all` and parallel finalizers (`forkUnsafe`
   with `startImmediately`, read in the source of `internal/effect.ts` at 4.1.1); the runtime does so through
-  `timeoutOption` in an entity's loop and `raceFirst` in the waker. The scheduler of
+  `raceFirst` in the waker. The scheduler of
   [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) asks a fiber to yield only while
   another task is ready, but a child started inline that yields gives its parent back, so that choice is never
   explored. The runtime's tests fork what they run at once (`together`), and the runtime's own children reach a
@@ -132,22 +132,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   such a fiber by its first run happening outside a task of its own. To check first:
   - how many more schedules it makes;
   - whether a test of `src/testing.test.ts` fails without it.
-- **A preemption as a fiber is resumed.** The scheduler of the tests preempts a fiber at any step, the first after
-  its resumption too. Effect's scheduler does not: it counts a fiber's steps from 0 at every run, so a fiber resumed
-  takes at least its budget less one before it yields, and under a budget of 2 or less no fiber gets on. So under
-  `inline` resumptions a test reaches orders Effect does not give, which
-  [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) holds it does not. One loses an
-  entity's event to the timeout of its wait. `timeoutOption` races the take and a sleep in two fibers, and the
-  racing fiber interrupts the loser once it is resumed. Preempted there, it lets the take, woken by an offer, take
-  the event after the sleep has won. `spikes/effect-queue-take-timeout-scheduled.test.ts` shows both: no loss under
-  Effect's scheduler at any budget that runs, and a loss under the scheduler of the tests. The runtime's test `a
-  message that arrives as the wait of its entity runs out is handled` reaches the loss under `queued` resumptions at
-  seed 465, and under `inline` ones at seed 140 once the entities' locks are taken through `RcMap`, which forks a
-  fiber where the lock was taken in one step. What would decide it:
-  - whether `prioritized` and `everySchedule` leave a fiber resumed its first steps, and how many: Effect gives at
-    least two, and any budget of a scheduler of Effect's could give more;
-  - whether the explored tests still fail, under the same rules taken out, with those steps left;
-  - whether the locks through `RcMap` then pass every seed, and are worth the fork they add to every `send`.
 - **How many seeds a bug needs.** A run of the tests runs 100 of the 2,000 seeds of each explored test, and a
   release all of them ([`AGENTS.md`](../AGENTS.md)). That
   most bugs are found within the first 100 is only reasoned. To check: take out, one at a time, the rules of

@@ -204,6 +204,10 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
         return false
       }
     } else {
+      // Effect counts a fiber's steps from 0 at every run, and yields once the count reaches its budget. A budget of 2
+      // yields the step a fiber was resumed for, at every run, and the fiber never gets on: so the least that runs is
+      // 3, and no preemption comes before a run's third step (decision 0115).
+      if (fiber.currentOpCount < leastBudget) return false
       if (ready.length === 0) return false
       const preempts = strategy.preempt(id(fiber), tasks())
       preemptions.push(preempts)
@@ -276,6 +280,9 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
     failure: () => failure,
   }
 }
+
+/** The least budget of steps under which Effect's scheduler runs a fiber on: the step a preemption first comes at. */
+const leastBudget = 3
 
 /** How many tasks a run may take before it is taken for one that never ends. */
 const maxSteps = 1_000_000

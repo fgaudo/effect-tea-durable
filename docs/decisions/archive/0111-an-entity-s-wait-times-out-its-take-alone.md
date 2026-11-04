@@ -3,6 +3,8 @@
 **Status:** accepted, 2026-11-01. Adds a rule to the wait of [decision 0029](0029-an-idle-entity-is-unloaded.md), and
 changes what decision 0107 (deleted; git keeps it) said of the take a timeout interrupts, that Effect's JSDoc does
 not promise it: Effect promises it, under a condition. Closes its [open question](../../open-questions.md#running).
+Replaced by [decision 0116](../0116-an-entitys-wait-ends-with-an-item-of-its-queue.md): a take raced against a timeout
+can lose its item when the racing fiber's budget of steps is 3.
 
 ## Context
 

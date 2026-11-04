@@ -253,13 +253,23 @@ export interface Runtime {
  */
 type Evict = Readonly<{ _tag: 'Evict' }>
 
+/**
+ * What tells an entity's loop that its wait has run out: put in its queue of events by a sleep the loop forks for
+ * the wait, so that the take is never raced against a timeout, and loses no event (decision 0116). `wait` is the
+ * wait it ends, since one put there just before an event is taken after it. It is no event, and is not counted as
+ * one.
+ */
+type Passivate = Readonly<{ _tag: 'Passivate'; wait: number }>
+
 /** An entity loaded in this process: its machine, the events waiting, and what is running for it. */
 interface Loaded<T extends Types> {
   machine: Machine.Machine<T>
   applying: boolean
-  readonly events: Queue.Queue<Machine.Offered<T> | Evict>
+  readonly events: Queue.Queue<Machine.Offered<T> | Evict | Passivate>
   /** Told to leave the process, and not taken that yet: until its loop does, the process is not settled. */
   evicted: boolean
+  /** How many times the loop has waited for an event: the number of the wait under way. */
+  waits: number
   /**
    * The events offered and not yet applied: counted as each is offered, and until its step is done, so that an
    * event taken off the queue and not yet applied is still under way (decision 0063).
@@ -904,12 +914,23 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             Effect.flatMap(() => next),
           )
         }
-        // The timeout wraps the take alone (decision 0111). Only then does Effect keep an event offered as it fires.
-        // A step after the take inside it would let the timeout win with the event taken, and lose it.
-        return Effect.timeoutOption(Queue.take(loaded.events), `${passivate} millis`).pipe(
+        // The wait's end is put in the queue by a sleep of its own, and the take is raced against nothing: a take a
+        // timeout interrupts can lose the event it took (decision 0116). The sleep is the loop's child, and ends with it.
+        const wait = ++loaded.waits
+        const runsOut = Effect.andThen(
+          Effect.sleep(`${passivate} millis`),
+          Effect.sync(() => Queue.offerUnsafe(loaded.events, { _tag: 'Passivate', wait })),
+        )
+        // An end an earlier wait's sleep put there, just before the event that ended that wait, is passed over.
+        const take: Effect.Effect<Machine.Offered<T> | Evict | Passivate> = Effect.flatMap(
+          Queue.take(loaded.events),
+          (taken) => taken._tag === 'Passivate' && taken.wait !== wait ? take : Effect.succeed(taken),
+        )
+        return Effect.flatMap(Effect.forkChild(runsOut), (sleep) =>
+          Effect.flatMap(take, (taken) => Effect.as(Fiber.interrupt(sleep), taken))).pipe(
           Effect.flatMap((taken) => {
             // The wait ran out, or the entity was told to leave: it is unloaded if it has nothing to do.
-            const event = taken._tag === 'Some' ? taken.value : null
+            const event = taken._tag === 'Passivate' ? null : taken
             if (event === null || event._tag === 'Evict') {
               const evicted = event === null ? Effect.succeed(null) : Effect.map(DateTime.now, DateTime.toEpochMillis)
               return Effect.flatMap(Effect.flatMap(evicted, (now) => unload(deployed, loaded, now)), (gone) =>
@@ -941,8 +962,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const loaded: Loaded<T> = {
           machine: { stored, running: {} },
           applying: false,
-          events: yield* Queue.unbounded<Machine.Offered<T> | Evict>(),
+          events: yield* Queue.unbounded<Machine.Offered<T> | Evict | Passivate>(),
           evicted: false,
+          waits: 0,
           pending: 0,
           operations: new Map(),
           timers: new Map(),
@@ -1082,8 +1104,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           const loaded: Loaded<T> = {
             machine: started.machine,
             applying: false,
-            events: yield* Queue.unbounded<Machine.Offered<T> | Evict>(),
+            events: yield* Queue.unbounded<Machine.Offered<T> | Evict | Passivate>(),
             evicted: false,
+            waits: 0,
             pending: 0,
             operations: new Map(),
             timers: new Map(),

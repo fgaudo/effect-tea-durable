@@ -409,3 +409,30 @@ test('under inline resumptions a fiber a Deferred resumes runs before its resume
   expect(orders('inline')).toEqual(['resumer waiter', 'waiter resumer'])
   expect(orders('queued')).toEqual(['resumer waiter'])
 })
+
+test('a strategy is never asked to preempt a fiber before the third step of its run, as Effect never yields there', () => {
+  // Effect counts a fiber's steps from 0 at every run, and runs no fiber on under a budget below 3 (decision 0115).
+  // A preemption at a run's second step gives orders Effect does not: a race of a take that loses its item.
+  const resumes = Effect.gen(function*() {
+    const deferred = yield* Deferred.make<void>()
+    const waiter = yield* Effect.forkChild(Effect.andThen(Deferred.await(deferred), Effect.yieldNow))
+    yield* Effect.yieldNow
+    yield* Deferred.succeed(deferred, undefined)
+    yield* Fiber.join(waiter)
+    return 'ended'
+  })
+  const steps: Array<number> = []
+  const always: Strategy = {
+    pick: () => 0,
+    preempt: () => {
+      steps.push(Fiber.getCurrent()!.currentOpCount)
+      return true
+    },
+  }
+  for (const resumptions of ['inline', 'queued'] as const) {
+    expect(value(scheduled(twoWriters, always, resumptions))).toBeDefined()
+    expect(value(scheduled(resumes, always, resumptions))).toBe('ended')
+  }
+  expect(steps.length).toBeGreaterThan(0)
+  expect(Math.min(...steps)).toBe(3)
+})
