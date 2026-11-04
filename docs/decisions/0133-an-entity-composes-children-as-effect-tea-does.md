@@ -74,8 +74,10 @@ Two questions decide it, in order.
   the rest of the entity within one step: an order's line is not charged once the order is cancelled, in the step
   that cancels it. An item is an entity of its own when it has a life of its own that others address: a seat's
   inventory, which every booking sends to. It is an entity of its own too when its parent would hold more items than
-  one row and one step should carry. Where that starts is the open question on
-  [large states](../open-questions.md#storage-and-reading). A child by id moves that question, and does not answer it.
+  one row and one step should carry. Where that starts is what
+  [decision 0135](0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) proposes: the runtime
+  warns of a step past a threshold, and the design gives what a step costs. A child by id moves that question, and
+  does not answer it.
 - **Inside the entity, a child or the parent's own state.** The Guide's rules on splitting a program decide it,
   unchanged. An item is a child when it is a concern of its own: the parent hears of it through its events, steers it
   through its external messages, and never reads its state to decide. A line whose charge is a state machine of its

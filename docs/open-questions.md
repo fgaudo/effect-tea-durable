@@ -36,7 +36,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   the spike saw a step of a small entity take 345 ms at worst, where it takes 2 ms alone
   ([decision 0134](decisions/0134-an-entitys-loop-yields-between-two-steps.md) keeps it to one step).
   [Decision 0133](decisions/0133-an-entity-composes-children-as-effect-tea-does.md) keeps the children in the parent's
-  state, so it makes this question more pressing. It would be decided by:
+  state, so it makes this question more pressing.
+  [Decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) proposes an
+  answer, for the step on children of the [roadmap](roadmap.md). It would be decided by:
   - whether the runtime states a limit, as a warning or a refusal past a size of the state's JSON, or whether only
     the design advises a split into entities;
   - whether a row of the outbox needs the projection whole, or whether the message and a version would do. A large
