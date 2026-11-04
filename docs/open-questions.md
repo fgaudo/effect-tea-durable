@@ -149,17 +149,16 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     with the entity's due timer known to nobody. The test `settled never returns between a crash and the
     activation its due timer brings`, in [`src/runtime.test.ts`](../src/runtime.test.ts), now takes it out, at 11
     seeds of 2,000 under decision 0117, the first at 172, which it pins. A waker that reads its poke in one step and
-    clears its flag in the next, of the same note, is reached by no test yet. And the signal of an entity told to
-    leave that stays, of [decision 0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), which
+    clears its flag in the next, of the same note, fails the test `settled never returns while the waker rests from a
+    reading another entity left during`, which runs every schedule within one preemption. And the signal of an entity
+    told to leave that stays, of [decision 0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), which
     the review of 2026-11-01 found another signal always follows.
 
   Is a twentieth of the seeds enough for a run of the tests, and should a step of the roadmap run the release's seeds
   before it is taken? What would decide it:
   - how long a run of the tests may take: all the seeds of `src/runtime.test.ts` take about 150 seconds alone, and a
     twentieth of them about 40, under load;
-  - how often `bun run test:explore` is run, which tries new seeds and finds what the first 100 miss;
-  - a test for the waker that reads its poke apart from clearing its flag, or a reading that shows the mutation
-    changes nothing.
+  - how often `bun run test:explore` is run, which tries new seeds and finds what the first 100 miss.
 
 ## Naming
 

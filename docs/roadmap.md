@@ -13,28 +13,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    it is taken. That run takes about 150 seconds. The step writes the rule in the section `Code and tests`, takes the
    open question out of `docs/open-questions.md`, and needs no note, since the rule's reason fits in a sentence. The
    maintainer confirms the rule before it is written.
-2. **A test for the waker's reading and its rest in one step**
-   ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). In `waking`, in
-   [`src/runtime.ts`](../src/runtime.ts), the waker looks whether a poke is waiting, and clears `waker.busy` and calls
-   `end()`, in one `Effect.sync`. No test fails when that is split in two steps, a first that reads
-   `Queue.sizeUnsafe(waker.poke) === 0` and a second that clears the flag and signals, with no yield forced between
-   them. In that window an entity can leave and poke the waker. The waker then clears the flag the departure set, and
-   `settled` can return with a poke nobody has taken, and the departed entity's due timer known to nobody.
-   - The step writes a test in [`src/runtime.test.ts`](../src/runtime.test.ts) that fails with the split and passes
-     every seed without it. A review suggested a small test under `bound: 1` or a prioritized one, in which an entity
-     leaves while the waker is between its reading and its rest.
-   - The test `settled never returns between a crash and the activation its due timer brings` shows a shape that
-     works for the departure's own split: a gate in the probe holds a step, the clock moves with the window closed,
-     and a `settled` already waiting looks at every signal once the window opens. A clock moved with the window open
-     leaves sleeps that have not started yet behind the move
-     ([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)). A fiber that asks
-     `settled` in a loop keeps `TestClock.adjust` from ever ending.
-   - A count of the seeds the test fails, out of 2,000, takes the mutation in a copy of the repository, and runs the
-     test under `SCHEDULES=all` with `explored` changed to record each failing seed instead of stopping at the first.
-     A seed past the first 100 is pinned in the test, as `pinned` does for the seed 172 of the departure's test.
-   - If no test reaches the window within a reasonable effort, the open question `How many seeds a bug needs` says
-     so, and why.
-3. **A planned stop** ([open question](open-questions.md#running), `A planned stop`). An at-most-once operation under
+2. **A planned stop** ([open question](open-questions.md#running), `A planned stop`). An at-most-once operation under
    way when its process stops delivers `unknown` at the next activation, and
    [decision 0011](decisions/archive/0011-an-operation-declares-what-a-crash-does.md) says the runtime should drain them
    before a planned stop. Today a process ends when the scope it was launched in closes, which interrupts everything
@@ -63,7 +42,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      restart. The test `an at-most-once operation delivers unknown after a crash, and an idempotent one runs
      again` stays, for a process launched without the option. A change to `src/runtime.ts` that adds a wait or a fork has a test under `explored` that
      fails without it, as [`AGENTS.md`](../AGENTS.md) says.
-4. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+3. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
