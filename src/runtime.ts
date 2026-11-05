@@ -532,8 +532,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const undeployed = new Map<string, Deferred.Deferred<void>>()
     /**
      * What a `feed` that waits waits for, by program and topic: completed and dropped by the first commit of a row in
-     * the topic. Only a reading that waits makes one, so a step nobody waits for finds none, and adds no yield. A
-     * `PubSub` per topic would tell the same, at a subscription per reading (decision 0142).
+     * the topic. Only a reading that waits makes one, and one stays until that commit though its wait is over, so the
+     * map holds at most one per topic declared, and a step in a topic no reading has waited for finds none. Completing
+     * one adds no yield. A `PubSub` per topic would tell the same, at a subscription per reading (decision 0142).
      */
     const commits = new Map<string, Deferred.Deferred<void>>()
     const commitOf = (name: string, topic: string) => {
