@@ -16,6 +16,8 @@ import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
+import * as Logger from 'effect/Logger'
+import * as References from 'effect/References'
 import fc from 'fast-check'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -580,6 +582,39 @@ describe('the runtime on SQLite', () => {
       expect(acted.filter((act) => act === 'c').length).toBe(1)
       const stored = yield* persisted
       expect(stored).toEqual(replayed(stored?.state.since ?? at, events))
+    })))
+
+  test('warns of a step past its threshold once per activation, and refuses nothing for its size (decision 0135)', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const warnings: Array<Readonly<Record<string, unknown>>> = []
+      const logger = Logger.make((options) => {
+        if (options.logLevel === 'Warn') warnings.push(options.fiber.getRef(References.CurrentLogAnnotations))
+      })
+      const at = yield* DateTime.now
+      const sender = { _tag: 'Tester' } as const
+      const want = (nonce: string) => ({ _tag: 'Want', key: 'b', on: true, nonce }) as const
+      let requests = 0
+      // Each activation is a process of its own, which loads the entity again: its warning is its own.
+      const activation = (options: Options) =>
+        process(options, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            if (requests === 0) yield* toy.create(id, { at }, { requestId: 'creation', sender })
+            for (let step = 0; step < 2; step++) {
+              const requestId = `request-${requests++}`
+              expect(yield* toy.send(id, want(requestId), { requestId, sender })).toEqual({ _tag: 'Accepted' })
+            }
+            yield* runtime.settled
+          })).pipe(Effect.provide(Logger.layer([logger])))
+      yield* activation({})
+      expect(warnings).toEqual([])
+      yield* activation({ warn: { characters: 1 } })
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toMatchObject({ name: program.name, id, threshold: 1 })
+      expect(warnings[0]!['characters']).toBeGreaterThan(1)
+      yield* activation({ warn: { characters: 1 } })
+      expect(warnings).toHaveLength(2)
     })))
 
   test('answers a retry from the stored reply, and NotFound for no entity', () =>

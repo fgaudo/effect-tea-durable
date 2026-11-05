@@ -9,6 +9,9 @@ Cluster's says so.
   caller, and writes the sender. The runtime trusts the sender the boundary gives, and `read` takes none.
 - **Capacity.** How many entities a process keeps loaded, an option of the runtime. Over it, the least recently used
   of the idle ones is unloaded; a busy entity, or one whose timer is due, never is.
+- **Child, parent.** A part a program or another part holds in its state, declared in its `children` with `child`
+  for one, or `each` for children by id; the one that holds it is its parent. The library routes a child's messages,
+  holds its work under `<child>.<key>`, and runs its operations under `<child>.<tag>`.
 - **Consumer.** A name under which the outbox is read, with a stored cursor that `ack` moves forward and never back.
 - **Crash.** The process dies at a point of the crash table, or an entity leaves the process on an event the runtime
   cannot finish. To the machine, a passivation is a crash the runtime chose.
@@ -25,7 +28,9 @@ Cluster's says so.
 - **Entity.** One long-lived thing with an id, an order or a booking, with one state, one mailbox and one message
   handled at a time.
 - **Event.** What moves the machine: a message arriving, an operation completing or dying, a timer firing, a step, the
-  process dying, an operator resuming or discarding.
+  process dying, an operator resuming or discarding. What a child tells its parent is a raised event, not an event.
+- **External message.** What a parent sends a child through `children.<child>.update`, of a type the child's schema
+  `external` gives. It is no inbound message: no caller can send it, and a child takes it in every state.
 - **Flags.** What an entity is created with, which `init` reads and nothing else keeps.
 - **Handle.** What `deploy` gives: `create`, `send`, `read` and `query` for callers, `feed`, `ack` and the rest of the
   outbox for its consumers, `reindex`, and `suspended`, `resume` and `discard` for an operator.
@@ -61,6 +66,8 @@ Cluster's says so.
   that acts on nothing, which a step may drop or change while it runs.
 - **Outbox, log.** One row per step that changed what callers read, holding the entity's address, the message handled
   and the projection left, with a `seq` that never repeats. A consumer reads it from its cursor.
+- **Part.** A child, as declared in `part(schemas)(…)`: a program's pieces without a name, indexes or migrations,
+  which are its parent's, and with the schemas of the events it raises and the external messages it takes.
 - **Passivation.** The runtime unloads an entity that has nothing to do. It writes nothing, and the earliest of the
   stored timers wakes the entity.
 - **Planned stop, drain.** The closing of the scope a runtime was launched in with the option `drain`. The runtime
@@ -68,10 +75,12 @@ Cluster's says so.
   its at-most-once operations and the steps of their completions. Without the option, the closing is a crash.
 - **Probe.** A reference in the context that the runtime tells what it did, which a test provides and the library does
   not export.
-- **Program.** Everything declared in `program(schemas)(…)`: `name`, `keys`, `init`, `update`, `durable`,
-  `operations`, `project`, `indexes` and `migrations`.
+- **Program.** Everything declared in `program(schemas)(…)`: `name`, `keys`, `children`, `init`, `update`,
+  `onEvent`, `durable`, `operations`, `project`, `indexes` and `migrations`.
 - **Projection, read model.** `project(state)`: what a caller reads of an entity, with the actions it allows. Stored as
   a row with the value of each index, which `read` and a query read.
+- **Raised event.** What a child's `update` tells its parent with `raise(event)(state)`, handled by the parent's
+  `onEvent` in the same step, and never stored.
 - **Rehearsal, `rehearse`.** A scenario run on the machine without storage, cluster or clock, where the test answers
   or runs the operations, fires the timers, kills the process and deploys new versions. `rehearse` runs one entity,
   and `rehearse.together` a world.

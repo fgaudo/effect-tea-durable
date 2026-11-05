@@ -1,8 +1,8 @@
 # 0135. A large state is split by the program, and the runtime warns of it
 
-**Status:** proposed, for the step Children inside an entity of the [roadmap](../roadmap.md); rewritten in place
-while the step is under way. Decides the open question on [large states](../open-questions.md#storage-and-reading),
-which [decision 0028](archive/0028-rules-the-runtime-settled.md) left open when it put aside writing a difference.
+**Status:** accepted, 2026-11-05, with the step Children inside an entity of the roadmap. Decided the open question
+on large states, which [decision 0028](archive/0028-rules-the-runtime-settled.md) left open when it put aside writing
+a difference.
 
 ## Context
 
@@ -32,16 +32,16 @@ An order with a child for each line grows inside one entity, which is the case t
 
 ## Decision
 
-The terms below are a draft, rewritten while the step is under way.
-
 - **The runtime refuses no state for its size.** A step past a limit would be a defect, and would suspend an entity
   on a message its program accepts. Where the limit stands depends on the machine and on the load, which the
   library does not know.
-- **The runtime warns of a large step.** `launch` takes `warn: { characters }`, 262 144 by default. A step whose
-  text of the state and of the projection, summed, is longer than that logs a warning through Effect's logger, with
-  the entity's address, the length written, and the threshold. An entity warns once per activation, so that a large
-  entity does not log at every step. The length is that of the JSON text the storage writes, which it has in hand.
-  At the default, the spike's step takes about 10 ms.
+- **The runtime warns of a large step.** `launch` takes `warn: { characters }`, 262 144 by default. A step that
+  writes more characters than that of the state and of the projection, in the read model and in the outbox, logs a
+  warning through Effect's logger. The warning is annotated with the entity's `name` and `id`, the `characters`
+  written, and the `threshold`. An entity warns once per activation, so that a large entity does not log at every
+  step. The length is that of the JSON text the storage writes, which `write` returns, so nothing is encoded twice.
+  At the default, the spike's step takes about 10 ms. A step under the threshold does nothing more than compare two
+  numbers, and yields nowhere.
 - **The runtime tells the operator through logs, not through the probe.** The probe is for tests, and an operator's
   view of what the runtime did is logs, metrics and traces
   ([decision 0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md)). This warning is the runtime's first
@@ -66,9 +66,11 @@ The terms below are a draft, rewritten while the step is under way.
   [decision 0134](0134-an-entitys-loop-yields-between-two-steps.md).
 - That `Effect.logWarning` reaches the logger the application provides: **documented**, in the JSDoc of
   `logWarning` in `effect/src/Effect.ts`.
-- That 262 144 characters is a threshold an operator wants to hear of: **only reasoned**, on the spike's figures,
-  where such a step takes about 10 ms. The step measures an order of many lines under decisions 0132 and 0133, and
-  sets the default from what its steps cost.
+- That 262 144 characters is a threshold an operator wants to hear of: **only reasoned**, on the spikes' figures,
+  where such a step takes about 10 ms. **Seen**, in `spikes/many-children.test.ts`, for a parent of children by id
+  under [decision 0133](0133-an-entity-composes-children-as-effect-tea-does.md): a step took 3.5 ms at 1 000 children
+  and 10 ms at 10 000, where it wrote 667 801 characters and warned. A parent's step does work for each child, so a
+  parent past the threshold costs about half as much again as a flat state of its size does.
 - That a consumer needs the projection of that step, and not the one of now: **documented**, by decision 0038, which
   rejected the message without the projection.
 
@@ -92,5 +94,5 @@ The terms below are a draft, rewritten while the step is under way.
 - [`src/runtime.ts`](../../src/runtime.ts) takes `warn` in its options, and logs a large step.
   [`src/storage.ts`](../../src/storage.ts) gives the length of the text it writes.
 - [`src/runtime.test.ts`](../../src/runtime.test.ts) checks that a step past the threshold warns once per
-  activation, through a logger the test provides.
-- The step measures the order of many lines that decision 0133 writes, and gives its figures to the design.
+  activation, through a logger the test provides, and that a step under the default does not.
+- `spikes/many-children.test.ts` measures a parent of many children by id, and its figures go to the design.

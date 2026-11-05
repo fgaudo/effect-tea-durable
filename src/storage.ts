@@ -458,9 +458,10 @@ export interface Storage<T extends Types> {
   /**
    * Writes what an event wrote, as the machine encoded it (decision 0057). The caller wraps it in the transaction
    * of the event (decision 0007). `at` is the time of the event, in milliseconds: the time the entity suspended,
-   * where the event suspends it (decision 0114).
+   * where the event suspends it (decision 0114). It gives how many characters it wrote of the state and of the
+   * projection, in the read model and in the outbox, which the runtime warns of past a threshold (decision 0135).
    */
-  readonly write: (id: string, written: Machine.Written, at: number) => Effect.Effect<void>
+  readonly write: (id: string, written: Machine.Written, at: number) => Effect.Effect<number>
   /**
    * The entities whose state holds an operation, or whose mailbox holds a message: what a process activates when
    * it starts, without waiting for a caller. So an operation a crash interrupted runs again, and a message a
@@ -593,12 +594,12 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const columnOf = (index: string) => sql.literal(expression(index))
 
   /** The row a query reads, as the machine computed it from a state (decision 0032). */
-  const row = (id: string, shown: Machine.Shown) =>
+  const row = (id: string, shown: Machine.Shown, projection: string = JSON.stringify(shown.projection)) =>
     sql`INSERT OR REPLACE INTO projections ${
       sql.insert({
         name,
         id,
-        projection: JSON.stringify(shown.projection),
+        projection,
         indexes: JSON.stringify(shown.indexes),
         version,
       })
@@ -711,6 +712,8 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
   const write = (id: string, written: Machine.Written, at: number) =>
     Effect.gen(function*() {
       const { entity, suspension } = written
+      const state = entity === null ? null : JSON.stringify(entity.state)
+      let characters = state?.length ?? 0
       const on = suspension === null ? null : JSON.stringify(suspension.on)
       const cause = suspension === null ? null : suspension.cause
       if (written.created) {
@@ -719,7 +722,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
           sql.insert({
             name,
             id,
-            state: JSON.stringify(entity.state),
+            state,
             version,
             creation: JSON.stringify(entity.creation),
             incarnations: written.incarnations,
@@ -734,7 +737,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         // 0114).
         yield* sql`
           UPDATE entities
-          SET state = ${JSON.stringify(entity.state)}, version = ${version},
+          SET state = ${state}, version = ${version},
               creation = ${JSON.stringify(entity.creation)}, incarnations = ${written.incarnations},
               suspended_on = ${on}, suspended_cause = ${cause},
               suspended_at = CASE WHEN ${on} IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
@@ -748,9 +751,15 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
           WHERE name = ${name} AND id = ${id}
         `
       }
-      if (written.shown !== null) yield* row(id, written.shown)
+      if (written.shown !== null) {
+        const projection = JSON.stringify(written.shown.projection)
+        characters += projection.length
+        yield* row(id, written.shown, projection)
+      }
       if (written.published !== null) {
-        const { kind, message, projection } = written.published
+        const { kind, message } = written.published
+        const projection = JSON.stringify(written.published.projection)
+        characters += projection.length
         yield* sql`INSERT INTO outbox ${
           sql.insert({
             name,
@@ -758,7 +767,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             tag: kind,
             version,
             message: message === null ? null : JSON.stringify(message),
-            projection: JSON.stringify(projection),
+            projection,
           })
         }`
       }
@@ -875,6 +884,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       if (written.replies.length > 0) {
         yield* sql`DELETE FROM replies WHERE name = ${name} AND id = ${id} AND until IS NOT NULL AND until <= ${at}`
       }
+      return characters
     }).pipe(Effect.orDie)
 
   const expire = (at: number) =>

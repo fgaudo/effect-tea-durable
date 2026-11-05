@@ -3,6 +3,10 @@ import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import type * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import { dual } from 'effect/Function'
+import type * as Optic from 'effect/Optic'
+import * as Opt from 'effect/Option'
+import * as Result from 'effect/Result'
 import { Base64Url } from 'effect/encoding'
 import * as Schema from 'effect/Schema'
 import { createHash } from 'node:crypto'
@@ -67,6 +71,18 @@ const isJson = (value: unknown): boolean => {
   const prototype: unknown = Object.getPrototypeOf(value)
   return (prototype === Object.prototype || prototype === null) && Object.values(value).every(isJson)
 }
+
+/** JSON with the fields of each object in order: two values that encode alike are then equal, field for field. */
+export const ordered = (json: Json): Json =>
+  Array.isArray(json)
+    ? json.map(ordered)
+    : typeof json === 'object' && json !== null
+    ? Object.fromEntries(
+      Object.entries(json)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([field, value]) => [field, ordered(value as Json)]),
+    )
+    : json
 
 const encoders = new WeakMap<object, (value: unknown) => unknown>()
 
@@ -533,8 +549,315 @@ type ParametersOf<Keys> = {
     : never
 }
 
-/** The types `program` reads off a declaration, which an object literal typed `Program<T>` writes out by hand. */
-type Inferred<
+const RaisedTypeId: unique symbol = Symbol.for('effect-tea-durable/Raised')
+
+/**
+ * A state with the events a child raised for its parent in the same step. An event is handled by the parent's
+ * `onEvent` in the step that raised it, and nothing stores it (decision 0133).
+ */
+export interface Raised<State, Event> {
+  readonly [RaisedTypeId]: typeof RaisedTypeId
+  readonly state: State
+  readonly events: ReadonlyArray<Event>
+}
+
+/**
+ * What a step of a part gives: its next state, or that state with the events it raised for its parent. A part
+ * that raises no event steps to a state alone, as a program does.
+ */
+export type Step<State, Event = never> = [Event] extends [never] ? State : State | Raised<State, Event>
+
+const isRaised = (step: unknown): step is Raised<unknown, unknown> =>
+  typeof step === 'object' && step !== null && RaisedTypeId in step
+
+/** A step as its state and its events: no event for a state alone. */
+const unfold = (step: unknown): Readonly<{ state: unknown; events: ReadonlyArray<unknown> }> =>
+  isRaised(step) ? { state: step.state, events: step.events } : { state: step, events: [] }
+
+/** The step to `state` with `events`: the state alone when there is none, so that a state stays a state. */
+const stepOf = (state: unknown, events: ReadonlyArray<unknown>): unknown =>
+  events.length === 0 ? state : { [RaisedTypeId]: RaisedTypeId, state, events }
+
+/**
+ * An event raised for the parent, the state unchanged: `raise(event)(state)` in a child's `update`, or
+ * `onEvent: { Line: (id, event) => raise(event) }` in a parent that passes a child's event on as its own.
+ */
+export const raise = <Event>(event: Event) => <State>(state: State): Raised<State, Event> => ({
+  [RaisedTypeId]: RaisedTypeId,
+  state,
+  events: [event],
+})
+
+/**
+ * A step followed by another, made from its state: the state is the second's, and the events are both steps', in
+ * order. Taking a step's state by hand to make the next one would drop its events. It is dual, for `pipe`.
+ */
+export const andThen: {
+  <State, Event2 = never>(
+    next: (state: State) => State | Raised<State, Event2>,
+  ): <Event1 = never>(step: State | Raised<State, Event1>) => Step<State, Event1 | Event2>
+  <State, Event1 = never, Event2 = never>(
+    step: State | Raised<State, Event1>,
+    next: (state: State) => State | Raised<State, Event2>,
+  ): Step<State, Event1 | Event2>
+} = dual(2, (step: unknown, next: (state: unknown) => unknown): unknown => {
+  const first = unfold(step)
+  const second = unfold(next(first.state))
+  return stepOf(second.state, [...first.events, ...second.events])
+})
+
+/**
+ * A step followed by one more for each item, in order, each made from the state the one before left: the
+ * `andThen` of many, e.g. an order that cancels each of its lines. It is dual, for `pipe`.
+ */
+export const forEach: {
+  <Item, State, Event2 = never>(
+    items: Iterable<Item>,
+    next: (item: Item) => (state: State) => State | Raised<State, Event2>,
+  ): <Event1 = never>(step: State | Raised<State, Event1>) => Step<State, Event1 | Event2>
+  <State, Item, Event1 = never, Event2 = never>(
+    step: State | Raised<State, Event1>,
+    items: Iterable<Item>,
+    next: (item: Item) => (state: State) => State | Raised<State, Event2>,
+  ): Step<State, Event1 | Event2>
+} = dual(3, (step: unknown, items: Iterable<unknown>, next: (item: unknown) => (state: unknown) => unknown) => {
+  let folded = unfold(step)
+  for (const item of items) {
+    const after = unfold(next(item)(folded.state))
+    folded = { state: after.state, events: [...folded.events, ...after.events] }
+  }
+  return stepOf(folded.state, folded.events)
+})
+
+/** What a part's type says of it: a program's types, and the events it raises and the external messages it takes. */
+export type PartTypes = Types & Readonly<{ event: unknown; external: unknown }>
+
+declare const PartTypeId: unique symbol
+
+/**
+ * A child, as a parent holds it: a state with its messages, operations and work, and no name, indexes or
+ * migrations. The entity is the parent's, and so are its address, its row of the read model and the versions of its
+ * state (decision 0133). A part with children of its own is a part too, so a tree is as deep as a program needs.
+ */
+export interface Part<T extends PartTypes> {
+  /** Only in the type, so that a parent reads the part's types back: no part has the property. */
+  readonly [PartTypeId]?: T
+  readonly keys: Keys<T['key'], T['parameter']>
+  /**
+   * The schemas the parent's are made of. The parent's state and projection schemas are the parent's own, and hold
+   * the child's where the parent puts it.
+   */
+  readonly schemas: Readonly<{
+    state: Schema.Codec<T['state'], Json>
+    inbound: Schema.Codec<T['inbound'], Json>
+    internal: Schema.Codec<T['internal'], Json>
+    operation: Schema.Codec<T['operation'], Json>
+    rejection: Schema.Codec<T['rejection'], Json>
+  }>
+  readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state']
+  readonly update: (
+    message: T['inbound'] | T['internal'] | T['external'],
+    meta: Meta<T['sender']>,
+  ) => (state: T['state']) => Step<T['state'], T['event']> | Rejected<T['rejection']>
+  readonly durable: (
+    state: T['state'],
+  ) => Readonly<Record<string, Returned<T['operation'], T['internal']> | undefined>>
+  readonly operations: Runners<T>
+  readonly project: (state: T['state']) => T['projection']
+}
+
+type AnyPart = Part<any>
+
+/** The types a part says of itself. */
+type TypesOf<P> = P extends { readonly [PartTypeId]?: infer T } ? Exclude<T, undefined> : never
+
+/** The state of a part. */
+type StateOf<P> = TypesOf<P> extends Readonly<{ state: infer State }> ? State : never
+
+/** One child, where an optic finds it in the parent's state: where the optic focuses nothing, it is not there. */
+export interface One<State, P> {
+  readonly kind: 'one'
+  readonly part: P
+  readonly at: Optic.Optional<State, StateOf<P>>
+}
+
+/**
+ * Children by id, as the entries an optic finds in the parent's state: every child there is listed once, and one
+ * optic says both where a child is and which children are there (decision 0133). An id is compared by what its
+ * schema encodes it to, as a key's parameter is.
+ */
+export interface Each<State, Id, P> {
+  readonly kind: 'each'
+  readonly part: P
+  readonly id: Schema.Codec<Id, Json>
+  readonly at: Optic.Optional<State, ReadonlyArray<readonly [Id, StateOf<P>]>>
+}
+
+/**
+ * One child of a parent, e.g. `child(payment, { at: Optic.id<State>().key('payment') })`, or with
+ * `.compose(Optic.some())` for a child that may not be there.
+ */
+export const child = <State, P extends AnyPart>(
+  part: P,
+  place: Readonly<{ at: Optic.Optional<State, StateOf<P>> }>,
+): One<State, P> => ({ kind: 'one', part, at: place.at })
+
+/**
+ * Children by id, e.g. the lines of an order kept as a record by id:
+ * `each(line, { id: Schema.String, at: Optic.id<State>().key('lines').compose(Optic.entries()) })`.
+ */
+export const each = <State, Id, P extends AnyPart>(
+  part: P,
+  place: Readonly<{ id: Schema.Codec<Id, Json>; at: Optic.Optional<State, ReadonlyArray<readonly [Id, StateOf<P>]>> }>,
+): Each<State, Id, P> => ({ kind: 'each', part, id: place.id, at: place.at })
+
+type Children<State> = Readonly<Record<string, One<State, AnyPart> | Each<State, any, AnyPart>>>
+
+type Names<C> = keyof C & string
+type PartIn<C> = C extends { readonly part: infer P } ? TypesOf<P> : never
+type IdIn<C> = C extends { readonly kind: 'each'; readonly id: Schema.Codec<infer Id, Json> } ? Id : never
+/** Where a child's messages, operations and rejections carry its id: only for children by id. */
+type AtIn<C> = C extends { readonly kind: 'each' } ? Readonly<{ id: IdIn<C> }> : unknown
+
+/** A child's messages of one kind, as its parent's: `{ _tag: <child>, message }`, with `id` for children by id. */
+type Wrapped<C, Kind extends 'inbound' | 'internal'> = {
+  [K in Names<C>]: [PartIn<C[K]>[Kind]] extends [never] ? never
+    : Readonly<{ _tag: K; message: PartIn<C[K]>[Kind] }> & AtIn<C[K]>
+}[Names<C>]
+
+/** A child's operation under the tag `<child>.<tag>`, so that the parent's runners are found by tag, as any are. */
+type LiftedOperation<K extends string, Operation, At> = Operation extends Readonly<{ _tag: infer Tag extends string }>
+  ? Readonly<{ _tag: `${K}.${Tag}`; operation: Operation }> & At
+  : never
+
+type ChildOperation<C> = { [K in Names<C>]: LiftedOperation<K, PartIn<C[K]>['operation'], AtIn<C[K]>> }[Names<C>]
+
+type ChildRejection<C> = {
+  [K in Names<C>]: [PartIn<C[K]>['rejection']] extends [never] ? never
+    : Readonly<{ _tag: K; reason: PartIn<C[K]>['rejection'] }> & AtIn<C[K]>
+}[Names<C>]
+
+type ChildKey<C> = { [K in Names<C>]: `${K}.${PartIn<C[K]>['key']}` }[Names<C>]
+
+declare const NoParameter: unique symbol
+
+/**
+ * The parameter of a child's key, as its parent's: the child's own for one child, and for a child by id its id, or
+ * the id and the child's own as a pair.
+ */
+type ParameterIn<C, Name> = Name extends `${infer K}.${infer Key}` ? K extends Names<C> ? Key extends
+      keyof PartIn<C[K]>['parameter'] ? C[K] extends { readonly kind: 'each' }
+        ? readonly [IdIn<C[K]>, PartIn<C[K]>['parameter'][Key]]
+      : PartIn<C[K]>['parameter'][Key]
+    : C[K] extends { readonly kind: 'each' } ? IdIn<C[K]>
+    : typeof NoParameter
+  : never
+  : never
+
+type ChildParameter<C> = {
+  readonly [Name in ChildKey<C> as ParameterIn<C, Name> extends typeof NoParameter ? never : Name]: ParameterIn<
+    C,
+    Name
+  >
+}
+
+type ChildServices<C> = { [K in Names<C>]: PartIn<C[K]>['services'] }[Names<C>]
+
+/**
+ * What a parent can do with a child (`children` in `update` and `onEvent`): give it one of the messages its type
+ * says a parent may send, which returns the parent's step. The child answers with its state or an event: one that
+ * rejects the message, or is not there, is a defect, since the parent decides when to send.
+ */
+type Handles<State, Event, C> = {
+  readonly [K in Names<C>]: Readonly<{
+    update: C[K] extends { readonly kind: 'each' }
+      ? (id: IdIn<C[K]>, message: PartIn<C[K]>['external']) => (state: State) => Step<State, Event>
+      : (message: PartIn<C[K]>['external']) => (state: State) => Step<State, Event>
+  }>
+}
+
+/** The children's projections (`children` in `project`): asking for one of a child that is not there is a defect. */
+type Projections<State, C> = {
+  readonly [K in Names<C>]: C[K] extends { readonly kind: 'each' }
+    ? (state: State, id: IdIn<C[K]>) => PartIn<C[K]>['projection']
+    : (state: State) => PartIn<C[K]>['projection']
+}
+
+type OnEvents<State, Event, C> = {
+  readonly [K in Names<C> as [PartIn<C[K]>['event']] extends [never] ? never : K]: C[K] extends
+    { readonly kind: 'each' } ? (
+      id: IdIn<C[K]>,
+      event: PartIn<C[K]>['event'],
+      children: Handles<State, Event, C>,
+    ) => (state: State) => Step<State, Event>
+    : (
+      event: PartIn<C[K]>['event'],
+      children: Handles<State, Event, C>,
+    ) => (state: State) => Step<State, Event>
+}
+
+/** `onEvent` is required exactly when a child raises events, so that none goes unhandled. */
+type OnEventOf<State, Event, C> = [keyof OnEvents<State, Event, C>] extends [never]
+  ? Readonly<{ onEvent?: OnEvents<State, Event, C> }>
+  : Readonly<{ onEvent: OnEvents<State, Event, C> }>
+
+type TagOf<M> = M extends { readonly _tag: infer Tag } ? Tag : never
+
+/**
+ * What the compiler refuses of a parent: an own message that takes a child's name, which would be routed to the
+ * child, and a child that reads a sender its parent does not have.
+ */
+type Checks<Own, Sender, C> =
+  & ([Extract<TagOf<Own>, Names<C>>] extends [never] ? unknown
+    : Readonly<{ 'an own message takes the name of a child': Extract<TagOf<Own>, Names<C>> }>)
+  & ([{ [K in Names<C>]: [Sender] extends [PartIn<C[K]>['sender']] ? never : K }[Names<C>]] extends [never] ? unknown
+    : Readonly<{
+      'a child reads a sender its parent does not have': {
+        [K in Names<C>]: [Sender] extends [PartIn<C[K]>['sender']] ? never : K
+      }[Names<C>]
+    }>)
+
+/** What a program and a part declare alike: their keys, children, and what they do. */
+type Pieces<
+  State extends object,
+  Flags,
+  Inbound,
+  Internal,
+  Operation extends Readonly<{ _tag: string }>,
+  Rejection,
+  Sender,
+  Projection,
+  Event,
+  External,
+  Keys,
+  Operations,
+  C,
+> =
+  & Readonly<{
+    /**
+     * Every key `durable` holds work under, with the schema of its parameter or null: work under any other key is a
+     * type error (decisions 0033, 0132).
+     */
+    keys: Keys
+    /** The children, each placed with `child` or `each`: their messages, work and keys are the library's to route. */
+    children?: C
+    init: (flags: Flags, at: DateTime.Utc) => State
+    /** The own messages, and the external ones for a part: a child's messages are routed to the child. */
+    update: (
+      message: Inbound | Internal | External,
+      meta: Meta<Sender>,
+      children: Handles<State, Event, C>,
+    ) => (state: State) => Step<State, Event> | Rejected<Rejection>
+    /** The own work: a child's is held while the child is there, under its keys. */
+    durable: (state: State) => Work<Extract<keyof Keys, string>, ParametersOf<Keys>, Operation, Internal>
+    operations: Operations
+    project: (state: State, children: Projections<State, C>) => Projection
+  }>
+  & OnEventOf<State, Event, C>
+  & Checks<Inbound | Internal | External, Sender, C>
+
+/** The types of a composition: the own ones, and each child's, wrapped (decision 0133). */
+type Composed<
   State extends object,
   Flags,
   Inbound,
@@ -545,21 +868,305 @@ type Inferred<
   Projection,
   Keys,
   Operations,
-  Indexes,
+  C,
 > = Readonly<{
   state: State
   flags: Flags
-  inbound: Inbound
-  internal: Internal
-  operation: Operation
-  key: Extract<keyof Keys, string>
-  parameter: ParametersOf<Keys>
-  rejection: Rejection
+  inbound: Inbound | Wrapped<C, 'inbound'>
+  internal: Internal | Wrapped<C, 'internal'>
+  operation: Operation | ChildOperation<C>
+  key: Extract<keyof Keys, string> | ChildKey<C>
+  parameter: ParametersOf<Keys> & ChildParameter<C>
+  rejection: Rejection | ChildRejection<C>
   sender: Sender
   projection: Projection
-  index: Extract<keyof Indexes, string>
-  services: ServicesOf<Operations>
+  services: ServicesOf<Operations> | ChildServices<C>
 }>
+
+/** A child as the composition reads it, its types out of the way. */
+type UntypedChild = Readonly<{
+  kind: 'one' | 'each'
+  part: UntypedPart
+  id?: Schema.Codec<unknown, Json>
+  at: Optic.Optional<unknown, unknown>
+}>
+
+type UntypedRunner = Runner<unknown, unknown, unknown>
+
+type UntypedPart = Readonly<{
+  keys: Readonly<Record<string, Schema.Codec<unknown, Json> | null>>
+  schemas: Readonly<Record<'state' | 'inbound' | 'internal' | 'operation' | 'rejection', Schema.Codec<unknown, Json>>>
+  init: (flags: unknown, at: DateTime.Utc) => unknown
+  update: (message: unknown, meta: Meta<unknown>) => (state: unknown) => unknown
+  durable: (state: unknown) => Readonly<Record<string, unknown>>
+  operations: Readonly<Record<string, UntypedRunner>>
+  project: (state: unknown) => unknown
+}>
+
+type UntypedDeclaration = Readonly<{
+  keys: Readonly<Record<string, Schema.Codec<unknown, Json> | null>>
+  children?: Readonly<Record<string, UntypedChild>>
+  init: (flags: unknown, at: DateTime.Utc) => unknown
+  update: (message: unknown, meta: Meta<unknown>, children: unknown) => (state: unknown) => unknown
+  durable: (state: unknown) => Readonly<Record<string, unknown>>
+  operations: Readonly<Record<string, UntypedRunner>>
+  project: (state: unknown, children: unknown) => unknown
+  onEvent?: Readonly<Record<string, (...args: ReadonlyArray<unknown>) => (state: unknown) => unknown>>
+}>
+
+/** Where a child is: its name, and its id for a child by id. */
+type Place = Readonly<{ name: string; id: unknown }>
+
+const noChildren: Readonly<Record<string, never>> = Object.freeze({})
+
+const fieldOf = (value: unknown, field: string): unknown =>
+  typeof value === 'object' && value !== null ? (value as Readonly<Record<string, unknown>>)[field] : undefined
+
+/**
+ * A name a composition gives a child's key, or a child's operation, is `<child>.<name>`. A parent whose own key,
+ * operation or child is named with a `.` could share a name with a child's, so it is refused where it is declared
+ * (decision 0133).
+ */
+const checkNames = (declaration: UntypedDeclaration, names: ReadonlyArray<string>): void => {
+  const refuse = (what: string, name: string): never =>
+    defect(`a parent has ${what} '${name}', and a name of a parent's is a word with no '.'`)
+  for (const name of names) if (name.length === 0 || name.includes('.')) refuse('a child', name)
+  for (const key of Object.keys(declaration.keys)) if (key.includes('.')) refuse('a key', key)
+  for (const tag of Object.keys(declaration.operations)) if (tag.includes('.')) refuse('an operation', tag)
+}
+
+/**
+ * The pieces of a program or a part, made of its own and its children's: the library routes each child's
+ * messages, holds its work under its keys, lifts its runners and wraps its rejections, as effect-tea routes a
+ * child's messages and lifts its commands (decision 0133). Every piece is pure, as the declaration's are.
+ */
+const assemble = (
+  schemas: UntypedPart['schemas'],
+  declaration: UntypedDeclaration,
+): UntypedPart => {
+  const children = declaration.children ?? noChildren
+  const names = Object.keys(children)
+  if (names.length === 0) {
+    return {
+      keys: declaration.keys,
+      schemas,
+      init: declaration.init,
+      update: (message, meta) => declaration.update(message, meta, noChildren),
+      durable: declaration.durable,
+      operations: declaration.operations,
+      project: (state) => declaration.project(state, noChildren),
+    }
+  }
+  checkNames(declaration, names)
+  const childOf = (name: string) => children[name]!
+  const isEach = (name: string) => childOf(name).kind === 'each'
+  const at = ({ name, id }: Place) => (isEach(name) ? { id } : {})
+  const wrap = (place: Place, message: unknown) => ({ _tag: place.name, ...at(place), message })
+  // Two ids are one when they encode alike, as two parameters of a key are (decision 0132).
+  const textOf = (name: string, id: unknown) =>
+    JSON.stringify(ordered(encode(childOf(name).id!, id, `id of a child '${name}'`)))
+  type Entries = ReadonlyArray<readonly [unknown, unknown]>
+  /** The children by id of one name in a state: their entries, and the position of the first with each id's text. */
+  type Listing = Readonly<{ entries: Entries; positions: ReadonlyMap<string, number> }>
+  // A listing is made once per state and kept with the state, so that a step that asks for many children, the
+  // projection of each line or a message to each, encodes each id once and not once per child asked. A state is a
+  // value that nothing changes in place, which the machine relies on when it compares two states by reference, so
+  // a listing never goes stale under its state.
+  const listings = new WeakMap<object, Map<string, Listing>>()
+  const remember = (name: string, state: unknown, listing: Listing): void => {
+    if (typeof state !== 'object' || state === null) return
+    const byName = listings.get(state) ?? new Map<string, Listing>()
+    byName.set(name, listing)
+    listings.set(state, byName)
+  }
+  const listed = (name: string, state: unknown): Listing => {
+    const kept = typeof state === 'object' && state !== null ? listings.get(state)?.get(name) : undefined
+    if (kept !== undefined) return kept
+    const found = childOf(name).at.getResult(state)
+    const entries: Entries = Result.isSuccess(found) ? (found.success as Entries) : []
+    const positions = new Map<string, number>()
+    entries.forEach(([id], position) => {
+      const text = textOf(name, id)
+      if (!positions.has(text)) positions.set(text, position)
+    })
+    const listing = { entries, positions }
+    remember(name, state, listing)
+    return listing
+  }
+  const entriesOf = (name: string, state: unknown): Entries => listed(name, state).entries
+  const getAt = (place: Place, state: unknown): Opt.Option<unknown> => {
+    if (!isEach(place.name)) return Result.getSuccess(childOf(place.name).at.getResult(state))
+    const { entries, positions } = listed(place.name, state)
+    const position = positions.get(textOf(place.name, place.id))
+    return position === undefined ? Opt.none() : Opt.some(entries[position]![1])
+  }
+  const setAt = (place: Place, state: unknown, value: unknown): unknown => {
+    if (!isEach(place.name)) return childOf(place.name).at.replace(value, state)
+    const { entries, positions } = listed(place.name, state)
+    const position = positions.get(textOf(place.name, place.id))
+    if (position === undefined) return state
+    const replaced = entries.map((entry, index) => (index === position ? ([entry[0], value] as const) : entry))
+    const next = childOf(place.name).at.replace(replaced, state)
+    // The optic reads back what it was given, so the next state's listing is this one with the value replaced,
+    // and a message to each child in turn encodes no id twice.
+    if (next !== state) remember(place.name, next, { entries: replaced, positions })
+    return next
+  }
+  const onEvents = declaration.onEvent ?? {}
+  const onEventAt = (place: Place, event: unknown, meta: Meta<unknown>) => {
+    const handle = onEvents[place.name]
+    // Unreachable through the types: `onEvent` has a handler for every child that raises events.
+    if (handle === undefined) return defect(`the child '${place.name}' raised an event its parent does not handle`)
+    return isEach(place.name) ? handle(place.id, event, handlesOf(meta)) : handle(event, handlesOf(meta))
+  }
+  // A child's step is the parent's: the child's state put back where it was found, then each event it raised
+  // handled in order, each from the state the one before left. An unchanged child leaves the parent's state as it
+  // is, so that a step that changes nothing stores nothing new.
+  const updateAt = (place: Place, message: unknown, meta: Meta<unknown>) => (state: unknown): unknown => {
+    const found = getAt(place, state)
+    if (Opt.isNone(found)) return reject
+    const result = childOf(place.name).part.update(message, meta)(found.value)
+    if (isRejected(result)) {
+      return result === reject ? reject : rejectWith({ _tag: place.name, ...at(place), reason: result.reason })
+    }
+    const { state: next, events } = unfold(result)
+    const placed = next === found.value ? state : setAt(place, state, next)
+    return events.reduce((step: unknown, event) => andThen(step, onEventAt(place, event, meta)), placed)
+  }
+  const tell = (place: Place, message: unknown, meta: Meta<unknown>) => (state: unknown): unknown => {
+    if (Opt.isNone(getAt(place, state))) {
+      return defect(`an external message to the child '${place.name}', which is not in this state`)
+    }
+    const result = updateAt(place, message, meta)(state)
+    if (isRejected(result)) return defect(`the child '${place.name}' rejected an external message, which it takes`)
+    return result
+  }
+  const handlesOf = (meta: Meta<unknown>) =>
+    Object.fromEntries(names.map((name) => [name, {
+      update: isEach(name)
+        ? (id: unknown, message: unknown) => tell({ name, id }, message, meta)
+        : (message: unknown) => tell({ name, id: undefined }, message, meta),
+    }]))
+  const update = (message: unknown, meta: Meta<unknown>) => (state: unknown): unknown => {
+    const tag = fieldOf(message, '_tag')
+    if (typeof tag === 'string' && Object.hasOwn(children, tag)) {
+      return updateAt({ name: tag, id: fieldOf(message, 'id') }, fieldOf(message, 'message'), meta)(state)
+    }
+    return declaration.update(message, meta, handlesOf(meta))(state)
+  }
+  const presentIn = (name: string, state: unknown): ReadonlyArray<readonly [unknown, unknown]> =>
+    isEach(name)
+      ? entriesOf(name, state)
+      : Opt.match(Result.getSuccess(childOf(name).at.getResult(state)), {
+        onNone: () => [],
+        onSome: (found) => [[undefined, found]],
+      })
+  const lift = (place: Place, work: unknown): unknown =>
+    isTimer(work)
+      ? timer(work.at, wrap(place, work.message))
+      : { _tag: `${place.name}.${String(fieldOf(work, '_tag'))}`, ...at(place), operation: work }
+  // A child's work is held while the child is there: a child that leaves the state with an operation under way
+  // drops its key, which the machine finds a defect (decision 0005).
+  const durable = (state: unknown): Readonly<Record<string, unknown>> => {
+    const work: Record<string, unknown> = { ...declaration.durable(state) }
+    for (const name of names) {
+      const { part } = childOf(name)
+      for (const [id, held] of presentIn(name, state)) {
+        const place = { name, id }
+        for (const [key, piece] of Object.entries(part.durable(held))) {
+          if (piece === undefined) continue
+          const composed = `${name}.${key}`
+          const takes = (part.keys[key] ?? null) !== null
+          const pieces: ReadonlyArray<readonly [unknown, unknown]> = takes
+            ? (piece as ReadonlyArray<readonly [unknown, unknown]>).map(([parameter, one]) => [
+              isEach(name) ? [id, parameter] : parameter,
+              lift(place, one),
+            ])
+            : [[id, lift(place, piece)]]
+          if (!isEach(name)) work[composed] = takes ? pieces : pieces[0]![1]
+          else work[composed] = [...((work[composed] as ReadonlyArray<unknown> | undefined) ?? []), ...pieces]
+        }
+      }
+    }
+    return work
+  }
+  const liftRunner = (name: string, runner: UntypedRunner): UntypedRunner => {
+    const wrapOf = (operation: unknown, message: unknown) => wrap({ name, id: fieldOf(operation, 'id') }, message)
+    const run = (operation: unknown, key: IdempotencyKey) =>
+      Effect.map(
+        (runner.run as (operation: unknown, key: IdempotencyKey) => Effect.Effect<unknown, never, unknown>)(
+          fieldOf(operation, 'operation'),
+          key,
+        ),
+        (message) => wrapOf(operation, message),
+      )
+    return runner.delivery === 'AtMostOnce'
+      ? {
+        delivery: 'AtMostOnce',
+        run,
+        unknown: (operation) => wrapOf(operation, runner.unknown(fieldOf(operation, 'operation'))),
+      } as UntypedRunner
+      : ({ delivery: runner.delivery, run } as UntypedRunner)
+  }
+  const keys: Record<string, Schema.Codec<unknown, Json> | null> = { ...declaration.keys }
+  const operations: Record<string, UntypedRunner> = { ...declaration.operations }
+  const inbound: Array<Schema.Codec<unknown, Json>> = [schemas.inbound]
+  const internal: Array<Schema.Codec<unknown, Json>> = [schemas.internal]
+  const operation: Array<Schema.Codec<unknown, Json>> = [schemas.operation]
+  const rejection: Array<Schema.Codec<unknown, Json>> = [schemas.rejection]
+  for (const name of names) {
+    const { part, id } = childOf(name)
+    const idField = isEach(name) ? { id: id! } : {}
+    const struct = (fields: Readonly<Record<string, Schema.Codec<unknown, Json>>>) =>
+      Schema.Struct({ ...fields, ...idField }) as unknown as Schema.Codec<unknown, Json>
+    for (const [key, schema] of Object.entries(part.keys)) {
+      keys[`${name}.${key}`] = !isEach(name)
+        ? schema
+        : schema === null
+        ? id!
+        : (Schema.Tuple([id!, schema]) as unknown as Schema.Codec<unknown, Json>)
+    }
+    const tags = Object.keys(part.operations)
+    for (const tag of tags) operations[`${name}.${tag}`] = liftRunner(name, part.operations[tag]!)
+    inbound.push(struct({ _tag: Schema.Literal(name), message: part.schemas.inbound }))
+    internal.push(struct({ _tag: Schema.Literal(name), message: part.schemas.internal }))
+    if (tags.length > 0) {
+      operation.push(struct({
+        _tag: Schema.Literals(tags.map((tag) => `${name}.${tag}`)) as unknown as Schema.Codec<unknown, Json>,
+        operation: part.schemas.operation,
+      }))
+    }
+    rejection.push(struct({ _tag: Schema.Literal(name), reason: part.schemas.rejection }))
+  }
+  const union = (members: ReadonlyArray<Schema.Codec<unknown, Json>>) =>
+    Schema.Union(members) as unknown as Schema.Codec<unknown, Json>
+  const projectAt = (place: Place, state: unknown) =>
+    Opt.match(getAt(place, state), {
+      onNone: () => defect(`the projection of the child '${place.name}', which is not in this state`),
+      onSome: (found) => childOf(place.name).part.project(found),
+    })
+  const projections = Object.fromEntries(names.map((name) => [
+    name,
+    isEach(name)
+      ? (state: unknown, id: unknown) => projectAt({ name, id }, state)
+      : (state: unknown) => projectAt({ name, id: undefined }, state),
+  ]))
+  return {
+    keys,
+    schemas: {
+      state: schemas.state,
+      inbound: union(inbound),
+      internal: union(internal),
+      operation: union(operation),
+      rejection: union(rejection),
+    },
+    init: declaration.init,
+    update,
+    durable,
+    operations,
+    project: (state) => declaration.project(state, projections),
+  }
+}
 
 /**
  * The one place a program is declared: its schemas, which give every type the program is written in, and then
@@ -568,7 +1175,8 @@ type Inferred<
  * schemas say what the state, the flags, the messages, the operations, the rejections, the senders and the
  * projection are. `keys` says the space of keys the work is held under (decision 0033). Each runner says which
  * messages its kind of operation answers, and which services it needs (decision 0034). `indexes` says what a
- * query filters and orders by.
+ * query filters and orders by. `children` says the parts the state holds, whose messages, work and keys the
+ * library derives (decision 0133).
  */
 export const program = <
   State extends object,
@@ -584,38 +1192,110 @@ export const program = <
   const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>>,
   Operations extends Declared<Operation, Internal>,
   Indexes extends Readonly<Record<string, (projection: Projection) => Scalar>>,
+  const C extends Children<State> = {},
 >(
-  declaration: Readonly<{
-    name: string
-    /**
-     * Every key `durable` holds work under, with the schema of its parameter or null: work under any other key is a
-     * type error (decisions 0033, 0132).
-     */
-    keys: Keys
-    init: (flags: Flags, at: DateTime.Utc) => State
-    update: Update<State, Inbound | Internal, Sender, Rejection>
-    durable: (state: State) => Work<Extract<keyof Keys, string>, ParametersOf<Keys>, Operation, Internal>
-    operations: Operations
-    project: (state: State) => Projection
-    indexes: Indexes
-    /** How the versions before this one are read, in order: none for a first version (decision 0036). */
-    migrations?: ReadonlyArray<Migration>
-  }>,
+  declaration:
+    & Pieces<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, never, never, Keys, Operations, C>
+    & Readonly<{
+      name: string
+      indexes: Indexes
+      /** How the versions before this one are read, in order: none for a first version (decision 0036). */
+      migrations?: ReadonlyArray<Migration>
+    }>,
 ): Program<
-  Inferred<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, Indexes>
+  & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
+  & Readonly<{ index: Extract<keyof Indexes, string> }>
 > => {
-  type Of = Inferred<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, Indexes>
+  type Of =
+    & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
+    & Readonly<{ index: Extract<keyof Indexes, string> }>
+  const pieces = assemble(
+    schemas as unknown as UntypedPart['schemas'],
+    declaration as unknown as UntypedDeclaration,
+  )
   return {
-    ...declaration,
-    // Each key's schema gives the parameter's type, which `Keys` writes out of it.
-    keys: declaration.keys as unknown as Program<Of>['keys'],
-    schemas,
-    // Work held under the declared keys is the record by key the machine reads.
-    durable: declaration.durable as Program<Of>['durable'],
-    // Each runner says which services its kind of operation needs; together they are the program's.
-    operations: declaration.operations as Runners<Of>,
+    name: declaration.name,
+    indexes: declaration.indexes,
+    ...(declaration.migrations === undefined ? {} : { migrations: declaration.migrations }),
+    // The pieces are made of the declaration's, with the types the composition derives, which `Of` writes out.
+    keys: pieces.keys as unknown as Program<Of>['keys'],
+    schemas: { ...schemas, ...pieces.schemas } as unknown as Program<Of>['schemas'],
+    init: pieces.init as Program<Of>['init'],
+    update: (message, meta) => (state) => {
+      const step = pieces.update(message, meta)(state)
+      // Unreachable through the types: an entity's program raises no event, since it has no parent.
+      if (isRaised(step)) return defect('a program raised an event, and an entity has no parent to handle it')
+      return step as Of['state'] | Rejected<Of['rejection']>
+    },
+    durable: pieces.durable as Program<Of>['durable'],
+    operations: pieces.operations as unknown as Runners<Of>,
+    project: pieces.project as Program<Of>['project'],
   }
 }
+
+/**
+ * A part, declared as a program is, without a name, indexes or migrations, which are its parent's (decision 0133).
+ * Its schemas say what the program's say, and the sender it reads when it reads one. It may raise events for its
+ * parent, and take external messages from it, whose schemas give their types: neither is stored, since a parent
+ * handles them in the step.
+ */
+export const part = <
+  State extends object,
+  Flags,
+  Inbound,
+  Internal,
+  Operation extends Readonly<{ _tag: string }>,
+  Rejection,
+  Projection,
+  Sender = unknown,
+  Event = never,
+  External = never,
+>(
+  schemas: Readonly<{
+    state: Schema.Codec<State, Json>
+    flags: Schema.Codec<Flags, Json>
+    inbound: Schema.Codec<Inbound, Json>
+    internal: Schema.Codec<Internal, Json>
+    operation: Schema.Codec<Operation, Json>
+    rejection: Schema.Codec<Rejection, Json>
+    projection: Schema.Codec<Projection, Json>
+    sender?: Schema.Codec<Sender, Json>
+    event?: Schema.Codec<Event, Json>
+    external?: Schema.Codec<External, Json>
+  }>,
+) =>
+<
+  const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>>,
+  Operations extends Declared<Operation, Internal>,
+  const C extends Children<State> = {},
+>(
+  declaration: Pieces<
+    State,
+    Flags,
+    Inbound,
+    Internal,
+    Operation,
+    Rejection,
+    Sender,
+    Projection,
+    Event,
+    External,
+    Keys,
+    Operations,
+    C
+  >,
+): Part<
+  & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
+  & Readonly<{ index: never; event: Event; external: External }>
+> =>
+  assemble(
+    schemas as unknown as UntypedPart['schemas'],
+    declaration as unknown as UntypedDeclaration,
+  ) as unknown as Part<
+    & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
+    & Readonly<{ index: never; event: Event; external: External }>
+  >
+
 
 /** What creating an entity is answered. Only `Created` is stored, under its sender and the request id. */
 export type Creation = Readonly<{ _tag: 'Created' }> | Readonly<{ _tag: 'AlreadyExists' }>

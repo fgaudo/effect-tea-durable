@@ -30,10 +30,12 @@ tested by calling pure functions, crashes included.
 | `name`       | what the runtime stores the entity under, and what other entities see it as               |
 | `keys`       | every key the work under way is held under, with the schema of its parameter or `null`    |
 | `init`       | the first state, from the flags the entity is created with and the time of its creation   |
-| `update`     | `(message, meta) => (state) =>` the next state, a rejection, or a defect                  |
+| `update`     | `(message, meta, children) => (state) =>` the next state, a rejection, or a defect        |
 | `durable`    | the work under way in each state, by key: operations, as data, and timers                 |
 | `operations` | how each kind of operation runs, what it answers, and what a crash does to it             |
-| `project`    | what callers read of the state, with the actions it allows                                |
+| `project`    | what callers read of the state, with the actions it allows, from the children's too       |
+| `children`   | the parts the state holds, each placed with `child` or `each`                             |
+| `onEvent`    | what the program does with each event a child raises                                      |
 | `indexes`    | what a query across the program's entities filters and orders by, read off the projection |
 | `migrations` | how the versions before this one are read, in order                                       |
 
@@ -69,6 +71,65 @@ once, since a program is never mutated
 [decision 0136](decisions/0136-a-key-is-a-name-and-a-parameter-as-data.md)).
 
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
+
+## Children
+
+A program may hold children inside its entity, as effect-tea's parent does, stored in its one state
+([decision 0133](decisions/0133-an-entity-composes-children-as-effect-tea-does.md)). The library routes each child's
+messages, holds its work under its keys, lifts its runners and wraps its reasons, so the composed program is a
+program the machine takes as any other. [`examples/cart`](../examples/cart) holds a line of a cart for each article.
+
+### A part
+
+A child is a part, `part(schemas)(…)`: a program's pieces without a name, indexes or migrations, which are the
+parent's. Its schemas are a program's, and the sender it reads when it reads one. A part may also give two schemas
+that only type it, since nothing stores what they describe:
+
+- **`event`**, what it raises for its parent. Its `update` returns `raise(event)(state)`, and the parent's
+  `onEvent` handles the raised event in the same step.
+- **`external`**, what only its parent sends it. An external message is no inbound one: a caller cannot send it,
+  so a fact the parent hands down as one truth, a checkout, reaches the child from the parent alone.
+
+A part may hold children of its own, so a tree is as deep as a program needs.
+
+### Declaring children
+
+- **`children`** holds each child: `child(part, { at })` where an optic of Effect focuses, and
+  `each(part, { id, at })` for children by id, as the entries an optic focuses, such as
+  `Optic.id<State>().key('lines').compose(Optic.entries())`. An id has a schema, and two ids are one when they
+  encode alike, as the parameters of a key are.
+- **`update`** takes the parent's own messages, `meta`, and `children`: `children.Line.update(id, message)` sends a
+  child an external message, and returns the parent's step. A child that rejects it, or is not there, is a defect.
+  `andThen` and `forEach` add up the steps of a parent that is itself a part, keeping their raised events.
+- **`onEvent`** has a handler for each child that raises events, and is required exactly when one does. A handler of
+  children by id takes the id first.
+- **`project`** takes `children`, with each child's projection: `children.Line(state, id)`.
+- **`init`** makes the whole state, and starts a child with the child's own `init`.
+
+### What the library derives
+
+- **Messages.** The parent's inbound and internal messages are its own and each child's, as
+  `{ _tag: <child>, message }`, with `id` for a child by id. `meta.from` reaches the child as it reached the parent.
+  An inbound message to a child that is not there is rejected.
+- **Keys.** A child's key is the parent's under `<child>.<key>`. A key of a child by id takes the id as parameter,
+  or the id and the key's own parameter as a pair.
+- **Operations.** A child's operation is the parent's under the tag `<child>.<tag>`, as
+  `{ _tag: 'Line.Reserve', id, operation }`, run by the child's runner with its delivery.
+- **Reasons.** A reason a child gives reaches the caller as `{ _tag: <child>, id, reason }`.
+
+A name with a `.` is composition's: a parent whose own key, operation or child has one is refused where it is
+declared. A child that leaves the state with an operation under way is a defect, as any key dropped while its
+operation runs. A child that asks its parent to drop it leaves its work first, from a state that holds none: work a
+state still holds after its completion runs again, so a parent that kept the child would run it twice. A child by id removed and added again comes back under new incarnations, so an answer of its earlier
+run is dropped.
+
+### Where an item goes
+
+An item is inside the entity when a rule holds across it and the rest within one step. It is an entity of its own
+when others address it, or when its parent would hold more than one step should write. Inside the entity, it is a
+child when it is a concern of its own, which the parent hears of through its raised events and never reads to
+decide. Otherwise it is the parent's own state. A parent's step lists the work of every child that is there, so a
+step costs more with every child (see [what a step costs](#what-a-step-costs)).
 
 ## Messages
 
@@ -265,6 +326,21 @@ It stores the state, not the messages that led to it: a fixed `update` changes w
 already happened ([decision 0002](decisions/archive/0002-store-the-state-not-the-messages.md)). The messages may be
 kept as an audit, but nothing replays them.
 
+### What a step costs
+
+A step writes the state whole, and a projection that changed twice more: in the read model and in the outbox.
+The spike `spikes/large-states.test.ts` saw a step take about 5 ms with a state of 48 KB, 21 ms with 0.5 MB and
+240 ms with 5 MB, when the projection holds the state. It took about a third of that from 0.5 MB up when the
+projection holds a count. The spike `spikes/many-children.test.ts` saw a parent's step take 3.5 ms with 1 000
+children by id and 10 ms with 10 000, about half as much again as a flat state of that size takes. Such a step is synchronous,
+and holds every other entity of the process while it runs.
+
+So the runtime refuses no state for its size, and warns of a large step. A step that writes more than
+`warn.characters` of the state and of the projections, 262 144 by default, logs a warning through Effect's logger,
+once per activation of the entity. A large state is split by the program: an item goes into an entity of its own
+once its parent would hold more than one step should write
+([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)).
+
 ### The tables
 
 The runtime on SQLite writes all of it through the program's schemas, as JSON, in seven tables — the entity, the
@@ -438,7 +514,9 @@ operator's own event did, even when two operate on one entity at once ([decision
 `project(state)` is what callers read of an entity: its status, and the actions it allows. It is the
 counterpart of effect-tea's model, and follows the same rule: it shows no action that `update` would reject.
 A caller learns how an operation ended by reading the projection. The reply says only whether the message was
-accepted and, for a rejection, perhaps why: an acceptance never carries data.
+accepted and, for a rejection, perhaps why: an acceptance never carries data. A projection shows what a caller
+acts on, not the whole state: it is written twice in each step that changes it, and the outbox keeps it
+([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)).
 
 Queries across entities — "the orders nobody paid" — read the same thing. The runtime keeps one row per
 entity, written in the step's transaction, holding the encoded projection; `indexes` gives, for each name, a
@@ -623,7 +701,11 @@ that what an event writes, applied to the rows before it, gives the rows after i
 | a subscription listens to a service's connection | the boundary reads the stream, and sends each item as a message      | a listening dies with the process, and a sent item is stored             |
 | a model, with the messages the view sends        | a projection, with the actions it allows                             | a caller is remote: it receives data, never functions                    |
 | a defect ends the run                            | a defect suspends the entity                                         | one entity's bug must not stop the others                                |
-| one program, a tree of children                  | many entities, by id; children inside an entity are an open question | an entity is the unit of storage and of concurrency                      |
+| one program, a tree of children                  | many entities, by id, each a tree of parts in one state              | an entity is the unit of storage and of concurrency                      |
+| a child is any program                           | a child is a part: no name, indexes or migrations                    | the entity, its row and its versions are the parent's                    |
+| external messages are among a child's messages   | external messages are no inbound ones                                | a caller may send an inbound message, and only a parent an external one  |
+| `each` takes an optic by id, and `subscribed`    | `each` takes one optic over the entries                              | every child there holds work, so a step lists them all                   |
+| a parent minds ids that come back                | an id that comes back has new incarnations                           | the machine drops an answer of an earlier run                            |
 | the ids of children, compared with `Equal`       | the parameters of a key, compared by their canonical JSON            | the machine compares work by what is stored, and `Equal` is not stored   |
 | no persistence                                   | the state after each message                                         | the state is the data                                                    |
 

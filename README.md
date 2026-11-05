@@ -17,7 +17,11 @@ flowchart LR
   caller -->|inbound message, with a request id| update
   update -->|Accepted, Rejected or Suspended| caller
   update --> state
-  state --> durable[durable, by key]
+  update -->|wrapped message| child[a child's update]
+  child -->|raised event| onEvent
+  onEvent --> state
+  child --> state
+  state --> durable[durable, by key, the children's included]
   durable -->|operations| runner[runners]
   durable -->|timers| timers
   runner -->|completion, same incarnation| update
@@ -70,6 +74,7 @@ no life of its own, a profile or a product, does not need it.
   systems ([`examples/order/runtime.test.ts`](examples/order/runtime.test.ts)). If an example reads badly, the
   API is wrong;
 - [`examples/subscription`](examples/subscription): a subscription billed every month, which never ends;
+- [`examples/cart`](examples/cart): a cart whose lines are children by id, each reserving its own stock;
 - [`examples/booking`](examples/booking): a booking that holds seats in an event's inventory, two entities
   that talk, rehearsed and also run on the runtime
   ([`examples/booking/runtime.test.ts`](examples/booking/runtime.test.ts)).
@@ -78,7 +83,7 @@ The modules of `src/`, each built on the one above it:
 
 ```mermaid
 flowchart TB
-  program["program.ts: program(schemas)(…), with init, update, durable,<br/>operations, project, indexes and migrations"]
+  program["program.ts: program(schemas)(…), with init, update, durable,<br/>operations, project, indexes and migrations;<br/>part, child and each, which compose children"]
   machine["machine.ts: the pure machine, from an event<br/>to the next machine and the rows it writes"]
   rehearse["rehearse.ts: a scenario without storage or clock,<br/>of one entity or of a world"]
   runtime["runtime.ts: launch and deploy, each entity under its own lock,<br/>its fibers, timers and passivation"]

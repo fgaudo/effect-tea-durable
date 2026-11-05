@@ -21,6 +21,7 @@ import {
   type Json,
   type Key,
   KeyCodec,
+  ordered,
   type Origin,
   originOf,
   type Program,
@@ -73,18 +74,6 @@ const encodeBy = <A>(codec: Schema.Codec<A, Json>, value: A, what: string): Json
 /** The schema of each key's parameter, or null for a key without one, by its name. */
 const declaredKeys = <T extends Types>(program: Program<T>) =>
   program.keys as unknown as Readonly<Record<string, Schema.Codec<unknown, Json> | null>>
-
-/** JSON with the fields of each object in order: two values that encode alike are then equal, field for field. */
-const ordered = (json: Json): Json =>
-  Array.isArray(json)
-    ? json.map(ordered)
-    : typeof json === 'object' && json !== null
-    ? Object.fromEntries(
-      Object.entries(json)
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([field, value]) => [field, ordered(value as Json)]),
-    )
-    : json
 
 /**
  * The key `name` with `parameter`: the name alone for a key without one, and otherwise the name and the parameter

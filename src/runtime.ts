@@ -155,6 +155,12 @@ export interface Options {
    * `millis` stops as in a crash. None by default: the scope's closing is a crash (decision 0119).
    */
   readonly drain?: Readonly<{ millis: number }>
+  /**
+   * How many characters a step may write of the state and of the projection, in the read model and in the outbox,
+   * before the runtime logs a warning, once per activation of the entity. 262 144 by default. Nothing is refused for
+   * its size: the program splits a large state (decision 0135).
+   */
+  readonly warn?: Readonly<{ characters: number }>
 }
 
 /** What a caller does with one program's entities. */
@@ -313,6 +319,8 @@ interface Loaded<T extends Types> {
    */
   readonly rerun: Set<string>
   readonly timers: Map<string, Fiber.Fiber<void>>
+  /** Whether this activation has warned of a large step: an entity warns once per activation (decision 0135). */
+  warned: boolean
 }
 
 /**
@@ -481,6 +489,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const passivate = options.passivate?.millis ?? 30_000
     const capacity = options.capacity?.entities
     const drain = options.drain?.millis
+    const threshold = options.warn?.characters ?? 262_144
     if (drain !== undefined && !(Number.isSafeInteger(drain) && drain >= 0)) {
       const reason = `the drain is ${drain} millis, which is no non-negative integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
@@ -812,6 +821,19 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * where no other event of the entity is applied: the machine holds none (decision 0065). It is given the time
      * too, at which it is handled if the mailbox is empty (decision 0074).
      */
+    /**
+     * Logs a warning for a step that wrote more than the threshold, once per activation of the entity, so that a
+     * large entity does not log at every step. A step under the threshold does nothing, and yields nowhere
+     * (decision 0135).
+     */
+    const warnOfSize = <T extends Types>(loaded: Loaded<T>, entity: Address, characters: number): Effect.Effect<void> => {
+      if (characters <= threshold || loaded.warned) return Effect.void
+      loaded.warned = true
+      return Effect.logWarning('a step wrote a large state; the program may split it into entities').pipe(
+        Effect.annotateLogs({ name: entity.name, id: entity.id, characters, threshold }),
+      )
+    }
+
     const apply = <T extends Types>(
       deployed: Deployment<T>,
       loaded: Loaded<T>,
@@ -834,9 +856,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         if (written !== null) {
           yield* at('BeforeCommit', entity, event)
           // What the event writes is the machine's, encoded: the storage decides nothing (decision 0057).
-          yield* sql.withTransaction(deployed.storage.write(entity.id, written, DateTime.toEpochMillis(now))).pipe(
-            Effect.orDie,
-          )
+          const characters = yield* sql.withTransaction(
+            deployed.storage.write(entity.id, written, DateTime.toEpochMillis(now)),
+          ).pipe(Effect.orDie)
+          yield* warnOfSize(loaded, entity, characters)
         }
         loaded.machine = transition.machine
         if (before.stored.suspension !== null && transition.machine.stored.suspension === null) {
@@ -1061,6 +1084,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           operations: new Map(),
           rerun: new Set(),
           timers: new Map(),
+          warned: false,
         }
         yield* enter(deployed, loaded)
         // Before anything else: the stored state says what runs (decision 0003). An activation that cannot finish
@@ -1204,12 +1228,14 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             operations: new Map(),
             rerun: new Set(),
             timers: new Map(),
+            warned: false,
           }
           const creation: Machine.Event<T> = { _tag: 'Create', request }
           yield* at('BeforeCommit', entity, creation)
-          yield* sql.withTransaction(deployed.storage.write(id, started.written, DateTime.toEpochMillis(now))).pipe(
-            Effect.orDie,
-          )
+          const characters = yield* sql.withTransaction(
+            deployed.storage.write(id, started.written, DateTime.toEpochMillis(now)),
+          ).pipe(Effect.orDie)
+          yield* warnOfSize(loaded, entity, characters)
           // The entity exists from here: its creation is the first event committed for it.
           yield* observe(entity, creation)
           yield* at('AfterCommit', entity, creation)

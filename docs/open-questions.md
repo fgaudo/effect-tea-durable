@@ -4,11 +4,14 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Programs
 
-- **Children inside an entity.** effect-tea composes programs into a tree. Does an entity's program compose
-  children the same way, stored as one state? The decider pattern (Jérémie Chassaing's `Decider`) has an algebra
-  for it — two state machines compose into one, with laws a test can check — and is worth reading before this is
-  designed, although it stores the events where this design stores the state
-  ([decision 0002](decisions/archive/0002-store-the-state-not-the-messages.md)).
+- **A message to every child by id.** `children.<child>.update(id, message)` replaces the parent's state once per
+  child it is sent to, so a step that tells every child something, a checkout told to each line, copies the record
+  of children once per child: 1.7 s for 4 000 lines in `examples/cart`, where the listing of the children by id
+  costs 4 ms ([decision 0133](decisions/0133-an-entity-composes-children-as-effect-tea-does.md)). Whether a parent
+  gets a form that tells every child at once, and replaces the state once, is not decided. It would be decided by:
+  - a program whose children are told something together in numbers where the copies show;
+  - what the form returns where some children raise events, in which order, and what it does where one rejects;
+  - whether effect-tea's `forEach` is the form, made to replace once, so that the two libraries stay alike.
 
 ## Storage and reading
 
@@ -22,27 +25,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md)). Where two write at once —
   a cluster, or a store that allows it — a row with a lower `seq` may commit after one a consumer has read, and
   be stepped over. What orders the log then, and what a consumer reads from, is not decided.
-- **Large states.** Each message stores the whole state. Where is the limit, and what does a program with a
-  large state do: split into entities, or store a difference? A step that changes what callers read also writes
-  the projection twice: in its row, and whole in a row of the outbox, which stays until every consumer has read it.
-  The spike `spikes/large-states.test.ts` saw a step take about 5 ms with a state of 48 KB, 21 ms with 0.5 MB, and
-  240 ms with 5 MB, when the projection holds the state. From 0.5 MB up, a step took about a third of that when the
-  projection holds a count. Most of the time is SQLite's write and the schema's encoding, not the machine. Both are
-  synchronous, so a step holds every other entity of the process for as long as it takes: beside a state of 5 MB,
-  the spike saw a step of a small entity take 345 ms at worst, where it takes 2 ms alone
-  ([decision 0134](decisions/0134-an-entitys-loop-yields-between-two-steps.md) keeps it to one step).
-  [Decision 0133](decisions/0133-an-entity-composes-children-as-effect-tea-does.md) keeps the children in the parent's
-  state, so it makes this question more pressing.
-  [Decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) proposes an
-  answer, for the step on children of the [roadmap](roadmap.md). It would be decided by:
-  - whether the runtime states a limit, as a warning or a refusal past a size of the state's JSON, or whether only
-    the design advises a split into entities;
-  - whether a row of the outbox needs the projection whole, or whether the message and a version would do. A large
-    projection doubles what a step writes, and the outbox keeps it;
-  - an example whose state grows with use, such as an order of many lines under decisions 0132 and 0133, and what
-    its steps cost;
-  - what writing a difference would cost the machine, which decision 0028 put aside as a second place for the
-    machine's rules.
 - **Renaming a program.** A program's name is the entities' address, and a schema's migration does not move
   what is stored under it: its entities, and the replies stored for them by other entities
   ([decision 0022](decisions/archive/0022-a-new-program-keeps-what-work-started-with.md)). How a rename is run, and
