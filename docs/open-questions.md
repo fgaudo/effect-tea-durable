@@ -73,6 +73,20 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - a program with a migration of many branches, whose recorded cases a change could keep while it reads other
     rows otherwise;
   - what an arbitrary of an older version costs to keep, next to the cases recorded of it.
+- **A count grouped by an index.** `count` gives how many entities match the criteria
+  ([decision 0148](decisions/0148-a-count-and-a-sum-are-read-in-one-statement.md)). "How many orders per status",
+  which a dashboard shows at every view, is today one count per value of the index, each a statement on a snapshot
+  of its own, or a report fed from the log
+  ([decision 0149](decisions/0149-the-read-model-answers-what-a-program-acts-on.md)). One statement of SQLite,
+  a `COUNT` grouped by the index, gives every value with its count on one snapshot, reads no projection and takes
+  the criteria a query takes, which is the form a question of the read model has. Whether `count` takes an index
+  to group by is not decided. It would be decided by:
+  - a program whose dashboard shows a breakdown, measured as one count per value against one grouped count, and
+    against a consumer that keeps a table of the counts from the log;
+  - what the handle answers, since a value of an index is any scalar and null is one of them, and whether a sum
+    is grouped the same way;
+  - an example that feeds a store of reports from the log, since none does yet, which shows what a grouped count
+    costs there and what a report's consumer needs of the runtime.
 
 ## Running
 

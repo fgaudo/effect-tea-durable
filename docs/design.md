@@ -576,6 +576,19 @@ SQLite would read the string as `0` and `true` as `1`, and the total would look 
 index and the least id of such a row. Both read the rows as they stand while `reindex` runs, as a query does
 ([decision 0148](decisions/0148-a-count-and-a-sum-are-read-in-one-statement.md)).
 
+The read model answers what the program's application reads to act, from the rows a step writes in its own
+transaction, so its answers are consistent with the states. Its questions are declared: an index for each value a
+question filters, orders or adds by, and a question added is a deploy and a `reindex`. It answers in three forms,
+the entities whose indexes match, their count, and the sum of one index over them. Any other question over the
+entities is a **report**: how many per status, how many per day, the entities whose status is one of several, a
+word in a text, an entity with what another program holds of it. A report is fed from the log: a consumer of a
+topic writes a store made for the question, a table of a relational database, a search index or a warehouse, and
+the question is asked of that store. What such a consumer needs is in the projection, which is the entity's one
+contract. A form the read model gains is one statement over the indexes, under the criteria a query takes, which
+reads no projection. A count grouped by an index is such a form, and whether it is the read model's is not decided
+([decision 0149](decisions/0149-the-read-model-answers-what-a-program-acts-on.md),
+[open question](open-questions.md#storage-and-reading)).
+
 A descending order is the ascending order reversed, the ids of the rows that tie included, so the rows that hold no
 value come last. A page reads only the rows it gives, however late in the order its cursor is. The storage indexes
 each index of the program by its value and then the id, and reads a page as at most three ranges of that index, in
