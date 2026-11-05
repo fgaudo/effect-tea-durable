@@ -1,6 +1,6 @@
 # 0145. A page is read as ranges of its index
 
-**Status:** proposed, for the step The cost of a page of the roadmap. Changes
+**Status:** accepted, 2026-11-05. Changes
 [decision 0143](0143-a-query-pages-after-the-last-row-it-gave.md), whose descending order ascends by the id among
 the rows that tie, and [decision 0144](0144-a-page-reads-the-rows-before-its-cursor.md), whose page reads the rows
 of its program before its cursor.
@@ -72,7 +72,12 @@ status or a boolean, reads every row of the run it ends in.
 
 - `query` in [`src/storage.ts`](../../src/storage.ts) reads a page as those statements, in a transaction, and
   `indexed` creates the index of the name, the value and the id. A database made before keeps the index under the
-  name it had, so the new index takes a new name, and `indexed` drops the old one.
+  name it had, so the new index takes a new name, and `indexed` drops the old one. The test `an index of the program
+  holds the value and the id, and the index a database had without the id goes` in
+  [`src/storage.test.ts`](../../src/storage.test.ts) checks both.
+- The test `a page gives a row once though a step moves it while the page is read` runs a page and a step that
+  moves a row past its value under every schedule within one deviation. Without the transaction, a schedule gives
+  the row twice.
 - The tests and the examples that read a descending order expect the ids descending among the rows that tie.
 - `docs/design.md` says under Reading how a descending order reverses the ids, and the open question The cost of a
   page leaves `docs/open-questions.md`.

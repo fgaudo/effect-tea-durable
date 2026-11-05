@@ -5,16 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **The cost of a page** ([open question](open-questions.md#storage-and-reading)). A page late in a query's order
-   reads every row of its program before its cursor
-   ([decision 0144](decisions/0144-a-page-reads-the-rows-before-its-cursor.md)). A page is then read as a few
-   statements, each searched as a range of the index: the rows that tie with the cursor past its id, then the rows
-   past its value, then the rows that hold no value where they come last. Each takes what the statements before it
-   left of the limit, and the page is read in one transaction, so that a step between two statements moves no row
-   into the page twice. The index the storage creates holds the id after the value, so that the rows that tie are
-   searched past the id. A descending order then reverses the ids too, since an index read backwards gives them
-   descending. The step is taken by a note of its own.
-2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later

@@ -209,7 +209,8 @@ export interface Handle<T extends Types> {
    * (decision 0141). Given `after`, the last row of a page, the query gives the rows past it in its order, by the
    * index ordered by and then by the id; each row carries the indexes it stores for that. Nothing is held between
    * two pages, so a row no step changes is given once, and a row whose index changes between them is given where
-   * it stands when the next page is read (decision 0143).
+   * it stands when the next page is read (decision 0143). A descending order is the ascending one reversed, the ids
+   * of the rows that tie included, and a page reads only the rows it gives (decision 0145).
    */
   readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
   /**

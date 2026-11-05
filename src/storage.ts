@@ -10,7 +10,7 @@ import * as Effect from 'effect/Effect'
 import * as Hash from 'effect/Hash'
 import * as Schema from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
-import { SqlClient } from 'effect/sql'
+import { SqlClient, type Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
 import {
   type Durable,
@@ -470,7 +470,10 @@ export type Criterion<T extends Types> = Readonly<{ index: T['index']; is: Compa
 export type Query<T extends Types> = Readonly<{
   /** Every criterion holds of the entities found; a query with none finds them all. */
   where?: ReadonlyArray<Criterion<T>>
-  /** The index they are ordered by, ascending unless `descending`. Entities whose index is null come first. */
+  /**
+   * The index they are ordered by, then the id, ascending unless `descending`, which reverses both: entities whose
+   * index is null come first ascending and last descending (decision 0145).
+   */
   order?: Readonly<{ index: T['index']; descending?: boolean }>
   /** How many at most, in that order: a query is a page (decision 0141). */
   limit: number
@@ -1132,8 +1135,12 @@ export const storage = <T extends Types>(
 
   const indexed = Effect.gen(function*() {
     for (const index of Object.keys(program.indexes)) {
-      const on = `projections (name, ${expression(index)})`
-      yield* sql.unsafe(`CREATE INDEX IF NOT EXISTS ${quoted(`projections ${name} ${index}`)} ON ${on}`)
+      // The id follows the value, so that the rows that tie are in the order of their id and a page reads them past
+      // its cursor as a range. A database made before holds the index without the id under the old name, which goes
+      // (decision 0145).
+      yield* sql.unsafe(`DROP INDEX IF EXISTS ${quoted(`projections ${name} ${index}`)}`)
+      const on = `projections (name, ${expression(index)}, id)`
+      yield* sql.unsafe(`CREATE INDEX IF NOT EXISTS ${quoted(`projections ${name} ${index} by id`)} ON ${on}`)
     }
   }).pipe(Effect.orDie)
 
@@ -1141,39 +1148,57 @@ export const storage = <T extends Types>(
   const bound = (value: Exclude<Scalar, null>) => typeof value === 'boolean' ? (value ? 1 : 0) : value
 
   /**
-   * The clause that holds of the rows past `after` in the query's order, which is the index ascending or
-   * descending, then the id ascending. SQLite sorts `NULL` first in an ascending order and last in a descending
-   * one, and compares a value of `json_extract` with a parameter in the order it sorts them (decision 0143).
+   * Checks `after`, and gives its value for the index ordered by, or null without an order. A row that holds no id,
+   * or no scalar of that index, is the caller's defect (decision 0143).
    */
-  const past = (after: After<T>, order: Query<T>['order']) => {
+  const cursorOf = (after: After<T>, index: string | undefined) => {
     if (typeof after !== 'object' || after === null) {
       throw new InvariantDefect({ reason: `the row after is ${String(after)}, which is no row` })
     }
     if (typeof after.id !== 'string') {
       throw new InvariantDefect({ reason: `the id after is ${String(after.id)}, which is no string` })
     }
-    const id = sql`id > ${after.id}`
-    if (order === undefined) return id
-    const column = columnOf(order.index)
-    const value: unknown = (after.indexes as Readonly<Record<string, unknown>> | undefined)?.[order.index]
+    if (index === undefined) return null
+    const value: unknown = (after.indexes as Readonly<Record<string, unknown>> | undefined)?.[index]
     if (
       !(value === null || typeof value === 'string' || typeof value === 'boolean'
         || (typeof value === 'number' && Number.isFinite(value)))
     ) {
       const shown = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)
-      const reason = `the index '${order.index}' after is ${shown}, which is no scalar`
-      throw new InvariantDefect({ reason })
+      throw new InvariantDefect({ reason: `the index '${index}' after is ${shown}, which is no scalar` })
     }
-    const descending = order.descending === true
+    return value
+  }
+
+  /**
+   * The parts of the order past `after`, each a clause and the order SQLite reads it in as a range of the index, in
+   * the order of the query: the rows that tie with `after` past its id, then the rows past its value, then, in a
+   * descending order, the rows that hold no value, which come last there (decision 0145).
+   */
+  const parts = (after: After<T> | undefined, order: Query<T>['order']) => {
+    const descending = order?.descending === true
+    const direction = sql.literal(descending ? 'DESC' : 'ASC')
+    if (order === undefined) {
+      const by = sql`id ASC`
+      if (after === undefined) return [{ clause: sql`1`, by }]
+      cursorOf(after, undefined)
+      return [{ clause: sql`id > ${after.id}`, by }]
+    }
+    const column = columnOf(order.index)
+    const ordered = sql`${column} ${direction}, id ${direction}`
+    if (after === undefined) return [{ clause: sql`1`, by: ordered }]
+    const value = cursorOf(after, order.index)
+    const id = sql`id ${sql.literal(descending ? '<' : '>')} ${after.id}`
+    const byId = sql`id ${direction}`
     if (value === null) {
-      // The rows that hold no value are first in an ascending order, so every row that holds one is past them.
-      const tied = sql`(${column} IS NULL AND ${id})`
-      return descending ? tied : sql`(${tied} OR ${column} IS NOT NULL)`
+      const tied = { clause: sql`${column} IS NULL AND ${id}`, by: byId }
+      // Every value an index stores but null is greater than -Infinity, which no stored value is, since the indexes
+      // are written by `JSON.stringify`: so the rows past the nulls are a range, where `IS NOT NULL` is not.
+      return descending ? [tied] : [tied, { clause: sql`${column} > ${-Infinity}`, by: ordered }]
     }
-    const later = sql`${column} ${sql.literal(descending ? '<' : '>')} ${bound(value)}`
-    const tied = sql`(${column} = ${bound(value)} AND ${id})`
-    // The rows that hold no value are last in a descending order, so they are past every row that holds one.
-    return descending ? sql`(${later} OR ${tied} OR ${column} IS NULL)` : sql`(${later} OR ${tied})`
+    const tied = { clause: sql`${column} = ${bound(value)} AND ${id}`, by: byId }
+    const later = { clause: sql`${column} ${sql.literal(descending ? '<' : '>')} ${bound(value)}`, by: ordered }
+    return descending ? [tied, later, { clause: sql`${column} IS NULL`, by: byId }] : [tied, later]
   }
 
   const query = ({ after, limit, order, where = [] }: Query<T>) =>
@@ -1190,14 +1215,22 @@ export const storage = <T extends Types>(
             : sql`${column} ${sql.literal(is)} ${bound(value)}`,
         )
       }
-      if (after !== undefined) clauses.push(past(after, order))
-      const by = order === undefined
-        ? sql`id`
-        : sql`${columnOf(order.index)} ${sql.literal(order.descending === true ? 'DESC' : 'ASC')}, id`
-      const found = yield* rows('projections', Rows.projection)(sql`
-        SELECT id, projection, indexes, version FROM projections
-        WHERE ${sql.and(clauses)} ORDER BY ${by} LIMIT ${limit}
-      `)
+      const read = parts(after, order)
+      const page = (clause: Statement.Fragment, by: Statement.Fragment, left: number) =>
+        rows('projections', Rows.projection)(sql`
+          SELECT id, projection, indexes, version FROM projections
+          WHERE ${sql.and([...clauses, clause])} ORDER BY ${by} LIMIT ${left}
+        `)
+      // The parts are read in one transaction, so that a step between two of them moves no row into the page twice
+      // (decision 0145).
+      const found = yield* sql.withTransaction(Effect.gen(function*() {
+        const found: Array<Effect.Success<ReturnType<typeof page>>[number]> = []
+        for (const { clause, by } of read) {
+          if (found.length >= limit) break
+          found.push(...yield* page(clause, by, limit - found.length))
+        }
+        return found
+      }))
       // A row the version before wrote is read through its migrations; `reindex` is what writes it again.
       return found.map((held): Found<T> => ({
         id: held.id,

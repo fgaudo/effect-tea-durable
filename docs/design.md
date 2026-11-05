@@ -558,6 +558,12 @@ past the id of that row, since the id breaks ties in either order. Nothing is he
 is given once, on one page, and a row whose index a step changes between two pages is given where it stands when
 the next is read ([decision 0143](decisions/0143-a-query-pages-after-the-last-row-it-gave.md)).
 
+A descending order is the ascending order reversed, the ids of the rows that tie included, so the rows that hold no
+value come last. A page reads only the rows it gives, however late in the order its cursor is. The storage indexes
+each index of the program by its value and then the id, and reads a page as at most three ranges of that index, in
+one transaction: the rows that tie with the cursor past its id, the rows past its value, and, in a descending
+order, the rows that hold no value ([decision 0145](decisions/0145-a-page-is-read-as-ranges-of-its-index.md)).
+
 `reindex` writes every row again from the stored states, which is what an index added or changed
 by a new version of the program needs. It runs while entities step, and writes a row only if the state it was
 computed from is still the one stored, in one statement: a step that committed since keeps the row it wrote

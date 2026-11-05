@@ -2633,9 +2633,10 @@ describe('the read model', () => {
           expect(yield* toy.query({ limit: all, where: [{ index: 'wanted', is: '=', value: 0 }] }))
             .toEqual([{ id: 't-2', projection: 0, indexes: { wanted: 0 } }])
           expect((yield* toy.query({ limit: all, order: { index: 'wanted', descending: true } })).map(({ id }) => id))
-            .toEqual(['t-1', 't-3', 't-2'])
+            .toEqual(['t-3', 't-1', 't-2'])
+          // A descending order reverses the ids of the rows that tie too (decision 0145).
           expect((yield* toy.query({ order: { index: 'wanted', descending: true }, limit: 2 })).map(({ id }) => id))
-            .toEqual(held)
+            .toEqual(['t-3', 't-1'])
           expect(yield* toy.query({ limit: all, where: [{ index: 'wanted', is: '>', value: 9 }] })).toEqual([])
         }))
     })))
@@ -2704,7 +2705,7 @@ describe('the read model', () => {
          WHERE name = 'Toy' AND json_extract(indexes, '$.wanted') <= 0`,
       )
       // The index is on the expression, so it is used only where a query writes the expression the same way.
-      expect(plan.map(({ detail }) => detail).join(' ')).toContain('USING INDEX projections Toy wanted (name=? AND <expr>')
+      expect(plan.map(({ detail }) => detail).join(' ')).toContain('INDEX projections Toy wanted by id (name=? AND <expr>')
     })))
 
   test('reindex writes the rows again for an index a new version changed', () =>

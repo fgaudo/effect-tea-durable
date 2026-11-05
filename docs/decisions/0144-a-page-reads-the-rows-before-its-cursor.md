@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-05. Changes
 [decision 0143](0143-a-query-pages-after-the-last-row-it-gave.md), whose alternative of an offset is set aside for
-reading every row skipped, which the clause taken reads too.
+reading every row skipped, which the clause taken reads too. Changed by
+[decision 0145](0145-a-page-is-read-as-ranges-of-its-index.md), whose page reads only the rows it gives.
 
 ## Context
 

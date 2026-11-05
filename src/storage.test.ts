@@ -13,6 +13,7 @@ import { SqlClient } from 'effect/sql'
 import * as Machine from './machine.ts'
 import { InvariantDefect, isTimer, type Json, type Migration, noWork, operation, type Program, type Scalar } from './program.ts'
 import { createTables, type Found, partitionOf, type Query, storage } from './storage.ts'
+import { everySchedule } from './testing.ts'
 
 type T = {
   state: Readonly<{ last: string }>
@@ -834,13 +835,13 @@ test('a query pages past the last row it gave, through ties and nulls, in either
             if (after === undefined || ids.length > Object.keys(ranks).length) return ids
           }
         })
-      // SQLite sorts null first ascending and last descending, numbers before text, and the id breaks the ties,
-      // ascending in either order. A criterion compares across types in the same order, so 'x' is `>= 1`
-      // (decision 0143).
+      // SQLite sorts null first, numbers before text, and the id breaks the ties: a descending order is the
+      // ascending one reversed, ids included (decision 0145). A criterion compares across types in the same
+      // order, so 'x' is `>= 1` (decision 0143).
       const orders = [
         [{}, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']],
         [{ order: { index: 'rank' } }, ['b', 'e', 'c', 'f', 'a', 'd', 'g', 'h']],
-        [{ order: { index: 'rank', descending: true } }, ['h', 'a', 'd', 'g', 'c', 'f', 'b', 'e']],
+        [{ order: { index: 'rank', descending: true } }, ['h', 'g', 'd', 'a', 'f', 'c', 'e', 'b']],
         [{ order: { index: 'rank' }, where: [{ index: 'rank', is: '>=', value: 1 }] }, ['c', 'f', 'a', 'd', 'g', 'h']],
       ] as const
       for (const [query, ids] of orders) {
@@ -854,6 +855,42 @@ test('a query pages past the last row it gave, through ties and nulls, in either
         indexes: { rank: null },
       })
     })))
+
+// The index holds the id after the value, so that each part of a page is a range of it (decision 0145).
+test('an index of the program holds the value and the id, and the index a database had without the id goes', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const column = `json_extract(indexes, '$.rank')`
+      yield* sql.unsafe(`CREATE INDEX "projections Ranked rank" ON projections (name, ${column})`)
+      yield* storage(ranked, sql).indexed
+      const made = yield* sql<{ name: string; sql: string }>`
+        SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name LIKE 'projections %'
+      `
+      expect(made).toEqual([{
+        name: 'projections Ranked rank by id',
+        sql: `CREATE INDEX "projections Ranked rank by id" ON projections (name, ${column}, id)`,
+      }])
+    }).pipe(Effect.orDie)))
+
+// Under every schedule within one deviation, a step moves a row from the rows that tie with the cursor to the rows
+// past its value while a page reads them, and the page gives it once (decision 0145).
+test('a page gives a row once though a step moves it while the page is read', () => {
+  const race = Effect.gen(function*() {
+    yield* createTables
+    const sql = yield* SqlClient.SqlClient
+    const store = storage(ranked, sql)
+    for (const id of ['a', 'b']) yield* store.write(id, created({ shown: { projection: '1', indexes: { rank: 1 } } }), 0)
+    const [page] = yield* Effect.all([
+      store.query({ limit: all, order: { index: 'rank' }, after: { id: 'a', indexes: { rank: 1 } } }),
+      sql`UPDATE projections SET indexes = '{"rank":2}' WHERE id = 'b'`,
+    ], { concurrency: 'unbounded' })
+    return page.map(({ id }) => id)
+  }).pipe(Effect.provide(SqliteClient.layer({ filename: ':memory:' })), Effect.orDie)
+  const runs = everySchedule(race, { bound: 1 }, (exit) => {
+    expect(Exit.isSuccess(exit) && exit.value).toEqual(['b'])
+  })
+  expect(runs).toBeGreaterThan(1)
+})
 
 test('a cursor that holds no id, or no scalar of the index ordered by, is its caller’s defect', () =>
   database((sql) =>

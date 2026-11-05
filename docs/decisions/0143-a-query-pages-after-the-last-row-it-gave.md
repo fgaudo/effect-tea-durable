@@ -4,7 +4,9 @@
 [decision 0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md), whose query gives only its first page, and
 [decision 0032](archive/0032-a-projection-is-a-row.md), whose query gives an id and a projection. Changed by
 [decision 0144](0144-a-page-reads-the-rows-before-its-cursor.md), which reads the alternative of an offset without the
-reading of every row skipped, since the clause taken reads the rows before its cursor too.
+reading of every row skipped, since the clause taken reads the rows before its cursor too. Changed by
+[decision 0145](0145-a-page-is-read-as-ranges-of-its-index.md), whose descending order reverses the ids of the rows
+that tie too, and whose page is read as ranges of an index of the value and the id.
 
 ## Context
 
