@@ -5,7 +5,22 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **A log ordered within a partition** ([open question](open-questions.md#storage-and-reading)). A consumer's
+   cursor skips nothing because one transaction commits at a time, which holds on SQLite and on no store where two
+   processes commit at once. Each row of the outbox gets a partition, drawn by the runtime from the entity's id
+   among a number fixed when the database is created, 300 by default, as Cluster's shards per group. A step takes
+   its `seq` within its partition under a lock of the partition's row, in its own transaction, so that the steps
+   of one partition commit in the order of their `seq`, and steps of different partitions do not wait for each
+   other. A consumer keeps a cursor per partition, and the log promises the order of one entity's rows, not an
+   order across entities. That is what the step gives up: today the log is one sequence, and a consumer may then
+   read an effect in one partition before its cause in another, as a consumer of Kafka may. A row holds the
+   projection whole, so no row needs another to be read. The number of partitions is fixed for the life of the
+   database, since a change moves rows between partitions and every consumer's cursors with them. The one
+   alternative that keeps a total order, a lock every step of the cluster takes, gives up what more than one
+   process is for. Whether a partition is Cluster's shard is decided with the step Effect Cluster: the lock keeps
+   the order without it, and a partition that followed an option of the deployment would move every consumer's
+   cursors. Nothing of this is code yet, and the step is taken by a note of its own.
+2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
