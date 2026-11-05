@@ -760,6 +760,22 @@ export const storage = <T extends Types>(
 
   const columnOf = (index: string) => sql.literal(expression(index))
 
+  /**
+   * The JSON of a row's indexes, as `json_extract` reads them equal to the value a query binds. An integer beyond
+   * 2^53 is written with the exact digits of its double, since `JSON.stringify` writes the fewest digits that read
+   * back as it, which SQLite reads as the exact integer they spell, another number (decision 0146).
+   */
+  const indexesText = (indexes: Machine.Shown['indexes']) =>
+    `{${
+      Object.entries(indexes).map(([index, value]) =>
+        `${JSON.stringify(index)}:${
+          typeof value === 'number' && Number.isInteger(value) && !Number.isSafeInteger(value)
+            ? BigInt(value).toString()
+            : JSON.stringify(value)
+        }`
+      ).join(',')
+    }}`
+
   /** The row a query reads, as the machine computed it from a state (decision 0032). */
   const row = (id: string, shown: Machine.Shown, projection: string = JSON.stringify(shown.projection)) =>
     sql`INSERT OR REPLACE INTO projections ${
@@ -767,7 +783,7 @@ export const storage = <T extends Types>(
         name,
         id,
         projection,
-        indexes: JSON.stringify(shown.indexes),
+        indexes: indexesText(shown.indexes),
         version,
       })
     }`
@@ -1296,7 +1312,7 @@ export const storage = <T extends Types>(
         // projection the entity has moved past.
         const rewritten = yield* rows('projections', Rows.id)(sql`
           INSERT OR REPLACE INTO projections (name, id, projection, indexes, version)
-          SELECT name, id, ${JSON.stringify(shown.projection)}, ${JSON.stringify(shown.indexes)}, ${version}
+          SELECT name, id, ${JSON.stringify(shown.projection)}, ${indexesText(shown.indexes)}, ${version}
           FROM entities WHERE name = ${name} AND id = ${held.id} AND state = ${held.state}
             AND version = ${held.version}
           RETURNING id

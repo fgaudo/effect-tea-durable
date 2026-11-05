@@ -911,6 +911,40 @@ test('a cursor that holds no id, or no scalar of the index ordered by, is its ca
       }
     })))
 
+// `JSON.stringify` writes an integer beyond 2^53 with the fewest digits that read back as it, which SQLite reads as
+// another integer: without the exact digits, the page gives the row for ever, and a criterion misses it (decision 0146).
+test('a query pages past, and finds by its value, a row whose index is an integer beyond 2^53', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(ranked, sql)
+      const nanos = 1762300123456789012
+      const ranks: Readonly<Record<string, Scalar>> = { a: nanos, b: 2 ** 60, c: 2 ** 60, d: 5 }
+      for (const [id, rank] of Object.entries(ranks)) {
+        yield* store.write(id, created({ shown: { projection: JSON.stringify(rank), indexes: { rank } } }), 0)
+      }
+      const stored = yield* sql<{ id: string; indexes: string }>`SELECT id, indexes FROM projections ORDER BY id`
+      expect(stored.map(({ indexes }) => indexes)).toEqual([
+        '{"rank":1762300123456788992}',
+        '{"rank":1152921504606846976}',
+        '{"rank":1152921504606846976}',
+        '{"rank":5}',
+      ])
+      const ids: Array<string> = []
+      let after: Found<Ranked> | undefined
+      while (ids.length <= 4) {
+        const page = yield* store.query({ limit: 1, order: { index: 'rank' }, after })
+        after = page[0]
+        if (after === undefined) break
+        ids.push(after.id)
+      }
+      expect(ids).toEqual(['d', 'b', 'c', 'a'])
+      expect(after).toBeUndefined()
+      expect((yield* store.query({ limit: all, where: [{ index: 'rank', is: '=', value: 2 ** 60 }] })).map(({ id }) => id))
+        .toEqual(['b', 'c'])
+      expect((yield* store.query({ limit: 1, order: { index: 'rank' }, after: { id: 'b', indexes: { rank: 2 ** 60 } } }))[0])
+        .toEqual({ id: 'c', projection: '1152921504606847000', indexes: { rank: 2 ** 60 } })
+    }).pipe(Effect.orDie)))
+
 test('a row is written at the version that writes it, and read back as it was written', () =>
   database((sql) =>
     Effect.gen(function*() {

@@ -556,7 +556,10 @@ stores it, which is what the query compared. A caller passes the last row of a p
 rows past it in the order of the query: past the value of that row for the index ordered by, and, among the rows that tie,
 past the id of that row, since the id breaks ties in either order. Nothing is held between two pages, so a row no step changes
 is given once, on one page, and a row whose index a step changes between two pages is given where it stands when
-the next is read ([decision 0143](decisions/0143-a-query-pages-after-the-last-row-it-gave.md)).
+the next is read ([decision 0143](decisions/0143-a-query-pages-after-the-last-row-it-gave.md)). An index that is
+an integer beyond 2^53 is written with the exact digits of its double, so that SQLite reads the number the query
+compares: the digits `JSON.stringify` writes spell another integer to SQLite
+([decision 0146](decisions/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md)).
 
 A descending order is the ascending order reversed, the ids of the rows that tie included, so the rows that hold no
 value come last. A page reads only the rows it gives, however late in the order its cursor is. The storage indexes
