@@ -5,7 +5,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **A number over many entities** ([open question](open-questions.md#storage-and-reading)). A question whose
+   answer is one number over the entities that match, how many orders await their payment or what they add up to,
+   has no handle: a caller pages through every row and counts in the process. The handle then gives `count`, the
+   number of entities whose indexes match, and `sum`, the total of one index over them, each in one statement of
+   SQLite over the criteria a query takes. The step decides what a sum does with a row whose index holds no number,
+   and what both read while `reindex` runs, and is taken by a note of its own.
+2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
