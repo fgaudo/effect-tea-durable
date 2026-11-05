@@ -861,6 +861,7 @@ test('a cursor that holds no id, or no scalar of the index ordered by, is its ca
       const store = storage(ranked, sql)
       const order = { index: 'rank' } as const
       const refused = [
+        store.query({ limit: all, after: null as never }),
         store.query({ limit: all, after: { id: 1, indexes: { rank: 1 } } as never }),
         store.query({ limit: all, order, after: { id: 'a', indexes: {} } as never }),
         store.query({ limit: all, order, after: { id: 'a', indexes: { rank: Number.NaN } } }),
@@ -869,7 +870,7 @@ test('a cursor that holds no id, or no scalar of the index ordered by, is its ca
       for (const call of refused) {
         const exit = yield* Effect.exit(call)
         const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
-        expect(cause instanceof InvariantDefect && cause.reason).toMatch(/^the (id|index 'rank') after is .+, which is no/)
+        expect(cause instanceof InvariantDefect && cause.reason).toMatch(/^the (row|id|index 'rank') after is .+, which is no/)
       }
     })))
 

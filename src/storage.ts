@@ -1146,6 +1146,9 @@ export const storage = <T extends Types>(
    * one, and compares a value of `json_extract` with a parameter in the order it sorts them (decision 0143).
    */
   const past = (after: After<T>, order: Query<T>['order']) => {
+    if (typeof after !== 'object' || after === null) {
+      throw new InvariantDefect({ reason: `the row after is ${String(after)}, which is no row` })
+    }
     if (typeof after.id !== 'string') {
       throw new InvariantDefect({ reason: `the id after is ${String(after.id)}, which is no string` })
     }
