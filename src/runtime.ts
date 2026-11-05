@@ -218,28 +218,32 @@ export interface Handle<T extends Types> {
   readonly reindex: Effect.Effect<Reindexed>
   /**
    * What the entities of the program published in `topic`, past the cursors of `after`, at most `limit` rows, the
-   * oldest first. Each row is the message an entity handled and what callers read of it afterwards, written in
-   * that step's transaction. A topic selects a part of the projection, and a step is written in the topics whose
-   * selection it changed (decisions 0038, 0138). A program that declares no topics publishes its projection as
-   * the topic `projection`, at each step that changes it. The rows of one entity come
-   * in the order its steps committed, and each carries its partition and its `seq` within it. The rows of one step
+   * oldest first. Each row is the message an entity handled and the value its topic selects of what callers read
+   * of it afterwards, written in that step's transaction. A topic selects a part of the projection, and a step is
+   * written in the topics whose selection it changed (decisions 0038, 0138, 0140). A program that declares no
+   * topics publishes its projection as the topic `projection`, at each step that changes it. The rows of one entity
+   * come in the order its steps committed, and each carries its partition and its `seq` within it. The rows of one step
    * share its `seq`, so a topic's `seq`s have gaps. The log promises no order across entities: a row of one entity
    * written before a row of another may come after it (decision 0137). A partition with no cursor in `after` is
    * read from `0`, so `[]` is the whole topic. The cursors are the caller's, and nothing of them is stored: a
    * reading here, by a test or an operator looking, has no say in a prune. A consumer that keeps its cursors reads
    * with `feed` instead (decision 0039).
    */
-  readonly published: (
-    topic: Topic<T>,
+  readonly published: <Name extends Topic<T>>(
+    topic: Name,
     after: ReadonlyArray<Cursor>,
     limit?: number,
-  ) => Effect.Effect<ReadonlyArray<Published<T>>>
+  ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * The same from the stored cursors of the consumer `consumer` of `topic`: a consumer is a name within its topic,
    * its first reading stores it, and `ack` moves its cursors once the rows are acted on. From its first reading
    * its topic of the log is kept for it, so a consumer holds no state of its own (decisions 0039, 0138).
    */
-  readonly feed: (topic: Topic<T>, consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  readonly feed: <Name extends Topic<T>>(
+    topic: Name,
+    consumer: string,
+    limit?: number,
+  ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * Moves a consumer's cursor in each partition `through` names, and no other. The rows `feed` gave are such a
    * list. A cursor never moves back, since what is behind it may be gone, and never past the last `seq` written in

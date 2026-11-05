@@ -559,7 +559,8 @@ payment.
 
 A queue, an event store or another service learns what an entity did from an **outbox**: a step that changes
 what callers read writes one row in its own transaction, in each **topic** of the log whose selection changed,
-holding the entity's address, the message the step handled and the projection it left. An entity's creation
+holding the entity's address, the message the step handled and the value the topic selects of the projection it
+left. An entity's creation
 writes a row in every topic, with no message. Nothing more is declared: the message names the fact, and the
 projection is already the public contract
 ([decision 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md)).
@@ -570,15 +571,17 @@ A program may declare `topics`: by name, a pure function that selects, of the pr
 watches, as JSON ([decision 0138](decisions/0138-the-log-publishes-topics.md)). Different readers act on
 different parts of what an entity shows: a billing service reads what an order was charged, a dashboard its
 status. A topic per reader writes a row only when what that reader acts on changes, compared as canonical JSON by
-the runtime, and a consumer of one topic reads none of the others' rows. Every row holds the projection whole, so
-a topic says why the row was written, not what it holds, and the rows of every topic are read through the
-projection's migrations. A program that declares no topics publishes its projection as the one topic
-`projection`. A topic selects and does not decide, as `indexes` do: a part of the projection, the whole of it, all
-of it but a field, a value nested in it, or a comparison of it with a threshold, which changes when the threshold
-is crossed. What it selects is JSON, so a `DateTime` or an `Option` of the projection is converted where it is
-selected, by the program, which decides there what counts as a change of it. A topic has no schema and no
-migration of its own: what a consumer needs is in the projection, and a boundary that answers a caller leaves
-out what the caller is not shown. A topic that dies on a projection, or selects what JSON does not hold, suspends
+the runtime, and a consumer of one topic reads none of the others' rows. A row gives the value its topic selects,
+typed by the selector, so a consumer has a contract of its own: the row stores the projection, which is read
+through the projection's migrations, and the selector of the program deployed is applied to it where the row is
+read ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md)). A selector that dies on a row gives
+the defect to whoever reads it, as the schema does. A program that declares no topics publishes its projection as
+the one topic `projection`, whose value is the projection whole. A topic selects and does not decide, as `indexes`
+do: a part of the projection, the whole of it, all of it but a field, a value nested in it, or a comparison of it
+with a threshold, which changes when the threshold is crossed. What it selects is JSON, as the projection is
+([decision 0139](decisions/0139-the-projection-is-json.md)). A topic has no schema and no migration of its own:
+what a consumer needs is in the projection, and a boundary that answers a caller leaves out what the caller is not
+shown. A topic that dies on a projection, or selects what JSON does not hold, suspends
 the entity, as `project` does. [`examples/order`](../examples/order/order.ts) publishes its status and its
 charge.
 

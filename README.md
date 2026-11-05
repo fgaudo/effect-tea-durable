@@ -9,7 +9,7 @@ An entity keeps one **state**. A pure **`update`** changes it in response to mes
 the work under way — operations, as data, and timers — is derived from the state by **`durable`**, by key, and
 answers with messages of the same incarnation. Callers read a **projection**, made from the state, which is
 also the row a query reads and what the outbox publishes, by **topic**: a part of the projection, written when it
-changes.
+changes, and read as that part.
 
 ```mermaid
 flowchart LR
@@ -30,7 +30,7 @@ flowchart LR
   runner -->|send, create| other[another entity]
   state --> project
   project -->|projection| read[read, query]
-  project -->|projection, in each topic whose selection changes| outbox
+  project -->|a row in each topic whose selection changes| outbox
 ```
 
 ## Why

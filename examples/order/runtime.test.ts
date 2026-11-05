@@ -76,18 +76,18 @@ test('what an order published is what another system learns of it, each consumer
     yield* runtime.settled
 
     // The steps were the creation, the request to pay, the charge coming back, and the warehouse told. A topic has a
-    // row for each step that changed what it selects, holding the message the step handled and the projection
-    // (decisions 0038, 0138): the status changed at the first three, the charge at the creation and at the charge
-    // alone, and the warehouse told changed only `canCancel`, which no topic selects.
+    // row for each step that changed what it selects, holding the message the step handled and the value selected
+    // (decisions 0038, 0138, 0140): the status changed at the first three, the charge at the creation and at the
+    // charge alone, and the warehouse told changed only `canCancel`, which no topic selects.
     const statuses = yield* orders.published('status', [])
-    expect(statuses.map(({ id, kind, message, projection }) => [id, kind, message?._tag ?? null, projection.status]))
+    expect(statuses.map(({ id, kind, message, value }) => [id, kind, message?._tag ?? null, value]))
       .toEqual([
         ['o-1', 'Creation', null, 'AwaitingPayment'],
         ['o-1', 'Inbound', 'PayRequested', 'Charging'],
         ['o-1', 'Internal', 'ChargeSucceeded', 'Paid'],
       ])
     const billing = yield* orders.published('billing', [])
-    expect(billing.map(({ kind, message, projection }) => [kind, message?._tag ?? null, projection.charge])).toEqual([
+    expect(billing.map(({ kind, message, value }) => [kind, message?._tag ?? null, value.charge])).toEqual([
       ['Creation', null, null],
       ['Internal', 'ChargeSucceeded', 'ch_1'],
     ])

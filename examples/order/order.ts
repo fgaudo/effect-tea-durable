@@ -289,8 +289,8 @@ export const order = program({
   }),
 
   // The topics of the log, each selecting of the projection what a consumer acts on: a row is written in a topic
-  // only when that changed (decision 0138). A dashboard reads the status. Billing reads the charge and the refund,
-  // and is not told when the warehouse is.
+  // only when that changed, and gives it (decisions 0138, 0140). A dashboard reads the status. Billing reads the
+  // charge and the refund, and is not told when the warehouse is.
   topics: {
     status: ({ status }) => status,
     billing: ({ charge, refunded }) => ({ charge, refunded }),

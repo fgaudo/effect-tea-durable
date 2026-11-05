@@ -452,9 +452,9 @@ const publishedOf = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) 
   type Row = Readonly<{
     kind: 'Creation' | 'Inbound' | 'Internal'
     message: Inbound | Internal | null
-    projection: number
+    value: number
   }>
-  const rows: Array<Row> = [{ kind: 'Creation', message: null, projection: shown }]
+  const rows: Array<Row> = [{ kind: 'Creation', message: null, value: shown }]
   for (const event of rest) {
     // The message a step handles is the mailbox's first, read before the step takes it, or a message that finds
     // the mailbox empty (decision 0074).
@@ -467,7 +467,7 @@ const publishedOf = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) 
       rows.push({
         kind: head?._tag ?? 'Creation',
         message: head?.message ?? null,
-        projection: after,
+        value: after,
       })
     }
     machine = next
@@ -2409,7 +2409,7 @@ describe('the crash table', () => {
           expect(yield* persisted).toEqual(replayed(since, events))
           expect(
             (yield* store.published('projection', []))
-              .map(({ kind, message, projection }) => ({ kind, message, projection })),
+              .map(({ kind, message, value }) => ({ kind, message, value })),
           )
             .toEqual(publishedOf(since, events))
         })))
@@ -2570,7 +2570,7 @@ describe('random sequences of events', () => {
             expect(yield* store.projected(id)).toEqual(last === null ? null : program.project(last.state))
             expect(
               (yield* store.published('projection', []))
-                .map(({ kind, message, projection }) => ({ kind, message, projection })),
+                .map(({ kind, message, value }) => ({ kind, message, value })),
             ).toEqual(publishedOf(since, events))
           })),
       ),
@@ -2781,13 +2781,13 @@ describe('publishing what happened', () => {
             .toEqual({ _tag: 'Rejected', reason: 'Refused' })
           const rows = yield* toy.published('projection', [])
           expect(rows.map(({ partition: _partition, seq: _seq, ...row }) => row)).toEqual([
-            { id, topic: 'projection', kind: 'Creation', message: null, projection: 4 },
+            { id, topic: 'projection', kind: 'Creation', message: null, value: 4 },
             {
               id,
               topic: 'projection',
               kind: 'Inbound',
               message: { _tag: 'Want', key: 't', on: false, nonce: 'off' },
-              projection: 3,
+              value: 3,
             },
           ])
         }))
@@ -2808,7 +2808,7 @@ describe('publishing what happened', () => {
           // The creation, then the completion of each operation and the firing of the timer: what callers read
           // falls by one at each, whatever order the work came back in.
           expect(rows.map(({ kind }) => kind)).toEqual(['Creation', 'Internal', 'Internal', 'Internal', 'Internal'])
-          expect(rows.map(({ projection }) => projection)).toEqual([4, 3, 2, 1, 0])
+          expect(rows.map(({ value }) => value)).toEqual([4, 3, 2, 1, 0])
           // One entity's rows are in its partition, numbered from 1 in the order its steps committed (decision 0137).
           expect(rows.map(({ partition, seq }) => ({ partition, seq }))).toEqual(
             [1, 2, 3, 4, 5].map((seq) => ({ partition: partitionOf(id, 300), seq })),
@@ -2837,7 +2837,7 @@ describe('publishing what happened', () => {
           // The timer is the key a step may drop and bring back: each way changes what callers read.
           yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
           const read = yield* toy.published('projection', [])
-          expect(read.map(({ projection }) => projection)).toEqual([4, 3])
+          expect(read.map(({ value }) => value)).toEqual([4, 3])
           // The consumer acted on both rows and acked them: the prune takes what it has read, and its cursor
           // stands.
           yield* toy.ack('projection', 'queue', read)
@@ -2847,7 +2847,7 @@ describe('publishing what happened', () => {
           // What is published next is past the cursor: a seq the prune freed is never given again, or the
           // consumer would read from beyond a row it never saw.
           const next = yield* toy.published('projection', read)
-          expect(next.map(({ projection }) => projection)).toEqual([4])
+          expect(next.map(({ value }) => value)).toEqual([4])
           expect(next[0]?.seq ?? 0).toBeGreaterThan(read[1]?.seq ?? 0)
           expect(yield* toy.published('projection', [])).toEqual(next)
           expect(yield* toy.feed('projection', 'queue')).toEqual(next)
@@ -2957,7 +2957,7 @@ describe('publishing what happened', () => {
           expect(yield* toy.consumers).toEqual([{ topic: 'projection', consumer: 'queue', behind: 0, cursors: [] }])
           yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
           expect(yield* toy.prune).toBe(1)
-          expect((yield* toy.feed('projection', 'queue')).map(({ projection }) => projection)).toEqual([3])
+          expect((yield* toy.feed('projection', 'queue')).map(({ value }) => value)).toEqual([3])
         }))
     })))
 
@@ -3041,7 +3041,7 @@ describe('publishing what happened', () => {
           // Each entity's rows are in its own partition, numbered from 1 in the order of its steps.
           for (const id of ids) {
             const own = rows.filter((row) => row.id === id)
-            expect(own.map(({ projection }) => projection)).toEqual([4, 3, 2, 1, 0])
+            expect(own.map(({ value }) => value)).toEqual([4, 3, 2, 1, 0])
             expect(own.map(({ partition, seq }) => ({ partition, seq }))).toEqual(
               [1, 2, 3, 4, 5].map((seq) => ({ partition: partitionOf(id, 300), seq })),
             )
@@ -3072,7 +3072,7 @@ describe('publishing what happened', () => {
             rows.map((_, at) => ({ partition: 1, seq: at + 1 })),
           )
           for (const id of ids) {
-            expect(rows.filter((row) => row.id === id).map(({ projection }) => projection)).toEqual([4, 3, 2, 1, 0])
+            expect(rows.filter((row) => row.id === id).map(({ value }) => value)).toEqual([4, 3, 2, 1, 0])
           }
         }))
     })))
@@ -3175,8 +3175,8 @@ describe('publishing what happened', () => {
       )
       yield* Effect.raceFirst(dying, Deferred.await(crashed))
       expect(yield* Deferred.isDone(crashed)).toBe(true)
-      expect((yield* store.published('projection', [])).map(({ kind, projection }) => ({ kind, projection })))
-        .toEqual([{ kind: 'Creation', projection: 4 }])
+      expect((yield* store.published('projection', [])).map(({ kind, value }) => ({ kind, value })))
+        .toEqual([{ kind: 'Creation', value: 4 }])
     })))
 
   test('a cursor is a consumer of one program, and holds no other program log', () =>

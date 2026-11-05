@@ -6,7 +6,8 @@ whose consumer reads every row of its program, [decision 0072](archive/0072-the-
 whose step publishes when what callers read changed, and [decision 0137](0137-the-log-is-ordered-within-a-partition.md),
 whose row of the outbox is keyed by its program, its partition and its `seq`. Its topic converting what it selects
 to JSON is changed by [decision 0139](0139-the-projection-is-json.md): the projection is JSON, and a selector
-converts nothing.
+converts nothing. Its row holding the projection whole, and its `Published` giving the projection, are changed by
+[decision 0140](0140-a-row-of-a-topic-gives-its-value.md): a row gives the value its topic selects.
 
 ## Context
 

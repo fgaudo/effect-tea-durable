@@ -2171,7 +2171,7 @@ describe('what an event writes', () => {
 describe('topics of the log (decision 0138)', () => {
   // A tiny program whose log has two topics, each selecting of the projection, the last message: its length, and
   // its first letter.
-  type Topical = Omit<Tiny, 'topic'> & Readonly<{ topic: 'length' | 'first' }>
+  type Topical = Omit<Tiny, 'topics'> & Readonly<{ topics: Readonly<{ length: number; first: Json }> }>
   const topical = (first: (last: string) => Json = (last) => last.slice(0, 1)): Program<Topical> => ({
     ...tiny((message) => message, () => ({})),
     topics: { length: (last) => last.length, first },

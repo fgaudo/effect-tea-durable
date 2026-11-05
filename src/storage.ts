@@ -27,6 +27,7 @@ import {
   type Topic,
   topicsOf,
   type Types,
+  type Value,
   versionOf,
 } from './program.ts'
 
@@ -489,10 +490,10 @@ export type Reindexed = Readonly<{
 export type Cursor = Readonly<{ partition: number; seq: number }>
 
 /**
- * What a step published: the message it handled, and what callers read of the entity after it, in one topic of
- * the log (decisions 0038, 0138).
+ * What a step published in one topic of the log: the message it handled, and the value the topic selects of what
+ * callers read of the entity after it (decisions 0038, 0138, 0140).
  */
-export type Published<T extends Types> = Readonly<{
+export type Published<T extends Types, Name extends Topic<T> = Topic<T>> = Readonly<{
   /** The partition of the log the entity belongs to, which never changes (decision 0137). */
   partition: number
   /**
@@ -503,11 +504,15 @@ export type Published<T extends Types> = Readonly<{
   seq: number
   id: string
   /** The topic the row is in: `projection` for a program that declares no topics (decision 0138). */
-  topic: Topic<T>
+  topic: Name
   /** Where the message came from, or `Creation` for the row an entity's creation writes, which has none. */
   kind: 'Inbound' | 'Internal' | 'Creation'
   message: T['inbound'] | T['internal'] | null
-  projection: T['projection']
+  /**
+   * What the topic selects of the projection the step left, as the program deployed selects it of the stored
+   * projection read at the program's version: the projection whole for the topic `projection` (decision 0140).
+   */
+  value: Value<T, Name>
 }>
 
 /**
@@ -606,16 +611,20 @@ export interface Storage<T extends Types> {
    * `Handle.published`, as the storage keeps it: the rows of `topic` past the cursors of `after`, in the order they
    * were written. The topic and the partitions are the caller's to check.
    */
-  readonly published: (
-    topic: Topic<T>,
+  readonly published: <Name extends Topic<T>>(
+    topic: Name,
     after: ReadonlyArray<Cursor>,
     limit?: number,
-  ) => Effect.Effect<ReadonlyArray<Published<T>>>
+  ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * `Handle.feed`, as the storage keeps it. The consumer's first reading stores it, and from then on the consumer
    * holds its topic of the log, acked or not, until it is forgotten (decisions 0039, 0138).
    */
-  readonly feed: (topic: Topic<T>, consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  readonly feed: <Name extends Topic<T>>(
+    topic: Name,
+    consumer: string,
+    limit?: number,
+  ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * `Handle.ack`, as the storage keeps it, in one transaction: the head of each partition is read first, and caps
    * the cursor stored there.
@@ -650,8 +659,12 @@ export const storage = <T extends Types>(
   const reason = json(reasonOf(program.schemas.rejection))
   const suspended = json(Suspended)
   const projection = json(program.schemas.projection)
-  /** The topics the program publishes, by name (decision 0138). */
-  const topics = new Set(topicsOf(program).map(({ topic }) => topic))
+  /**
+   * The topics the program publishes, by name, each with what it selects of a projection, or null for the whole of
+   * it: what a row of the topic gives, selected of the stored projection once it is read at the program's version
+   * (decisions 0138, 0140).
+   */
+  const topics = new Map(topicsOf(program).map(({ topic, select }) => [topic, select]))
   const { name } = program
   const version = versionOf(program)
 
@@ -1208,9 +1221,10 @@ export const storage = <T extends Types>(
   // only the rows of the steps that committed out of their order, and each page is a range of an index.
   // A topic's rows have gaps in their `seq`, where a step published only other topics, so a partition whose head is
   // past a cursor may hold no row of the topic past it (decision 0138).
-  const published = (topic: Topic<T>, after: ReadonlyArray<Cursor>, limit?: number) =>
+  const published = <Name extends Topic<T>>(topic: Name, after: ReadonlyArray<Cursor>, limit?: number) =>
     Effect.gen(function*() {
-      if (!topics.has(topic)) throw new Error(`'${topic}' is no topic of the program '${name}'`)
+      const select = topics.get(topic)
+      if (select === undefined) throw new Error(`'${topic}' is no topic of the program '${name}'`)
       const cursors = cursorsOf(after)
       const behind: Array<readonly [number, number]> = []
       for (const [partition, head] of yield* heads) {
@@ -1228,7 +1242,7 @@ export const storage = <T extends Types>(
         FROM json_each(${JSON.stringify(behind)}) AS behind
       `)
       let from = first[0]?.position ?? null
-      const read: Array<Published<T>> = []
+      const read: Array<Published<T, Name>> = []
       while (from !== null && (limit === undefined || read.length < limit)) {
         const page = yield* rows('outbox', Rows.published)(sql`
           SELECT position, partition, seq, id, tag, version, message, projection FROM outbox
@@ -1236,6 +1250,9 @@ export const storage = <T extends Types>(
         `)
         for (const row of page) {
           if (row.seq <= (cursors.get(row.partition) ?? 0)) continue
+          // The selector of the program deployed, on the row at the program's version: one that dies gives the
+          // defect to the reader, as the schema does (decisions 0121, 0140).
+          const shown = projection.read(row.projection, up('projection', row.version))
           read.push({
             partition: row.partition,
             seq: row.seq,
@@ -1247,7 +1264,7 @@ export const storage = <T extends Types>(
               : row.tag === 'Inbound'
               ? inbound.read(row.message, up('inbound', row.version))
               : internal.read(row.message, up('internal', row.version)),
-            projection: projection.read(row.projection, up('projection', row.version)),
+            value: (select === null ? shown : select(shown)) as Value<T, Name>,
           })
           if (read.length === limit) break
         }
@@ -1263,7 +1280,7 @@ export const storage = <T extends Types>(
       INSERT INTO consumers ${sql.insert({ name, topic, consumer })} ON CONFLICT (name, topic, consumer) DO NOTHING
     `
 
-  const feed = (topic: Topic<T>, consumer: string, limit?: number) =>
+  const feed = <Name extends Topic<T>>(topic: Name, consumer: string, limit?: number) =>
     Effect.gen(function*() {
       const known = yield* rows('consumers', Rows.consumer)(sql`
         SELECT consumer FROM consumers WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}

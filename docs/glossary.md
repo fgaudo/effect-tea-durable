@@ -66,7 +66,8 @@ Cluster's says so.
   that ends with an internal message. It leaves the state only through its completion, unless it is droppable: one
   that acts on nothing, which a step may drop or change while it runs.
 - **Outbox, log.** One row per step that changed what callers read, in each topic whose selection changed, holding
-  the entity's address, the message handled and the projection left, with its entity's partition and the step's
+  the entity's address, the message handled and the value the topic selects of the projection left, with its
+  entity's partition and the step's
   `seq`, which never repeats within the partition. The rows of one step share its `seq`. A consumer reads one topic
   of it from its cursors.
 - **Part.** A child, as declared in `part(schemas)(…)`: a program's pieces without a name, topics, indexes or
@@ -114,8 +115,9 @@ Cluster's says so.
 - **Timer.** Work that delivers one internal message at its time, derived from the state. It may be dropped in any
   state, and one that changes is armed again as new work.
 - **Topic.** A part of the log, by name: a pure function, declared in `topics`, that selects of the projection what
-  the topic watches, as JSON. A step writes a row in a topic only when that changed, and the row holds the
-  projection whole. A program that declares no topics publishes its projection as the one topic `projection`.
+  the topic watches. A step writes a row in a topic only when that changed, and the row gives it, selected of the
+  stored projection by the program deployed. A program that declares no topics publishes its projection as the one
+  topic `projection`.
 - **Version.** Of a program: how many migrations it carries, plus one. Every row carries the version that wrote it,
   and is read by migrating its JSON to the program's.
 - **Waker.** The runtime's fiber that reads the stored timers due and activates their entities, and tries again after

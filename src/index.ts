@@ -47,6 +47,7 @@ export {
   type Topic,
   type Types,
   type Update,
+  type Value,
   versionOf,
   type Work,
 } from './program.ts'

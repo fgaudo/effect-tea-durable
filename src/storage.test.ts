@@ -632,9 +632,9 @@ test('a version reads through its migrations the work, the mailbox and the log a
       expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang (internal)')
       expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello (inbound)', 'done (internal)'])
       const read = yield* after.published('projection', [])
-      expect(read.map(({ message, projection }) => ({ message, projection }))).toEqual([
-        { message: null, projection: 'start (projection)' },
-        { message: 'hello (inbound)', projection: 'hello (projection)' },
+      expect(read.map(({ message, value }) => ({ message, value }))).toEqual([
+        { message: null, value: 'start (projection)' },
+        { message: 'hello (inbound)', value: 'hello (projection)' },
       ])
       // A read gives the row through the projection's migrations, as a query does (decision 0121).
       expect(yield* after.projected('r')).toBe('start (projection)')
@@ -644,9 +644,9 @@ test('a version reads through its migrations the work, the mailbox and the log a
  * The receiver with a projection of two fields, each selected by a topic of its log: the last message in capitals,
  * and its length (decision 0138).
  */
-type Topical = Omit<T, 'projection' | 'topic'> & Readonly<{
+type Topical = Omit<T, 'projection' | 'topics'> & Readonly<{
   projection: Readonly<{ upper: string; size: number }>
-  topic: 'upper' | 'size'
+  topics: Readonly<{ upper: string; size: number }>
 }>
 
 const topical: Program<Topical> = {
@@ -660,7 +660,7 @@ const topical: Program<Topical> = {
 const publishing = (
   message: string | null,
   projection: Topical['projection'],
-  topics: ReadonlyArray<Topical['topic']>,
+  topics: ReadonlyArray<keyof Topical['topics']>,
 ) =>
   written({
     ...(message === null ? created() : {}),
@@ -675,14 +675,12 @@ describe('topics of the log (decision 0138)', () => {
         yield* store.write('r', publishing(null, { upper: 'START', size: 5 }, ['upper', 'size']), 0)
         yield* store.write('r', publishing('hi', { upper: 'HI', size: 2 }, ['upper', 'size']), 0)
         yield* store.write('r', publishing('ho', { upper: 'HO', size: 2 }, ['upper']), 0)
-        const rows = (topic: Topical['topic']) =>
-          Effect.map(
-            store.published(topic, []),
-            (read) => read.map(({ seq, topic, projection }) => [seq, topic, projection.upper]),
-          )
+        const rows = (topic: 'upper' | 'size') =>
+          Effect.map(store.published(topic, []), (read) => read.map(({ seq, topic, value }) => [seq, topic, value]))
         expect(yield* rows('upper')).toEqual([[1, 'upper', 'START'], [2, 'upper', 'HI'], [3, 'upper', 'HO']])
-        expect(yield* rows('size')).toEqual([[1, 'size', 'START'], [2, 'size', 'HI']])
-        // Every row holds the projection, and is read through the projection's migrations, whatever its topic.
+        expect(yield* rows('size')).toEqual([[1, 'size', 5], [2, 'size', 2]])
+        // Every row stores the projection, read through the projection's migrations whatever its topic, and gives
+        // what the topic of the program deployed selects of it (decision 0140).
         const second: Program<Topical> = {
           ...topical,
           migrations: [{
@@ -693,8 +691,11 @@ describe('topics of the log (decision 0138)', () => {
           }],
         }
         const after = storage(second, sql)
-        expect((yield* after.published('size', [])).map(({ projection }) => projection.size)).toEqual([50, 20])
-        expect((yield* after.published('upper', [])).map(({ projection }) => projection)).toEqual([
+        expect((yield* after.published('size', [])).map(({ value }) => value)).toEqual([50, 20])
+        // A selector the deploy changed selects of the migrated row too: `upper` now gives the projection whole.
+        type Widened = Omit<Topical, 'topics'> & Readonly<{ topics: Readonly<{ upper: Topical['projection']; size: number }> }>
+        const widened: Program<Widened> = { ...second, topics: { upper: (shown) => shown, size: ({ size }) => size } }
+        expect((yield* storage(widened, sql).published('upper', [])).map(({ value }) => value)).toEqual([
           { upper: 'START', size: 50 },
           { upper: 'HI', size: 20 },
           { upper: 'HO', size: 20 },
@@ -812,7 +813,7 @@ test('a row is written at the version that writes it, and read back as it was wr
       const work = stored?.keys[Machine.keyText({ name: 'ask' })]?.work
       expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang')
       expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello', 'done'])
-      expect((yield* after.published('projection', [])).map(({ projection }) => projection)).toEqual(['start'])
+      expect((yield* after.published('projection', [])).map(({ value }) => value)).toEqual(['start'])
       expect(yield* after.query({})).toEqual([{ id: 'r', projection: 'start' }])
     })))
 
