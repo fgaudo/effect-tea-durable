@@ -88,6 +88,18 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md));
   - what the handle answers while `reindex` runs, since the rows it has not written yet hold the old index.
 
+- **The cost of a page.** A query pages after the last row it gave, with a clause SQLite searches by the name
+  alone: a page walks the rows of its program from the first in the order and drops the ones before its cursor, so
+  the number of rows read grows with the place of the cursor
+  ([decision 0144](decisions/0144-a-page-reads-the-rows-before-its-cursor.md)). The last page of a read model of
+  many rows reads all of them, as it would with an offset. Whether a page is read in two statements, the rows that
+  tie with the cursor past its id and the rows past its value, each searched as a range with a limit of its own, is
+  not decided. It would be decided by:
+  - a program whose caller walks a read model of many rows, a report or an export, where each page late in the
+    order costs what the whole read model costs;
+  - what two statements cost per page where the read model is small, against one;
+  - whether the index the storage creates holds the id too, so that the rows that tie are searched past the id.
+
 ## Running
 
 - **A mailbox with no bound.** An entity's events wait in an unbounded queue of the process, its messages in the

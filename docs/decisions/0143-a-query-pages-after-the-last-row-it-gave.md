@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-11-05. Changes
 [decision 0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md), whose query gives only its first page, and
-[decision 0032](archive/0032-a-projection-is-a-row.md), whose query gives an id and a projection.
+[decision 0032](archive/0032-a-projection-is-a-row.md), whose query gives an id and a projection. Changed by
+[decision 0144](0144-a-page-reads-the-rows-before-its-cursor.md), which reads the alternative of an offset without the
+reading of every row skipped, since the clause taken reads the rows before its cursor too.
 
 ## Context
 
