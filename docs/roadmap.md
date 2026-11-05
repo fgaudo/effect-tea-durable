@@ -5,18 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **A woken consumer** ([open question](open-questions.md#storage-and-reading)). A consumer calls `feed` again and
-   again, and learns of a row as late as the time between its readings. `feed` then takes a `wait`, in
-   milliseconds. Where no row is past the consumer's cursors, the call waits until a step commits a row in its
-   topic, or until the wait is over, and gives what it reads then. The wake is the topic's: a step tells the topics
-   it wrote rows in, once its transaction has committed, and a consumer of another topic is not woken. The call
-   holds nothing for the consumer but its own wait, so a consumer that stops calling costs the runtime nothing. A
-   wait that runs to its end gives an empty page, so no call is held for the life of the process. One runtime holds
-   the database ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), so every commit of
-   a topic is told. On Cluster a commit of another runner is not, and a wait there ends at its time: whether runners
-   tell each other is decided with the step Effect Cluster. Nothing of this is code yet, and the step is taken by a
-   note of its own.
-2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
@@ -34,6 +23,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   Whether a partition of the log is Cluster's shard is decided with this step: the head of a partition keeps the
   order without it, and a test with two writers checks that the steps of a partition commit in the order of their
   `seq` ([decision 0137](decisions/0137-the-log-is-ordered-within-a-partition.md)).
+
+  A consumer's wait ends at the commit of a row in its topic, which the runner that commits tells, and only at its
+  time where another runner commits ([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md)).
+  Whether runners tell each other of their commits is decided with this step.
 
   A caller's reply past its time ([decision 0125](decisions/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md))
   is deleted on Cluster with Cluster's rows of its request, as an entity's reply is

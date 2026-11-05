@@ -7,6 +7,7 @@ import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import { SqlClient } from 'effect/sql'
 import { createTables, launch } from '../../src/index.ts'
@@ -113,4 +114,11 @@ test('what an order published is what another system learns of it, each consumer
       { topic: 'billing', consumer: 'invoices', behind: 2, cursors: [{ partition, seq: 0 }] },
       { topic: 'status', consumer: 'dashboard', behind: 1, cursors: [{ partition, seq: statuses[1]?.seq ?? 0 }] },
     ])
+
+    // A consumer that has read everything waits for the next row of its topic instead of polling: the creation of
+    // another order ends its wait, and a wait with no row would give none after ten seconds (decision 0142).
+    yield* orders.ack('status', 'dashboard', statuses)
+    const next = yield* Effect.forkChild(orders.feed('status', 'dashboard', all, { millis: 10_000 }))
+    yield* orders.create('o-2', { order: { customer: 'ada', totalInCents: 500 } }, { requestId: 'c-o-2', sender: ada })
+    expect((yield* Fiber.join(next)).map(({ id, value }) => [id, value])).toEqual([['o-2', 'AwaitingPayment']])
   }))))

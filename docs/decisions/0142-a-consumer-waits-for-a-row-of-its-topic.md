@@ -1,6 +1,6 @@
 # 0142. A consumer waits for a row of its topic
 
-**Status:** proposed, 2026-11-05, for the step A woken consumer of the [roadmap](../roadmap.md). Changes
+**Status:** accepted, 2026-11-05. Changes
 [decision 0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md), whose `feed` gives at once what it reads.
 
 ## Context

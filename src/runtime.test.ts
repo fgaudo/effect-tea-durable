@@ -2940,6 +2940,79 @@ describe('publishing what happened', () => {
     expect(read.after).toBeGreaterThan(0)
   }, 60_000)
 
+  test('a consumer that waits is given the row a step commits while it reads, under prioritized schedules', () => {
+    // Decision 0142: the reading takes its topic's signal before it reads, so that a commit between its reading and
+    // its wait ends the wait at once. The clock never moves here, so a wait that missed the commit never ends.
+    explored((window) =>
+      Effect.gen(function*() {
+        const at = yield* DateTime.now
+        return yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const { layer } = yield* hands({ holds: true })
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+            yield* toy.ack('projection', 'queue', yield* toy.feed('projection', 'queue', all))
+            yield* opened(window, true)
+            const [read] = yield* together<unknown, never, never>([
+              toy.feed('projection', 'queue', all, { millis: 60_000 }),
+              toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester }),
+            ])
+            yield* opened(window, false)
+            return (read as ReadonlyArray<Readonly<{ value: number }>>).map(({ value }) => value)
+          }))
+      }), [3], { open: false })
+  }, 60_000)
+
+  test('a row of another topic does not end a consumer’s wait, which gives nothing once it is over', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      // `high` selects a value no step of the toy changes: only the creation is written there.
+      const topical: Program<T & Readonly<{ topics: { count: number; high: boolean } }>> = {
+        ...program,
+        name: 'Topical',
+        topics: { count: (projection) => projection, high: (projection) => projection > 100 },
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(topical), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.ack('high', 'queue', yield* toy.feed('high', 'queue', all))
+          // A limit of 0 is given nothing at once, since no row could be given.
+          expect(yield* toy.feed('high', 'queue', 0, { millis: 50 })).toEqual([])
+          const waiting = yield* running(toy.feed('high', 'queue', all, { millis: 50 }))
+          yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
+          expect((yield* toy.published('count', [], all)).map(({ value }) => value)).toEqual([4, 3])
+          yield* TestClock.adjust('49 millis')
+          expect(waiting.pollUnsafe()).toBeUndefined()
+          yield* TestClock.adjust('1 millis')
+          expect(yield* Fiber.join(waiting)).toEqual([])
+        }))
+    })))
+
+  test('a consumer that waits is given nothing once the runtime stops', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const outside = yield* Scope.make()
+      // The reading outlives the runtime's scope: without its end at the stop, it would wait out its minute.
+      const waiting = yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.ack('projection', 'queue', yield* toy.feed('projection', 'queue', all))
+          const waiting = yield* Effect.forkIn(
+            Effect.delay(toy.feed('projection', 'queue', all, { millis: 60_000 }), '1 millis'),
+            outside,
+          )
+          yield* TestClock.adjust('1 millis')
+          expect(waiting.pollUnsafe()).toBeUndefined()
+          return waiting
+        }))
+      expect(yield* Fiber.join(waiting)).toEqual([])
+      yield* Scope.close(outside, Exit.void)
+    })))
+
   test('an ack past the last seq of its partition moves the cursor to it, and the rows written after are kept', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
@@ -2992,6 +3065,10 @@ describe('publishing what happened', () => {
             toy.published('projection', [], 1.5),
             toy.feed('projection', 'queue', -1),
             toy.feed('projection', 'queue', Number.POSITIVE_INFINITY),
+            // A wait is counted as a limit is (decision 0142).
+            toy.feed('projection', 'queue', all, { millis: -1 }),
+            toy.feed('projection', 'queue', all, { millis: 0.5 }),
+            toy.feed('projection', 'queue', all, {} as never),
             toy.query({ limit: -1 }),
             toy.query({ limit: 0.5 }),
             // A limit left out is refused too, since the types do not hold a cast (decision 0141).
@@ -3001,7 +3078,7 @@ describe('publishing what happened', () => {
           ]
           for (const call of refused) {
             expect(reasonOf(yield* Effect.exit(call)))
-              .toMatch(/^the (cursor|limit) is .+, which is no non-negative|^the partition is .+, which is no integer/)
+              .toMatch(/^the (cursor|limit|wait) is .+, which is no non-negative|^the partition is .+, which is no integer/)
           }
           // A topic the program does not publish is refused too, before anything is read or stored (decision 0138):
           // a cast lets it through the types.

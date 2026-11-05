@@ -10,6 +10,7 @@
  * is what wakes it (decision 0029).
  */
 import * as Cause from 'effect/Cause'
+import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import * as DateTime from 'effect/DateTime'
@@ -240,11 +241,16 @@ export interface Handle<T extends Types> {
    * The same from the stored cursors of the consumer `consumer` of `topic`: a consumer is a name within its topic,
    * its first reading stores it, and `ack` moves its cursors once the rows are acted on. From its first reading
    * its topic of the log is kept for it, so a consumer holds no state of its own (decisions 0039, 0138).
+   * Given `wait`, a reading that finds no row waits until a step commits a row in `topic`, and reads again, for at
+   * most `wait.millis` from the call: it gives the first page with a row, or none once the time is over or the
+   * runtime stops. A limit of 0 gives none at once. `wait.millis` is a non-negative integer, and anything else is
+   * the caller's defect (decision 0142).
    */
   readonly feed: <Name extends Topic<T>>(
     topic: Name,
     consumer: string,
     limit: number,
+    wait?: Readonly<{ millis: number }>,
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * Moves a consumer's cursor in each partition `through` names, and no other. The rows `feed` gave are such a
@@ -479,6 +485,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     // Everything the runtime runs is forked in `running`, which closes after the drain: a scope runs its finalizers
     // in the reverse order of their adding, so the drain, added after it, runs first (decision 0119).
     const running = yield* Scope.fork(scope)
+    /**
+     * Completed once the runtime stops, after the drain and before `running` closes: a `feed` that waits is then
+     * given no row, and reads nothing from a database about to be let go (decision 0142).
+     */
+    const closing = Deferred.makeUnsafe<void>()
+    yield* Scope.addFinalizer(scope, Effect.sync(() => Deferred.doneUnsafe(closing, Effect.void)))
     const deployments = new Map<string, Deployment<never>>()
     /** The names deployed in this process, or being deployed: each is deployed once (decision 0075). */
     const names = new Set<string>()
@@ -518,6 +530,51 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     }
     /** The operations waiting for a program not deployed yet, by its name: its deploy wakes them (decision 0045). */
     const undeployed = new Map<string, Deferred.Deferred<void>>()
+    /**
+     * What a `feed` that waits waits for, by program and topic: completed and dropped by the first commit of a row in
+     * the topic. Only a reading that waits makes one, so a step nobody waits for finds none, and adds no yield. A
+     * `PubSub` per topic would tell the same, at a subscription per reading (decision 0142).
+     */
+    const commits = new Map<string, Deferred.Deferred<void>>()
+    const commitOf = (name: string, topic: string) => {
+      const address = JSON.stringify([name, topic])
+      const commit = commits.get(address) ?? Deferred.makeUnsafe<void>()
+      commits.set(address, commit)
+      return commit
+    }
+    /** Tells the readings that wait for a topic `written` publishes in, once its transaction has committed. */
+    const tell = (name: string, written: Machine.Written) => {
+      for (const topic of written.published?.topics ?? []) {
+        const address = JSON.stringify([name, topic])
+        const commit = commits.get(address)
+        if (commit === undefined) continue
+        commits.delete(address)
+        Deferred.doneUnsafe(commit, Effect.void)
+      }
+    }
+    /**
+     * Runs `read` until it gives a row, each wait ended by a commit in `topic`, for `millis` from the call at most,
+     * and gives the last page read: none once the time is over, or the runtime stops (decision 0142).
+     */
+    const waited = <A>(
+      name: string,
+      topic: string,
+      millis: number,
+      read: Effect.Effect<ReadonlyArray<A>>,
+    ): Effect.Effect<ReadonlyArray<A>> =>
+      Effect.gen(function*() {
+        const until = (yield* Clock.currentTimeMillis) + millis
+        while (!Deferred.isDoneUnsafe(closing)) {
+          // Taken before the reading: a commit after it completes it, and the wait below ends at once. Taken after,
+          // a commit between the reading and the wait would be missed, and the wait would run to its end.
+          const commit = commitOf(name, topic)
+          const page = yield* read
+          const now = yield* Clock.currentTimeMillis
+          if (page.length > 0 || now >= until) return page
+          yield* Effect.raceAll([Deferred.await(commit), Deferred.await(closing), Effect.sleep(`${until - now} millis`)])
+        }
+        return []
+      })
     /**
      * The senders waiting for an entity's resumption, by entity. Each registers before it sends, so that a
      * resumption between its being answered `Suspended` and its waiting is not missed (decisions 0023, 0063).
@@ -934,6 +991,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           const characters = yield* sql.withTransaction(
             deployed.storage.write(entity.id, written, DateTime.toEpochMillis(now)),
           ).pipe(Effect.orDie)
+          tell(entity.name, written)
           yield* warnOfSize(loaded, entity, characters)
         }
         loaded.machine = transition.machine
@@ -1310,6 +1368,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           const characters = yield* sql.withTransaction(
             deployed.storage.write(id, started.written, DateTime.toEpochMillis(now)),
           ).pipe(Effect.orDie)
+          tell(entity.name, started.written)
           yield* warnOfSize(loaded, entity, characters)
           // The entity exists from here: its creation is the first event committed for it.
           yield* observe(entity, creation)
@@ -1584,8 +1643,17 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               topic,
               cursored(after, partitions, counted({ limit }, deployed.storage.published(topic, after, limit))),
             ),
-          feed: (topic, consumer, limit) =>
-            topical(program, topic, counted({ limit }, deployed.storage.feed(topic, consumer, limit))),
+          feed: (topic, consumer, limit, wait) =>
+            topical(
+              program,
+              topic,
+              counted(
+                wait === undefined ? { limit } : { limit, wait: wait.millis },
+                wait === undefined || limit === 0
+                  ? deployed.storage.feed(topic, consumer, limit)
+                  : waited(program.name, topic, wait.millis, deployed.storage.feed(topic, consumer, limit)),
+              ),
+            ),
           ack: (topic, consumer, through) =>
             topical(program, topic, cursored(through, partitions, deployed.storage.ack(topic, consumer, through))),
           prune: deployed.storage.prune,

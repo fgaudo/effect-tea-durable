@@ -624,10 +624,17 @@ cursor, and drops nothing of a topic no consumer has read from. `consumers` says
 many rows are past its cursors, and in which partitions, and `forget` lets the log go past one that is gone.
 `published(topic, after, limit)` reads past cursors the caller holds, and registers nothing; `[]` is the whole
 topic
-([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). A partition a handle is
-given is an integer from 1 to the number of partitions, a topic is one the program publishes, and a `seq` and a limit
-are non-negative integers. The limit is required, of `feed` and `published` as of `query`, so that no reading holds
-a whole topic in one array; a caller that wants more reads again, past the last row it was given
+([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)).
+`feed(topic, consumer, limit, { millis })` waits where it finds no row: until a step commits a row in the topic,
+and then reads again, for at most `millis` from the call. It gives the first page with a row, or none once the
+time is over or the runtime stops. A step tells each topic it wrote in once its transaction has committed, and a
+consumer of another topic is not woken. The reading takes its topic's signal before it reads, so that a commit
+between its reading and its wait is not missed. A consumer that waits polls nothing, and a consumer that stops
+calling costs the runtime nothing
+([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md)). A partition a handle is
+given is an integer from 1 to the number of partitions, a topic is one the program publishes, and a `seq`, a limit
+and a wait are non-negative integers. The limit is required, of `feed` and `published` as of `query`, so that no
+reading holds a whole topic in one array; a caller that wants more reads again, past the last row it was given
 ([decision 0141](decisions/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)). Anything else is its
 caller's defect, which stores nothing
 ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). The log is kept for its

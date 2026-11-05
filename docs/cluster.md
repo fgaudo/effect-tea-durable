@@ -171,7 +171,9 @@ What stays two transactions:
 Cluster polls: its mailbox every 10 s, its replies every `entityReplyPollInterval` (200 ms), its assignments every
 3 s, as a fallback beside the notifications a runner sends itself. The runtime polls nothing
 ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)); on Cluster that holds of the
-runtime's own fibers, not of Cluster's.
+runtime's own fibers, not of Cluster's. A consumer's wait is ended by a commit in its topic on its own runner
+only, and by its time where another runner commits
+([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md)).
 
 ## Two versions at once
 
