@@ -343,9 +343,10 @@ once its parent would hold more than one step should write
 
 ### The tables
 
-The runtime on SQLite writes all of it through the program's schemas, as JSON, in seven tables — the entity, the
+The runtime on SQLite writes all of it through the program's schemas, as JSON, in ten tables — the entity, the
 keys with their incarnations and work, the mailbox in order, the replies by request, the read model, the
-outbox and the cursors of its consumers ([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
+outbox, the number of its partitions and the head of each, its consumers and their cursors
+([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
 by migrating its JSON to the program's version (see [schemas that change](#schemas-that-change)). The row around
 the JSON is read through its table's schema, which says what the storage writes: nothing is filled in or cast, and
 a row it refuses fails the call that meets it ([decision 0062](decisions/archive/0062-a-row-is-read-through-a-schema.md)). A schema whose
@@ -553,21 +554,44 @@ handled and the projection it left. An entity's creation writes its first projec
 more is declared: the message names the fact, and the projection is already the public contract
 ([decision 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md)).
 
-Each row carries a `seq`, which rises with every row and is never reused. A consumer is a name, and its cursor
-is stored: `feed(consumer, limit)` reads from it and `ack(consumer, through)` moves it once the rows are acted
-on, never back and never past the last `seq` written, so a crash before the ack delivers them again — at least once, deduplicated by `seq`. `prune` drops what
-every consumer has read, through the lowest stored cursor, and drops nothing where no consumer has read from the
-log. `consumers` says where each one is and how many rows are past it, and `forget` lets the log go past one
-that is gone; `published(after, limit)` reads from a cursor the caller holds, and registers nothing
-([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). A cursor and a limit a handle
-is given are non-negative integers, and anything else is its caller's defect, which stores nothing
+### The order of the log
+
+The log is ordered within a **partition**, and promises no order across partitions
+([decision 0137](decisions/0137-the-log-is-ordered-within-a-partition.md)). Each entity belongs to one partition,
+drawn from its id when it is created and stored with it. The partition is `Math.abs(Hash.string(id) % partitions) + 1`,
+Cluster's formula for a shard. `launch` takes the number of partitions as `log.partitions`, 300 by default. The
+first launch stores the number in the database, and a launch given another number fails, since a change would
+move entities between partitions, and every consumer's cursors with them.
+
+Each row carries its partition and a `seq`, which rises with every row of the partition and is never reused. A
+step draws its `seq` by moving the head of its partition, in its own transaction, which holds the head's row until
+it commits. So the steps of one partition commit in the order of their `seq`, and the steps of different partitions
+do not wait for each other. The rows of one entity therefore come in the order its steps committed. A row of one
+entity written before a row of another may come after it, as on Kafka. A consumer that needs an effect after its
+cause in another entity waits for the cause, or reads the cause's projection, which a row holds whole.
+
+### Consumers
+
+A consumer is a name, and it keeps a cursor per partition, stored. `feed(consumer, limit)` gives at most `limit`
+rows past its cursors, the oldest first. `ack(consumer, through)` takes a list of partitions and `seq`s, which the
+rows `feed` gave are, and moves each of those cursors once the rows are acted on. A cursor never moves back, and
+never past the head of its partition, so a crash before the ack delivers the rows again: at least once,
+deduplicated by the partition and the `seq`. A partition a consumer has no cursor for is read from `0`. `prune`
+drops, in each partition, what every consumer has read there, through the lowest cursor, and drops nothing where
+no consumer has read from the log. `consumers` says how many rows are past each consumer's cursors, and in which
+partitions, and `forget` lets the log go past one that is gone. `published(after, limit)` reads past cursors the
+caller holds, and registers nothing; `[]` is the whole log
+([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). A partition a handle is
+given is an integer from 1 to the number of partitions, and a `seq` and a limit are non-negative integers. Anything
+else is its caller's defect, which stores nothing
 ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). The log is kept for its
 consumers and is not an archive: a program whose past must stay readable keeps it where callers read it, in the
 state or in entities of its own.
-A cursor skips nothing because the runtime writes one transaction at a time, so a row's `seq` is given and
-committed in the same order; entities that step at once queue for it.
 The runtime writes the log and does not deliver it — the transport, the retries and the acknowledgements are
 the consumer's.
+
+### What a step publishes
+
 
 A step that changes the state without changing what callers read publishes nothing, and neither does a
 rejected message, an internal message dropped, or a step that suspends the entity. The booking's inventory

@@ -44,7 +44,7 @@ import {
 } from './program.ts'
 import * as Library from './index.ts'
 import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
-import { createTables, storage } from './storage.ts'
+import { createTables, partitionOf, storage } from './storage.ts'
 import {
   inOrder,
   prioritized,
@@ -896,7 +896,7 @@ describe('the runtime on SQLite', () => {
           expect(yield* ran(toy.send(id, on, { requestId: 'on', sender: tester }))).toEqual({ _tag: 'Accepted' })
           yield* Deferred.succeed(gate, undefined)
           yield* runtime.settled
-          const handled = (yield* toy.published(0)).flatMap((row) => (row.message === null ? [] : [row.message]))
+          const handled = (yield* toy.published([])).flatMap((row) => (row.message === null ? [] : [row.message]))
           expect(handled).not.toContainEqual({ _tag: 'Done', key: 'c' })
           expect(acted.filter((act) => act === 'c')).toEqual(['c'])
         }))
@@ -975,7 +975,7 @@ describe('the runtime on SQLite', () => {
           expect(yield* toy.discard(id)).toEqual({ _tag: 'Discarded' })
           yield* runtime.settled
           expect(acted.filter((key) => key === 'b')).toEqual(['b'])
-          const handled = (yield* toy.published(0)).flatMap((row) => (row.message === null ? [] : [row.message._tag]))
+          const handled = (yield* toy.published([])).flatMap((row) => (row.message === null ? [] : [row.message._tag]))
           expect(handled.filter((tag) => tag === 'Done').length).toBe(3)
           expect(handled).not.toContain('Unknown')
           // The timer is armed again, at a time that has passed, and fires: at once, or with the clock's next move,
@@ -1206,7 +1206,7 @@ describe('a planned stop', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(deployed), second.layer)
           yield* runtime.settled
-          return { toy, published: yield* toy.published(0) }
+          return { toy, published: yield* toy.published([]) }
         }))
       return { first: first.acted, second: second.acted, published: after.published, during: during_ }
     })
@@ -1426,7 +1426,7 @@ describe('a planned stop', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), second.layer)
           yield* runtime.settled
-          return yield* toy.published(0)
+          return yield* toy.published([])
         }))
       expect(second.acted.filter((act) => act === 'b').length).toBe(0)
       expect(unknown(published)).toEqual([])
@@ -2405,7 +2405,7 @@ describe('the crash table', () => {
           // And the time the test moved through was acted on: a timer it passed would be due still.
           expect((yield* store.due(DateTime.toEpochMillis(yield* DateTime.now), [])).ready).toEqual([])
           expect(yield* persisted).toEqual(replayed(since, events))
-          expect((yield* store.published(0)).map(({ kind, message, projection }) => ({ kind, message, projection })))
+          expect((yield* store.published([])).map(({ kind, message, projection }) => ({ kind, message, projection })))
             .toEqual(publishedOf(since, events))
         })))
     }
@@ -2564,7 +2564,7 @@ describe('random sequences of events', () => {
             const last = yield* store.load(id)
             expect(yield* store.projected(id)).toEqual(last === null ? null : program.project(last.state))
             expect(
-              (yield* store.published(0)).map(({ kind, message, projection }) => ({ kind, message, projection })),
+              (yield* store.published([])).map(({ kind, message, projection }) => ({ kind, message, projection })),
             ).toEqual(publishedOf(since, events))
           })),
       ),
@@ -2773,7 +2773,7 @@ describe('publishing what happened', () => {
           yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
           expect(yield* toy.send(id, { _tag: 'Refuse', nonce: 'no' }, { requestId: 'no', sender: tester }))
             .toEqual({ _tag: 'Rejected', reason: 'Refused' })
-          expect((yield* toy.published(0)).map(({ seq: _seq, ...row }) => row)).toEqual([
+          expect((yield* toy.published([])).map(({ partition: _partition, seq: _seq, ...row }) => row)).toEqual([
             { id, kind: 'Creation', message: null, projection: 4 },
             {
               id,
@@ -2796,22 +2796,25 @@ describe('publishing what happened', () => {
           yield* runtime.settled
           yield* TestClock.adjust('60 millis')
           yield* runtime.settled
-          const rows = yield* toy.published(0)
+          const rows = yield* toy.published([])
           // The creation, then the completion of each operation and the firing of the timer: what callers read
           // falls by one at each, whatever order the work came back in.
           expect(rows.map(({ kind }) => kind)).toEqual(['Creation', 'Internal', 'Internal', 'Internal', 'Internal'])
           expect(rows.map(({ projection }) => projection)).toEqual([4, 3, 2, 1, 0])
-          expect(rows.map(({ seq }) => seq)).toEqual([...rows.map(({ seq }) => seq)].sort((a, b) => a - b))
-          const second = rows[1]?.seq ?? 0
-          expect(yield* toy.published(second)).toEqual(rows.slice(2))
-          expect(yield* toy.published(0, 2)).toEqual(rows.slice(0, 2))
-          // A consumer reads from a cursor of its own, which the readings above neither moved nor stored: it
+          // One entity's rows are in its partition, numbered from 1 in the order its steps committed (decision 0137).
+          expect(rows.map(({ partition, seq }) => ({ partition, seq }))).toEqual(
+            [1, 2, 3, 4, 5].map((seq) => ({ partition: partitionOf(id, 300), seq })),
+          )
+          const read = rows.slice(0, 2)
+          expect(yield* toy.published(read)).toEqual(rows.slice(2))
+          expect(yield* toy.published([], 2)).toEqual(read)
+          // A consumer reads from cursors of its own, which the readings above neither moved nor stored: it
           // starts at the beginning, and goes on from where it acked (decision 0039).
-          expect(yield* toy.feed('queue', 2)).toEqual(rows.slice(0, 2))
-          yield* toy.ack('queue', second)
+          expect(yield* toy.feed('queue', 2)).toEqual(read)
+          yield* toy.ack('queue', read)
           expect(yield* toy.feed('queue')).toEqual(rows.slice(2))
           expect(yield* toy.prune).toBe(2)
-          expect(yield* toy.published(0)).toEqual(rows.slice(2))
+          expect(yield* toy.published([])).toEqual(rows.slice(2))
         }))
     })))
 
@@ -2825,21 +2828,20 @@ describe('publishing what happened', () => {
           yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
           // The timer is the key a step may drop and bring back: each way changes what callers read.
           yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
-          const read = yield* toy.published(0)
+          const read = yield* toy.published([])
           expect(read.map(({ projection }) => projection)).toEqual([4, 3])
-          const cursor = read[1]?.seq ?? 0
           // The consumer acted on both rows and acked them: the prune takes what it has read, and its cursor
           // stands.
-          yield* toy.ack('queue', cursor)
+          yield* toy.ack('queue', read)
           expect(yield* toy.prune).toBe(2)
-          expect(yield* toy.published(0)).toEqual([])
+          expect(yield* toy.published([])).toEqual([])
           yield* toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'on' }, { requestId: 'on', sender: tester })
           // What is published next is past the cursor: a seq the prune freed is never given again, or the
           // consumer would read from beyond a row it never saw.
-          const next = yield* toy.published(cursor)
+          const next = yield* toy.published(read)
           expect(next.map(({ projection }) => projection)).toEqual([4])
-          expect(next[0]?.seq ?? 0).toBeGreaterThan(cursor)
-          expect(yield* toy.published(0)).toEqual(next)
+          expect(next[0]?.seq ?? 0).toBeGreaterThan(read[1]?.seq ?? 0)
+          expect(yield* toy.published([])).toEqual(next)
           expect(yield* toy.feed('queue')).toEqual(next)
         }))
     })))
@@ -2855,28 +2857,27 @@ describe('publishing what happened', () => {
           yield* runtime.settled
           yield* TestClock.adjust('60 millis')
           yield* runtime.settled
-          const rows = yield* toy.published(0)
-          const last = rows[rows.length - 1]?.seq ?? 0
+          const rows = yield* toy.published([])
           // Nobody has read the log: a prune drops nothing, since the rows are somebody's to read by hand.
           expect(yield* toy.prune).toBe(0)
           expect(yield* toy.consumers).toEqual([])
           // Two consumers read it, and only one acts on what it read.
           expect(yield* toy.feed('queue')).toEqual(rows)
           expect(yield* toy.feed('audit')).toEqual(rows)
-          yield* toy.ack('queue', last)
+          yield* toy.ack('queue', rows)
           // An ack never moves a cursor back: what is behind it may be gone.
-          yield* toy.ack('queue', rows[0]?.seq ?? 0)
+          yield* toy.ack('queue', rows.slice(0, 1))
           expect(yield* toy.consumers).toEqual([
-            { consumer: 'audit', seq: 0, behind: rows.length },
-            { consumer: 'queue', seq: last, behind: 0 },
+            { consumer: 'audit', behind: rows.length, cursors: [{ partition: partitionOf(id, 300), seq: 0 }] },
+            { consumer: 'queue', behind: 0, cursors: [] },
           ])
           // The one that is behind holds every row, however far the other has read.
           expect(yield* toy.prune).toBe(0)
-          expect(yield* toy.published(0)).toEqual(rows)
+          expect(yield* toy.published([])).toEqual(rows)
           // An operator sees what it costs, and forgets the consumer: the next prune passes what it never read.
           yield* toy.forget('audit')
           expect(yield* toy.prune).toBe(rows.length)
-          expect(yield* toy.published(0)).toEqual([])
+          expect(yield* toy.published([])).toEqual([])
           // Forgotten and reading again under the same name, it starts from 0: at least once, as a crash before
           // an ack gives (decision 0039).
           expect(yield* toy.feed('audit')).toEqual([])
@@ -2899,9 +2900,9 @@ describe('publishing what happened', () => {
             yield* runtime.settled
             yield* TestClock.adjust('60 millis')
             yield* runtime.settled
-            const rows = yield* toy.published(0)
+            const rows = yield* toy.published([])
             // A consumer that has read everything lets the prune go as far as the log.
-            yield* toy.ack('queue', rows[rows.length - 1]?.seq ?? 0)
+            yield* toy.ack('queue', rows)
             yield* opened(window, true)
             // Each forked as a task of its own, as `together` does.
             const reading = yield* Effect.forkChild(toy.feed('late', 1))
@@ -2913,7 +2914,7 @@ describe('publishing what happened', () => {
               return { skipped: [] }
             }
             read.before++
-            yield* toy.ack('late', first[first.length - 1]?.seq ?? 0)
+            yield* toy.ack('late', first)
             // It holds the log from its first reading: it reads every row after the one it acked.
             const all = [...first, ...yield* toy.feed('late')]
             return { skipped: rows.filter((row) => !all.some(({ seq }) => seq === row.seq)).map(({ seq }) => seq) }
@@ -2924,28 +2925,30 @@ describe('publishing what happened', () => {
     expect(read.after).toBeGreaterThan(0)
   }, 60_000)
 
-  test('an ack past the last seq moves the cursor to it, and the rows written after are kept', () =>
+  test('an ack past the last seq of its partition moves the cursor to it, and the rows written after are kept', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
           const { layer } = yield* hands({ holds: true })
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          // Nothing was written yet: the cursor stays at 0.
-          yield* toy.ack('queue', 1_000)
-          expect(yield* toy.consumers).toEqual([{ consumer: 'queue', seq: 0, behind: 0 }])
+          const partition = partitionOf(id, 300)
+          // Nothing was written yet: no cursor is stored, and the consumer is.
+          yield* toy.ack('queue', [{ partition, seq: 1_000 }])
+          expect(yield* toy.consumers).toEqual([{ consumer: 'queue', behind: 0, cursors: [] }])
           yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
-          const [created] = yield* toy.published(0)
+          // A cursor past the head of its partition never stood: the creation is past it.
+          expect(yield* toy.feed('queue')).toHaveLength(1)
           // A consumer that acks beyond what it read stops at the last row: the next one is past its cursor.
-          yield* toy.ack('queue', (created?.seq ?? 0) + 1_000)
-          expect(yield* toy.consumers).toEqual([{ consumer: 'queue', seq: created?.seq ?? 0, behind: 0 }])
+          yield* toy.ack('queue', [{ partition, seq: 1_000 }])
+          expect(yield* toy.consumers).toEqual([{ consumer: 'queue', behind: 0, cursors: [] }])
           yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
           expect(yield* toy.prune).toBe(1)
           expect((yield* toy.feed('queue')).map(({ projection }) => projection)).toEqual([3])
         }))
     })))
 
-  test('a cursor or a limit that is no non-negative integer is its caller’s defect, and stores nothing', () =>
+  test('a cursor, a partition or a limit out of its range is its caller’s defect, and stores nothing', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const reasonOf = (exit: Exit.Exit<unknown>) => {
@@ -2957,33 +2960,39 @@ describe('publishing what happened', () => {
           const { layer } = yield* hands({ holds: true })
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
-          // Each of them is refused before anything is read or stored (decision 0053).
+          const partition = partitionOf(id, 300)
+          // Each of them is refused before anything is read or stored (decisions 0053, 0137).
           const refused = [
-            toy.ack('queue', 2.5),
-            toy.ack('queue', -5),
-            toy.ack('queue', Number.NaN),
+            toy.ack('queue', [{ partition, seq: 2.5 }]),
+            toy.ack('queue', [{ partition, seq: -5 }]),
+            toy.ack('queue', [{ partition, seq: Number.NaN }]),
             // An integer past what a double holds exactly is no cursor either.
-            toy.ack('queue', 2 ** 53),
-            toy.published(-1),
-            toy.published(0, -1),
-            toy.published(0, 1.5),
+            toy.ack('queue', [{ partition, seq: 2 ** 53 }]),
+            toy.ack('queue', [{ partition: 0, seq: 1 }]),
+            toy.ack('queue', [{ partition: 301, seq: 1 }]),
+            toy.ack('queue', [{ partition: 1.5, seq: 1 }]),
+            toy.published([{ partition, seq: -1 }]),
+            toy.published([{ partition: -1, seq: 0 }]),
+            toy.published([], -1),
+            toy.published([], 1.5),
             toy.feed('queue', -1),
             toy.feed('queue', Number.POSITIVE_INFINITY),
             toy.query({ limit: -1 }),
             toy.query({ limit: 0.5 }),
           ]
           for (const call of refused) {
-            expect(reasonOf(yield* Effect.exit(call))).toMatch(/^the (cursor|limit) is .+, which is no non-negative/)
+            expect(reasonOf(yield* Effect.exit(call)))
+              .toMatch(/^the (cursor|limit) is .+, which is no non-negative|^the partition is .+, which is no integer/)
           }
           // No consumer was stored by a call refused, and a limit of 0, or none, is a limit.
           expect(yield* toy.consumers).toEqual([])
-          expect(yield* toy.published(0, 0)).toEqual([])
-          expect((yield* toy.published(0)).length).toBe(1)
+          expect(yield* toy.published([], 0)).toEqual([])
+          expect((yield* toy.published([])).length).toBe(1)
           expect((yield* toy.query({ limit: 0 })).length).toBe(0)
         }))
     })))
 
-  test('entities stepping at once share one rising sequence, and nothing of theirs is lost', () =>
+  test('entities stepping at once each publish in their partition, and nothing of theirs is lost', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const ids = ['p-1', 'p-2', 'p-3']
@@ -2999,31 +3008,112 @@ describe('publishing what happened', () => {
           yield* runtime.settled
           yield* TestClock.adjust('60 millis')
           yield* runtime.settled
-          const rows = yield* toy.published(0)
+          const rows = yield* toy.published([])
           // The creation of each, and the four pieces of work each was created with: the three entities step at
           // once, and a row of one is never written in the middle of another's step.
           expect(rows.length).toBe(ids.length * 5)
-          const seqs = rows.map(({ seq }) => seq)
-          expect(seqs).toEqual([...seqs].sort((a, b) => a - b))
-          expect(new Set(seqs).size).toBe(seqs.length)
+          // Each entity's rows are in its own partition, numbered from 1 in the order of its steps.
           for (const id of ids) {
-            expect(rows.filter((row) => row.id === id).map(({ projection }) => projection)).toEqual([4, 3, 2, 1, 0])
+            const own = rows.filter((row) => row.id === id)
+            expect(own.map(({ projection }) => projection)).toEqual([4, 3, 2, 1, 0])
+            expect(own.map(({ partition, seq }) => ({ partition, seq }))).toEqual(
+              [1, 2, 3, 4, 5].map((seq) => ({ partition: partitionOf(id, 300), seq })),
+            )
           }
-          // A consumer that read to the end is given nothing again.
-          expect(yield* toy.published(seqs[seqs.length - 1] ?? 0)).toEqual([])
+          // A reader that read to the end is given nothing again.
+          expect(yield* toy.published(rows)).toEqual([])
         }))
     })))
 
-  test('a consumer reads from its cursor through an index, and never scans the log', () =>
+  test('the entities of one partition share its sequence, in the order their steps committed', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const ids = ['p-1', 'p-2', 'p-3']
+      yield* process({ log: { partitions: 1 } }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* Effect.forEach(
+            ids,
+            (id) => toy.create(id, { at }, { requestId: `c-${id}`, sender: tester }),
+            { concurrency: 'unbounded' },
+          )
+          yield* runtime.settled
+          yield* TestClock.adjust('60 millis')
+          yield* runtime.settled
+          const rows = yield* toy.published([])
+          expect(rows.map(({ partition, seq }) => ({ partition, seq }))).toEqual(
+            rows.map((_, at) => ({ partition: 1, seq: at + 1 })),
+          )
+          for (const id of ids) {
+            expect(rows.filter((row) => row.id === id).map(({ projection }) => projection)).toEqual([4, 3, 2, 1, 0])
+          }
+        }))
+    })))
+
+  test('a consumer reads every partition, and an ack and a prune move only the partitions acked', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      // Two entities of two partitions.
+      const [one, other] = ['a', 'b']
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          expect(partitionOf(one, 300)).not.toBe(partitionOf(other, 300))
+          yield* toy.create(one, { at }, { requestId: 'c-one', sender: tester })
+          yield* toy.create(other, { at }, { requestId: 'c-other', sender: tester })
+          yield* toy.send(one, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
+          // The rows come in the order they were written, each with its partition and its `seq` there.
+          const rows = yield* toy.feed('queue')
+          expect(rows.map(({ id, partition, seq }) => ({ id, partition, seq }))).toEqual([
+            { id: one, partition: partitionOf(one, 300), seq: 1 },
+            { id: other, partition: partitionOf(other, 300), seq: 1 },
+            { id: one, partition: partitionOf(one, 300), seq: 2 },
+          ])
+          // The consumer acts on the rows of one entity only: the other's partition stays where it was.
+          yield* toy.ack('queue', rows.filter((row) => row.id === one))
+          expect((yield* toy.feed('queue')).map(({ id }) => id)).toEqual([other])
+          expect(yield* toy.consumers).toEqual([
+            { consumer: 'queue', behind: 1, cursors: [{ partition: partitionOf(other, 300), seq: 0 }] },
+          ])
+          // The prune drops what the consumer read in each partition, and keeps the partition it acked nothing of.
+          expect(yield* toy.prune).toBe(2)
+          expect((yield* toy.published([])).map(({ id }) => id)).toEqual([other])
+        }))
+    })))
+
+  test('a launch with another number of partitions than the database’s fails, and names both', () =>
+    database(Effect.gen(function*() {
+      const reasonOf = (exit: Exit.Exit<unknown>) => {
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        return cause instanceof InvariantDefect ? cause.reason : null
+      }
+      // The first launch stores its number, and the next one with the same number runs.
+      yield* process({ log: { partitions: 12 } }, () => Effect.void)
+      yield* process({ log: { partitions: 12 } }, () => Effect.void)
+      expect(reasonOf(yield* Effect.exit(process({}, () => Effect.void))))
+        .toBe('the log has 12 partitions, and the runtime is launched with 300')
+      expect(reasonOf(yield* Effect.exit(process({ log: { partitions: 0 } }, () => Effect.void))))
+        .toBe('the log has 0 partitions, which is no positive integer')
+    })))
+
+  test('a consumer reads from its cursors through indexes, and never scans the log', () =>
     database(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
-      const plan = yield* sql.unsafe<{ detail: string }>(
-        `EXPLAIN QUERY PLAN SELECT seq, id, tag, version, message, projection FROM outbox
-         WHERE name = 'Toy' AND seq > 7 ORDER BY seq LIMIT 100`,
-      )
-      // A range over (name, seq), which is also the order read: the log grows until a consumer prunes it, and
-      // a poll must not read again what it has read.
-      expect(plan.map(({ detail }) => detail).join(' ')).toContain('USING INDEX outbox_name (name=? AND seq>?)')
+      const plan = (query: string) =>
+        Effect.map(sql.unsafe<{ detail: string }>(`EXPLAIN QUERY PLAN ${query}`), (rows) =>
+          rows.map(({ detail }) => detail).join(' '))
+      // The first row past a cursor is a seek into its partition, by `seq`.
+      expect(
+        yield* plan(`SELECT position FROM outbox WHERE name = 'Toy' AND partition = 3 AND seq > 7 ORDER BY seq LIMIT 1`),
+      ).toContain('USING COVERING INDEX outbox_partition (name=? AND partition=? AND seq>?)')
+      // A page is a range over (name, position), which is also the order read: the log grows until a consumer
+      // prunes it, and a poll must not read again what it has read.
+      expect(
+        yield* plan(`SELECT position, partition, seq, id, tag, version, message, projection FROM outbox
+          WHERE name = 'Toy' AND position >= 7 ORDER BY position LIMIT 256`),
+      ).toMatch(/USING INDEX outbox_name \(name=\? AND (position|rowid)>\?\)/)
     })))
 
   test('a step whose transaction never commits publishes nothing', () =>
@@ -3053,7 +3143,7 @@ describe('publishing what happened', () => {
       )
       yield* Effect.raceFirst(dying, Deferred.await(crashed))
       expect(yield* Deferred.isDone(crashed)).toBe(true)
-      expect((yield* store.published(0)).map(({ kind, projection }) => ({ kind, projection })))
+      expect((yield* store.published([])).map(({ kind, projection }) => ({ kind, projection })))
         .toEqual([{ kind: 'Creation', projection: 4 }])
     })))
 
@@ -3074,29 +3164,30 @@ describe('publishing what happened', () => {
           const theirs = yield* twins.feed('queue')
           expect(mine.length).toBe(1)
           expect(theirs.length).toBe(1)
-          // One sequence serves both logs, so a `seq` of the one is no cursor into the other: it is a row the
-          // other's consumer never saw, and acking it would leave its own row where it is.
-          expect(theirs[0]?.seq ?? 0).toBeGreaterThan(mine[0]?.seq ?? 0)
-          yield* twins.ack('queue', mine[0]?.seq ?? 0)
-          expect(yield* twins.prune).toBe(0)
+          // Each program's partitions have heads of their own, so the same entity id starts at the same place in
+          // both logs (decision 0137).
+          expect(theirs.map(({ partition, seq }) => ({ partition, seq })))
+            .toEqual(mine.map(({ partition, seq }) => ({ partition, seq })))
           // Each acks its own, and the rows of the one go while the other's consumer holds its log.
-          yield* twins.ack('queue', theirs[0]?.seq ?? 0)
+          yield* twins.ack('queue', theirs)
           expect(yield* twins.prune).toBe(1)
           expect(yield* toys.prune).toBe(0)
-          expect(yield* toys.published(0)).toEqual(mine)
-          expect(yield* toys.consumers).toEqual([{ consumer: 'queue', seq: 0, behind: 1 }])
-          expect(yield* twins.consumers).toEqual([{ consumer: 'queue', seq: theirs[0]?.seq ?? 0, behind: 0 }])
+          expect(yield* toys.published([])).toEqual(mine)
+          expect(yield* toys.consumers).toEqual([
+            { consumer: 'queue', behind: 1, cursors: [{ partition: partitionOf(id, 300), seq: 0 }] },
+          ])
+          expect(yield* twins.consumers).toEqual([{ consumer: 'queue', behind: 0, cursors: [] }])
         }))
     })))
 
-  // The premise the prune's one transaction rests on: the client leases its one connection under a semaphore of
-  // one, and a transaction holds it for its duration (decisions 0007, 0039). Two statements apart let a
-  // consumer register in between, which is what would have it read rows and have them dropped behind its cursor.
+  // The premise a transaction of the runtime rests on: the client leases its one connection under a semaphore of
+  // one, and a transaction holds it for its duration (decisions 0007, 0039). Two statements apart let a consumer
+  // register in between.
   test('a transaction keeps a consumer from registering between its statements, two statements apart do not', () =>
     database(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       const lowest = sql<{ through: number | null }>`SELECT min(seq) AS through FROM cursors WHERE name = 'Toy'`
-      const registers = sql`INSERT INTO cursors ${sql.insert({ name: 'Toy', consumer: 'late', seq: 0 })}`
+      const registers = sql`INSERT INTO cursors ${sql.insert({ name: 'Toy', consumer: 'late', partition: 1, seq: 0 })}`
       // The readings wait for the clock between them, so the insert is offered where the race would be, and
       // lands there unless something holds it out.
       const reads = Effect.gen(function*() {
@@ -4190,11 +4281,10 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
 test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {
   // Decision 0116: an entity's wait ends with an item of its queue, and nothing races its take. A take raced against a
   // timeout loses the event when the racing fiber is preempted at the third step after its resumption, and its caller
-  // waits for ever. Under the yields of decision 0134, no seed of the first 2,000 reaches that loss. Seed 286016936,
-  // pinned, reaches it against the wait written as `Effect.timeoutOption` of the take, mapped to a `Passivate` where
-  // it runs out, with the sleep and the pass-over left in place unused. A seed draws its schedule from the yields of
-  // the code it runs, so another form of the old wait needs a seed of its own, which `bun run test:explore` finds in
-  // a round or two.
+  // waits for ever. Seed 54, pinned, reaches it against the wait written as `Effect.timeoutOption` of the take, mapped
+  // to a `Passivate` where it runs out, with the sleep and the pass-over left in place unused, under the writes of a
+  // step of decision 0137. A seed draws its schedule from the yields of the code it runs, so another form of the old
+  // wait needs a seed of its own, which `bun run test:explore` finds in a round or two.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -4215,7 +4305,7 @@ test('a message that arrives as the wait of its entity runs out is handled, unde
           yield* runtime.settled
           return reply
         }))
-    }), { _tag: 'Accepted' }, { open: false, pinned: [286016936] })
+    }), { _tag: 'Accepted' }, { open: false, pinned: [54] })
 }, 60_000)
 
 test('settled never returns between a crash and the activation its due timer brings, under prioritized schedules', () => {

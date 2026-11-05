@@ -12,7 +12,8 @@ Cluster's says so.
 - **Child, parent.** A part a program or another part holds in its state, declared in its `children` with `child`
   for one, or `each` for children by id; the one that holds it is its parent. The library routes a child's messages,
   holds its work under `<child>.<key>`, and runs its operations under `<child>.<tag>`.
-- **Consumer.** A name under which the outbox is read, with a stored cursor that `ack` moves forward and never back.
+- **Consumer.** A name under which the outbox is read, with a stored cursor per partition that `ack` moves forward and
+  never back.
 - **Crash.** The process dies at a point of the crash table, or an entity leaves the process on an event the runtime
   cannot finish. To the machine, a passivation is a crash the runtime chose.
 - **Defect.** What the program does that it should not: a function or a schema of its that throws, or a rule of the
@@ -65,9 +66,13 @@ Cluster's says so.
   that ends with an internal message. It leaves the state only through its completion, unless it is droppable: one
   that acts on nothing, which a step may drop or change while it runs.
 - **Outbox, log.** One row per step that changed what callers read, holding the entity's address, the message handled
-  and the projection left, with a `seq` that never repeats. A consumer reads it from its cursor.
+  and the projection left, with its entity's partition and a `seq` that never repeats within the partition. A
+  consumer reads it from its cursors.
 - **Part.** A child, as declared in `part(schemas)(…)`: a program's pieces without a name, indexes or migrations,
   which are its parent's, and with the schemas of the events it raises and the external messages it takes.
+- **Partition.** One of the parts of the log, numbered from 1 to a number fixed for the life of the database, 300 by
+  default. Each entity belongs to one, drawn from its id when it is created and stored. The rows of a partition are
+  in the order of their `seq`, and the log promises no order across partitions.
 - **Passivation.** The runtime unloads an entity that has nothing to do. It writes nothing, and the earliest of the
   stored timers wakes the entity.
 - **Planned stop, drain.** The closing of the scope a runtime was launched in with the option `drain`. The runtime

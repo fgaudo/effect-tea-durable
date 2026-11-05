@@ -20,11 +20,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). Nothing caps what that grows
   to. A step that cannot publish cannot commit, so a cap would stop the entities: what a deployment does when
   the disk is the limit — a warning, a refusal, a drop that says which consumer lost rows — is not decided.
-- **The order of what is published.** A cursor over the outbox skips nothing while one transaction writes at a
-  time, which is what the runtime on SQLite does
-  ([decision 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md)). Where two write at once —
-  a cluster, or a store that allows it — a row with a lower `seq` may commit after one a consumer has read, and
-  be stepped over. What orders the log then, and what a consumer reads from, is not decided.
 - **Renaming a program.** A program's name is the entities' address, and a schema's migration does not move
   what is stored under it: its entities, and the replies stored for them by other entities
   ([decision 0022](decisions/archive/0022-a-new-program-keeps-what-work-started-with.md)). How a rename is run, and

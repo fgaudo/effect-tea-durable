@@ -5,23 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **A log ordered within a partition** ([open question](open-questions.md#storage-and-reading)). A consumer's
-   cursor skips nothing because one transaction commits at a time, which holds on SQLite and on no store where two
-   processes commit at once. Each row of the outbox gets a partition, drawn by the runtime from the entity's id
-   among a number fixed when the database is created, 300 by default, as Cluster's shards per group. A step takes
-   its `seq` within its partition under a lock of the partition's row, in its own transaction, so that the steps
-   of one partition commit in the order of their `seq`, and steps of different partitions do not wait for each
-   other. A consumer keeps a cursor per partition, and the log promises the order of one entity's rows, not an
-   order across entities. That is what the step gives up: today the log is one sequence, and a consumer may then
-   read an effect in one partition before its cause in another, as a consumer of Kafka may. A row holds the
-   projection whole, so no row needs another to be read. The number of partitions is fixed for the life of the
-   database, since a change moves rows between partitions and every consumer's cursors with them. The one
-   alternative that keeps a total order, a lock every step of the cluster takes, gives up what more than one
-   process is for. Whether a partition is Cluster's shard is decided with the step Effect Cluster: the lock keeps
-   the order without it, and a partition that followed an option of the deployment would move every consumer's
-   cursors. Nothing of this is code yet. The step is decided by
-   [decision 0137](decisions/0137-the-log-is-ordered-within-a-partition.md), proposed.
-2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
@@ -35,6 +19,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)), which a resumption told by a
     message changes ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md));
   - an entity's lock dropped while others wait for it ([decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md)).
+
+  Whether a partition of the log is Cluster's shard is decided with this step: the head of a partition keeps the
+  order without it, and a test with two writers checks that the steps of a partition commit in the order of their
+  `seq` ([decision 0137](decisions/0137-the-log-is-ordered-within-a-partition.md)).
 
   A caller's reply past its time ([decision 0125](decisions/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md))
   is deleted on Cluster with Cluster's rows of its request, as an entity's reply is

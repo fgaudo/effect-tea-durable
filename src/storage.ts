@@ -7,6 +7,7 @@
  */
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Hash from 'effect/Hash'
 import * as Schema from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import { SqlClient } from 'effect/sql'
@@ -63,6 +64,19 @@ export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope>
 })
 
 /**
+ * How many partitions the log has where `launch` is given none: as many as Cluster's shards per group
+ * (decision 0137).
+ */
+export const defaultPartitions = 300
+
+/**
+ * The partition of the log the entity `id` belongs to, among `partitions`: Cluster's formula for a shard, on
+ * `Hash.string`. It is computed once, when the entity is created, and stored, so that a hash that changes in a later
+ * release of Effect moves no entity's rows (decision 0137).
+ */
+export const partitionOf = (id: string, partitions: number): number => Math.abs(Hash.string(id) % partitions) + 1
+
+/**
  * The tables, created once for the database. Every entity of every program sits in them: the name of the program
  * and the id are the entity's address (decision 0022).
  */
@@ -82,6 +96,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       suspended_on TEXT,
       suspended_cause TEXT,
       suspended_at INTEGER,
+      partition INTEGER NOT NULL,
       PRIMARY KEY (name, id)
     )
   `
@@ -136,13 +151,35 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       PRIMARY KEY (name, id)
     )
   `
+  // How many partitions the log has: one row, written by the first launch and checked by every other, since a
+  // change would move entities between partitions, and every consumer's cursors with them (decision 0137).
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS log (
+      one INTEGER PRIMARY KEY CHECK (one = 1),
+      partitions INTEGER NOT NULL
+    )
+  `
+  // The last `seq` given in each partition of each program. A step moves its partition's head in its own
+  // transaction, which holds the row until it commits, so the steps of one partition commit in the order of their
+  // `seq`. A head is never deleted, so a `seq` is never given again (decision 0137).
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS heads (
+      name TEXT NOT NULL,
+      partition INTEGER NOT NULL,
+      seq INTEGER NOT NULL,
+      PRIMARY KEY (name, partition)
+    )
+  `
   // What other systems learn of the entities: one row per step that changed what callers read, written in the
-  // step's own transaction. `seq` rises with each row and is never reused, and is what a consumer reads from
-  // and deduplicates by (decision 0038).
+  // step's own transaction (decision 0038). A row is keyed by its program, its partition and its `seq`, which is
+  // what a consumer acks (decision 0137). `position` rises with each row of the database, and is never reused: it
+  // is the order `feed` reads the rows in, and no cursor.
   yield* sql`
     CREATE TABLE IF NOT EXISTS outbox (
-      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      position INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
+      partition INTEGER NOT NULL,
+      seq INTEGER NOT NULL,
       id TEXT NOT NULL,
       tag TEXT NOT NULL,
       version INTEGER NOT NULL,
@@ -150,15 +187,26 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       projection TEXT NOT NULL
     )
   `
-  yield* sql`CREATE INDEX IF NOT EXISTS outbox_name ON outbox (name, seq)`
-  // Where each consumer of the outbox has read to: a consumer stores a cursor by name, and what every one of
-  // them has read is what a prune drops (decision 0039).
+  yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS outbox_partition ON outbox (name, partition, seq)`
+  yield* sql`CREATE INDEX IF NOT EXISTS outbox_name ON outbox (name, position)`
+  // The consumers of the outbox, by name, stored by their first reading or ack. Each holds the log from then on,
+  // until it is forgotten (decision 0039).
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS consumers (
+      name TEXT NOT NULL,
+      consumer TEXT NOT NULL,
+      PRIMARY KEY (name, consumer)
+    )
+  `
+  // Where each consumer has read to in each partition. A partition a consumer has no row for is read from `0`
+  // (decision 0137).
   yield* sql`
     CREATE TABLE IF NOT EXISTS cursors (
       name TEXT NOT NULL,
       consumer TEXT NOT NULL,
+      partition INTEGER NOT NULL,
       seq INTEGER NOT NULL,
-      PRIMARY KEY (name, consumer)
+      PRIMARY KEY (name, consumer, partition)
     )
   `
   // The replies, by request: a retry gets the one stored (decision 0015). The request is its JSON as the machine
@@ -190,6 +238,26 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // (decision 0065).
   yield* sql`CREATE INDEX IF NOT EXISTS replies_request_id ON replies (name, id, json_extract(request, '$.id'))`
 }).pipe(Effect.orDie)
+
+/**
+ * Stores the number of partitions of the log at the first launch, and checks it at every other: a launch given
+ * another number than the one stored is the launcher's defect, and names both (decision 0137).
+ */
+export const partitioned = (partitions: number): Effect.Effect<void, never, SqlClient.SqlClient> =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`INSERT INTO log (one, partitions) VALUES (1, ${partitions}) ON CONFLICT (one) DO NOTHING`
+    const stored = yield* Effect.flatMap(
+      sql`SELECT partitions FROM log`,
+      Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ partitions: Count }))),
+    )
+    const held = stored[0]?.partitions
+    if (held !== partitions) {
+      return yield* Effect.die(new InvariantDefect({
+        reason: `the log has ${held} partitions, and the runtime is launched with ${partitions}`,
+      }))
+    }
+  }).pipe(Effect.orDie)
 
 /**
  * A value read from JSON text through its schema: what the machine wrote, encoded by the same schema
@@ -335,6 +403,8 @@ const Rows = {
   /** A creation's row handles no message, and a step's always one (decision 0038). */
   published: decoder(Schema.Union([
     Schema.Struct({
+      position: Count,
+      partition: Count,
       seq: Count,
       id: Schema.String,
       tag: Schema.Literal('Creation'),
@@ -343,6 +413,8 @@ const Rows = {
       projection: Schema.String,
     }),
     Schema.Struct({
+      position: Count,
+      partition: Count,
       seq: Count,
       id: Schema.String,
       tag: Schema.Literals(['Inbound', 'Internal']),
@@ -357,8 +429,12 @@ const Rows = {
   seq: decoder(Schema.Struct({ seq: Count })),
   /** An aggregate over no rows is null. */
   last: decoder(Schema.Struct({ seq: Schema.NullOr(Count) })),
-  through: decoder(Schema.Struct({ through: Schema.NullOr(Count) })),
-  consumer: decoder(Schema.Struct({ consumer: Schema.String, seq: Count, behind: Count })),
+  /** A cursor, or a partition's head: a `seq` within a partition. */
+  cursor: decoder(Schema.Struct({ partition: Count, seq: Count })),
+  /** The first row past the cursors, or null where every partition is read to its head. */
+  position: decoder(Schema.Struct({ position: Schema.NullOr(Count) })),
+  consumer: decoder(Schema.Struct({ consumer: Schema.String })),
+  behind: decoder(Schema.Struct({ consumer: Schema.String, partition: Count, seq: Count, behind: Count })),
 } as const
 
 /** How a query compares an index with a value. */
@@ -394,9 +470,20 @@ export type Reindexed = Readonly<{
   failed: ReadonlyArray<Readonly<{ id: string; cause: string }>>
 }>
 
+/**
+ * Where a reader has read to in one partition of the log: the `seq` of the last row it read there, `0` for none
+ * (decision 0137).
+ */
+export type Cursor = Readonly<{ partition: number; seq: number }>
+
 /** What a step published: the message it handled, and what callers read of the entity after it (decision 0038). */
 export type Published<T extends Types> = Readonly<{
-  /** Rises with each row of the database, and is never reused: what a consumer acks, and deduplicates by. */
+  /** The partition of the log the entity belongs to, which never changes (decision 0137). */
+  partition: number
+  /**
+   * Rises with each row of the partition, and is never reused: with the partition, what a consumer acks, and
+   * deduplicates by (decision 0137).
+   */
   seq: number
   id: string
   /** Where the message came from, or `Creation` for the row an entity's creation writes, which has none. */
@@ -420,13 +507,16 @@ export type Suspension = Readonly<{
   since: DateTime.Utc
 }>
 
-/** A consumer of the outbox, as an operator sees it: where it has read to, and what is waiting (decision 0039). */
+/** A consumer of the outbox, as an operator sees it: what is waiting, and where (decisions 0039, 0137). */
 export type Consumer = Readonly<{
   consumer: string
-  /** The `seq` it acked, `0` for one that has read and acked nothing yet. */
-  seq: number
-  /** How many rows are past its cursor: what it costs the log to keep it. */
+  /** How many rows are past its cursors, in every partition: what it costs the log to keep it. */
   behind: number
+  /**
+   * The cursors of the partitions it has rows to read in, by partition: `seq` is `0` in a partition it has acked
+   * nothing of.
+   */
+  cursors: ReadonlyArray<Cursor>
 }>
 
 /** An identifier SQLite reads as written: a program's name is the author's, and is quoted, not escaped away. */
@@ -491,20 +581,26 @@ export interface Storage<T extends Types> {
    * entity that took a step since wrote its own (decision 0070).
    */
   readonly reindex: Effect.Effect<Reindexed>
-  /** `Handle.published`, as the storage keeps it: the rows from `after` on, in the order they were written. */
-  readonly published: (after: number, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
-   * `Handle.feed`, as the storage keeps it. The consumer's first reading stores its cursor at `0`, and from then
-   * on the consumer holds the log, acked or not, until it is forgotten (decision 0039).
+   * `Handle.published`, as the storage keeps it: the rows past the cursors of `after`, in the order they were
+   * written. The partitions are the caller's to check.
+   */
+  readonly published: (after: ReadonlyArray<Cursor>, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  /**
+   * `Handle.feed`, as the storage keeps it. The consumer's first reading stores it, and from then on the consumer
+   * holds the log, acked or not, until it is forgotten (decision 0039).
    */
   readonly feed: (consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
-  /** `Handle.ack`, as the storage keeps it: the last `seq` written is read first, and caps the cursor stored. */
-  readonly ack: (consumer: string, through: number) => Effect.Effect<void>
+  /**
+   * `Handle.ack`, as the storage keeps it, in one transaction: the head of each partition is read first, and caps
+   * the cursor stored there.
+   */
+  readonly ack: (consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
   /** `Handle.prune`, as the storage keeps it: the cursors are read and the rows dropped in one transaction. */
   readonly prune: Effect.Effect<number>
-  /** Every consumer that has stored a cursor, with how many rows are past it, by name. */
+  /** Every consumer stored, with how many rows are past its cursors, by name. */
   readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
-  /** Drops a consumer's cursor, so that the next prune passes what it never read (decision 0039). */
+  /** Drops a consumer and its cursors, so that the next prune passes what it never read (decision 0039). */
   readonly forget: (consumer: string) => Effect.Effect<void>
   /** `Handle.expire`: deletes the callers' replies past their time at `at`, in milliseconds, and counts them. */
   readonly expire: (at: number) => Effect.Effect<number>
@@ -512,8 +608,15 @@ export interface Storage<T extends Types> {
   readonly suspended: Effect.Effect<ReadonlyArray<Suspension>>
 }
 
-/** The storage of one program's entities, on one client, with its schemas read once. */
-export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.SqlClient): Storage<T> => {
+/**
+ * The storage of one program's entities, on one client, with its schemas read once. `partitions` is the number of
+ * partitions of the log, which `partitioned` checks against the database.
+ */
+export const storage = <T extends Types>(
+  program: Program<T>,
+  sql: SqlClient.SqlClient,
+  partitions: number = defaultPartitions,
+): Storage<T> => {
   const state = json(program.schemas.state)
   const inbound = json(program.schemas.inbound)
   const internal = json(program.schemas.internal)
@@ -729,6 +832,7 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
             suspended_on: on,
             suspended_cause: cause,
             suspended_at: on === null ? null : at,
+            partition: partitionOf(id, partitions),
           })
         }`
       } else if (entity !== null) {
@@ -755,21 +859,6 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
         const projection = JSON.stringify(written.shown.projection)
         characters += projection.length
         yield* row(id, written.shown, projection)
-      }
-      if (written.published !== null) {
-        const { kind, message } = written.published
-        const projection = JSON.stringify(written.published.projection)
-        characters += projection.length
-        yield* sql`INSERT INTO outbox ${
-          sql.insert({
-            name,
-            id,
-            tag: kind,
-            version,
-            message: message === null ? null : JSON.stringify(message),
-            projection,
-          })
-        }`
       }
       for (const held of written.keys) {
         yield* sql`INSERT OR REPLACE INTO entity_keys ${
@@ -883,6 +972,34 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
       // A step that answers a caller takes its entity's replies past their time with it (decision 0125).
       if (written.replies.length > 0) {
         yield* sql`DELETE FROM replies WHERE name = ${name} AND id = ${id} AND until IS NOT NULL AND until <= ${at}`
+      }
+      // The row of the log is written last. Its `seq` is drawn by moving the head of the entity's partition, which
+      // holds the head's row until the transaction ends, so the head is held for the least of the transaction. The
+      // head is written by the first step that publishes in the partition (decision 0137).
+      if (written.published !== null) {
+        const { kind, message } = written.published
+        const projection = JSON.stringify(written.published.projection)
+        characters += projection.length
+        const drawn = yield* rows('heads', Rows.cursor)(sql`
+          INSERT INTO heads (name, partition, seq)
+          SELECT name, partition, 1 FROM entities WHERE name = ${name} AND id = ${id}
+          ON CONFLICT (name, partition) DO UPDATE SET seq = seq + 1
+          RETURNING partition, seq
+        `)
+        const head = drawn[0]
+        if (head === undefined) throw new Error(`the entity '${name}' '${id}' publishes with no row of its own`)
+        yield* sql`INSERT INTO outbox ${
+          sql.insert({
+            name,
+            partition: head.partition,
+            seq: head.seq,
+            id,
+            tag: kind,
+            version,
+            message: message === null ? null : JSON.stringify(message),
+            projection,
+          })
+        }`
       }
       return characters
     }).pipe(Effect.orDie)
@@ -1040,82 +1157,153 @@ export const storage = <T extends Types>(program: Program<T>, sql: SqlClient.Sql
     }
   }).pipe(Effect.orDie)
 
-  const published = (after: number, limit?: number) =>
+  /** The cursors of a list, one per partition: a partition named twice is read from the higher. */
+  const cursorsOf = (after: ReadonlyArray<Cursor>) => {
+    const cursors = new Map<number, number>()
+    for (const { partition, seq } of after) cursors.set(partition, Math.max(seq, cursors.get(partition) ?? 0))
+    return cursors
+  }
+
+  /** The head of each partition the program has published in, by partition. */
+  const heads = Effect.map(
+    rows('heads', Rows.cursor)(sql`SELECT partition, seq FROM heads WHERE name = ${name}`),
+    (held) => new Map(held.map(({ partition, seq }) => [partition, seq])),
+  )
+
+  // The rows are read in the order of `position`, from the first row past a cursor in any partition, and the rows a
+  // cursor has passed are left out as they are read. That first row has the lowest `seq` past the cursor in its
+  // partition, since `position` rises with `seq` within a partition (decision 0137). So a reader at pace passes over
+  // only the rows of the steps that committed out of their order, and each page is a range of an index.
+  const published = (after: ReadonlyArray<Cursor>, limit?: number) =>
     Effect.gen(function*() {
-      const log = yield* rows('outbox', Rows.published)(sql`
-        SELECT seq, id, tag, version, message, projection FROM outbox
-        WHERE name = ${name} AND seq > ${after} ORDER BY seq LIMIT ${limit ?? -1}
+      const cursors = cursorsOf(after)
+      const behind: Array<readonly [number, number]> = []
+      for (const [partition, head] of yield* heads) {
+        const cursor = cursors.get(partition) ?? 0
+        if (head > cursor) behind.push([partition, cursor])
+      }
+      if (behind.length === 0 || limit === 0) return []
+      const first = yield* rows('outbox', Rows.position)(sql`
+        SELECT min((
+          SELECT position FROM outbox
+          WHERE name = ${name} AND partition = json_extract(behind.value, '$[0]')
+            AND seq > json_extract(behind.value, '$[1]')
+          ORDER BY seq LIMIT 1
+        )) AS position
+        FROM json_each(${JSON.stringify(behind)}) AS behind
       `)
-      return log.map((row): Published<T> => ({
-        seq: row.seq,
-        id: row.id,
-        kind: row.tag,
-        message: row.tag === 'Creation'
-          ? null
-          : row.tag === 'Inbound'
-          ? inbound.read(row.message, up('inbound', row.version))
-          : internal.read(row.message, up('internal', row.version)),
-        projection: projection.read(row.projection, up('projection', row.version)),
-      }))
+      let from = first[0]?.position ?? null
+      const read: Array<Published<T>> = []
+      while (from !== null && (limit === undefined || read.length < limit)) {
+        const page = yield* rows('outbox', Rows.published)(sql`
+          SELECT position, partition, seq, id, tag, version, message, projection FROM outbox
+          WHERE name = ${name} AND position >= ${from} ORDER BY position LIMIT ${batch}
+        `)
+        for (const row of page) {
+          if (row.seq <= (cursors.get(row.partition) ?? 0)) continue
+          read.push({
+            partition: row.partition,
+            seq: row.seq,
+            id: row.id,
+            kind: row.tag,
+            message: row.tag === 'Creation'
+              ? null
+              : row.tag === 'Inbound'
+              ? inbound.read(row.message, up('inbound', row.version))
+              : internal.read(row.message, up('internal', row.version)),
+            projection: projection.read(row.projection, up('projection', row.version)),
+          })
+          if (read.length === limit) break
+        }
+        const last = page[page.length - 1]
+        from = page.length < batch || last === undefined ? null : last.position + 1
+      }
+      return read
     }).pipe(Effect.orDie)
 
-  /** Stores a cursor for the consumer, and moves it to `through`, never back (decision 0039). */
-  const mark = (consumer: string, through: number) =>
-    sql`
-      INSERT INTO cursors ${sql.insert({ name, consumer, seq: through })}
-      ON CONFLICT (name, consumer) DO UPDATE SET seq = max(seq, excluded.seq)
-    `
+  /** Stores the consumer, if it is not stored yet: from then on it holds the log (decision 0039). */
+  const declare = (consumer: string) =>
+    sql`INSERT INTO consumers ${sql.insert({ name, consumer })} ON CONFLICT (name, consumer) DO NOTHING`
 
   const feed = (consumer: string, limit?: number) =>
     Effect.gen(function*() {
-      const held = yield* rows('cursors', Rows.seq)(
-        sql`SELECT seq FROM cursors WHERE name = ${name} AND consumer = ${consumer}`,
+      const known = yield* rows('consumers', Rows.consumer)(
+        sql`SELECT consumer FROM consumers WHERE name = ${name} AND consumer = ${consumer}`,
       )
-      const cursor = held[0]?.seq
       // The first reading declares the consumer, and only that one writes: a consumer that polls reads.
-      if (cursor === undefined) yield* mark(consumer, 0)
-      return yield* published(cursor ?? 0, limit)
-    }).pipe(Effect.orDie)
-
-  // A cursor goes no further than the last `seq` the log gave, of any program: one past it would have the rows
-  // written after it dropped by a prune before its consumer read them. `sqlite_sequence` holds that `seq` though
-  // a prune dropped its row, and has no row for the outbox until the first one is written.
-  const ack = (consumer: string, through: number) =>
-    Effect.gen(function*() {
-      const last = yield* rows('sqlite_sequence', Rows.seq)(
-        sql`SELECT seq FROM sqlite_sequence WHERE name = 'outbox'`,
+      if (known.length === 0) yield* declare(consumer)
+      const cursors = yield* rows('cursors', Rows.cursor)(
+        sql`SELECT partition, seq FROM cursors WHERE name = ${name} AND consumer = ${consumer}`,
       )
-      yield* mark(consumer, Math.min(through, last[0]?.seq ?? 0))
+      return yield* published(cursors, limit)
     }).pipe(Effect.orDie)
 
-  // The cursors are read and the rows dropped in one transaction: a consumer whose first reading lands in the
-  // middle of a prune either holds the log, and nothing goes, or starts after the drop. Otherwise it could read
-  // rows with its cursor still at 0 and have them dropped behind it, and skip them without ever saying so.
-  const prune = sql.withTransaction(Effect.gen(function*() {
-    const read = yield* rows('cursors', Rows.through)(
-      sql`SELECT min(seq) AS through FROM cursors WHERE name = ${name}`,
-    )
-    const through = read[0]?.through ?? null
-    // No consumer has stored a cursor: the log is somebody's to read by hand, and nothing of it is dropped.
-    if (through === null) return 0
-    const gone = yield* rows('outbox', Rows.seq)(
-      sql`DELETE FROM outbox WHERE name = ${name} AND seq <= ${through} RETURNING seq`,
-    )
+  // A cursor goes no further than the head of its partition: one past it would have the rows written after it
+  // dropped by a prune before its consumer read them. A head is never deleted, so it holds the last `seq` given
+  // though a prune dropped its row, and a partition with no head yet has nothing to ack (decision 0137).
+  const ack = (consumer: string, through: ReadonlyArray<Cursor>) =>
+    sql.withTransaction(Effect.gen(function*() {
+      yield* declare(consumer)
+      const held = yield* heads
+      for (const [partition, seq] of cursorsOf(through)) {
+        const capped = Math.min(seq, held.get(partition) ?? 0)
+        if (capped === 0) continue
+        yield* sql`
+          INSERT INTO cursors ${sql.insert({ name, consumer, partition, seq: capped })}
+          ON CONFLICT (name, consumer, partition) DO UPDATE SET seq = max(seq, excluded.seq)
+        `
+      }
+    })).pipe(Effect.orDie)
+
+  // Each partition is dropped through the lowest cursor of every consumer in it, and only where every consumer has a
+  // cursor there, since one with none holds the partition from `0` (decision 0137). The cursors are read and the rows
+  // dropped in one statement: a consumer whose first reading lands in the middle of a prune either holds the log,
+  // and nothing goes, or starts after the drop. Otherwise it could read rows with no cursor stored and have them
+  // dropped behind it, and skip them without ever saying so (decision 0039).
+  const prune = Effect.gen(function*() {
+    const gone = yield* rows('outbox', Rows.seq)(sql`
+      WITH floors AS (
+        SELECT partition, min(seq) AS through FROM cursors WHERE name = ${name}
+        GROUP BY partition
+        HAVING count(*) = (SELECT count(*) FROM consumers WHERE name = ${name})
+      )
+      DELETE FROM outbox
+      WHERE name = ${name} AND seq <= (SELECT through FROM floors WHERE floors.partition = outbox.partition)
+      RETURNING seq
+    `)
     return gone.length
-  })).pipe(Effect.orDie)
+  }).pipe(Effect.orDie)
 
   const consumers = Effect.gen(function*() {
-    const held = yield* rows('cursors', Rows.consumer)(sql`
-      SELECT consumer, seq, (
-        SELECT count(*) FROM outbox WHERE outbox.name = cursors.name AND outbox.seq > cursors.seq
-      ) AS behind
-      FROM cursors WHERE name = ${name} ORDER BY consumer
+    const stored = yield* rows('consumers', Rows.consumer)(
+      sql`SELECT consumer FROM consumers WHERE name = ${name} ORDER BY consumer`,
+    )
+    const behind = yield* rows('cursors', Rows.behind)(sql`
+      SELECT consumers.consumer AS consumer, outbox.partition AS partition, coalesce(cursors.seq, 0) AS seq,
+        count(*) AS behind
+      FROM consumers
+      JOIN outbox ON outbox.name = consumers.name
+      LEFT JOIN cursors ON cursors.name = consumers.name AND cursors.consumer = consumers.consumer
+        AND cursors.partition = outbox.partition
+      WHERE consumers.name = ${name} AND outbox.seq > coalesce(cursors.seq, 0)
+      GROUP BY consumers.consumer, outbox.partition
+      ORDER BY consumers.consumer, outbox.partition
     `)
-    return held.map((row): Consumer => ({ consumer: row.consumer, seq: row.seq, behind: row.behind }))
+    return stored.map(({ consumer }): Consumer => {
+      const own = behind.filter((row) => row.consumer === consumer)
+      return {
+        consumer,
+        behind: own.reduce((sum, row) => sum + row.behind, 0),
+        cursors: own.map(({ partition, seq }) => ({ partition, seq })),
+      }
+    })
   }).pipe(Effect.orDie)
 
   const forget = (consumer: string) =>
-    Effect.asVoid(sql`DELETE FROM cursors WHERE name = ${name} AND consumer = ${consumer}`).pipe(Effect.orDie)
+    sql.withTransaction(Effect.andThen(
+      sql`DELETE FROM cursors WHERE name = ${name} AND consumer = ${consumer}`,
+      sql`DELETE FROM consumers WHERE name = ${name} AND consumer = ${consumer}`,
+    )).pipe(Effect.asVoid, Effect.orDie)
 
   // The tag of the mailbox's first message says what a `Message` the entity died on is: an inbound one is
   // discarded, an internal one is not (decisions 0041, 0044, 0114).

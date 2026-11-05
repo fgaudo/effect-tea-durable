@@ -238,8 +238,9 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
   `passivate.millis`, and its `maxResidentEntities` unbounded
   ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)).
 - **[0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md)** — on PostgreSQL or MySQL, runners on
-  different shards commit at once, so a `seq` from the database no longer orders the log as it commits. What a
-  consumer's cursor reads from is the [open question](open-questions.md#storage-and-reading) it was.
+  different shards commit at once, so a `seq` from the database no longer orders the log as it commits. A `seq` is
+  drawn within a partition of the log, under the lock of the partition's head, and a consumer keeps a cursor per
+  partition ([decision 0137](decisions/0137-the-log-is-ordered-within-a-partition.md)).
 - **[0045](decisions/archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md)** — an operation waits by retrying
   a send that Cluster fails after `entityRegistrationTimeout`, a window that runs once per runner, from the first entity it registers.
 - **[0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md)**,

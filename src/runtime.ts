@@ -40,9 +40,12 @@ import {
 } from './program.ts'
 import {
   type Consumer,
+  type Cursor,
+  defaultPartitions,
   type Found,
   type Published,
   hold,
+  partitioned,
   type Query,
   type Reindexed,
   storage,
@@ -161,6 +164,12 @@ export interface Options {
    * its size: the program splits a large state (decision 0135).
    */
   readonly warn?: Readonly<{ characters: number }>
+  /**
+   * How many partitions the log has: a positive integer, 300 by default. The first launch stores it in the
+   * database, and a launch given another number fails, since a change would move entities between partitions,
+   * and every consumer's cursors with them (decision 0137).
+   */
+  readonly log?: Readonly<{ partitions: number }>
 }
 
 /** What a caller does with one program's entities. */
@@ -206,36 +215,45 @@ export interface Handle<T extends Types> {
    */
   readonly reindex: Effect.Effect<Reindexed>
   /**
-   * What the entities of the program did, from the `seq` of `after` on, in the order the steps committed. Each
-   * row is the message an entity handled and what callers read of it afterwards, written in that step's
-   * transaction (decision 0038). The cursor is the caller's, and nothing of it is stored: a reading here, by a
-   * test or an operator looking, has no say in a prune, and `0` is the whole log. A consumer that keeps a cursor
-   * reads with `feed` instead (decision 0039).
+   * What the entities of the program did, past the cursors of `after`, at most `limit` rows, the oldest first.
+   * Each row is the message an entity handled and what callers read of it afterwards, written in that step's
+   * transaction (decision 0038). The rows of one entity come in the order its steps committed, and each carries
+   * its partition and its `seq` within it. The log promises no order across entities: a row of one entity written
+   * before a row of another may come after it (decision 0137). A partition `after` names no cursor of is read
+   * from `0`, so `[]` is the whole log. The cursors are the caller's, and nothing of them is stored: a reading
+   * here, by a test or an operator looking, has no say in a prune. A consumer that keeps its cursors reads with
+   * `feed` instead (decision 0039).
    */
-  readonly published: (after: number, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  readonly published: (after: ReadonlyArray<Cursor>, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
-   * The same from the stored cursor of the consumer `consumer`: a consumer is a name, its first reading stores
-   * its cursor at `0`, and `ack` moves it once the rows are acted on. From its first reading the log is kept for
-   * it, so a consumer holds no state of its own (decision 0039).
+   * The same from the stored cursors of the consumer `consumer`: a consumer is a name, its first reading stores
+   * it, and `ack` moves its cursors once the rows are acted on. From its first reading the log is kept for it, so a
+   * consumer holds no state of its own (decision 0039).
    */
   readonly feed: (consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
-   * Moves a consumer's cursor to `through`. It never moves back, since what is behind it may be gone, and never
-   * past the last `seq` written, so that no row written later is behind it. An ack from a consumer that has not
-   * read stores its cursor too (decision 0039). A cursor and a limit are non-negative integers, here and in
-   * `query`, `published` and `feed`. Anything else is the caller's defect (decision 0053).
+   * Moves a consumer's cursor in each partition `through` names, and no other. The rows `feed` gave are such a
+   * list. A cursor never moves back, since what is behind it may be gone, and never past the last `seq` written in
+   * its partition, so that no row written later is behind it. An ack from a consumer that has not read stores the
+   * consumer too (decisions 0039, 0137). A partition is an integer from 1 to the number of partitions of the log. A
+   * `seq` and a limit are non-negative integers, here and in `query`, `published` and `feed`. Anything else is the
+   * caller's defect (decision 0053).
    */
-  readonly ack: (consumer: string, through: number) => Effect.Effect<void>
+  readonly ack: (consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
   /**
-   * Drops what every consumer has read, through the lowest stored cursor, and gives how many rows went. Where
-   * no consumer has read from the log, it drops nothing (decision 0039).
+   * Drops what every consumer has read, in each partition through the lowest cursor there, and gives how many rows
+   * went. A consumer that has acked nothing of a partition holds the whole partition. Where no consumer has read
+   * from the log, it drops nothing (decisions 0039, 0137).
    */
   readonly prune: Effect.Effect<number>
-  /** What each consumer has read, and how many rows are past it: what keeping it costs the log. */
+  /**
+   * Each consumer, with how many rows are past its cursors, and its cursors in the partitions it has rows to read
+   * in: what keeping it costs the log.
+   */
   readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
   /**
-   * Drops a consumer's cursor, so that the next prune passes what it never read: how a consumer that is gone,
-   * or a name misspelt once, stops holding the log (decision 0039).
+   * Drops a consumer and its cursors, so that the next prune passes what it never read: how a consumer that is
+   * gone, or a name misspelt once, stops holding the log (decision 0039).
    */
   readonly forget: (consumer: string) => Effect.Effect<void>
   /**
@@ -392,15 +410,44 @@ const counted = <A>(
     return effect
   })
 
+/**
+ * Runs `effect` once each cursor a caller gave names a partition of the log, from 1 to `partitions`, and a `seq`
+ * that is a non-negative integer: anything else is the caller's defect, and nothing is read or stored for it
+ * (decisions 0053, 0137).
+ */
+const cursored = <A>(
+  cursors: ReadonlyArray<Cursor>,
+  partitions: number,
+  effect: Effect.Effect<A>,
+): Effect.Effect<A> =>
+  Effect.suspend(() => {
+    for (const { partition, seq } of cursors) {
+      if (!(Number.isSafeInteger(partition) && partition >= 1 && partition <= partitions)) {
+        const reason = `the partition is ${partition}, which is no integer from 1 to ${partitions}`
+        return Effect.die(new InvariantDefect({ reason }))
+      }
+      if (!(Number.isSafeInteger(seq) && seq >= 0)) {
+        return Effect.die(new InvariantDefect({ reason: `the cursor is ${seq}, which is no non-negative integer` }))
+      }
+    }
+    return effect
+  })
+
 export const launch = (options: Options = {}): Effect.Effect<Runtime, never, SqlClient.SqlClient | Scope.Scope> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     // The runtime's own scope, sequential whatever its caller's: a parallel scope would run the drain, the closing of
     // `running` and the release of the database at once (decision 0120).
     const scope = yield* Scope.fork(yield* Effect.scope, 'sequential')
+    const partitions = options.log?.partitions ?? defaultPartitions
+    if (!(Number.isSafeInteger(partitions) && partitions >= 1)) {
+      const reason = `the log has ${partitions} partitions, which is no positive integer`
+      return yield* Effect.die(new InvariantDefect({ reason }))
+    }
     // One runtime holds the database, before anything of this one runs, and lets it go after everything of it has
     // stopped: the scope ends what it was given last first (decision 0080).
     yield* Scope.provide(hold, scope)
+    yield* partitioned(partitions)
     // Everything the runtime runs is forked in `running`, which closes after the drain: a scope runs its finalizers
     // in the reverse order of their adding, so the drain, added after it, runs first (decision 0119).
     const running = yield* Scope.fork(scope)
@@ -1442,7 +1489,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             names.add(program.name)
             const deployed: Deployment<T> = {
               program,
-              storage: storage(program, sql),
+              storage: storage(program, sql, partitions),
               scope: yield* Scope.fork(running),
               loaded: new Map(),
               // Nothing is known of the stored timers until the waker has read them once.
@@ -1503,9 +1550,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           read: (id) => deployed.storage.projected(id),
           query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
           reindex: deployed.storage.reindex,
-          published: (after, limit) => counted({ cursor: after, limit }, deployed.storage.published(after, limit)),
+          published: (after, limit) =>
+            cursored(after, partitions, counted({ limit }, deployed.storage.published(after, limit))),
           feed: (consumer, limit) => counted({ limit }, deployed.storage.feed(consumer, limit)),
-          ack: (consumer, through) => counted({ cursor: through }, deployed.storage.ack(consumer, through)),
+          ack: (consumer, through) => cursored(through, partitions, deployed.storage.ack(consumer, through)),
           prune: deployed.storage.prune,
           consumers: deployed.storage.consumers,
           forget: (consumer) => deployed.storage.forget(consumer),

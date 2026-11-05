@@ -78,7 +78,7 @@ test('what an order published is what another system learns of it', () =>
     // One row per step that changed what callers read: the creation, the request to pay, the charge coming back,
     // and the warehouse told — which keeps the status and makes the order cancellable, so callers read something
     // else. Each row carries the message the step handled (decision 0038).
-    const published = yield* orders.published(0)
+    const published = yield* orders.published([])
     expect(
       published.map(({ id, kind, message, projection }) =>
         [id, kind, message?._tag ?? null, projection.status, projection.canCancel]
@@ -90,15 +90,19 @@ test('what an order published is what another system learns of it', () =>
       ['o-1', 'Internal', 'WarehouseTold', 'Paid', true],
     ])
 
-    // A consumer is a name, and its cursor is stored: it reads from where it acked, and a prune drops what
-    // every consumer has read (decision 0039).
-    const read = published[1]?.seq ?? 0
+    // A consumer is a name, and its cursors are stored: it reads from where it acked, and a prune drops what
+    // every consumer has read (decision 0039). The rows of one order are in its partition, in the order of their
+    // `seq`, and an ack is given the rows acted on (decision 0137).
+    const acted = published.slice(0, 2)
     const left = published.slice(2).map(({ seq }) => seq)
     expect((yield* orders.feed('warehouse')).map(({ seq }) => seq)).toEqual(published.map(({ seq }) => seq))
-    yield* orders.ack('warehouse', read)
+    yield* orders.ack('warehouse', acted)
     expect((yield* orders.feed('warehouse')).map(({ seq }) => seq)).toEqual(left)
     expect(yield* orders.prune).toBe(2)
-    expect((yield* orders.published(0)).map(({ seq }) => seq)).toEqual(left)
+    expect((yield* orders.published([])).map(({ seq }) => seq)).toEqual(left)
     // What the one consumer still has to act on, as an operator sees it.
-    expect(yield* orders.consumers).toEqual([{ consumer: 'warehouse', seq: read, behind: left.length }])
+    const partition = published[0]?.partition ?? 0
+    expect(yield* orders.consumers).toEqual([
+      { consumer: 'warehouse', behind: left.length, cursors: [{ partition, seq: acted[1]?.seq ?? 0 }] },
+    ])
   }))))

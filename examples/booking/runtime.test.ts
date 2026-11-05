@@ -54,7 +54,7 @@ test('a booking holds its seats in the inventory, and confirms them', () =>
 
     // What other systems learn: the booking's whole story, step by step (decision 0038).
     expect(
-      (yield* bookings.published(0)).map(({ kind, message, projection }) =>
+      (yield* bookings.published([])).map(({ kind, message, projection }) =>
         [kind, message?._tag ?? null, projection.status]
       ),
     ).toEqual([
@@ -67,7 +67,7 @@ test('a booking holds its seats in the inventory, and confirms them', () =>
     // `available` where it was: a fact no caller can read is not published, and an inventory whose sales must
     // be is one that shows them.
     expect(
-      (yield* inventories.published(0)).map(({ kind, message, projection }) =>
+      (yield* inventories.published([])).map(({ kind, message, projection }) =>
         [kind, message?._tag ?? null, projection.available]
       ),
     ).toEqual([['Creation', null, 10], ['Inbound', 'HoldRequested', 7]])
@@ -114,7 +114,7 @@ test('the runtime mutates nothing the programs give or the callers offer', () =>
       expect(yield* bookings.read('b2')).toMatchObject({ status: 'Cancelled' })
       expect(yield* bookings.read('b3')).toMatchObject({ status: 'Cancelled' })
       expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
-      expect((yield* bookings.published(0)).map(({ projection }) => projection.status)).toEqual([
+      expect((yield* bookings.published([])).map(({ projection }) => projection.status)).toEqual([
         'Holding',
         'Held',
         'Holding',

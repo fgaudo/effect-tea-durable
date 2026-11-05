@@ -1,8 +1,8 @@
 # 0039. A consumer of the outbox keeps its cursor
 
 **Status:** accepted, 2026-10-30. Its one cursor per consumer is changed by
-[decision 0137](../0137-the-log-is-ordered-within-a-partition.md), proposed: a consumer keeps a cursor per partition
-of the log.
+[decision 0137](../0137-the-log-is-ordered-within-a-partition.md): a consumer keeps a cursor per partition of the
+log.
 
 ## Context
 

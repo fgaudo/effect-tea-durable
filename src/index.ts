@@ -74,6 +74,7 @@ export {
   type Consumer,
   createTables,
   type Criterion,
+  type Cursor,
   type Found,
   type Published,
   type Query,

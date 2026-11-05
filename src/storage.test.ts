@@ -12,7 +12,7 @@ import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import * as Machine from './machine.ts'
 import { isTimer, type Json, type Migration, noWork, operation, type Program } from './program.ts'
-import { createTables, storage } from './storage.ts'
+import { createTables, partitionOf, storage } from './storage.ts'
 
 type T = {
   state: Readonly<{ last: string }>
@@ -383,7 +383,14 @@ test('a row the runtime never writes fails the call that meets it, and is read a
     Effect.gen(function*() {
       const store = storage(receiver, sql)
       yield* store.write('r', created({ queued: [inbound('one')] }), 0)
+      yield* store.write('r', written({ published: { kind: 'Inbound', message: 'one', projection: 'one' } }), 0)
+      const partition = partitionOf('r', 300)
       const caller = { _tag: 'Caller', sender: null, id: 'x' } as const
+      /** A consumer that has read the log to a `seq` no cursor holds. */
+      const behind = Effect.andThen(
+        sql`INSERT INTO consumers ${sql.insert({ name: 'Receiver', consumer: 'c' })}`,
+        sql`INSERT INTO cursors ${sql.insert({ name: 'Receiver', consumer: 'c', partition, seq: -1 })}`,
+      )
       // Each row is broken by hand in one of the ways a reading used to fill in or cast, and read by what reads it.
       const broken = [
         [sql`UPDATE mailbox SET tag = 'Outbound' WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
@@ -469,9 +476,9 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           sql`UPDATE mailbox SET seq = -5 WHERE name = 'Receiver' AND id = 'r'`,
           store.write('r', written({ queued: [inbound('two')] }), 0),
         ],
-        [sql`INSERT INTO cursors ${sql.insert({ name: 'Receiver', consumer: 'c', seq: -1 })}`, store.feed('c')],
-        [sql`INSERT INTO cursors ${sql.insert({ name: 'Receiver', consumer: 'c', seq: -1 })}`, store.consumers],
-        [sql`INSERT INTO cursors ${sql.insert({ name: 'Receiver', consumer: 'c', seq: -1 })}`, store.prune],
+        [behind, store.feed('c')],
+        [behind, store.consumers],
+        [sql`UPDATE heads SET seq = -1 WHERE name = 'Receiver'`, store.published([])],
         // A timer's time is a whole number of milliseconds, read by the waker.
         [
           sql`INSERT INTO entity_keys ${
@@ -492,9 +499,18 @@ test('a row the runtime never writes fails the call that meets it, and is read a
         // A step's row of the outbox always handles a message.
         [
           sql`INSERT INTO outbox ${
-            sql.insert({ name: 'Receiver', id: 'r', tag: 'Inbound', version: 1, message: null, projection: '"one"' })
+            sql.insert({
+              name: 'Receiver',
+              partition,
+              seq: 2,
+              id: 'r',
+              tag: 'Inbound',
+              version: 1,
+              message: null,
+              projection: '"one"',
+            })
           }`,
-          store.published(0),
+          store.published([]),
         ],
       ] as const
       for (const [breaking, reading] of broken) {
@@ -510,9 +526,18 @@ test('a row the runtime never writes fails the call that meets it, and is read a
       expect((yield* store.load('r'))?.mailbox.map((envelope) => envelope.message)).toEqual(['one'])
       // A creation's row of the outbox handles no message.
       yield* sql`INSERT INTO outbox ${
-        sql.insert({ name: 'Receiver', id: 'r', tag: 'Creation', version: 1, message: '"one"', projection: '"one"' })
+        sql.insert({
+          name: 'Receiver',
+          partition,
+          seq: 2,
+          id: 'r',
+          tag: 'Creation',
+          version: 1,
+          message: '"one"',
+          projection: '"one"',
+        })
       }`
-      expect((yield* Effect.exit(store.published(0)))._tag).toBe('Failure')
+      expect((yield* Effect.exit(store.published([])))._tag).toBe('Failure')
     }).pipe(Effect.orDie)))
 
 // A row is keyed by its request as the version that wrote it encoded it, and by that version (decision 0069).
@@ -598,7 +623,7 @@ test('a version reads through its migrations the work, the mailbox and the log a
       const work = stored?.keys[Machine.keyText({ name: 'ask' })]?.work
       expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang (internal)')
       expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello (inbound)', 'done (internal)'])
-      expect((yield* after.published(0)).map(({ message, projection }) => ({ message, projection }))).toEqual([
+      expect((yield* after.published([])).map(({ message, projection }) => ({ message, projection }))).toEqual([
         { message: null, projection: 'start (projection)' },
         { message: 'hello (inbound)', projection: 'hello (projection)' },
       ])
@@ -687,7 +712,7 @@ test('a row is written at the version that writes it, and read back as it was wr
       const work = stored?.keys[Machine.keyText({ name: 'ask' })]?.work
       expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang')
       expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello', 'done'])
-      expect((yield* after.published(0)).map(({ projection }) => projection)).toEqual(['start'])
+      expect((yield* after.published([])).map(({ projection }) => projection)).toEqual(['start'])
       expect(yield* after.query({})).toEqual([{ id: 'r', projection: 'start' }])
     })))
 
@@ -726,3 +751,71 @@ test('a suspended entity is listed with what it died on, its cause and since whe
         { id: 'inbound', on: { _tag: 'Message', kind: 'Internal' }, cause: 'broken', since: 20 },
       ])
     })))
+
+// A move of Effect's version that changes `Hash.string` changes these, and is seen: the partition is stored, so
+// the entities created before keep theirs (decision 0137).
+test('the partition of an id is Cluster’s formula on Hash.string, pinned for a few ids', () => {
+  expect(['toy-1', 'a', 'b', 'r', 'o-1'].map((id) => partitionOf(id, 300))).toEqual([164, 5, 8, 24, 71])
+  expect(['toy-1', 'a', 'b'].map((id) => partitionOf(id, 1))).toEqual([1, 1, 1])
+})
+
+/** A row of the log as a step writes it, at the `position` given: the order the store gave the rows in. */
+const logged = (sql: SqlClient.SqlClient, id: string, seq: number, position: number) =>
+  Effect.andThen(
+    sql`INSERT INTO outbox ${
+      sql.insert({
+        position,
+        name: 'Receiver',
+        partition: partitionOf(id, 300),
+        seq,
+        id,
+        tag: 'Creation',
+        version: 1,
+        message: null,
+        projection: '"start"',
+      })
+    }`,
+    sql`
+      INSERT INTO heads ${sql.insert({ name: 'Receiver', partition: partitionOf(id, 300), seq })}
+      ON CONFLICT (name, partition) DO UPDATE SET seq = max(seq, excluded.seq)
+    `,
+  )
+
+// On a store where two steps commit at once, a step of one partition may take its row's place in the order before
+// a step of another, and commit after it (decision 0137).
+test('a row that commits after one a consumer has read is read then, from its partition’s cursor', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(receiver, sql)
+      const seen = (read: ReadonlyArray<{ id: string; seq: number }>) => read.map(({ id, seq }) => `${id}${seq}`)
+      yield* logged(sql, 'a', 1, 10)
+      const first = yield* store.feed('c')
+      expect(seen(first)).toEqual(['a1'])
+      yield* store.ack('c', first)
+      // The row of `b` was given its place before the one of `a`, and is committed only now.
+      yield* logged(sql, 'b', 1, 5)
+      expect(seen(yield* store.feed('c'))).toEqual(['b1'])
+      expect(yield* store.prune).toBe(1)
+      expect(seen(yield* store.published([]))).toEqual(['b1'])
+    }).pipe(Effect.orDie)))
+
+test('a reading passes over the rows its cursors have read, page after page, and stops at its limit', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(receiver, sql)
+      const seen = (read: ReadonlyArray<{ id: string; seq: number }>) => read.map(({ id, seq }) => `${id}${seq}`)
+      // The row of `b` is the oldest, and every row of `a` after it fills more than a page.
+      yield* logged(sql, 'b', 1, 1)
+      for (let seq = 1; seq <= 300; seq++) yield* logged(sql, 'a', seq, seq + 1)
+      const a = partitionOf('a', 300)
+      expect(seen(yield* store.published([{ partition: a, seq: 300 }]))).toEqual(['b1'])
+      expect(seen(yield* store.published([{ partition: a, seq: 300 }], 1))).toEqual(['b1'])
+      const half = yield* store.published([{ partition: a, seq: 150 }])
+      expect(seen(half)).toEqual(['b1', ...Array.from({ length: 150 }, (_, at) => `a${at + 151}`)])
+      expect(seen(yield* store.published([], 260))).toEqual([
+        'b1',
+        ...Array.from({ length: 259 }, (_, at) => `a${at + 1}`),
+      ])
+      // A partition named twice is read from the higher cursor.
+      expect(seen(yield* store.published([{ partition: a, seq: 300 }, { partition: a, seq: 1 }]))).toEqual(['b1'])
+    }).pipe(Effect.orDie)))

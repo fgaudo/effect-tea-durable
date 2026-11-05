@@ -1,7 +1,6 @@
 # 0137. The log is ordered within a partition
 
-**Status:** proposed, for the step A log ordered within a partition of the [roadmap](../roadmap.md); rewritten in
-place while the step is under way. Changes [decision 0038](archive/0038-what-happened-is-published-through-an-outbox.md),
+**Status:** accepted, 2026-11-05. Changes [decision 0038](archive/0038-what-happened-is-published-through-an-outbox.md),
 whose `seq` is one sequence of the database, and [decision 0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md),
 whose consumer keeps one cursor per program.
 
@@ -37,7 +36,8 @@ the order of one partition only.
 - **The partition is stored, and never computed again.** A change of `Hash.string` in a later release of Effect
   would then change the partition of the entities created after it, and of none created before. The order of an
   entity's rows depends only on its own partition, so such a change breaks no order.
-- **The number of partitions is fixed for the life of the database.** `launch` takes `partitions`, 300 by default.
+- **The number of partitions is fixed for the life of the database.** `launch` takes `log: { partitions }`, 300 by
+  default.
   The first launch stores the number in the database. A launch that passes a different number than the one stored
   fails, and names both numbers. A change would move entities between partitions, and every consumer's cursors with
   them.
@@ -92,7 +92,9 @@ the order of one partition only.
 - That `Hash.string` gives the same number for the same text within a release: **documented**, in its JSDoc in
   `effect/src/Hash.ts`, which is `@stability stable` and gives the values of three texts. That it gives the same
   number in a later release is not promised, and the partition is stored so that the order does not rest on it. A
-  test pins the partitions of a few ids, so that a move of Effect's version that changes them is seen.
+  test pins the partitions of a few ids, so that a move of Effect's version that changes them is seen: `the
+  partition of an id is Cluster’s formula on Hash.string, pinned for a few ids`, in
+  [`src/storage.test.ts`](../../src/storage.test.ts).
 - That Cluster draws a shard by the same formula: **read in the source**, in `getShardId` of
   `effect/src/cluster/Sharding.ts`, which is `@stability unstable`, and in `hashString` of
   `effect/src/cluster/internal/hash.ts`, which is `@internal` and the code of `Hash.string` line for line. The
@@ -100,8 +102,18 @@ the order of one partition only.
   see. Nothing of this decision falls without it, since a partition and a shard are one only if the step Effect
   Cluster decides so.
 - That SQLite runs `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`, which writes a partition's head row at its
-  first step and moves it at the next ones: documented by SQLite from 3.35. The tests of the step see it run in the
-  version that Bun bundles.
+  first step and moves it at the next ones: documented by SQLite from 3.35, and **tested** on SQLite 3.53.2, which
+  Bun 1.4.2 bundles, by every test that publishes, `the entities of one partition share its sequence, in the order
+  their steps committed` in [`src/runtime.test.ts`](../../src/runtime.test.ts) among them.
+- That `position` rises with `seq` within a partition, so that `feed` may start from the lowest `seq` past each
+  cursor: on SQLite **documented**, since `AUTOINCREMENT` gives each row a rowid larger than any before it, and a
+  step draws its `seq` in the same transaction, before it writes its row. On a store with two writers it holds
+  where the store gives `position` as the row is written, after the head's row is locked: **only reasoned**. The
+  step Effect Cluster runs a test with two writers.
+- That a consumer that reads a row of one partition and acks it still reads a row of another partition committed
+  after it with a lower `position`: **tested**, by `a row that commits after one a consumer has read is read then,
+  from its partition’s cursor` in [`src/storage.test.ts`](../../src/storage.test.ts), which writes the rows by hand
+  in that order.
 
 ## Alternatives
 
@@ -138,7 +150,7 @@ the order of one partition only.
   a consumer reads every row of every partition in the order of its `seq`, that an ack moves only the partitions it
   names, that a prune keeps what any consumer has not read in each partition, and that a launch with another number
   of partitions fails. A test pins the partitions of a few ids.
-- `docs/design.md` says, under Reading, what the log promises and what it does not. The glossary defines
+- `docs/design.md` says, under Publishing what happened, what the log promises and what it does not. The glossary defines
   **partition**, and its entries for the consumer and the outbox say that a cursor and a `seq` are per partition.
   The diagram of the modules in [`README.md`](../../README.md) names the new tables.
 - The examples whose tests read the log, [`examples/order`](../../examples/order) and
