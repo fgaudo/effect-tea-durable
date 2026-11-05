@@ -36,25 +36,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - a program with a migration of many branches, whose recorded cases a change could keep while it reads other
     rows otherwise;
   - what an arbitrary of an older version costs to keep, next to the cases recorded of it.
-- **One projection for every reader.** A program has one `project`, and a step that changes it writes it whole in
-  the row of the read model and in a row of the outbox
-  ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md),
-  [decision 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md)). The design advises a
-  projection that shows what a caller acts on
-  ([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)), but
-  different readers act on different things: a shipping service reads an order's address, a dashboard its
-  status. One projection is then the union of what every reader needs, and each consumer of the outbox receives
-  the whole of it at every step that changes any part of it, which it cannot tell from a change of the part it
-  reads. A boundary that picks fields before it answers `read` spares the reader, and not the step's writes or
-  the log. Whether a program declares several projections by name, each a pure function of the state, written
-  only when it changes, with the outbox's row and the indexes naming the one they hold, is not decided. It would
-  be decided by:
-  - a program with two consumers of its outbox that read different parts of what it shows, where the rows one
-    receives for the other's changes show in `consumers`;
-  - what `read`, `query` and `reindex` take once a projection has a name, and what the row of the read model and
-    the row of the outbox hold;
-  - whether an index reads one named projection or the state, since an index over the state would query what no
-    caller reads, which decision 0032 keeps out.
 - **A number over many entities.** `query` gives the ids found with their projections, within a limit, so a
   question about a list of entities is answered by SQLite over the indexes
   ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md)). A question whose answer is one number over

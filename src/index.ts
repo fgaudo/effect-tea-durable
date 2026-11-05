@@ -44,6 +44,7 @@ export {
   type Timer,
   isTimer,
   timer,
+  type Topic,
   type Types,
   type Update,
   versionOf,

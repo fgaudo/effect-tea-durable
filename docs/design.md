@@ -34,6 +34,7 @@ tested by calling pure functions, crashes included.
 | `durable`    | the work under way in each state, by key: operations, as data, and timers                 |
 | `operations` | how each kind of operation runs, what it answers, and what a crash does to it             |
 | `project`    | what callers read of the state, with the actions it allows, from the children's too       |
+| `topics`     | the parts of the projection the log publishes, by name, each selected from it as JSON    |
 | `children`   | the parts the state holds, each placed with `child` or `each`                             |
 | `onEvent`    | what the program does with each event a child raises                                      |
 | `indexes`    | what a query across the program's entities filters and orders by, read off the projection |
@@ -318,9 +319,9 @@ After each message the runtime stores, in one transaction:
 - the message, marked as handled, with its reply for an inbound one;
 - and, when the state changed, the row a query reads: the projection, and the value of each index on it
   ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md));
-- and, when what callers read changed with it, the row other systems learn from
-  ([decision 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md), see
-  [publishing](#publishing-what-happened)).
+- and, in each topic of the log whose selection changed with it, the row other systems learn from
+  ([decision 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md),
+  [decision 0138](decisions/0138-the-log-publishes-topics.md), see [publishing](#publishing-what-happened)).
 
 It stores the state, not the messages that led to it: a fixed `update` changes what happens next, never what
 already happened ([decision 0002](decisions/archive/0002-store-the-state-not-the-messages.md)). The messages may be
@@ -328,16 +329,18 @@ kept as an audit, but nothing replays them.
 
 ### What a step costs
 
-A step writes the state whole, and a projection that changed twice more: in the read model and in the outbox.
+A step writes the state whole, and a projection that changed in the read model and once more in each topic of
+the outbox whose selection changed. A program that declares no topics writes its projection twice.
 The spike `spikes/large-states.test.ts` saw a step take about 5 ms with a state of 48 KB, 21 ms with 0.5 MB and
 240 ms with 5 MB, when the projection holds the state. It took about a third of that from 0.5 MB up when the
 projection holds a count. The spike `spikes/many-children.test.ts` saw a parent's step take 3.5 ms with 1 000
-children by id and 10 ms with 10 000, about half as much again as a flat state of that size takes. Such a step is synchronous,
-and holds every other entity of the process while it runs.
+children by id and 10 ms with 10 000, about half as much again as a flat state of that size takes. Such a step is
+synchronous, and holds every other entity of the process while it runs.
 
 So the runtime refuses no state for its size, and warns of a large step. A step that writes more than
-`warn.characters` of the state and of the projections, 262 144 by default, logs a warning through Effect's logger,
-once per activation of the entity. A large state is split by the program: an item goes into an entity of its own
+`warn.characters` of the state and of the projection, in the read model and in the outbox, 262 144 by default,
+logs a warning through Effect's logger, once per activation of the entity. A large state is split by the program:
+an item goes into an entity of its own
 once its parent would hold more than one step should write
 ([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)).
 
@@ -363,7 +366,7 @@ that do not encode: `init` sees only flags its schema takes
 
 What an event writes is the machine's: besides the next machine, a transition gives the rows it writes, already
 encoded — the state when it changed, the keys that changed, the messages that leave the mailbox and the ones
-queued, the replies added, the work that ended, the read model's row and the outbox's — and the storage writes
+queued, the replies added, the work that ended, the read model's row and the outbox's rows — and the storage writes
 them and decides nothing. Each value is encoded once, and the projection of a state computed once
 ([decision 0057](decisions/archive/0057-the-machine-gives-what-is-written.md)).
 
@@ -518,6 +521,9 @@ A caller learns how an operation ended by reading the projection. The reply says
 accepted and, for a rejection, perhaps why: an acceptance never carries data. A projection shows what a caller
 acts on, not the whole state: it is written twice in each step that changes it, and the outbox keeps it
 ([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)).
+The projection is the one contract of the entity: what a consumer of the log needs of it is in the projection
+too, and a boundary that answers a caller leaves out what that caller is not shown
+([decision 0138](decisions/0138-the-log-publishes-topics.md)).
 
 Queries across entities — "the orders nobody paid" — read the same thing. The runtime keeps one row per
 entity, written in the step's transaction, holding the encoded projection; `indexes` gives, for each name, a
@@ -549,10 +555,29 @@ payment.
 ## Publishing what happened
 
 A queue, an event store or another service learns what an entity did from an **outbox**: a step that changes
-what callers read writes one row in its own transaction, holding the entity's address, the message the step
-handled and the projection it left. An entity's creation writes its first projection, with no message. Nothing
-more is declared: the message names the fact, and the projection is already the public contract
+what callers read writes one row in its own transaction, in each **topic** of the log whose selection changed,
+holding the entity's address, the message the step handled and the projection it left. An entity's creation
+writes a row in every topic, with no message. Nothing more is declared: the message names the fact, and the
+projection is already the public contract
 ([decision 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md)).
+
+### Topics
+
+A program may declare `topics`: by name, a pure function that selects, of the projection, what the topic
+watches, as JSON ([decision 0138](decisions/0138-the-log-publishes-topics.md)). Different readers act on
+different parts of what an entity shows: a billing service reads what an order was charged, a dashboard its
+status. A topic per reader writes a row only when what that reader acts on changes, compared as canonical JSON by
+the runtime, and a consumer of one topic reads none of the others' rows. Every row holds the projection whole, so
+a topic says why the row was written, not what it holds, and the rows of every topic are read through the
+projection's migrations. A program that declares no topics publishes its projection as the one topic
+`projection`. A topic selects and does not decide, as `indexes` do: a part of the projection, the whole of it, all
+of it but a field, a value nested in it, or a comparison of it with a threshold, which changes when the threshold
+is crossed. What it selects is JSON, so a `DateTime` or an `Option` of the projection is converted where it is
+selected, by the program, which decides there what counts as a change of it. A topic has no schema and no
+migration of its own: what a consumer needs is in the projection, and a boundary that answers a caller leaves
+out what the caller is not shown. A topic that dies on a projection, or selects what JSON does not hold, suspends
+the entity, as `project` does. [`examples/order`](../examples/order/order.ts) publishes its status and its
+charge.
 
 ### The order of the log
 
@@ -563,27 +588,31 @@ Cluster's formula for a shard. `launch` takes the number of partitions as `log.p
 first launch stores the number in the database, and a launch given another number fails, since a change would
 move entities between partitions, and every consumer's cursors with them.
 
-Each row carries its partition and a `seq`, which rises with every row of the partition and is never reused. A
-step draws its `seq` by moving the head of its partition, in its own transaction, which holds the head's row until
-it commits. So the steps of one partition commit in the order of their `seq`, and the steps of different partitions
+Each row carries its partition and a `seq`, which rises with every step that publishes in the partition and is
+never reused. A step draws its `seq` once, by moving the head of its partition, in its own transaction, which holds
+the head's row until it commits. Every row the step writes, one per topic, takes that `seq`, so a step takes one
+lock however many topics it is written in, and a topic's `seq`s have gaps where a step was written in other topics
+only. So the steps of one partition commit in the order of their `seq`, and the steps of different partitions
 do not wait for each other. The rows of one entity therefore come in the order its steps committed. A row of one
 entity written before a row of another may come after it, as on Kafka. A consumer that needs an effect after its
 cause in another entity waits for the cause, or reads the cause's projection, which a row holds whole.
 
 ### Consumers
 
-A consumer is a name, and it keeps a cursor per partition, stored. `feed(consumer, limit)` gives at most `limit`
-rows past its cursors, the oldest first. `ack(consumer, through)` takes a list of partitions and `seq`s, which the
-rows `feed` gave are, and moves each of those cursors once the rows are acted on. A cursor never moves back, and
+A consumer is a name within one topic, and it keeps a cursor per partition, stored: one name in two topics is two
+consumers. `feed(topic, consumer, limit)` gives at most `limit` rows of the topic past its cursors, the oldest
+first. `ack(topic, consumer, through)` takes a list of partitions and `seq`s, which the rows `feed` gave are, and
+moves each of those cursors once the rows are acted on. A cursor never moves back, and
 never past the head of its partition, so a crash before the ack delivers the rows again: at least once,
-deduplicated by the partition and the `seq`. A partition a consumer has no cursor for is read from `0`. `prune`
-drops, in each partition, what every consumer has read there, through the lowest cursor, and drops nothing where
-no consumer has read from the log. `consumers` says how many rows are past each consumer's cursors, and in which
-partitions, and `forget` lets the log go past one that is gone. `published(after, limit)` reads past cursors the
-caller holds, and registers nothing; `[]` is the whole log
+deduplicated by the topic, the partition and the `seq`. A partition a consumer has no cursor for is read from `0`.
+`prune` drops, in each topic and partition, what every consumer of the topic has read there, through the lowest
+cursor, and drops nothing of a topic no consumer has read from. `consumers` says the topic of each consumer, how
+many rows are past its cursors, and in which partitions, and `forget` lets the log go past one that is gone.
+`published(topic, after, limit)` reads past cursors the caller holds, and registers nothing; `[]` is the whole
+topic
 ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). A partition a handle is
-given is an integer from 1 to the number of partitions, and a `seq` and a limit are non-negative integers. Anything
-else is its caller's defect, which stores nothing
+given is an integer from 1 to the number of partitions, a topic is one the program publishes, and a `seq` and a limit
+are non-negative integers. Anything else is its caller's defect, which stores nothing
 ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). The log is kept for its
 consumers and is not an archive: a program whose past must stay readable keeps it where callers read it, in the
 state or in entities of its own.
@@ -594,15 +623,18 @@ the consumer's.
 
 A step that changes the state without changing what callers read publishes nothing, and neither does a
 rejected message, an internal message dropped, or a step that suspends the entity. The booking's inventory
-shows what that costs: confirming seats moves them from held to sold and leaves `available` where it was, so
-the sale is not published. A program whose fact must reach other systems shows it to callers.
+shows what that costs: confirming seats moves them from held to sold and leaves `available` where it was, so the
+sale is not published. A program whose fact must reach other systems shows it to callers, where a topic selects
+it.
 
-A deploy publishes nothing of itself, and `reindex` writes the read model again without publishing. A step
-publishes when what callers read changed in that step, as the program deployed computes it before and after: a
-new `project` reaches the log at an entity's next step that changes what it shows, and a consumer that needs
-every entity as the new program shows it reads them through `query`, once `reindex` has run. A projection whose
-schema changed is read through its migrations in the log too
-([decision 0072](decisions/archive/0072-the-log-shows-what-a-step-changed.md)).
+A deploy publishes nothing of itself, and `reindex` writes the read model again without publishing. A step is
+written in a topic when what the topic selects changed in that step, as the program deployed computes the
+projection before and after: a new `project` reaches the log at an entity's next step that changes what a topic
+selects, and a
+consumer that needs every entity as the new program shows it reads them through `query`, once `reindex` has run.
+A projection whose schema changed is read through its migrations in the log too
+([decision 0072](decisions/archive/0072-the-log-shows-what-a-step-changed.md),
+[decision 0138](decisions/0138-the-log-publishes-topics.md)).
 
 ## Testing
 

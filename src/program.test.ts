@@ -10,6 +10,7 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
 import {
+  checkProgram,
   digestOf,
   encode,
   Entities,
@@ -20,6 +21,7 @@ import {
   operation,
   type Program,
   program,
+  type Topic,
 } from './program.ts'
 import type { Rehearsal } from './rehearse.ts'
 import type { Query } from './storage.ts'
@@ -182,6 +184,48 @@ test('the schemas applied first type the pieces, where one call would widen a ta
   const widened = oneCall({ state: State, init: () => ({ _tag: 'Opn' }) })
   const any: ReturnType<typeof widened.init> = { _tag: 'any string' }
   expect([misspelt, any]).toHaveLength(2)
+})
+
+test('a topic selects JSON of the projection, and the topics a program declares are its only ones (decision 0138)', () => {
+  const pieces = {
+    name: 'Charges',
+    keys: {},
+    init: () => ({ charging: true }),
+    update: () => () => ({ charging: false }),
+    durable: () => noWork,
+    operations: {},
+    project: ({ charging }: { charging: boolean }) => ({ charging, since: 0 }),
+    indexes: {},
+  } as const
+  const shown = {
+    ...schemas,
+    operation: Schema.Never,
+    projection: Schema.Struct({ charging: Schema.Boolean, since: Schema.Number }),
+  }
+  const charges = program(shown)({ ...pieces, topics: { charging: ({ charging }) => charging } })
+  type Of = typeof charges extends Program<infer T> ? T : never
+  const named: Topic<Of> = 'charging'
+  // @ts-expect-error a program that declares topics publishes them alone, and its projection is no topic
+  const projection: Topic<Of> = 'projection'
+  const untopical = program(shown)(pieces)
+  const only: Topic<typeof untopical extends Program<infer T> ? T : never> = 'projection'
+  // @ts-expect-error a topic selects of the projection, which has no such field
+  const misnamed = program(shown)({ ...pieces, topics: { charging: ({ charged }) => charged } })
+  // @ts-expect-error a topic selects what JSON holds, which a Date is not
+  const unencoded = program(shown)({ ...pieces, topics: { when: () => new Date(0) } })
+  expect([named, projection, only, misnamed, unencoded]).toHaveLength(5)
+  // A program with topics publishes them alone, so none would publish nothing, and a topic has a name
+  // (decision 0054).
+  const refused: ReadonlyArray<readonly [Program<Of>, string]> = [
+    [{ ...charges, topics: {} as unknown as NonNullable<typeof charges.topics> }, 'declares no topic in its topics'],
+    [
+      { ...charges, topics: { '': () => true } as unknown as NonNullable<typeof charges.topics> },
+      'has a topic with an empty name',
+    ],
+  ]
+  for (const [broken, reason] of refused) {
+    expect(() => checkProgram(broken)).toThrow(`the program 'Charges' ${reason}`)
+  }
 })
 
 test('a rehearsal and a query name only the keys and the indexes the program declares (decisions 0032, 0033)', () => {

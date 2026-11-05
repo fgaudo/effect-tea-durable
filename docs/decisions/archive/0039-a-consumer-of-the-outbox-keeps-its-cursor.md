@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-10-30. Its one cursor per consumer is changed by
 [decision 0137](../0137-the-log-is-ordered-within-a-partition.md): a consumer keeps a cursor per partition of the
-log.
+log. Its consumer of every row of the program is changed by [decision 0138](../0138-the-log-publishes-topics.md): a
+consumer reads one topic.
 
 ## Context
 

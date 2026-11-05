@@ -16,6 +16,7 @@ import {
   idempotencyKey,
   InvariantDefect,
   isTimer,
+  type Json,
   noWork,
   operation,
   type Program,
@@ -2060,7 +2061,7 @@ describe('what an event writes', () => {
     const machine: Entity = { ...created.machine, program, replies: new Map() }
     count.projected = count.state = count.projection = 0
     const transition = handled(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
-    expect(transition.written?.published?.projection).toBe('go')
+    expect(transition.written?.published).toMatchObject({ projection: 'go', topics: ['projection'] })
     expect(count).toEqual({ projected: 1, state: 1, projection: 1 })
   })
 
@@ -2129,14 +2130,26 @@ describe('what an event writes', () => {
   test('a step publishes what callers read when it changes, with the message it handled, and nothing else does', () =>
     property(({ trace }) => {
       const [creation, ...events] = trace
-      expect(creation?.written?.published).toEqual({ kind: 'Creation', message: null, projection: keys.length })
+      expect(creation?.written?.published).toEqual({
+        kind: 'Creation',
+        message: null,
+        projection: keys.length,
+        topics: ['projection'],
+      })
       for (const { event, program, before, after, written } of events) {
         const head = handledBy(event, before)
         const { project } = program
         const shows = head !== undefined && before.stored.state !== after.stored.state &&
           project(before.stored.state) !== project(after.stored.state)
         expect(written?.published ?? null).toEqual(
-          shows ? { kind: head._tag, message: head.message, projection: project(after.stored.state) } : null,
+          shows
+            ? {
+              kind: head._tag,
+              message: head.message,
+              projection: project(after.stored.state),
+              topics: ['projection'],
+            }
+            : null,
         )
       }
     }))
@@ -2155,6 +2168,70 @@ describe('what an event writes', () => {
 
 // A key may take a parameter, and every piece of work of an entity draws its incarnation from one counter
 // (decision 0132).
+describe('topics of the log (decision 0138)', () => {
+  // A tiny program whose log has two topics, each selecting of the projection, the last message: its length, and
+  // its first letter.
+  type Topical = Omit<Tiny, 'topic'> & Readonly<{ topic: 'length' | 'first' }>
+  const topical = (first: (last: string) => Json = (last) => last.slice(0, 1)): Program<Topical> => ({
+    ...tiny((message) => message, () => ({})),
+    topics: { length: (last) => last.length, first },
+  })
+  const started = (program: Program<Topical>) => {
+    const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
+    if (created._tag === 'Defect') throw created.cause
+    return created
+  }
+  const step = (program: Program<Topical>, machine: Machine.Machine<Topical>, message: string) =>
+    Machine.step(program, machine, { _tag: 'Receive', request: by(message), message, reply: null, at })
+
+  test('a step is written in each topic whose selection changed, with the projection, and a creation in every topic', () => {
+    const program = topical()
+    const created = started(program)
+    expect(created.written?.published).toEqual({
+      kind: 'Creation',
+      message: null,
+      projection: 'start',
+      topics: ['length', 'first'],
+    })
+    // The state and the projection change, and what no topic selects does: nothing is published.
+    const shout = step(program, created.machine, 'shout')
+    expect(shout.written?.shown?.projection).toBe('shout')
+    expect(shout.written?.published).toBeNull()
+    const go = step(program, shout.machine, 'go')
+    expect(go.written?.published).toEqual({
+      kind: 'Inbound',
+      message: 'go',
+      projection: 'go',
+      topics: ['length', 'first'],
+    })
+    const gone = step(program, go.machine, 'gone')
+    expect(gone.written?.published).toEqual({
+      kind: 'Inbound',
+      message: 'gone',
+      projection: 'gone',
+      topics: ['length'],
+    })
+  })
+
+  test('a state a topic dies on, or selects what JSON does not hold of, is a defect, and is not stored', () => {
+    const broken = new Error('broken')
+    const dies = topical((last) => {
+      if (last === 'go') throw broken
+      return last.slice(0, 1)
+    })
+    const died = step(dies, started(dies).machine, 'go')
+    expect(died.machine.stored.suspension?.cause).toBe(broken)
+    expect(died.machine.stored.state).toEqual({ last: 'start' })
+    expect(died.written?.published ?? null).toBeNull()
+    // A cast lets through a value JSON does not hold.
+    const unencoded = topical((last) => (last === 'go' ? new Date(0) : last.slice(0, 1)) as unknown as Json)
+    const refused = step(unencoded, started(unencoded).machine, 'go')
+    const cause = refused.machine.stored.suspension?.cause
+    expect(cause instanceof InvariantDefect ? cause.reason : null).toContain("the topic 'first' does not encode")
+    expect(refused.machine.stored.state).toEqual({ last: 'start' })
+  })
+})
+
 describe('keys with a parameter', () => {
   // A message `+x` charges the line `x`, whose charge leaves once it completes with `charged x`. The shipment of
   // each line charged is a timer under `ship`, whose parameter `flip` writes with its properties in the other

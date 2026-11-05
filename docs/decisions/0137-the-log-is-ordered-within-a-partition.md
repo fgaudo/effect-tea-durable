@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-11-05. Changes [decision 0038](archive/0038-what-happened-is-published-through-an-outbox.md),
 whose `seq` is one sequence of the database, and [decision 0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md),
-whose consumer keeps one cursor per program.
+whose consumer keeps one cursor per program. Its row keyed by its program, its partition and its `seq` is changed
+by [decision 0138](0138-the-log-publishes-topics.md): a row is keyed by its topic too, and the rows of one step
+share its `seq`.
 
 ## Context
 

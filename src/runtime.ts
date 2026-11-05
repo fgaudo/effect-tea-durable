@@ -36,6 +36,8 @@ import {
   type Reply,
   type Request,
   runnerOf,
+  type Topic,
+  topicsOf,
   type Types,
 } from './program.ts'
 import {
@@ -159,9 +161,9 @@ export interface Options {
    */
   readonly drain?: Readonly<{ millis: number }>
   /**
-   * How many characters a step may write of the state and of the projection, in the read model and in the outbox,
-   * before the runtime logs a warning, once per activation of the entity. 262 144 by default. Nothing is refused for
-   * its size: the program splits a large state (decision 0135).
+   * How many characters a step may write of the state and of the projection, in the read model and in each topic
+   * of the outbox, before the runtime logs a warning, once per activation of the entity. 262 144 by default.
+   * Nothing is refused for its size: the program splits a large state (decisions 0135, 0138).
    */
   readonly warn?: Readonly<{ characters: number }>
   /**
@@ -215,47 +217,54 @@ export interface Handle<T extends Types> {
    */
   readonly reindex: Effect.Effect<Reindexed>
   /**
-   * What the entities of the program did, past the cursors of `after`, at most `limit` rows, the oldest first.
-   * Each row is the message an entity handled and what callers read of it afterwards, written in that step's
-   * transaction (decision 0038). The rows of one entity come in the order its steps committed, and each carries
-   * its partition and its `seq` within it. The log promises no order across entities: a row of one entity written
-   * before a row of another may come after it (decision 0137). A partition with no cursor in `after` is read
-   * from `0`, so `[]` is the whole log. The cursors are the caller's, and nothing of them is stored: a reading
-   * here, by a test or an operator looking, has no say in a prune. A consumer that keeps its cursors reads with
-   * `feed` instead (decision 0039).
+   * What the entities of the program published in `topic`, past the cursors of `after`, at most `limit` rows, the
+   * oldest first. Each row is the message an entity handled and what callers read of it afterwards, written in
+   * that step's transaction. A topic selects a part of the projection, and a step is written in the topics whose
+   * selection it changed (decisions 0038, 0138). A program that declares no topics publishes its projection as
+   * the topic `projection`, at each step that changes it. The rows of one entity come
+   * in the order its steps committed, and each carries its partition and its `seq` within it. The rows of one step
+   * share its `seq`, so a topic's `seq`s have gaps. The log promises no order across entities: a row of one entity
+   * written before a row of another may come after it (decision 0137). A partition with no cursor in `after` is
+   * read from `0`, so `[]` is the whole topic. The cursors are the caller's, and nothing of them is stored: a
+   * reading here, by a test or an operator looking, has no say in a prune. A consumer that keeps its cursors reads
+   * with `feed` instead (decision 0039).
    */
-  readonly published: (after: ReadonlyArray<Cursor>, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  readonly published: (
+    topic: Topic<T>,
+    after: ReadonlyArray<Cursor>,
+    limit?: number,
+  ) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
-   * The same from the stored cursors of the consumer `consumer`: a consumer is a name, its first reading stores
-   * it, and `ack` moves its cursors once the rows are acted on. From its first reading the log is kept for it, so a
-   * consumer holds no state of its own (decision 0039).
+   * The same from the stored cursors of the consumer `consumer` of `topic`: a consumer is a name within its topic,
+   * its first reading stores it, and `ack` moves its cursors once the rows are acted on. From its first reading
+   * its topic of the log is kept for it, so a consumer holds no state of its own (decisions 0039, 0138).
    */
-  readonly feed: (consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  readonly feed: (topic: Topic<T>, consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
    * Moves a consumer's cursor in each partition `through` names, and no other. The rows `feed` gave are such a
    * list. A cursor never moves back, since what is behind it may be gone, and never past the last `seq` written in
    * its partition, so that no row written later is behind it. An ack from a consumer that has not read stores the
-   * consumer too (decisions 0039, 0137). A partition is an integer from 1 to the number of partitions of the log. A
-   * `seq` and a limit are non-negative integers, here and in `query`, `published` and `feed`. Anything else is the
-   * caller's defect (decision 0053).
+   * consumer too (decisions 0039, 0137). A topic is one the program publishes, and a partition is an integer from 1
+   * to the number of partitions of the log. A `seq` and a limit are non-negative integers, here and in `query`,
+   * `published` and `feed`. Anything else is the caller's defect (decisions 0053, 0138).
    */
-  readonly ack: (consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
+  readonly ack: (topic: Topic<T>, consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
   /**
-   * Drops what every consumer has read, in each partition through the lowest cursor there, and gives how many rows
-   * went. A consumer that has acked nothing of a partition holds the whole partition. Where no consumer has read
-   * from the log, it drops nothing (decisions 0039, 0137).
+   * Drops what every consumer of a topic has read, in each partition through the lowest cursor there, and gives how
+   * many rows went. A consumer that has acked nothing of a partition holds the whole partition of its topic. A
+   * topic no consumer has read from keeps every row (decisions 0039, 0137, 0138).
    */
   readonly prune: Effect.Effect<number>
   /**
-   * Each consumer, with how many rows are past its cursors, and its cursors in the partitions it has rows to read
-   * in: what keeping it costs the log.
+   * Each consumer, with its topic, how many rows are past its cursors, and its cursors in the partitions it has rows
+   * to read in: what keeping it costs the log.
    */
   readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
   /**
-   * Drops a consumer and its cursors, so that the next prune passes what it never read: how a consumer that is
-   * gone, or a name misspelt once, stops holding the log (decision 0039).
+   * Drops a consumer of `topic` and its cursors, so that the next prune passes what it never read: how a consumer
+   * that is gone, or a name misspelt once, stops holding the log (decision 0039).
    */
-  readonly forget: (consumer: string) => Effect.Effect<void>
+  readonly forget: (topic: Topic<T>, consumer: string) => Effect.Effect<void>
   /**
    * Deletes the callers' replies of the program past their time, and gives how many went. A reply past its time is
    * never read, so this frees only their rows: those of an entity that takes no step, since a step deletes its own
@@ -432,6 +441,17 @@ const cursored = <A>(
     }
     return effect
   })
+
+/**
+ * Runs `effect` once the topic a caller gave is one `program` publishes: anything else is the caller's defect, and
+ * nothing is read or stored for it (decisions 0053, 0138).
+ */
+const topical = <T extends Types, A>(program: Program<T>, topic: string, effect: Effect.Effect<A>): Effect.Effect<A> =>
+  Effect.suspend(() =>
+    topicsOf(program).some((held) => held.topic === topic)
+      ? effect
+      : Effect.die(new InvariantDefect({ reason: `'${topic}' is no topic of the program '${program.name}'` }))
+  )
 
 export const launch = (options: Options = {}): Effect.Effect<Runtime, never, SqlClient.SqlClient | Scope.Scope> =>
   Effect.gen(function*() {
@@ -1550,13 +1570,19 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           read: (id) => deployed.storage.projected(id),
           query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
           reindex: deployed.storage.reindex,
-          published: (after, limit) =>
-            cursored(after, partitions, counted({ limit }, deployed.storage.published(after, limit))),
-          feed: (consumer, limit) => counted({ limit }, deployed.storage.feed(consumer, limit)),
-          ack: (consumer, through) => cursored(through, partitions, deployed.storage.ack(consumer, through)),
+          published: (topic, after, limit) =>
+            topical(
+              program,
+              topic,
+              cursored(after, partitions, counted({ limit }, deployed.storage.published(topic, after, limit))),
+            ),
+          feed: (topic, consumer, limit) =>
+            topical(program, topic, counted({ limit }, deployed.storage.feed(topic, consumer, limit))),
+          ack: (topic, consumer, through) =>
+            topical(program, topic, cursored(through, partitions, deployed.storage.ack(topic, consumer, through))),
           prune: deployed.storage.prune,
           consumers: deployed.storage.consumers,
-          forget: (consumer) => deployed.storage.forget(consumer),
+          forget: (topic, consumer) => topical(program, topic, deployed.storage.forget(topic, consumer)),
           expire: Effect.flatMap(DateTime.now, (now) => deployed.storage.expire(DateTime.toEpochMillis(now))),
           suspended: Effect.map(deployed.storage.suspended, (listed) =>
             listed.map((suspension): Suspended => ({

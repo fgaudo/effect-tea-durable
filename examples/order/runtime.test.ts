@@ -63,7 +63,7 @@ test('a query finds the orders nobody paid, and leaves out the one that was', ()
     expect(yield* orders.query({ where: [{ index: 'unpaidUntil', is: '<', value: null }] })).toEqual([])
   }))))
 
-test('what an order published is what another system learns of it', () =>
+test('what an order published is what another system learns of it, each consumer in its topic', () =>
   database(Effect.scoped(Effect.gen(function*() {
     const runtime = yield* launch()
     const orders = yield* Effect.provide(runtime.deploy(order), world)
@@ -75,34 +75,39 @@ test('what an order published is what another system learns of it', () =>
     yield* orders.send('o-1', { _tag: 'PayRequested', payment: 'card-1' }, { requestId: 'p-1', sender: ada })
     yield* runtime.settled
 
-    // One row per step that changed what callers read: the creation, the request to pay, the charge coming back,
-    // and the warehouse told — which keeps the status and makes the order cancellable, so callers read something
-    // else. Each row carries the message the step handled (decision 0038).
-    const published = yield* orders.published([])
-    expect(
-      published.map(({ id, kind, message, projection }) =>
-        [id, kind, message?._tag ?? null, projection.status, projection.canCancel]
-      ),
-    ).toEqual([
-      ['o-1', 'Creation', null, 'AwaitingPayment', true],
-      ['o-1', 'Inbound', 'PayRequested', 'Charging', false],
-      ['o-1', 'Internal', 'ChargeSucceeded', 'Paid', false],
-      ['o-1', 'Internal', 'WarehouseTold', 'Paid', true],
+    // The steps were the creation, the request to pay, the charge coming back, and the warehouse told. A topic has a
+    // row for each step that changed what it selects, holding the message the step handled and the projection
+    // (decisions 0038, 0138): the status changed at the first three, the charge at the creation and at the charge
+    // alone, and the warehouse told changed only `canCancel`, which no topic selects.
+    const statuses = yield* orders.published('status', [])
+    expect(statuses.map(({ id, kind, message, projection }) => [id, kind, message?._tag ?? null, projection.status]))
+      .toEqual([
+        ['o-1', 'Creation', null, 'AwaitingPayment'],
+        ['o-1', 'Inbound', 'PayRequested', 'Charging'],
+        ['o-1', 'Internal', 'ChargeSucceeded', 'Paid'],
+      ])
+    const billing = yield* orders.published('billing', [])
+    expect(billing.map(({ kind, message, projection }) => [kind, message?._tag ?? null, projection.charge])).toEqual([
+      ['Creation', null, null],
+      ['Internal', 'ChargeSucceeded', 'ch_1'],
     ])
+    // The rows of one step share its `seq`, so a topic's `seq`s have gaps where a step published only others.
+    expect(billing.map(({ seq }) => seq)).toEqual([0, 2].map((at) => statuses[at]?.seq ?? 0))
 
-    // A consumer is a name, and its cursors are stored: it reads from where it acked, and a prune drops what
-    // every consumer has read (decision 0039). The rows of one order are in its partition, in the order of their
-    // `seq`, and an ack is given the rows acted on (decision 0137).
-    const acted = published.slice(0, 2)
-    const left = published.slice(2).map(({ seq }) => seq)
-    expect((yield* orders.feed('warehouse')).map(({ seq }) => seq)).toEqual(published.map(({ seq }) => seq))
-    yield* orders.ack('warehouse', acted)
-    expect((yield* orders.feed('warehouse')).map(({ seq }) => seq)).toEqual(left)
+    // A consumer is a name within its topic, and its cursors are stored: it reads from where it acked, and a prune
+    // drops, in each topic, what every consumer of the topic has read (decisions 0039, 0138). The rows of one order
+    // are in its partition, in the order of their `seq`, and an ack is given the rows acted on (decision 0137).
+    expect(yield* orders.feed('billing', 'invoices')).toEqual(billing)
+    expect(yield* orders.feed('status', 'dashboard')).toEqual(statuses)
+    yield* orders.ack('status', 'dashboard', statuses.slice(0, 2))
+    expect(yield* orders.feed('status', 'dashboard')).toEqual(statuses.slice(2))
     expect(yield* orders.prune).toBe(2)
-    expect((yield* orders.published([])).map(({ seq }) => seq)).toEqual(left)
-    // What the one consumer still has to act on, as an operator sees it.
-    const partition = published[0]?.partition ?? 0
+    expect(yield* orders.published('status', [])).toEqual(statuses.slice(2))
+    expect(yield* orders.published('billing', [])).toEqual(billing)
+    // What each consumer still has to act on, as an operator sees it.
+    const partition = statuses[0]?.partition ?? 0
     expect(yield* orders.consumers).toEqual([
-      { consumer: 'warehouse', behind: left.length, cursors: [{ partition, seq: acted[1]?.seq ?? 0 }] },
+      { topic: 'billing', consumer: 'invoices', behind: 2, cursors: [{ partition, seq: 0 }] },
+      { topic: 'status', consumer: 'dashboard', behind: 1, cursors: [{ partition, seq: statuses[1]?.seq ?? 0 }] },
     ])
   }))))

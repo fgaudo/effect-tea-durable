@@ -5,7 +5,9 @@ by [decision 0072](0072-the-log-shows-what-a-step-changed.md): it holds only for
 rule is applied, and its cost, are changed by [decision 0057](0057-the-machine-gives-what-is-written.md): the machine
 gives the row, and the projection of the state before a step is the one the step before computed. Its `seq`, one
 sequence of the database, is changed by [decision 0137](../0137-the-log-is-ordered-within-a-partition.md):
-a `seq` is within a partition of the log.
+a `seq` is within a partition of the log. Its one row per step, with nothing declared of the log, is changed by
+[decision 0138](../0138-the-log-publishes-topics.md): a program may declare topics, each a selection of the
+projection, and a step writes a row, holding the projection, in each topic whose selection changed.
 
 ## Context
 

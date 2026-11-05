@@ -24,6 +24,8 @@ import {
   type Request,
   type Scalar,
   timer,
+  type Topic,
+  topicsOf,
   type Types,
   versionOf,
 } from './program.ts'
@@ -170,14 +172,15 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       PRIMARY KEY (name, partition)
     )
   `
-  // What other systems learn of the entities: one row per step that changed what callers read, written in the
-  // step's own transaction (decision 0038). A row is keyed by its program, its partition and its `seq`, which is
-  // what a consumer acks (decision 0137). `position` rises with each row of the database, and is never reused: it
-  // is the order `feed` reads the rows in, and no cursor.
+  // What other systems learn of the entities: one row per topic that changed in a step, written in the step's own
+  // transaction (decisions 0038, 0138). A row is keyed by its program, its topic, its partition and its `seq`, which
+  // is what a consumer acks (decision 0137). The rows of one step share its `seq`. `position` rises with each row of
+  // the database, and is never reused: it is the order `feed` reads the rows in, and no cursor.
   yield* sql`
     CREATE TABLE IF NOT EXISTS outbox (
       position INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
+      topic TEXT NOT NULL,
       partition INTEGER NOT NULL,
       seq INTEGER NOT NULL,
       id TEXT NOT NULL,
@@ -187,26 +190,28 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       projection TEXT NOT NULL
     )
   `
-  yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS outbox_partition ON outbox (name, partition, seq)`
-  yield* sql`CREATE INDEX IF NOT EXISTS outbox_name ON outbox (name, position)`
-  // The consumers of the outbox, by name, stored by their first reading or ack. Each holds the log from then on,
-  // until it is forgotten (decision 0039).
+  yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS outbox_partition ON outbox (name, topic, partition, seq)`
+  yield* sql`CREATE INDEX IF NOT EXISTS outbox_topic ON outbox (name, topic, position)`
+  // The consumers of the outbox, by topic and name, stored by their first reading or ack. Each holds its topic of
+  // the log from then on, until it is forgotten (decisions 0039, 0138).
   yield* sql`
     CREATE TABLE IF NOT EXISTS consumers (
       name TEXT NOT NULL,
+      topic TEXT NOT NULL,
       consumer TEXT NOT NULL,
-      PRIMARY KEY (name, consumer)
+      PRIMARY KEY (name, topic, consumer)
     )
   `
-  // Where each consumer has read to in each partition. A partition a consumer has no row for is read from `0`
-  // (decision 0137).
+  // Where each consumer has read to in each partition of its topic. A partition a consumer has no row for is read
+  // from `0` (decision 0137).
   yield* sql`
     CREATE TABLE IF NOT EXISTS cursors (
       name TEXT NOT NULL,
+      topic TEXT NOT NULL,
       consumer TEXT NOT NULL,
       partition INTEGER NOT NULL,
       seq INTEGER NOT NULL,
-      PRIMARY KEY (name, consumer, partition)
+      PRIMARY KEY (name, topic, consumer, partition)
     )
   `
   // The replies, by request: a retry gets the one stored (decision 0015). The request is its JSON as the machine
@@ -434,7 +439,14 @@ const Rows = {
   /** The first row past the cursors, or null where every partition is read to its head. */
   position: decoder(Schema.Struct({ position: Schema.NullOr(Count) })),
   consumer: decoder(Schema.Struct({ consumer: Schema.String })),
-  behind: decoder(Schema.Struct({ consumer: Schema.String, partition: Count, seq: Count, behind: Count })),
+  topical: decoder(Schema.Struct({ topic: Schema.String, consumer: Schema.String })),
+  behind: decoder(Schema.Struct({
+    topic: Schema.String,
+    consumer: Schema.String,
+    partition: Count,
+    seq: Count,
+    behind: Count,
+  })),
 } as const
 
 /** How a query compares an index with a value. */
@@ -476,16 +488,22 @@ export type Reindexed = Readonly<{
  */
 export type Cursor = Readonly<{ partition: number; seq: number }>
 
-/** What a step published: the message it handled, and what callers read of the entity after it (decision 0038). */
+/**
+ * What a step published: the message it handled, and what callers read of the entity after it, in one topic of
+ * the log (decisions 0038, 0138).
+ */
 export type Published<T extends Types> = Readonly<{
   /** The partition of the log the entity belongs to, which never changes (decision 0137). */
   partition: number
   /**
-   * Rises with each row of the partition, and is never reused: with the partition, what a consumer acks, and
-   * deduplicates by (decision 0137).
+   * Rises with each step that publishes in the partition, and is never reused: with the partition, what a
+   * consumer acks, and deduplicates by (decision 0137). The rows of one step share it, one per topic
+   * (decision 0138).
    */
   seq: number
   id: string
+  /** The topic the row is in: `projection` for a program that declares no topics (decision 0138). */
+  topic: Topic<T>
   /** Where the message came from, or `Creation` for the row an entity's creation writes, which has none. */
   kind: 'Inbound' | 'Internal' | 'Creation'
   message: T['inbound'] | T['internal'] | null
@@ -507,8 +525,10 @@ export type Suspension = Readonly<{
   since: DateTime.Utc
 }>
 
-/** A consumer of the outbox, as an operator sees it: what is waiting, and where (decisions 0039, 0137). */
+/** A consumer of the outbox, as an operator sees it: its topic, what is waiting, and where (decisions 0039, 0137). */
 export type Consumer = Readonly<{
+  /** The topic it reads: a consumer is a name within its topic (decision 0138). */
+  topic: string
   consumer: string
   /** How many rows are past its cursors, in every partition: what it costs the log to keep it. */
   behind: number
@@ -549,7 +569,8 @@ export interface Storage<T extends Types> {
    * Writes what an event wrote, as the machine encoded it (decision 0057). The caller wraps it in the transaction
    * of the event (decision 0007). `at` is the time of the event, in milliseconds: the time the entity suspended,
    * where the event suspends it (decision 0114). It gives how many characters it wrote of the state and of the
-   * projection, in the read model and in the outbox, which the runtime warns of past a threshold (decision 0135).
+   * projection, in the read model and in each topic of the outbox, which the runtime warns of past a threshold
+   * (decisions 0135, 0138).
    */
   readonly write: (id: string, written: Machine.Written, at: number) => Effect.Effect<number>
   /**
@@ -582,26 +603,30 @@ export interface Storage<T extends Types> {
    */
   readonly reindex: Effect.Effect<Reindexed>
   /**
-   * `Handle.published`, as the storage keeps it: the rows past the cursors of `after`, in the order they were
-   * written. The partitions are the caller's to check.
+   * `Handle.published`, as the storage keeps it: the rows of `topic` past the cursors of `after`, in the order they
+   * were written. The topic and the partitions are the caller's to check.
    */
-  readonly published: (after: ReadonlyArray<Cursor>, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  readonly published: (
+    topic: Topic<T>,
+    after: ReadonlyArray<Cursor>,
+    limit?: number,
+  ) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
    * `Handle.feed`, as the storage keeps it. The consumer's first reading stores it, and from then on the consumer
-   * holds the log, acked or not, until it is forgotten (decision 0039).
+   * holds its topic of the log, acked or not, until it is forgotten (decisions 0039, 0138).
    */
-  readonly feed: (consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
+  readonly feed: (topic: Topic<T>, consumer: string, limit?: number) => Effect.Effect<ReadonlyArray<Published<T>>>
   /**
    * `Handle.ack`, as the storage keeps it, in one transaction: the head of each partition is read first, and caps
    * the cursor stored there.
    */
-  readonly ack: (consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
+  readonly ack: (topic: Topic<T>, consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
   /** `Handle.prune`, as the storage keeps it: the cursors are read and the rows dropped in one transaction. */
   readonly prune: Effect.Effect<number>
-  /** Every consumer stored, with how many rows are past its cursors, by name. */
+  /** Every consumer stored, with how many rows are past its cursors, by topic and name. */
   readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
   /** Drops a consumer and its cursors, so that the next prune passes what it never read (decision 0039). */
-  readonly forget: (consumer: string) => Effect.Effect<void>
+  readonly forget: (topic: Topic<T>, consumer: string) => Effect.Effect<void>
   /** `Handle.expire`: deletes the callers' replies past their time at `at`, in milliseconds, and counts them. */
   readonly expire: (at: number) => Effect.Effect<number>
   /** The suspended entities of the program, the longest suspended first (decision 0114). */
@@ -625,6 +650,8 @@ export const storage = <T extends Types>(
   const reason = json(reasonOf(program.schemas.rejection))
   const suspended = json(Suspended)
   const projection = json(program.schemas.projection)
+  /** The topics the program publishes, by name (decision 0138). */
+  const topics = new Set(topicsOf(program).map(({ topic }) => topic))
   const { name } = program
   const version = versionOf(program)
 
@@ -973,13 +1000,14 @@ export const storage = <T extends Types>(
       if (written.replies.length > 0) {
         yield* sql`DELETE FROM replies WHERE name = ${name} AND id = ${id} AND until IS NOT NULL AND until <= ${at}`
       }
-      // The row of the log is written last. Its `seq` is drawn by moving the head of the entity's partition, which
-      // holds the head's row until the transaction ends, so the head is held for the least of the transaction. The
-      // head is written by the first step that publishes in the partition (decision 0137).
+      // The rows of the log are written last. Their `seq` is drawn once, by moving the head of the entity's
+      // partition, which holds the head's row until the transaction ends, so the head is held for the least of the
+      // transaction. The head is written by the first step that publishes in the partition (decision 0137). Every
+      // topic the step is written in takes the same `seq`, so that a step takes one lock however many topics it
+      // publishes (decision 0138).
       if (written.published !== null) {
         const { kind, message } = written.published
         const projection = JSON.stringify(written.published.projection)
-        characters += projection.length
         const drawn = yield* rows('heads', Rows.cursor)(sql`
           INSERT INTO heads (name, partition, seq)
           SELECT name, partition, 1 FROM entities WHERE name = ${name} AND id = ${id}
@@ -988,18 +1016,22 @@ export const storage = <T extends Types>(
         `)
         const head = drawn[0]
         if (head === undefined) throw new Error(`the entity '${name}' '${id}' publishes with no row of its own`)
-        yield* sql`INSERT INTO outbox ${
-          sql.insert({
-            name,
-            partition: head.partition,
-            seq: head.seq,
-            id,
-            tag: kind,
-            version,
-            message: message === null ? null : JSON.stringify(message),
-            projection,
-          })
-        }`
+        for (const topic of written.published.topics) {
+          characters += projection.length
+          yield* sql`INSERT INTO outbox ${
+            sql.insert({
+              name,
+              topic,
+              partition: head.partition,
+              seq: head.seq,
+              id,
+              tag: kind,
+              version,
+              message: message === null ? null : JSON.stringify(message),
+              projection,
+            })
+          }`
+        }
       }
       return characters
     }).pipe(Effect.orDie)
@@ -1174,8 +1206,11 @@ export const storage = <T extends Types>(
   // cursor has passed are left out as they are read. That first row has the lowest `seq` past the cursor in its
   // partition, since `position` rises with `seq` within a partition (decision 0137). So a reader at pace passes over
   // only the rows of the steps that committed out of their order, and each page is a range of an index.
-  const published = (after: ReadonlyArray<Cursor>, limit?: number) =>
+  // A topic's rows have gaps in their `seq`, where a step published only other topics, so a partition whose head is
+  // past a cursor may hold no row of the topic past it (decision 0138).
+  const published = (topic: Topic<T>, after: ReadonlyArray<Cursor>, limit?: number) =>
     Effect.gen(function*() {
+      if (!topics.has(topic)) throw new Error(`'${topic}' is no topic of the program '${name}'`)
       const cursors = cursorsOf(after)
       const behind: Array<readonly [number, number]> = []
       for (const [partition, head] of yield* heads) {
@@ -1186,7 +1221,7 @@ export const storage = <T extends Types>(
       const first = yield* rows('outbox', Rows.position)(sql`
         SELECT min((
           SELECT position FROM outbox
-          WHERE name = ${name} AND partition = json_extract(behind.value, '$[0]')
+          WHERE name = ${name} AND topic = ${topic} AND partition = json_extract(behind.value, '$[0]')
             AND seq > json_extract(behind.value, '$[1]')
           ORDER BY seq LIMIT 1
         )) AS position
@@ -1197,7 +1232,7 @@ export const storage = <T extends Types>(
       while (from !== null && (limit === undefined || read.length < limit)) {
         const page = yield* rows('outbox', Rows.published)(sql`
           SELECT position, partition, seq, id, tag, version, message, projection FROM outbox
-          WHERE name = ${name} AND position >= ${from} ORDER BY position LIMIT ${batch}
+          WHERE name = ${name} AND topic = ${topic} AND position >= ${from} ORDER BY position LIMIT ${batch}
         `)
         for (const row of page) {
           if (row.seq <= (cursors.get(row.partition) ?? 0)) continue
@@ -1205,6 +1240,7 @@ export const storage = <T extends Types>(
             partition: row.partition,
             seq: row.seq,
             id: row.id,
+            topic,
             kind: row.tag,
             message: row.tag === 'Creation'
               ? null
@@ -1221,77 +1257,85 @@ export const storage = <T extends Types>(
       return read
     }).pipe(Effect.orDie)
 
-  /** Stores the consumer, if it is not stored yet: from then on it holds the log (decision 0039). */
-  const declare = (consumer: string) =>
-    sql`INSERT INTO consumers ${sql.insert({ name, consumer })} ON CONFLICT (name, consumer) DO NOTHING`
+  /** Stores the consumer, if it is not stored yet: from then on it holds its topic (decisions 0039, 0138). */
+  const declare = (topic: string, consumer: string) =>
+    sql`
+      INSERT INTO consumers ${sql.insert({ name, topic, consumer })} ON CONFLICT (name, topic, consumer) DO NOTHING
+    `
 
-  const feed = (consumer: string, limit?: number) =>
+  const feed = (topic: Topic<T>, consumer: string, limit?: number) =>
     Effect.gen(function*() {
-      const known = yield* rows('consumers', Rows.consumer)(
-        sql`SELECT consumer FROM consumers WHERE name = ${name} AND consumer = ${consumer}`,
-      )
+      const known = yield* rows('consumers', Rows.consumer)(sql`
+        SELECT consumer FROM consumers WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}
+      `)
       // The first reading declares the consumer, and only that one writes: a consumer that polls reads.
-      if (known.length === 0) yield* declare(consumer)
-      const cursors = yield* rows('cursors', Rows.cursor)(
-        sql`SELECT partition, seq FROM cursors WHERE name = ${name} AND consumer = ${consumer}`,
-      )
-      return yield* published(cursors, limit)
+      if (known.length === 0) yield* declare(topic, consumer)
+      const cursors = yield* rows('cursors', Rows.cursor)(sql`
+        SELECT partition, seq FROM cursors WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}
+      `)
+      return yield* published(topic, cursors, limit)
     }).pipe(Effect.orDie)
 
   // A cursor goes no further than the head of its partition: one past it would have the rows written after it
   // dropped by a prune before its consumer read them. A head is never deleted, so it holds the last `seq` given
   // though a prune dropped its row, and a partition with no head yet has nothing to ack (decision 0137).
-  const ack = (consumer: string, through: ReadonlyArray<Cursor>) =>
+  const ack = (topic: Topic<T>, consumer: string, through: ReadonlyArray<Cursor>) =>
     sql.withTransaction(Effect.gen(function*() {
-      yield* declare(consumer)
+      yield* declare(topic, consumer)
       const held = yield* heads
       for (const [partition, seq] of cursorsOf(through)) {
         const capped = Math.min(seq, held.get(partition) ?? 0)
         if (capped === 0) continue
         yield* sql`
-          INSERT INTO cursors ${sql.insert({ name, consumer, partition, seq: capped })}
-          ON CONFLICT (name, consumer, partition) DO UPDATE SET seq = max(seq, excluded.seq)
+          INSERT INTO cursors ${sql.insert({ name, topic, consumer, partition, seq: capped })}
+          ON CONFLICT (name, topic, consumer, partition) DO UPDATE SET seq = max(seq, excluded.seq)
         `
       }
     })).pipe(Effect.orDie)
 
-  // Each partition is dropped through the lowest cursor of every consumer in it, and only where every consumer has a
-  // cursor there, since one with none holds the partition from `0` (decision 0137). The cursors are read and the rows
-  // dropped in one statement: a consumer whose first reading lands in the middle of a prune either holds the log,
-  // and nothing goes, or starts after the drop. Otherwise it could read rows with no cursor stored and have them
-  // dropped behind it, and skip them without ever saying so (decision 0039).
+  // Each partition of a topic is dropped through the lowest cursor of the topic's consumers in it, and only where
+  // every consumer of the topic has a cursor there, since one with none holds the partition from `0` (decision 0137).
+  // A topic no consumer reads keeps every row, as a log no consumer reads did (decision 0138). The cursors are read
+  // and the rows dropped in one statement: a consumer whose first reading lands in the middle of a prune either
+  // holds the log, and nothing goes, or starts after the drop. Otherwise it could read rows with no cursor stored
+  // and have them dropped behind it, and skip them without ever saying so (decision 0039).
   const prune = Effect.gen(function*() {
     const gone = yield* rows('outbox', Rows.seq)(sql`
       WITH floors AS (
-        SELECT partition, min(seq) AS through FROM cursors WHERE name = ${name}
-        GROUP BY partition
-        HAVING count(*) = (SELECT count(*) FROM consumers WHERE name = ${name})
+        SELECT topic, partition, min(seq) AS through FROM cursors WHERE name = ${name}
+        GROUP BY topic, partition
+        HAVING count(*) = (
+          SELECT count(*) FROM consumers WHERE consumers.name = ${name} AND consumers.topic = cursors.topic
+        )
       )
       DELETE FROM outbox
-      WHERE name = ${name} AND seq <= (SELECT through FROM floors WHERE floors.partition = outbox.partition)
+      WHERE name = ${name} AND seq <= (
+        SELECT through FROM floors WHERE floors.topic = outbox.topic AND floors.partition = outbox.partition
+      )
       RETURNING seq
     `)
     return gone.length
   }).pipe(Effect.orDie)
 
   const consumers = Effect.gen(function*() {
-    const stored = yield* rows('consumers', Rows.consumer)(
-      sql`SELECT consumer FROM consumers WHERE name = ${name} ORDER BY consumer`,
+    const stored = yield* rows('consumers', Rows.topical)(
+      sql`SELECT topic, consumer FROM consumers WHERE name = ${name} ORDER BY topic, consumer`,
     )
     const behind = yield* rows('cursors', Rows.behind)(sql`
-      SELECT consumers.consumer AS consumer, outbox.partition AS partition, coalesce(cursors.seq, 0) AS seq,
-        count(*) AS behind
+      SELECT consumers.topic AS topic, consumers.consumer AS consumer, outbox.partition AS partition,
+        coalesce(cursors.seq, 0) AS seq, count(*) AS behind
       FROM consumers
-      JOIN outbox ON outbox.name = consumers.name
-      LEFT JOIN cursors ON cursors.name = consumers.name AND cursors.consumer = consumers.consumer
-        AND cursors.partition = outbox.partition
+      JOIN outbox ON outbox.name = consumers.name AND outbox.topic = consumers.topic
+      LEFT JOIN cursors ON cursors.name = consumers.name AND cursors.topic = consumers.topic
+        AND cursors.consumer = consumers.consumer AND cursors.partition = outbox.partition
       WHERE consumers.name = ${name} AND outbox.seq > coalesce(cursors.seq, 0)
-      GROUP BY consumers.consumer, outbox.partition
-      ORDER BY consumers.consumer, outbox.partition
+      GROUP BY consumers.topic, consumers.consumer, outbox.partition
+      ORDER BY consumers.topic, consumers.consumer, outbox.partition
     `)
-    return stored.map(({ consumer }): Consumer => {
-      const own = behind.filter((row) => row.consumer === consumer)
+    return stored.map(({ topic, consumer }): Consumer => {
+      const own = behind.filter((row) => row.topic === topic && row.consumer === consumer)
       return {
+        topic,
         consumer,
         behind: own.reduce((sum, row) => sum + row.behind, 0),
         cursors: own.map(({ partition, seq }) => ({ partition, seq })),
@@ -1299,10 +1343,10 @@ export const storage = <T extends Types>(
     })
   }).pipe(Effect.orDie)
 
-  const forget = (consumer: string) =>
+  const forget = (topic: Topic<T>, consumer: string) =>
     sql.withTransaction(Effect.andThen(
-      sql`DELETE FROM cursors WHERE name = ${name} AND consumer = ${consumer}`,
-      sql`DELETE FROM consumers WHERE name = ${name} AND consumer = ${consumer}`,
+      sql`DELETE FROM cursors WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}`,
+      sql`DELETE FROM consumers WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}`,
     )).pipe(Effect.asVoid, Effect.orDie)
 
   // The tag of the mailbox's first message says what a `Message` the entity died on is: an inbound one is

@@ -12,8 +12,8 @@ Cluster's says so.
 - **Child, parent.** A part a program or another part holds in its state, declared in its `children` with `child`
   for one, or `each` for children by id; the one that holds it is its parent. The library routes a child's messages,
   holds its work under `<child>.<key>`, and runs its operations under `<child>.<tag>`.
-- **Consumer.** A name under which the outbox is read, with a stored cursor per partition that `ack` moves forward and
-  never back.
+- **Consumer.** A name under which one topic of the outbox is read, with a stored cursor per partition that `ack`
+  moves forward and never back. One name in two topics is two consumers.
 - **Crash.** The process dies at a point of the crash table, or an entity leaves the process on an event the runtime
   cannot finish. To the machine, a passivation is a crash the runtime chose.
 - **Defect.** What the program does that it should not: a function or a schema of its that throws, or a rule of the
@@ -65,11 +65,13 @@ Cluster's says so.
 - **Operation.** Work that acts on the world, as a value of the program's own type. Its runner turns it into an effect
   that ends with an internal message. It leaves the state only through its completion, unless it is droppable: one
   that acts on nothing, which a step may drop or change while it runs.
-- **Outbox, log.** One row per step that changed what callers read, holding the entity's address, the message handled
-  and the projection left, with its entity's partition and a `seq` that never repeats within the partition. A
-  consumer reads it from its cursors.
-- **Part.** A child, as declared in `part(schemas)(…)`: a program's pieces without a name, indexes or migrations,
-  which are its parent's, and with the schemas of the events it raises and the external messages it takes.
+- **Outbox, log.** One row per step that changed what callers read, in each topic whose selection changed, holding
+  the entity's address, the message handled and the projection left, with its entity's partition and the step's
+  `seq`, which never repeats within the partition. The rows of one step share its `seq`. A consumer reads one topic
+  of it from its cursors.
+- **Part.** A child, as declared in `part(schemas)(…)`: a program's pieces without a name, topics, indexes or
+  migrations, which are its parent's, and with the schemas of the events it raises and the external messages it
+  takes.
 - **Partition.** One of the parts of the log, numbered from 1 to a number fixed for the life of the database, 300 by
   default. Each entity belongs to one, drawn from its id when it is created and stored. The rows of a partition are
   in the order of their `seq`, and the log promises no order across partitions.
@@ -81,7 +83,7 @@ Cluster's says so.
 - **Probe.** A reference in the context that the runtime tells what it did, which a test provides and the library does
   not export.
 - **Program.** Everything declared in `program(schemas)(…)`: `name`, `keys`, `children`, `init`, `update`,
-  `onEvent`, `durable`, `operations`, `project`, `indexes` and `migrations`.
+  `onEvent`, `durable`, `operations`, `project`, `topics`, `indexes` and `migrations`.
 - **Projection, read model.** `project(state)`: what a caller reads of an entity, with the actions it allows. Stored as
   a row with the value of each index, which `read` and a query read.
 - **Raised event.** What a child's `update` tells its parent with `raise(event)(state)`, handled by the parent's
@@ -111,6 +113,9 @@ Cluster's says so.
   their completions wait behind the message. A caller meanwhile is answered `Suspended`, which is no reply.
 - **Timer.** Work that delivers one internal message at its time, derived from the state. It may be dropped in any
   state, and one that changes is armed again as new work.
+- **Topic.** A part of the log, by name: a pure function, declared in `topics`, that selects of the projection what
+  the topic watches, as JSON. A step writes a row in a topic only when that changed, and the row holds the
+  projection whole. A program that declares no topics publishes its projection as the one topic `projection`.
 - **Version.** Of a program: how many migrations it carries, plus one. Every row carries the version that wrote it,
   and is read by migrating its JSON to the program's.
 - **Waker.** The runtime's fiber that reads the stored timers due and activates their entities, and tries again after

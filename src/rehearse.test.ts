@@ -158,6 +158,11 @@ describe('a program that cannot run as written', () => {
         { ...order, indexes: { ...order.indexes, 'not a word': () => null } as typeof order.indexes },
         "the program 'Order' has an index 'not a word' whose name is not a word",
       ],
+      // A program that declares topics publishes them alone (decision 0138).
+      [
+        { ...order, topics: {} as NonNullable<typeof order.topics> },
+        "the program 'Order' declares no topic in its topics",
+      ],
     ]
     for (const [program, reason] of refused) {
       expect(reasonOf(await Effect.runPromiseExit(rehearsed(program)))).toBe(reason)

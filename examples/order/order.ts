@@ -92,6 +92,10 @@ const Projection = Schema.Struct({
   deadline: Schema.NullOr(Schema.DateTimeUtcFromMillis),
   canPay: Schema.Boolean,
   canCancel: Schema.Boolean,
+  // What billing acts on: the charge the order took, and whether it was given back. The projection is the one
+  // contract of the order, so what a consumer of the log needs is in it too (decision 0138).
+  charge: Schema.NullOr(ChargeId),
+  refunded: Schema.Boolean,
 })
 export type Projection = typeof Projection.Type
 
@@ -277,7 +281,17 @@ export const order = program({
     deadline: state._tag === 'AwaitingPayment' || state._tag === 'Charging' ? state.deadline : null,
     canPay: state._tag === 'AwaitingPayment',
     canCancel: state._tag === 'AwaitingPayment' || (state._tag === 'Paid' && state.warehouse === 'Told'),
+    charge: 'charge' in state ? state.charge : null,
+    refunded: state._tag === 'Cancelled' && state.reason === 'Refunded',
   }),
+
+  // The topics of the log, each selecting of the projection what a consumer acts on: a row is written in a topic
+  // only when that changed (decision 0138). A dashboard reads the status. Billing reads the charge and the refund,
+  // and is not told when the warehouse is.
+  topics: {
+    status: ({ status }) => status,
+    billing: ({ charge, refunded }) => ({ charge, refunded }),
+  },
 
   // "The orders nobody paid by now": the deadline of an order still awaiting its payment, in milliseconds, and
   // nothing for an order that is being charged, paid or over (decisions 0030, 0032).
