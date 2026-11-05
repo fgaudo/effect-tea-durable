@@ -1,6 +1,6 @@
 # 0148. A count and a sum over the entities that match are read in one statement
 
-**Status:** proposed, 2026-11-05, for the step A number over many entities of the roadmap. Decides the
+**Status:** accepted, 2026-11-06, with the step A number over many entities of the roadmap. Decides the
 [open question](../open-questions.md#storage-and-reading) of a number over many entities. Changes
 [decision 0032](archive/0032-a-projection-is-a-row.md), whose read model answers only with rows.
 
@@ -52,10 +52,15 @@ an integer. A total that counts such rows as numbers is a wrong answer, and nobo
   database.
 - That `json_type` gives `true` and `false` for a boolean, `integer` or `real` for a number, `null` for JSON's null
   and SQL's NULL for a path the row lacks, and that `TOTAL` gives `0.0` over no row: **documented**, by SQLite's
-  pages on its JSON functions and its aggregates; **tested**, by the tests of `count` and `sum` in
-  [`src/storage.test.ts`](../../src/storage.test.ts).
+  pages on its JSON functions and its aggregates; **tested**, by the tests under `a count and a sum over the
+  entities that match` in [`src/storage.test.ts`](../../src/storage.test.ts), at the SQLite that bun 1.4.2 holds,
+  3.53.2.
 - That a criterion compares as a query's does: **tested**, by the same tests, which count the rows a query finds
-  under the same criteria.
+  under the same criteria, and by the order of `examples/order/runtime.test.ts`.
+- That `TOTAL` adds an integer beyond SQLite's without failing, where `SUM` fails on the overflow: **documented**, by
+  SQLite's page on its aggregates; **tested**, by the test `a count finds the rows a query finds, and a sum adds
+  their numbers and leaves out the rest` in [`src/storage.test.ts`](../../src/storage.test.ts), which adds two
+  integers of 2^63.
 - That no caller sums an index of strings on purpose: **only reasoned**. A caller that wants the rows holding a
   string counts them with a criterion.
 
@@ -67,6 +72,17 @@ an integer. A total that counts such rows as numbers is a wrong answer, and nobo
   least or the greatest row, with its projection, and an average is the sum over the count. A grouping, a count per
   value of an index, is a question of a report, and a consumer of the log feeds a store made for reports.
 - **A sum that passes over a string or a boolean** in silence. Its total would be a number that looks right.
+- **A structure of Effect in place of the statement.** Each module of the pinned version that could do part of the
+  work was weighed. `effect/sql`'s `SqlClient` and `Statement` build the statement, as they build a query's, and its
+  criteria are joined with `sql.and`. `Schema` decodes the row the statement gives, through the `rows` of the
+  storage, as every reading does. `SqlSchema.findOne` decodes one row too, and fails where there is none. It is
+  marked `@stability unstable`, `src/` does not import it, and an aggregate always gives one row, so it adds
+  nothing to `rows`. `SqlResolver` batches requests of one shape into one statement, and two counts under other
+  criteria are two statements all the same. `Number.sumAll`, `BigInt` and `BigDecimal` add in the process: each
+  needs every row read out first, which is what the statement avoids. A `BigDecimal` total would be exact past
+  2^53, and SQLite has no decimal of its own to give one. `Cache` and `Reactivity` would keep a number between two
+  calls, and drop it at a commit. A number kept is a number stale until the drop, and the statement costs a read
+  of the index alone. None of them is used.
 - **Only the indexes that hold numbers may be summed, by their types.** The types of a program name its indexes and
   give each the type `Scalar`, so this would need each index's kind in the types, a change to every program.
   A row an older version wrote can hold another kind all the same, which the types do not see.
@@ -78,4 +94,6 @@ an integer. A total that counts such rows as numbers is a wrong answer, and nobo
 - `docs/design.md` says under Reading what the two give, and the open question of a number over many entities
   leaves `docs/open-questions.md`.
 - [`examples/order/runtime.test.ts`](../../examples/order/runtime.test.ts) counts the orders that await their
-  payment, and sums what they owe.
+  payment, and sums what they owe. The order's projection holds its total for that, and its index `owedInCents`
+  holds the total of an order that awaits its payment.
+- The glossary's handle and index, and the README's diagram of an entity's loop, name `count` and `sum`.

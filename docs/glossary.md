@@ -37,7 +37,7 @@ Cluster's says so.
   `callers.messages`, 4096 by default: the messages of `send` offered to it and not yet applied. Nothing of the
   message is offered or stored. An operation of another entity is never answered `Full`, and sends again after the
   retry.
-- **Handle.** What `deploy` gives: `create`, `send`, `read` and `query` for callers, `feed`, `ack` and the rest of the
+- **Handle.** What `deploy` gives: `create`, `send`, `read`, `query`, `count` and `sum` for callers, `feed`, `ack` and the rest of the
   outbox for its consumers, `reindex`, and `suspended`, `resume` and `discard` for an operator.
 - **Hold, lock.** Each entity is found, loaded, unloaded and crashed under a lock of its own. A caller holds the entity
   while it waits for its activation, and nothing under one entity's lock waits for another's.
@@ -47,8 +47,8 @@ Cluster's says so.
 - **Incarnation.** The number of a run of a key's work, drawn from one counter of the entity each time work starts
   anew under any key, so it never goes back. An internal message carries the incarnation of the work that sent it,
   and is dropped once the key's has moved on.
-- **Index.** A pure function from the projection to a scalar, named by the program, which a query filters and orders
-  by. Its values are stored with the projection's row.
+- **Index.** A pure function from the projection to a scalar, named by the program, which a query, a count and a sum filter
+  by, and a query orders by. Its values are stored with the projection's row.
 - **Key.** A name the program declares, under which `durable` holds one piece of work, or one piece for each
   *parameter* of a key declared with a schema for it. Two parameters are one when they encode alike. The names are
   finite, and one the program does not declare is a defect.

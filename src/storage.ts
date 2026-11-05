@@ -438,6 +438,13 @@ const Rows = {
   /** A timer's time, in milliseconds: one before 1970 is a time too. */
   due: decoder(Schema.Struct({ id: Schema.String, at: Schema.Int })),
   seq: decoder(Schema.Struct({ seq: Count })),
+  /** A count of the rows that match. */
+  count: decoder(Schema.Struct({ count: Count })),
+  /**
+   * A total of an index, a double, and the least id of a row whose index holds a value that is no number, or null
+   * for none (decision 0148).
+   */
+  total: decoder(Schema.Struct({ total: Schema.Number, refused: Schema.NullOr(Schema.String) })),
   /** An aggregate over no rows is null. */
   last: decoder(Schema.Struct({ seq: Schema.NullOr(Count) })),
   /** A cursor, or a partition's head: a `seq` within a partition. */
@@ -484,6 +491,12 @@ export type Query<T extends Types> = Readonly<{
    */
   after?: After<T> | undefined
 }>
+
+/** What a count across the entities of one program asks: the criteria a query takes (decision 0148). */
+export type Counted<T extends Types> = Readonly<{ where?: ReadonlyArray<Criterion<T>> }>
+
+/** What a sum across the entities of one program asks: the index added, and the criteria a query takes (decision 0148). */
+export type Summed<T extends Types> = Readonly<{ index: T['index']; where?: ReadonlyArray<Criterion<T>> }>
 
 /** A row a query gave, as a later page reads past it (decision 0143). */
 export type After<T extends Types> = Readonly<{ id: string; indexes: Readonly<Record<T['index'], Scalar>> }>
@@ -622,6 +635,10 @@ export interface Storage<T extends Types> {
   readonly indexed: Effect.Effect<void>
   /** The entities of the program whose indexes match, with what callers read of them (decision 0032). */
   readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
+  /** `Handle.count`, as the storage keeps it: one statement, which reads no projection (decision 0148). */
+  readonly count: (counted: Counted<T>) => Effect.Effect<number>
+  /** `Handle.sum`, as the storage keeps it: one statement, which reads no projection (decision 0148). */
+  readonly sum: (summed: Summed<T>) => Effect.Effect<number>
   /** `Handle.read`, as the storage keeps it: the projection of the entity's row, or null for none (decision 0121). */
   readonly projected: (id: string) => Effect.Effect<T['projection'] | null>
   /**
@@ -751,12 +768,14 @@ export const storage = <T extends Types>(
    * it, since SQLite uses an index of an expression only where the query writes the expression the same way. A
    * program's indexes are words, which its check made sure of where it entered (decision 0054).
    */
-  const expression = (index: string) => {
+  const pathOf = (index: string) => {
     if (!Object.hasOwn(program.indexes, index)) {
       throw new Error(`'${index}' is no index of the program '${name}'`)
     }
-    return `json_extract(indexes, '$.${index}')`
+    return `'$.${index}'`
   }
+
+  const expression = (index: string) => `json_extract(indexes, ${pathOf(index)})`
 
   const columnOf = (index: string) => sql.literal(expression(index))
 
@@ -1217,20 +1236,26 @@ export const storage = <T extends Types>(
     return descending ? [tied, later, { clause: sql`${column} IS NULL`, by: byId }] : [tied, later]
   }
 
+  /** The clauses of the rows of the program that match `where`, as a query, a count and a sum read them. */
+  const criteria = (where: ReadonlyArray<Criterion<T>>) => {
+    const clauses = [sql`name = ${name}`]
+    for (const { index, is, value } of where) {
+      if (!comparisons.includes(is)) throw new Error(`'${is}' is no comparison`)
+      const column = columnOf(index)
+      clauses.push(
+        // Nothing but `=` and `<>` says anything of an index that holds no value, as in SQL, where a
+        // comparison with null is null: `0` is the clause no row holds.
+        value === null
+          ? is === '=' ? sql`${column} IS NULL` : is === '<>' ? sql`${column} IS NOT NULL` : sql`0`
+          : sql`${column} ${sql.literal(is)} ${bound(value)}`,
+      )
+    }
+    return clauses
+  }
+
   const query = ({ after, limit, order, where = [] }: Query<T>) =>
     Effect.gen(function*() {
-      const clauses = [sql`name = ${name}`]
-      for (const { index, is, value } of where) {
-        if (!comparisons.includes(is)) throw new Error(`'${is}' is no comparison`)
-        const column = columnOf(index)
-        clauses.push(
-          // Nothing but `=` and `<>` says anything of an index that holds no value, as in SQL, where a
-          // comparison with null is null: `0` is the clause no row holds.
-          value === null
-            ? is === '=' ? sql`${column} IS NULL` : is === '<>' ? sql`${column} IS NOT NULL` : sql`0`
-            : sql`${column} ${sql.literal(is)} ${bound(value)}`,
-        )
-      }
+      const clauses = criteria(where)
       const read = parts(after, order)
       const page = (clause: Statement.Fragment, by: Statement.Fragment, left: number) =>
         rows('projections', Rows.projection)(sql`
@@ -1253,6 +1278,33 @@ export const storage = <T extends Types>(
         projection: projection.read(held.projection, up('projection', held.version)),
         indexes: storedIndexes(held.indexes),
       }))
+    }).pipe(Effect.orDie)
+
+  const count = ({ where = [] }: Counted<T>) =>
+    Effect.gen(function*() {
+      const [counted] = yield* rows('projections', Rows.count)(
+        sql`SELECT COUNT(*) AS count FROM projections WHERE ${sql.and(criteria(where))}`,
+      )
+      return counted?.count ?? 0
+    }).pipe(Effect.orDie)
+
+  const sum = ({ index, where = [] }: Summed<T>) =>
+    Effect.gen(function*() {
+      // `json_type` tells `true` from `1`, which `json_extract` gives alike, and is NULL where the row lacks the index.
+      // `TOTAL` gives a double and never fails on an overflow of SQLite's integers, where `SUM` does (decision 0148).
+      const kind = sql.literal(`json_type(indexes, ${pathOf(index)})`)
+      const [summed] = yield* rows('projections', Rows.total)(sql`
+        SELECT TOTAL(CASE WHEN ${kind} IN ('integer', 'real') THEN ${columnOf(index)} END) AS total,
+               MIN(CASE WHEN ${kind} NOT IN ('integer', 'real', 'null') THEN id END) AS refused
+        FROM projections WHERE ${sql.and(criteria(where))}
+      `)
+      if (summed === undefined) return 0
+      if (summed.refused !== null) {
+        return yield* Effect.die(
+          new InvariantDefect({ reason: `the index '${index}' of '${summed.refused}' holds no number, and is no sum's` }),
+        )
+      }
+      return summed.total
     }).pipe(Effect.orDie)
 
   /**
@@ -1521,6 +1573,8 @@ export const storage = <T extends Types>(
     due,
     indexed,
     query,
+    count,
+    sum,
     projected,
     reindex,
     published,

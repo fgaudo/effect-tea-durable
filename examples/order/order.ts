@@ -91,6 +91,8 @@ const Projection = Schema.Struct({
   // the orders nobody paid, so what it filters by is what the customer is told, in milliseconds, since the
   // projection is JSON (decisions 0032, 0139).
   deadline: Schema.NullOr(Schema.Number),
+  // What the order costs, which a sum over the orders still awaiting their payment adds up (decision 0148).
+  totalInCents: Schema.Int,
   canPay: Schema.Boolean,
   canCancel: Schema.Boolean,
   // What billing acts on: the charge the order took, and whether it was given back. The projection is the one
@@ -282,6 +284,7 @@ export const order = program({
     deadline: state._tag === 'AwaitingPayment' || state._tag === 'Charging'
       ? DateTime.toEpochMillis(state.deadline)
       : null,
+    totalInCents: state.order.totalInCents,
     canPay: state._tag === 'AwaitingPayment',
     canCancel: state._tag === 'AwaitingPayment' || (state._tag === 'Paid' && state.warehouse === 'Told'),
     charge: 'charge' in state ? state.charge : null,
@@ -297,8 +300,10 @@ export const order = program({
   },
 
   // "The orders nobody paid by now": the deadline of an order still awaiting its payment, as the projection
-  // holds it, and nothing for an order that is being charged, paid or over (decisions 0032, 0139).
+  // holds it, and nothing for an order that is being charged, paid or over (decisions 0032, 0139). "What they
+  // owe": the total of such an order, which a sum adds up and leaves out where it is null (decision 0148).
   indexes: {
     unpaidUntil: ({ deadline, status }) => (status === 'AwaitingPayment' ? deadline : null),
+    owedInCents: ({ status, totalInCents }) => (status === 'AwaitingPayment' ? totalInCents : null),
   },
 })

@@ -568,6 +568,14 @@ an integer beyond 2^53 is written with the exact digits of its double, so that S
 compares: the digits `JSON.stringify` writes spell another integer to SQLite
 ([decision 0146](decisions/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md)).
 
+A number over the entities that match is read in one statement, which reads no projection. `count` takes the
+criteria a query takes, and gives how many entities match them. `sum` takes an index and the same criteria, and
+gives the total of that index over the entities that match, a double, `0` over none. A row whose index holds null,
+or no value at all, adds nothing, as in SQL. A row whose index holds a string or a boolean is the caller's defect:
+SQLite would read the string as `0` and `true` as `1`, and the total would look right. The call dies, naming the
+index and the least id of such a row. Both read the rows as they stand while `reindex` runs, as a query does
+([decision 0148](decisions/0148-a-count-and-a-sum-are-read-in-one-statement.md)).
+
 A descending order is the ascending order reversed, the ids of the rows that tie included, so the rows that hold no
 value come last. A page reads only the rows it gives, however late in the order its cursor is. The storage indexes
 each index of the program by its value and then the id, and reads a page as at most three ranges of that index, in

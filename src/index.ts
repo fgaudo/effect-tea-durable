@@ -74,6 +74,7 @@ export {
 export {
   type Comparison,
   type Consumer,
+  type Counted,
   createTables,
   type Criterion,
   type Cursor,
@@ -82,6 +83,7 @@ export {
   type Published,
   type Query,
   type Reindexed,
+  type Summed,
   type Suspension,
 } from './storage.ts'
 export {

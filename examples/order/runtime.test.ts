@@ -69,6 +69,12 @@ test('a query finds the orders nobody paid, and leaves out the one that was', ()
       .toEqual(['o-1', 'o-3'])
     // An order against no value finds nothing, as in SQL.
     expect(yield* orders.query({ limit: all, where: [{ index: 'unpaidUntil', is: '<', value: null }] })).toEqual([])
+
+    // A number over the orders is one statement, which reads no projection: how many await their payment, and
+    // what they owe, the paid order left out by its null (decision 0148).
+    expect(yield* orders.count({ where: [{ index: 'unpaidUntil', is: '<>', value: null }] })).toBe(2)
+    expect(yield* orders.count({})).toBe(3)
+    expect(yield* orders.sum({ index: 'owedInCents' })).toBe(2_000)
   }))))
 
 test('what an order published is what another system learns of it, each consumer in its topic', () =>

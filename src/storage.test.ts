@@ -945,6 +945,83 @@ test('a query pages past, and finds by its value, a row whose index is an intege
         .toEqual({ id: 'c', projection: '1152921504606847000', indexes: { rank: 2 ** 60 } })
     }).pipe(Effect.orDie)))
 
+describe('a count and a sum over the entities that match (decision 0148)', () => {
+  /** Writes each entity with its rank as its projection, and with no rank at all where it is `undefined`. */
+  const ranking = (store: ReturnType<typeof storage<Ranked>>, ranks: Readonly<Record<string, Scalar | undefined>>) =>
+    Effect.forEach(Object.entries(ranks), ([id, rank]) =>
+      store.write(
+        id,
+        created({ shown: { projection: JSON.stringify(rank ?? null), indexes: rank === undefined ? {} : { rank } } }),
+        0,
+      ))
+
+  test('a count finds the rows a query finds, and a sum adds their numbers and leaves out the rest', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(ranked, sql)
+        expect(yield* store.count({})).toBe(0)
+        expect(yield* store.sum({ index: 'rank' })).toBe(0)
+        // `e` lacks the index, as a row an older version wrote before the index was added.
+        yield* ranking(store, { a: 2, b: null, c: 1.5, d: 2 ** 60, e: undefined, f: -3 })
+        const criteria = [
+          [],
+          [{ index: 'rank', is: '>=', value: 1 }],
+          [{ index: 'rank', is: '=', value: null }],
+          [{ index: 'rank', is: '<>', value: null }, { index: 'rank', is: '<', value: 2 }],
+          [{ index: 'rank', is: '>', value: 2 ** 61 }],
+        ] as const
+        for (const where of criteria) {
+          const found = yield* store.query({ limit: all, where })
+          expect(yield* store.count({ where })).toBe(found.length)
+          const numbers = found.flatMap(({ indexes }) => typeof indexes.rank === 'number' ? [indexes.rank] : [])
+          expect(yield* store.sum({ index: 'rank', where })).toBe(numbers.reduce((total, rank) => total + rank, 0))
+        }
+        expect(yield* store.count({})).toBe(6)
+        // An integer beyond SQLite's would make `SUM` fail on an overflow: `TOTAL` adds it as a double.
+        expect(yield* store.sum({ index: 'rank' })).toBe(2 + 1.5 + 2 ** 60 - 3)
+        yield* ranking(store, { g: 2 ** 63, h: 2 ** 63 })
+        expect(yield* store.sum({ index: 'rank', where: [{ index: 'rank', is: '>', value: 2 ** 61 }] })).toBe(2 ** 64)
+      })))
+
+  // `json_extract` gives `true` as `1`, and SQLite reads most strings as `0`: without `json_type`, the sum is a
+  // number that looks right.
+  test('a sum that meets a string or a boolean is its caller’s defect, naming the least id of such a row', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(ranked, sql)
+        yield* ranking(store, { a: 1, b: true, c: 'x', d: 2 })
+        const reasonOf = (exit: Exit.Exit<unknown>) => {
+          const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+          return cause instanceof InvariantDefect ? cause.reason : null
+        }
+        expect(reasonOf(yield* Effect.exit(store.sum({ index: 'rank' }))))
+          .toBe("the index 'rank' of 'b' holds no number, and is no sum's")
+        expect(reasonOf(yield* Effect.exit(store.sum({ index: 'rank', where: [{ index: 'rank', is: '>', value: 1 }] }))))
+          .toBe("the index 'rank' of 'c' holds no number, and is no sum's")
+        // A criterion that leaves them out leaves the sum whole, and a count reads them as a query does. A criterion
+        // compares `true` as `1`, as `json_extract` gives it, and every string after every number.
+        const numbers = [{ index: 'rank', is: '>', value: 1 }, { index: 'rank', is: '<', value: 'a' }] as const
+        expect(yield* store.sum({ index: 'rank', where: numbers })).toBe(2)
+        expect(yield* store.count({ where: [{ index: 'rank', is: '>=', value: 1 }] })).toBe(4)
+      })))
+
+  test('a count or a sum by an index the program does not declare dies, naming it', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(ranked, sql)
+        const calls = [
+          store.count({ where: [{ index: 'nope', is: '=', value: 1 }] } as never),
+          store.sum({ index: 'nope' } as never),
+          store.sum({ index: 'rank', where: [{ index: 'nope', is: '=', value: 1 }] } as never),
+        ]
+        for (const call of calls) {
+          const exit = yield* Effect.exit(call)
+          const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+          expect(cause instanceof Error && cause.message).toBe("'nope' is no index of the program 'Ranked'")
+        }
+      })))
+})
+
 test('a row is written at the version that writes it, and read back as it was written', () =>
   database((sql) =>
     Effect.gen(function*() {

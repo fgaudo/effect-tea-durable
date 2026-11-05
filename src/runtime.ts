@@ -43,6 +43,7 @@ import {
 } from './program.ts'
 import {
   type Consumer,
+  type Counted,
   type Cursor,
   defaultPartitions,
   type Found,
@@ -53,6 +54,7 @@ import {
   type Reindexed,
   storage,
   type Storage,
+  type Summed,
   type Suspension,
 } from './storage.ts'
 
@@ -223,6 +225,20 @@ export interface Handle<T extends Types> {
    * of the rows that tie included, and a page reads only the rows it gives (decision 0145).
    */
   readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
+  /**
+   * How many entities of the program have indexes that match `where`, compared as a query compares them, and every
+   * entity where there is no criterion. It is one statement, which reads the rows as one transaction sees them and
+   * reads no projection. A row an older version wrote is counted by the indexes it holds, until a step or `reindex`
+   * writes it again (decision 0148).
+   */
+  readonly count: (counted: Counted<T>) => Effect.Effect<number>
+  /**
+   * The total of `index` over the entities whose indexes match `where`, as `count` finds them: a double, `0` over no
+   * entity. A row whose index holds null, or no value at all, adds nothing. A row whose index holds a string or a
+   * boolean is the caller's defect: the call dies, naming the index and the least id of such a row, and gives no
+   * total (decision 0148).
+   */
+  readonly sum: (summed: Summed<T>) => Effect.Effect<number>
   /**
    * Writes the read model of every entity of the program again, from its stored state, and gives how many rows it
    * wrote and which entities it passed over. An index a new version of the program added or changed needs it, since a row is written only when its entity
@@ -1686,6 +1702,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             ),
           read: (id) => deployed.storage.projected(id),
           query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
+          count: deployed.storage.count,
+          sum: deployed.storage.sum,
           reindex: deployed.storage.reindex,
           published: (topic, after, limit) =>
             topical(

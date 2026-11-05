@@ -4,7 +4,9 @@
 [decision 0070](0070-reindex-writes-a-row-only-over-its-state.md). Its query giving the projections decoded, and
 its index converting a time to its milliseconds, are changed by [decision 0139](../0139-the-projection-is-json.md):
 the projection is JSON, and `project` converts. Its `limit` as an option of a query is changed by
-[decision 0141](../0141-a-query-and-a-reading-of-the-log-take-a-limit.md): a query takes one.
+[decision 0141](../0141-a-query-and-a-reading-of-the-log-take-a-limit.md): a query takes one. Its read model, which
+answers only with rows, is changed by [decision 0148](../0148-a-count-and-a-sum-are-read-in-one-statement.md): a
+count and a sum over the entities that match are read in one statement.
 
 ## Context
 
