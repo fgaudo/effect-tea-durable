@@ -404,7 +404,12 @@ const Rows = {
       reason: Schema.NullOr(Schema.String),
     }),
   ])),
-  projection: decoder(Schema.Struct({ id: Schema.String, projection: Schema.String, version: Version })),
+  projection: decoder(Schema.Struct({
+    id: Schema.String,
+    projection: Schema.String,
+    indexes: Schema.String,
+    version: Version,
+  })),
   state: decoder(Schema.Struct({ id: Schema.String, state: Schema.String, version: Version })),
   /** A creation's row handles no message, and a step's always one (decision 0038). */
   published: decoder(Schema.Union([
@@ -467,12 +472,28 @@ export type Query<T extends Types> = Readonly<{
   where?: ReadonlyArray<Criterion<T>>
   /** The index they are ordered by, ascending unless `descending`. Entities whose index is null come first. */
   order?: Readonly<{ index: T['index']; descending?: boolean }>
-  /** How many at most, in that order: a query is a page, and a caller that needs more narrows it (decision 0141). */
+  /** How many at most, in that order: a query is a page (decision 0141). */
   limit: number
+  /**
+   * The last row a page gave: the rows given are past it in the order, by the value of the index ordered by and,
+   * among the rows that tie, by the id. None, `undefined` included, is the first page, so that the last row of a
+   * page is passed as it is, `undefined` where the page was empty (decision 0143).
+   */
+  after?: After<T> | undefined
 }>
 
-/** An entity a query found, as a caller reads it. */
-export type Found<T extends Types> = Readonly<{ id: string; projection: T['projection'] }>
+/** A row a query gave, as a later page reads past it (decision 0143). */
+export type After<T extends Types> = Readonly<{ id: string; indexes: Readonly<Record<T['index'], Scalar>> }>
+
+/**
+ * An entity a query found, as a caller reads it, with the value of each index as its row stores it: the values the
+ * query compared, which a row written by an older version holds until `reindex` (decision 0143).
+ */
+export type Found<T extends Types> = Readonly<{
+  id: string
+  projection: T['projection']
+  indexes: Readonly<Record<T['index'], Scalar>>
+}>
 
 /**
  * What a `reindex` did: how many rows it wrote, and the entities whose row it could not compute, each with the
@@ -1116,7 +1137,43 @@ export const storage = <T extends Types>(
     }
   }).pipe(Effect.orDie)
 
-  const query = ({ limit, order, where = [] }: Query<T>) =>
+  /** A boolean is stored as JSON's, which `json_extract` gives as 1 or 0. */
+  const bound = (value: Exclude<Scalar, null>) => typeof value === 'boolean' ? (value ? 1 : 0) : value
+
+  /**
+   * The clause that holds of the rows past `after` in the query's order, which is the index ascending or
+   * descending, then the id ascending. SQLite sorts `NULL` first in an ascending order and last in a descending
+   * one, and compares a value of `json_extract` with a parameter in the order it sorts them (decision 0143).
+   */
+  const past = (after: After<T>, order: Query<T>['order']) => {
+    if (typeof after.id !== 'string') {
+      throw new InvariantDefect({ reason: `the id after is ${String(after.id)}, which is no string` })
+    }
+    const id = sql`id > ${after.id}`
+    if (order === undefined) return id
+    const column = columnOf(order.index)
+    const value: unknown = (after.indexes as Readonly<Record<string, unknown>> | undefined)?.[order.index]
+    if (
+      !(value === null || typeof value === 'string' || typeof value === 'boolean'
+        || (typeof value === 'number' && Number.isFinite(value)))
+    ) {
+      const shown = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)
+      const reason = `the index '${order.index}' after is ${shown}, which is no scalar`
+      throw new InvariantDefect({ reason })
+    }
+    const descending = order.descending === true
+    if (value === null) {
+      // The rows that hold no value are first in an ascending order, so every row that holds one is past them.
+      const tied = sql`(${column} IS NULL AND ${id})`
+      return descending ? tied : sql`(${tied} OR ${column} IS NOT NULL)`
+    }
+    const later = sql`${column} ${sql.literal(descending ? '<' : '>')} ${bound(value)}`
+    const tied = sql`(${column} = ${bound(value)} AND ${id})`
+    // The rows that hold no value are last in a descending order, so they are past every row that holds one.
+    return descending ? sql`(${later} OR ${tied} OR ${column} IS NULL)` : sql`(${later} OR ${tied})`
+  }
+
+  const query = ({ after, limit, order, where = [] }: Query<T>) =>
     Effect.gen(function*() {
       const clauses = [sql`name = ${name}`]
       for (const { index, is, value } of where) {
@@ -1127,28 +1184,40 @@ export const storage = <T extends Types>(
           // comparison with null is null: `0` is the clause no row holds.
           value === null
             ? is === '=' ? sql`${column} IS NULL` : is === '<>' ? sql`${column} IS NOT NULL` : sql`0`
-            // A boolean is stored as JSON's, which `json_extract` gives as 1 or 0.
-            : sql`${column} ${sql.literal(is)} ${typeof value === 'boolean' ? (value ? 1 : 0) : value}`,
+            : sql`${column} ${sql.literal(is)} ${bound(value)}`,
         )
       }
+      if (after !== undefined) clauses.push(past(after, order))
       const by = order === undefined
         ? sql`id`
         : sql`${columnOf(order.index)} ${sql.literal(order.descending === true ? 'DESC' : 'ASC')}, id`
       const found = yield* rows('projections', Rows.projection)(sql`
-        SELECT id, projection, version FROM projections
+        SELECT id, projection, indexes, version FROM projections
         WHERE ${sql.and(clauses)} ORDER BY ${by} LIMIT ${limit}
       `)
       // A row the version before wrote is read through its migrations; `reindex` is what writes it again.
       return found.map((held): Found<T> => ({
         id: held.id,
         projection: projection.read(held.projection, up('projection', held.version)),
+        indexes: storedIndexes(held.indexes),
       }))
     }).pipe(Effect.orDie)
+
+  /**
+   * The value of each index of the program in a stored row, as a query reads it: an index the row lacks, one a
+   * later version added, is null, as `json_extract` gives it.
+   */
+  const storedIndexes = (text: string): Found<T>['indexes'] => {
+    const stored = JSON.parse(text) as Readonly<Record<string, Scalar>>
+    return Object.fromEntries(
+      Object.keys(program.indexes).map((index) => [index, Object.hasOwn(stored, index) ? stored[index] : null]),
+    ) as Found<T>['indexes']
+  }
 
   const projected = (id: string) =>
     Effect.gen(function*() {
       const found = yield* rows('projections', Rows.projection)(
-        sql`SELECT id, projection, version FROM projections WHERE name = ${name} AND id = ${id}`,
+        sql`SELECT id, projection, indexes, version FROM projections WHERE name = ${name} AND id = ${id}`,
       )
       const held = found[0]
       return held === undefined ? null : projection.read(held.projection, up('projection', held.version))

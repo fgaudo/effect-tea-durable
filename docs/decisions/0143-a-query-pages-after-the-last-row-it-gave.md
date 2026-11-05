@@ -1,6 +1,6 @@
 # 0143. A query pages after the last row it gave
 
-**Status:** proposed, 2026-11-05, for the step Paging a query of the [roadmap](../roadmap.md). Changes
+**Status:** accepted, 2026-11-05. Changes
 [decision 0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md), whose query gives only its first page, and
 [decision 0032](archive/0032-a-projection-is-a-row.md), whose query gives an id and a projection.
 
@@ -28,13 +28,16 @@ last row given is a place in it.
   the value the query compared, and not one the caller recomputes from the projection with the program's own
   functions: a row written by an older version holds the index that version computed until `reindex` writes it
   again. An index the stored row lacks, one added since, is `null`, as the query reads it.
-- **`after` is `{ id, indexes }`, so the last row of a page is passed as it is.** Its id is a string, and where the
-  query has an `order`, its value of that index is a scalar: a string, a finite number, a boolean or `null`.
+- **`after` is `{ id, indexes }`, so the last row of a page is passed as it is.** An `after` left out, or
+  `undefined`, reads the first page, so `page.at(-1)` is passed as it is whether the page had rows or none. The id
+  of `after` is a string. Where the query has an `order`, the value of `after` for that index is a scalar: a
+  string, a finite number, a boolean or `null`.
   Anything else is the caller's defect, and nothing is read, as decision 0053 decided of what a handle is given.
+  The test `a cursor that holds no id, or no scalar of the index ordered by, is its caller’s defect` in
+  [`src/storage.test.ts`](../../src/storage.test.ts) checks it.
 - **Nothing is held between two pages.** Each page is a statement of its own, read at its time. A row whose index a
   step changes between two pages is given where it stands when the next page is read: a row moved past the cursor
   is given again, and a row moved behind it is not given. A row no step changes is given exactly once, on one page.
-  A caller that needs one reading of the whole read model at one time reads the outbox, which holds each step.
 
 ## What it rests on
 
@@ -42,7 +45,7 @@ last row given is a place in it.
   **documented**, by SQLite's page on datatypes, where an expression and a parameter have no affinity, so neither is
   converted, and a comparison and `ORDER BY` share the order of the storage classes, `NULL` first, then numbers, then
   text. **Tested**, by the test `a query pages past the last row it gave, through ties and nulls, in either order` in
-  [`src/runtime.test.ts`](../../src/runtime.test.ts), whose index holds numbers, ties and nulls.
+  [`src/storage.test.ts`](../../src/storage.test.ts), whose index holds numbers that tie, nulls and a string.
 - That `NULL` sorts first in an ascending order and last in a descending one: **documented**, by SQLite's page on
   `SELECT`, and kept in the clause that reads past a `null`, which the same test checks in either order.
 - That the indexes stored with a row are the ones the query compares: **seen**, in

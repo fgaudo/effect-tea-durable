@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-11-05. Changes [decision 0053](archive/0053-what-a-handle-is-given-is-checked.md), whose
 limit left out was no limit, [decision 0032](archive/0032-a-projection-is-a-row.md), whose query takes `limit` as an
 option, and [decision 0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md), whose `feed` and `published`
-take one as an option.
+take one as an option. Changed by [decision 0143](0143-a-query-pages-after-the-last-row-it-gave.md), whose
+query pages after the last row it gave.
 
 ## Context
 

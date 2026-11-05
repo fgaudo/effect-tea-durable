@@ -77,6 +77,7 @@ export {
   createTables,
   type Criterion,
   type Cursor,
+  type After,
   type Found,
   type Published,
   type Query,

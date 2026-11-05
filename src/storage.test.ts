@@ -11,8 +11,8 @@ import * as Exit from 'effect/Exit'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import * as Machine from './machine.ts'
-import { isTimer, type Json, type Migration, noWork, operation, type Program } from './program.ts'
-import { createTables, partitionOf, storage } from './storage.ts'
+import { InvariantDefect, isTimer, type Json, type Migration, noWork, operation, type Program, type Scalar } from './program.ts'
+import { createTables, type Found, partitionOf, type Query, storage } from './storage.ts'
 
 type T = {
   state: Readonly<{ last: string }>
@@ -752,7 +752,7 @@ test('reindex skips an entity that a step wrote since, though its state has the 
       `)
       const after = storage(marked, sql)
       expect(yield* after.reindex).toEqual({ written: 1, failed: [] })
-      expect(yield* after.query({ limit: all })).toEqual([{ id: 'a', projection: 'migrated' }, { id: 'b', projection: 'x' }])
+      expect(yield* after.query({ limit: all })).toEqual([{ id: 'a', projection: 'migrated', indexes: {} }, { id: 'b', projection: 'x', indexes: {} }])
     }).pipe(Effect.orDie)))
 
 // What the program computes of a row leaves that entity's row, and what the runtime throws fails the call
@@ -782,9 +782,9 @@ test('reindex passes over a state a migration or the schema dies on, and fails o
       expect(reindexed.failed[0]?.cause).toBe('Error: the migration dies')
       // The rows passed over are the ones version 1 wrote.
       expect(yield* after.query({ limit: all })).toEqual([
-        { id: 'a', projection: 'a' },
-        { id: 'b', projection: 'start' },
-        { id: 'c', projection: 'start' },
+        { id: 'a', projection: 'a', indexes: {} },
+        { id: 'b', projection: 'start', indexes: {} },
+        { id: 'c', projection: 'start', indexes: {} },
       ])
       yield* sql`UPDATE entities SET state = 'no json' WHERE name = 'Receiver' AND id = 'a'`
       const exit = yield* Effect.exit(after.reindex)
@@ -805,6 +805,74 @@ test('a query by an index the program does not declare dies, naming it', () =>
       }
     })))
 
+/** A receiver whose projection is its rank, as JSON: an index of numbers that tie, of nulls and of a string. */
+type Ranked = Omit<T, 'index'> & { index: 'rank' }
+const ranked: Program<Ranked> = {
+  ...(named('Ranked') as unknown as Program<Ranked>),
+  indexes: { rank: (projection) => JSON.parse(projection) as Scalar },
+}
+
+test('a query pages past the last row it gave, through ties and nulls, in either order', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(ranked, sql)
+      const ranks: Readonly<Record<string, Scalar>> = { a: 2, b: null, c: 1, d: 2, e: null, f: 1, g: 2, h: 'x' }
+      for (const [id, rank] of Object.entries(ranks)) {
+        const projection = JSON.stringify(rank)
+        yield* store.write(id, created({ shown: { projection, indexes: { rank } } }), 0)
+      }
+      /** Every page of `query`, `limit` rows at a time, each read past the last row of the page before. */
+      const paged = (query: Omit<Query<Ranked>, 'limit' | 'after'>, limit: number) =>
+        Effect.gen(function*() {
+          const ids: Array<string> = []
+          let after: Found<Ranked> | undefined
+          while (true) {
+            const page = yield* store.query({ ...query, limit, after })
+            ids.push(...page.map(({ id }) => id))
+            after = page[page.length - 1]
+            // A query that reads no row past its cursor would give the same page for ever.
+            if (after === undefined || ids.length > Object.keys(ranks).length) return ids
+          }
+        })
+      // SQLite sorts null first ascending and last descending, numbers before text, and the id breaks the ties,
+      // ascending in either order. A criterion compares across types in the same order, so 'x' is `>= 1`
+      // (decision 0143).
+      const orders = [
+        [{}, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']],
+        [{ order: { index: 'rank' } }, ['b', 'e', 'c', 'f', 'a', 'd', 'g', 'h']],
+        [{ order: { index: 'rank', descending: true } }, ['h', 'a', 'd', 'g', 'c', 'f', 'b', 'e']],
+        [{ order: { index: 'rank' }, where: [{ index: 'rank', is: '>=', value: 1 }] }, ['c', 'f', 'a', 'd', 'g', 'h']],
+      ] as const
+      for (const [query, ids] of orders) {
+        expect(yield* store.query({ ...query, limit: all })).toHaveLength(ids.length)
+        for (const limit of [1, 2, 3]) expect(yield* paged(query, limit)).toEqual([...ids])
+      }
+      // A row carries the indexes the query compared, as stored: the cursor is the row itself.
+      expect((yield* store.query({ limit: 1, order: { index: 'rank' } }))[0]).toEqual({
+        id: 'b',
+        projection: 'null',
+        indexes: { rank: null },
+      })
+    })))
+
+test('a cursor that holds no id, or no scalar of the index ordered by, is its caller’s defect', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(ranked, sql)
+      const order = { index: 'rank' } as const
+      const refused = [
+        store.query({ limit: all, after: { id: 1, indexes: { rank: 1 } } as never }),
+        store.query({ limit: all, order, after: { id: 'a', indexes: {} } as never }),
+        store.query({ limit: all, order, after: { id: 'a', indexes: { rank: Number.NaN } } }),
+        store.query({ limit: all, order, after: { id: 'a', indexes: { rank: [] } } as never }),
+      ]
+      for (const call of refused) {
+        const exit = yield* Effect.exit(call)
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        expect(cause instanceof InvariantDefect && cause.reason).toMatch(/^the (id|index 'rank') after is .+, which is no/)
+      }
+    })))
+
 test('a row is written at the version that writes it, and read back as it was written', () =>
   database((sql) =>
     Effect.gen(function*() {
@@ -818,7 +886,7 @@ test('a row is written at the version that writes it, and read back as it was wr
       expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang')
       expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello', 'done'])
       expect((yield* after.published('projection', [], all)).map(({ value }) => value)).toEqual(['start'])
-      expect(yield* after.query({ limit: all })).toEqual([{ id: 'r', projection: 'start' }])
+      expect(yield* after.query({ limit: all })).toEqual([{ id: 'r', projection: 'start', indexes: {} }])
     })))
 
 // The time an entity suspended is kept while it stays suspended, and read with what it died on (decision 0114).

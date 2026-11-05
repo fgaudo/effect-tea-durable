@@ -206,7 +206,10 @@ export interface Handle<T extends Types> {
    * What callers read of the entities whose indexes match, across the program, at most `query.limit` of them: the
    * read model is written in each entity's own transaction, so nothing found here is a projection its entity has
    * moved past (decision 0032). The limit is required, so that no reading holds the whole read model in one array
-   * (decision 0141).
+   * (decision 0141). Given `after`, the last row of a page, the query gives the rows past it in its order, by the
+   * index ordered by and then by the id; each row carries the indexes it stores for that. Nothing is held between
+   * two pages, so a row no step changes is given once, and a row whose index changes between them is given where
+   * it stands when the next page is read (decision 0143).
    */
   readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
   /**

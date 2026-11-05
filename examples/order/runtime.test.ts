@@ -56,6 +56,10 @@ test('a query finds the orders nobody paid, and leaves out the one that was', ()
     })
     expect(unpaid.map(({ id }) => id)).toEqual(['o-1', 'o-3'])
     expect(unpaid[0]?.projection).toMatchObject({ status: 'AwaitingPayment', canPay: true })
+    // A page reads on from the last row of the page before, by the index it orders by and then by the id.
+    const firstPage = yield* orders.query({ limit: 1, order: { index: 'unpaidUntil' } })
+    const secondPage = yield* orders.query({ limit: 2, order: { index: 'unpaidUntil' }, after: firstPage.at(-1) })
+    expect([...firstPage, ...secondPage].map(({ id }) => id)).toEqual(['o-2', 'o-1', 'o-3'])
 
     // Nobody is late yet, and the order that was paid holds no deadline to be found by.
     expect(yield* orders.query({ limit: all, where: [{ index: 'unpaidUntil', is: '<=', value: now }] })).toEqual([])

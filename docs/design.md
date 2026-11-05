@@ -549,8 +549,16 @@ the row, `read` or `query` ([decision 0121](decisions/0121-a-read-answers-from-t
 `query` takes the criteria that hold, an index to order by and a limit, and gives the ids found with their
 projections, at most `limit` of them. The limit is required: a reading that holds a program's whole read model in
 one array is never what its caller meant, and a call without one is the caller's defect
-([decision 0141](decisions/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)). A query gives the first
-`limit` rows in its order, and a caller that needs more narrows its criteria; `reindex` writes every row again from the stored states, which is what an index added or changed
+([decision 0141](decisions/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)).
+
+A query pages after the last row it gave. Each row found carries `indexes`, the value of each index as its row
+stores it, which is what the query compared. A caller passes the last row of a page as `after`, and is given the
+rows past it in the order of the query: past the value of that row for the index ordered by, and, among the rows that tie,
+past the id of that row, since the id breaks ties in either order. Nothing is held between two pages, so a row no step changes
+is given once, on one page, and a row whose index a step changes between two pages is given where it stands when
+the next is read ([decision 0143](decisions/0143-a-query-pages-after-the-last-row-it-gave.md)).
+
+`reindex` writes every row again from the stored states, which is what an index added or changed
 by a new version of the program needs. It runs while entities step, and writes a row only if the state it was
 computed from is still the one stored, in one statement: a step that committed since keeps the row it wrote
 ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). An entity whose row the program

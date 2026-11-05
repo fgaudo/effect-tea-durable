@@ -2623,7 +2623,7 @@ describe('the read model', () => {
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* settled(runtime, at)
-          expect(yield* toy.query({ limit: all })).toEqual(ids.map((id) => ({ id, projection: 0 })))
+          expect(yield* toy.query({ limit: all })).toEqual(ids.map((id) => ({ id, projection: 0, indexes: { wanted: 0 } })))
         }))
       // The rows outlive the process that wrote them, and each step writes its own.
       yield* process({}, (runtime) =>
@@ -2631,7 +2631,7 @@ describe('the read model', () => {
           const toy = yield* working(runtime, program)
           expect(yield* toy.read('t-1')).toBe(1)
           expect(yield* toy.query({ limit: all, where: [{ index: 'wanted', is: '=', value: 0 }] }))
-            .toEqual([{ id: 't-2', projection: 0 }])
+            .toEqual([{ id: 't-2', projection: 0, indexes: { wanted: 0 } }])
           expect((yield* toy.query({ limit: all, order: { index: 'wanted', descending: true } })).map(({ id }) => id))
             .toEqual(['t-1', 't-3', 't-2'])
           expect((yield* toy.query({ order: { index: 'wanted', descending: true }, limit: 2 })).map(({ id }) => id))
@@ -2756,7 +2756,7 @@ describe('the read model', () => {
             yield* Fiber.join(reindexing)
             const read = yield* Effect.forEach(walked, (id) =>
               Effect.map(toy.read(id), (projection) => ({ id, projection })))
-            const rows: ReadonlyArray<unknown> = yield* toy.query({ limit: all })
+            const rows = (yield* toy.query({ limit: all })).map(({ id, projection }) => ({ id, projection }))
             return { stale: rows.filter((row) => !read.some((one) => JSON.stringify(one) === JSON.stringify(row))) }
           }))
       }), { stale: [] }, { runs: 200, open: false })
@@ -3489,7 +3489,7 @@ describe('a schema that changes', () => {
           const toy = yield* ran(Effect.provide(runtime.deploy(next), layer))
           // The row of 'm-1' is the one version 1 wrote, read through the migration of the projection.
           expect(yield* toy.query({ limit: all, where: [{ index: 'wanted', is: '=', value: 0 }] }))
-            .toEqual([{ id: 'm-1', projection: { wanted: 0 } }])
+            .toEqual([{ id: 'm-1', projection: { wanted: 0 }, indexes: { wanted: 0 } }])
           // 'm-2' was activated with the state and the operations of version 1, migrated: its at-most-once
           // operation delivered `unknown` and its timer fired, and the two that hold run under the keys they
           // started with.
@@ -3511,7 +3511,7 @@ describe('a schema that changes', () => {
           // The rows are version 2's once they are written again, and the index reads the struct.
           expect(yield* toy.reindex).toEqual({ written: 2, failed: [] })
           expect(yield* toy.query({ limit: all, where: [{ index: 'wanted', is: '=', value: 0 }] }))
-            .toEqual([{ id: 'm-1', projection: { wanted: 0 } }])
+            .toEqual([{ id: 'm-1', projection: { wanted: 0 }, indexes: { wanted: 0 } }])
         }))
     })))
 

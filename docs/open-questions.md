@@ -73,14 +73,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - a program with a migration of many branches, whose recorded cases a change could keep while it reads other
     rows otherwise;
   - what an arbitrary of an older version costs to keep, next to the cases recorded of it.
-- **Paging a query.** `query` takes a limit, and gives the first rows in its order
-  ([decision 0141](decisions/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)). It takes no cursor after the
-  last row given, so a caller that needs every row that matches reads them only up to a limit it can hold, and a
-  criterion on the index it orders by misses the rows that tie with the last one. Whether a query takes the id of the
-  last row, as `published` takes its cursors, is not decided. It would be decided by:
-  - a program whose caller walks a read model larger than one page, a report or an export;
-  - what the page after a row is where the order is an index with ties, and whether the id breaks them in the
-    cursor as it does in the order.
 - **A number over many entities.** `query` gives the ids found with their projections, within a limit, so a
   question about a list of entities is answered by SQLite over the indexes
   ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md)). A question whose answer is one number over

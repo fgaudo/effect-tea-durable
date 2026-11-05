@@ -5,14 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Paging a query** ([open question](open-questions.md#storage-and-reading)). `query` gives the first `limit`
-   rows in its order, and a caller that needs every row that matches has no way past the first page. `query` then
-   takes `after`, the last row a page gave, and gives the rows past it in the query's order: past the row's value of
-   the index it orders by, and, among the rows that tie with it, past its id, since the id breaks the ties in the
-   order. Each row found carries the value of each index the query compared, as stored, so that the cursor is what
-   the query compared and not what the caller recomputes. A page is a statement of its own, and nothing is held
-   between two pages. Nothing of this is code yet, and the step is taken by a note of its own.
-2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
