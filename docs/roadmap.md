@@ -14,7 +14,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    reads one topic, keeps its cursors per partition of that topic, and receives no row of the others. The read
    model is not changed: `read`, `query`, `reindex` and the indexes read the projection, which shows what a
    caller acts on, and a boundary that picks fields spares a reader of one entity already. What the step gives up
-   is a read of a topic by id. Nothing of this is code yet, and the step is taken by a note of its own.
+   is a read of a topic by id. Nothing of this is code yet. The step is decided by
+   [decision 0138](decisions/0138-the-log-publishes-topics.md), proposed.
 2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
