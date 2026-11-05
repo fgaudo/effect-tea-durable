@@ -20,6 +20,20 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). Nothing caps what that grows
   to. A step that cannot publish cannot commit, so a cap would stop the entities: what a deployment does when
   the disk is the limit — a warning, a refusal, a drop that says which consumer lost rows — is not decided.
+- **The projection written once per topic.** A row of a topic stores the projection whole, and the selector runs
+  where the row is read, so that a topic needs no migration of its own
+  ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md)). A step that changes what five topics
+  select writes the projection six times, once in the read model and once in each topic, where a program that
+  declares no topics writes it twice. The topics were added so that a consumer reads less, and they make a step
+  write more. Whether the outbox stores the projection once per step, in a row keyed by the partition and the
+  `seq`, with a row per topic that names it, is not decided. It would keep what decision 0140 rests on, the reading
+  through the projection's migrations, and bring a step back to two writes of the projection whatever the number
+  of topics. It would be decided by:
+  - a program with several topics whose entities' steps the warning of
+    [decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) names,
+    measured in `spikes/large-states.test.ts` with the topics it declares;
+  - what `prune` drops of such a row once every topic that names it is read past it, and what `feed` reads where
+    a row of a topic and the projection it names are two rows.
 - **Renaming a program.** A program's name is the entities' address, and a schema's migration does not move
   what is stored under it: its entities, and the replies stored for them by other entities
   ([decision 0022](decisions/archive/0022-a-new-program-keeps-what-work-started-with.md)). How a rename is run, and
@@ -61,6 +75,31 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Running
 
+- **A mailbox with no bound.** An entity's events wait in an unbounded queue of the process, its messages in the
+  table `mailbox`, and each caller waits with a `Deferred` of its own until its message is handled
+  ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)). Nothing bounds any of the
+  three: a slow entity, one whose steps are long, sent to faster than it steps grows all of them until the process
+  dies, and nothing names the entity before that. The runtime warns of a large step
+  ([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)), and of
+  nothing else. Whether the runtime warns of a mailbox past a length, through the same logger, and whether a
+  `send` past a bound waits or is answered at once, is not decided. It would be decided by:
+  - a program whose callers send to one entity faster than it steps, where the length a step takes to handle
+    shows what a caller waits;
+  - what a `send` refused for a full mailbox is to its caller, a rejection the program never wrote or a defect, and
+    what an operation of another entity that sends does with it, since a runner retries and the state counts the
+    attempts ([decision 0130](decisions/0130-a-runner-retries-and-the-state-counts-the-attempts.md));
+  - what Effect Cluster bounds of a mailbox, once the runtime runs on it.
+- **Entities loaded without a capacity.** `capacity.entities` is an option, and a process launched without it
+  unloads an entity only once it has been idle for `passivate`, 30 seconds by default
+  ([decision 0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md),
+  [decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)). Each entity loaded holds its decoded
+  state and what callers read of it, with the canonical text of each topic's selection. A burst of distinct
+  entities within half a minute holds all of them, and only the time bounds the number. Whether the capacity has a
+  default, and what number an operator wants told, in entities or in characters held, is not decided. It would be
+  decided by:
+  - a program whose entities arrive in bursts, measured for what a loaded entity holds against its state's size;
+  - whether the warning of decision 0135 is the form, a log once the process holds more than a threshold, or
+    whether a default capacity, that unloads the least recently used, is.
 - **Two versions at once.** During a rolling deploy, a state written by the new version may be read by the
   old one. Is forward compatibility for one version required, or do deploys avoid it? A database is held by one
   runtime ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), so two versions meet only where

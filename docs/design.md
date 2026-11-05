@@ -330,7 +330,10 @@ kept as an audit, but nothing replays them.
 ### What a step costs
 
 A step writes the state whole, and a projection that changed in the read model and once more in each topic of
-the outbox whose selection changed. A program that declares no topics writes its projection twice.
+the outbox whose selection changed. A program that declares no topics writes its projection twice. A row of a topic
+stores the projection whole, since the selector runs where the row is read
+([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md)): a step that changes what five topics select
+writes the projection six times, so a program declares the topics its readers act on, and no more.
 The spike `spikes/large-states.test.ts` saw a step take about 5 ms with a state of 48 KB, 21 ms with 0.5 MB and
 240 ms with 5 MB, when the projection holds the state. It took about a third of that from 0.5 MB up when the
 projection holds a count. The spike `spikes/many-children.test.ts` saw a parent's step take 3.5 ms with 1 000
