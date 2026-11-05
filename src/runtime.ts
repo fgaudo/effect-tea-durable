@@ -57,10 +57,11 @@ import {
 } from './storage.ts'
 
 /**
- * What a caller is answered: the replies stored under its request id, `NotFound` for no entity, and `Suspended`,
- * which says that the request has no reply yet (decision 0023).
+ * What a caller is answered: the replies stored under its request id, `NotFound` for no entity, `Suspended`,
+ * which says that the request has no reply yet (decision 0023), and `Full`, which says that the entity holds as many
+ * callers' messages as its bound, and nothing of this one was offered or stored (decision 0147).
  */
-export type Answer<Reason> = Reply<Reason> | Readonly<{ _tag: 'Suspended' }>
+export type Answer<Reason> = Reply<Reason> | Readonly<{ _tag: 'Suspended' }> | Readonly<{ _tag: 'Full' }>
 
 /**
  * An operation of another entity whose `send` waits for the entity's resumption: its run, and the name it sent
@@ -168,6 +169,13 @@ export interface Options {
    */
   readonly warn?: Readonly<{ characters: number }>
   /**
+   * How many callers' messages an entity holds before a `send` is answered `Full`: the messages of `send` offered
+   * to it and not yet applied, whose callers wait. A positive integer, 4096 by default. The first refusal of an
+   * activation logs a warning. An operation of another entity is never answered `Full`: it sends again after `retry`
+   * (decision 0147).
+   */
+  readonly callers?: Readonly<{ messages: number }>
+  /**
    * How many partitions the log has: a positive integer, 300 by default. The first launch stores it in the
    * database, and a launch given another number fails, since a change would move entities between partitions,
    * and every consumer's cursors with them (decision 0137).
@@ -187,7 +195,9 @@ export interface Handle<T extends Types> {
    * Sends an inbound message, and waits for the reply. A retry under the same request id gets the reply stored for
    * it. The boundary gives `keep`, the time its protocol retries for. The reply is then kept for `keep.millis` from
    * the step that answers, and a retry after that is a new request, applied again. Without `keep` the reply is kept
-   * for ever. `keep.millis` is a non-negative integer, and anything else is the caller's defect (decision 0125).
+   * for ever. `keep.millis` is a non-negative integer, and anything else is the caller's defect (decision 0125). An
+   * entity that holds as many callers' messages as `callers.messages` answers `Full` at once, and nothing of the
+   * message is offered or stored: the caller retries later, under the same request id or another (decision 0147).
    */
   readonly send: (
     id: string,
@@ -365,6 +375,13 @@ interface Loaded<T extends Types> {
   readonly timers: Map<string, Fiber.Fiber<void>>
   /** Whether this activation has warned of a large step: an entity warns once per activation (decision 0135). */
   warned: boolean
+  /**
+   * A permit for each message of `send` offered and not yet applied: one is taken with the offer, or the caller is
+   * answered `Full`, and given back as the message's step ends (decision 0147).
+   */
+  readonly callers: Semaphore.Semaphore
+  /** Whether this activation has warned that it is full, once per activation as of a large step (decision 0147). */
+  refused: boolean
 }
 
 /**
@@ -627,6 +644,11 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     const capacity = options.capacity?.entities
     const drain = options.drain?.millis
     const threshold = options.warn?.characters ?? 262_144
+    const bound = options.callers?.messages ?? 4096
+    if (!(Number.isSafeInteger(bound) && bound > 0)) {
+      const reason = `the callers' messages are ${bound}, which is no positive integer`
+      return yield* Effect.die(new InvariantDefect({ reason }))
+    }
     if (drain !== undefined && !(Number.isSafeInteger(drain) && drain >= 0)) {
       const reason = `the drain is ${drain} millis, which is no non-negative integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
@@ -952,12 +974,14 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         }
       })
 
-    /**
-     * One event: the machine's step, written in one transaction, then acted on. A crash at any of the points
-     * leaves the entity as the crash table says. A message is given the reply stored under its request, read here,
-     * where no other event of the entity is applied: the machine holds none (decision 0065). It is given the time
-     * too, at which it is handled if the mailbox is empty (decision 0074).
-     */
+    /** Logs a warning at the first refusal of an activation, so that a burst does not log once per caller. */
+    const warnOfFull = <T extends Types>(loaded: Loaded<T>, entity: Address): Effect.Effect<void> => {
+      if (loaded.refused) return Effect.void
+      loaded.refused = true
+      return Effect.logWarning("an entity holds as many callers' messages as its bound; its callers are answered Full")
+        .pipe(Effect.annotateLogs({ name: entity.name, id: entity.id, messages: bound }))
+    }
+
     /**
      * Logs a warning for a step that wrote more than the threshold, once per activation of the entity, so that a
      * large entity does not log at every step. A step under the threshold does nothing, and yields nowhere
@@ -971,6 +995,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       )
     }
 
+    /**
+     * One event: the machine's step, written in one transaction, then acted on. A crash at any of the points
+     * leaves the entity as the crash table says. A message is given the reply stored under its request, read here,
+     * where no other event of the entity is applied: the machine holds none (decision 0065). It is given the time
+     * too, at which it is handled if the mailbox is empty (decision 0074).
+     */
     const apply = <T extends Types>(
       deployed: Deployment<T>,
       loaded: Loaded<T>,
@@ -1197,10 +1227,14 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
                 }))
             }
             return Effect.flatMap(
-              apply(deployed, loaded, event).pipe(Effect.ensuring(Effect.sync(() => {
-                loaded.pending -= 1
-                end()
-              }))),
+              apply(deployed, loaded, event).pipe(Effect.ensuring(Effect.andThen(
+                // The permit first: a process settled holds no permit of a message applied (decision 0147).
+                event._tag === 'Receive' ? loaded.callers.release(1) : Effect.void,
+                Effect.sync(() => {
+                  loaded.pending -= 1
+                  end()
+                }),
+              ))),
               () => again,
             )
           }),
@@ -1223,6 +1257,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           rerun: new Set(),
           timers: new Map(),
           warned: false,
+          callers: Semaphore.makeUnsafe(bound),
+          refused: false,
         }
         yield* enter(deployed, loaded)
         // Before anything else: the stored state says what runs (decision 0003). An activation that cannot finish
@@ -1367,6 +1403,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             rerun: new Set(),
             timers: new Map(),
             warned: false,
+            callers: Semaphore.makeUnsafe(bound),
+            refused: false,
           }
           const creation: Machine.Event<T> = { _tag: 'Create', request }
           yield* at('BeforeCommit', entity, creation)
@@ -1409,17 +1447,20 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           },
           catch: (defect) => new Faulted({ defect }),
         })
-        const asked = yield* withEntity(deployed, id, (loaded) =>
-          loaded === null
-            ? Effect.succeed(null)
-            : ask(
-              messages,
-              loaded,
-              entity,
-              requested,
-              keep === undefined ? { _tag: 'Receive', request, message } : { _tag: 'Receive', request, message, keep },
-            ))
+        const event: Machine.Offered<T> = keep === undefined
+          ? { _tag: 'Receive', request, message }
+          : { _tag: 'Receive', request, message, keep }
+        type Offered = Asked<Answer<unknown>> | 'Full' | null
+        const asked = yield* withEntity(deployed, id, (loaded): Effect.Effect<Offered> => {
+          if (loaded === null) return Effect.succeed(null)
+          // The permit and the offer in one uninterruptible region: a caller interrupted between the two would keep
+          // a permit that no step gives back (decision 0147).
+          const offered = (taken: boolean): Effect.Effect<Offered> =>
+            taken ? ask(messages, loaded, entity, requested, event) : Effect.as(warnOfFull(loaded, entity), 'Full')
+          return Effect.uninterruptible(Effect.flatMap(loaded.callers.takeIfAvailable(1), offered))
+        })
         if (asked === null) return { _tag: 'NotFound' }
+        if (asked === 'Full') return { _tag: 'Full' }
         return (yield* answered(asked)) as Answer<T['rejection']>
       })
 
@@ -1451,8 +1492,9 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
      * under another's (decisions 0009, 0047, 0060). A name the run already used with the same entity would be
      * answered the first one's reply, and is the operation's defect: for a message, and apart for a creation. A
      * suspended receiver has no reply yet, and `send` waits for its resumption instead of giving up (decisions 0023,
-     * 0063). A receiver that crashed has none either, and is sent to again after `retry` (decision 0046). `send`
-     * and `create` wait for the deploy of a program not deployed yet (decisions 0045, 0063).
+     * 0063). A receiver that crashed has none either, and is sent to again after `retry` (decision 0046). So is a
+     * full receiver, which stored nothing of the message, and the operation is never given `Full` (decision 0147).
+     * `send` and `create` wait for the deploy of a program not deployed yet (decisions 0045, 0063).
      */
     const entities = (entity: Address, key: Key, incarnation: number, droppable: boolean) => {
       const used = { message: new Set<string>(), creation: new Set<string>() }
@@ -1495,7 +1537,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               Effect.flatMap(
                 unlessCrashed(send(deployed, id, message, request), null),
                 (reply): Effect.Effect<Reply<T['rejection']> | null> =>
-                  reply === null
+                  reply === null || reply._tag === 'Full'
                     ? Effect.as(Effect.sleep(`${retry} millis`), null)
                     : reply._tag === 'Suspended'
                     ? Effect.as(resumed, null)

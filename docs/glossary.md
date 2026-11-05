@@ -33,6 +33,10 @@ Cluster's says so.
 - **External message.** What a parent sends a child through `children.<child>.update`, of a type the child's schema
   `external` gives. It is no inbound message: no caller can send it, and a child takes it in every state.
 - **Flags.** What an entity is created with, which `init` reads and nothing else keeps.
+- **Full.** What `send` answers for an entity that holds as many callers' messages as the runtime's option
+  `callers.messages`, 4096 by default: the messages of `send` offered to it and not yet applied. Nothing of the
+  message is offered or stored. An operation of another entity is never answered `Full`, and sends again after the
+  retry.
 - **Handle.** What `deploy` gives: `create`, `send`, `read` and `query` for callers, `feed`, `ack` and the rest of the
   outbox for its consumers, `reindex`, and `suspended`, `resume` and `discard` for an operator.
 - **Hold, lock.** Each entity is found, loaded, unloaded and crashed under a lock of its own. A caller holds the entity
@@ -52,7 +56,8 @@ Cluster's says so.
   to the next machine and the rows it writes. `rehearse` runs it, and the runtime interprets it.
 - **Mailbox.** The entity's stored queue of messages, in order. A message that finds it empty is received and handled
   in one event, and one transaction.
-- **Message.** *Inbound*, from a caller, with a request id, answered `Accepted`, `Rejected`, `Suspended` or `NotFound`;
+- **Message.** *Inbound*, from a caller, with a request id, answered `Accepted`, `Rejected`, `Suspended`, `NotFound` or
+  `Full`;
   or *internal*, from the entity's own work, a completion or a firing, carrying an incarnation.
 - **Migration.** A record of pure functions from the JSON a version wrote to the JSON the next one reads, by kind of
   stored value. A program carries every migration it ever had, in order.

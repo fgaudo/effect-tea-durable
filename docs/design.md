@@ -301,7 +301,9 @@ its deploy ([decision 0045](decisions/archive/0045-an-operation-waits-for-a-prog
 what it waits for, and nothing looks again on a clock
 ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)). A receiver that crashes has no reply
 yet either, and the operation sends again after a while; only a defect of the sender's own suspends it
-([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). An operation creates an
+([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). A full receiver stored nothing
+of the message, and the operation sends again after the same while: it is never given `Full`
+([decision 0147](decisions/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)). An operation creates an
 entity the same way, with `create` and a name. So an operation that talks only to entities may run at least once:
 run again, it sends the same requests, and acts once. `update` never sends: a step never waits on another entity
 ([decision 0009](decisions/archive/0009-entities-talk-through-operations.md)).
@@ -438,8 +440,13 @@ each migration: a JSON value a version wrote of one kind, and the JSON value the
   An internal message `update` rejects is a defect, since it cannot be late
   ([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)). A message that finds the mailbox empty is
   received and handled in one event, and one transaction; the runtime takes a caller's message only once the
-  mailbox is empty, so a burst waits in memory, unstored, and nothing bounds it but the server in front of the
-  process ([decision 0074](decisions/archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)).
+  mailbox is empty, so a burst waits in memory, unstored
+  ([decision 0074](decisions/archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)). An
+  entity holds at most `callers.messages` callers' messages, an option of the runtime, 4096 by default: the messages
+  of `send` offered to it and not yet applied. A `send` past the bound is answered `Full` at once, and nothing of
+  its message is offered or stored, so a retry under the same request id is a new try. The first refusal of an
+  activation logs a warning that names the entity
+  ([decision 0147](decisions/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)).
 - **Passivation.** An entity with no message for a while is unloaded. An operation under way keeps it loaded, a
   suspended entity's too; a suspended entity whose operations have ended is unloaded with the message it died on,
   and the completions recorded behind it. To the machine, a passivation is

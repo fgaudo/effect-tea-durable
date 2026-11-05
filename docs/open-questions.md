@@ -90,20 +90,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Running
 
-- **A mailbox with no bound.** An entity's events wait in an unbounded queue of the process, its messages in the
-  table `mailbox`, and each caller waits with a `Deferred` of its own until its message is handled
-  ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)). Nothing bounds any of the
-  three: a slow entity, one whose steps are long, sent to faster than it steps grows all of them until the process
-  dies, and nothing names the entity before that. The runtime warns of a large step
-  ([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)), and of
-  nothing else. Whether the runtime warns of a mailbox past a length, through the same logger, and whether a
-  `send` past a bound waits or is answered at once, is not decided. It would be decided by:
-  - a program whose callers send to one entity faster than it steps, where the length a step takes to handle
-    shows what a caller waits;
-  - what a `send` refused for a full mailbox is to its caller, a rejection the program never wrote or a defect, and
-    what an operation of another entity that sends does with it, since a runner retries and the state counts the
-    attempts ([decision 0130](decisions/0130-a-runner-retries-and-the-state-counts-the-attempts.md));
-  - what Effect Cluster bounds of a mailbox, once the runtime runs on it.
 - **Entities loaded without a capacity.** `capacity.entities` is an option, and a process launched without it
   unloads an entity only once it has been idle for `passivate`, 30 seconds by default
   ([decision 0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md),

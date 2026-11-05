@@ -15,7 +15,9 @@ changes, and read as that part.
 flowchart LR
   caller -->|create, with flags| init
   init --> state([state])
-  caller -->|inbound message, with a request id| update
+  caller -->|inbound message, with a request id| bound{within the bound of callers' messages}
+  bound -->|yes| update
+  bound -->|no: Full| caller
   update -->|Accepted, Rejected or Suspended| caller
   update --> state
   update -->|wrapped message| child[a child's update]

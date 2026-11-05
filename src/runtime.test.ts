@@ -778,6 +778,85 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  test('a send past the bound of its entity’s callers is answered Full, stores nothing, and is warned of once (decision 0147)', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const warnings: Array<Readonly<Record<string, unknown>>> = []
+      const logger = Logger.make((options) => {
+        if (options.logLevel === 'Warn') warnings.push(options.fiber.getRef(References.CurrentLogAnnotations))
+      })
+      const at = yield* DateTime.now
+      const gate = yield* Deferred.make<void>()
+      const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 'a', on: false, nonce })
+      yield* process({
+        callers: { messages: 2 },
+        at: (point, _entity, event) =>
+          point === 'BeforeCommit' && received(event) === 'first' ? Deferred.await(gate) : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          // The first is held at its commit, and counts until its step ends: with the second, the entity is full.
+          const first = yield* running(toy.send(id, want('n1'), { requestId: 'first', sender: tester }))
+          const second = yield* running(toy.send(id, want('n2'), { requestId: 'second', sender: tester }))
+          for (const _ of [1, 2]) {
+            expect(yield* toy.send(id, want('n3'), { requestId: 'third', sender: tester })).toEqual({ _tag: 'Full' })
+          }
+          yield* Deferred.succeed(gate, undefined)
+          for (const fiber of [first, second]) expect(yield* Fiber.join(fiber)).toEqual({ _tag: 'Accepted' })
+          // Nothing of the refused message was stored, so its retry is applied once, when there is room.
+          expect(yield* toy.send(id, want('n3'), { requestId: 'third', sender: tester })).toEqual({ _tag: 'Accepted' })
+          yield* runtime.settled
+          const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
+          expect(stored?.state.applied).toEqual(['n1', 'n2', 'n3'])
+        })).pipe(Effect.provide(Logger.layer([logger])))
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toMatchObject({ name: program.name, id, messages: 2 })
+      // A bound of no message at all, or of no whole number of them, is the launcher's defect.
+      for (const messages of [0, 1.5, Infinity, NaN]) {
+        const exit = yield* Effect.exit(process({ callers: { messages } }, () => Effect.void))
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        expect(cause instanceof InvariantDefect && cause.reason)
+          .toBe(`the callers' messages are ${messages}, which is no positive integer`)
+      }
+    })))
+
+  test('an operation that sends to a full entity sends again after the retry, and is answered (decision 0147)', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const refused = yield* Deferred.make<void>()
+      const logger = Logger.make((options) => {
+        if (options.logLevel === 'Warn') Deferred.doneUnsafe(refused, Effect.void)
+      })
+      const at = yield* DateTime.now
+      const gate = yield* Deferred.make<void>()
+      yield* process({
+        callers: { messages: 1 },
+        retry: { millis: 100 },
+        at: (point, _entity, event) =>
+          point === 'BeforeCommit' && received(event) === 'first' ? Deferred.await(gate) : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const from = yield* runtime.deploy(sending)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          const first = yield* running(
+            toy.send(id, { _tag: 'Want', key: 'a', on: false, nonce: 'n1' }, { requestId: 'first', sender: tester }),
+          )
+          // The sender's operation finds the toy full, and is not given the answer.
+          yield* ran(from.create('sender', { at }, { requestId: 'creation', sender: tester }))
+          yield* Deferred.await(refused)
+          yield* Deferred.succeed(gate, undefined)
+          expect(yield* Fiber.join(first)).toEqual({ _tag: 'Accepted' })
+          yield* TestClock.adjust('100 millis')
+          yield* runtime.settled
+          const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
+          expect(stored?.state.applied).toEqual(['n1', 'sent'])
+        })).pipe(Effect.provide(Logger.layer([logger])))
+    })))
+
   test('an entity whose messages keep coming lets another step between two of its steps', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -1943,6 +2022,27 @@ describe('passivation', () => {
             return 'settled'
           }))
       }), 'settled')
+  }, 60_000)
+
+  test('a caller interrupted anywhere as it sends leaves its entity’s bound whole, in every schedule within one deviation', () => {
+    const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
+    // Each schedule moves the point where the interruption reaches the caller, the permit taken and the message not
+    // offered yet among them (decision 0147). A send that yields between the two, outside an uninterruptible region,
+    // keeps the permit in a schedule, and the second send is answered Full.
+    explored(() =>
+      Effect.gen(function*() {
+        const at = yield* DateTime.now
+        return yield* process({ callers: { messages: 1 } }, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+            yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+            yield* runtime.settled
+            const caller = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
+            yield* Fiber.interrupt(caller)
+            yield* runtime.settled
+            return yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester })
+          }))
+      }), { _tag: 'Accepted' }, { bound: 1 })
   }, 60_000)
 
   test('a caller loads an unloaded entity again, and is answered', () =>

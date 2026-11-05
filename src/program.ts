@@ -1397,7 +1397,8 @@ export class Entities extends Context.Service<Entities, {
  * the operation and `name`, which names it among those the operation makes (decisions 0047, 0060). So a restarted
  * operation sends the same requests, and gets the stored replies. One that sends twice under the same name to the
  * same entity dies. While the receiver is suspended, it waits, and it sends again when the receiver crashes
- * (decision 0046).
+ * (decision 0046). It sends again too when the receiver holds as many callers' messages as its bound, and is never
+ * given `Full` (decision 0147).
  */
 export const send = <T extends Types>(
   program: Program<T>,

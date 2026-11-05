@@ -5,15 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **A mailbox with no bound** ([open question](open-questions.md#running)). An entity's callers wait in an
-   unbounded queue of the process, each with a `Deferred` of its own, so an entity sent to faster than it steps
-   grows the process until it dies. The runtime then bounds the callers' messages an entity holds, those in its
-   queue and the inbound ones in its mailbox, with an option and a default. A `send` past the bound is answered
-   `Full` at once, and nothing of it is stored, so a retry under the same request id is safe. An operation of
-   another entity is never given `Full`: its `send` waits for `retry` and sends again, as to a receiver that
-   crashed. The first refusal of an activation logs a warning that names the entity. The step weighs every
-   structure of Effect that could keep the bound, and is taken by a note of its own.
-2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
