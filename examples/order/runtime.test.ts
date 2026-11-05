@@ -12,6 +12,7 @@ import * as Layer from 'effect/Layer'
 import { SqlClient } from 'effect/sql'
 import { createTables, launch } from '../../src/index.ts'
 import { Mailer, order, Payments, Warehouse } from './order.ts'
+import { statusReport } from './report.ts'
 
 const ada = { _tag: 'Customer', id: 'ada' } as const
 /** A limit no reading of this test reaches: a reading says how many rows it takes (decision 0141). */
@@ -131,4 +132,42 @@ test('what an order published is what another system learns of it, each consumer
     const next = yield* Effect.forkChild(orders.feed('status', 'dashboard', all, { millis: 10_000 }))
     yield* orders.create('o-2', { order: { customer: 'ada', totalInCents: 500 } }, { requestId: 'c-o-2', sender: ada })
     expect((yield* Fiber.join(next)).map(({ id, value }) => [id, value])).toEqual([['o-2', 'AwaitingPayment']])
+  }))))
+
+test('a report fed from the log counts the orders in each status, as the read model counts them one at a time', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    const runtime = yield* launch()
+    const orders = yield* Effect.provide(runtime.deploy(order), world)
+    const report = yield* statusReport
+
+    for (const id of ['o-1', 'o-2', 'o-3', 'o-4']) {
+      yield* orders.create(id, { order: { customer: 'ada', totalInCents: 1_000 } }, {
+        requestId: `c-${id}`,
+        sender: ada,
+      })
+    }
+    for (const id of ['o-2', 'o-3']) {
+      yield* orders.send(id, { _tag: 'PayRequested', payment: 'card-1' }, { requestId: `p-${id}`, sender: ada })
+    }
+    yield* orders.send('o-4', { _tag: 'CancelRequested' }, { requestId: 'x-o-4', sender: ada })
+    yield* runtime.settled
+
+    // The consumer: a page of its topic, written to the store, then acked, until a page is empty. A consumer that
+    // serves a dashboard reads with a wait instead, and never stops (decision 0142). The first page is written and
+    // not acked, as a crash between the two leaves it, so the consumer reads it again and writes it again.
+    yield* report.record(yield* orders.feed('status', 'dashboard', 3))
+    while (true) {
+      const page = yield* orders.feed('status', 'dashboard', 3)
+      if (page.length === 0) break
+      yield* report.record(page)
+      yield* orders.ack('status', 'dashboard', page)
+    }
+
+    // The store answers the question in one statement, and agrees with the read model, which answers it with a
+    // count per status, each on a snapshot of its own (decisions 0148, 0149).
+    const counts = yield* report.counts
+    expect(counts).toEqual({ AwaitingPayment: 1, Paid: 2, Cancelled: 1 })
+    for (const status of ['AwaitingPayment', 'Charging', 'Paid', 'Refunding', 'Shipped', 'Cancelled'] as const) {
+      expect(yield* orders.count({ where: [{ index: 'status', is: '=', value: status }] })).toBe(counts[status] ?? 0)
+    }
   }))))
