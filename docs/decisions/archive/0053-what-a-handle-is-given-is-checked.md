@@ -1,6 +1,8 @@
 # 0053. What a handle is given is checked
 
-**Status:** accepted, 2026-10-31.
+**Status:** accepted, 2026-10-31. Its limit left out, read as no limit, is changed by
+[decision 0141](../0141-a-query-and-a-reading-of-the-log-take-a-limit.md): a limit is required, and one left out is
+the caller's defect.
 
 ## Context
 

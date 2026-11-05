@@ -202,8 +202,10 @@ export interface Handle<T extends Types> {
    */
   readonly read: (id: string) => Effect.Effect<T['projection'] | null>
   /**
-   * What callers read of the entities whose indexes match, across the program: the read model is written in each
-   * entity's own transaction, so nothing found here is a projection its entity has moved past (decision 0032).
+   * What callers read of the entities whose indexes match, across the program, at most `query.limit` of them: the
+   * read model is written in each entity's own transaction, so nothing found here is a projection its entity has
+   * moved past (decision 0032). The limit is required, so that no reading holds the whole read model in one array
+   * (decision 0141).
    */
   readonly query: (query: Query<T>) => Effect.Effect<ReadonlyArray<Found<T>>>
   /**
@@ -232,7 +234,7 @@ export interface Handle<T extends Types> {
   readonly published: <Name extends Topic<T>>(
     topic: Name,
     after: ReadonlyArray<Cursor>,
-    limit?: number,
+    limit: number,
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * The same from the stored cursors of the consumer `consumer` of `topic`: a consumer is a name within its topic,
@@ -242,7 +244,7 @@ export interface Handle<T extends Types> {
   readonly feed: <Name extends Topic<T>>(
     topic: Name,
     consumer: string,
-    limit?: number,
+    limit: number,
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * Moves a consumer's cursor in each partition `through` names, and no other. The rows `feed` gave are such a
@@ -250,7 +252,8 @@ export interface Handle<T extends Types> {
    * its partition, so that no row written later is behind it. An ack from a consumer that has not read stores the
    * consumer too (decisions 0039, 0137). A topic is one the program publishes, and a partition is an integer from 1
    * to the number of partitions of the log. A `seq` and a limit are non-negative integers, here and in `query`,
-   * `published` and `feed`. Anything else is the caller's defect (decisions 0053, 0138).
+   * `published` and `feed`, and a limit left out is no limit at all but the caller's defect, as is anything else
+   * (decisions 0053, 0138, 0141).
    */
   readonly ack: (topic: Topic<T>, consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
   /**
@@ -409,15 +412,16 @@ const faulted = <A>(effect: Effect.Effect<A, Faulted>): Effect.Effect<A> =>
 
 /**
  * Runs `effect` once each count a caller gave — a cursor, a limit — is a non-negative integer: anything else is
- * the caller's defect, and nothing is read or stored for it. A limit left out is none (decision 0053).
+ * the caller's defect, and nothing is read or stored for it. A count left out is refused with the rest, since the
+ * types do not hold a cast or a call from JavaScript: a `keep` that is none is not passed (decisions 0053, 0141).
  */
 const counted = <A>(
-  counts: Readonly<Record<string, number | undefined>>,
+  counts: Readonly<Record<string, number>>,
   effect: Effect.Effect<A>,
 ): Effect.Effect<A> =>
   Effect.suspend(() => {
     for (const [what, count] of Object.entries(counts)) {
-      if (count === undefined || (Number.isSafeInteger(count) && count >= 0)) continue
+      if (Number.isSafeInteger(count) && count >= 0) continue
       return Effect.die(new InvariantDefect({ reason: `the ${what} is ${count}, which is no non-negative integer` }))
     }
     return effect
@@ -1560,7 +1564,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             )),
           send: (id, message, request) =>
             counted(
-              { keep: request.keep?.millis },
+              request.keep === undefined ? {} : { keep: request.keep.millis },
               admitted(faulted(
                 send(
                   deployed,

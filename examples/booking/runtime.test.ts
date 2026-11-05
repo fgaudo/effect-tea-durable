@@ -14,6 +14,9 @@ import { Probe } from '../../src/runtime.ts'
 // Values frozen through, which only the library's own tests run on (decision 0052).
 import { freezing, frozen } from '../../src/testing.ts'
 import { booking } from './booking.ts'
+
+/** A limit no reading of this test reaches: a reading says how many rows it takes (decision 0141). */
+const all = 100
 import { inventory } from './inventory.ts'
 
 const organizer = { _tag: 'Organizer' } as const
@@ -54,7 +57,7 @@ test('a booking holds its seats in the inventory, and confirms them', () =>
 
     // What other systems learn: the booking's whole story, step by step (decision 0038).
     expect(
-      (yield* bookings.published('projection', [])).map(({ kind, message, value }) =>
+      (yield* bookings.published('projection', [], all)).map(({ kind, message, value }) =>
         [kind, message?._tag ?? null, value.status]
       ),
     ).toEqual([
@@ -67,7 +70,7 @@ test('a booking holds its seats in the inventory, and confirms them', () =>
     // `available` where it was: a fact no caller can read is not published, and an inventory whose sales must
     // be is one that shows them.
     expect(
-      (yield* inventories.published('projection', [])).map(({ kind, message, value }) =>
+      (yield* inventories.published('projection', [], all)).map(({ kind, message, value }) =>
         [kind, message?._tag ?? null, value.available]
       ),
     ).toEqual([['Creation', null, 10], ['Inbound', 'HoldRequested', 7]])
@@ -114,7 +117,7 @@ test('the runtime mutates nothing the programs give or the callers offer', () =>
       expect(yield* bookings.read('b2')).toMatchObject({ status: 'Cancelled' })
       expect(yield* bookings.read('b3')).toMatchObject({ status: 'Cancelled' })
       expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
-      expect((yield* bookings.published('projection', [])).map(({ value }) => value.status)).toEqual([
+      expect((yield* bookings.published('projection', [], all)).map(({ value }) => value.status)).toEqual([
         'Holding',
         'Held',
         'Holding',

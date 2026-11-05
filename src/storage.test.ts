@@ -81,6 +81,8 @@ const created = (rows: Partial<Machine.Written> = {}): Machine.Written =>
 
 /** A caller's request that created the entity, as the machine encodes it. */
 const creation = { _tag: 'Caller', sender: null, id: 'creation' } as const
+/** A limit no reading of these tests reaches: a reading says how many rows it takes (decision 0141). */
+const all = 1_000
 
 /** The request named `name` of the asker's work in `incarnation`, as the machine keys its reply (decision 0059). */
 const asked = (name: string, incarnation: number) =>
@@ -459,7 +461,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
         // A version from 1, and a count from 0, wherever they are read.
         [sql`UPDATE entities SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
         [sql`UPDATE entities SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.reindex],
-        [sql`UPDATE projections SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.query({})],
+        [sql`UPDATE projections SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.query({ limit: all })],
         [
           sql`INSERT INTO entity_keys ${
             sql.insert({
@@ -480,9 +482,9 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           sql`UPDATE mailbox SET seq = -5 WHERE name = 'Receiver' AND id = 'r'`,
           store.write('r', written({ queued: [inbound('two')] }), 0),
         ],
-        [behind, store.feed('projection', 'c')],
+        [behind, store.feed('projection', 'c', all)],
         [behind, store.consumers],
-        [sql`UPDATE heads SET seq = -1 WHERE name = 'Receiver'`, store.published('projection', [])],
+        [sql`UPDATE heads SET seq = -1 WHERE name = 'Receiver'`, store.published('projection', [], all)],
         // A timer's time is a whole number of milliseconds, read by the waker.
         [
           sql`INSERT INTO entity_keys ${
@@ -515,7 +517,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               projection: '"one"',
             })
           }`,
-          store.published('projection', []),
+          store.published('projection', [], all),
         ],
       ] as const
       for (const [breaking, reading] of broken) {
@@ -543,7 +545,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           projection: '"one"',
         })
       }`
-      expect((yield* Effect.exit(store.published('projection', [])))._tag).toBe('Failure')
+      expect((yield* Effect.exit(store.published('projection', [], all)))._tag).toBe('Failure')
     }).pipe(Effect.orDie)))
 
 // A row is keyed by its request as the version that wrote it encoded it, and by that version (decision 0069).
@@ -631,7 +633,7 @@ test('a version reads through its migrations the work, the mailbox and the log a
       const work = stored?.keys[Machine.keyText({ name: 'ask' })]?.work
       expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang (internal)')
       expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello (inbound)', 'done (internal)'])
-      const read = yield* after.published('projection', [])
+      const read = yield* after.published('projection', [], all)
       expect(read.map(({ message, value }) => ({ message, value }))).toEqual([
         { message: null, value: 'start (projection)' },
         { message: 'hello (inbound)', value: 'hello (projection)' },
@@ -676,7 +678,7 @@ describe('topics of the log (decision 0138)', () => {
         yield* store.write('r', publishing('hi', { upper: 'HI', size: 2 }, ['upper', 'size']), 0)
         yield* store.write('r', publishing('ho', { upper: 'HO', size: 2 }, ['upper']), 0)
         const rows = (topic: 'upper' | 'size') =>
-          Effect.map(store.published(topic, []), (read) => read.map(({ seq, topic, value }) => [seq, topic, value]))
+          Effect.map(store.published(topic, [], all), (read) => read.map(({ seq, topic, value }) => [seq, topic, value]))
         expect(yield* rows('upper')).toEqual([[1, 'upper', 'START'], [2, 'upper', 'HI'], [3, 'upper', 'HO']])
         expect(yield* rows('size')).toEqual([[1, 'size', 5], [2, 'size', 2]])
         // Every row stores the projection, read through the projection's migrations whatever its topic, and gives
@@ -691,11 +693,11 @@ describe('topics of the log (decision 0138)', () => {
           }],
         }
         const after = storage(second, sql)
-        expect((yield* after.published('size', [])).map(({ value }) => value)).toEqual([50, 20])
+        expect((yield* after.published('size', [], all)).map(({ value }) => value)).toEqual([50, 20])
         // A selector the deploy changed selects of the migrated row too: `upper` now gives the projection whole.
         type Widened = Omit<Topical, 'topics'> & Readonly<{ topics: Readonly<{ upper: Topical['projection']; size: number }> }>
         const widened: Program<Widened> = { ...second, topics: { upper: (shown) => shown, size: ({ size }) => size } }
-        expect((yield* storage(widened, sql).published('upper', [])).map(({ value }) => value)).toEqual([
+        expect((yield* storage(widened, sql).published('upper', [], all)).map(({ value }) => value)).toEqual([
           { upper: 'START', size: 50 },
           { upper: 'HI', size: 20 },
           { upper: 'HO', size: 20 },
@@ -710,24 +712,24 @@ describe('topics of the log (decision 0138)', () => {
         yield* store.write('r', publishing('ho', { upper: 'HO', size: 5 }, ['upper']), 0)
         const partition = partitionOf('r', 300)
         // One name in two topics is two consumers, each with its own cursors.
-        const upper = yield* store.feed('upper', 'c')
+        const upper = yield* store.feed('upper', 'c', all)
         expect(upper).toHaveLength(2)
-        expect(yield* store.feed('size', 'c')).toHaveLength(1)
+        expect(yield* store.feed('size', 'c', all)).toHaveLength(1)
         yield* store.ack('upper', 'c', upper)
-        expect(yield* store.feed('upper', 'c')).toEqual([])
-        expect(yield* store.feed('size', 'c')).toHaveLength(1)
+        expect(yield* store.feed('upper', 'c', all)).toEqual([])
+        expect(yield* store.feed('size', 'c', all)).toHaveLength(1)
         expect(yield* store.consumers).toEqual([
           { topic: 'size', consumer: 'c', behind: 1, cursors: [{ partition, seq: 0 }] },
           { topic: 'upper', consumer: 'c', behind: 0, cursors: [] },
         ])
         // The consumer of `size` holds its topic, and not the other.
         expect(yield* store.prune).toBe(2)
-        expect(yield* store.published('upper', [])).toEqual([])
-        expect(yield* store.published('size', [])).toHaveLength(1)
+        expect(yield* store.published('upper', [], all)).toEqual([])
+        expect(yield* store.published('size', [], all)).toHaveLength(1)
         // A topic no consumer reads keeps every row, as a log no consumer reads did.
         yield* store.forget('size', 'c')
         expect(yield* store.prune).toBe(0)
-        expect(yield* store.published('size', [])).toHaveLength(1)
+        expect(yield* store.published('size', [], all)).toHaveLength(1)
         expect(yield* store.consumers).toEqual([{ topic: 'upper', consumer: 'c', behind: 0, cursors: [] }])
       })))
 })
@@ -750,7 +752,7 @@ test('reindex skips an entity that a step wrote since, though its state has the 
       `)
       const after = storage(marked, sql)
       expect(yield* after.reindex).toEqual({ written: 1, failed: [] })
-      expect(yield* after.query({})).toEqual([{ id: 'a', projection: 'migrated' }, { id: 'b', projection: 'x' }])
+      expect(yield* after.query({ limit: all })).toEqual([{ id: 'a', projection: 'migrated' }, { id: 'b', projection: 'x' }])
     }).pipe(Effect.orDie)))
 
 // What the program computes of a row leaves that entity's row, and what the runtime throws fails the call
@@ -779,7 +781,7 @@ test('reindex passes over a state a migration or the schema dies on, and fails o
       expect(reindexed.failed.map(({ id }) => id)).toEqual(['b', 'c'])
       expect(reindexed.failed[0]?.cause).toBe('Error: the migration dies')
       // The rows passed over are the ones version 1 wrote.
-      expect(yield* after.query({})).toEqual([
+      expect(yield* after.query({ limit: all })).toEqual([
         { id: 'a', projection: 'a' },
         { id: 'b', projection: 'start' },
         { id: 'c', projection: 'start' },
@@ -794,7 +796,9 @@ test('a query by an index the program does not declare dies, naming it', () =>
     Effect.gen(function*() {
       // A name is written into the query as it is, so only the program's own are: the types say so, and a cast
       // that passes them still reaches nothing.
-      for (const query of [{ where: [{ index: 'nope', is: '=', value: 1 }] }, { order: { index: 'nope' } }]) {
+      for (
+        const query of [{ limit: all, where: [{ index: 'nope', is: '=', value: 1 }] }, { limit: all, order: { index: 'nope' } }]
+      ) {
         const exit = yield* Effect.exit(storage(receiver, sql).query(query as never))
         const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
         expect(cause instanceof Error && cause.message).toBe("'nope' is no index of the program 'Receiver'")
@@ -813,8 +817,8 @@ test('a row is written at the version that writes it, and read back as it was wr
       const work = stored?.keys[Machine.keyText({ name: 'ask' })]?.work
       expect(work !== undefined && isTimer(work) ? work.message : null).toBe('rang')
       expect(stored?.mailbox.map(({ message }) => message)).toEqual(['hello', 'done'])
-      expect((yield* after.published('projection', [])).map(({ value }) => value)).toEqual(['start'])
-      expect(yield* after.query({})).toEqual([{ id: 'r', projection: 'start' }])
+      expect((yield* after.published('projection', [], all)).map(({ value }) => value)).toEqual(['start'])
+      expect(yield* after.query({ limit: all })).toEqual([{ id: 'r', projection: 'start' }])
     })))
 
 // The time an entity suspended is kept while it stays suspended, and read with what it died on (decision 0114).
@@ -891,14 +895,14 @@ test('a row that commits after one a consumer has read is read then, from its pa
       const store = storage(receiver, sql)
       const seen = (read: ReadonlyArray<{ id: string; seq: number }>) => read.map(({ id, seq }) => `${id}${seq}`)
       yield* logged(sql, 'a', 1, 10)
-      const first = yield* store.feed('projection', 'c')
+      const first = yield* store.feed('projection', 'c', all)
       expect(seen(first)).toEqual(['a1'])
       yield* store.ack('projection', 'c', first)
       // The row of `b` was given its place before the one of `a`, and is committed only now.
       yield* logged(sql, 'b', 1, 5)
-      expect(seen(yield* store.feed('projection', 'c'))).toEqual(['b1'])
+      expect(seen(yield* store.feed('projection', 'c', all))).toEqual(['b1'])
       expect(yield* store.prune).toBe(1)
-      expect(seen(yield* store.published('projection', []))).toEqual(['b1'])
+      expect(seen(yield* store.published('projection', [], all))).toEqual(['b1'])
     }).pipe(Effect.orDie)))
 
 test('a reading passes over the rows its cursors have read, page after page, and stops at its limit', () =>
@@ -910,15 +914,15 @@ test('a reading passes over the rows its cursors have read, page after page, and
       yield* logged(sql, 'b', 1, 1)
       for (let seq = 1; seq <= 300; seq++) yield* logged(sql, 'a', seq, seq + 1)
       const a = partitionOf('a', 300)
-      expect(seen(yield* store.published('projection', [{ partition: a, seq: 300 }]))).toEqual(['b1'])
+      expect(seen(yield* store.published('projection', [{ partition: a, seq: 300 }], all))).toEqual(['b1'])
       expect(seen(yield* store.published('projection', [{ partition: a, seq: 300 }], 1))).toEqual(['b1'])
-      const half = yield* store.published('projection', [{ partition: a, seq: 150 }])
+      const half = yield* store.published('projection', [{ partition: a, seq: 150 }], all)
       expect(seen(half)).toEqual(['b1', ...Array.from({ length: 150 }, (_, at) => `a${at + 151}`)])
       expect(seen(yield* store.published('projection', [], 260))).toEqual([
         'b1',
         ...Array.from({ length: 259 }, (_, at) => `a${at + 1}`),
       ])
       // A partition named twice is read from the higher cursor.
-      expect(seen(yield* store.published('projection', [{ partition: a, seq: 300 }, { partition: a, seq: 1 }])))
+      expect(seen(yield* store.published('projection', [{ partition: a, seq: 300 }, { partition: a, seq: 1 }], all)))
         .toEqual(['b1'])
     }).pipe(Effect.orDie)))

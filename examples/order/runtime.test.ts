@@ -13,6 +13,8 @@ import { createTables, launch } from '../../src/index.ts'
 import { Mailer, order, Payments, Warehouse } from './order.ts'
 
 const ada = { _tag: 'Customer', id: 'ada' } as const
+/** A limit no reading of this test reaches: a reading says how many rows it takes (decision 0141). */
+const all = 100
 
 /** The world the orders act on, which answers and records nothing: this test only reads states. */
 const world = Layer.mergeAll(
@@ -47,6 +49,7 @@ test('a query finds the orders nobody paid, and leaves out the one that was', ()
     // Every order is created with half an hour to pay: the ones still awaiting it are the ones to chase.
     const now = DateTime.toEpochMillis(yield* DateTime.now)
     const unpaid = yield* orders.query({
+      limit: all,
       where: [{ index: 'unpaidUntil', is: '<=', value: now + 3_600_000 }],
       order: { index: 'unpaidUntil' },
     })
@@ -54,13 +57,13 @@ test('a query finds the orders nobody paid, and leaves out the one that was', ()
     expect(unpaid[0]?.projection).toMatchObject({ status: 'AwaitingPayment', canPay: true })
 
     // Nobody is late yet, and the order that was paid holds no deadline to be found by.
-    expect(yield* orders.query({ where: [{ index: 'unpaidUntil', is: '<=', value: now }] })).toEqual([])
-    expect((yield* orders.query({ where: [{ index: 'unpaidUntil', is: '=', value: null }] })).map(({ id }) => id))
+    expect(yield* orders.query({ limit: all, where: [{ index: 'unpaidUntil', is: '<=', value: now }] })).toEqual([])
+    expect((yield* orders.query({ limit: all, where: [{ index: 'unpaidUntil', is: '=', value: null }] })).map(({ id }) => id))
       .toEqual(['o-2'])
-    expect((yield* orders.query({ where: [{ index: 'unpaidUntil', is: '<>', value: null }] })).map(({ id }) => id))
+    expect((yield* orders.query({ limit: all, where: [{ index: 'unpaidUntil', is: '<>', value: null }] })).map(({ id }) => id))
       .toEqual(['o-1', 'o-3'])
     // An order against no value finds nothing, as in SQL.
-    expect(yield* orders.query({ where: [{ index: 'unpaidUntil', is: '<', value: null }] })).toEqual([])
+    expect(yield* orders.query({ limit: all, where: [{ index: 'unpaidUntil', is: '<', value: null }] })).toEqual([])
   }))))
 
 test('what an order published is what another system learns of it, each consumer in its topic', () =>
@@ -79,14 +82,14 @@ test('what an order published is what another system learns of it, each consumer
     // row for each step that changed what it selects, holding the message the step handled and the value selected
     // (decisions 0038, 0138, 0140): the status changed at the first three, the charge at the creation and at the
     // charge alone, and the warehouse told changed only `canCancel`, which no topic selects.
-    const statuses = yield* orders.published('status', [])
+    const statuses = yield* orders.published('status', [], all)
     expect(statuses.map(({ id, kind, message, value }) => [id, kind, message?._tag ?? null, value]))
       .toEqual([
         ['o-1', 'Creation', null, 'AwaitingPayment'],
         ['o-1', 'Inbound', 'PayRequested', 'Charging'],
         ['o-1', 'Internal', 'ChargeSucceeded', 'Paid'],
       ])
-    const billing = yield* orders.published('billing', [])
+    const billing = yield* orders.published('billing', [], all)
     expect(billing.map(({ kind, message, value }) => [kind, message?._tag ?? null, value.charge])).toEqual([
       ['Creation', null, null],
       ['Internal', 'ChargeSucceeded', 'ch_1'],
@@ -97,13 +100,13 @@ test('what an order published is what another system learns of it, each consumer
     // A consumer is a name within its topic, and its cursors are stored: it reads from where it acked, and a prune
     // drops, in each topic, what every consumer of the topic has read (decisions 0039, 0138). The rows of one order
     // are in its partition, in the order of their `seq`, and an ack is given the rows acted on (decision 0137).
-    expect(yield* orders.feed('billing', 'invoices')).toEqual(billing)
-    expect(yield* orders.feed('status', 'dashboard')).toEqual(statuses)
+    expect(yield* orders.feed('billing', 'invoices', all)).toEqual(billing)
+    expect(yield* orders.feed('status', 'dashboard', all)).toEqual(statuses)
     yield* orders.ack('status', 'dashboard', statuses.slice(0, 2))
-    expect(yield* orders.feed('status', 'dashboard')).toEqual(statuses.slice(2))
+    expect(yield* orders.feed('status', 'dashboard', all)).toEqual(statuses.slice(2))
     expect(yield* orders.prune).toBe(2)
-    expect(yield* orders.published('status', [])).toEqual(statuses.slice(2))
-    expect(yield* orders.published('billing', [])).toEqual(billing)
+    expect(yield* orders.published('status', [], all)).toEqual(statuses.slice(2))
+    expect(yield* orders.published('billing', [], all)).toEqual(billing)
     // What each consumer still has to act on, as an operator sees it.
     const partition = statuses[0]?.partition ?? 0
     expect(yield* orders.consumers).toEqual([

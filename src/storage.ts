@@ -467,8 +467,8 @@ export type Query<T extends Types> = Readonly<{
   where?: ReadonlyArray<Criterion<T>>
   /** The index they are ordered by, ascending unless `descending`. Entities whose index is null come first. */
   order?: Readonly<{ index: T['index']; descending?: boolean }>
-  /** How many at most, in that order; all of them when it is left out. */
-  limit?: number
+  /** How many at most, in that order: a query is a page, and a caller that needs more narrows it (decision 0141). */
+  limit: number
 }>
 
 /** An entity a query found, as a caller reads it. */
@@ -614,7 +614,7 @@ export interface Storage<T extends Types> {
   readonly published: <Name extends Topic<T>>(
     topic: Name,
     after: ReadonlyArray<Cursor>,
-    limit?: number,
+    limit: number,
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * `Handle.feed`, as the storage keeps it. The consumer's first reading stores it, and from then on the consumer
@@ -623,7 +623,7 @@ export interface Storage<T extends Types> {
   readonly feed: <Name extends Topic<T>>(
     topic: Name,
     consumer: string,
-    limit?: number,
+    limit: number,
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * `Handle.ack`, as the storage keeps it, in one transaction: the head of each partition is read first, and caps
@@ -1134,10 +1134,9 @@ export const storage = <T extends Types>(
       const by = order === undefined
         ? sql`id`
         : sql`${columnOf(order.index)} ${sql.literal(order.descending === true ? 'DESC' : 'ASC')}, id`
-      // SQLite reads a negative limit as none.
       const found = yield* rows('projections', Rows.projection)(sql`
         SELECT id, projection, version FROM projections
-        WHERE ${sql.and(clauses)} ORDER BY ${by} LIMIT ${limit ?? -1}
+        WHERE ${sql.and(clauses)} ORDER BY ${by} LIMIT ${limit}
       `)
       // A row the version before wrote is read through its migrations; `reindex` is what writes it again.
       return found.map((held): Found<T> => ({
@@ -1221,7 +1220,7 @@ export const storage = <T extends Types>(
   // only the rows of the steps that committed out of their order, and each page is a range of an index.
   // A topic's rows have gaps in their `seq`, where a step published only other topics, so a partition whose head is
   // past a cursor may hold no row of the topic past it (decision 0138).
-  const published = <Name extends Topic<T>>(topic: Name, after: ReadonlyArray<Cursor>, limit?: number) =>
+  const published = <Name extends Topic<T>>(topic: Name, after: ReadonlyArray<Cursor>, limit: number) =>
     Effect.gen(function*() {
       const select = topics.get(topic)
       if (select === undefined) throw new Error(`'${topic}' is no topic of the program '${name}'`)
@@ -1243,7 +1242,7 @@ export const storage = <T extends Types>(
       `)
       let from = first[0]?.position ?? null
       const read: Array<Published<T, Name>> = []
-      while (from !== null && (limit === undefined || read.length < limit)) {
+      while (from !== null && read.length < limit) {
         const page = yield* rows('outbox', Rows.published)(sql`
           SELECT position, partition, seq, id, tag, version, message, projection FROM outbox
           WHERE name = ${name} AND topic = ${topic} AND position >= ${from} ORDER BY position LIMIT ${batch}
@@ -1280,7 +1279,7 @@ export const storage = <T extends Types>(
       INSERT INTO consumers ${sql.insert({ name, topic, consumer })} ON CONFLICT (name, topic, consumer) DO NOTHING
     `
 
-  const feed = <Name extends Topic<T>>(topic: Name, consumer: string, limit?: number) =>
+  const feed = <Name extends Topic<T>>(topic: Name, consumer: string, limit: number) =>
     Effect.gen(function*() {
       const known = yield* rows('consumers', Rows.consumer)(sql`
         SELECT consumer FROM consumers WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}

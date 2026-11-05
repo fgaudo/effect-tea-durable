@@ -544,7 +544,10 @@ through the projection's migrations and schema, and one of them that dies on it 
 the row, `read` or `query` ([decision 0121](decisions/0121-a-read-answers-from-the-row-of-the-read-model.md)).
 
 `query` takes the criteria that hold, an index to order by and a limit, and gives the ids found with their
-projections; `reindex` writes every row again from the stored states, which is what an index added or changed
+projections, at most `limit` of them. The limit is required: a reading that holds a program's whole read model in
+one array is never what its caller meant, and a call without one is the caller's defect
+([decision 0141](decisions/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)). A query gives the first
+`limit` rows in its order, and a caller that needs more narrows its criteria; `reindex` writes every row again from the stored states, which is what an index added or changed
 by a new version of the program needs. It runs while entities step, and writes a row only if the state it was
 computed from is still the one stored, in one statement: a step that committed since keeps the row it wrote
 ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). An entity whose row the program
@@ -618,7 +621,10 @@ many rows are past its cursors, and in which partitions, and `forget` lets the l
 topic
 ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). A partition a handle is
 given is an integer from 1 to the number of partitions, a topic is one the program publishes, and a `seq` and a limit
-are non-negative integers. Anything else is its caller's defect, which stores nothing
+are non-negative integers. The limit is required, of `feed` and `published` as of `query`, so that no reading holds
+a whole topic in one array; a caller that wants more reads again, past the last row it was given
+([decision 0141](decisions/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)). Anything else is its
+caller's defect, which stores nothing
 ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). The log is kept for its
 consumers and is not an archive: a program whose past must stay readable keeps it where callers read it, in the
 state or in entities of its own.

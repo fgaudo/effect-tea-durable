@@ -257,9 +257,13 @@ test('a rehearsal and a query name only the keys and the indexes the program dec
     // @ts-expect-error `charg` is no key the program declares
     rehearsal.pending('charg'),
   ]
-  const found: Query<Of> = { where: [{ index: 'charging', is: '=', value: true }], order: { index: 'charging' } }
+  const found: Query<Of> = {
+    where: [{ index: 'charging', is: '=', value: true }],
+    order: { index: 'charging' },
+    limit: 10,
+  }
   // @ts-expect-error `charged` is no index the program declares
-  const misnamed: Query<Of> = { order: { index: 'charged' } }
+  const misnamed: Query<Of> = { order: { index: 'charged' }, limit: 10 }
   const unstored = program(schemas)({
     ...pieces,
     // @ts-expect-error an index is a scalar, which a column holds

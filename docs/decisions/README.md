@@ -137,13 +137,14 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0138](0138-the-log-publishes-topics.md) | The log publishes topics, and a consumer reads one | [0139](0139-the-projection-is-json.md), [0140](0140-a-row-of-a-topic-gives-its-value.md) |
 | [0139](0139-the-projection-is-json.md) | The projection is JSON, and `project` converts |  |
 | [0140](0140-a-row-of-a-topic-gives-its-value.md) | A row of a topic gives the value the topic selects |  |
+| [0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md) | A query and a reading of the log take a limit, and one left out is the caller's defect |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for |  |
 | [0027](archive/0027-a-program-gives-the-schema-of-its-senders.md) | A program gives the schema of its senders |  |
 | [0030](archive/0030-a-schema-encodes-to-json.md) | A schema encodes to what JSON holds | [0098](archive/0098-json-is-effect-s.md) |
-| [0032](archive/0032-a-projection-is-a-row.md) | A projection is a row, and a program declares the indexes a query uses | [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md), [0139](0139-the-projection-is-json.md) |
+| [0032](archive/0032-a-projection-is-a-row.md) | A projection is a row, and a program declares the indexes a query uses | [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md), [0139](0139-the-projection-is-json.md), [0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md) |
 | [0038](archive/0038-what-happened-is-published-through-an-outbox.md) | What happened is published through an outbox | [0057](archive/0057-the-machine-gives-what-is-written.md), [0072](archive/0072-the-log-shows-what-a-step-changed.md), [0137](0137-the-log-is-ordered-within-a-partition.md), [0138](0138-the-log-publishes-topics.md) |
-| [0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md) | A consumer of the outbox keeps its cursor | [0137](0137-the-log-is-ordered-within-a-partition.md), [0138](0138-the-log-publishes-topics.md) |
+| [0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md) | A consumer of the outbox keeps its cursor | [0137](0137-the-log-is-ordered-within-a-partition.md), [0138](0138-the-log-publishes-topics.md), [0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md) |
 | [0040](archive/0040-what-is-stored-encodes-to-json-as-it-is.md) | What is stored encodes to JSON as it is | [0057](archive/0057-the-machine-gives-what-is-written.md) |
 | [0062](archive/0062-a-row-is-read-through-a-schema.md) | A row is read through a schema, or not at all | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) |
 | [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md) | `reindex` writes a row only over the state it was computed from |  |
@@ -155,7 +156,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | Note | Decides | Changed by |
 | --- | --- | --- |
 | [0052](archive/0052-what-crosses-the-library-is-never-mutated.md) | What crosses the library is never mutated |  |
-| [0053](archive/0053-what-a-handle-is-given-is-checked.md) | What a handle is given is checked |  |
+| [0053](archive/0053-what-a-handle-is-given-is-checked.md) | What a handle is given is checked | [0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md) |
 | [0054](archive/0054-a-program-is-checked-where-it-enters.md) | A program is checked where it enters | [0064](archive/0064-the-program-is-not-the-machines-state.md), [0132](0132-a-key-may-take-a-parameter.md), [0136](0136-a-key-is-a-name-and-a-parameter-as-data.md) |
 
 ## The runtime

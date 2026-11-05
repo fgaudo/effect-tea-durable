@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-10-30. Its consequence that lets `reindex` write a row back over a step is replaced by
 [decision 0070](0070-reindex-writes-a-row-only-over-its-state.md). Its query giving the projections decoded, and
 its index converting a time to its milliseconds, are changed by [decision 0139](../0139-the-projection-is-json.md):
-the projection is JSON, and `project` converts.
+the projection is JSON, and `project` converts. Its `limit` as an option of a query is changed by
+[decision 0141](../0141-a-query-and-a-reading-of-the-log-take-a-limit.md): a query takes one.
 
 ## Context
 
