@@ -616,7 +616,9 @@ consumers. `feed(topic, consumer, limit)` gives at most `limit` rows of the topi
 first. `ack(topic, consumer, through)` takes a list of partitions and `seq`s, which the rows `feed` gave are, and
 moves each of those cursors once the rows are acted on. A cursor never moves back, and
 never past the head of its partition, so a crash before the ack delivers the rows again: at least once,
-deduplicated by the topic, the partition and the `seq`. A partition a consumer has no cursor for is read from `0`.
+deduplicated by the topic, the partition and the `seq`. A consumer that must act on a row once keeps cursors of
+its own, written in the transaction of its work, and drops a row delivered again behind them: the cursor it acks
+then serves the prune alone, and may lag. A partition a consumer has no cursor for is read from `0`.
 `prune` drops, in each topic and partition, what every consumer of the topic has read there, through the lowest
 cursor, and drops nothing of a topic no consumer has read from. `consumers` says the topic of each consumer, how
 many rows are past its cursors, and in which partitions, and `forget` lets the log go past one that is gone.

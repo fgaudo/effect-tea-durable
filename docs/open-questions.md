@@ -20,6 +20,28 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). Nothing caps what that grows
   to. A step that cannot publish cannot commit, so a cap would stop the entities: what a deployment does when
   the disk is the limit — a warning, a refusal, a drop that says which consumer lost rows — is not decided.
+  Neither is a consumer nobody meant: `feed` stores the name it is given at its first reading, so a name
+  mistyped once holds its topic until an operator finds it in `consumers` and calls `forget`, and nothing
+  tells the two apart from a consumer that is slow. It would be decided by:
+  - a deployment that runs out of disk under a consumer that stopped, measured for what the runtime can still
+    do once a step cannot commit;
+  - whether the consumers of a topic are declared, with the program or at `deploy`, so that a name not declared
+    is the caller's defect as a topic not declared is
+    ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)), or whether a consumer that
+    has not acked within a time of the operator's is forgotten, and told so at its next reading.
+- **A consumer that polls.** The runtime writes the log and does not deliver it: a consumer calls `feed` again
+  and again, and nothing tells it that a row was written
+  ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). A consumer that polls
+  every second learns of a step a second late and reads an empty page the rest of the time, and a hundred consumers
+  read a hundred empty pages. Whether the handle wakes a consumer is not decided: a `feed` that waits until a
+  row is past the cursors, a signal per topic that a step raises when it commits a row there, or a stream of pages
+  over either. It would be decided by:
+  - a program whose consumer must act within less than a polling interval, a notification or a payment to confirm,
+    measured for the delay and for the empty readings under polling;
+  - what a wait in `feed` costs the runtime, which holds no state for a consumer today, and how long a
+    consumer waits where no row comes, since a call that never returns is a fiber held for the life of the process;
+  - whether the signal is the row's or the step's, since a step writes one row per topic whose selection changed,
+    and a consumer of one topic is not woken by a step that published in others.
 - **The projection written once per topic.** A row of a topic stores the projection whole, and the selector runs
   where the row is read, so that a topic needs no migration of its own
   ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md)). A step that changes what five topics
