@@ -66,11 +66,12 @@ type Internal = typeof Internal.Type
 const Sender = Schema.TaggedStruct('Customer', { id: Schema.String })
 export type Sender = typeof Sender.Type
 
-// What callers read: it leaves the process, with the deadline in it, so it has a schema too.
+// What callers read: it leaves the process, so it has a schema too, and it is JSON: the deadline is its
+// milliseconds (decision 0139).
 const Projection = Schema.Struct({
   status: Schema.Literals(['Holding', 'Held', 'Confirming', 'Releasing', 'Confirmed', 'Cancelled']),
   seats: Schema.Int,
-  deadline: Schema.DateTimeUtcFromMillis,
+  deadline: Schema.Number,
   canConfirm: Schema.Boolean,
   canCancel: Schema.Boolean,
 })
@@ -213,7 +214,7 @@ export const booking = program({
   project: (state) => ({
     status: state._tag,
     seats: state.booking.seats,
-    deadline: state.booking.deadline,
+    deadline: DateTime.toEpochMillis(state.booking.deadline),
     canConfirm: state._tag === 'Held',
     canCancel: (state._tag === 'Holding' && !state.cancelled) || state._tag === 'Held',
   }),

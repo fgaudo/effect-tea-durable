@@ -1,7 +1,9 @@
 # 0032. A projection is a row, and a program declares the indexes a query uses
 
 **Status:** accepted, 2026-10-30. Its consequence that lets `reindex` write a row back over a step is replaced by
-[decision 0070](0070-reindex-writes-a-row-only-over-its-state.md).
+[decision 0070](0070-reindex-writes-a-row-only-over-its-state.md). Its query giving the projections decoded, and
+its index converting a time to its milliseconds, are changed by [decision 0139](../0139-the-projection-is-json.md):
+the projection is JSON, and `project` converts.
 
 ## Context
 

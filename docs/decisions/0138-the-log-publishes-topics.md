@@ -4,7 +4,9 @@
 whose log has nothing declared of it and one row per step, [decision 0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md),
 whose consumer reads every row of its program, [decision 0072](archive/0072-the-log-shows-what-a-step-changed.md),
 whose step publishes when what callers read changed, and [decision 0137](0137-the-log-is-ordered-within-a-partition.md),
-whose row of the outbox is keyed by its program, its partition and its `seq`.
+whose row of the outbox is keyed by its program, its partition and its `seq`. Its topic converting what it selects
+to JSON is changed by [decision 0139](0139-the-projection-is-json.md): the projection is JSON, and a selector
+converts nothing.
 
 ## Context
 

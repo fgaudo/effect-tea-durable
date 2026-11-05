@@ -88,8 +88,9 @@ export type Sender = typeof Sender.Type
 const Projection = Schema.Struct({
   status: Schema.Literals(['AwaitingPayment', 'Charging', 'Paid', 'Refunding', 'Shipped', 'Cancelled']),
   // By when the customer has to pay, while there is still something to pay: it is what a query reads to find
-  // the orders nobody paid, so what it filters by is what the customer is told (decision 0032).
-  deadline: Schema.NullOr(Schema.DateTimeUtcFromMillis),
+  // the orders nobody paid, so what it filters by is what the customer is told, in milliseconds, since the
+  // projection is JSON (decisions 0032, 0139).
+  deadline: Schema.NullOr(Schema.Number),
   canPay: Schema.Boolean,
   canCancel: Schema.Boolean,
   // What billing acts on: the charge the order took, and whether it was given back. The projection is the one
@@ -278,7 +279,9 @@ export const order = program({
 
   project: (state) => ({
     status: state._tag,
-    deadline: state._tag === 'AwaitingPayment' || state._tag === 'Charging' ? state.deadline : null,
+    deadline: state._tag === 'AwaitingPayment' || state._tag === 'Charging'
+      ? DateTime.toEpochMillis(state.deadline)
+      : null,
     canPay: state._tag === 'AwaitingPayment',
     canCancel: state._tag === 'AwaitingPayment' || (state._tag === 'Paid' && state.warehouse === 'Told'),
     charge: 'charge' in state ? state.charge : null,
@@ -293,10 +296,9 @@ export const order = program({
     billing: ({ charge, refunded }) => ({ charge, refunded }),
   },
 
-  // "The orders nobody paid by now": the deadline of an order still awaiting its payment, in milliseconds, and
-  // nothing for an order that is being charged, paid or over (decisions 0030, 0032).
+  // "The orders nobody paid by now": the deadline of an order still awaiting its payment, as the projection
+  // holds it, and nothing for an order that is being charged, paid or over (decisions 0032, 0139).
   indexes: {
-    unpaidUntil: ({ deadline, status }) =>
-      status === 'AwaitingPayment' && deadline !== null ? DateTime.toEpochMillis(deadline) : null,
+    unpaidUntil: ({ deadline, status }) => (status === 'AwaitingPayment' ? deadline : null),
   },
 })

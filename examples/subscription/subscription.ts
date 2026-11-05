@@ -85,7 +85,8 @@ const Projection = Schema.Struct({
   status: Schema.Literals(['Active', 'Charging', 'PastDue', 'Cancelled']),
   plan: Plan,
   nextPlan: Schema.NullOr(Plan),
-  paidUntil: Schema.DateTimeUtcFromMillis,
+  // In milliseconds: the projection is JSON (decision 0139).
+  paidUntil: Schema.Number,
   creditInCents: Schema.Int,
   canChangePlan: Schema.Boolean,
   canUpdatePayment: Schema.Boolean,
@@ -265,7 +266,7 @@ export const subscription = program({
       status: state._tag,
       plan: state.account.plan,
       nextPlan: state.account.nextPlan,
-      paidUntil: paidUntil(state.account),
+      paidUntil: DateTime.toEpochMillis(paidUntil(state.account)),
       creditInCents: state.account.creditInCents,
       canChangePlan: open,
       canUpdatePayment: open,

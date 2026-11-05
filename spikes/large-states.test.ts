@@ -40,7 +40,7 @@ import { SqlClient } from 'effect/sql'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createTables, launch, noWork, program } from '../src/index.ts'
+import { createTables, type Json, launch, noWork, program } from '../src/index.ts'
 
 const Item = Schema.Struct({ id: Schema.Int, label: Schema.String })
 
@@ -51,7 +51,7 @@ const Inbound = Schema.TaggedUnion({ Add: { label: Schema.String } })
 
 const Sender = Schema.Struct({ id: Schema.String })
 
-const room = <P>(name: string, projection: Schema.Codec<P, any>, project: (state: State) => P) =>
+const room = <P extends Json>(name: string, projection: Schema.Codec<P, Json>, project: (state: State) => P) =>
   program({
     state: State,
     flags: Schema.Struct({ size: Schema.Int }),

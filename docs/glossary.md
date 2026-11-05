@@ -84,8 +84,8 @@ Cluster's says so.
   not export.
 - **Program.** Everything declared in `program(schemas)(…)`: `name`, `keys`, `children`, `init`, `update`,
   `onEvent`, `durable`, `operations`, `project`, `topics`, `indexes` and `migrations`.
-- **Projection, read model.** `project(state)`: what a caller reads of an entity, with the actions it allows. Stored as
-  a row with the value of each index, which `read` and a query read.
+- **Projection, read model.** `project(state)`: what a caller reads of an entity, with the actions it allows, as
+  JSON, a time as its milliseconds. Stored as a row with the value of each index, which `read` and a query read.
 - **Raised event.** What a child's `update` tells its parent with `raise(event)(state)`, handled by the parent's
   `onEvent` in the same step, and never stored.
 - **Rehearsal, `rehearse`.** A scenario run on the machine without storage, cluster or clock, where the test answers

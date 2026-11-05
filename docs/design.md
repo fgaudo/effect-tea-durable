@@ -518,7 +518,10 @@ operator's own event did, even when two operate on one entity at once ([decision
 `project(state)` is what callers read of an entity: its status, and the actions it allows. It is the
 counterpart of effect-tea's model, and follows the same rule: it shows no action that `update` would reject.
 A caller learns how an operation ended by reading the projection. The reply says only whether the message was
-accepted and, for a rejection, perhaps why: an acceptance never carries data. A projection shows what a caller
+accepted and, for a rejection, perhaps why: an acceptance never carries data. The projection is JSON, and
+`project` converts what the state holds, a time to its milliseconds: `read`, a query, an index and a topic read
+one shape, and the compiler refuses a projection schema that decodes to anything else
+([decision 0139](decisions/0139-the-projection-is-json.md)). A projection shows what a caller
 acts on, not the whole state: it is written twice in each step that changes it, and the outbox keeps it
 ([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)).
 The projection is the one contract of the entity: what a consumer of the log needs of it is in the projection
@@ -754,7 +757,7 @@ that what an event writes, applied to the rows before it, gives the rows after i
 | work that should stop is a subscription          | a droppable operation, which acts on nothing                         | only work with no act in the world can be cut halfway, and run again     |
 | an ended subscription waits for its key to leave | a key kept after its work delivered is new work                      | kept, it would not run again until a crash, which starts it anew         |
 | a subscription listens to a service's connection | the boundary reads the stream, and sends each item as a message      | a listening dies with the process, and a sent item is stored             |
-| a model, with the messages the view sends        | a projection, with the actions it allows                             | a caller is remote: it receives data, never functions                    |
+| a model, with the messages the view sends        | a projection, JSON, with the actions it allows                       | a caller is remote: it receives data, never functions                    |
 | a defect ends the run                            | a defect suspends the entity                                         | one entity's bug must not stop the others                                |
 | one program, a tree of children                  | many entities, by id, each a tree of parts in one state              | an entity is the unit of storage and of concurrency                      |
 | a child is any program                           | a child is a part: no name, indexes or migrations                    | the entity, its row and its versions are the parent's                    |

@@ -8,6 +8,8 @@ import { accepted, rehearse, rejected } from '../../src/index.ts'
 import { type Sender, subscription } from './subscription.ts'
 
 const startedAt = DateTime.makeUnsafe('2026-01-31T10:00:00Z')
+/** A time as the projection gives it: its milliseconds (decision 0139). */
+const millis = (iso: string) => DateTime.toEpochMillis(DateTime.makeUnsafe(iso))
 
 const start = {
   flags: { customer: 'ada', payment: 'card-1', plan: { name: 'Basic', priceInCents: 900 } },
@@ -25,10 +27,10 @@ describe('subscription', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
-        expect(DateTime.formatIso((yield* rehearsal.projection).paidUntil)).toBe('2026-02-28T10:00:00.000Z')
+        expect((yield* rehearsal.projection).paidUntil).toBe(millis('2026-02-28T10:00:00Z'))
         yield* rehearsal.fire(yield* rehearsal.pending('renewal'))
         yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
-        expect(DateTime.formatIso((yield* rehearsal.projection).paidUntil)).toBe('2026-03-31T10:00:00.000Z')
+        expect((yield* rehearsal.projection).paidUntil).toBe(millis('2026-03-31T10:00:00Z'))
       }),
     )))
 

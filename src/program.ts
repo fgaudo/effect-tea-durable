@@ -1230,7 +1230,9 @@ export const program = <
   Operation extends Readonly<{ _tag: string }>,
   Rejection,
   Sender,
-  Projection,
+  // The projection is JSON: what `read`, a query, an index and a topic read is one shape, and a schema that
+  // decodes to what JSON does not hold, a `DateTime`, is refused here (decision 0139).
+  Projection extends Json,
 >(schemas: Schemas<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection>) =>
 <
   const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>>,
@@ -1302,7 +1304,8 @@ export const part = <
   Internal,
   Operation extends Readonly<{ _tag: string }>,
   Rejection,
-  Projection,
+  // A part's projection is JSON, as a program's is, since the parent's projection holds it (decision 0139).
+  Projection extends Json,
   Sender = unknown,
   Event = never,
   External = never,

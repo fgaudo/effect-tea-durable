@@ -1,7 +1,8 @@
 /**
- * What the compiler checks of a program: each schema encodes to what JSON holds (decisions 0030, 0098), a state is
- * an object (decision 0031), the schemas applied first type the pieces (decision 0035), the work is held under the
- * declared keys (decisions 0033, 0037), and an operation answers the messages of its runner (decision 0034).
+ * What the compiler checks of a program: each schema encodes to what JSON holds (decisions 0030, 0098), the
+ * projection is JSON (decision 0139), a state is an object (decision 0031), the schemas applied first type the
+ * pieces (decision 0035), the work is held under the declared keys (decisions 0033, 0037), and an operation
+ * answers the messages of its runner (decision 0034).
  */
 import { expect, test } from 'bun:test'
 import * as Context from 'effect/Context'
@@ -19,6 +20,7 @@ import {
   type Json,
   noWork,
   operation,
+  part,
   type Program,
   program,
   type Topic,
@@ -65,6 +67,16 @@ const schemas = {
 }
 
 const charge = { _tag: 'Charge' } as const
+
+test('a projection is JSON: a schema that decodes to a DateTime is refused where the program is declared (decision 0139)', () => {
+  const json = program({ ...schemas, projection: Schema.Struct({ until: Schema.Number }) })
+  const ofPart = part({ ...schemas, projection: Schema.Struct({ until: Schema.Number }) })
+  // @ts-expect-error the projection is read as it is, so its type is JSON, which a `DateTime.Utc` is not
+  const decoded = program({ ...schemas, projection: Schema.Struct({ until: Schema.DateTimeUtcFromMillis }) })
+  // @ts-expect-error a part's projection is JSON too, since the parent's projection holds it
+  const decodedPart = part({ ...schemas, projection: Schema.Struct({ until: Schema.DateTimeUtcFromMillis }) })
+  expect([json, ofPart, decoded, decodedPart]).toHaveLength(4)
+})
 
 test('a state is an object: a program whose state is a string does not compile', () => {
   // @ts-expect-error a state is an object, as effect-tea's is
