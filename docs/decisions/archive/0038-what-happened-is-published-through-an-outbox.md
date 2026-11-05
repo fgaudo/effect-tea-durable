@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-10-30. Its consequence that the entity's next step publishes the new projection is corrected
 by [decision 0072](0072-the-log-shows-what-a-step-changed.md): it holds only for a step that changes it. Where the
 rule is applied, and its cost, are changed by [decision 0057](0057-the-machine-gives-what-is-written.md): the machine
-gives the row, and the projection of the state before a step is the one the step before computed.
+gives the row, and the projection of the state before a step is the one the step before computed. Its `seq`, one
+sequence of the database, is changed by [decision 0137](../0137-the-log-is-ordered-within-a-partition.md),
+proposed: a `seq` is within a partition of the log.
 
 ## Context
 

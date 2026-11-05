@@ -19,7 +19,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    alternative that keeps a total order, a lock every step of the cluster takes, gives up what more than one
    process is for. Whether a partition is Cluster's shard is decided with the step Effect Cluster: the lock keeps
    the order without it, and a partition that followed an option of the deployment would move every consumer's
-   cursors. Nothing of this is code yet, and the step is taken by a note of its own.
+   cursors. Nothing of this is code yet. The step is decided by
+   [decision 0137](decisions/0137-the-log-is-ordered-within-a-partition.md), proposed.
 2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
