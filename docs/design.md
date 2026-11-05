@@ -592,7 +592,6 @@ the consumer's.
 
 ### What a step publishes
 
-
 A step that changes the state without changing what callers read publishes nothing, and neither does a
 rejected message, an internal message dropped, or a step that suspends the entity. The booking's inventory
 shows what that costs: confirming seats moves them from held to sold and leaves `available` where it was, so

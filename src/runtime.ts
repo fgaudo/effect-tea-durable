@@ -219,7 +219,7 @@ export interface Handle<T extends Types> {
    * Each row is the message an entity handled and what callers read of it afterwards, written in that step's
    * transaction (decision 0038). The rows of one entity come in the order its steps committed, and each carries
    * its partition and its `seq` within it. The log promises no order across entities: a row of one entity written
-   * before a row of another may come after it (decision 0137). A partition `after` names no cursor of is read
+   * before a row of another may come after it (decision 0137). A partition with no cursor in `after` is read
    * from `0`, so `[]` is the whole log. The cursors are the caller's, and nothing of them is stored: a reading
    * here, by a test or an operator looking, has no say in a prune. A consumer that keeps its cursors reads with
    * `feed` instead (decision 0039).
