@@ -41,6 +41,39 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - a program with a migration of many branches, whose recorded cases a change could keep while it reads other
     rows otherwise;
   - what an arbitrary of an older version costs to keep, next to the cases recorded of it.
+- **One projection for every reader.** A program has one `project`, and a step that changes it writes it whole in
+  the row of the read model and in a row of the outbox
+  ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md),
+  [decision 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md)). The design advises a
+  projection that shows what a caller acts on
+  ([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)), but
+  different readers act on different things: a shipping service reads an order's address, a dashboard its
+  status. One projection is then the union of what every reader needs, and each consumer of the outbox receives
+  the whole of it at every step that changes any part of it, which it cannot tell from a change of the part it
+  reads. A boundary that picks fields before it answers `read` spares the reader, and not the step's writes or
+  the log. Whether a program declares several projections by name, each a pure function of the state, written
+  only when it changes, with the outbox's row and the indexes naming the one they hold, is not decided. It would
+  be decided by:
+  - a program with two consumers of its outbox that read different parts of what it shows, where the rows one
+    receives for the other's changes show in `consumers`;
+  - what `read`, `query` and `reindex` take once a projection has a name, and what the row of the read model and
+    the row of the outbox hold;
+  - whether an index reads one named projection or the state, since an index over the state would query what no
+    caller reads, which decision 0032 keeps out.
+- **A number over many entities.** `query` gives the ids found with their projections, within a limit, so a
+  question about a list of entities is answered by SQLite over the indexes
+  ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md)). A question whose answer is one number over
+  every entity that matches, how many orders await their payment or what the orders paid today add up to, has
+  no handle: a caller pages through every row and counts them in the process. A program answers it today with
+  an entity that keeps the number, sent a message by each entity that changes it, or with a consumer of the
+  outbox that feeds a store made for it. Whether the read model answers a count, and a sum over an index, in
+  one statement of SQLite, is not decided. It would be decided by:
+  - a program whose dashboard asks the number at every view, where the entity that keeps it costs a message per
+    change and the paging costs a read of every row;
+  - which aggregates the handle takes, and whether a sum over an index that is not a number is the caller's
+    defect, as a cursor that is not an integer is
+    ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md));
+  - what the handle answers while `reindex` runs, since the rows it has not written yet hold the old index.
 
 ## Running
 
