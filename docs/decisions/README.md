@@ -84,7 +84,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0041](archive/0041-a-completion-is-not-discarded.md) | A completion is not discarded | [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0114](0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) |
 | [0044](archive/0044-a-firing-is-not-discarded.md) | A timer's firing is not discarded | [0064](archive/0064-the-program-is-not-the-machines-state.md), [0114](0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) |
 | [0045](archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md) | An operation waits for a program not deployed yet | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) |
-| [0046](archive/0046-a-receiver-that-crashes-is-sent-again.md) | A receiver that crashes is sent to again | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) |
+| [0046](archive/0046-a-receiver-that-crashes-is-sent-again.md) | A receiver that crashes is sent to again | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md) |
 | [0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md) | Nothing waits for an operation under the permit | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md) |
 | [0123](0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) | An idempotent runner may be given the digest of its key, as its delivery |  |
 | [0127](0127-a-live-stream-feeds-its-entities-from-the-boundary.md) | A live stream is no work of a program: the boundary reads it, and sends each item |  |
@@ -176,7 +176,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md) | What another fiber reads changes in one step | [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) |
 | [0071](archive/0071-a-process-starts-the-entities-with-a-message.md) | A process starts the entities whose mailbox holds a message | [0074](archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md) |
 | [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md) | What the runtime did is told to a probe, out of its options |  |
-| [0074](archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md) | A message that finds the mailbox empty is handled as it arrives | [0081](0081-on-cluster-a-step-commits-with-its-reply.md) |
+| [0074](archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md) | A message that finds the mailbox empty is handled as it arrives | [0081](0081-on-cluster-a-step-commits-with-its-reply.md), [0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md) |
 | [0076](archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md) | A process over its capacity unloads the least recently used | [0078](archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md), [0109](archive/0109-settled-waits-for-an-entity-unloading.md) |
 | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) | The waker tries an entity it cannot load again, after the retry |  |
 | [0078](archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) | A timer due is no spare entity, and a registered deploy keeps its name | [0102](archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md), [0103](archive/0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md), [0112](archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md) |
@@ -194,3 +194,4 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md) | A planned stop drains the at-most-once operations, and stops the rest at once | [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) |
 | [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) | The runtime closes a sequential scope of its own, whatever its caller's |  |
 | [0134](0134-an-entitys-loop-yields-between-two-steps.md) | An entity's loop yields after a step that leaves it more to do, so that a busy entity holds no other for more than a step |  |
+| [0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md) | An entity holds a bounded number of callers' messages, and a `send` past it is answered `Full` |  |
