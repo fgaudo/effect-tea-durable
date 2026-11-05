@@ -1454,7 +1454,10 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const asked = yield* withEntity(deployed, id, (loaded): Effect.Effect<Offered> => {
           if (loaded === null) return Effect.succeed(null)
           // The permit and the offer in one uninterruptible region: a caller interrupted between the two would keep
-          // a permit that no step gives back (decision 0147).
+          // a permit that no step gives back (decision 0147). Nothing yields between the two today, so no test reaches
+          // that interruption: the region guards the yield Effect inserts after a count of operations. A send that
+          // yields between them fails `a caller interrupted anywhere as it sends leaves its entity’s bound whole`
+          // outside the region, and passes inside it.
           const offered = (taken: boolean): Effect.Effect<Offered> =>
             taken ? ask(messages, loaded, entity, requested, event) : Effect.as(warnOfFull(loaded, entity), 'Full')
           return Effect.uninterruptible(Effect.flatMap(loaded.callers.takeIfAvailable(1), offered))
