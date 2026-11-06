@@ -3063,6 +3063,7 @@ describe('publishing what happened', () => {
       // A cast lets each through the types (decisions 0054, 0152).
       const refused: ReadonlyArray<readonly [unknown, string]> = [
         [{ billing: ['queue'] }, "declares consumers of 'billing', which is no topic of the program"],
+        [{ projection: 'queue' }, "declares the consumers of 'projection' as no list"],
         [{ projection: [''] }, "declares a consumer of 'projection' with no name"],
         [{ projection: ['queue', 'queue'] }, "declares the consumer 'queue' of 'projection' twice"],
       ]

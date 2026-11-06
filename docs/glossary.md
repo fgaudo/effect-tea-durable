@@ -22,8 +22,9 @@ Cluster's says so.
   *idempotent*, run again with the same idempotency key, readable or as its digest; *at least once*, run again; *at
   most once*, not run again, its `unknown` message delivered instead; *droppable*, acting on nothing, run again, and
   interrupted when a step drops it or changes it.
-- **Deploy, deployment.** `deploy(program)` gives a handle to one program's entities, under the program's name, in a
-  scope of its own. A new version, a fix included, is deployed by a new process.
+- **Deploy, deployment.** `deploy(program, options)` gives a handle to one program's entities, under the program's
+  name, in a scope of its own; the options declare the consumers of its topics. A new version, a fix included, is
+  deployed by a new process.
 - **Durable work, work.** What the state holds under its keys, operations and timers, computed by `durable(state)` and
   compared with the previous state's after each step: a new key starts its work, a missing one ends it.
 - **Entity.** One long-lived thing with an id, an order or a booking, with one state, one mailbox and one message

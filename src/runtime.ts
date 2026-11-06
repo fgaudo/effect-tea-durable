@@ -374,8 +374,8 @@ export interface Runtime {
    * one whose name this process has deployed already: a new version is deployed by a new process (decision 0075).
    * `consumers` are the names the log is read with, by topic, none by default. The deploy stores each that is not
    * stored yet, so that it holds its topic from then on. A consumer stored and not declared is kept, and the deploy
-   * logs a warning for it. A topic the program does not publish, an empty name or a name declared twice in a topic
-   * is refused, before anything is stored (decision 0152).
+   * logs a warning for it. A topic the program does not publish, consumers of a topic that are no list, an empty
+   * name or a name declared twice in a topic are refused, before anything is stored (decision 0152).
    */
   readonly deploy: <T extends Types, const C extends Consumers<T> = {}>(
     program: Program<T>,
@@ -559,6 +559,8 @@ const consumersOf = <T extends Types>(
   for (const [topic, names] of Object.entries(consumers)) {
     if (names === undefined) continue
     if (!published.has(topic)) refuse(`declares consumers of '${topic}', which is no topic of the program`)
+    // A string is iterable too, and would declare a consumer per letter: only a list is read (decision 0053).
+    if (!Array.isArray(names)) refuse(`declares the consumers of '${topic}' as no list`)
     const held = new Set<string>()
     for (const consumer of names) {
       if (typeof consumer !== 'string' || consumer.length === 0) refuse(`declares a consumer of '${topic}' with no name`)

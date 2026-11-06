@@ -63,6 +63,8 @@ export {
 } from './rehearse.ts'
 export {
   type Answer,
+  type ConsumerOf,
+  type Consumers,
   type Handle,
   launch,
   type Operated,
