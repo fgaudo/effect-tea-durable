@@ -28,6 +28,9 @@ Cluster's says so.
   deployed by a new process.
 - **Dialect.** The SQL a database speaks: SQLite or PostgreSQL, the two the storage speaks, in the same tables. A
   query finds and orders the same rows in both.
+- **Door.** Cluster's entity of a program, with one RPC for a creation and one for a message: the handler that
+  finds the runtime's entity and steps it in Cluster's transaction, only at the newest version of the program any
+  launch recorded ([0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
 - **Durable work, work.** What the state holds under its keys, operations and timers, computed by `durable(state)` and
   compared with the previous state's after each step: a new key starts its work, a missing one ends it.
 - **Entity.** One long-lived thing with an id, an order or a booking, with one state, one mailbox and one message

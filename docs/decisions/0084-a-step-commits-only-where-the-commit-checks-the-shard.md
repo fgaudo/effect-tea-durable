@@ -2,7 +2,10 @@
 
 **Status:** accepted, 2026-10-31. Decides the second of the [roadmap](../roadmap.md)'s findings from
 [Effect Cluster](../cluster.md#who-holds-an-entity), the fence; corrects what an alternative of
-[decision 0080](archive/0080-a-database-is-held-by-one-runtime.md) says of Cluster's shard locks.
+[decision 0080](archive/0080-a-database-is-held-by-one-runtime.md) says of Cluster's shard locks. What an
+alternative says of a step that dies is changed by
+[decision 0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md), proposed: Cluster
+restarts the entity without end, and the message is delivered again.
 
 ## Context
 

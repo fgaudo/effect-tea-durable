@@ -111,9 +111,9 @@ bun test
 ```
 
 The name is a working one. The library will be separate from effect-tea, which it shares ideas with but no
-code. It depends on Effect's unstable modules, `effect/sql`, `effect/cluster` and `effect/workflow`, and is
-released as experimental, not for production, as long as it does: an API that changes under it costs an update of
-the runtime, never of the pure core or of a program.
+code. It depends on Effect's unstable modules, `effect/sql`, `effect/cluster`, `effect/rpc` and `effect/workflow`,
+and is released as experimental, not for production, as long as it does: an API that changes under it costs an
+update of the runtime, never of the pure core or of a program.
 
 ## License
 

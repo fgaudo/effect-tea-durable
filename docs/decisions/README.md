@@ -18,7 +18,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | Note | Decides | Changed by |
 | --- | --- | --- |
 | [0081](0081-on-cluster-a-step-commits-with-its-reply.md) | On Cluster, a step commits with its reply | [0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md), [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md), [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
-| [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) | A step commits only where the commit checks the shard |  |
+| [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) | A step commits only where the commit checks the shard | [0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md) |
 | [0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md) | On Cluster, a request is keyed and answered as on one process |  |
 | [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
 | [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) | On Cluster, an interrupted caller leaves its request alone |  |

@@ -372,8 +372,8 @@ export type Versioned = Readonly<{ name: string; version: number }>
  * Records, for the runner at `address`, the version each of `programs` runs, and raises the newest version of each
  * program to it, in one transaction (decision 0159). A program whose version is older than the newest recorded is
  * the launcher's defect, which names the program and both versions, and records nothing. On SQLite the transaction
- * takes the file's writer as it begins, and on PostgreSQL it locks the table, so that two launches see each other's
- * versions.
+ * takes the file's write lock as it begins, which the driver does by default and this asks for by name, so that the
+ * rule holds if the default changes; on PostgreSQL it locks the table. So two launches see each other's versions.
  */
 export const recordVersions = (
   address: string,

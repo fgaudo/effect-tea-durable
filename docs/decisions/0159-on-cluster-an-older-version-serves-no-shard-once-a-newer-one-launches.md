@@ -73,9 +73,10 @@ runs two runners on one SQLite file, with a `RunnerHealth` that answers by versi
   runner of the newest version, which steps it.
 - **The runtime registers its entity types without `disableFatalDefects`.** With it, a defect would be saved as the
   request's reply, and the message would be lost.
-- **On SQLite the check is made by the commit.** A launch's record and a step are transactions of one file, which
-  come one after the other. On PostgreSQL the step reads the row under `FOR SHARE`, so that a launch's record waits
-  for the steps that read the version before it. Until Cluster has a fence, the runtime on Cluster runs on SQLite
+- **On SQLite the check is made by the commit.** A launch's record and a step are transactions of one file, and
+  each takes the file's write lock as it begins, so that one waits for the other, even where a step has only read.
+  On PostgreSQL the step reads the row under `FOR SHARE`, so that a launch's record waits for the steps that read
+  the version before it. Until Cluster has a fence, the runtime on Cluster runs on SQLite
   alone ([decision 0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
 
 ### What a deploy costs
@@ -103,8 +104,12 @@ runs two runners on one SQLite file, with a `RunnerHealth` that answers by versi
   runtime's step. With `disableFatalDefects`, the test fails.
 - That Cluster never marks its last healthy runner unhealthy: **read in the source** of `Sharding.ts`. Only what a
   deploy costs rests on it.
-- That SQLite runs the transactions of one file one after the other: **documented** by SQLite, and relied on by
-  decision 0084.
+- That a transaction of SQLite takes the file's write lock as it begins, so that a launch's record and a step come
+  one after the other: **documented** by the JSDoc of `SqliteClient.layer` of `@effect/sql-sqlite-bun` at 4.1.2,
+  which begins every transaction of a writable connection with `BEGIN IMMEDIATE`. SQLite alone, in WAL mode, as its
+  documentation says, lets a launch commit while a step reads, and refuses the step's first write after it, with
+  `SQLITE_BUSY_SNAPSHOT`. `recordVersions` asks for
+  `BEGIN IMMEDIATE` itself, so that the rule holds if the driver's default changes.
 - That the newest version only grows: kept by the launch, which dies before it records an older one.
 
 ## Alternatives
