@@ -56,7 +56,7 @@ no life of its own, a profile or a product, does not need it.
 - **One model, in the browser and on the server.** A program is written as in effect-tea: who writes the Elm
   architecture for a screen writes it the same way for an order.
 
-**This repository holds a design, its pure core, and a runtime on SQLite that runs on one process.** It has:
+**This repository holds a design, its pure core, and a runtime on SQLite or PostgreSQL that runs on one process.** It has:
 
 - [`docs/design.md`](docs/design.md): what the library is for, its model of execution, and what it guarantees
   at each point where the process may die;
@@ -92,7 +92,7 @@ flowchart TB
   rehearse["rehearse.ts: a scenario without storage or clock,<br/>of one entity or of a world"]
   runtime["runtime.ts: launch and deploy, each entity under its own lock,<br/>its fibers, timers and passivation"]
   storage["storage.ts: entities, entity_keys, mailbox, replies,<br/>projections, publications, outbox, log, heads, consumers and cursors"]
-  db[(SQLite)]
+  db[(SQLite or PostgreSQL)]
 
   program --> machine
   machine --> rehearse

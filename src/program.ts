@@ -524,11 +524,21 @@ export const topicsOf = <T extends Types>(program: Program<T>): ReadonlyArray<To
     : Object.entries(program.topics as unknown as Readonly<Record<string, (projection: unknown) => Json>>)
       .map(([topic, select]) => ({ topic, select }))
 
+/**
+ * Whether a string is text every database holds as it is: it holds no U+0000, which PostgreSQL holds in no text and
+ * parses in no JSON, and no lone surrogate, which PostgreSQL writes as U+FFFD, so that two strings would be one,
+ * and SQLite gives back as U+FFFD for each of its bytes, so that the string read finds no row. A
+ * regular expression with the flag `u` reads a pair of surrogates as one code point, so `\p{Cs}` finds a lone one
+ * only (decision 0157).
+ */
+export const isText = (text: string): boolean => !text.includes('\u0000') && !/\p{Cs}/u.test(text)
+
 /** An index's name is a word, so that a store writes it as it is, in a query and in an index of its own. */
 const isWord = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
 
 /**
- * Refuses a program that cannot run as it is written: an empty name, an index whose name is not a word. It is pure, and
+ * Refuses a program that cannot run as it is written: an empty name, a name no database holds as it is, an index
+ * whose name is not a word. It is pure, and
  * called where a program enters, before anything is stored or run: `deploy`, which a fix is too, and `rehearse`. A
  * program is never mutated, so the check holds for as long as the program runs (decisions 0052, 0054). A missing
  * runner is the machine's to find, where an operation is held.
@@ -538,6 +548,11 @@ export const checkProgram = <T extends Types>(program: Program<T>): void => {
     throw new InvariantDefect({ reason: `the program '${program.name}' ${reason}` })
   }
   if (program.name.length === 0) refuse('has an empty name')
+  // A name, a key's name and a topic's are each stored as text of their own (decision 0157).
+  if (!isText(program.name)) refuse('has a name that is no text a database holds')
+  for (const key of Object.keys(program.keys)) {
+    if (!isText(key)) refuse(`has a key ${JSON.stringify(key)} whose name is no text a database holds`)
+  }
   for (const index of Object.keys(program.indexes)) {
     if (!isWord(index)) refuse(`has an index '${index}' whose name is not a word`)
   }
@@ -545,7 +560,10 @@ export const checkProgram = <T extends Types>(program: Program<T>): void => {
   if (program.topics !== undefined) {
     const topics = Object.keys(program.topics)
     if (topics.length === 0) refuse('declares no topic in its topics')
-    for (const topic of topics) if (topic.length === 0) refuse('has a topic with an empty name')
+    for (const topic of topics) {
+      if (topic.length === 0) refuse('has a topic with an empty name')
+      if (!isText(topic)) refuse(`has a topic ${JSON.stringify(topic)} whose name is no text a database holds`)
+    }
   }
 }
 

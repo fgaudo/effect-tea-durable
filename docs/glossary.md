@@ -26,6 +26,8 @@ Cluster's says so.
 - **Deploy, deployment.** `deploy(program, options)` gives a handle to one program's entities, under the program's
   name, in a scope of its own; the options declare the consumers of its topics. A new version, a fix included, is
   deployed by a new process.
+- **Dialect.** The SQL a database speaks: SQLite or PostgreSQL, the two the storage speaks, in the same tables. A
+  query finds and orders the same rows in both.
 - **Durable work, work.** What the state holds under its keys, operations and timers, computed by `durable(state)` and
   compared with the previous state's after each step: a new key starts its work, a missing one ends it.
 - **Entity.** One long-lived thing with an id, an order or a booking, with one state, one mailbox and one message
@@ -132,6 +134,9 @@ Cluster's says so.
 - **Suspended.** An entity after a defect: its state stays, the message stays unhandled, its timers are disarmed, and
   nothing is handled until an operator resumes it or discards the message. Its operations run to their end, and
   their completions wait behind the message. A caller meanwhile is answered `Suspended`, which is no reply.
+- **Text a database holds.** A string with no U+0000, which PostgreSQL holds in no text, and no lone surrogate,
+  which no database gives back as written. An id, a name and a string an index holds are such text, or the defect of
+  whoever gave them.
 - **Timer.** Work that delivers one internal message at its time, derived from the state. It may be dropped in any
   state, and one that changes is armed again as new work.
 - **Topic.** A part of the log, by name: a pure function, declared in `topics`, that selects of the projection what

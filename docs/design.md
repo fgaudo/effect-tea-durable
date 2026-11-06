@@ -356,7 +356,7 @@ once its parent would hold more than one step should write
 
 ### The tables
 
-The runtime on SQLite writes all of it through the program's schemas, as JSON, in ten tables — the entity, the
+The runtime writes all of it through the program's schemas, as JSON, in ten tables — the entity, the
 keys with their incarnations and work, the mailbox in order, the replies by request, the read model, the
 outbox, the number of its partitions and the head of each, its consumers and their cursors
 ([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
@@ -597,8 +597,8 @@ rows past it in the order of the query: past the value of that row for the index
 past the id of that row, since the id breaks ties in either order. Nothing is held between two pages, so a row no step changes
 is given once, on one page, and a row whose index a step changes between two pages is given where it stands when
 the next is read ([decision 0143](decisions/0143-a-query-pages-after-the-last-row-it-gave.md)). An index that is
-an integer beyond 2^53 is written with the exact digits of its double, so that SQLite reads the number the query
-compares: the digits `JSON.stringify` writes spell another integer to SQLite
+an integer beyond 2^53 is written with the exact digits of its double, so that the database reads the number the
+query compares: the digits `JSON.stringify` writes spell another integer to SQLite and to PostgreSQL
 ([decision 0146](decisions/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md)).
 
 A number over the entities that match is read in one statement, which reads no projection. `count` takes the
@@ -612,7 +612,7 @@ index and the least id of such a row. Both read the rows as they stand while `re
 A count per value of an index is read in one statement too. `countBy` takes an index, the criteria a query takes
 and a limit, and gives each value the index holds among the entities that match, with how many hold it, so every
 count is read on one snapshot. The values come in the order a query orders the index by, null first, at most
-`limit` of them, and a value no entity holds has no entry. `true` and `1` are two values, though SQLite orders a
+`limit` of them, and a value no entity holds has no entry. `true` and `1` are two values, though a query orders a
 boolean as its number, and a boolean comes after that number. An index a row lacks is null, as a query reads it.
 A grouping by an index of many values, such as a customer, is a report's question past its limit. A sum is not
 grouped ([decision 0150](decisions/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)).
@@ -709,7 +709,8 @@ its own, written in the transaction of its work, and drops a row delivered again
 then serves the prune alone, and may lag. A consumer whose store is a table of the runtime's database writes it
 and acks in one transaction: `ack` joins a transaction the caller left open on the client the runtime was
 launched with, so the store and the cursors commit together. Within that transaction the caller waits for nothing
-a step does, since the transaction holds the one connection of SQLite and a step's commit waits for it
+a step does, since the transaction may hold the one connection of the database, as on SQLite and PGlite, and a
+step's commit waits for it
 ([decision 0150](decisions/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)). A partition a
 consumer has no cursor for is read from `0`.
 `prune` drops, in each topic and partition, what every consumer of the topic has read there, through the lowest
@@ -918,14 +919,32 @@ that what an event writes, applied to the rows before it, gives the rows after i
 
 ## Where it runs
 
-On one process, with SQLite: the mailbox, the states and the timers sit in one database, so each step is one
-transaction ([decision 0007](decisions/archive/0007-one-process-first.md)). A runtime holds its database until it
-ends: a second runtime on it, or a launch while another connection has the file open, dies as it launches
-([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). `launch` gives a runtime, `deploy(program)`
+On one process, with SQLite or PostgreSQL: the mailbox, the states and the timers sit in one database, so each step
+is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md), [0157](decisions/0157-the-storage-speaks-sqlite-and-postgresql.md)). A runtime holds its
+database until it ends: a second runtime on it, or a launch while another connection has the file of SQLite open,
+dies as it launches ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). A database of
+PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. `launch` gives a runtime, `deploy(program)`
 a handle to one program's entities — `create`, `send`, `read`, and `suspended`, `resume` and `discard` for an
 operator — and
 the operations of a program are run with the services it was deployed with
 ([`src/runtime.ts`](../src/runtime.ts), [decision 0028](decisions/archive/0028-rules-the-runtime-settled.md)).
+
+### Databases
+
+The storage speaks SQLite and PostgreSQL, in the same tables, with the same columns, and a statement both read alike
+is written once. A launch on a client of any other dialect is the launcher's defect ([decision 0157](decisions/0157-the-storage-speaks-sqlite-and-postgresql.md)).
+
+- A query finds and orders the same rows on both. On PostgreSQL an index of the read model is three expressions,
+  which order a value as SQLite's `json_extract` does: its kind, its number, and its string, by its bytes. Text of
+  PostgreSQL is compared by its bytes, so ids are ordered alike too.
+- A column of JSON is text on both, and no statement of PostgreSQL parses JSON that holds the program's data, since
+  PostgreSQL parses no JSON that escapes U+0000. A reply holds the id of a caller's request in a column of its own.
+- An id, a name, a key's name, a topic's, a consumer's, and a string an index holds are text every database holds as
+  it is: no U+0000, which PostgreSQL holds in no text, and no lone surrogate, which no database gives back as written, so
+  that two ids would be one. Anything else is the defect of whoever gave it.
+- The tests of the storage run on both, PostgreSQL on PGlite, and the tests of the runtime whose steps write what the
+  dialects write otherwise run on both too. What a server with many connections does is an
+  [open question](open-questions.md#running).
 
 ### Entities in the process
 

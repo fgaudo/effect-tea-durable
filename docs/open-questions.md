@@ -34,6 +34,15 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   two processes share a store. On Effect Cluster a runner carries no version, and a shard may go from a new runner
   back to an old one ([Cluster](cluster.md#two-versions-at-once)): the choice is between deploys that replace every
   runner before a new one writes, forward compatibility for one version, or a change to Cluster.
+- **PostgreSQL with many connections.** The storage's tests run on PGlite, which runs one statement at a time on
+  one session ([decision 0157](decisions/0157-the-storage-speaks-sqlite-and-postgresql.md)). On a server with a
+  pool, steps of different entities commit at once. That the head of a partition still orders the commits of its
+  steps, that a session advisory lock holds the database, that a page read at `REPEATABLE READ` gives a row once, and
+  what a deadlock or a failure of serialization does to a step, are only reasoned. It would be decided by:
+  - the storage's tests and the runtime's tests of the log run against a server, in CI or by hand;
+  - a test with two writers of one partition, which checks that its steps commit in the order of their `seq`;
+  - whether a step whose transaction fails with `DeadlockError` or `SerializationError` is retried, as the JSDoc of
+    `SqlClient.withTransaction` shows, or crashes its entity, as a write that fails does.
 - **Bookkeeping in transactions.** What another fiber reads changes in one synchronous step
   ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)): a rule kept by hand, which
   a step that waits cannot keep. The waker reads the entities held and then waits for a poke, and only the steps

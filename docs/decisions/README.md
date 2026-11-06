@@ -28,7 +28,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0007](archive/0007-one-process-first.md) | One process with SQL first, Effect Cluster later | [0080](archive/0080-a-database-is-held-by-one-runtime.md), [0081](0081-on-cluster-a-step-commits-with-its-reply.md) |
+| [0007](archive/0007-one-process-first.md) | One process with SQL first, Effect Cluster later | [0080](archive/0080-a-database-is-held-by-one-runtime.md), [0081](0081-on-cluster-a-step-commits-with-its-reply.md), [0157](0157-the-storage-speaks-sqlite-and-postgresql.md) |
 | [0019](archive/0019-unstable-effect-modules.md) | The library depends on Effect's unstable modules | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) |
 | [0055](archive/0055-the-public-surface-is-what-its-users-use.md) | The public surface is what its users use |  |
 | [0080](archive/0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md), [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) |
@@ -66,7 +66,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0048](archive/0048-a-callers-request-belongs-to-its-sender.md) | A caller's request belongs to its sender | [0059](archive/0059-a-request-is-a-value.md), [0065](archive/0065-the-machine-holds-no-replies.md), [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md), [0124](0124-the-boundary-authenticates-and-update-authorizes.md) |
 | [0059](archive/0059-a-request-is-a-value.md) | A request is a value | [0065](archive/0065-the-machine-holds-no-replies.md), [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) |
 | [0060](archive/0060-send-and-create-take-no-key.md) | `send` and `create` take no key |  |
-| [0065](archive/0065-the-machine-holds-no-replies.md) | The machine holds no replies, and a receive is given the one it asks for |  |
+| [0065](archive/0065-the-machine-holds-no-replies.md) | The machine holds no replies, and a receive is given the one it asks for | [0157](0157-the-storage-speaks-sqlite-and-postgresql.md) |
 | [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) | A reply is keyed by the version that wrote it |  |
 | [0124](0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes |  |
 | [0125](0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) | A caller's reply is kept as long as its boundary says, from the step that answers |  |
@@ -121,7 +121,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0043](archive/0043-a-row-no-version-reads-fails-what-reads-it.md) | A row no version reads fails what reads it, not the process | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) |
 | [0100](archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md) | A rejection's reason is kept as long as a reply of its version is stored |  |
 | [0126](0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md) | A program keeps every migration, and a test records what each did |  |
-| [0156](0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md) | A program is renamed by its launch, which moves what is stored under its old name, and its entities keep their keys |  |
+| [0156](0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md) | A program is renamed by its launch, which moves what is stored under its old name, and its entities keep their keys | [0157](0157-the-storage-speaks-sqlite-and-postgresql.md) |
 | [0051](archive/0051-a-deploy-that-fails-leaves-nothing-running.md) | A deploy that fails leaves nothing running | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0102](archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md) |
 | [0058](archive/0058-work-is-compared-by-what-is-stored.md) | Work is compared by what is stored |  |
 | [0075](archive/0075-a-name-is-deployed-once-in-a-process.md) | A name is deployed once in a process | [0078](archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) |
@@ -152,7 +152,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0153](0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md) | A reader of a consumer names the partitions it reads, and the division is the caller's |  |
 | [0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md) | A step's projection is stored once in the outbox, in a publication each topic's row names |  |
 | [0155](0155-a-foreach-of-messages-to-children-puts-them-back-once.md) | A `forEach` of messages to children by id puts them back once, with the step one message after the other gives |  |
-| [0157](0157-the-storage-speaks-sqlite-and-postgresql.md) | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both |  |
+| [0157](0157-the-storage-speaks-sqlite-and-postgresql.md) | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both, of text every database holds |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for |  |
 | [0027](archive/0027-a-program-gives-the-schema-of-its-senders.md) | A program gives the schema of its senders |  |

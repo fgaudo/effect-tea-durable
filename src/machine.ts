@@ -18,6 +18,7 @@ import {
   topicsOf,
   InvariantDefect,
   isRejected,
+  isText,
   isTimer,
   type Json,
   type Key,
@@ -259,10 +260,8 @@ export const shownOf = <T extends Types>(
     if (typeof value === 'number' && !Number.isFinite(value)) {
       broken(`the index '${name}' is a number JSON does not hold`)
     }
-    // PostgreSQL holds U+0000 in no text, and parses no JSON that escapes it, and a database writes a lone surrogate
-    // as U+FFFD, so that two strings would be one (decision 0157). A regular expression with the flag `u` reads a
-    // pair of surrogates as one code point, so `\p{Cs}` finds a lone one only.
-    if (typeof value === 'string' && (value.includes('\u0000') || /\p{Cs}/u.test(value))) {
+    // The database parses the indexes, as JSON (decision 0157).
+    if (typeof value === 'string' && !isText(value)) {
       broken(`the index '${name}' is a string a database does not hold`)
     }
   }

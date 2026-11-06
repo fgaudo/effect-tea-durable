@@ -234,10 +234,44 @@ test('a topic selects JSON of the projection, and the topics a program declares 
       { ...charges, topics: { '': () => true } as unknown as NonNullable<typeof charges.topics> },
       'has a topic with an empty name',
     ],
+    // A topic's name is stored as text of its own, which a database holds as it is (decision 0157).
+    [
+      { ...charges, topics: { 'a\u0000': () => true } as unknown as NonNullable<typeof charges.topics> },
+      'has a topic "a\\u0000" whose name is no text a database holds',
+    ],
   ]
   for (const [broken, reason] of refused) {
     expect(() => checkProgram(broken)).toThrow(`the program 'Charges' ${reason}`)
   }
+})
+
+// A name and a key's name are stored as text of their own: no database gives a lone surrogate back as written, so that two
+// names would be one, and PostgreSQL holds U+0000 in no text (decision 0157).
+test('a program whose name or key is no text a database holds is refused, naming it', () => {
+  const charges = program({
+    state: Schema.Struct({}),
+    flags: Schema.Null,
+    inbound: Schema.Never,
+    internal: Schema.Never,
+    operation: Schema.Never,
+    rejection: Schema.Never,
+    sender: Schema.Null,
+    projection: Schema.Null,
+  })({
+    name: 'Charges',
+    keys: { ask: null },
+    init: () => ({}),
+    update: () => (state) => state,
+    durable: () => noWork,
+    operations: {},
+    project: () => null,
+    indexes: {},
+  })
+  expect(() => checkProgram({ ...charges, name: 'Charges\ud800' })).toThrow('has a name that is no text a database holds')
+  expect(() => checkProgram({ ...charges, keys: { 'a\u0000': null } as unknown as typeof charges.keys })).toThrow(
+    `the program 'Charges' has a key "a\\u0000" whose name is no text a database holds`,
+  )
+  expect(() => checkProgram(charges)).not.toThrow()
 })
 
 test('a rehearsal and a query name only the keys and the indexes the program declares (decisions 0032, 0033)', () => {

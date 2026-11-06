@@ -32,6 +32,7 @@ import {
   encode,
   Entities,
   InvariantDefect,
+  isText,
   isTimer,
   type Program,
   type Reply,
@@ -204,6 +205,8 @@ const renamesOf = (renames: Readonly<Record<string, string>>): ReadonlyArray<rea
   for (const [from, to] of pairs) {
     const reason = typeof to !== 'string' || from === '' || to === ''
       ? `the launch renames '${from}' to '${String(to)}', and a name is a string that is not empty`
+      : !isText(from) || !isText(to)
+      ? `the launch renames ${JSON.stringify(from)} to ${JSON.stringify(to)}, and a name is text a database holds`
       : from === to
       ? `the launch renames '${from}' to itself`
       : Object.hasOwn(renames, to)
@@ -548,6 +551,18 @@ const counted = <A>(
   })
 
 /**
+ * Runs `effect` once the id a caller gave is text a database holds as it is: anything else is the caller's defect,
+ * and nothing is read or stored for it. No database gives a lone surrogate back as written, so that two ids would be one
+ * entity, and PostgreSQL holds U+0000 in no text (decisions 0053, 0157).
+ */
+const texted = <A>(id: string, effect: Effect.Effect<A>): Effect.Effect<A> =>
+  Effect.suspend(() =>
+    typeof id === 'string' && isText(id)
+      ? effect
+      : Effect.die(new InvariantDefect({ reason: `the id is ${JSON.stringify(id)}, which is no text a database holds` }))
+  )
+
+/**
  * Runs `effect` once each cursor a caller gave names a partition of the log, from 1 to `partitions`, and a `seq`
  * that is a non-negative integer: anything else is the caller's defect, and nothing is read or stored for it
  * (decisions 0053, 0137).
@@ -627,6 +642,9 @@ const consumersOf = <T extends Types>(
     const held = new Set<string>()
     for (const consumer of names) {
       if (typeof consumer !== 'string' || consumer.length === 0) refuse(`declares a consumer of '${topic}' with no name`)
+      if (!isText(consumer)) {
+        refuse(`declares a consumer ${JSON.stringify(consumer)} of '${topic}', whose name is no text a database holds`)
+      }
       if (held.has(consumer)) refuse(`declares the consumer '${consumer}' of '${topic}' twice`)
       held.add(consumer)
     }
@@ -1690,6 +1708,12 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               }),
             )
           }
+          // An id an operation gives is held as a caller's is (decision 0157).
+          if (typeof id !== 'string' || !isText(id)) {
+            return Effect.die(
+              new InvariantDefect({ reason: `the id is ${JSON.stringify(id)}, which is no text a database holds` }),
+            )
+          }
           const to = JSON.stringify([program.name, id, name])
           if (used[kind].has(to)) {
             const verb = kind === 'message' ? 'sent' : 'created'
@@ -1872,11 +1896,14 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const handle: Handle<T, C> = {
           partitions,
           create: (id, flags, request) =>
-            admitted(faulted(
-              create(deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
-            )),
+            texted(
+              id,
+              admitted(faulted(
+                create(deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
+              )),
+            ),
           send: (id, message, request) =>
-            counted(
+            texted(id, counted(
               request.keep === undefined ? {} : { keep: request.keep.millis },
               admitted(faulted(
                 send(
@@ -1887,8 +1914,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
                   request.keep?.millis,
                 ),
               )),
-            ),
-          read: (id) => deployed.storage.projected(id),
+            )),
+          read: (id) => texted(id, deployed.storage.projected(id)),
           query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
           count: deployed.storage.count,
           sum: deployed.storage.sum,
@@ -1942,8 +1969,8 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               ...suspension,
               waiting: waitingFor({ name: program.name, id: suspension.id }),
             }))),
-          resume: (id) => admitted(operate(deployed, id, { _tag: 'Resume' })),
-          discard: (id) => admitted(operate(deployed, id, { _tag: 'Discard' })),
+          resume: (id) => texted(id, admitted(operate(deployed, id, { _tag: 'Resume' }))),
+          discard: (id) => texted(id, admitted(operate(deployed, id, { _tag: 'Discard' }))),
         }
         return handle
       })

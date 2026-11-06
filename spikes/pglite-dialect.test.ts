@@ -129,3 +129,12 @@ test('neither json nor jsonb parses a text escaping U+0000 or holding a lone sur
     expect(yield* reason(sql`SELECT (${lone}::jsonb) ->> 'id' AS v`)).toBe('invalid input syntax for type json')
     expect(yield* reason(sql`SELECT ${'a\u0000b'}::text AS v`)).toBe('invalid byte sequence for encoding "UTF8": 0x00')
   })), 30_000)
+
+// A lone surrogate is written as U+FFFD, so that two ids that differ by one are one (decision 0157).
+test('a text with a lone surrogate is written with U+FFFD in its place', () =>
+  run(Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`CREATE TABLE ids (id TEXT)`
+    yield* sql`INSERT INTO ids (id) VALUES (${'a\ud800'}), (${'a\udc00'})`
+    expect(yield* sql`SELECT DISTINCT id FROM ids`).toEqual([{ id: 'a�' }])
+  })), 30_000)

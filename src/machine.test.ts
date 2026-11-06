@@ -1272,7 +1272,7 @@ describe('what a runtime writes', () => {
             projection === 'go' ? 'a\u0000b' : projection),
           "the index 'shown' is a string a database does not hold",
         ],
-        // An index that is a string holding a lone surrogate, which a database writes as U+FFFD (decision 0157).
+        // An index that is a string holding a lone surrogate, which no database gives back as written (decision 0157).
         [
           checked((message) => message, () => ({}), undefined, undefined, (projection) =>
             projection === 'go' ? '\ud800' : projection),

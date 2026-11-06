@@ -1,6 +1,6 @@
 # 0157. The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both
 
-**Status:** proposed, 2026-11-06, for the step A store on PostgreSQL of the roadmap. Changes
+**Status:** accepted, 2026-11-06, with the step A store on PostgreSQL of the roadmap. Changes
 [decision 0007](archive/0007-one-process-first.md), which puts the runtime on SQLite;
 [decision 0065](archive/0065-the-machine-holds-no-replies.md), whose index reads a caller's request id out of the
 request; and [decision 0156](0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md), whose rename rewrites a
@@ -21,7 +21,7 @@ A program is rehearsed and tested on SQLite, and may run on PostgreSQL. So what 
 must not depend on the database.
 
 The spike [`spikes/pglite-dialect.test.ts`](../../spikes/pglite-dialect.test.ts) runs on PGlite the statements the
-storage would write on PostgreSQL. PGlite is PostgreSQL compiled to run in the process. The spike sees six things
+storage would write on PostgreSQL. PGlite is PostgreSQL compiled to run in the process. The spike, with one of SQLite, sees seven things
 that differ from SQLite:
 
 - jsonb writes its text again, with its keys in its own order and with spaces;
@@ -29,6 +29,8 @@ that differ from SQLite:
   orders text after numbers;
 - neither json nor jsonb parses a text that escapes U+0000 or holds a lone surrogate, whichever field a statement
   reads of it, and no text of PostgreSQL holds U+0000;
+- PostgreSQL writes a lone surrogate as U+FFFD, and SQLite writes its three bytes, which it gives back as three
+  U+FFFD, so that no database gives such a text back as written;
 - a parameter whose type PostgreSQL cannot infer, as in `$1 IS NULL`, is refused;
 - a bigint is read as a number up to 2^53, and as a JS `bigint` past it;
 - an advisory lock is taken again by the session that holds it, and PGlite runs every statement on one session.
@@ -58,9 +60,23 @@ that differ from SQLite:
     parses each, keeps those whose `entity` is the old name, and writes the new name with `JSON.parse` and
     `JSON.stringify`, in the rename's transaction. A text that `JSON.stringify` does not give back as it is makes the
     rename die before it moves anything. On SQLite a rename stays as decision 0156 decides;
-  - the indexes of the read model are parsed, so an index that is a string holding U+0000 or a lone surrogate is a
-    defect of the program, on both dialects, as an index that is a number JSON does not hold is. A database also
-    writes a lone surrogate as U+FFFD, so that two strings would be one.
+  - the indexes of the read model are parsed, which the next section says the program's part of.
+
+### Text a database holds
+
+- **A string the runtime stores as text, or the database parses, is text every database holds as it is**: it holds
+  no U+0000 and no lone surrogate. A lone surrogate written on PostgreSQL makes two ids one entity, and one written
+  on SQLite is read back as another text, which finds no row. So the rule holds on both dialects, and a program
+  tested on SQLite meets it there.
+- **An index that is a string no database holds is the program's defect**, and suspends its entity, as an index that
+  is a number JSON does not hold does.
+- **A program whose name, a key's name or a topic's name is no such text is refused where it enters**, by
+  `checkProgram`. So is a deploy that declares such a consumer, and a launch that renames to or from such a name.
+- **An id a caller gives a handle that is no such text is the caller's defect**, and nothing is read or stored for
+  it: `create`, `send`, `read`, `resume` and `discard` check it. An id an operation gives `Entities` is the
+  operation's defect.
+- **What the runtime writes as JSON holds any string**: a state, a message, a request, a key's parameter, a
+  projection. JSON escapes U+0000 and a lone surrogate, and no statement parses that JSON on PostgreSQL.
 
 ### Indexes and queries
 
@@ -104,15 +120,10 @@ that differ from SQLite:
 - **On PostgreSQL a test reads the plans of the statements the storage runs**, recorded with
   `Statement.CurrentTransformer`, with scans of whole tables turned off. Each page, count and reading of a caller's
   reply is served by its index, and no page sorts.
-
-### Still to decide in this step
-
-- **The runtime on PGlite.** Its tests pass on PGlite but for twenty. Some read SQLite's plans. Others show that
-  `runtime.settled` returns while the waker's reading is under way. A statement of bun:sqlite ends before its fiber
-  yields, and one of PGlite does not.
-- **Ids and names.** An id, a program's name and a consumer's name are text of their own column, and a database
-  writes a lone surrogate in them as U+FFFD, on both dialects. PostgreSQL refuses one that holds U+0000.
-- **`docs/design.md`, the glossary and the diagrams of `README.md`**, which say the runtime runs on SQLite.
+- **The tests of the runtime run on SQLite, and those whose steps write what the dialects write otherwise run on
+  PGlite too**: the replies, the read model, the log and the rename. The rules of the runtime are the same on both
+  dialects. A test that moves the test's clock expects done what the time has come for, and a statement of
+  bun:sqlite ends before its fiber yields, where one of PGlite does not. So such a test runs on SQLite alone.
 
 ## What it rests on
 
@@ -121,6 +132,12 @@ that differ from SQLite:
   spike**. The order of SQLite is kept by expressions, which a test of the read model checks on both dialects.
 - That neither json nor jsonb parses a text escaping U+0000 or holding a lone surrogate, and that no text holds
   U+0000: **seen in the spike**.
+- That PostgreSQL writes a lone surrogate as U+FFFD, and that SQLite gives it back as other text: **seen in the
+  spikes** [`spikes/pglite-dialect.test.ts`](../../spikes/pglite-dialect.test.ts) and
+  [`spikes/sqlite-column-values.test.ts`](../../spikes/sqlite-column-values.test.ts).
+- That a test of the runtime that moves the clock finds the work of PGlite undone: **seen** when the whole of
+  [`src/runtime.test.ts`](../../src/runtime.test.ts) was run on PGlite, where 20 of its tests failed, each after it
+  moved the clock or read a plan of SQLite.
 - That jsonb compares a number by its exact digits: **seen in the spike**, with 2^70.
 - That a row trigger after a delete sees every row the statement deleted, so that a publication goes with the last
   row of the outbox that names it ([decision 0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md)):
@@ -158,14 +175,21 @@ that differ from SQLite:
 - **A rename that writes a request again in the process on both dialects.** It would read every request of the
   tables into the process on SQLite too, where one statement per table does the work.
 - **Strings of an index refused on PostgreSQL alone.** A program tested on SQLite would meet the defect only once
-  deployed on PostgreSQL.
+  deployed on PostgreSQL, and SQLite gives a lone surrogate back as another text too.
+- **Every test of the runtime on both dialects.** The tests that move the clock would wait for statements of
+  PGlite, which a test's clock does not know of, and the rules they check do not depend on the dialect.
 
 ## Consequences
 
 - [`src/storage.ts`](../../src/storage.ts) writes each statement that differs once per dialect, holds a database of
   PostgreSQL with an advisory lock, writes `request_id`, and gives PostgreSQL the expressions of an index.
-- [`src/machine.ts`](../../src/machine.ts) refuses an index that is a string holding U+0000 or a lone surrogate, and
-  [`src/machine.test.ts`](../../src/machine.test.ts) checks it.
+- [`src/program.ts`](../../src/program.ts) gives `isText`, which [`src/machine.ts`](../../src/machine.ts) reads of
+  an index, `checkProgram` of the names, and [`src/runtime.ts`](../../src/runtime.ts) of the renames, the consumers
+  and the ids. [`src/machine.test.ts`](../../src/machine.test.ts),
+  [`src/program.test.ts`](../../src/program.test.ts) and [`src/runtime.test.ts`](../../src/runtime.test.ts) check
+  each. [`src/test-databases.ts`](../../src/test-databases.ts) gives the tests a database of each dialect.
 - [`src/storage.test.ts`](../../src/storage.test.ts) runs its tests on both dialects, and reads the plans of
-  PostgreSQL. [`src/runtime.test.ts`](../../src/runtime.test.ts) runs on PGlite the tests that write what differs.
-- `docs/design.md` says, under Where it runs, which databases the runtime runs on. The step leaves the roadmap.
+  PostgreSQL. [`src/runtime.test.ts`](../../src/runtime.test.ts) runs on both the tests that write what differs.
+- `docs/design.md` says, under Where it runs, which databases the runtime runs on. The glossary defines a dialect
+  and text a database holds, the diagram of `README.md` shows both databases, and `docs/open-questions.md` asks
+  what a server with many connections does. The step leaves the roadmap.

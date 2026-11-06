@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-11-06, with the step Renaming a program of the roadmap. Decides the
 [open question](../open-questions.md#storage-and-reading) of renaming a program. Changes
 [decision 0022](archive/0022-a-new-program-keeps-what-work-started-with.md), which leaves a rename outside the
-runtime.
+runtime. On PostgreSQL a rename writes a request's text again in the process, by
+[decision 0157](0157-the-storage-speaks-sqlite-and-postgresql.md).
 
 ## Context
 

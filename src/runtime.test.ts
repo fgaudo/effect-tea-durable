@@ -44,7 +44,8 @@ import {
 } from './program.ts'
 import * as Library from './index.ts'
 import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
-import { createTables, partitionOf, storage } from './storage.ts'
+import { createTables, type Dialect, partitionOf, storage } from './storage.ts'
+import { client, onEach } from './test-databases.ts'
 import {
   inOrder,
   prioritized,
@@ -244,16 +245,22 @@ const persisted = Effect.gen(function*() {
 
 /**
  * A database for one test: every process of the test shares it, as a crash leaves the file behind. Time is the
- * test's: it starts at 0, and moves only when the test moves it (decision 0066).
+ * test's: it starts at 0, and moves only when the test moves it (decision 0066). A test runs on SQLite, whose
+ * statements end before their fiber yields, so that a test that moves the clock finds done what the time has come
+ * for. One on PGlite does not, so `onBoth` runs on both dialects the tests whose steps write what the dialects
+ * write otherwise, which move the clock only where nothing waits for a statement (decision 0157).
  */
-const database = <A, E>(test: Effect.Effect<A, E, SqlClient.SqlClient>) =>
-  Effect.runPromise(
-    Effect.scoped(Effect.flatMap(createTables, () => test)).pipe(
-      Effect.provide(SqliteClient.layer({ filename: ':memory:' })),
-      Effect.provide(TestClock.layer()),
-      Effect.orDie,
-    ),
-  )
+const database = <A, E>(test: Effect.Effect<A, E, SqlClient.SqlClient>, dialects: ReadonlyArray<Dialect> = ['sqlite']) =>
+  onEach(dialects, (dialect) =>
+    Effect.runPromise(
+      Effect.scoped(Effect.flatMap(createTables, () => test)).pipe(
+        Effect.provide(client(dialect)),
+        Effect.provide(TestClock.layer()),
+        Effect.orDie,
+      ),
+    ))
+
+const onBoth = <A, E>(test: Effect.Effect<A, E, SqlClient.SqlClient>) => database(test, ['sqlite', 'pg'])
 
 /**
  * What a test is told of what the runtime did, each kind of it apart: `at` each point of the crash table, where it
@@ -627,7 +634,7 @@ describe('the runtime on SQLite', () => {
     })))
 
   test('answers a retry from the stored reply, and NotFound for no entity', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const { layer } = yield* hands()
       const at = yield* DateTime.now
       yield* process({}, (runtime) =>
@@ -712,10 +719,43 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // No database gives a lone surrogate back as written, so that two ids would be one entity, and PostgreSQL holds U+0000
+  // in no text (decision 0157).
+  test('an id that is no text a database holds is the caller’s defect, and reaches no entity', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const sender = { _tag: 'Tester' } as const
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+          for (const broken of ['toy\ud800', 'toy\udc00', 'toy\u0000']) {
+            const calls: ReadonlyArray<Effect.Effect<unknown>> = [
+              toy.create(broken, { at }, { requestId: 'creation', sender }),
+              toy.send(broken, want, { requestId: 'r', sender }),
+              toy.read(broken),
+              toy.resume(broken),
+              toy.discard(broken),
+            ]
+            for (const call of calls) {
+              const exit = yield* Effect.exit(call)
+              const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+              expect(cause instanceof InvariantDefect ? cause.reason : null).toBe(`the id is ${JSON.stringify(broken)}, which is no text a database holds`)
+            }
+          }
+          const sql = yield* SqlClient.SqlClient
+          expect(yield* sql`SELECT id FROM entities`).toEqual([])
+          // A pair of surrogates is one character, and an id.
+          yield* toy.create('toy😀', { at }, { requestId: 'creation', sender })
+          expect(yield* sql`SELECT id FROM entities`).toEqual([{ id: 'toy😀' }])
+        }))
+    })))
+
   // A message waits in the mailbox behind another while a creation under its request id is answered: the
   // creation's reply must not reach the message's caller (decision 0050).
   test('a creation and a message under one request id are answered each its own reply', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const { layer } = yield* hands()
       const at = yield* DateTime.now
       const gate = yield* Deferred.make<void>()
@@ -1016,6 +1056,32 @@ describe('the runtime on SQLite', () => {
           const stored = yield* storage(sender, yield* SqlClient.SqlClient).load('sender')
           expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: { name: 'c' }, incarnation: 1 })
           expect(yield* storage(program, yield* SqlClient.SqlClient).load(id)).toBeNull()
+        }))
+    })))
+
+  // An id an operation gives is held as a caller's is (decision 0157).
+  test('an operation that sends to an id that is no text a database holds dies, and suspends its entity', () =>
+    database(Effect.gen(function*() {
+      const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
+        ...sending,
+        operations: {
+          ...sending.operations,
+          C: operation.atLeastOnce(({ key }) =>
+            Effect.as(send(program, 'toy\ud800', { _tag: 'Want', key: 'a', on: false, nonce: 'sent' }, 'want'), done(key))
+          ),
+        },
+      }
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          yield* Effect.provide(runtime.deploy(program), layer)
+          const from = yield* runtime.deploy(sender)
+          yield* ran(from.create('sender', { at }, { requestId: 'creation', sender: tester }))
+          yield* runtime.settled
+          const stored = yield* storage(sender, yield* SqlClient.SqlClient).load('sender')
+          expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: { name: 'c' }, incarnation: 1 })
+          expect(stored?.suspension?.cause).toContain('the id is "toy\\ud800", which is no text a database holds')
         }))
     })))
 
@@ -2745,7 +2811,7 @@ describe('the read model', () => {
     })
 
   test('a query finds the entities by an index, in order, and gives what callers read', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
@@ -2895,7 +2961,7 @@ describe('publishing what happened', () => {
   const tester = { _tag: 'Tester' } as const
 
   test('a creation, and every step that changes what callers read, publishes a row', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
@@ -2924,7 +2990,7 @@ describe('publishing what happened', () => {
     })))
 
   test('a cursor reads what was published after it, and prune drops what every consumer has read', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
@@ -3066,6 +3132,11 @@ describe('publishing what happened', () => {
         [{ projection: 'queue' }, "declares the consumers of 'projection' as no list"],
         [{ projection: [''] }, "declares a consumer of 'projection' with no name"],
         [{ projection: ['queue', 'queue'] }, "declares the consumer 'queue' of 'projection' twice"],
+        // A consumer's name is stored as text, which a database holds as it is (decision 0157).
+        [
+          { projection: ['a\u0000'] },
+          `declares a consumer "a\\u0000" of 'projection', whose name is no text a database holds`,
+        ],
       ]
       for (const [consumers, reason] of refused) {
         const exit = yield* Effect.exit(process({}, (runtime) =>
@@ -3085,7 +3156,7 @@ describe('publishing what happened', () => {
     })))
 
   test('a consumer declared at deploy holds the rows published before its first reading', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
@@ -3103,7 +3174,7 @@ describe('publishing what happened', () => {
     })))
 
   test('a topic no consumer holds is pruned whole, and a reading by hand has no say in it', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
       const topical: Program<T & Readonly<{ topics: { count: number; high: boolean } }>> = {
         ...program,
@@ -3321,7 +3392,7 @@ describe('publishing what happened', () => {
     })))
 
   test('entities stepping at once each publish in their partition, and nothing of theirs is lost', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
       const ids = ['p-1', 'p-2', 'p-3']
       yield* process({}, (runtime) =>
@@ -3380,7 +3451,7 @@ describe('publishing what happened', () => {
     })))
 
   test('a consumer reads every partition, and an ack and a prune move only the partitions acked', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
       // Two entities of two partitions.
       const [one, other] = ['a', 'b']
@@ -3562,7 +3633,7 @@ describe('publishing what happened', () => {
     })))
 
   test('a cursor is a consumer of one program, and holds no other program log', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
       // The same program under another name: two programs' entities publish into one log, read apart by name.
       const twin: Program<T> = { ...program, name: 'Twin' }
@@ -4857,7 +4928,7 @@ describe('renaming a program (decision 0156)', () => {
   const want = { _tag: 'Want', key: 'a', on: true, nonce: 'w1' } as const
 
   test("a launch moves the entities of the old name, which keep their work's keys and their callers' replies", () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
       // The idempotent operation acts and never comes back: it is under way when the process ends.
       const first = yield* hands({ holds: true })
@@ -4901,6 +4972,8 @@ describe('renaming a program (decision 0156)', () => {
         [{ Toy: 'Toy' }, "the launch renames 'Toy' to itself"],
         [{ Toy: 'Game', Game: 'Plaything' }, "the launch renames 'Toy' to 'Game', which it renames too"],
         [{ Toy: 'Plaything', Game: 'Plaything' }, "the launch renames both 'Toy' and 'Game' to 'Plaything'"],
+        // A name is stored as text, which a database holds as it is (decision 0157).
+        [{ Toy: 'Toy\ud800' }, 'the launch renames "Toy" to "Toy\\ud800", and a name is text a database holds'],
       ] as const
       for (const [renames, reason] of refused) {
         expect(reasonOf(yield* Effect.exit(process({ renames }, () => Effect.void)))).toBe(reason)

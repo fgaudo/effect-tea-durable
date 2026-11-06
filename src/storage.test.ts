@@ -2,20 +2,18 @@
  * The storage writes what the machine says an event writes, and decides nothing but what only it sees: another
  * entity's keys (decision 0057). Here it is given rows by hand, and what it holds afterwards is read back.
  */
-import { PGlite } from '@electric-sql/pglite'
-import { PgliteClient } from '@effect/sql-pglite'
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { describe, expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
-import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
 import { SqlClient, Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
 import { InvariantDefect, isTimer, type Json, type Migration, noWork, operation, type Program, type Scalar } from './program.ts'
 import { createTables, type Dialect, dialectOf, type Found, partitionOf, type Query, renamed, storage } from './storage.ts'
+import { client, onEach } from './test-databases.ts'
 import { everySchedule } from './testing.ts'
 
 type T = {
@@ -110,45 +108,21 @@ const inbound = (message: string): Machine.EnvelopeRow => ({
 })
 
 /**
- * The data of a new database of PGlite, which each test copies, since a copy starts in a fifth of the time of a new
- * database (decision 0157).
- */
-let empty: Promise<File | Blob> | undefined
-const copied = () =>
-  empty ??= PGlite.create().then(async (pg) => {
-    const dump = await pg.dumpDataDir('none')
-    await pg.close()
-    return dump
-  })
-
-/** A client of a new database of `dialect`: SQLite in memory, or PostgreSQL on PGlite. */
-const client = (dialect: Dialect) =>
-  dialect === 'sqlite'
-    ? SqliteClient.layer({ filename: ':memory:' })
-    : Layer.unwrap(Effect.map(Effect.promise(copied), (loadDataDir) => PgliteClient.layer({ loadDataDir })))
-
-/**
  * Runs `body` on a database of each of `dialects` whose tables are created, one after the other. A failure names the
  * dialect it failed on. The storage speaks both dialects, so a test runs on both unless it reads what only one
  * writes (decision 0157).
  */
-const database = async <A>(
+const database = <A>(
   body: (sql: SqlClient.SqlClient) => Effect.Effect<A>,
   dialects: ReadonlyArray<Dialect> = ['sqlite', 'pg'],
-) => {
-  for (const dialect of dialects) {
-    try {
-      await Effect.runPromise(
-        Effect.flatMap(createTables, () => Effect.flatMap(SqlClient.SqlClient, body)).pipe(
-          Effect.provide(client(dialect)),
-          Effect.orDie,
-        ),
-      )
-    } catch (thrown) {
-      throw new Error(`on ${dialect}`, { cause: thrown })
-    }
-  }
-}
+) =>
+  onEach(dialects, (dialect) =>
+    Effect.runPromise(
+      Effect.flatMap(createTables, () => Effect.flatMap(SqlClient.SqlClient, body)).pipe(
+        Effect.provide(client(dialect)),
+        Effect.orDie,
+      ),
+    ))
 
 test('a reply asked by work that no longer holds goes as it is stored, and one whose work holds is kept', () =>
   database((sql) =>

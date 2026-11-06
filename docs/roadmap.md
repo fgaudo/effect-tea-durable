@@ -5,17 +5,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **A store on PostgreSQL.** The storage speaks SQLite only, and a database of one file serves one machine. A
-   serious backend runs on a database server, and Effect Cluster across machines needs one that its runners share.
-   The step decides how the storage speaks both dialects, what each one's JSON, order and integers change, how a
-   runtime holds a database of a server, and what is tested where no server runs. It is taken by a note of its own.
-2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
 
 - **Effect Cluster.** The runtime runs on it as [`docs/cluster.md`](cluster.md) and decisions 0081 to 0092 decide,
-  with sharding and rolling deploys. It runs across machines once Cluster has a fence, or the runtime one of its own
+  with sharding and rolling deploys. Its runners share a database of PostgreSQL
+  ([decision 0157](decisions/0157-the-storage-speaks-sqlite-and-postgresql.md)). It runs across machines once Cluster has a fence, or the runtime one of its own
   ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)). Before it is done, the
   two interleavings [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) reached are read
   again, since the runtime on Cluster may change them:
