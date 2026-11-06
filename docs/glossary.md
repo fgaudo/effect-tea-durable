@@ -14,7 +14,7 @@ Cluster's says so.
   holds its work under `<child>.<key>`, and runs its operations under `<child>.<tag>`.
 - **Consumer.** A name under which one topic of the outbox is read, declared where the program is deployed, with
   a stored cursor per partition that `ack` moves forward and never back. One name in two topics is two consumers.
-  Several readers may read one consumer, each naming the partitions it reads, and the division is the caller's.
+  Several readers may read one consumer.
 - **Crash.** The process dies at a point of the crash table, or an entity leaves the process on an event the runtime
   cannot finish. To the machine, a passivation is a crash the runtime chose.
 - **Defect.** What the program does that it should not: a function or a schema of its that throws, or a rule of the
@@ -96,6 +96,9 @@ Cluster's says so.
   JSON, a time as its milliseconds. Stored as a row with the value of each index, which `read`, a query, a count,
   a sum and a count per value read. The read model answers what the program's application reads to act; any other question over the
   entities is a *report*.
+- **Reader.** A caller of `feed` under a consumer's name, which may name the partitions it reads. The readers of
+  one consumer divide its partitions among them, and the division is the caller's: the runtime holds no reader,
+  and two readers that name one partition are given the same rows.
 - **Raised event.** What a child's `update` tells its parent with `raise(event)(state)`, handled by the parent's
   `onEvent` in the same step, and never stored.
 - **Report.** A question over the entities the read model does not answer: a grouping other than a count per value
