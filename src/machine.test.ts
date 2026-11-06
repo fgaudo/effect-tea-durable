@@ -1806,6 +1806,22 @@ describe('a new program', () => {
     expect(Machine.idempotencyKeyOf(machine, { name: 'charge' }, 1)).toBe(digest)
   })
 
+  test("a renamed entity's work keeps the idempotency keys of the name its keys are drawn from (decision 0156)", () => {
+    const plain = checked((message) => message, () => ({ charge: 'operation' }))
+    const created = Machine.start(plain.program, 'tiny', null, epoch, by('creation'))
+    if (created._tag === 'Defect') throw created.cause
+    const first = idempotencyKey({ name: 'Tiny', id: 'tiny' }, { name: 'charge' }, 1)
+    const keysOf = (outputs: ReadonlyArray<Machine.Output<Tiny>>) =>
+      outputs.flatMap((output) => (output._tag === 'Started' ? [output.idempotencyKey] : []))
+    expect(keysOf(created.outputs)).toEqual([first])
+    // The launch renamed `Tiny` to `Small`: the entity holds the new name, and the name its keys are drawn from.
+    const program = { ...plain.program, name: 'Small' }
+    const stored = { ...created.machine.stored, name: 'Small', keyedAs: 'Tiny' }
+    const machine: Entity = { ...created.machine, stored, program, replies: new Map() }
+    expect(keysOf(stepped(machine, { _tag: 'Restart' }).outputs)).toEqual([first])
+    expect(Machine.idempotencyKeyOf(machine, { name: 'charge' }, 1)).toBe(first)
+  })
+
   test('declaring the digest of an operation under way is a defect, as changing its delivery is', () => {
     const machine = checked((message) => message, () => ({ charge: 'operation' }))
     const transition = stepped(machine, { _tag: 'Restart' }, {

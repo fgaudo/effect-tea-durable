@@ -5,11 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Renaming a program** ([open question](open-questions.md#storage-and-reading)). A program's name is the address
-   of its entities, and is in every idempotency key, so a deploy under a new name finds none of them. The step
-   decides how a rename moves what is stored under the old name, what keeps the keys of the work under way, and
-   what reaches the senders of the replies stored under it. It is taken by a note of its own.
-2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
@@ -23,6 +19,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)), which a resumption told by a
     message changes ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md));
   - an entity's lock dropped while others wait for it ([decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md)).
+
+  On Cluster an entity's type is its program's name, and Cluster stores its messages under it, so a rename moves
+  Cluster's rows too ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)).
 
   Whether a partition of the log is Cluster's shard is decided with this step: the head of a partition keeps the
   order without it, and a test with two writers checks that the steps of a partition commit in the order of their

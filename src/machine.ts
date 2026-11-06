@@ -385,6 +385,11 @@ export type Run<T extends Types> = Readonly<{
 export type Stored<T extends Types> = Readonly<{
   /** The name of the program the entity was created by: with its id, the entity's address (decision 0022). */
   name: string
+  /**
+   * The name the entity's idempotency keys are drawn from, once a launch has renamed its program: the name it held
+   * before its first rename. Absent for an entity never renamed, whose keys are drawn from `name` (decision 0156).
+   */
+  keyedAs?: string
   id: string
   state: T['state']
   /** The work under way, by the `keyText` of each key, which each run carries as data (decision 0136). */
@@ -585,10 +590,11 @@ export const holds = <T extends Types>(stored: Stored<T>, key: Key, incarnation:
 
 /**
  * The idempotency key a runner of `delivery` is given for the work under `key` in `incarnation`: the readable one,
- * or its digest. It is a pure function of what is stored, so a restart gives the same one (decision 0123).
+ * or its digest. It is a pure function of what is stored, so a restart gives the same one (decision 0123), and so
+ * does a rename, which keeps the name the keys are drawn from (decision 0156).
  */
 const givenKey = <T extends Types>(stored: Stored<T>, key: Key, incarnation: number, delivery?: Delivery) => {
-  const readable = idempotencyKey({ name: stored.name, id: stored.id }, key, incarnation)
+  const readable = idempotencyKey({ name: stored.keyedAs ?? stored.name, id: stored.id }, key, incarnation)
   return delivery === 'IdempotentDigest' ? digestOf(readable) : readable
 }
 

@@ -10,7 +10,7 @@ import * as Effect from 'effect/Effect'
 import * as Hash from 'effect/Hash'
 import * as Schema from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
-import { SqlClient, type Statement } from 'effect/sql'
+import { SqlClient, type SqlError, type Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
 import {
   type Durable,
@@ -87,11 +87,14 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   const sql = yield* SqlClient.SqlClient
   // The state, the request that created the entity and the suspension: one row per entity. `suspended_at` is the
   // time the entity suspended, kept while it stays suspended, which an operator reads (decision 0114).
-  // `incarnations` is the last incarnation the entity drew, which never goes back (decision 0132).
+  // `incarnations` is the last incarnation the entity drew, which never goes back (decision 0132). `keyed_as` is
+  // the name the entity's idempotency keys are drawn from, written by its first rename and null before
+  // (decision 0156).
   yield* sql`
     CREATE TABLE IF NOT EXISTS entities (
       name TEXT NOT NULL,
       id TEXT NOT NULL,
+      keyed_as TEXT,
       state TEXT NOT NULL,
       version INTEGER NOT NULL,
       creation TEXT NOT NULL,
@@ -287,6 +290,109 @@ export const partitioned = (partitions: number): Effect.Effect<void, never, SqlC
     }
   }).pipe(Effect.orDie)
 
+/** The tables whose rows are keyed by a program's name, each with an index whose first column is the name. */
+const namedTables = [
+  'entities',
+  'entity_keys',
+  'mailbox',
+  'projections',
+  'heads',
+  'publications',
+  'outbox',
+  'consumers',
+  'cursors',
+  'replies',
+] as const
+
+/**
+ * Moves what is stored under each old name of `renames` to its new name, in one transaction: a rename that fails
+ * moves nothing, and dies. A rename whose old name holds nothing moves nothing, so that it may stay in the launch.
+ * One onto a name that holds an entity, a head of the log or a consumer is the launcher's defect. An entity keeps
+ * the name its idempotency keys are drawn from, and every request its entities sent names the new name
+ * (decision 0156). The runtime checks `renames` first, and runs this before any deploy, while nothing is loaded.
+ */
+export const renamed = (
+  renames: ReadonlyArray<readonly [from: string, to: string]>,
+): Effect.Effect<void, never, SqlClient.SqlClient> =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const flag = (statement: Effect.Effect<ReadonlyArray<unknown>, SqlError.SqlError>) =>
+      Effect.map(
+        Effect.flatMap(statement, Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ held: Count })))),
+        (found) => (found[0]?.held ?? 0) > 0,
+      )
+    const die = (reason: string) => Effect.die(new InvariantDefect({ reason }))
+    // Each `EXISTS` is a search of an index whose first column is the name, or of `replies_sender`.
+    const holds = (name: string) =>
+      flag(sql`
+        SELECT (${
+        sql.or([
+          ...namedTables.map((table) => sql`EXISTS (SELECT 1 FROM ${sql(table)} WHERE name = ${name})`),
+          sql`EXISTS (SELECT 1 FROM replies WHERE sender_name = ${name})`,
+        ])
+      }) AS held
+      `)
+    const occupied = (name: string) =>
+      flag(sql`
+        SELECT (${
+        sql.or(['entities', 'heads', 'consumers'].map((table) =>
+          sql`EXISTS (SELECT 1 FROM ${sql(table)} WHERE name = ${name})`
+        ))
+      }) AS held
+      `)
+    // The requests the old name's entities sent name it as their `entity`: the request that created an entity, a
+    // message waiting in a mailbox, and a reply's request. `json_set` writes the new name in place, in the
+    // database, and no request is read into the process.
+    const requests = [['entities', 'creation'], ['mailbox', 'request'], ['replies', 'request']] as const
+    const sentBy = (column: string, from: string) =>
+      sql`json_extract(${sql(column)}, '$._tag') = 'Operation' AND json_extract(${
+        sql(column)
+      }, '$.entity.name') = ${from}`
+    const rename = (from: string, to: string) =>
+      Effect.gen(function*() {
+        if (!(yield* holds(from))) return
+        if (yield* occupied(to)) {
+          return yield* die(
+            `the launch renames '${from}' to '${to}', which holds an entity, a head of the log or a consumer already`,
+          )
+        }
+        // A sender's retry finds its reply by the text of its request, which `json_set` writes, and no version of
+        // SQLite the repository pins documents that text. So the rename checks, before it moves anything, that the
+        // old name set again gives each text back unchanged, and that the new name is quoted as `JSON.stringify`
+        // quotes it (decision 0156).
+        const quoted = yield* Effect.flatMap(
+          sql`SELECT json_quote(${to}) AS quoted`,
+          Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ quoted: Schema.String }))),
+        )
+        let rewritten = quoted[0]?.quoted !== JSON.stringify(to)
+        for (const [table, column] of requests) {
+          rewritten ||= yield* flag(sql`
+            SELECT EXISTS (
+              SELECT 1 FROM ${sql(table)}
+              WHERE ${sentBy(column, from)} AND json_set(${sql(column)}, '$.entity.name', ${from}) IS NOT ${
+            sql(column)
+          }
+            ) AS held
+          `)
+        }
+        if (rewritten) {
+          return yield* die(
+            `the launch renames '${from}' to '${to}', and SQLite writes a request's text otherwise than the runtime`,
+          )
+        }
+        for (const [table, column] of requests) {
+          yield* sql`
+            UPDATE ${sql(table)} SET ${sql(column)} = json_set(${sql(column)}, '$.entity.name', ${to})
+            WHERE ${sentBy(column, from)}
+          `
+        }
+        yield* sql`UPDATE replies SET sender_name = ${to} WHERE sender_name = ${from}`
+        yield* sql`UPDATE entities SET keyed_as = COALESCE(keyed_as, ${from}) WHERE name = ${from}`
+        for (const table of namedTables) yield* sql`UPDATE ${sql(table)} SET name = ${to} WHERE name = ${from}`
+      })
+    yield* sql.withTransaction(Effect.forEach(renames, ([from, to]) => rename(from, to), { discard: true }))
+  }).pipe(Effect.orDie)
+
 /**
  * A value read from JSON text through its schema: what the machine wrote, encoded by the same schema
  * (decisions 0030, 0040, 0057).
@@ -360,6 +466,7 @@ const Rows = {
   /** A suspension's event and its cause are written together, or not at all. */
   entity: decoder(Schema.Union([
     Schema.Struct({
+      keyed_as: Schema.NullOr(Schema.String),
       state: Schema.String,
       version: Version,
       creation: Schema.String,
@@ -368,6 +475,7 @@ const Rows = {
       suspended_cause: Schema.Null,
     }),
     Schema.Struct({
+      keyed_as: Schema.NullOr(Schema.String),
       state: Schema.String,
       version: Version,
       creation: Schema.String,
@@ -873,7 +981,7 @@ export const storage = <T extends Types>(
   const load = (id: string) =>
     Effect.gen(function*() {
       const entities = yield* rows('entities', Rows.entity)(
-        sql`SELECT state, version, creation, incarnations, suspended_on, suspended_cause
+        sql`SELECT keyed_as, state, version, creation, incarnations, suspended_on, suspended_cause
             FROM entities WHERE name = ${name} AND id = ${id}`,
       )
       const row = entities[0]
@@ -913,6 +1021,7 @@ export const storage = <T extends Types>(
       )
       return {
         name,
+        ...(row.keyed_as === null ? {} : { keyedAs: row.keyed_as }),
         id,
         state: state.read(row.state, up('state', row.version)),
         keys,

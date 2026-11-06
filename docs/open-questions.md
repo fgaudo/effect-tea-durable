@@ -14,11 +14,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     prune run on it;
   - whether the runtime keeps room of its own, a file it drops once the disk is full, so that a prune always has
     the room it needs.
-- **Renaming a program.** A program's name is the entities' address, and a schema's migration does not move
-  what is stored under it: its entities, and the replies stored for them by other entities
-  ([decision 0022](decisions/archive/0022-a-new-program-keeps-what-work-started-with.md)). How a rename is run, and
-  what reaches the senders that stored a reply under the old name, is not decided. A schema that changes is
-  ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)).
 - **Generated cases of a migration.** A case of a migration is recorded by hand, with the JSON a version wrote and
   the JSON the next one reads
   ([decision 0126](decisions/0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md)). A changed

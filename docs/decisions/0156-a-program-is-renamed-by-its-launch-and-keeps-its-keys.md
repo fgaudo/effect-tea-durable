@@ -1,6 +1,6 @@
 # 0156. A program is renamed by its launch, and its entities keep their keys
 
-**Status:** proposed, 2026-11-06, for the step Renaming a program of the roadmap. Decides the
+**Status:** accepted, 2026-11-06, with the step Renaming a program of the roadmap. Decides the
 [open question](../open-questions.md#storage-and-reading) of renaming a program. Changes
 [decision 0022](archive/0022-a-new-program-keeps-what-work-started-with.md), which leaves a rename outside the
 runtime.

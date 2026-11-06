@@ -435,6 +435,31 @@ once deployed is never changed, since it is how a version that exists in storage
 each migration: a JSON value a version wrote of one kind, and the JSON value the next version reads of it.
 `migrationViolations` checks the program against them.
 
+### Renaming a program
+
+A program is renamed by its launch: `launch` takes `renames`, a record from each old name to its new name
+([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). A rename is a move of the
+database, as the number of partitions is, so it is the launch's, and the program only carries its new name.
+
+The launch runs every rename in one transaction, after it holds the database and before any deploy, so no entity
+is loaded while the rows move. Every row stored under the old name moves to the new one, in every table. Every
+reply whose sender is the old name names the new one, and so does every request the old name's entities sent: in
+the mailboxes, in the replies and in the rows of the entities they created. A sender that sends again after the
+rename keys its request with the new name, and finds the reply stored for it. A caller's retry finds its reply too.
+
+An entity keeps the idempotency keys of its work. From its first rename it stores the name its keys are drawn
+from, and its keys are drawn from that name from then on, so an operation under way runs again under the key it
+was given. Its state, versions, incarnations, partition and suspension do not change, and the consumers keep their
+names and cursors. A state or a message that holds an address of the old name is the program's data, which its own
+migration moves.
+
+A rename whose old name holds nothing moves nothing, so it may stay in the launch for as long as a database of the
+old name may be launched. A rename onto a name that holds an entity, a head of the log or a consumer dies, and
+moves nothing. An empty name, a name renamed to itself, a name both renamed and the new name of another, and two
+names renamed to one are refused before the database is held. A deploy of a program whose name the launch renames
+dies, since it is the old program. On Effect Cluster an entity's type is the name, and a rename there is decided
+with Cluster.
+
 ## Execution
 
 - **Activation.** The runtime loads the state, the incarnations and the stored work, computes `durable(state)`,

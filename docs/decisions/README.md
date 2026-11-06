@@ -116,7 +116,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | Note | Decides | Changed by |
 | --- | --- | --- |
 | [0020](archive/0020-a-new-program-is-checked-against-the-stored-work.md) | A new program is checked against the work it finds stored | [0064](archive/0064-the-program-is-not-the-machines-state.md) |
-| [0022](archive/0022-a-new-program-keeps-what-work-started-with.md) | A new program keeps how its work is delivered, and its name |  |
+| [0022](archive/0022-a-new-program-keeps-what-work-started-with.md) | A new program keeps how its work is delivered, and its name | [0156](0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md) |
 | [0036](archive/0036-a-migration-is-a-function-on-the-json.md) | A program carries its migrations, and a migration is a function on the JSON | [0043](archive/0043-a-row-no-version-reads-fails-what-reads-it.md), [0058](archive/0058-work-is-compared-by-what-is-stored.md), [0100](archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md), [0126](0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md) |
 | [0043](archive/0043-a-row-no-version-reads-fails-what-reads-it.md) | A row no version reads fails what reads it, not the process | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) |
 | [0100](archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md) | A rejection's reason is kept as long as a reply of its version is stored |  |

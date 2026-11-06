@@ -12,7 +12,7 @@ import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import * as Machine from './machine.ts'
 import { InvariantDefect, isTimer, type Json, type Migration, noWork, operation, type Program, type Scalar } from './program.ts'
-import { createTables, type Found, partitionOf, type Query, storage } from './storage.ts'
+import { createTables, type Found, partitionOf, type Query, renamed, storage } from './storage.ts'
 import { everySchedule } from './testing.ts'
 
 type T = {
@@ -1289,3 +1289,135 @@ test('a reading passes over the rows its cursors have read, page after page, and
       expect(seen(yield* store.published('projection', [{ partition: a, seq: 300 }, { partition: a, seq: 1 }], all)))
         .toEqual(['b1'])
     }).pipe(Effect.orDie)))
+
+describe('renaming a program (decision 0156)', () => {
+  const buyer = named('Buyer')
+  const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
+  /** A request of the asker's work, from the entity `a` of the program `name`, under a key whose parameter is `parameter`. */
+  const askedBy = (name: string, parameter?: Json) =>
+    ({
+      _tag: 'Operation',
+      entity: { name, id: 'a' },
+      key: parameter === undefined ? { name: 'ask' } : { name: 'ask', parameter },
+      incarnation: 1,
+      name: 'request',
+    }) as const
+  const stored = (sql: SqlClient.SqlClient) =>
+    Effect.flatMap(
+      sql`SELECT name, id, keyed_as, creation FROM entities ORDER BY name, id`,
+      Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({
+        name: Schema.String,
+        id: Schema.String,
+        keyed_as: Schema.NullOr(Schema.String),
+        creation: Schema.String,
+      }))),
+    )
+  /** The renames run against the database of the test, as the launch runs them. */
+  const rename = (sql: SqlClient.SqlClient, renames: ReadonlyArray<readonly [string, string]>) =>
+    Effect.provideService(renamed(renames), SqlClient.SqlClient, sql)
+  const reasonOf = (exit: Exit.Exit<unknown>) => {
+    const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+    return cause instanceof InvariantDefect ? cause.reason : null
+  }
+
+  test("a rename moves every row of the old name, the requests its entities sent, and keeps each entity's keys", () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const asked = askedBy('Asker')
+        const key = { key: { name: 'ask' }, incarnation: 1, work, delivery: 'Idempotent', due: null } as const
+        yield* storage(asker, sql).write('a', created({ keys: [key], incarnations: 1 }), 0)
+        // The receiver was created by the asker, holds a message it sent, and stores a reply to it.
+        const answered: Machine.ReplyRow = {
+          request: Machine.requestKey(receiver, asked),
+          tag: 'Accepted',
+          reason: null,
+          asked: { name: 'Asker', id: 'a', key: { name: 'ask' }, incarnation: 1 },
+          until: null,
+        }
+        yield* storage(receiver, sql).write('r', created({
+          entity: { state: { last: 'start' }, creation: asked },
+          queued: [{ _tag: 'Inbound', message: 'later', request: asked, keep: null }],
+          replies: [answered],
+        }), 0)
+        yield* rename(sql, [['Asker', 'Buyer']])
+        expect(yield* storage(asker, sql).load('a')).toBeNull()
+        const loaded = yield* storage(buyer, sql).load('a')
+        expect(loaded?.name).toBe('Buyer')
+        expect(loaded?.keyedAs).toBe('Asker')
+        expect(Object.values(loaded?.keys ?? {}).map(({ incarnation }) => incarnation)).toEqual([1])
+        expect(loaded?.state).toEqual({ last: 'start' })
+        // The sender's retry, under its new name, finds the reply stored for it.
+        const store = storage(receiver, sql)
+        expect(yield* store.reply('r', askedBy('Buyer'), 0)).toEqual({ _tag: 'Accepted' })
+        expect(yield* store.reply('r', asked, 0)).toBeNull()
+        const r = yield* store.load('r')
+        expect(r?.creation).toEqual(askedBy('Buyer'))
+        expect(r?.mailbox).toEqual([{ _tag: 'Inbound', message: 'later', request: askedBy('Buyer') }])
+        // A rename whose old name holds nothing moves nothing, and a second rename keeps the first name.
+        yield* rename(sql, [['Asker', 'Buyer']])
+        yield* rename(sql, [['Buyer', 'Client']])
+        expect((yield* stored(sql)).map(({ name, keyed_as }) => [name, keyed_as])).toEqual([
+          ['Client', 'Asker'],
+          ['Receiver', null],
+        ])
+      }).pipe(Effect.orDie)))
+
+  test("a rewritten request's text is the one the runtime writes for the new name, whatever its key holds", () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const parameters: ReadonlyArray<Json> = [
+          1e21,
+          5e-324,
+          -1.5e-7,
+          2 ** 53 + 2,
+          'é "quoted" \ \u0001   😀 \ud800 </x>',
+          { b: [{ z: 1, a: [true, null, 0.1] }], a: '' },
+        ]
+        const answered = (parameter: Json): Machine.ReplyRow => ({
+          request: Machine.requestKey(receiver, askedBy('Asker', parameter)),
+          tag: 'Accepted',
+          reason: null,
+          asked: null,
+          until: null,
+        })
+        yield* storage(asker, sql).write('a', created(), 0)
+        yield* storage(receiver, sql).write('r', created({ replies: parameters.map(answered) }), 0)
+        yield* rename(sql, [['Asker', 'Buyer \u0007 "é"']])
+        const found = yield* Effect.flatMap(
+          sql`SELECT request FROM replies WHERE name = 'Receiver' ORDER BY request`,
+          Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ request: Schema.String }))),
+        )
+        expect([...found.map(({ request }) => request)].sort()).toEqual(
+          parameters.map((parameter) => Machine.requestKey(receiver, askedBy('Buyer \u0007 "é"', parameter))).sort(),
+        )
+      }).pipe(Effect.orDie)))
+
+  test('a rename onto a name that holds an entity dies, and moves nothing', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        yield* storage(asker, sql).write('a', created(), 0)
+        yield* storage(buyer, sql).write('b', created(), 0)
+        const before = yield* stored(sql)
+        expect(reasonOf(yield* Effect.exit(rename(sql, [['Receiver', 'Nobody'], ['Asker', 'Buyer']])))).toBe(
+          "the launch renames 'Asker' to 'Buyer', which holds an entity, a head of the log or a consumer already",
+        )
+        expect(yield* stored(sql)).toEqual(before)
+      }).pipe(Effect.orDie)))
+
+  test('a request whose text SQLite would write otherwise makes the rename die, and moves nothing', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        yield* storage(asker, sql).write('a', created(), 0)
+        yield* storage(receiver, sql).write('r', created(), 0)
+        // A text with spaces, which the runtime never writes, and `json_set` writes without them.
+        const spaced = JSON.stringify(askedBy('Asker'), null, 1)
+        yield* sql`UPDATE entities SET creation = ${spaced} WHERE name = 'Receiver'`
+        expect(reasonOf(yield* Effect.exit(rename(sql, [['Asker', 'Buyer']])))).toBe(
+          "the launch renames 'Asker' to 'Buyer', and SQLite writes a request's text otherwise than the runtime",
+        )
+        expect((yield* stored(sql)).map(({ name, creation }) => [name, creation])).toEqual([
+          ['Asker', JSON.stringify(creation)],
+          ['Receiver', spaced],
+        ])
+      }).pipe(Effect.orDie)))
+})

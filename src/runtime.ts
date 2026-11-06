@@ -51,6 +51,7 @@ import {
   type Published,
   hold,
   partitioned,
+  renamed,
   type Query,
   type Reindexed,
   storage,
@@ -185,6 +186,35 @@ export interface Options {
    * and every consumer's cursors with them (decision 0137).
    */
   readonly log?: Readonly<{ partitions: number }>
+  /**
+   * The programs renamed, from each old name to its new one. The launch moves what is stored under each old name to
+   * the new one in one transaction, before any deploy, and an entity keeps the idempotency keys of its work. A
+   * rename whose old name holds nothing moves nothing, so it may stay here for as long as a database of the old
+   * name may be launched. One onto a name that holds an entity, a head of the log or a consumer dies. So do an
+   * empty name, a name renamed to itself, a name both renamed and the new name of another, and two names renamed
+   * to one, before the database is held. A deploy of a name renamed dies (decision 0156).
+   */
+  readonly renames?: Readonly<Record<string, string>>
+}
+
+/** The renames of a launch as pairs, or the launcher's defect where they cannot run as written (decision 0156). */
+const renamesOf = (renames: Readonly<Record<string, string>>): ReadonlyArray<readonly [string, string]> => {
+  const pairs = Object.entries(renames)
+  const targets = new Map<string, string>()
+  for (const [from, to] of pairs) {
+    const reason = typeof to !== 'string' || from === '' || to === ''
+      ? `the launch renames '${from}' to '${String(to)}', and a name is a string that is not empty`
+      : from === to
+      ? `the launch renames '${from}' to itself`
+      : Object.hasOwn(renames, to)
+      ? `the launch renames '${from}' to '${to}', which it renames too`
+      : targets.has(to)
+      ? `the launch renames both '${targets.get(to)}' and '${from}' to '${to}'`
+      : null
+    if (reason !== null) throw new InvariantDefect({ reason })
+    targets.set(to, from)
+  }
+  return pairs
 }
 
 /**
@@ -636,10 +666,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       const reason = `the log has ${partitions} partitions, which is no positive integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
     }
+    const renames = new Map(yield* Effect.sync(() => renamesOf(options.renames ?? {})))
     // One runtime holds the database, before anything of this one runs, and lets it go after everything of it has
     // stopped: the scope ends what it was given last first (decision 0080).
     yield* Scope.provide(hold, scope)
     yield* partitioned(partitions)
+    // Nothing is deployed yet, so no entity is loaded while the rows move, and no reader reads (decision 0156).
+    yield* renamed([...renames])
     // Everything the runtime runs is forked in `running`, which closes after the drain: a scope runs its finalizers
     // in the reverse order of their adding, so the drain, added after it, runs first (decision 0119).
     const running = yield* Scope.fork(scope)
@@ -1768,6 +1801,13 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           Effect.gen(function*() {
             if (names.has(program.name)) {
               return yield* Effect.die(new InvariantDefect({ reason: `the program '${program.name}' is deployed already` }))
+            }
+            // A program under a name the launch left is the old one, and would create entities under it again
+            // (decision 0156).
+            const renamedTo = renames.get(program.name)
+            if (renamedTo !== undefined) {
+              const reason = `the program '${program.name}' is deployed, and the launch renames it to '${renamedTo}'`
+              return yield* Effect.die(new InvariantDefect({ reason }))
             }
             names.add(program.name)
             const deployed: Deployment<T> = {

@@ -4847,3 +4847,65 @@ test('settled never returns while the waker rests from a reading another entity 
         }))
     }), { early: false, restarted: true }, { open: false, bound: 1 })
 }, 60_000)
+
+describe('renaming a program (decision 0156)', () => {
+  const reasonOf = (exit: Exit.Exit<unknown>) => {
+    const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+    return cause instanceof InvariantDefect ? cause.reason : null
+  }
+  const renamedProgram: Program<T> = { ...program, name: 'Plaything' }
+  const want = { _tag: 'Want', key: 'a', on: true, nonce: 'w1' } as const
+
+  test("a launch moves the entities of the old name, which keep their work's keys and their callers' replies", () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      // The idempotent operation acts and never comes back: it is under way when the process ends.
+      const first = yield* hands({ holds: true })
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), first.layer)
+          yield* ran(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          expect(yield* ran(toy.send(id, want, { requestId: 'w1', sender: tester }))).toEqual({ _tag: 'Accepted' })
+        }))
+      const keyed = first.acted.filter((act) => act.startsWith('a:'))
+      expect(keyed).toEqual([`a:${JSON.stringify(['Toy', id, 'a', 1])}`])
+      const second = yield* hands()
+      yield* process({ renames: { Toy: 'Plaything' } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(renamedProgram), second.layer)
+          yield* runtime.settled
+          // The caller's retry gets the reply stored under the old name, and the message is not applied again.
+          expect(yield* toy.send(id, want, { requestId: 'w1', sender: tester })).toEqual({ _tag: 'Accepted' })
+          expect(yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })).toEqual({ _tag: 'Created' })
+          yield* runtime.settled
+          // The old program, deployed beside, would create entities under the name the launch left.
+          expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy(program), second.layer)))).toBe(
+            "the program 'Toy' is deployed, and the launch renames it to 'Plaything'",
+          )
+        }))
+      // The operation under way runs again under the key it was given before the rename.
+      expect(second.acted.filter((act) => act.startsWith('a:'))).toEqual(keyed)
+      const sql = yield* SqlClient.SqlClient
+      const stored = yield* storage(renamedProgram, sql).load(id)
+      expect(stored?.state.applied).toEqual(['w1'])
+      expect(yield* storage(program, sql).load(id)).toBeNull()
+      // A launch that renames again finds nothing under the old name, and moves nothing.
+      yield* process({ renames: { Toy: 'Plaything' } }, () => Effect.void)
+      expect((yield* storage(renamedProgram, sql).load(id))?.keyedAs).toBe('Toy')
+    })))
+
+  test('renames that cannot run as written are refused before the database is held', () =>
+    database(Effect.gen(function*() {
+      const refused = [
+        [{ Toy: '' }, "the launch renames 'Toy' to '', and a name is a string that is not empty"],
+        [{ Toy: 'Toy' }, "the launch renames 'Toy' to itself"],
+        [{ Toy: 'Game', Game: 'Plaything' }, "the launch renames 'Toy' to 'Game', which it renames too"],
+        [{ Toy: 'Plaything', Game: 'Plaything' }, "the launch renames both 'Toy' and 'Game' to 'Plaything'"],
+      ] as const
+      for (const [renames, reason] of refused) {
+        expect(reasonOf(yield* Effect.exit(process({ renames }, () => Effect.void)))).toBe(reason)
+      }
+      // None of them held the database: a launch after them holds it.
+      yield* process({}, () => Effect.void)
+    })))
+})
