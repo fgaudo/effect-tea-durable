@@ -138,7 +138,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0139](0139-the-projection-is-json.md) | The projection is JSON, and `project` converts |  |
 | [0140](0140-a-row-of-a-topic-gives-its-value.md) | A row of a topic gives the value the topic selects |  |
 | [0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md) | A query and a reading of the log take a limit, and one left out is the caller's defect | [0143](0143-a-query-pages-after-the-last-row-it-gave.md) |
-| [0142](0142-a-consumer-waits-for-a-row-of-its-topic.md) | A consumer waits for a row of its topic, woken by the commit that writes it |  |
+| [0142](0142-a-consumer-waits-for-a-row-of-its-topic.md) | A consumer waits for a row of its topic, woken by the commit that writes it | [0153](0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md) |
 | [0143](0143-a-query-pages-after-the-last-row-it-gave.md) | A query pages after the last row it gave, by the index it orders by and the id | [0144](0144-a-page-reads-the-rows-before-its-cursor.md), [0145](0145-a-page-is-read-as-ranges-of-its-index.md), [0146](0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md) |
 | [0144](0144-a-page-reads-the-rows-before-its-cursor.md) | A page reads the rows of its program before its cursor, and decision 0143 stands on its other reasons | [0145](0145-a-page-is-read-as-ranges-of-its-index.md) |
 | [0145](0145-a-page-is-read-as-ranges-of-its-index.md) | A page is read as ranges of an index of the value and the id, and a descending order reverses the ids |  |
@@ -148,6 +148,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0150](0150-a-count-per-value-of-an-index-is-read-in-one-statement.md) | A count per value of an index is read in one statement, and an ack joins the caller's transaction |  |
 | [0151](0151-a-process-holds-ten-thousand-entities-by-default.md) | A process holds ten thousand entities by default |  |
 | [0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md) | The consumers of a topic are declared at deploy, and a topic no consumer holds is pruned whole |  |
+| [0153](0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md) | A reader of a consumer names the partitions it reads, and the division is the caller's |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for |  |
 | [0027](archive/0027-a-program-gives-the-schema-of-its-senders.md) | A program gives the schema of its senders |  |
