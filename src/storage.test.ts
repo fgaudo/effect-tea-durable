@@ -709,6 +709,8 @@ describe('topics of the log (decision 0138)', () => {
     database((sql) =>
       Effect.gen(function*() {
         const store = storage(topical, sql)
+        // The deploy stores the consumers it declares (decision 0152).
+        yield* store.declare([{ topic: 'upper', consumer: 'c' }, { topic: 'size', consumer: 'c' }])
         yield* store.write('r', publishing(null, { upper: 'START', size: 5 }, ['upper', 'size']), 0)
         yield* store.write('r', publishing('ho', { upper: 'HO', size: 5 }, ['upper']), 0)
         const partition = partitionOf('r', 300)
@@ -727,10 +729,13 @@ describe('topics of the log (decision 0138)', () => {
         expect(yield* store.prune).toBe(2)
         expect(yield* store.published('upper', [], all)).toEqual([])
         expect(yield* store.published('size', [], all)).toHaveLength(1)
-        // A topic no consumer reads keeps every row, as a log no consumer reads did.
+        // A topic no consumer holds is pruned whole, since every consumer is stored at deploy (decision 0152).
         yield* store.forget('size', 'c')
-        expect(yield* store.prune).toBe(0)
-        expect(yield* store.published('size', [], all)).toHaveLength(1)
+        expect(yield* store.consumers).toEqual([{ topic: 'upper', consumer: 'c', behind: 0, cursors: [] }])
+        expect(yield* store.prune).toBe(1)
+        expect(yield* store.published('size', [], all)).toEqual([])
+        // A declare of a consumer stored already leaves its cursors where they are.
+        yield* store.declare([{ topic: 'upper', consumer: 'c' }])
         expect(yield* store.consumers).toEqual([{ topic: 'upper', consumer: 'c', behind: 0, cursors: [] }])
       })))
 })
@@ -1215,6 +1220,7 @@ test('a row that commits after one a consumer has read is read then, from its pa
     Effect.gen(function*() {
       const store = storage(receiver, sql)
       const seen = (read: ReadonlyArray<{ id: string; seq: number }>) => read.map(({ id, seq }) => `${id}${seq}`)
+      yield* store.declare([{ topic: 'projection', consumer: 'c' }])
       yield* logged(sql, 'a', 1, 10)
       const first = yield* store.feed('projection', 'c', all)
       expect(seen(first)).toEqual(['a1'])

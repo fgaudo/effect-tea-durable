@@ -12,8 +12,8 @@ Cluster's says so.
 - **Child, parent.** A part a program or another part holds in its state, declared in its `children` with `child`
   for one, or `each` for children by id; the one that holds it is its parent. The library routes a child's messages,
   holds its work under `<child>.<key>`, and runs its operations under `<child>.<tag>`.
-- **Consumer.** A name under which one topic of the outbox is read, with a stored cursor per partition that `ack`
-  moves forward and never back. One name in two topics is two consumers.
+- **Consumer.** A name under which one topic of the outbox is read, declared where the program is deployed, with
+  a stored cursor per partition that `ack` moves forward and never back. One name in two topics is two consumers.
 - **Crash.** The process dies at a point of the crash table, or an entity leaves the process on an event the runtime
   cannot finish. To the machine, a passivation is a crash the runtime chose.
 - **Defect.** What the program does that it should not: a function or a schema of its that throws, or a rule of the

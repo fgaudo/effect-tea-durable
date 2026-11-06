@@ -1,10 +1,11 @@
 # 0152. The consumers of a topic are declared at deploy
 
-**Status:** proposed, 2026-11-06, for the step A log that nobody prunes of the roadmap. Decides the
+**Status:** accepted, 2026-11-06, with the step A log that nobody prunes of the roadmap. Decides the
 [open question](../open-questions.md#storage-and-reading) of a log that nobody prunes. Changes
 [decision 0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md), whose consumer declares itself by
-reading and whose topic with no consumer keeps every row, and [decision 0138](0138-the-log-publishes-topics.md),
-whose prune drops nothing of a topic with no consumer.
+reading and whose topic with no consumer keeps every row, [decision 0137](0137-the-log-is-ordered-within-a-partition.md),
+whose consumer is stored on its first reading, and [decision 0138](0138-the-log-publishes-topics.md), whose prune
+drops nothing of a topic with no consumer.
 
 ## Context
 
@@ -112,11 +113,14 @@ is really full a prune may fail where the spike's prune succeeded.
   `feed`, `ack` and `forget` check the name against the declared ones. `Consumer` gains `declared`.
 - [`src/storage.ts`](../../src/storage.ts) stores the declared consumers at deploy, writes nothing at a `feed` or an
   ack beyond the cursors, and prunes a topic no consumer holds whole.
+- A consumer is stored only by a deploy, before its handle exists, so no consumer is stored in the middle of a prune.
+  The explored test of a consumer whose first reading lands in a prune is dropped with the race it reached. The
+  prune still reads the cursors and drops the rows in one statement, as decision 0039 decided.
 - [`src/runtime.test.ts`](../../src/runtime.test.ts) checks that an undeclared name is a defect, that a deploy dies
   on consumers it cannot read, that a declared consumer holds the rows published before its first reading, that a
   stored consumer no longer declared is kept, warned of and forgotten, and that a topic with no consumer is pruned
   whole.
 - [`examples/order`](../../examples/order) declares its two consumers where it deploys.
-- `docs/design.md` says, under Consumers, that consumers are declared at deploy and what a prune drops. The
-  glossary's consumer says that it is declared. The open question of a log that nobody prunes leaves
-  `docs/open-questions.md`, and the one of a full disk in WAL mode enters it.
+- `docs/design.md` says, under Consumers, what a prune drops, and under Declared consumers, how consumers are
+  declared and what a full database does. The glossary's consumer says that it is declared. The open question of
+  a log that nobody prunes leaves `docs/open-questions.md`, and the one of a disk that is really full enters it.

@@ -15,20 +15,16 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Storage and reading
 
-- **A log that nobody prunes.** A consumer is a name holding a stored cursor, and the runtime never drops a row
-  a consumer has not read: one that stops acking holds the log, where `consumers` shows it
-  ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)). Nothing caps what that grows
-  to. A step that cannot publish cannot commit, so a cap would stop the entities: what a deployment does when
-  the disk is the limit — a warning, a refusal, a drop that says which consumer lost rows — is not decided.
-  Neither is a consumer nobody meant: `feed` stores the name it is given at its first reading, so a name
-  mistyped once holds its topic until an operator finds it in `consumers` and calls `forget`, and nothing
-  tells the two apart from a consumer that is slow. It would be decided by:
-  - a deployment that runs out of disk under a consumer that stopped, measured for what the runtime can still
-    do once a step cannot commit;
-  - whether the consumers of a topic are declared, with the program or at `deploy`, so that a name not declared
-    is the caller's defect as a topic not declared is
-    ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)), or whether a consumer that
-    has not acked within a time of the operator's is forgotten, and told so at its next reading.
+- **A disk that is really full.** A step that cannot commit dies, and a forget and a prune free the room steps need
+  ([decision 0152](decisions/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). The spike `spikes/full-database.test.ts` sees it
+  under `PRAGMA max_page_count`, with the rollback journal, which caps the database file and not its journal. On a
+  disk that is really full a delete needs room in the journal too, and in WAL mode, the client's default, the rows
+  go to the WAL, which `max_page_count` does not cap. Whether a prune can still run there, and what an operator does
+  where it cannot, is not decided. It would be decided by:
+  - a database on a volume of fixed size, in WAL mode, filled under a consumer that stalled, and the forget and the
+    prune run on it;
+  - whether the runtime keeps room of its own, a file it drops once the disk is full, so that a prune always has
+    the room it needs.
 - **Readers of one consumer.** A consumer is a name within a topic, and `feed` gives every reader of the name the
   rows past its cursors: two fibers that read under one name are given the same rows, and act on them twice, with
   only the ack between them ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)).

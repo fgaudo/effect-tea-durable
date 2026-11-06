@@ -187,8 +187,19 @@ export interface Options {
   readonly log?: Readonly<{ partitions: number }>
 }
 
-/** What a caller does with one program's entities. */
-export interface Handle<T extends Types> {
+/**
+ * The consumers a deployment reads the log with, by topic: each a name within its topic. Who reads the log is the
+ * deployment's, so the same program is deployed with other consumers, or none, in a test (decision 0152).
+ */
+export type Consumers<T extends Types> = { readonly [Name in Topic<T>]?: ReadonlyArray<string> }
+
+/** The names `C` declares for the topic `Name`, or `never` where it declares none. */
+export type ConsumerOf<C, Name extends string> = Name extends keyof C
+  ? NonNullable<C[Name]> extends ReadonlyArray<infer Consumer extends string> ? Consumer : never
+  : never
+
+/** What a caller does with one program's entities, deployed with the consumers `C`. */
+export interface Handle<T extends Types, C = {}> {
   /** Creates the entity `id`. A retry of the request that created it is answered `Created` (decision 0017). */
   readonly create: (
     id: string,
@@ -279,8 +290,10 @@ export interface Handle<T extends Types> {
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * The same from the stored cursors of the consumer `consumer` of `topic`: a consumer is a name within its topic,
-   * its first reading stores it, and `ack` moves its cursors once the rows are acted on. From its first reading
-   * its topic of the log is kept for it, so a consumer holds no state of its own (decisions 0039, 0138).
+   * declared where the program is deployed, and `ack` moves its cursors once the rows are acted on. From the deploy
+   * that first declares it, its topic of the log is kept for it, so a consumer holds no state of its own, and a
+   * reading writes nothing. A name the deploy does not declare for the topic is the caller's defect
+   * (decisions 0039, 0138, 0152).
    * Given `wait`, a reading that finds no row waits until a step commits a row in `topic`, and reads again, for at
    * most `wait.millis` from the call: it gives the first page with a row, or none once the time is over or the
    * runtime stops. A limit of 0 gives none at once. `wait.millis` is a non-negative integer, and anything else is
@@ -288,36 +301,42 @@ export interface Handle<T extends Types> {
    */
   readonly feed: <Name extends Topic<T>>(
     topic: Name,
-    consumer: string,
+    consumer: ConsumerOf<C, Name>,
     limit: number,
     wait?: Readonly<{ millis: number }>,
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * Moves a consumer's cursor in each partition `through` names, and no other. The rows `feed` gave are such a
    * list. A cursor never moves back, since what is behind it may be gone, and never past the last `seq` written in
-   * its partition, so that no row written later is behind it. An ack from a consumer that has not read stores the
-   * consumer too (decisions 0039, 0137). A topic is one the program publishes, and a partition is an integer from 1
+   * its partition, so that no row written later is behind it (decisions 0039, 0137). The consumer is one the deploy
+   * declares for the topic (decision 0152). A topic is one the program publishes, and a partition is an integer from 1
    * to the number of partitions of the log. A `seq` and a limit are non-negative integers, here and in `query`,
    * `published` and `feed`, and a limit left out is no limit at all but the caller's defect, as is anything else
    * (decisions 0053, 0138, 0141). An ack joins a transaction the caller left open on the client the runtime was
    * launched with, so a store the caller writes in it commits with the cursors. Within it the caller waits for
    * nothing a step does, since a step's commit waits for the transaction's connection (decision 0150).
    */
-  readonly ack: (topic: Topic<T>, consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
+  readonly ack: <Name extends Topic<T>>(
+    topic: Name,
+    consumer: ConsumerOf<C, Name>,
+    through: ReadonlyArray<Cursor>,
+  ) => Effect.Effect<void>
   /**
    * Drops what every consumer of a topic has read, in each partition through the lowest cursor there, and gives how
    * many rows went. A consumer that has acked nothing of a partition holds the whole partition of its topic. A
-   * topic no consumer has read from keeps every row (decisions 0039, 0137, 0138).
+   * topic no consumer is stored for is dropped whole, since no reader that keeps cursors needs its rows: a reading
+   * with `published` has no say in a prune (decisions 0039, 0137, 0152).
    */
   readonly prune: Effect.Effect<number>
   /**
-   * Each consumer, with its topic, how many rows are past its cursors, and its cursors in the partitions it has rows
-   * to read in: what keeping it costs the log.
+   * Each consumer stored, with its topic, whether the deploy declares it, how many rows are past its cursors, and its
+   * cursors in the partitions it has rows to read in: what keeping it costs the log (decision 0152).
    */
   readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
   /**
    * Drops a consumer of `topic` and its cursors, so that the next prune passes what it never read: how a consumer
-   * that is gone, or a name misspelt once, stops holding the log (decision 0039).
+   * the deploy no longer declares stops holding the log. A consumer the deploy declares is not forgotten, which is
+   * the caller's defect: a deploy without it lets it go (decisions 0039, 0152).
    */
   readonly forget: (topic: Topic<T>, consumer: string) => Effect.Effect<void>
   /**
@@ -353,10 +372,15 @@ export interface Runtime {
    * in with the entity each operation runs for, so a program that only talks to other entities needs nothing.
    * A program that cannot run as written dies here, before anything is stored or run (decision 0054). So does
    * one whose name this process has deployed already: a new version is deployed by a new process (decision 0075).
+   * `consumers` are the names the log is read with, by topic, none by default. The deploy stores each that is not
+   * stored yet, so that it holds its topic from then on. A consumer stored and not declared is kept, and the deploy
+   * logs a warning for it. A topic the program does not publish, an empty name or a name declared twice in a topic
+   * is refused, before anything is stored (decision 0152).
    */
-  readonly deploy: <T extends Types>(
+  readonly deploy: <T extends Types, const C extends Consumers<T> = {}>(
     program: Program<T>,
-  ) => Effect.Effect<Handle<T>, never, Exclude<T['services'], Entities>>
+    options?: Readonly<{ consumers?: C }>,
+  ) => Effect.Effect<Handle<T, C>, never, Exclude<T['services'], Entities>>
   /**
    * Waits until nothing is under way. Nothing is under way when no event waits, no mailbox holds a message and no
    * operation runs; when no entity told to leave is still held (decision 0076), and none is still unloading
@@ -438,6 +462,8 @@ interface Waker {
 
 interface Deployment<T extends Types> {
   readonly program: Program<T>
+  /** The consumers the deploy declares, by topic (decision 0152). */
+  readonly consumers: ReadonlyMap<string, ReadonlySet<string>>
   readonly storage: Storage<T>
   /**
    * Where everything that runs for the deployment runs: the entities' loops, their operations and timers, and the
@@ -515,6 +541,54 @@ const topical = <T extends Types, A>(program: Program<T>, topic: string, effect:
       ? effect
       : Effect.die(new InvariantDefect({ reason: `'${topic}' is no topic of the program '${program.name}'` }))
   )
+
+/**
+ * The consumers a deploy declares, by topic, once each topic is one `program` publishes and each name is a name,
+ * declared once in its topic: anything else is the deployer's defect, refused before anything is stored
+ * (decisions 0054, 0152).
+ */
+const consumersOf = <T extends Types>(
+  program: Program<T>,
+  consumers: Readonly<Record<string, ReadonlyArray<string> | undefined>>,
+): ReadonlyMap<string, ReadonlySet<string>> => {
+  const refuse = (reason: string): never => {
+    throw new InvariantDefect({ reason: `the deploy of the program '${program.name}' ${reason}` })
+  }
+  const published = new Set(topicsOf(program).map(({ topic }) => topic))
+  const declared = new Map<string, ReadonlySet<string>>()
+  for (const [topic, names] of Object.entries(consumers)) {
+    if (names === undefined) continue
+    if (!published.has(topic)) refuse(`declares consumers of '${topic}', which is no topic of the program`)
+    const held = new Set<string>()
+    for (const consumer of names) {
+      if (typeof consumer !== 'string' || consumer.length === 0) refuse(`declares a consumer of '${topic}' with no name`)
+      if (held.has(consumer)) refuse(`declares the consumer '${consumer}' of '${topic}' twice`)
+      held.add(consumer)
+    }
+    declared.set(topic, held)
+  }
+  return declared
+}
+
+/**
+ * Runs `effect` once `consumer` is one the deploy declares for `topic`, or, given `declared` false, once it is not:
+ * anything else is the caller's defect, and nothing is read or stored for it (decisions 0053, 0152).
+ */
+const enlisted = <T extends Types, A>(
+  deployed: Deployment<T>,
+  topic: string,
+  consumer: string,
+  declared: boolean,
+  effect: Effect.Effect<A>,
+): Effect.Effect<A> =>
+  Effect.suspend(() => {
+    if ((deployed.consumers.get(topic)?.has(consumer) === true) === declared) return effect
+    const program = deployed.program.name
+    const reason = declared
+      ? `'${consumer}' is no consumer the deploy of '${program}' declares for '${topic}'`
+      : `'${consumer}' is a consumer the deploy of '${program}' declares for '${topic}', and is not forgotten`
+    return Effect.die(new InvariantDefect({ reason }))
+  })
 
 export const launch = (options: Options = {}): Effect.Effect<Runtime, never, SqlClient.SqlClient | Scope.Scope> =>
   Effect.gen(function*() {
@@ -1638,10 +1712,17 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       }))
     }
 
-    const deploy = <T extends Types>(program: Program<T>) =>
+    const deploy = <T extends Types, const C extends Consumers<T> = {}>(
+      program: Program<T>,
+      deployOptions?: Readonly<{ consumers?: C }>,
+    ) =>
       Effect.gen(function*() {
-        // A program that cannot run as written is refused before anything is stored or run (decision 0054).
+        // A program that cannot run as written is refused before anything is stored or run, and so are consumers
+        // that cannot be read as written (decisions 0054, 0152).
         yield* Effect.sync(() => checkProgram(program))
+        const consumers = yield* Effect.sync(() =>
+          consumersOf(program, (deployOptions?.consumers ?? {}) as Readonly<Record<string, ReadonlyArray<string>>>)
+        )
         const services = yield* Effect.context<Exclude<T['services'], Entities>>()
         // A name is deployed once in a process: a new version is a new process (decision 0075). It is claimed in
         // the step that checks it, so that two deploys at once cannot both pass. A deploy that fails before it is
@@ -1656,6 +1737,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             names.add(program.name)
             const deployed: Deployment<T> = {
               program,
+              consumers,
               storage: storage(program, sql, partitions),
               scope: yield* Scope.fork(running),
               loaded: new Map(),
@@ -1664,7 +1746,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               waking: null,
               run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
             }
-            return yield* Effect.onError(restore(deploying(deployed)), () =>
+            return yield* Effect.onError(restore(deploying<T, C>(deployed)), () =>
               deployments.has(program.name) ? Effect.void : Effect.andThen(
                 Scope.close(deployed.scope, Exit.void),
                 Effect.sync(() => {
@@ -1676,7 +1758,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         )
       })
 
-    const deploying = <T extends Types>(deployed: Deployment<T>) =>
+    const deploying = <T extends Types, C>(deployed: Deployment<T>) =>
       Effect.gen(function*() {
         const { program } = deployed
         // An operation a crash interrupted starts again here, and a message it left in a mailbox is handled
@@ -1685,6 +1767,22 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         // (decisions 0045, 0051). What it loaded leaves the process with it, and holds no place under the capacity
         // (decision 0076).
         yield* deployed.storage.indexed
+        // The consumers are stored before any step of this deploy publishes, so that a consumer declared here holds
+        // every row from the deploy on. One stored and not declared keeps its rows, and is told of, since a name
+        // left out by mistake would otherwise lose them (decision 0152).
+        yield* deployed.storage.declare(
+          [...deployed.consumers].flatMap(([topic, names]) => [...names].map((consumer) => ({ topic, consumer }))),
+        )
+        for (const stored of yield* deployed.storage.consumers) {
+          if (deployed.consumers.get(stored.topic)?.has(stored.consumer) === true) continue
+          yield* Effect.logWarning('a consumer is stored and not declared; it holds its topic until it is forgotten')
+            .pipe(Effect.annotateLogs({
+              name: program.name,
+              topic: stored.topic,
+              consumer: stored.consumer,
+              behind: stored.behind,
+            }))
+        }
         for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)
         // Registered with its waker in one step: a deployment others can reach always has its timers woken. The
         // waker is not forked uninterruptible with the step, so the scope that closes it stops it (decisions 0078,
@@ -1696,7 +1794,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           if (awaited !== undefined) Deferred.doneUnsafe(awaited, Effect.void)
           deployed.waking = yield* Effect.forkIn(waking(deployed), deployed.scope, { uninterruptible: false })
         }))
-        const handle: Handle<T> = {
+        const handle: Handle<T, C> = {
           create: (id, flags, request) =>
             admitted(faulted(
               create(deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
@@ -1730,18 +1828,33 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
             topical(
               program,
               topic,
-              counted(
+              enlisted(deployed, topic, consumer, true, counted(
                 wait === undefined ? { limit } : { limit, wait: wait.millis },
                 wait === undefined || limit === 0
                   ? deployed.storage.feed(topic, consumer, limit)
                   : waited(program.name, topic, wait.millis, deployed.storage.feed(topic, consumer, limit)),
-              ),
+              )),
             ),
           ack: (topic, consumer, through) =>
-            topical(program, topic, cursored(through, partitions, deployed.storage.ack(topic, consumer, through))),
+            topical(
+              program,
+              topic,
+              enlisted(
+                deployed,
+                topic,
+                consumer,
+                true,
+                cursored(through, partitions, deployed.storage.ack(topic, consumer, through)),
+              ),
+            ),
           prune: deployed.storage.prune,
-          consumers: deployed.storage.consumers,
-          forget: (topic, consumer) => topical(program, topic, deployed.storage.forget(topic, consumer)),
+          consumers: Effect.map(deployed.storage.consumers, (stored) =>
+            stored.map((consumer): Consumer => ({
+              ...consumer,
+              declared: deployed.consumers.get(consumer.topic)?.has(consumer.consumer) === true,
+            }))),
+          forget: (topic, consumer) =>
+            topical(program, topic, enlisted(deployed, topic, consumer, false, deployed.storage.forget(topic, consumer))),
           expire: Effect.flatMap(DateTime.now, (now) => deployed.storage.expire(DateTime.toEpochMillis(now))),
           suspended: Effect.map(deployed.storage.suspended, (listed) =>
             listed.map((suspension): Suspended => ({

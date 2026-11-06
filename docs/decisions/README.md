@@ -133,7 +133,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0121](0121-a-read-answers-from-the-row-of-the-read-model.md) | A read answers from the row of the read model, and calls no `project` | [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) |
 | [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) | `reindex` leaves a row it cannot compute, and names its entity |  |
 | [0135](0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) | A large state is split by the program, and the runtime warns of a large step | [0138](0138-the-log-publishes-topics.md) |
-| [0137](0137-the-log-is-ordered-within-a-partition.md) | The log is ordered within a partition, and a consumer keeps a cursor per partition | [0138](0138-the-log-publishes-topics.md) |
+| [0137](0137-the-log-is-ordered-within-a-partition.md) | The log is ordered within a partition, and a consumer keeps a cursor per partition | [0138](0138-the-log-publishes-topics.md), [0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md) |
 | [0138](0138-the-log-publishes-topics.md) | The log publishes topics, and a consumer reads one | [0139](0139-the-projection-is-json.md), [0140](0140-a-row-of-a-topic-gives-its-value.md), [0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md) |
 | [0139](0139-the-projection-is-json.md) | The projection is JSON, and `project` converts |  |
 | [0140](0140-a-row-of-a-topic-gives-its-value.md) | A row of a topic gives the value the topic selects |  |

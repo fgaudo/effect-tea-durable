@@ -8,7 +8,9 @@ consumer reads one topic. Its limit as an option of `feed` and `published` is ch
 at once what it reads is changed by [decision 0142](../0142-a-consumer-waits-for-a-row-of-its-topic.md): given a
 `wait`, a reading that finds no row waits for a commit in its topic. Its ack, a transaction of its own, is changed
 by [decision 0150](../0150-a-count-per-value-of-an-index-is-read-in-one-statement.md): an ack joins a transaction
-the caller left open.
+the caller left open. Its consumer that declares itself by reading, and its topic with no consumer that keeps every
+row, are changed by [decision 0152](../0152-the-consumers-of-a-topic-are-declared-at-deploy.md): consumers are declared at deploy,
+and a topic no consumer holds is pruned whole.
 
 ## Context
 

@@ -18,6 +18,11 @@ import { statusReport } from './report.ts'
 const ada = { _tag: 'Customer', id: 'ada' } as const
 /** A limit no reading of this test reaches: a reading says how many rows it takes (decision 0141). */
 const all = 100
+/**
+ * Who reads the orders' log: a billing service and a dashboard, each a consumer of its topic. They are the
+ * deployment's, declared where the orders are deployed, so a name mistyped does not compile (decision 0152).
+ */
+const consumers = { consumers: { billing: ['invoices'], status: ['dashboard'] } } as const
 
 /** The world the orders act on, which answers and records nothing: this test only reads states. */
 const world = Layer.mergeAll(
@@ -82,7 +87,7 @@ test('a query finds the orders nobody paid, and leaves out the one that was', ()
 test('what an order published is what another system learns of it, each consumer in its topic', () =>
   database(Effect.scoped(Effect.gen(function*() {
     const runtime = yield* launch()
-    const orders = yield* Effect.provide(runtime.deploy(order), world)
+    const orders = yield* Effect.provide(runtime.deploy(order, consumers), world)
 
     yield* orders.create('o-1', { order: { customer: 'ada', totalInCents: 1_000 } }, {
       requestId: 'c-o-1',
@@ -111,7 +116,7 @@ test('what an order published is what another system learns of it, each consumer
     expect(billing.map(({ seq }) => seq)).toEqual([0, 2].map((at) => statuses[at]?.seq ?? 0))
 
     // A consumer is a name within its topic, and its cursors are stored: it reads from where it acked, and a prune
-    // drops, in each topic, what every consumer of the topic has read (decisions 0039, 0138). The rows of one order
+    // drops, in each topic, what every consumer of the topic has read (decisions 0039, 0138, 0152). The rows of one order
     // are in its partition, in the order of their `seq`, and an ack is given the rows acted on (decision 0137).
     expect(yield* orders.feed('billing', 'invoices', all)).toEqual(billing)
     expect(yield* orders.feed('status', 'dashboard', all)).toEqual(statuses)
@@ -123,8 +128,14 @@ test('what an order published is what another system learns of it, each consumer
     // What each consumer still has to act on, as an operator sees it.
     const partition = statuses[0]?.partition ?? 0
     expect(yield* orders.consumers).toEqual([
-      { topic: 'billing', consumer: 'invoices', behind: 2, cursors: [{ partition, seq: 0 }] },
-      { topic: 'status', consumer: 'dashboard', behind: 1, cursors: [{ partition, seq: statuses[1]?.seq ?? 0 }] },
+      { topic: 'billing', consumer: 'invoices', declared: true, behind: 2, cursors: [{ partition, seq: 0 }] },
+      {
+        topic: 'status',
+        consumer: 'dashboard',
+        declared: true,
+        behind: 1,
+        cursors: [{ partition, seq: statuses[1]?.seq ?? 0 }],
+      },
     ])
 
     // A consumer that has read everything waits for the next row of its topic instead of polling: the creation of
@@ -138,7 +149,7 @@ test('what an order published is what another system learns of it, each consumer
 test('a report fed from the log counts the orders in each status, as the read model counts them', () =>
   database(Effect.scoped(Effect.gen(function*() {
     const runtime = yield* launch()
-    const orders = yield* Effect.provide(runtime.deploy(order), world)
+    const orders = yield* Effect.provide(runtime.deploy(order, consumers), world)
     const report = yield* statusReport
 
     for (const id of ['o-1', 'o-2', 'o-3', 'o-4']) {

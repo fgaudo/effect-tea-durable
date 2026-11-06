@@ -5,12 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **A log that nobody prunes** ([open question](open-questions.md#storage-and-reading)). A consumer that stops
-   acking holds its topic, a name mistyped once holds it too, and nothing caps what the log grows to. The step
-   runs a database that fills up under a consumer that stalled, to see what the runtime can still do. It decides
-   whether the consumers of a topic are declared, and what a prune drops of a topic no consumer holds. It is taken
-   by a note of its own.
-2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later

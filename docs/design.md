@@ -667,8 +667,8 @@ cause in another entity waits for the cause, or reads the cause's projection, wh
 ### Consumers
 
 A consumer is a name within one topic, and it keeps a cursor per partition, stored: one name in two topics is two
-consumers. `feed(topic, consumer, limit)` gives at most `limit` rows of the topic past its cursors, the oldest
-first. `ack(topic, consumer, through)` takes a list of partitions and `seq`s, which the rows `feed` gave are, and
+consumers, each declared at deploy. `feed(topic, consumer, limit)` gives at most `limit` rows of the topic past its
+cursors, the oldest first. `ack(topic, consumer, through)` takes a list of partitions and `seq`s, which the rows `feed` gave are, and
 moves each of those cursors once the rows are acted on. A cursor never moves back, and
 never past the head of its partition, so a crash before the ack delivers the rows again: at least once,
 deduplicated by the topic, the partition and the `seq`. A consumer that must act on a row once keeps cursors of
@@ -680,8 +680,10 @@ a step does, since the transaction holds the one connection of SQLite and a step
 ([decision 0150](decisions/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)). A partition a
 consumer has no cursor for is read from `0`.
 `prune` drops, in each topic and partition, what every consumer of the topic has read there, through the lowest
-cursor, and drops nothing of a topic no consumer has read from. `consumers` says the topic of each consumer, how
-many rows are past its cursors, and in which partitions, and `forget` lets the log go past one that is gone.
+cursor. A topic no consumer is stored for is dropped whole, since no reader that keeps cursors needs its rows
+([decision 0152](decisions/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
+`consumers` says the topic of each consumer, whether the deploy declares it, how many rows are past its cursors,
+and in which partitions.
 `published(topic, after, limit)` reads past cursors the caller holds, and registers nothing; `[]` is the whole
 topic
 ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)).
@@ -702,6 +704,23 @@ consumers and is not an archive: a program whose past must stay readable keeps i
 state or in entities of its own.
 The runtime writes the log and does not deliver it — the transport, the retries and the acknowledgements are
 the consumer's.
+
+### Declared consumers
+
+The consumers are declared where the program is deployed, by topic:
+`deploy(program, { consumers: { status: ['dashboard'] } })`. Who reads the log is the deployment's, so the same
+program is deployed with other consumers, or none, in a test. The handle is typed by the names declared, so a name
+mistyped does not compile, and a name not declared is the caller's defect. The deploy stores each consumer it
+declares that is not stored yet, so a consumer holds its topic from the deploy that first declares it, and a
+reading writes nothing. A consumer stored and no longer declared is kept, and holds its topic: the deploy logs a
+warning for it, `consumers` shows it as not declared, and `forget` drops it. A consumer the deploy declares is not
+forgotten, since a deploy without it is how it goes
+([decision 0152](decisions/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
+
+The runtime caps nothing of the log, and drops nothing by time. A database that is full fails the commit of every
+step, and each caller is given the defect, while the readings, the acks and `forget` still answer. An operator
+finds in `consumers` the consumer that holds the log, deploys without it, forgets it and prunes, and the steps
+commit again ([decision 0152](decisions/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
 
 ### What a step publishes
 

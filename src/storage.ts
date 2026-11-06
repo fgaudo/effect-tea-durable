@@ -193,8 +193,8 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   `
   yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS outbox_partition ON outbox (name, topic, partition, seq)`
   yield* sql`CREATE INDEX IF NOT EXISTS outbox_topic ON outbox (name, topic, position)`
-  // The consumers of the outbox, by topic and name, stored by their first reading or ack. Each holds its topic of
-  // the log from then on, until it is forgotten (decisions 0039, 0138).
+  // The consumers of the outbox, by topic and name, stored by the first deploy that declares them. Each holds its
+  // topic of the log from then on, until it is forgotten (decisions 0138, 0152).
   yield* sql`
     CREATE TABLE IF NOT EXISTS consumers (
       name TEXT NOT NULL,
@@ -456,7 +456,6 @@ const Rows = {
   cursor: decoder(Schema.Struct({ partition: Count, seq: Count })),
   /** The first row past the cursors, or null where every partition is read to its head. */
   position: decoder(Schema.Struct({ position: Schema.NullOr(Count) })),
-  consumer: decoder(Schema.Struct({ consumer: Schema.String })),
   topical: decoder(Schema.Struct({ topic: Schema.String, consumer: Schema.String })),
   behind: decoder(Schema.Struct({
     topic: Schema.String,
@@ -585,11 +584,19 @@ export type Suspension = Readonly<{
   since: DateTime.Utc
 }>
 
-/** A consumer of the outbox, as an operator sees it: its topic, what is waiting, and where (decisions 0039, 0137). */
+/**
+ * A consumer of the outbox, as an operator sees it: its topic, whether the deploy declares it, what is waiting,
+ * and where (decisions 0039, 0137, 0152).
+ */
 export type Consumer = Readonly<{
   /** The topic it reads: a consumer is a name within its topic (decision 0138). */
   topic: string
   consumer: string
+  /**
+   * Whether the deploy declares it. One that is not is kept, and holds its topic, until `forget` drops it
+   * (decision 0152).
+   */
+  declared: boolean
   /** How many rows are past its cursors, in every partition: what it costs the log to keep it. */
   behind: number
   /**
@@ -678,9 +685,11 @@ export interface Storage<T extends Types> {
     limit: number,
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
-   * `Handle.feed`, as the storage keeps it. The consumer's first reading stores it, and from then on the consumer
-   * holds its topic of the log, acked or not, until it is forgotten (decisions 0039, 0138).
+   * Stores each consumer the deploy declares that is not stored yet, with no cursor: from then on it holds its
+   * topic of the log, acked or not, until it is forgotten (decision 0152).
    */
+  readonly declare: (consumers: ReadonlyArray<Readonly<{ topic: string; consumer: string }>>) => Effect.Effect<void>
+  /** `Handle.feed`, as the storage keeps it: it reads the consumer's cursors, and writes nothing (decision 0152). */
   readonly feed: <Name extends Topic<T>>(
     topic: Name,
     consumer: string,
@@ -693,8 +702,11 @@ export interface Storage<T extends Types> {
   readonly ack: (topic: Topic<T>, consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
   /** `Handle.prune`, as the storage keeps it: the cursors are read and the rows dropped in one transaction. */
   readonly prune: Effect.Effect<number>
-  /** Every consumer stored, with how many rows are past its cursors, by topic and name. */
-  readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
+  /**
+   * Every consumer stored, with how many rows are past its cursors, by topic and name. Whether the deploy declares
+   * it is the runtime's to say.
+   */
+  readonly consumers: Effect.Effect<ReadonlyArray<Omit<Consumer, 'declared'>>>
   /** Drops a consumer and its cursors, so that the next prune passes what it never read (decision 0039). */
   readonly forget: (topic: Topic<T>, consumer: string) => Effect.Effect<void>
   /** `Handle.expire`: deletes the callers' replies past their time at `at`, in milliseconds, and counts them. */
@@ -1481,19 +1493,14 @@ export const storage = <T extends Types>(
       return read
     }).pipe(Effect.orDie)
 
-  /** Stores the consumer, if it is not stored yet: from then on it holds its topic (decisions 0039, 0138). */
-  const declare = (topic: string, consumer: string) =>
-    sql`
-      INSERT INTO consumers ${sql.insert({ name, topic, consumer })} ON CONFLICT (name, topic, consumer) DO NOTHING
-    `
+  const declare = (consumers: ReadonlyArray<Readonly<{ topic: string; consumer: string }>>) =>
+    sql.withTransaction(Effect.forEach(consumers, ({ topic, consumer }) =>
+      sql`
+        INSERT INTO consumers ${sql.insert({ name, topic, consumer })} ON CONFLICT (name, topic, consumer) DO NOTHING
+      `, { discard: true })).pipe(Effect.orDie)
 
   const feed = <Name extends Topic<T>>(topic: Name, consumer: string, limit: number) =>
     Effect.gen(function*() {
-      const known = yield* rows('consumers', Rows.consumer)(sql`
-        SELECT consumer FROM consumers WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}
-      `)
-      // The first reading declares the consumer, and only that one writes: a consumer that polls reads.
-      if (known.length === 0) yield* declare(topic, consumer)
       const cursors = yield* rows('cursors', Rows.cursor)(sql`
         SELECT partition, seq FROM cursors WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}
       `)
@@ -1505,7 +1512,6 @@ export const storage = <T extends Types>(
   // though a prune dropped its row, and a partition with no head yet has nothing to ack (decision 0137).
   const ack = (topic: Topic<T>, consumer: string, through: ReadonlyArray<Cursor>) =>
     sql.withTransaction(Effect.gen(function*() {
-      yield* declare(topic, consumer)
       const held = yield* heads
       for (const [partition, seq] of cursorsOf(through)) {
         const capped = Math.min(seq, held.get(partition) ?? 0)
@@ -1519,10 +1525,10 @@ export const storage = <T extends Types>(
 
   // Each partition of a topic is dropped through the lowest cursor of the topic's consumers in it, and only where
   // every consumer of the topic has a cursor there, since one with none holds the partition from `0` (decision 0137).
-  // A topic no consumer reads keeps every row, as a log no consumer reads did (decision 0138). The cursors are read
-  // and the rows dropped in one statement: a consumer whose first reading lands in the middle of a prune either
-  // holds the log, and nothing goes, or starts after the drop. Otherwise it could read rows with no cursor stored
-  // and have them dropped behind it, and skip them without ever saying so (decision 0039).
+  // A topic no consumer is stored for is dropped whole: every consumer is declared and stored at deploy, so no
+  // reader that keeps cursors needs its rows (decision 0152). The consumers and cursors are read and the rows
+  // dropped in one statement, since the two are one decision (decision 0039). A consumer is stored only by a deploy,
+  // before its handle exists, so none is stored in the middle of a prune (decision 0152).
   const prune = Effect.gen(function*() {
     const gone = yield* rows('outbox', Rows.seq)(sql`
       WITH floors AS (
@@ -1533,8 +1539,11 @@ export const storage = <T extends Types>(
         )
       )
       DELETE FROM outbox
-      WHERE name = ${name} AND seq <= (
-        SELECT through FROM floors WHERE floors.topic = outbox.topic AND floors.partition = outbox.partition
+      WHERE name = ${name} AND (
+        NOT EXISTS (SELECT 1 FROM consumers WHERE consumers.name = ${name} AND consumers.topic = outbox.topic)
+        OR seq <= (
+          SELECT through FROM floors WHERE floors.topic = outbox.topic AND floors.partition = outbox.partition
+        )
       )
       RETURNING seq
     `)
@@ -1556,7 +1565,7 @@ export const storage = <T extends Types>(
       GROUP BY consumers.topic, consumers.consumer, outbox.partition
       ORDER BY consumers.topic, consumers.consumer, outbox.partition
     `)
-    return stored.map(({ topic, consumer }): Consumer => {
+    return stored.map(({ topic, consumer }): Omit<Consumer, 'declared'> => {
       const own = behind.filter((row) => row.topic === topic && row.consumer === consumer)
       return {
         topic,
@@ -1614,6 +1623,7 @@ export const storage = <T extends Types>(
     projected,
     reindex,
     published,
+    declare,
     feed,
     ack,
     prune,
