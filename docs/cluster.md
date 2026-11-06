@@ -200,6 +200,11 @@ programs and refuses a shard whose rows are newer would leave the shard unserved
 and gives it to a new runner only by chance. The choice is between a deploy that replaces every runner before any new one
 writes (no rolling deploy), forward compatibility for one version, or a change to Cluster.
 
+Proposed for the step Effect Cluster: a runner is alive, for the `RunnerHealth` the runtime gives Cluster, only while
+it runs the newest version of each of its programs, and a step commits only at the newest version, which it reads in
+its transaction ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+A rolling deploy then moves every shard to the newer runners, and nothing of the older version steps a newer row.
+
 ## The decisions it bears on
 
 - **[0007](decisions/archive/0007-one-process-first.md)** — one transaction is possible with `WithTransaction` and one

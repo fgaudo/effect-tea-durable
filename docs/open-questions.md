@@ -33,7 +33,12 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   runtime ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), so two versions meet only where
   two processes share a store. On Effect Cluster a runner carries no version, and a shard may go from a new runner
   back to an old one ([Cluster](cluster.md#two-versions-at-once)): the choice is between deploys that replace every
-  runner before a new one writes, forward compatibility for one version, or a change to Cluster.
+  runner before a new one writes, forward compatibility for one version, or a change to Cluster. The step Effect
+  Cluster proposes an answer that the runtime holds alone
+  ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)). It
+  would be decided by:
+  - a test of the runtime on Cluster in which an older runner's step dies, and a newer runner steps its message;
+  - the spike of the note, which sees an older runner give up its shards once a newer one registers.
 - **PostgreSQL with many connections.** The storage's tests run on PGlite, which runs one statement at a time on
   one session ([decision 0157](decisions/0157-the-storage-speaks-sqlite-and-postgresql.md)). On a server with a
   pool, steps of different entities commit at once. That the head of a partition still orders the commits of its
