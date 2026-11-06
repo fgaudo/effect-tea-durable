@@ -986,6 +986,22 @@ export interface Storage<T extends Types> {
   /** What is stored for the entity `id`, its replies left out, or null when there is none (decision 0065). */
   readonly load: (id: string) => Effect.Effect<Machine.Stored<T> | null>
   /**
+   * A request and a message that reached a door on Cluster as the JSON text of the version that wrote them, read
+   * at the program's version through its migrations, as a message of the mailbox is read (decision 0085). Text no
+   * version reads is no request the runtime sent, and dies, naming the program (decision 0043).
+   */
+  readonly delivered: (
+    version: number,
+    request: string,
+    message: string,
+  ) => Effect.Effect<Readonly<{ request: Request<T['sender']>; message: T['inbound'] }>>
+  /** The flags of a creation that reached a door on Cluster, and its request, read as `delivered` reads them. */
+  readonly deliveredCreation: (
+    version: number,
+    request: string,
+    flags: string,
+  ) => Effect.Effect<Readonly<{ request: Request<T['sender']>; flags: T['flags'] }>>
+  /**
    * The reply stored for the entity `id` under `request`, or null for none: what a `Receive` is given
    * (decision 0065). A caller's reply past its time at `at`, in milliseconds, is none (decision 0125).
    */
@@ -1093,6 +1109,7 @@ export const storage = <T extends Types>(
   const state = json(program.schemas.state)
   const inbound = json(program.schemas.inbound)
   const internal = json(program.schemas.internal)
+  const flags = json(program.schemas.flags)
   const request = json(Machine.requestCodec(program))
   const work = json(workOf(program))
   const reason = json(reasonOf(program.schemas.rejection))
@@ -2137,8 +2154,27 @@ export const storage = <T extends Types>(
     return listed
   }).pipe(Effect.orDie)
 
+  const delivered = (version: number, held: string, message: string) =>
+    Effect.try({
+      try: () => ({
+        request: request.read(held, upRequest(version)),
+        message: inbound.read(message, up('inbound', version)),
+      }),
+      catch: (error) =>
+        new Error(`a request delivered to the program '${name}' is no request the runtime sends: ${String(error)}`),
+    }).pipe(Effect.orDie)
+
+  const deliveredCreation = (version: number, held: string, written: string) =>
+    Effect.try({
+      try: () => ({ request: request.read(held, upRequest(version)), flags: flags.read(written) }),
+      catch: (error) =>
+        new Error(`a creation delivered to the program '${name}' is no request the runtime sends: ${String(error)}`),
+    }).pipe(Effect.orDie)
+
   return {
     load,
+    delivered,
+    deliveredCreation,
     reply,
     write,
     interrupted,

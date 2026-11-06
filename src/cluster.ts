@@ -15,14 +15,16 @@ import {
   Sharding,
   ShardingConfig,
 } from 'effect/cluster'
+import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Schema from 'effect/Schema'
 import { Rpc } from 'effect/rpc'
 import { SqlClient } from 'effect/sql'
+import * as Machine from './machine.ts'
 import { InvariantDefect, type Program, type Types, versionOf } from './program.ts'
-import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
+import { createTables, newestVersion, outranked, recordVersions, type Storage } from './storage.ts'
 
 /** The text a runner's address is recorded under. */
 export const addressText = (address: RunnerAddress.RunnerAddress): string => `${address.host}:${address.port}`
@@ -163,4 +165,87 @@ export const door = <R>(
       }),
     )
   return entity.toLayer({ Create: handle('Create'), Message: handle('Message') })
+}
+
+/**
+ * The text of what a step answers a message: a reply, `NotFound` where no entity is stored, or `Suspended`. Every
+ * one is a success of the RPC, so that Cluster saves it in the step's transaction (decision 0081).
+ */
+export const answerCodec = <T extends Types>(program: Program<T>) =>
+  Schema.fromJsonString(Schema.Union([
+    Schema.TaggedStruct('Accepted', {}),
+    Schema.TaggedStruct('Rejected', { reason: Schema.NullOr(program.schemas.rejection) }),
+    Schema.TaggedStruct('NotFound', {}),
+    Schema.TaggedStruct('Suspended', {}),
+  ]))
+
+/** The text of what a step answers a creation. */
+export const creationCodec = Schema.fromJsonString(Schema.Union([
+  Schema.TaggedStruct('Created', {}),
+  Schema.TaggedStruct('AlreadyExists', {}),
+]))
+
+/**
+ * The step a door runs for a request, in Cluster's transaction (decisions 0081, 0092). It loads the entity from what
+ * is stored, steps it, writes what the machine says, and answers as the machine answers. A message is received, and
+ * the mailbox is handled up to it: the step of its arrival queues it, and each `Handle` steps the head, until a step
+ * answers it, or the entity suspends on the way, which answers it `Suspended`. A creation whose program dies stores
+ * nothing and dies, so that Cluster delivers it again until a deploy fixes the program, and saves no defect as its
+ * reply (decision 0160).
+ *
+ * The entity is not held in memory between two requests, and nothing a step sets going is started yet: that is the
+ * pending machine of decision 0092.
+ */
+export const stepper = <T extends Types>(program: Program<T>, storage: Storage<T>) => {
+  const answer = Schema.encodeSync(answerCodec(program))
+  const created = Schema.encodeSync(creationCodec)
+  const write = (id: string, transition: Readonly<{ written: Machine.Written | null }>, now: DateTime.Utc) =>
+    transition.written === null
+      ? Effect.void
+      : Effect.asVoid(storage.write(id, transition.written, DateTime.toEpochMillis(now)))
+  return (delivered: Delivered): Effect.Effect<string> =>
+    Effect.gen(function*() {
+      const { id } = delivered
+      const now = yield* DateTime.now
+      if (delivered._tag === 'Create') {
+        const { request, flags } = yield* storage.deliveredCreation(
+          delivered.version,
+          delivered.request,
+          delivered.message,
+        )
+        const stored = yield* storage.load(id)
+        if (stored !== null) {
+          const transition = Machine.step(program, { stored, running: {} }, { _tag: 'Create', request })
+          yield* write(id, transition, now)
+          const reply = transition.outputs.find((output) => output._tag === 'CreationReplied')
+          return created(reply?.reply ?? { _tag: 'AlreadyExists' })
+        }
+        const started = Machine.start(program, id, flags, now, request)
+        if (started._tag === 'Defect') return yield* Effect.die(started.cause)
+        yield* write(id, started, now)
+        return created({ _tag: 'Created' })
+      }
+      const { request, message } = yield* storage.delivered(delivered.version, delivered.request, delivered.message)
+      const stored = yield* storage.load(id)
+      if (stored === null) return answer({ _tag: 'NotFound' })
+      const key = Machine.requestKey(program, request)
+      const reply = yield* storage.reply(id, request, DateTime.toEpochMillis(now))
+      let transition = Machine.step(program, { stored, running: {} }, { _tag: 'Receive', request, message, reply, at: now })
+      while (true) {
+        yield* write(id, transition, now)
+        for (const output of transition.outputs) {
+          if (output._tag === 'Replied' && Machine.requestKey(program, output.request) === key) {
+            return answer(output.reply)
+          }
+        }
+        const { suspension, mailbox } = transition.machine.stored
+        if (suspension !== null) return answer({ _tag: 'Suspended' })
+        if (mailbox.length === 0) {
+          return yield* Effect.die(new InvariantDefect({
+            reason: `the entity ${id} of ${program.name} handled its mailbox, and answered no request ${key}`,
+          }))
+        }
+        transition = Machine.step(program, transition.machine, { _tag: 'Handle', at: now })
+      }
+    })
 }

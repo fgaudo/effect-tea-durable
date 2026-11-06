@@ -24,6 +24,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) | On Cluster, an interrupted caller leaves its request alone |  |
 | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each |  |
 | [0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md) | On Cluster, an older version serves no shard once a newer one launches, and a step commits only at the newest version |  |
+| [0160](0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md) | On Cluster, a door answers as text, and a creation the program dies on waits for a fix |  |
 
 ## The project
 

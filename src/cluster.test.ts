@@ -29,9 +29,9 @@ import { SqlClient } from 'effect/sql'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addressText, byVersion, door, doorOf, sharding } from './cluster.ts'
-import { InvariantDefect, noWork, operation, type Program, versionOf } from './program.ts'
-import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
+import { addressText, byVersion, door, doorOf, sharding, stepper } from './cluster.ts'
+import { defect, InvariantDefect, noWork, operation, type Program, rejectWith, versionOf } from './program.ts'
+import { createTables, newestVersion, outranked, recordVersions, storage } from './storage.ts'
 import { client, onEach } from './test-databases.ts'
 
 type T = {
@@ -268,4 +268,123 @@ describe('two runners on one file', () => {
         const after = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Message'`
         expect(after.map(({ processed }) => Number(processed))).toEqual([1])
       })), 30_000)
+})
+
+describe('the step a door runs', () => {
+  type Tally = {
+    state: Readonly<{ n: number }>
+    flags: Readonly<{ start: number }>
+    inbound: Readonly<{ _tag: 'Add'; n: number }> | Readonly<{ _tag: 'Refuse' }> | Readonly<{ _tag: 'Break' }>
+    internal: never
+    operation: never
+    key: never
+    parameter: {}
+    rejection: Readonly<{ why: string }>
+    sender: Readonly<{ user: string }>
+    projection: number
+    index: never
+    services: never
+  }
+  const tally: Program<Tally> = {
+    name: 'Tally',
+    keys: {},
+    schemas: {
+      state: Schema.Struct({ n: Schema.Int }),
+      flags: Schema.Struct({ start: Schema.Int }),
+      inbound: Schema.Union([
+        Schema.TaggedStruct('Add', { n: Schema.Int }),
+        Schema.TaggedStruct('Refuse', {}),
+        Schema.TaggedStruct('Break', {}),
+      ]),
+      internal: Schema.Never,
+      operation: Schema.Never,
+      rejection: Schema.Struct({ why: Schema.String }),
+      sender: Schema.Struct({ user: Schema.String }),
+      projection: Schema.Int,
+    },
+    init: ({ start }) => start < 0 ? defect('a tally starts at zero or more') : { n: start },
+    update: (message) => (state) =>
+      message._tag === 'Add'
+        ? { n: state.n + message.n }
+        : message._tag === 'Refuse'
+        ? rejectWith({ why: 'refused' })
+        : defect('broken'),
+    durable: () => noWork,
+    operations: {},
+    project: ({ n }) => n,
+    indexes: {},
+  }
+  const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: { user: 'u' }, id })
+  const message = (inbound: Tally['inbound']) => JSON.stringify(inbound)
+
+  /** Runs `run` on one runner of the runtime over a SQLite file, which serves the door of `tally`. */
+  const onRunner = async (run: Effect.Effect<void, unknown, Sharding.Sharding | SqlClient.SqlClient | Scope.Scope>) => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
+    const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
+    const served = Layer.unwrap(Effect.map(Effect.service(SqlClient.SqlClient), (sql) =>
+      door(tally, stepper(tally, storage(tally, sql)))))
+    const runner = served.pipe(
+      Layer.provideMerge(sharding([tally])),
+      Layer.provideMerge(Runners.layerNoop),
+      Layer.provideMerge(SqlMessageStorage.layer),
+      Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
+      Layer.provide(ShardingConfig.layer({
+        runnerAddress: Option.some(RunnerAddress.make('localhost', 1)),
+        shardsPerGroup: 12,
+        entityMessagePollInterval: Duration.millis(100),
+      })),
+      Layer.provideMerge(store),
+      Layer.provide(Digest.layerWebCrypto),
+    )
+    try {
+      await Effect.runPromise(Effect.scoped(run).pipe(Effect.provide(Layer.orDie(runner))) as Effect.Effect<void>)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }
+
+  test('a door creates, answers each message as the machine does, and stores the state with the reply', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const clientOf = yield* doorOf('Tally').client
+      const door = clientOf('one')
+      const flags = JSON.stringify({ start: 1 })
+      expect(yield* door.Create({ version: 1, request: caller('c1'), message: flags })).toBe('{"_tag":"Created"}')
+      expect(yield* door.Create({ version: 1, request: caller('c2'), message: flags })).toBe('{"_tag":"AlreadyExists"}')
+      const add = { version: 1, request: caller('m1'), message: message({ _tag: 'Add', n: 2 }) }
+      expect(yield* door.Message(add)).toBe('{"_tag":"Accepted"}')
+      // A retry under the same key is answered as the first time, and adds nothing to the state.
+      expect(yield* door.Message(add)).toBe('{"_tag":"Accepted"}')
+      expect(yield* door.Message({ version: 1, request: caller('m2'), message: message({ _tag: 'Refuse' }) }))
+        .toBe('{"_tag":"Rejected","reason":{"why":"refused"}}')
+      const [row] = yield* sql<{ state: string }>`SELECT state FROM entities WHERE name = 'Tally' AND id = 'one'`
+      expect(JSON.parse(row!.state)).toEqual({ n: 3 })
+      expect(yield* clientOf('none').Message({ version: 1, request: caller('m3'), message: message({ _tag: 'Add', n: 1 }) }))
+        .toBe('{"_tag":"NotFound"}')
+    })), 30_000)
+
+  test('a defect of the program suspends the entity, and its message is answered Suspended', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const door = (yield* doorOf('Tally').client)('one')
+      yield* door.Create({ version: 1, request: caller('c1'), message: JSON.stringify({ start: 0 }) })
+      expect(yield* door.Message({ version: 1, request: caller('m1'), message: message({ _tag: 'Break' }) }))
+        .toBe('{"_tag":"Suspended"}')
+      const [row] = yield* sql<{ cause: string | null }>`SELECT suspended_cause AS cause FROM entities WHERE id = 'one'`
+      expect(row?.cause).toContain('broken')
+      expect(yield* door.Message({ version: 1, request: caller('m2'), message: message({ _tag: 'Add', n: 1 }) }))
+        .toBe('{"_tag":"Suspended"}')
+    })), 30_000)
+
+  test('a creation the program dies on stores nothing, saves no reply, and is delivered again', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const door = (yield* doorOf('Tally').client)('one')
+      yield* door.Create({ version: 1, request: caller('c1'), message: JSON.stringify({ start: -1 }) }, { discard: true })
+      yield* Effect.sleep('1500 millis')
+      expect(yield* sql`SELECT 1 FROM entities`).toEqual([])
+      expect(yield* sql`SELECT 1 FROM cluster_replies`).toEqual([])
+      const messages = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Create'`
+      expect(messages.map(({ processed }) => Number(processed))).toEqual([0])
+    })), 30_000)
 })
