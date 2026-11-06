@@ -78,6 +78,12 @@ defect, as the JSDoc of `Singleton.make` says.
 - **An entity that left the process on Cluster steps nothing more.** Its loop ends, and an event it took after it left
   is dropped. A crash its loop does not make — a shard lost, or a door that found the entity's row written by another
   runner — would otherwise leave a loop that steps for an entity another runner may hold.
+- **A step of the entity's own holds the entity's lock, so that a crash from a shard lost waits for it.** The step
+  takes the lock inside its transaction, and checks there that the entity is still in the process. After the commit it
+  takes the lock again to start what it sets going, and starts nothing where a crash took the entity out meanwhile:
+  the runner that holds the shard next starts it from what is stored. A step that held no lock would start an
+  operation after the crash had stopped the entity's work. Nothing would stop that operation, and it would run beside
+  the one the next runner starts.
 
 ### The waker
 
@@ -117,6 +123,10 @@ defect, as the JSDoc of `Singleton.make` says.
 - That an entity either enters before the mark or finds it: **only reasoned**, from the check and the entry, and the
   mark and the reading of the entities held, each being one step that does not yield. No test reaches the
   interleaving, which needs an entity to load during the finalizer.
+- That a step of the entity's own under way as its shard is lost leaves nothing running once the entity crashes:
+  **tested** by `a step of the loop under way when its shard is let go leaves nothing running once the entity
+  crashes` in [`src/runtime.test.ts`](../../src/runtime.test.ts), which plays Cluster and holds the step inside its
+  transaction while the shard's singleton is interrupted. The test fails where the step holds no lock.
 - That the loop of an entity that left steps nothing more: **only reasoned**. Without the rule the loop waits out
   `passivate.millis` and finds the entity gone, again and again, which no test sees in its time.
 - That a list of the partitions held fits in one statement: **documented** by SQLite, which takes 32766 parameters

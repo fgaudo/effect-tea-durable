@@ -18,6 +18,7 @@ import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as References from 'effect/References'
+import * as Schedule from 'effect/Schedule'
 import fc from 'fast-check'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -41,9 +42,21 @@ import {
   rejectWith,
   send,
   timer,
+  versionOf,
 } from './program.ts'
 import * as Library from './index.ts'
-import { type Answer, launch, type Options, type Point, Probe, type Runtime } from './runtime.ts'
+import {
+  type Answer,
+  type Delivered,
+  launch,
+  launchWith,
+  type OnCluster,
+  type Options,
+  type Point,
+  Probe,
+  type Runtime,
+  type Said,
+} from './runtime.ts'
 import { createTables, type Dialect, partitionOf, storage } from './storage.ts'
 import { client, onEach } from './test-databases.ts'
 import {
@@ -4981,4 +4994,108 @@ describe('renaming a program (decision 0156)', () => {
       // None of them held the database: a launch after them holds it.
       yield* process({}, () => Effect.void)
     })))
+})
+
+describe('the runtime on Cluster, with a Cluster the test plays', () => {
+  type Relay = {
+    state: Readonly<{ stage: 'idle' | 'first' | 'asking' }>
+    flags: Readonly<{}>
+    inbound: Readonly<{ _tag: 'Go' }>
+    internal: Readonly<{ _tag: 'Firsted' }>
+    operation: Readonly<{ _tag: 'First' }> | Readonly<{ _tag: 'Ask' }>
+    key: 'first' | 'ask'
+    parameter: {}
+    rejection: never
+    sender: Readonly<{ user: string }>
+    projection: string
+    index: never
+    services: never
+  }
+  /** What `Ask` did in the test under way: `started`, then `interrupted` once its fiber is interrupted. */
+  let asked: Array<string> = []
+  const relay: Program<Relay> = {
+    name: 'Relay',
+    keys: { first: null, ask: null },
+    schemas: {
+      state: Schema.Struct({ stage: Schema.Literals(['idle', 'first', 'asking']) }),
+      flags: Schema.Struct({}),
+      inbound: Schema.TaggedStruct('Go', {}),
+      internal: Schema.TaggedStruct('Firsted', {}),
+      operation: Schema.Union([Schema.TaggedStruct('First', {}), Schema.TaggedStruct('Ask', {})]),
+      rejection: Schema.Never,
+      sender: Schema.Struct({ user: Schema.String }),
+      projection: Schema.String,
+    },
+    init: () => ({ stage: 'idle' }),
+    update: (message) => () => ({ stage: message._tag === 'Go' ? 'first' : 'asking' }),
+    durable: ({ stage }) =>
+      stage === 'first'
+        ? { first: { _tag: 'First' } as const }
+        : stage === 'asking'
+        ? { ask: { _tag: 'Ask' } as const }
+        : {},
+    operations: {
+      First: operation(() => Effect.succeed({ _tag: 'Firsted' } as const)),
+      Ask: operation(() =>
+        Effect.andThen(
+          Effect.sync(() => void asked.push('started')),
+          Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(() => void asked.push('interrupted')))),
+        )
+      ),
+    },
+    project: ({ stage }) => stage,
+    indexes: {},
+  }
+  const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: { user: 'u' }, id })
+
+  test('a step of the loop under way when its shard is let go leaves nothing running once the entity crashes', () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      asked = []
+      const sql = yield* SqlClient.SqlClient
+      // On Cluster the tables are created where `sharding` is built, before the runtime launches.
+      yield* createTables
+      // One shard, held until the test interrupts its singleton, which runs what the runtime runs as the shard goes.
+      let step: ((delivered: Delivered) => Effect.Effect<unknown>) | null = null
+      const singletons: Array<Fiber.Fiber<never>> = []
+      const cluster: OnCluster = {
+        shards: 1,
+        shardOf: () => 1,
+        holds: () => true,
+        singleton: (_name, run) =>
+          Effect.flatMap(
+            Effect.forkScoped(Effect.scoped(Effect.andThen(run, Effect.never))),
+            (fiber) => Effect.sync(() => void singletons.push(fiber)),
+          ),
+        register: (_program, given) =>
+          Effect.sync(() => {
+            step = given as (delivered: Delivered) => Effect.Effect<unknown>
+          }),
+      }
+      // The step of the loop that handles the completion of `First`, and starts `Ask`, waits inside its transaction
+      // until the gate opens.
+      const reached = yield* Deferred.make<void>()
+      const gate = yield* Deferred.make<void>()
+      const probe = (said: Said) =>
+        said._tag === 'Reached' && said.point === 'BeforeCommit' && said.event._tag === 'Handle'
+          ? Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(gate))
+          : Effect.void
+      const runtime = yield* Effect.provideService(launchWith({}, cluster), Probe, probe)
+      yield* runtime.deploy(relay)
+      const door = (delivered: Omit<Delivered, 'id' | 'version'>) =>
+        sql.withTransaction(step!({ ...delivered, id: 'one', version: versionOf(relay) }))
+      yield* door({ _tag: 'Create', request: caller('c1'), message: '{}' })
+      yield* door({ _tag: 'Message', request: caller('m1'), message: JSON.stringify({ _tag: 'Go' }) })
+      yield* Deferred.await(reached)
+      // The shard is let go while the step waits. Its finalizer crashes the entity under the entity's lock.
+      const losing = yield* Effect.forkChild(Fiber.interrupt(singletons[0]!))
+      yield* Effect.sleep('50 millis')
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(losing)
+      // The step committed `Ask`, which the runner that holds the shard next starts from what is stored. Here it is
+      // either not started, or started and interrupted by the crash. Started after the crash, it would run beside
+      // that runner, and nothing here would stop it.
+      expect((yield* storage(relay, sql).load('one'))?.state).toEqual({ stage: 'asking' })
+      yield* Effect.sleep('200 millis')
+      expect(asked.filter((line) => line === 'started').length).toBe(asked.filter((line) => line === 'interrupted').length)
+    })).pipe(Effect.provide(client('sqlite')))), 10_000)
 })

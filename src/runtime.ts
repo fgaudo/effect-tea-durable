@@ -1447,12 +1447,14 @@ export const launchWith = (
       offered: Machine.Offered<T> | Settle,
     ): Effect.Effect<void> =>
       Effect.gen(function*() {
-        // An event taken before its entity left the process is dropped, as the loop's end says (decision 0162).
-        if (deployed.loaded.get(loaded.machine.stored.id) !== loaded) return
         loaded.applying = true
         const entity: Address = { name: loaded.machine.stored.name, id: loaded.machine.stored.id }
         const now = yield* DateTime.now
-        const stepped = yield* sql.withTransaction(Effect.gen(function*() {
+        // The step holds the entity's lock inside its transaction, as a door's step does, so that a crash from a shard
+        // let go waits for it, and stops what its settling starts (decision 0162).
+        const stepped = yield* sql.withTransaction(holding(entity)(Effect.gen(function*() {
+          // An event taken before its entity left the process is dropped, as the loop's end says (decision 0162).
+          if (deployed.loaded.get(entity.id) !== loaded) return null
           if (!(yield* settle(deployed, loaded))) return yield* Effect.die(unsettled(entity.name, entity.id))
           // A message of a caller reaches the entity through its door alone, never its loop.
           if (offered._tag === 'Settle' || offered._tag === 'Receive') return null
@@ -1472,7 +1474,7 @@ export const launchWith = (
           // commit that fails crashes the entity, and nothing reads them then (decision 0161).
           loaded.machine = transition.machine
           return { event, before, transition, characters }
-        })).pipe(Effect.orDie)
+        }))).pipe(Effect.orDie)
         if (stepped === null) return
         const { event, before, transition, characters } = stepped
         if (transition.written !== null) {
@@ -1481,8 +1483,15 @@ export const launchWith = (
         }
         if (before.stored.suspension !== null && transition.machine.stored.suspension === null) wake(entity)
         yield* observe(entity, event)
-        if (transition.written !== null) yield* at('AfterCommit', entity, event)
-        yield* perform(deployed, loaded, entity, event, transition.outputs)
+        // What the step sets going starts under the lock again, which touches no database here. An entity a crash
+        // took out between the commit and the lock starts nothing: the runner that holds its shard next starts it
+        // from what is stored (decision 0162).
+        yield* holding(entity)(Effect.suspend(() =>
+          deployed.loaded.get(entity.id) !== loaded ? Effect.void : Effect.andThen(
+            transition.written !== null ? at('AfterCommit', entity, event) : Effect.void,
+            perform(deployed, loaded, entity, event, transition.outputs),
+          )
+        ))
       }).pipe(Effect.ensuring(Effect.sync(() => {
         loaded.applying = false
         end()

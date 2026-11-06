@@ -65,8 +65,11 @@ transaction while one holds it, and that a statement waits for the semaphore too
 ### The lock on Cluster
 
 - **On Cluster, an entity's lock is taken only inside a transaction, or by code that touches no database while it
-  holds it.** A door's step takes it inside Cluster's transaction. An unload holds it without touching the database.
-  So nothing holds the lock while it waits for the connection a transaction holds.
+  holds it.** A door's step takes it inside Cluster's transaction. A step of the entity's own takes it inside its
+  transaction, and again after its commit to start what it sets going, which touches no database
+  ([decision 0162](0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)). An
+  unload holds it without touching the database. So nothing holds the lock while it waits for the connection a
+  transaction holds.
 - **A caller's request, an operator's, and an operation's on Cluster die until the client is code**, since each would
   load the entity under its lock outside a transaction. They reach an entity through its door's client
   ([decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)), which is a later part of the
