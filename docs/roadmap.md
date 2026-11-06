@@ -5,7 +5,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **The projection written once per step** ([open question](open-questions.md#storage-and-reading)). A step
+   written in five topics writes the projection six times today, once in the read model and once per topic. The
+   step decides whether the outbox stores the projection once per step, with a row per topic that names it, and
+   what `feed` reads and `prune` drops of such rows. It is taken by a note of its own.
+2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
