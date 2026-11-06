@@ -613,6 +613,40 @@ test('a reply is read by the key of its table, and a caller’s again by an inde
       ).toContain('USING INDEX replies_by_request_id (name=? AND id=? AND request_id=?)')
     }).pipe(Effect.orDie), ['sqlite']))
 
+// A database of SQLite made before decision 0157 holds its replies without `request_id`, and the index of the id read
+// out of the request. `createTables` adds the column, fills it from the requests, and drops the index (decision 0158).
+test('a database made before holds its replies without request_id, which createTables adds and fills', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      yield* sql`DROP TABLE replies`
+      yield* sql`
+        CREATE TABLE replies (
+          name TEXT NOT NULL, id TEXT NOT NULL, request TEXT NOT NULL, tag TEXT NOT NULL, version INTEGER NOT NULL,
+          reason TEXT, until INTEGER, sender_name TEXT, sender_id TEXT, sender_key TEXT, sender_parameter TEXT,
+          sender_incarnation INTEGER, PRIMARY KEY (name, id, request, version)
+        )
+      `
+      yield* sql`CREATE INDEX replies_request_id ON replies (name, id, json_extract(request, '$.id'))`
+      const caller = { _tag: 'Caller', sender: null, id: 'one' } as const
+      yield* sql`
+        INSERT INTO replies (name, id, request, tag, version) VALUES
+          ('Receiver', 'r', ${Machine.requestKey(receiver, caller)}, 'Accepted', 1),
+          ('Receiver', 'r', ${Machine.requestKey(receiver, asked('one', 1))}, 'Accepted', 1)
+      `
+      yield* Effect.provideService(createTables, SqlClient.SqlClient, sql)
+      expect(yield* sql`SELECT request_id FROM replies ORDER BY request_id`).toEqual([
+        { request_id: null },
+        { request_id: 'one' },
+      ])
+      expect(yield* sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'replies%request_id'`)
+        .toEqual([{ name: 'replies_by_request_id' }])
+      // Version 2 finds the caller's reply version 1 wrote by its request id.
+      expect(yield* storage(marked, sql).reply('r', caller, 0)).toEqual({ _tag: 'Accepted' })
+      // The tables are made again as they are.
+      yield* Effect.provideService(createTables, SqlClient.SqlClient, sql)
+      expect(yield* sql`SELECT request_id FROM replies WHERE request_id IS NOT NULL`).toEqual([{ request_id: 'one' }])
+    }).pipe(Effect.orDie), ['sqlite']))
+
 // PostgreSQL uses an index of an expression only where the statement writes the expression as the index does. The
 // test records the statements the storage runs, and reads the plan of each with scans of whole tables turned off: an
 // index that serves a page holds its order, so that no plan sorts (decision 0157).

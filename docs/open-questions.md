@@ -38,7 +38,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   one session ([decision 0157](decisions/0157-the-storage-speaks-sqlite-and-postgresql.md)). On a server with a
   pool, steps of different entities commit at once. That the head of a partition still orders the commits of its
   steps, that a session advisory lock holds the database, that a page read at `REPEATABLE READ` gives a row once, and
-  what a deadlock or a failure of serialization does to a step, are only reasoned. It would be decided by:
+  what a deadlock or a failure of serialization does to a step, are only reasoned. A page read inside a transaction
+  the caller left open reads at the caller's level, and at PostgreSQL's default a step committed between two of its
+  parts may move a row into it twice
+  ([decision 0158](decisions/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
+  It would be decided by:
   - the storage's tests and the runtime's tests of the log run against a server, in CI or by hand;
   - a test with two writers of one partition, which checks that its steps commit in the order of their `seq`;
   - whether a step whose transaction fails with `DeadlockError` or `SerializationError` is retried, as the JSDoc of

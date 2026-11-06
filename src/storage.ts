@@ -330,8 +330,20 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   yield* sql`CREATE INDEX IF NOT EXISTS replies_until ON replies (name, until) WHERE until IS NOT NULL`
   // A caller's request a version before stored is found by its request id: its sender may be migrated since
   // (decision 0065). A database of SQLite made before holds the index of the id read out of the request, which goes
-  // (decision 0157).
-  if (dialect === 'sqlite') yield* sql`DROP INDEX IF EXISTS replies_request_id`
+  // (decision 0157), and its replies without `request_id`, which is added and filled as that index read it, before
+  // the index of the column is made (decision 0158).
+  if (dialect === 'sqlite') {
+    yield* sql`DROP INDEX IF EXISTS replies_request_id`
+    const [column] = yield* sql<{ held: number }>`
+      SELECT COUNT(*) AS held FROM pragma_table_info('replies') WHERE name = 'request_id'
+    `
+    if (column?.held === 0) {
+      yield* sql`ALTER TABLE replies ADD COLUMN request_id TEXT`
+      yield* sql`
+        UPDATE replies SET request_id = json_extract(request, '$.id') WHERE json_extract(request, '$._tag') = 'Caller'
+      `
+    }
+  }
   yield* sql`
     CREATE INDEX IF NOT EXISTS replies_by_request_id ON replies (name, id, request_id) WHERE request_id IS NOT NULL
   `
@@ -1630,7 +1642,9 @@ export const storage = <T extends Types>(
       // The parts are read in one transaction, so that a step between two of them moves no row into the page twice
       // (decision 0145).
       // At PostgreSQL's default level each statement reads a snapshot of its own, so the transaction begins at
-      // `REPEATABLE READ`, whose statements read its first (decision 0157).
+      // `REPEATABLE READ`, whose statements read its first (decision 0157). The level is read where the transaction
+      // is the outermost: inside a transaction the caller left open, the page reads at the caller's level
+      // (decision 0158).
       const found = yield* sql.withTransaction(Effect.gen(function*() {
         const found: Array<Effect.Success<ReturnType<typeof page>>[number]> = []
         for (const { clause, by } of read) {

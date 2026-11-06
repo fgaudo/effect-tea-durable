@@ -4,7 +4,9 @@
 [decision 0007](archive/0007-one-process-first.md), which puts the runtime on SQLite;
 [decision 0065](archive/0065-the-machine-holds-no-replies.md), whose index reads a caller's request id out of the
 request; and [decision 0156](0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md), whose rename rewrites a
-request in the database.
+request in the database. A database of SQLite made before is given `request_id`, and a page begins at `REPEATABLE
+READ` only where the transaction is its own, by
+[decision 0158](0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md).
 
 ## Context
 
