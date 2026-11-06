@@ -160,15 +160,6 @@ const handlersOf = <R>(
 }
 
 /**
- * The layer that serves the door of `program` on this runner with `step`. The entity type is registered without
- * `disableFatalDefects`, which would save a defect as the request's reply, and lose its message (decision 0159).
- */
-export const door = <R>(
-  program: Pick<Program<Types>, 'name' | 'migrations'>,
-  step: (delivered: Delivered) => Effect.Effect<string, never, R>,
-) => doorOf(program.name).toLayer(handlersOf(program, step))
-
-/**
  * The text of what a step answers a message: a reply, `NotFound` where no entity is stored, or `Suspended`. Every
  * one is a success of the RPC, so that Cluster saves it in the step's transaction (decisions 0081, 0160).
  */
@@ -195,7 +186,8 @@ const group = 'default'
 /**
  * What the runtime is given to run on this runner's `Sharding`: a deploy registers its program's door, whose answers
  * are encoded as text (decision 0160). The door's `maxIdleTime` is the runtime's passivation, so that a door does not
- * outlive the runtime's entity by more than Cluster's reaper takes (decision 0092).
+ * outlive the runtime's entity by more than Cluster's reaper takes (decision 0092). The door is registered without
+ * `disableFatalDefects`, which would save a defect as the request's reply, and lose its message (decision 0159).
  */
 export const onCluster: Effect.Effect<
   OnCluster,

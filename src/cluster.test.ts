@@ -1,7 +1,7 @@
 /**
  * The runtime's `Sharding` on Cluster: the versions a launch records, the `RunnerHealth` that answers by them, and
- * two runners on one SQLite file during a rolling deploy (decision 0159). The runtime on Cluster: its doors
- * (decisions 0160, 0161), and the shards a runner learns from its singletons (decision 0162).
+ * two runners of the runtime on one SQLite file during a rolling deploy (decision 0159). The runtime on Cluster: its
+ * doors (decisions 0160, 0161), and the shards a runner learns from its singletons (decision 0162).
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { describe, expect, test } from 'bun:test'
@@ -32,7 +32,7 @@ import { SqlClient } from 'effect/sql'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addressText, byVersion, door, doorOf, launch, sharding } from './cluster.ts'
+import { addressText, byVersion, doorOf, launch, sharding } from './cluster.ts'
 import { defect, InvariantDefect, noWork, operation, type Program, rejectWith, timer, versionOf } from './program.ts'
 import { Probe, type Said } from './runtime.ts'
 import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
@@ -150,9 +150,9 @@ describe('two runners on one file', () => {
   const shards = Array.from({ length: shardsPerGroup }, (_, i) => ShardId.make('default', i + 1))
 
   /**
-   * Runs `run` with a function that starts a runner of the runtime on one SQLite file, at a port and with programs,
-   * and gives back how many shards it holds. The lease is 3 s, since SQLite's `CURRENT_TIMESTAMP` counts whole
-   * seconds, and a lease of 1 s drops a runner that has just beaten.
+   * Runs `run` with a function that starts a runner of the runtime on one SQLite file, at a port, whose runtime deploys
+   * `programs`, and gives back how many shards it holds. The lease is 3 s, since SQLite's `CURRENT_TIMESTAMP` counts
+   * whole seconds, and a lease of 1 s drops a runner that has just beaten.
    */
   const onFile = async (
     run: (
@@ -166,23 +166,12 @@ describe('two runners on one file', () => {
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
     const start = (port: number, programs: ReadonlyArray<Program<T>>) =>
       Effect.gen(function*() {
-        // Each program's door steps a request by writing the version that stepped it, in Cluster's transaction.
-        const doors = programs.map((program) =>
-          door(program, (delivered) =>
-            Effect.gen(function*() {
-              const sql = yield* SqlClient.SqlClient
-              yield* sql`CREATE TABLE IF NOT EXISTS stepped (request TEXT, version INTEGER)`
-              yield* sql`INSERT INTO stepped (request, version) VALUES (${delivered.request}, ${versionOf(program)})`
-              return `stepped at ${versionOf(program)}`
-            }).pipe(Effect.orDie))
-        )
         const context = yield* Layer.build(
-          Layer.mergeAll(doors[0]!, ...doors.slice(1)).pipe(
-            Layer.provideMerge(sharding(programs)),
+          sharding(programs).pipe(
             Layer.provideMerge(Runners.layerNoop),
             Layer.provideMerge(SqlMessageStorage.layer),
             Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
-            Layer.provide(ShardingConfig.layer({
+            Layer.provideMerge(ShardingConfig.layer({
               runnerAddress: Option.some(RunnerAddress.make('localhost', port)),
               shardsPerGroup,
               refreshAssignmentsInterval: Duration.millis(50),
@@ -195,8 +184,12 @@ describe('two runners on one file', () => {
             Layer.provide(Digest.layerWebCrypto),
           ),
         ).pipe(Effect.orDie)
+        const runtime = yield* Effect.provide(launch(), context)
+        for (const program of programs) yield* Effect.provide(runtime.deploy(program), context)
         const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
-        return Object.assign(() => shards.filter((shard) => held.hasShardId(shard)).length, { context })
+        return Object.assign(() => shards.filter((shard) => held.hasShardId(shard)).length, {
+          context: context as Context.Context<Sharding.Sharding>,
+        })
       })
     try {
       await Effect.runPromise(Effect.scoped(run(start)).pipe(Effect.provide(store)) as Effect.Effect<void, unknown>)
@@ -244,33 +237,41 @@ describe('two runners on one file', () => {
     onFile((start) =>
       Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
+        const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: null, id })
+        const entity = sql<{ state: string; version: number; steps: number }>`
+          SELECT state, version, steps FROM entities WHERE id = 'one'
+        `.pipe(Effect.map((rows) => rows.map((row) => ({ ...row, version: Number(row.version), steps: Number(row.steps) }))))
         const older = yield* start(1, [at('Toy', 1)])
         yield* until(older, (n) => n === shardsPerGroup)
+        const clientOf = yield* Effect.provide(doorOf('Toy').client, older.context)
+        expect(yield* clientOf('one').Create({ version: 1, request: caller('c1'), message: 'null' }))
+          .toBe('{"_tag":"Created"}')
+        expect(yield* entity).toEqual([{ state: '{"last":"start"}', version: 1, steps: 1 }])
         // A launch of the newer version is recorded, and its runner is not up yet. The older runner is the only one,
         // and Cluster never marks its last runner unhealthy, so it keeps its shards.
         yield* recordVersions('localhost:9', [{ name: 'Toy', version: 2 }])
-        const clientOf = yield* Effect.provide(doorOf('Toy').client, older.context)
-        yield* clientOf('one').Message({ version: 1, request: 'r1', message: 'm' }, { discard: true })
+        yield* clientOf('one').Message({ version: 1, request: caller('m1'), message: '"m"' }, { discard: true })
 
         // The older runner's step dies, again and again, and nothing is stepped, answered or marked processed.
         yield* Effect.sleep('1500 millis')
         expect(older()).toBe(shardsPerGroup)
         const before = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Message'`
         expect(before.map(({ processed }) => Number(processed))).toEqual([0])
-        expect(yield* sql`SELECT 1 FROM cluster_replies`).toEqual([])
-        expect(yield* sql`SELECT 1 FROM sqlite_master WHERE name = 'stepped'`).toEqual([])
+        const replies = yield* sql<{ id: number }>`SELECT id FROM cluster_replies`
+        expect(replies.length).toBe(1)
+        expect(yield* entity).toEqual([{ state: '{"last":"start"}', version: 1, steps: 1 }])
 
-        // A runner of the newest version takes the shards, and steps the message once.
+        // A runner of the newest version takes the shards, and steps the message once, at its version.
         const newer = yield* start(2, [at('Toy', 2)])
         yield* until(newer, (n) => n === shardsPerGroup)
-        yield* Effect.repeat(sql<{ version: number }>`SELECT version FROM stepped`, {
+        const stepped = yield* Effect.repeat(entity, {
           schedule: Schedule.spaced('50 millis'),
-          until: (rows) => rows.length > 0,
+          until: (rows) => rows[0]?.state === '{"last":"m"}',
         }).pipe(Effect.timeout('15 seconds'))
-        const stepped = yield* sql<{ request: string; version: number }>`SELECT request, version FROM stepped`
-        expect(stepped).toEqual([{ request: 'r1', version: 2 }])
+        expect(stepped).toEqual([{ state: '{"last":"m"}', version: 2, steps: 2 }])
         const after = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Message'`
         expect(after.map(({ processed }) => Number(processed))).toEqual([1])
+        expect((yield* sql<{ id: number }>`SELECT id FROM cluster_replies`).length).toBe(2)
       })), 30_000)
 })
 

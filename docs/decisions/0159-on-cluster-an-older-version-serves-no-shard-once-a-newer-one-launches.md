@@ -100,8 +100,9 @@ runs two runners on one SQLite file, with a `RunnerHealth` that answers by versi
   `defectRetryPolicy` and `disableFatalDefects` at 4.1.2, and **tested** by the test of
   [`src/cluster.test.ts`](../../src/cluster.test.ts) in which a step of an older version dies. Under
   `WithTransaction`, the message stays unprocessed and no reply is saved while the older runner dies on it, and a
-  runner of the newest version steps it once. The test steps with a stub that writes a row, and not yet with the
-  runtime's step. With `disableFatalDefects`, the test fails.
+  runner of the newest version steps it once. Both runners run the runtime, and the newer one's step writes the
+  entity at its version. With `disableFatalDefects`, or without the check of the newest version in the step's
+  transaction, the test fails.
 - That Cluster never marks its last healthy runner unhealthy: **read in the source** of `Sharding.ts`. Only what a
   deploy costs rests on it.
 - That a transaction of SQLite takes the file's write lock as it begins, so that a launch's record and a step come
