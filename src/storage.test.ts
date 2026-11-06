@@ -1066,6 +1066,66 @@ describe('a count and a sum over the entities that match (decision 0148)', () =>
       })))
 })
 
+describe('a count per value of an index (decision 0150)', () => {
+  /** Writes each entity with its rank, and with no rank at all where it is `undefined`. */
+  const ranking = (store: ReturnType<typeof storage<Ranked>>, ranks: Readonly<Record<string, Scalar | undefined>>) =>
+    Effect.forEach(Object.entries(ranks), ([id, rank]) =>
+      store.write(
+        id,
+        created({ shown: { projection: JSON.stringify(rank ?? null), indexes: rank === undefined ? {} : { rank } } }),
+        0,
+      ))
+
+  test('each value comes once, with how many rows hold it, in the order a query orders the index by', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(ranked, sql)
+        expect(yield* store.countBy({ index: 'rank', limit: all })).toEqual([])
+        // `e` lacks the index, as a row an older version wrote before the index was added: it is counted as null.
+        yield* ranking(store, { a: 2, b: null, c: 'x', d: 2, e: undefined, f: 1, g: true, h: 'x', i: 0, j: false })
+        const tallies = yield* store.countBy({ index: 'rank', limit: all })
+        // `json_extract` gives `true` as `1` and `false` as `0`, which a query orders among the numbers: the kind
+        // keeps them apart, and a boolean comes after the number it is read as.
+        expect(tallies).toEqual([
+          { value: null, count: 2 },
+          { value: 0, count: 1 },
+          { value: false, count: 1 },
+          { value: 1, count: 1 },
+          { value: true, count: 1 },
+          { value: 2, count: 2 },
+          { value: 'x', count: 2 },
+        ])
+        // A query ordered by the index gives the values in the same order. It orders a boolean and its number by
+        // their ids, which here put the number first.
+        const found = yield* store.query({ limit: all, order: { index: 'rank' } })
+        expect(found.map(({ indexes }) => indexes.rank)).toEqual([null, null, 0, false, 1, true, 2, 2, 'x', 'x'])
+        // A criterion keeps the rows a count keeps, and the limit takes the first values.
+        const where = [{ index: 'rank', is: '>=', value: 1 }] as const
+        expect(yield* store.countBy({ index: 'rank', where, limit: 2 })).toEqual([
+          { value: 1, count: 1 },
+          { value: true, count: 1 },
+        ])
+        const counted = yield* store.countBy({ index: 'rank', where, limit: all })
+        expect(counted.reduce((total, { count }) => total + count, 0)).toBe(yield* store.count({ where }))
+        expect(yield* store.countBy({ index: 'rank', limit: 0 })).toEqual([])
+      })))
+
+  test('a count per value of an index the program does not declare dies, naming it', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(ranked, sql)
+        const calls = [
+          store.countBy({ index: 'nope', limit: all } as never),
+          store.countBy({ index: 'rank', where: [{ index: 'nope', is: '=', value: 1 }], limit: all } as never),
+        ]
+        for (const call of calls) {
+          const exit = yield* Effect.exit(call)
+          const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+          expect(cause instanceof Error && cause.message).toBe("'nope' is no index of the program 'Ranked'")
+        }
+      })))
+})
+
 test('a row is written at the version that writes it, and read back as it was written', () =>
   database((sql) =>
     Effect.gen(function*() {

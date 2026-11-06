@@ -37,7 +37,7 @@ Cluster's says so.
   `callers.messages`, 4096 by default: the messages of `send` offered to it and not yet applied. Nothing of the
   message is offered or stored. An operation of another entity is never answered `Full`, and sends again after the
   retry.
-- **Handle.** What `deploy` gives: `create`, `send`, `read`, `query`, `count` and `sum` for callers, `feed`, `ack` and the rest of the
+- **Handle.** What `deploy` gives: `create`, `send`, `read`, `query`, `count`, `sum` and `countBy` for callers, `feed`, `ack` and the rest of the
   outbox for its consumers, `reindex`, and `suspended`, `resume` and `discard` for an operator.
 - **Hold, lock.** Each entity is found, loaded, unloaded and crashed under a lock of its own. A caller holds the entity
   while it waits for its activation, and nothing under one entity's lock waits for another's.
@@ -48,7 +48,7 @@ Cluster's says so.
   anew under any key, so it never goes back. An internal message carries the incarnation of the work that sent it,
   and is dropped once the key's has moved on.
 - **Index.** A pure function from the projection to a scalar, named by the program, which a query, a count and a sum filter
-  by, and a query orders by. Its values are stored with the projection's row.
+  by, a query orders by, and a count per value groups by. Its values are stored with the projection's row.
 - **Key.** A name the program declares, under which `durable` holds one piece of work, or one piece for each
   *parameter* of a key declared with a schema for it. Two parameters are one when they encode alike. The names are
   finite, and one the program does not declare is a defect.
@@ -91,12 +91,13 @@ Cluster's says so.
 - **Program.** Everything declared in `program(schemas)(…)`: `name`, `keys`, `children`, `init`, `update`,
   `onEvent`, `durable`, `operations`, `project`, `topics`, `indexes` and `migrations`.
 - **Projection, read model.** `project(state)`: what a caller reads of an entity, with the actions it allows, as
-  JSON, a time as its milliseconds. Stored as a row with the value of each index, which `read`, a query, a count
-  and a sum read. The read model answers what the program's application reads to act; any other question over the
+  JSON, a time as its milliseconds. Stored as a row with the value of each index, which `read`, a query, a count,
+  a sum and a count per value read. The read model answers what the program's application reads to act; any other question over the
   entities is a *report*.
 - **Raised event.** What a child's `update` tells its parent with `raise(event)(state)`, handled by the parent's
   `onEvent` in the same step, and never stored.
-- **Report.** A question over the entities the read model does not answer: a grouping, a disjunction, a search in
+- **Report.** A question over the entities the read model does not answer: a grouping other than a count per value
+  of one index, a disjunction, a search in
   a text, a join across programs, a series over time. It is answered by a store made for it, which a consumer of
   the log feeds.
 - **Rehearsal, `rehearse`.** A scenario run on the machine without storage, cluster or clock, where the test answers

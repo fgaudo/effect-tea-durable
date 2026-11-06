@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-11-06. Says where the read model of
 [decision 0032](archive/0032-a-projection-is-a-row.md) and the aggregates of
 [decision 0148](0148-a-count-and-a-sum-are-read-in-one-statement.md) stop, and where the questions they leave out
-are answered. Changes neither.
+are answered. Changes neither. Its three forms are changed by
+[decision 0150](0150-a-count-per-value-of-an-index-is-read-in-one-statement.md): a count per value of an index is a
+fourth.
 
 ## Context
 

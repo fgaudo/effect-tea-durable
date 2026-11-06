@@ -1,6 +1,6 @@
 # 0150. A count per value of an index is read in one statement, and an ack joins the caller's transaction
 
-**Status:** proposed, 2026-11-06, for the step A count per value of an index of the roadmap. Decides the
+**Status:** accepted, 2026-11-06, with the step A count per value of an index of the roadmap. Decides the
 [open question](../open-questions.md#storage-and-reading) of a count grouped by an index. Changes
 [decision 0149](0149-the-read-model-answers-what-a-program-acts-on.md), whose read model answers in three forms, and
 [decision 0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md), whose ack is a transaction of its own.
@@ -32,7 +32,8 @@ later version added.
   takes, compared as a query compares them. It is one statement of SQLite, so every count is read on one snapshot,
   and it reads no projection. A value no entity holds has no entry.
 - **The values come in the order a query orders the index by, at most `limit` of them.** Null comes first, then
-  the numbers, then the strings, as SQLite orders them. A boolean is ordered as the `1` or `0` SQLite reads it as.
+  the numbers, then the strings, as SQLite orders them. A boolean is ordered as the `1` or `0` SQLite reads it as,
+  and comes after that number, where a query orders the two by their ids.
   A grouping by an index of many values, such as a customer, is a report's question past its limit, and a caller
   that must know whether the values ended asks for one more than it shows.
 - **A value is grouped as a query reads it.** `true` and `1` are two values, told apart by `json_type`. JSON's
@@ -52,15 +53,18 @@ later version added.
 - That one statement reads the rows as one transaction sees them: **documented**, by SQLite's page on isolation, as
   for [decision 0148](0148-a-count-and-a-sum-are-read-in-one-statement.md).
 - That `json_type` gives `true`, `false`, `integer`, `real`, `text` and `null`, and SQL's NULL for a path the row
-  lacks: **documented**, by SQLite's page on its JSON functions; **tested**, by the tests under `a count per value
-  of an index` in [`src/storage.test.ts`](../../src/storage.test.ts).
+  lacks, and that `->` gives a value as its JSON text: **documented**, by SQLite's page on its JSON functions;
+  **tested**, by the tests under `a count per value of an index` in
+  [`src/storage.test.ts`](../../src/storage.test.ts), at the SQLite that bun 1.4.2 holds, 3.53.2.
 - That a nested `SqlClient.withTransaction` runs as a savepoint of the transaction open in the fiber's context, and
   that the transaction of a client is found in the context of the fiber that runs the statement: **documented**, by
   the JSDoc of `makeWithTransaction` and of `withTransaction` in `effect/src/sql/SqlClient.ts` at 4.1.2;
-  **tested**, by the test of the report in [`examples/order/runtime.test.ts`](../../examples/order/runtime.test.ts),
-  where a transaction that fails after its ack leaves the store and the cursors as they were.
-- That `ack` runs in its caller's fiber with its caller's context: **tested**, by the same test. A change of the
-  handle that forked the ack, or provided a context of its own, would fail it.
+  **tested**, by the test `a report fed from the log counts the orders in each status, as the read model counts
+  them` in [`examples/order/runtime.test.ts`](../../examples/order/runtime.test.ts), where a transaction that
+  fails after its ack leaves the store and the cursors as they were.
+- That `ack` runs with its caller's context: **tested**, by the same test. An ack run without the caller's
+  transaction, as one run in a context of the runtime's would be, waits for the connection the transaction holds,
+  and the test hangs. A fiber forked by the caller inherits the context, and still joins.
 - That the client of `@effect/sql-sqlite-bun` holds one connection, which a transaction holds until it ends: **read
   in the source**, in `SqliteClient.make`, whose acquirers share a semaphore of one permit.
 

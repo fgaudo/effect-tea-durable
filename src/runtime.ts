@@ -44,6 +44,7 @@ import {
 import {
   type Consumer,
   type Counted,
+  type CountedBy,
   type Cursor,
   defaultPartitions,
   type Found,
@@ -56,6 +57,7 @@ import {
   type Storage,
   type Summed,
   type Suspension,
+  type Tally,
 } from './storage.ts'
 
 /**
@@ -240,6 +242,14 @@ export interface Handle<T extends Types> {
    */
   readonly sum: (summed: Summed<T>) => Effect.Effect<number>
   /**
+   * For each value `index` holds among the entities whose indexes match `where`, as `count` finds them, the value
+   * and how many entities hold it, in one statement that reads no projection. A value no entity holds has no entry.
+   * The values come in the order a query orders the index by, null first, at most `limit` of them: a caller that
+   * must know whether they ended asks for one more. `true` and `1` are two values, and an index a row lacks is null,
+   * as a query reads it. A limit that is no non-negative integer is the caller's defect (decision 0150).
+   */
+  readonly countBy: (counted: CountedBy<T>) => Effect.Effect<ReadonlyArray<Tally>>
+  /**
    * Writes the read model of every entity of the program again, from its stored state, and gives how many rows it
    * wrote and which entities it passed over. An index a new version of the program added or changed needs it, since a row is written only when its entity
    * takes a step. An operator runs it after such a deploy (decision 0032). An entity that takes a step while it
@@ -289,7 +299,9 @@ export interface Handle<T extends Types> {
    * consumer too (decisions 0039, 0137). A topic is one the program publishes, and a partition is an integer from 1
    * to the number of partitions of the log. A `seq` and a limit are non-negative integers, here and in `query`,
    * `published` and `feed`, and a limit left out is no limit at all but the caller's defect, as is anything else
-   * (decisions 0053, 0138, 0141).
+   * (decisions 0053, 0138, 0141). An ack joins a transaction the caller left open on the client the runtime was
+   * launched with, so a store the caller writes in it commits with the cursors. Within it the caller waits for
+   * nothing a step does, since a step's commit waits for the transaction's connection (decision 0150).
    */
   readonly ack: (topic: Topic<T>, consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
   /**
@@ -1704,6 +1716,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
           count: deployed.storage.count,
           sum: deployed.storage.sum,
+          countBy: (asked) => counted({ limit: asked.limit }, deployed.storage.countBy(asked)),
           reindex: deployed.storage.reindex,
           published: (topic, after, limit) =>
             topical(

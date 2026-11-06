@@ -7,6 +7,7 @@ import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import { SqlClient } from 'effect/sql'
@@ -134,7 +135,7 @@ test('what an order published is what another system learns of it, each consumer
     expect((yield* Fiber.join(next)).map(({ id, value }) => [id, value])).toEqual([['o-2', 'AwaitingPayment']])
   }))))
 
-test('a report fed from the log counts the orders in each status, as the read model counts them one at a time', () =>
+test('a report fed from the log counts the orders in each status, as the read model counts them', () =>
   database(Effect.scoped(Effect.gen(function*() {
     const runtime = yield* launch()
     const orders = yield* Effect.provide(runtime.deploy(order), world)
@@ -152,22 +153,32 @@ test('a report fed from the log counts the orders in each status, as the read mo
     yield* orders.send('o-4', { _tag: 'CancelRequested' }, { requestId: 'x-o-4', sender: ada })
     yield* runtime.settled
 
-    // The consumer: a page of its topic, written to the store, then acked, until a page is empty. A consumer that
-    // serves a dashboard reads with a wait instead, and never stops (decision 0142). The first page is written and
-    // not acked, as a crash between the two leaves it, so the consumer reads it again and writes it again.
-    yield* report.record(yield* orders.feed('status', 'dashboard', 3))
+    // The consumer: a page of its topic, written to the store and acked in one transaction, until a page is empty.
+    // A consumer that serves a dashboard reads with a wait instead, and never stops (decision 0142). The first page
+    // fails after its ack, as a crash before the commit leaves it: the store and the cursors stay as they were, so
+    // the consumer reads the page again (decision 0150).
+    const sql = yield* SqlClient.SqlClient
+    const consume = (page: Effect.Success<ReturnType<typeof orders.feed<'status'>>>) =>
+      Effect.andThen(report.record(page), orders.ack('status', 'dashboard', page))
+    const first = yield* orders.feed('status', 'dashboard', 3)
+    yield* Effect.exit(sql.withTransaction(Effect.andThen(consume(first), Effect.fail('crash'))))
+    expect(yield* report.counts).toEqual({})
+    expect(yield* orders.feed('status', 'dashboard', 3)).toEqual(first)
     while (true) {
       const page = yield* orders.feed('status', 'dashboard', 3)
       if (page.length === 0) break
-      yield* report.record(page)
-      yield* orders.ack('status', 'dashboard', page)
+      yield* sql.withTransaction(consume(page))
     }
 
-    // The store answers the question in one statement, and agrees with the read model, which answers it with a
-    // count per status, each on a snapshot of its own (decisions 0148, 0149).
+    // The store answers the question in one statement, and so does the read model, on one snapshot
+    // (decisions 0149, 0150).
     const counts = yield* report.counts
     expect(counts).toEqual({ AwaitingPayment: 1, Paid: 2, Cancelled: 1 })
-    for (const status of ['AwaitingPayment', 'Charging', 'Paid', 'Refunding', 'Shipped', 'Cancelled'] as const) {
-      expect(yield* orders.count({ where: [{ index: 'status', is: '=', value: status }] })).toBe(counts[status] ?? 0)
-    }
+    expect(yield* orders.countBy({ index: 'status', limit: all })).toEqual([
+      { value: 'AwaitingPayment', count: 1 },
+      { value: 'Cancelled', count: 1 },
+      { value: 'Paid', count: 2 },
+    ])
+    // A limit that is no non-negative integer is the caller's defect, as a query's is (decision 0141).
+    expect(Exit.isFailure(yield* Effect.exit(orders.countBy({ index: 'status', limit: -1 })))).toBe(true)
   }))))

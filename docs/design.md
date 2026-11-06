@@ -576,18 +576,25 @@ SQLite would read the string as `0` and `true` as `1`, and the total would look 
 index and the least id of such a row. Both read the rows as they stand while `reindex` runs, as a query does
 ([decision 0148](decisions/0148-a-count-and-a-sum-are-read-in-one-statement.md)).
 
+A count per value of an index is read in one statement too. `countBy` takes an index, the criteria a query takes
+and a limit, and gives each value the index holds among the entities that match, with how many hold it, so every
+count is read on one snapshot. The values come in the order a query orders the index by, null first, at most
+`limit` of them, and a value no entity holds has no entry. `true` and `1` are two values, though SQLite orders a
+boolean as its number, and a boolean comes after that number. An index a row lacks is null, as a query reads it.
+A grouping by an index of many values, such as a customer, is a report's question past its limit. A sum is not
+grouped ([decision 0150](decisions/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)).
+
 The read model answers what the program's application reads to act, from the rows a step writes in its own
 transaction, so its answers are consistent with the states. Its questions are declared: an index for each value a
-question filters, orders or adds by, and a question added is a deploy and a `reindex`. It answers in three forms,
-the entities whose indexes match, their count, and the sum of one index over them. Any other question over the
-entities is a **report**: how many per status, how many per day, the entities whose status is one of several, a
-word in a text, an entity with what another program holds of it. A report is fed from the log: a consumer of a
+question filters, orders or adds by, and a question added is a deploy and a `reindex`. It answers in four forms,
+the entities whose indexes match, their count, the sum of one index over them, and their count per value of one
+index. Any other question over the entities is a **report**: how many per day, the total per customer, the
+entities whose status is one of several, a word in a text, an entity with what another program holds of it. A report is fed from the log: a consumer of a
 topic writes a store made for the question, a table of a relational database, a search index or a warehouse, and
 the question is asked of that store. What such a consumer needs is in the projection, which is the entity's one
 contract. A form the read model gains is one statement over the indexes, under the criteria a query takes, which
-reads no projection. A count grouped by an index is such a form, and whether it is the read model's is not decided
-([decision 0149](decisions/0149-the-read-model-answers-what-a-program-acts-on.md),
-[open question](open-questions.md#storage-and-reading)).
+reads no projection ([decision 0149](decisions/0149-the-read-model-answers-what-a-program-acts-on.md),
+[decision 0150](decisions/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)).
 
 A descending order is the ascending order reversed, the ids of the rows that tie included, so the rows that hold no
 value come last. A page reads only the rows it gives, however late in the order its cursor is. The storage indexes
@@ -663,7 +670,12 @@ moves each of those cursors once the rows are acted on. A cursor never moves bac
 never past the head of its partition, so a crash before the ack delivers the rows again: at least once,
 deduplicated by the topic, the partition and the `seq`. A consumer that must act on a row once keeps cursors of
 its own, written in the transaction of its work, and drops a row delivered again behind them: the cursor it acks
-then serves the prune alone, and may lag. A partition a consumer has no cursor for is read from `0`.
+then serves the prune alone, and may lag. A consumer whose store is a table of the runtime's database writes it
+and acks in one transaction: `ack` joins a transaction the caller left open on the client the runtime was
+launched with, so the store and the cursors commit together. Within that transaction the caller waits for nothing
+a step does, since the transaction holds the one connection of SQLite and a step's commit waits for it
+([decision 0150](decisions/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)). A partition a
+consumer has no cursor for is read from `0`.
 `prune` drops, in each topic and partition, what every consumer of the topic has read there, through the lowest
 cursor, and drops nothing of a topic no consumer has read from. `consumers` says the topic of each consumer, how
 many rows are past its cursors, and in which partitions, and `forget` lets the log go past one that is gone.

@@ -31,7 +31,7 @@ flowchart LR
   timers -->|firing, same incarnation| update
   runner -->|send, create| other[another entity]
   state --> project
-  project -->|projection| read[read, query, count, sum]
+  project -->|projection| read[read, query, count, sum, countBy]
   project -->|a row in each topic whose selection changes| outbox
 ```
 

@@ -445,6 +445,11 @@ const Rows = {
    * for none (decision 0148).
    */
   total: decoder(Schema.Struct({ total: Schema.Number, refused: Schema.NullOr(Schema.String) })),
+  /**
+   * A value of an index as the JSON text the row holds, `null` for a row that lacks it, and how many rows hold it
+   * (decision 0150).
+   */
+  tally: decoder(Schema.Struct({ value: Schema.String, count: Count })),
   /** An aggregate over no rows is null. */
   last: decoder(Schema.Struct({ seq: Schema.NullOr(Count) })),
   /** A cursor, or a partition's head: a `seq` within a partition. */
@@ -497,6 +502,19 @@ export type Counted<T extends Types> = Readonly<{ where?: ReadonlyArray<Criterio
 
 /** What a sum across the entities of one program asks: the index added, and the criteria a query takes (decision 0148). */
 export type Summed<T extends Types> = Readonly<{ index: T['index']; where?: ReadonlyArray<Criterion<T>> }>
+
+/**
+ * What a count per value of an index asks: the index grouped by, the criteria a query takes, and how many values at
+ * most (decision 0150).
+ */
+export type CountedBy<T extends Types> = Readonly<{
+  index: T['index']
+  where?: ReadonlyArray<Criterion<T>>
+  limit: number
+}>
+
+/** A value of an index, and how many of the entities counted hold it (decision 0150). */
+export type Tally = Readonly<{ value: Scalar; count: number }>
 
 /** A row a query gave, as a later page reads past it (decision 0143). */
 export type After<T extends Types> = Readonly<{ id: string; indexes: Readonly<Record<T['index'], Scalar>> }>
@@ -639,6 +657,8 @@ export interface Storage<T extends Types> {
   readonly count: (counted: Counted<T>) => Effect.Effect<number>
   /** `Handle.sum`, as the storage keeps it: one statement, which reads no projection (decision 0148). */
   readonly sum: (summed: Summed<T>) => Effect.Effect<number>
+  /** `Handle.countBy`, as the storage keeps it: one statement, which reads no projection (decision 0150). */
+  readonly countBy: (counted: CountedBy<T>) => Effect.Effect<ReadonlyArray<Tally>>
   /** `Handle.read`, as the storage keeps it: the projection of the entity's row, or null for none (decision 0121). */
   readonly projected: (id: string) => Effect.Effect<T['projection'] | null>
   /**
@@ -1307,6 +1327,21 @@ export const storage = <T extends Types>(
       return summed.total
     }).pipe(Effect.orDie)
 
+  const countBy = ({ index, where = [], limit }: CountedBy<T>) =>
+    Effect.gen(function*() {
+      // `json_extract` gives `true` as `1`, so the kind of the value groups too, and JSON's null and a path the row
+      // lacks are one kind, as a query reads them. The value is read as its JSON text, which tells `true` from `1`
+      // where the column does not. A boolean comes after the number SQLite reads it as (decision 0150).
+      const kind = sql.literal(`coalesce(json_type(indexes, ${pathOf(index)}), 'null')`)
+      const text = sql.literal(`coalesce(indexes -> ${pathOf(index)}, 'null')`)
+      const tallies = yield* rows('projections', Rows.tally)(sql`
+        SELECT min(${text}) AS value, count(*) AS count FROM projections WHERE ${sql.and(criteria(where))}
+        GROUP BY ${columnOf(index)}, ${kind}
+        ORDER BY ${columnOf(index)}, ${kind} IN ('true', 'false') LIMIT ${limit}
+      `)
+      return tallies.map(({ value, count }): Tally => ({ value: JSON.parse(value) as Scalar, count }))
+    }).pipe(Effect.orDie)
+
   /**
    * The value of each index of the program in a stored row, as a query reads it: an index the row lacks, one a
    * later version added, is null, as `json_extract` gives it.
@@ -1575,6 +1610,7 @@ export const storage = <T extends Types>(
     query,
     count,
     sum,
+    countBy,
     projected,
     reindex,
     published,
