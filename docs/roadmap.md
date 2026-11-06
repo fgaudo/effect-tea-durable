@@ -5,7 +5,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **A default capacity** ([open question](open-questions.md#running)). A process launched without a capacity
+   holds every entity loaded within `passivate`, and a burst of distinct entities fills its memory with nothing
+   but time as a bound. The step measures what a loaded entity holds, and gives `capacity.entities` a default
+   that unloads the least recently used, with a value that says no bound. It weighs Effect's `Cache`,
+   `ScopedCache` and `RcMap` against the order of use the runtime keeps. It is taken by a note of its own.
+2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
