@@ -5,7 +5,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Renaming a program** ([open question](open-questions.md#storage-and-reading)). A program's name is the address
+   of its entities, and is in every idempotency key, so a deploy under a new name finds none of them. The step
+   decides how a rename moves what is stored under the old name, what keeps the keys of the work under way, and
+   what reaches the senders of the replies stored under it. It is taken by a note of its own.
+2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
