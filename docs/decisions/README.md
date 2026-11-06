@@ -27,6 +27,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0160](0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md) | On Cluster, a door answers as text, and a creation the program dies on waits for a fix |  |
 | [0161](0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md) | On Cluster, a step settles the machine by the count of the steps that wrote it, and an entity's lock is taken only inside a transaction |  |
 | [0162](0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md) | On Cluster, an entity's shard is its partition, and each deployment serves its shards from a singleton of each |  |
+| [0163](0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md) | On Cluster, a reading that waits learns of another runner's commit from the file, read while it waits |  |
 
 ## The project
 
@@ -143,7 +144,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0139](0139-the-projection-is-json.md) | The projection is JSON, and `project` converts |  |
 | [0140](0140-a-row-of-a-topic-gives-its-value.md) | A row of a topic gives the value the topic selects | [0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md) |
 | [0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md) | A query and a reading of the log take a limit, and one left out is the caller's defect | [0143](0143-a-query-pages-after-the-last-row-it-gave.md) |
-| [0142](0142-a-consumer-waits-for-a-row-of-its-topic.md) | A consumer waits for a row of its topic, woken by the commit that writes it | [0153](0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md) |
+| [0142](0142-a-consumer-waits-for-a-row-of-its-topic.md) | A consumer waits for a row of its topic, woken by the commit that writes it | [0153](0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md), [0163](0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md) |
 | [0143](0143-a-query-pages-after-the-last-row-it-gave.md) | A query pages after the last row it gave, by the index it orders by and the id | [0144](0144-a-page-reads-the-rows-before-its-cursor.md), [0145](0145-a-page-is-read-as-ranges-of-its-index.md), [0146](0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md) |
 | [0144](0144-a-page-reads-the-rows-before-its-cursor.md) | A page reads the rows of its program before its cursor, and decision 0143 stands on its other reasons | [0145](0145-a-page-is-read-as-ranges-of-its-index.md) |
 | [0145](0145-a-page-is-read-as-ranges-of-its-index.md) | A page is read as ranges of an index of the value and the id, and a descending order reverses the ids |  |
@@ -185,7 +186,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | --- | --- | --- |
 | [0028](archive/0028-rules-the-runtime-settled.md) | Rules the runtime settled | [0029](archive/0029-an-idle-entity-is-unloaded.md), [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md), [0134](0134-an-entitys-loop-yields-between-two-steps.md) |
 | [0029](archive/0029-an-idle-entity-is-unloaded.md) | An idle entity is unloaded, and what is stored wakes it | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md), [0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md), [0071](archive/0071-a-process-starts-the-entities-with-a-message.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md), [0076](archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0111](archive/0111-an-entity-s-wait-times-out-its-take-alone.md), [0113](0113-a-suspended-entitys-operations-run-to-their-end.md), [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) |
-| [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) | The runtime waits for what it waits for, and polls nothing |  |
+| [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) | The runtime waits for what it waits for, and polls nothing | [0163](0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md) |
 | [0066](archive/0066-the-runtimes-tests-move-time.md) | The runtime's tests move time, and wait for nothing on a clock | [0101](archive/0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md), [0103](archive/0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md), [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) |
 | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md) | Each entity is held by its own lock | [0079](archive/0079-what-a-caller-sets-going-is-finished-without-it.md) |
 | [0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md) | What another fiber reads changes in one step | [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) |

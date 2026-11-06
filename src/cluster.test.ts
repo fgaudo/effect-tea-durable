@@ -23,6 +23,7 @@ import { Digest } from 'effect/crypto'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Schedule from 'effect/Schedule'
@@ -34,7 +35,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addressText, byVersion, doorOf, launch, sharding } from './cluster.ts'
 import { defect, InvariantDefect, noWork, operation, type Program, rejectWith, timer, versionOf } from './program.ts'
-import { Probe, type Said } from './runtime.ts'
+import { type Handle, Probe, type Said } from './runtime.ts'
 import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
 import { client, onEach } from './test-databases.ts'
 
@@ -572,11 +573,14 @@ describe('the shards of a runner on Cluster', () => {
   const shards = Array.from({ length: shardsPerGroup }, (_, i) => ShardId.make('default', i + 1))
   const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: { user: 'u' }, id })
 
-  /** A runner of the runtime: how many shards it holds, whether it holds an entity's, and its context. */
+  /** The consumer of `bell`'s projection the runners declare. */
+  const queue = { consumers: { projection: ['queue'] } } as const
+  /** A runner of the runtime: how many shards it holds, whether it holds an entity's, its context, and `bell`. */
   type Runner = Readonly<{
     count: () => number
     holds: (id: string) => boolean
     context: Context.Context<Sharding.Sharding>
+    bell: Handle<Bell, (typeof queue)['consumers']>
   }>
 
   /**
@@ -608,18 +612,20 @@ describe('the shards of a runner on Cluster', () => {
               shardLockExpiration: Duration.seconds(3),
               entityMessagePollInterval: Duration.millis(100),
             })),
-            Layer.provideMerge(store),
+            // Each runner its own connection, as a runner of its own process has: a layer built once is shared.
+            Layer.provideMerge(SqliteClient.layer({ filename: join(directory, 'store.db') })),
             Layer.provide(Digest.layerWebCrypto),
           ),
         ).pipe(Effect.orDie)
         const probe = (told: Said) => Effect.sync(() => said?.(told))
         const runtime = yield* Effect.provide(Effect.provideService(launch(options), Probe, probe), context)
-        yield* Effect.provide(Effect.provideService(runtime.deploy(bell), Where, { port }), context)
+        const deployed = yield* Effect.provide(Effect.provideService(runtime.deploy(bell, queue), Where, { port }), context)
         const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
         return {
           count: () => shards.filter((shard) => held.hasShardId(shard)).length,
           holds: (id: string) => held.hasShardId(held.getShardId(EntityId.make(id), 'default')),
           context: context as Context.Context<Sharding.Sharding>,
+          bell: deployed,
         }
       })
     seen = []
@@ -715,5 +721,29 @@ describe('the shards of a runner on Cluster', () => {
           expect(seen).not.toContain(`${id} interrupted on 1`)
           expect(seen).not.toContain(`${id} started on 2`)
         }
+      })), 30_000)
+
+  test('a consumer that waits is woken by a commit of another runner, within its poll', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const who = Array.from({ length: 64 }, (_, i) => `w${i}`).find((id) => second.holds(id))!
+        yield* first.bell.ack('projection', 'queue', yield* first.bell.feed('projection', 'queue', 100))
+        const started = Date.now()
+        const waiting = yield* Effect.forkChild(
+          first.bell.feed('projection', 'queue', 100, { wait: { millis: 10_000 } }),
+        )
+        yield* Effect.sleep('100 millis')
+        // The second runner commits the creation, and tells its own readings only.
+        yield* create(second, who)
+        const rows = yield* Fiber.join(waiting)
+        expect(rows.map(({ id }) => id)).toEqual([who])
+        // Woken within Cluster's poll of replies, 200 ms, and not at the wait's 10 s.
+        expect(Date.now() - started).toBeLessThan(5_000)
       })), 30_000)
 })

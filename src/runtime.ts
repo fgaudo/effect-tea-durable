@@ -18,6 +18,7 @@ import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
+import * as Latch from 'effect/Latch'
 import * as MutableList from 'effect/MutableList'
 import * as Queue from 'effect/Queue'
 import * as Schedule from 'effect/Schedule'
@@ -528,6 +529,12 @@ export interface OnCluster {
     name: string,
     run: Effect.Effect<void, never, Scope.Scope>,
   ) => Effect.Effect<void, never, Scope.Scope>
+  /**
+   * What tells this runner that another runner committed: `version`, a number that moves once another connection
+   * commits to the database and not at this runner's own commits, read every `millis` while a reading waits
+   * (decision 0163).
+   */
+  readonly others: Readonly<{ version: Effect.Effect<number, unknown>; millis: number }>
 }
 
 /** An entity loaded in this process: its machine, the events waiting, and what is running for it. */
@@ -865,6 +872,15 @@ export const launchWith = (
       commits.set(address, commit)
       return commit
     }
+    /** Tells every reading that waits, whatever its topic: another runner has committed (decision 0163). */
+    const tellAll = () => {
+      const told = [...commits.values()]
+      commits.clear()
+      for (const commit of told) Deferred.doneUnsafe(commit, Effect.void)
+    }
+    /** How many readings wait now: while one does, `waiting` is open, and the watcher of other runners reads. */
+    let readings = 0
+    const waiting = Latch.makeUnsafe(false)
     /** Tells the readings that wait for a topic `written` publishes in, once its transaction has committed. */
     const tell = (name: string, written: Machine.Written) => {
       for (const topic of written.published?.topics ?? []) {
@@ -894,10 +910,35 @@ export const launchWith = (
           const page = yield* read
           const now = yield* Clock.currentTimeMillis
           if (page.length > 0 || now >= until) return page
+          if (++readings === 1) waiting.openUnsafe()
           yield* Effect.raceAll([Deferred.await(commit), Deferred.await(closing), Effect.sleep(`${until - now} millis`)])
+            .pipe(Effect.ensuring(Effect.sync(() => {
+              if (--readings === 0) waiting.closeUnsafe()
+            })))
         }
         return []
       })
+    if (cluster !== null) {
+      const { version, millis } = cluster.others
+      const read = (seen: number) => Effect.catch(version, () => Effect.succeed(seen))
+      // The version is read once at launch, and kept while no reading waits. So a commit of another runner after a
+      // reading's page and before its wait still moves the version from the one kept, and the reading is woken. A
+      // version read anew whenever a wait begins would already count that commit, and the reading would wait out
+      // its time. A launch that cannot read it keeps -1, which no version is, so the first reading wakes once.
+      let seen = yield* read(-1)
+      yield* Effect.forkIn(
+        Effect.forever(Effect.gen(function*() {
+          yield* waiting.await
+          const now = yield* read(seen)
+          if (now !== seen) {
+            seen = now
+            tellAll()
+          }
+          yield* Effect.sleep(`${millis} millis`)
+        })),
+        running,
+      )
+    }
     /**
      * The senders waiting for an entity's resumption, by entity. Each registers before it sends, so that a
      * resumption between its being answered `Suspended` and its waiting is not missed (decisions 0023, 0063).

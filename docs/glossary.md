@@ -159,6 +159,9 @@ Cluster's says so.
   and is read by migrating its JSON to the program's.
 - **Waker.** The runtime's fiber that reads the stored timers due and activates their entities, and tries again after
   `retry` one it could not load. On Cluster it reads the timers of the shards held alone.
+- **Watcher.** On Cluster: the runtime's fiber that, while a reading of `feed` waits, reads the version of the other
+  runners' commits at an interval, and wakes every reading that waits where the version moved
+  ([0163](decisions/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)).
 - **World, member.** In a rehearsal: entities on the machine together, with one time and one process for all of them,
   made by `rehearse.together`. A member is one entity of a world, whose `run` runs an operation's runner, and what
   the runner sends reaches the receiver's machine.

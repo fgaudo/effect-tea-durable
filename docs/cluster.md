@@ -171,8 +171,9 @@ What stays two transactions:
 Cluster polls: its mailbox every 10 s, its replies every `entityReplyPollInterval` (200 ms), its assignments every
 3 s, as a fallback beside the notifications a runner sends itself. The runtime polls nothing
 ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)); on Cluster that holds of the
-runtime's own fibers, not of Cluster's. A consumer's wait is ended by a commit in its topic on its own runner
-only, and by its time where another runner commits
+runtime's own fibers, not of Cluster's, with one exception. While a consumer's reading waits, a runner reads
+SQLite's `data_version` every `entityReplyPollInterval`, and wakes its readings where another runner has committed
+([decision 0163](decisions/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)). A commit on the reading's own runner wakes it at once
 ([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md)).
 
 ## Two versions at once

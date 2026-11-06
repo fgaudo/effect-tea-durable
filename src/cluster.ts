@@ -203,6 +203,12 @@ export const onCluster: Effect.Effect<
       shardOf: (id) => sharding.getShardId(EntityId.make(id), group).id,
       holds: (shard) => sharding.hasShardId(ShardId.make(group, shard)),
       singleton: (name, run) => sharding.registerSingleton(name, run, { shardGroup: group }),
+      // SQLite moves `data_version` on a connection once another connection commits to the file, and not at the
+      // connection's own commits. The runner's client has one connection (decision 0163).
+      others: {
+        version: Effect.map(sql<{ data_version: number }>`PRAGMA data_version`, ([row]) => Number(row?.data_version)),
+        millis: Duration.toMillis(config.entityReplyPollInterval),
+      },
       register: (program, step, idle) => {
         const answer = Schema.encodeSync(answerCodec(program))
         const created = Schema.encodeSync(creationCodec)

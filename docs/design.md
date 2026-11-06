@@ -727,7 +727,10 @@ time is over or the runtime stops. A step tells each topic it wrote in once its 
 consumer of another topic is not woken. The reading takes its topic's signal before it reads, so that a commit
 between its reading and its wait is not missed. A consumer that waits polls nothing, and a consumer that stops
 calling costs the runtime nothing
-([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md)). A partition a handle is
+([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md)). On Effect Cluster a runner learns of
+another runner's commit from the file: while a reading waits, it reads SQLite's `data_version` at Cluster's
+interval of replies, and wakes every reading that waits where the version moved
+([decision 0163](decisions/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)). A partition a handle is
 given is an integer from 1 to the number of partitions, a topic is one the program publishes, and a `seq`, a limit
 and a wait are non-negative integers. The limit is required, of `feed` and `published` as of `query`, so that no
 reading holds a whole topic in one array; a caller that wants more reads again, past the last row it was given
