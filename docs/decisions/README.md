@@ -132,11 +132,11 @@ each read and found, are in [`reviews.md`](reviews.md).
 | --- | --- | --- |
 | [0121](0121-a-read-answers-from-the-row-of-the-read-model.md) | A read answers from the row of the read model, and calls no `project` | [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) |
 | [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) | `reindex` leaves a row it cannot compute, and names its entity |  |
-| [0135](0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) | A large state is split by the program, and the runtime warns of a large step | [0138](0138-the-log-publishes-topics.md) |
+| [0135](0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) | A large state is split by the program, and the runtime warns of a large step | [0138](0138-the-log-publishes-topics.md), [0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md) |
 | [0137](0137-the-log-is-ordered-within-a-partition.md) | The log is ordered within a partition, and a consumer keeps a cursor per partition | [0138](0138-the-log-publishes-topics.md), [0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md) |
-| [0138](0138-the-log-publishes-topics.md) | The log publishes topics, and a consumer reads one | [0139](0139-the-projection-is-json.md), [0140](0140-a-row-of-a-topic-gives-its-value.md), [0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md) |
+| [0138](0138-the-log-publishes-topics.md) | The log publishes topics, and a consumer reads one | [0139](0139-the-projection-is-json.md), [0140](0140-a-row-of-a-topic-gives-its-value.md), [0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md), [0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md) |
 | [0139](0139-the-projection-is-json.md) | The projection is JSON, and `project` converts |  |
-| [0140](0140-a-row-of-a-topic-gives-its-value.md) | A row of a topic gives the value the topic selects |  |
+| [0140](0140-a-row-of-a-topic-gives-its-value.md) | A row of a topic gives the value the topic selects | [0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md) |
 | [0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md) | A query and a reading of the log take a limit, and one left out is the caller's defect | [0143](0143-a-query-pages-after-the-last-row-it-gave.md) |
 | [0142](0142-a-consumer-waits-for-a-row-of-its-topic.md) | A consumer waits for a row of its topic, woken by the commit that writes it | [0153](0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md) |
 | [0143](0143-a-query-pages-after-the-last-row-it-gave.md) | A query pages after the last row it gave, by the index it orders by and the id | [0144](0144-a-page-reads-the-rows-before-its-cursor.md), [0145](0145-a-page-is-read-as-ranges-of-its-index.md), [0146](0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md) |

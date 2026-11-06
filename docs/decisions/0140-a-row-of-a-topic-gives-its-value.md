@@ -1,7 +1,9 @@
 # 0140. A row of a topic gives the value the topic selects
 
 **Status:** accepted, 2026-11-05. Changes [decision 0138](0138-the-log-publishes-topics.md), whose row of a topic
-holds the projection whole, and whose `Published` gives the projection.
+holds the projection whole, and whose `Published` gives the projection. Its row that stores the projection is
+changed by [decision 0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md): the rows of a step name one
+publication, which stores it.
 
 ## Context
 

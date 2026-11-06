@@ -503,21 +503,23 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           }`,
           store.due(0, []),
         ],
-        // A step's row of the outbox always handles a message.
+        // A step's publication always handles a message.
         [
-          sql`INSERT INTO outbox ${
-            sql.insert({
-              name: 'Receiver',
-              topic: 'projection',
-              partition,
-              seq: 2,
-              id: 'r',
-              tag: 'Inbound',
-              version: 1,
-              message: null,
-              projection: '"one"',
-            })
-          }`,
+          Effect.andThen(
+            sql`INSERT INTO publications ${
+              sql.insert({
+                name: 'Receiver',
+                partition,
+                seq: 2,
+                id: 'r',
+                tag: 'Inbound',
+                version: 1,
+                message: null,
+                projection: '"one"',
+              })
+            }`,
+            sql`INSERT INTO outbox ${sql.insert({ name: 'Receiver', topic: 'projection', partition, seq: 2 })}`,
+          ),
           store.published('projection', [], all),
         ],
       ] as const
@@ -532,11 +534,10 @@ test('a row the runtime never writes fails the call that meets it, and is read a
         }
       }
       expect((yield* store.load('r'))?.mailbox.map((envelope) => envelope.message)).toEqual(['one'])
-      // A creation's row of the outbox handles no message.
-      yield* sql`INSERT INTO outbox ${
+      // A creation's publication handles no message.
+      yield* sql`INSERT INTO publications ${
         sql.insert({
           name: 'Receiver',
-          topic: 'projection',
           partition,
           seq: 2,
           id: 'r',
@@ -546,6 +547,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           projection: '"one"',
         })
       }`
+      yield* sql`INSERT INTO outbox ${sql.insert({ name: 'Receiver', topic: 'projection', partition, seq: 2 })}`
       expect((yield* Effect.exit(store.published('projection', [], all)))._tag).toBe('Failure')
     }).pipe(Effect.orDie)))
 
@@ -704,6 +706,35 @@ describe('topics of the log (decision 0138)', () => {
           { upper: 'HO', size: 20 },
         ])
       })))
+
+  // A step's rows name one publication, which a prune keeps while a topic still holds a row of it (decision 0154).
+  test("a step's publication is stored once, and dropped with the last topic that names it", () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(topical, sql)
+        yield* store.declare([{ topic: 'upper', consumer: 'c' }, { topic: 'size', consumer: 'c' }])
+        yield* store.write('r', publishing(null, { upper: 'START', size: 5 }, ['upper', 'size']), 0)
+        yield* store.write('r', publishing('hi', { upper: 'HI', size: 2 }, ['upper', 'size']), 0)
+        const stored = Effect.map(
+          sql<{ seq: number; rows: number }>`
+            SELECT publications.seq AS seq, count(outbox.position) AS rows FROM publications
+            LEFT JOIN outbox ON outbox.name = publications.name AND outbox.partition = publications.partition
+              AND outbox.seq = publications.seq
+            GROUP BY publications.seq ORDER BY publications.seq
+          `,
+          (held) => held.map(({ seq, rows }) => [seq, rows]),
+        )
+        expect(yield* stored).toEqual([[1, 2], [2, 2]])
+        // `upper` is read past both steps, and `size` past the first: the second step's publication stays for `size`.
+        yield* store.ack('upper', 'c', yield* store.feed('upper', 'c', all))
+        yield* store.ack('size', 'c', (yield* store.feed('size', 'c', all)).slice(0, 1))
+        expect(yield* store.prune).toBe(3)
+        expect(yield* stored).toEqual([[2, 1]])
+        expect((yield* store.feed('size', 'c', all)).map(({ seq, value }) => [seq, value])).toEqual([[2, 2]])
+        yield* store.ack('size', 'c', yield* store.feed('size', 'c', all))
+        expect(yield* store.prune).toBe(1)
+        expect(yield* stored).toEqual([])
+      }).pipe(Effect.orDie)))
 
   test('a consumer is a name within its topic, and a prune drops in each topic what its consumers read', () =>
     database((sql) =>
@@ -950,8 +981,8 @@ test('a query pages past, and finds by its value, a row whose index is an intege
         .toEqual({ id: 'c', projection: '1152921504606847000', indexes: { rank: 2 ** 60 } })
     }).pipe(Effect.orDie)))
 
-// The warning of a large step counts the projection once per row of the log the step writes (decisions 0135, 0138).
-test('a step counts the projection it writes once per topic it is written in', () =>
+// The warning of a large step counts the projection once in the outbox, in the step's publication (decision 0154).
+test('a step counts the projection it writes once in the outbox, whatever the topics it is written in', () =>
   database((sql) =>
     Effect.gen(function*() {
       const store = storage(receiver, sql)
@@ -960,7 +991,8 @@ test('a step counts the projection it writes once per topic it is written in', (
         written({ published: { kind: 'Inbound', message: 'm', projection: 'projected', topics } })
       const once = yield* store.write('a', step(['one']), 0)
       const twice = yield* store.write('a', step(['one', 'two']), 0)
-      expect(twice - once).toBe(JSON.stringify('projected').length)
+      expect(once).toBe(JSON.stringify('projected').length)
+      expect(twice).toBe(once)
     }).pipe(Effect.orDie)))
 
 // `reindex` writes the indexes as a step does, so a row it writes again is found by its value (decision 0146).
@@ -1193,20 +1225,23 @@ test('the partition of an id is Cluster’s formula on Hash.string, pinned for a
 /** A row of the log as a step writes it, at the `position` given: the order the store gave the rows in. */
 const logged = (sql: SqlClient.SqlClient, id: string, seq: number, position: number) =>
   Effect.andThen(
-    sql`INSERT INTO outbox ${
-      sql.insert({
-        position,
-        name: 'Receiver',
-        topic: 'projection',
-        partition: partitionOf(id, 300),
-        seq,
-        id,
-        tag: 'Creation',
-        version: 1,
-        message: null,
-        projection: '"start"',
-      })
-    }`,
+    Effect.andThen(
+      sql`INSERT INTO publications ${
+        sql.insert({
+          name: 'Receiver',
+          partition: partitionOf(id, 300),
+          seq,
+          id,
+          tag: 'Creation',
+          version: 1,
+          message: null,
+          projection: '"start"',
+        })
+      }`,
+      sql`INSERT INTO outbox ${
+        sql.insert({ position, name: 'Receiver', topic: 'projection', partition: partitionOf(id, 300), seq })
+      }`,
+    ),
     sql`
       INSERT INTO heads ${sql.insert({ name: 'Receiver', partition: partitionOf(id, 300), seq })}
       ON CONFLICT (name, partition) DO UPDATE SET seq = max(seq, excluded.seq)

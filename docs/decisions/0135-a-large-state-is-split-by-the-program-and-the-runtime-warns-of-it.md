@@ -4,7 +4,9 @@
 on large states, which [decision 0028](archive/0028-rules-the-runtime-settled.md) left open when it put aside writing
 a difference. Its warning, which counts the projection once in the outbox, is changed by
 [decision 0138](0138-the-log-publishes-topics.md): a step writes a row in each topic whose selection changed, and
-the warning counts the projection once per row.
+the warning counts the projection once per row. That count is changed by
+[decision 0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md): a step stores its projection once in the
+outbox, and the warning counts it once.
 
 ## Context
 

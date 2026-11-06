@@ -1,10 +1,11 @@
 # 0154. A step's projection is stored once in the outbox
 
-**Status:** proposed, 2026-11-06, for the step The projection written once per step of the roadmap. Decides the
-[open question](../open-questions.md#storage-and-reading) of the projection written once per topic. Changes
-[decision 0138](0138-the-log-publishes-topics.md), whose every row of a step holds the projection, and whose warning
-counts the projection once per topic, and [decision 0140](0140-a-row-of-a-topic-gives-its-value.md), whose row of a
-topic stores the projection.
+**Status:** accepted, 2026-11-06, with the step The projection written once per step of the roadmap. Decided the
+open question of the projection written once per topic. Changes [decision 0138](0138-the-log-publishes-topics.md),
+whose every row of a step holds the projection, [decision 0140](0140-a-row-of-a-topic-gives-its-value.md), whose row
+of a topic stores the projection, and
+[decision 0135](0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md), whose warning counts the
+projection once per topic since decision 0138.
 
 ## Context
 
@@ -68,7 +69,9 @@ Every row of a step holds the same projection and the same message. Only the top
 ## What it rests on
 
 - That a step written in several topics costs, in time and in storage, the copies of its projection: **seen**, in
-  `spikes/large-states.test.ts`, whose figures the context gives, measured once, by hand.
+  `spikes/large-states.test.ts`, whose figures the context gives, measured once, by hand. Once this note's code was
+  written, the spike saw a step written in five topics take 20 ms at 0.5 MB and 304 ms at 5 MB, as a step written in
+  one does, and checks that the outbox keeps one copy of the projection per step.
 - That a page of a topic, read with its publications, is a range of `outbox_topic` and a search of the key of
   `publications` per row, with no scan and no sort: **tested**, by `a consumer reads from its cursors through
   indexes, and never scans the log` in [`src/runtime.test.ts`](../../src/runtime.test.ts), which reads the plan
@@ -125,4 +128,4 @@ Every row of a step holds the same projection and the same message. Only the top
 - `docs/design.md` says, under What a step costs and Publishing what happened, that a step writes its projection
   once in the outbox. The glossary defines a **publication**, and its entry for the outbox says that a row names one.
   The diagram of the modules in [`README.md`](../../README.md) names the table `publications`. The open question of
-  the projection written once per topic leaves `docs/open-questions.md`.
+  the projection written once per topic leaves `docs/open-questions.md`, and the step leaves the roadmap.

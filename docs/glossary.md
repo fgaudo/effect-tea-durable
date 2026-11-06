@@ -72,11 +72,11 @@ Cluster's says so.
 - **Operation.** Work that acts on the world, as a value of the program's own type. Its runner turns it into an effect
   that ends with an internal message. It leaves the state only through its completion, unless it is droppable: one
   that acts on nothing, which a step may drop or change while it runs.
-- **Outbox, log.** One row per step that changed what callers read, in each topic whose selection changed, holding
-  the entity's address, the message handled and the value the topic selects of the projection left, with its
+- **Outbox, log.** One row per step that changed what callers read, in each topic whose selection changed, which
+  gives the entity's address, the message handled and the value the topic selects of the projection left, with its
   entity's partition and the step's
-  `seq`, which never repeats within the partition. The rows of one step share its `seq`. A consumer reads one topic
-  of it from its cursors.
+  `seq`, which never repeats within the partition. The rows of one step share its `seq`, and name the step's
+  publication, which holds the message and the projection. A consumer reads one topic of it from its cursors.
 - **Part.** A child, as declared in `part(schemas)(…)`: a program's pieces without a name, topics, indexes or
   migrations, which are its parent's, and with the schemas of the events it raises and the external messages it
   takes.
@@ -88,6 +88,9 @@ Cluster's says so.
 - **Planned stop, drain.** The closing of the scope a runtime was launched in with the option `drain`. The runtime
   takes no caller's request, stops its timers and the operations that run again, and waits up to `drain.millis` for
   its at-most-once operations and the steps of their completions. Without the option, the closing is a crash.
+- **Publication.** What a step that publishes stores once in the outbox, however many topics it is written in: the
+  entity's id, the message handled and the projection, keyed by the program, the partition and the step's `seq`.
+  Each row of the step names it, and it is dropped with the last of them.
 - **Probe.** A reference in the context that the runtime tells what it did, which a test provides and the library does
   not export.
 - **Program.** Everything declared in `program(schemas)(…)`: `name`, `keys`, `children`, `init`, `update`,

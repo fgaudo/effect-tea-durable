@@ -3514,11 +3514,20 @@ describe('publishing what happened', () => {
           WHERE name = 'Toy' AND topic = 'projection' AND partition = 3 AND seq > 7 ORDER BY seq LIMIT 1`),
       ).toContain('USING COVERING INDEX outbox_partition (name=? AND topic=? AND partition=? AND seq>?)')
       // A page is a range over (name, topic, position), which is also the order read: the log grows until a
-      // consumer prunes it, and a poll must not read again what it has read, nor the rows of other topics.
+      // consumer prunes it, and a poll must not read again what it has read, nor the rows of other topics. Each row
+      // finds its publication by the key of `publications`, with no sort (decision 0154).
+      const page = yield* plan(`SELECT outbox.position, publications.projection FROM outbox
+          JOIN publications ON publications.name = outbox.name AND publications.partition = outbox.partition
+            AND publications.seq = outbox.seq
+          WHERE outbox.name = 'Toy' AND outbox.topic = 'projection' AND outbox.position >= 7
+          ORDER BY outbox.position LIMIT 256`)
+      expect(page).toMatch(/SEARCH outbox USING INDEX outbox_topic \(name=\? AND topic=\? AND (position|rowid)>\?\)/)
+      expect(page).toMatch(/SEARCH publications USING INDEX sqlite_autoindex_publications_1 \(name=\? AND partition=\? AND seq=\?\)/)
+      expect(page).not.toContain('TEMP B-TREE')
+      // A row dropped by a prune finds whether another row names its publication by the index of the publication.
       expect(
-        yield* plan(`SELECT position, partition, seq, id, tag, version, message, projection FROM outbox
-          WHERE name = 'Toy' AND topic = 'projection' AND position >= 7 ORDER BY position LIMIT 256`),
-      ).toMatch(/USING INDEX outbox_topic \(name=\? AND topic=\? AND (position|rowid)>\?\)/)
+        yield* plan(`SELECT 1 FROM outbox WHERE name = 'Toy' AND partition = 3 AND seq = 7`),
+      ).toContain('USING COVERING INDEX outbox_publication (name=? AND partition=? AND seq=?)')
     })))
 
   test('a step whose transaction never commits publishes nothing', () =>

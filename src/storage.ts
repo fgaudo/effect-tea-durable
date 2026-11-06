@@ -173,26 +173,48 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       PRIMARY KEY (name, partition)
     )
   `
-  // What other systems learn of the entities: one row per topic that changed in a step, written in the step's own
-  // transaction (decisions 0038, 0138). A row is keyed by its program, its topic, its partition and its `seq`, which
-  // is what a consumer acks (decision 0137). The rows of one step share its `seq`. `position` rises with each row of
-  // the database, and is never reused: it is the order `feed` reads the rows in, and no cursor.
+  // What a step that publishes left: the message it handled and the projection, once however many topics the step
+  // is written in, keyed by the program, the partition and the `seq` the step drew (decision 0154).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS outbox (
-      position INTEGER PRIMARY KEY AUTOINCREMENT,
+    CREATE TABLE IF NOT EXISTS publications (
       name TEXT NOT NULL,
-      topic TEXT NOT NULL,
       partition INTEGER NOT NULL,
       seq INTEGER NOT NULL,
       id TEXT NOT NULL,
       tag TEXT NOT NULL,
       version INTEGER NOT NULL,
       message TEXT,
-      projection TEXT NOT NULL
+      projection TEXT NOT NULL,
+      PRIMARY KEY (name, partition, seq)
+    )
+  `
+  // What other systems learn of the entities: one row per topic that changed in a step, written in the step's own
+  // transaction, which names the step's publication (decisions 0038, 0138, 0154). A row is keyed by its program, its
+  // topic, its partition and its `seq`, which is what a consumer acks (decision 0137). `position` rises with each
+  // row of the database, and is never reused: it is the order `feed` reads the rows in, and no cursor.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS outbox (
+      position INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      partition INTEGER NOT NULL,
+      seq INTEGER NOT NULL
     )
   `
   yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS outbox_partition ON outbox (name, topic, partition, seq)`
   yield* sql`CREATE INDEX IF NOT EXISTS outbox_topic ON outbox (name, topic, position)`
+  yield* sql`CREATE INDEX IF NOT EXISTS outbox_publication ON outbox (name, partition, seq)`
+  // A publication goes with the last row of the outbox that names it, in the statement that drops the row, so that
+  // no statement that drops rows of the outbox leaves a publication no topic reads (decision 0154).
+  yield* sql`
+    CREATE TRIGGER IF NOT EXISTS outbox_drops_its_publication AFTER DELETE ON outbox
+    WHEN NOT EXISTS (
+      SELECT 1 FROM outbox WHERE name = old.name AND partition = old.partition AND seq = old.seq
+    )
+    BEGIN
+      DELETE FROM publications WHERE name = old.name AND partition = old.partition AND seq = old.seq;
+    END
+  `
   // The consumers of the outbox, by topic and name, stored by the first deploy that declares them. Each holds its
   // topic of the log from then on, until it is forgotten (decisions 0138, 0152).
   yield* sql`
@@ -636,8 +658,8 @@ export interface Storage<T extends Types> {
    * Writes what an event wrote, as the machine encoded it (decision 0057). The caller wraps it in the transaction
    * of the event (decision 0007). `at` is the time of the event, in milliseconds: the time the entity suspended,
    * where the event suspends it (decision 0114). It gives how many characters it wrote of the state and of the
-   * projection, in the read model and in each topic of the outbox, which the runtime warns of past a threshold
-   * (decisions 0135, 0138).
+   * projection, in the read model and in the step's publication, which the runtime warns of past a threshold
+   * (decisions 0135, 0154).
    */
   readonly write: (id: string, written: Machine.Written, at: number) => Effect.Effect<number>
   /**
@@ -1112,7 +1134,7 @@ export const storage = <T extends Types>(
       // partition, which holds the head's row until the transaction ends, so the head is held for the least of the
       // transaction. The head is written by the first step that publishes in the partition (decision 0137). Every
       // topic the step is written in takes the same `seq`, so that a step takes one lock however many topics it
-      // publishes (decision 0138).
+      // publishes (decision 0138), and names the one publication that holds the projection (decision 0154).
       if (written.published !== null) {
         const { kind, message } = written.published
         const projection = JSON.stringify(written.published.projection)
@@ -1124,21 +1146,21 @@ export const storage = <T extends Types>(
         `)
         const head = drawn[0]
         if (head === undefined) throw new Error(`the entity '${name}' '${id}' publishes with no row of its own`)
+        characters += projection.length
+        yield* sql`INSERT INTO publications ${
+          sql.insert({
+            name,
+            partition: head.partition,
+            seq: head.seq,
+            id,
+            tag: kind,
+            version,
+            message: message === null ? null : JSON.stringify(message),
+            projection,
+          })
+        }`
         for (const topic of written.published.topics) {
-          characters += projection.length
-          yield* sql`INSERT INTO outbox ${
-            sql.insert({
-              name,
-              topic,
-              partition: head.partition,
-              seq: head.seq,
-              id,
-              tag: kind,
-              version,
-              message: message === null ? null : JSON.stringify(message),
-              projection,
-            })
-          }`
+          yield* sql`INSERT INTO outbox ${sql.insert({ name, topic, partition: head.partition, seq: head.seq })}`
         }
       }
       return characters
@@ -1477,11 +1499,18 @@ export const storage = <T extends Types>(
       const given: Array<Published<T, Name>> = []
       const within = read === undefined
         ? sql``
-        : sql`AND partition IN (SELECT value FROM json_each(${JSON.stringify([...read])}))`
+        : sql`AND outbox.partition IN (SELECT value FROM json_each(${JSON.stringify([...read])}))`
       while (from !== null && given.length < limit) {
+        // Each row finds its step's publication by the key of `publications` (decision 0154).
         const page = yield* rows('outbox', Rows.published)(sql`
-          SELECT position, partition, seq, id, tag, version, message, projection FROM outbox
-          WHERE name = ${name} AND topic = ${topic} AND position >= ${from} ${within} ORDER BY position LIMIT ${batch}
+          SELECT outbox.position AS position, outbox.partition AS partition, outbox.seq AS seq, publications.id AS id,
+            publications.tag AS tag, publications.version AS version, publications.message AS message,
+            publications.projection AS projection
+          FROM outbox
+          JOIN publications ON publications.name = outbox.name AND publications.partition = outbox.partition
+            AND publications.seq = outbox.seq
+          WHERE outbox.name = ${name} AND outbox.topic = ${topic} AND outbox.position >= ${from} ${within}
+          ORDER BY outbox.position LIMIT ${batch}
         `)
         for (const row of page) {
           if (row.seq <= (cursors.get(row.partition) ?? 0)) continue
@@ -1549,8 +1578,10 @@ export const storage = <T extends Types>(
   // A topic no consumer is stored for is dropped whole: every consumer is declared and stored at deploy, so no
   // reader that keeps cursors needs its rows (decision 0152). The consumers and cursors are read and the rows
   // dropped in one statement, since the two are one decision (decision 0039). A consumer is stored only by a deploy,
-  // before its handle exists, so none is stored in the middle of a prune (decision 0152).
-  const prune = Effect.gen(function*() {
+  // before its handle exists, so none is stored in the middle of a prune (decision 0152). The trigger of the outbox
+  // drops each publication with the last row that names it, and the transaction commits the two together, whatever
+  // SQLite does of a trigger outside one (decision 0154).
+  const prune = sql.withTransaction(Effect.gen(function*() {
     const gone = yield* rows('outbox', Rows.seq)(sql`
       WITH floors AS (
         SELECT topic, partition, min(seq) AS through FROM cursors WHERE name = ${name}
@@ -1569,7 +1600,7 @@ export const storage = <T extends Types>(
       RETURNING seq
     `)
     return gone.length
-  }).pipe(Effect.orDie)
+  })).pipe(Effect.orDie)
 
   const consumers = Effect.gen(function*() {
     const stored = yield* rows('consumers', Rows.topical)(

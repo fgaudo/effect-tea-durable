@@ -1,7 +1,7 @@
 /**
  * What a step costs as the state grows, on the runtime over SQLite, for the open question on large states. Each
- * step that changes the state writes the whole state, the projection's row and, when the projection changed, a row
- * of the outbox holding the whole projection (decisions 0002, 0032, 0038). The spike runs a program whose state is
+ * step that changes the state writes the whole state, the projection's row and, when the projection changed, a
+ * publication of the outbox holding the whole projection (decisions 0002, 0032, 0038, 0154). The spike runs a program whose state is
  * a list of items, created with as many as its flags say, and times the sends that add one item each. It runs it
  * twice: once with a projection that holds the items, once with one that holds their count.
  *
@@ -122,14 +122,14 @@ const measure = (rooms: typeof whole | typeof counted | typeof topical, label: s
     const sender = { id: 'ada' }
     yield* entities.create('r', { size }, { requestId: 'create', sender })
     yield* runtime.settled
-    const before = yield* sql<{ bytes: number }>`SELECT coalesce(sum(length(projection)), 0) AS bytes FROM outbox`
+    const before = yield* sql<{ bytes: number }>`SELECT coalesce(sum(length(projection)), 0) AS bytes FROM publications`
     const started = performance.now()
     for (let step = 0; step < steps; step++) {
       yield* entities.send('r', { _tag: 'Add', label: `added ${step}` }, { requestId: `add-${step}`, sender })
     }
     yield* runtime.settled
     const elapsed = performance.now() - started
-    const after = yield* sql<{ bytes: number }>`SELECT coalesce(sum(length(projection)), 0) AS bytes FROM outbox`
+    const after = yield* sql<{ bytes: number }>`SELECT coalesce(sum(length(projection)), 0) AS bytes FROM publications`
     const [state] = yield* sql<{ bytes: number }>`SELECT length(state) AS bytes FROM entities WHERE id = 'r'`
     const [rows] = yield* sql<{ rows: number }>`SELECT count(*) AS rows FROM outbox`
     // One row of the outbox per topic for the creation and for each step, since each step changes every topic.
@@ -247,9 +247,16 @@ test('a small entity waits for the writes of a large one', async () => {
   for (const m of measured) expect(m.beside.worst).toBeGreaterThan(0)
 }, 600_000)
 
-// A step written in five topics, beside the same step written in one. The rows of a step hold the projection
-// whole, once per topic (decision 0140).
-test('a step written in five topics writes the projection once per topic', async () => {
+/**
+ * A step written in five topics, beside the same step written in one, for the open question of the projection
+ * written once per topic. Before decision 0154 every row of a step held the projection whole, once per topic
+ * (decision 0140). Seen on 2026-11-06, on Windows with Bun 1.4.2, on a file, 20 steps each: a step took 21 ms with
+ * one topic and 34 ms with five at 10 000 items (0.5 MB), and 300 ms with one and 466 ms with five at 100 000
+ * (5 MB). The outbox grew by 25 MB per step with five topics at 5 MB. Since decision 0154 a step writes one
+ * publication, which its rows name: seen the same day, five topics took 20 ms and 304 ms, as one topic does, and the
+ * outbox grew by one copy of the projection per step.
+ */
+test('a step written in five topics writes the projection once', async () => {
   const measured: Array<Measured> = []
   for (const size of sizes) {
     measured.push(await onFile(Effect.scoped(measure(whole, 'one topic', size))))
@@ -262,9 +269,10 @@ test('a step written in five topics writes the projection once per topic', async
     'ms per step': Number(m.msPerStep.toFixed(2)),
     'outbox KB per step': Math.round(m.outboxBytesPerStep / 1024),
   })))
+  // One copy of the projection per step, whatever the number of topics.
   for (const m of measured) {
     if (m.size < 1_000) continue
-    const copies = m.projection === 'five topics' ? 5 : 1
-    expect(m.outboxBytesPerStep).toBeGreaterThan(m.stateBytes * 0.9 * copies)
+    expect(m.outboxBytesPerStep).toBeGreaterThan(m.stateBytes * 0.9)
+    expect(m.outboxBytesPerStep).toBeLessThan(m.stateBytes * 1.1)
   }
 }, 600_000)

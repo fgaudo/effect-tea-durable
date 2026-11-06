@@ -331,11 +331,11 @@ kept as an audit, but nothing replays them.
 
 ### What a step costs
 
-A step writes the state whole, and a projection that changed in the read model and once more in each topic of
-the outbox whose selection changed. A program that declares no topics writes its projection twice. A row of a topic
-stores the projection whole, since the selector runs where the row is read
-([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md)): a step that changes what five topics select
-writes the projection six times, so a program declares the topics its readers act on, and no more.
+A step writes the state whole. A step that changes the projection writes it twice: in the read model, and once in
+the outbox, in the step's publication, however many topics the step is written in. Each row of a topic names the
+publication, and the selector runs where the row is read ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md),
+[decision 0154](decisions/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). The spike
+`spikes/large-states.test.ts` saw a step written in five topics take as long as one written in one.
 The spike `spikes/large-states.test.ts` saw a step take about 5 ms with a state of 48 KB, 21 ms with 0.5 MB and
 240 ms with 5 MB, when the projection holds the state. It took about a third of that from 0.5 MB up when the
 projection holds a count. The spike `spikes/many-children.test.ts` saw a parent's step take 3.5 ms with 1 000
@@ -343,7 +343,7 @@ children by id and 10 ms with 10 000, about half as much again as a flat state o
 synchronous, and holds every other entity of the process while it runs.
 
 So the runtime refuses no state for its size, and warns of a large step. A step that writes more than
-`warn.characters` of the state and of the projection, in the read model and in the outbox, 262 144 by default,
+`warn.characters` of the state and of the projection, in the read model and in its publication, 262 144 by default,
 logs a warning through Effect's logger, once per activation of the entity. A large state is split by the program:
 an item goes into an entity of its own
 once its parent would hold more than one step should write
@@ -633,9 +633,12 @@ watches, as JSON ([decision 0138](decisions/0138-the-log-publishes-topics.md)). 
 different parts of what an entity shows: a billing service reads what an order was charged, a dashboard its
 status. A topic per reader writes a row only when what that reader acts on changes, compared as canonical JSON by
 the runtime, and a consumer of one topic reads none of the others' rows. A row gives the value its topic selects,
-typed by the selector, so a consumer has a contract of its own: the row stores the projection, which is read
+typed by the selector, so a consumer has a contract of its own: the row's publication stores the projection, which is read
 through the projection's migrations, and the selector of the program deployed is applied to it where the row is
-read ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md)). A selector that dies on a row gives
+read ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md)). A step stores its message and its
+projection once, in a **publication** keyed by its partition and its `seq`, and each of its rows names it. A prune
+drops a publication with the last row that names it, so a publication stays while one topic has not read past it
+([decision 0154](decisions/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). A selector that dies on a row gives
 the defect to whoever reads it, as the schema does. A program that declares no topics publishes its projection as
 the one topic `projection`, whose value is the projection whole. A topic selects and does not decide, as `indexes`
 do: a part of the projection, the whole of it, all of it but a field, a value nested in it, or a comparison of it

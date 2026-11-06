@@ -25,20 +25,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     prune run on it;
   - whether the runtime keeps room of its own, a file it drops once the disk is full, so that a prune always has
     the room it needs.
-- **The projection written once per topic.** A row of a topic stores the projection whole, and the selector runs
-  where the row is read, so that a topic needs no migration of its own
-  ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md)). A step that changes what five topics
-  select writes the projection six times, once in the read model and once in each topic, where a program that
-  declares no topics writes it twice. The topics were added so that a consumer reads less, and they make a step
-  write more. Whether the outbox stores the projection once per step, in a row keyed by the partition and the
-  `seq`, with a row per topic that names it, is not decided. It would keep what decision 0140 rests on, the reading
-  through the projection's migrations, and bring a step back to two writes of the projection whatever the number
-  of topics. It would be decided by:
-  - a program with several topics whose entities' steps the warning of
-    [decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) names,
-    measured in `spikes/large-states.test.ts` with the topics it declares;
-  - what `prune` drops of such a row once every topic that names it is read past it, and what `feed` reads where
-    a row of a topic and the projection it names are two rows.
 - **Renaming a program.** A program's name is the entities' address, and a schema's migration does not move
   what is stored under it: its entities, and the replies stored for them by other entities
   ([decision 0022](decisions/archive/0022-a-new-program-keeps-what-work-started-with.md)). How a rename is run, and

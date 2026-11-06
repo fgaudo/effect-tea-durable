@@ -9,7 +9,9 @@ to JSON is changed by [decision 0139](0139-the-projection-is-json.md): the proje
 converts nothing. Its row holding the projection whole, and its `Published` giving the projection, are changed by
 [decision 0140](0140-a-row-of-a-topic-gives-its-value.md): a row gives the value its topic selects. Its prune
 that drops nothing of a topic with no consumer is changed by [decision 0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md):
-such a topic is pruned whole.
+such a topic is pruned whole. Its every row of a step holding the projection is changed by
+[decision 0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md): a step stores its message and projection
+once, in a publication its rows name.
 
 ## Context
 
