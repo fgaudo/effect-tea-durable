@@ -54,9 +54,9 @@ No form is added: the program writes what effect-tea's Guide writes, and the lib
 - That a handle's step is a function of the parent's state alone, so that making the steps of a run before taking
   the first one changes nothing. **Reasoned**: the handle is pure, as every piece of a program is, and it reads only
   the id and the message it was given.
-- That putting back the last entries once gives the state that putting back each entries in turn gives. For the
-  optic of a record by id, `key` composed with `entries`, a replacement sets the field to the record its entries
-  make, whatever the field held before. **Read** in `node_modules/effect/src/Optic.ts`: `entries` is an `Iso` of
+- That putting back the final entries once gives the state that putting back the entries after each message
+  gives. For the optic of a record by id, `key` composed with `entries`, a replacement sets the field to the record
+  its entries make, whatever the field held before. **Read** in `node_modules/effect/src/Optic.ts`: `entries` is an `Iso` of
   `Object.entries` and `Object.fromEntries`, whose JSDoc states its round-trip laws, and `key` replaces the field. An
   optic a program writes by hand is **only reasoned**: one that kept something of the state it replaces would differ.
   The machine compares what is stored, so such an optic would store a different state, and raise no defect.

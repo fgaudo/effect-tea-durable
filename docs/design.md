@@ -334,9 +334,9 @@ kept as an audit, but nothing replays them.
 
 ### What a step costs
 
-A step writes the state whole. A step that changes the projection writes it in the read model, and once more in
-the outbox, in the step's publication, where what one topic selects changed, however many topics the step is
-written in. Each row of a topic names the publication, and the selector runs where the row is read
+A step writes the state whole. A step that changes the projection writes it in the read model. A step that changes
+what at least one topic selects writes it once more, in the step's publication of the outbox, however many topics
+the step is written in. Each row of a topic names the publication, and the selector runs where the row is read
 ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md),
 [decision 0154](decisions/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). A program that declares no
 topics writes its projection twice.
