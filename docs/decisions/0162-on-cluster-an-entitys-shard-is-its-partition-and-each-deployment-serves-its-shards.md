@@ -124,9 +124,16 @@ defect, as the JSDoc of `Singleton.make` says.
   mark and the reading of the entities held, each being one step that does not yield. No test reaches the
   interleaving, which needs an entity to load during the finalizer.
 - That a step of the entity's own under way as its shard is lost leaves nothing running once the entity crashes:
-  **tested** by `a step of the loop under way when its shard is let go leaves nothing running once the entity
-  crashes` in [`src/runtime.test.ts`](../../src/runtime.test.ts), which plays Cluster and holds the step inside its
-  transaction while the shard's singleton is interrupted. The test fails where the step holds no lock.
+  **tested** in [`src/runtime.test.ts`](../../src/runtime.test.ts) by three tests. Each plays Cluster, holds the step
+  at one point, and interrupts the shard's singleton meanwhile. Each fails without one of the three rules, and passes
+  without either of the other two, since each rule covers a case the others leave open.
+  - `a shard let go while a step of the loop is inside its transaction waits for the step` holds the step before its
+    commit. It fails where the step holds no lock inside its transaction.
+  - `an entity a shard let go took out between a step of the loop and its start starts nothing` holds the step after
+    its commit, before it takes the lock again. It fails where the step does not check, under the lock, that the
+    entity is still in the process.
+  - `a shard let go while a step of the loop starts what it set going waits for the start` holds the step under the
+    lock it takes again, before it starts `Ask`. It fails where the step does not take the lock again.
 - That the loop of an entity that left steps nothing more: **only reasoned**. Without the rule the loop waits out
   `passivate.millis` and finds the entity gone, again and again, which no test sees in its time.
 - That a list of the partitions held fits in one statement: **documented** by SQLite, which takes 32766 parameters

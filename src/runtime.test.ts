@@ -18,7 +18,6 @@ import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as References from 'effect/References'
-import * as Schedule from 'effect/Schedule'
 import fc from 'fast-check'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -5048,7 +5047,13 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
   }
   const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: { user: 'u' }, id })
 
-  test('a step of the loop under way when its shard is let go leaves nothing running once the entity crashes', () =>
+  /**
+   * The step of the loop that handles the completion of `First`, and starts `Ask`, waits where `gated` says, and the
+   * shard is let go meanwhile. Its finalizer crashes the entity under the entity's lock. Where `finalizer` is `waits`,
+   * the step holds the lock where it waits, and the finalizer must not end before the step goes on. Where it is
+   * `ends`, the step holds no lock there, and the finalizer ends first.
+   */
+  const letGo = (gated: (said: Said) => boolean, finalizer: 'waits' | 'ends') =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       asked = []
       const sql = yield* SqlClient.SqlClient
@@ -5071,14 +5076,10 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
             step = given as (delivered: Delivered) => Effect.Effect<unknown>
           }),
       }
-      // The step of the loop that handles the completion of `First`, and starts `Ask`, waits inside its transaction
-      // until the gate opens.
       const reached = yield* Deferred.make<void>()
       const gate = yield* Deferred.make<void>()
       const probe = (said: Said) =>
-        said._tag === 'Reached' && said.point === 'BeforeCommit' && said.event._tag === 'Handle'
-          ? Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(gate))
-          : Effect.void
+        gated(said) ? Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(gate)) : Effect.void
       const runtime = yield* Effect.provideService(launchWith({}, cluster), Probe, probe)
       yield* runtime.deploy(relay)
       const door = (delivered: Omit<Delivered, 'id' | 'version'>) =>
@@ -5086,9 +5087,16 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
       yield* door({ _tag: 'Create', request: caller('c1'), message: '{}' })
       yield* door({ _tag: 'Message', request: caller('m1'), message: JSON.stringify({ _tag: 'Go' }) })
       yield* Deferred.await(reached)
-      // The shard is let go while the step waits. Its finalizer crashes the entity under the entity's lock.
       const losing = yield* Effect.forkChild(Fiber.interrupt(singletons[0]!))
-      yield* Effect.sleep('50 millis')
+      if (finalizer === 'ends') {
+        yield* Fiber.join(losing)
+        // The crash forks the interruption of the entity's work. It ends before the step goes on, so that nothing
+        // the step starts afterwards is stopped by it.
+        yield* Effect.sleep('50 millis')
+      } else {
+        yield* Effect.sleep('50 millis')
+        expect(losing.pollUnsafe()).toBeUndefined()
+      }
       yield* Deferred.succeed(gate, undefined)
       yield* Fiber.join(losing)
       // The step committed `Ask`, which the runner that holds the shard next starts from what is stored. Here it is
@@ -5097,5 +5105,20 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
       expect((yield* storage(relay, sql).load('one'))?.state).toEqual({ stage: 'asking' })
       yield* Effect.sleep('200 millis')
       expect(asked.filter((line) => line === 'started').length).toBe(asked.filter((line) => line === 'interrupted').length)
-    })).pipe(Effect.provide(client('sqlite')))), 10_000)
+    })).pipe(Effect.provide(client('sqlite'))))
+
+  test('a shard let go while a step of the loop is inside its transaction waits for the step', () =>
+    letGo(
+      (said) => said._tag === 'Reached' && said.point === 'BeforeCommit' && said.event._tag === 'Handle',
+      'waits',
+    ), 10_000)
+
+  test('an entity a shard let go took out between a step of the loop and its start starts nothing', () =>
+    letGo((said) => said._tag === 'Applied' && said.event._tag === 'Handle', 'ends'), 10_000)
+
+  test('a shard let go while a step of the loop starts what it set going waits for the start', () =>
+    letGo(
+      (said) => said._tag === 'Reached' && said.point === 'AfterReply' && said.event._tag === 'Handle',
+      'waits',
+    ), 10_000)
 })
