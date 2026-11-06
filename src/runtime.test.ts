@@ -3422,6 +3422,9 @@ describe('publishing what happened', () => {
       const at = yield* DateTime.now
       const [one, other] = ['a', 'b']
       const [mine, theirs] = [partitionOf(one, 300), partitionOf(other, 300)]
+      // The two ids fall in two partitions, and a third partition holds no entity of the test.
+      expect(mine).not.toBe(theirs)
+      const empty = [1, 2, 3].find((partition) => partition !== mine && partition !== theirs) as number
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
           const { layer } = yield* hands({ holds: true })
@@ -3436,7 +3439,7 @@ describe('publishing what happened', () => {
           expect(slow.map(({ id, seq }) => ({ id, seq }))).toEqual([{ id: one, seq: 1 }, { id: one, seq: 2 }])
           const fast = yield* toy.feed('projection', 'queue', all, { partitions: [theirs] })
           expect(fast.map(({ id, seq }) => ({ id, seq }))).toEqual([{ id: other, seq: 1 }])
-          expect(yield* toy.feed('projection', 'queue', all, { partitions: [mine === 1 ? 2 : 1] })).toEqual([])
+          expect(yield* toy.feed('projection', 'queue', all, { partitions: [empty] })).toEqual([])
           // The fast reader acks and goes on while the slow one has acked nothing: what it is given next is its
           // own partition's alone, and the slow reader is given its rows again.
           yield* toy.ack('projection', 'queue', fast)
