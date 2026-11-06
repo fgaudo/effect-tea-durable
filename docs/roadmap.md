@@ -5,7 +5,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **A count per value of an index** ([open question](open-questions.md#storage-and-reading)). How many orders
+   are in each status is one count per status today, each a statement on a snapshot of its own, or a report fed
+   from the log. The handle then gives `countBy`, the number of entities per value of one index, in one statement
+   over the criteria a query takes, at most `limit` values. The step decides how a boolean, a null and an index a
+   row lacks are grouped, and whether `ack` joins a transaction the caller left open, so that a report's store and
+   its consumer's cursors commit together. It is taken by a note of its own.
+2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later
