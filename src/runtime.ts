@@ -154,10 +154,10 @@ export interface Options {
   /**
    * How many entities the process holds, of every program, before it unloads the least recently used of those
    * with nothing to do and no timer due, without waiting for their passivation. Another is never unloaded for it,
-   * so the process holds more only while what it holds is busy. None by default: time alone unloads (decisions
-   * 0076, 0078).
+   * so the process holds more only while what it holds is busy. A positive integer, 10 000 by default, which is
+   * Effect Cluster's `maxResidentEntities`; `'unbounded'` leaves time alone to unload (decisions 0076, 0078, 0151).
    */
-  readonly capacity?: Readonly<{ entities: number }>
+  readonly capacity?: Readonly<{ entities: number | 'unbounded' }>
   /**
    * How long a planned stop waits for the at-most-once operations under way, once the scope the runtime was launched
    * in closes. Meanwhile no caller's message, creation, resume or discard is taken, the timers stop, and so do the
@@ -669,7 +669,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
       probe({ _tag: 'Applied', entity, event: event as Machine.Event<never> })
     const retry = options.retry?.millis ?? 10
     const passivate = options.passivate?.millis ?? 30_000
-    const capacity = options.capacity?.entities
+    const capacity = options.capacity?.entities ?? 10_000
     const drain = options.drain?.millis
     const threshold = options.warn?.characters ?? 262_144
     const bound = options.callers?.messages ?? 4096
@@ -688,13 +688,15 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
     /** A caller's effect, unless a planned stop is under way. */
     const admitted = <A>(effect: Effect.Effect<A>): Effect.Effect<A> =>
       Effect.suspend(() => draining ? Deferred.await(stopped) : effect)
-    if (capacity !== undefined && !(Number.isSafeInteger(capacity) && capacity > 0)) {
+    if (capacity !== 'unbounded' && !(Number.isSafeInteger(capacity) && capacity > 0)) {
       const reason = `the capacity is ${capacity}, which is no positive integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
     }
     /**
      * Every entity this process holds, of every program, from the least recently used: an entity is used when it is
      * loaded and when an event is offered to it. It is what a process over its capacity unloads first (decision 0076).
+     * Written by hand: `Cache` and `ScopedCache` evict the oldest entry whatever it is doing, and `ScopedCache` waits
+     * for the evicted from the fiber that enters; `RcMap` refuses a new key past its capacity (decision 0151).
      */
     const recent = new Map<string, Loaded<never>>()
     // The one cast of a loaded entity: the process orders the entities of every program, and steps none of them.
@@ -782,7 +784,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
         const now = DateTime.toEpochMillis(at)
         deployed.loaded.set(loaded.machine.stored.id, loaded)
         recent.set(addressOf(loaded.machine.stored), erased(loaded))
-        if (capacity === undefined) return
+        if (capacity === 'unbounded') return
         let over = recent.size - capacity
         for (const other of recent.values()) {
           if (over <= 0) return

@@ -76,17 +76,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Running
 
-- **Entities loaded without a capacity.** `capacity.entities` is an option, and a process launched without it
-  unloads an entity only once it has been idle for `passivate`, 30 seconds by default
-  ([decision 0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md),
-  [decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)). Each entity loaded holds its decoded
-  state and what callers read of it, with the canonical text of each topic's selection. A burst of distinct
-  entities within half a minute holds all of them, and only the time bounds the number. Whether the capacity has a
-  default, and what number an operator wants told, in entities or in characters held, is not decided. It would be
-  decided by:
-  - a program whose entities arrive in bursts, measured for what a loaded entity holds against its state's size;
-  - whether the warning of decision 0135 is the form, a log once the process holds more than a threshold, or
-    whether a default capacity, that unloads the least recently used, is.
 - **Two versions at once.** During a rolling deploy, a state written by the new version may be read by the
   old one. Is forward compatibility for one version required, or do deploys avoid it? A database is held by one
   runtime ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), so two versions meet only where

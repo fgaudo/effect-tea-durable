@@ -7,8 +7,8 @@ Cluster's says so.
   `durable(state)`, starts its operations and arms its timers. A restart, a passivation and a deploy each end in one.
 - **Boundary.** The code that calls a deployment's `create`, `send` and `read` for a caller: it authenticates the
   caller, and writes the sender. The runtime trusts the sender the boundary gives, and `read` takes none.
-- **Capacity.** How many entities a process keeps loaded, an option of the runtime. Over it, the least recently used
-  of the idle ones is unloaded; a busy entity, or one whose timer is due, never is.
+- **Capacity.** How many entities a process keeps loaded, an option of the runtime, 10 000 by default. Over it, the
+  least recently used of the idle ones is unloaded; a busy entity, or one whose timer is due, never is.
 - **Child, parent.** A part a program or another part holds in its state, declared in its `children` with `child`
   for one, or `each` for children by id; the one that holds it is its parent. The library routes a child's messages,
   holds its work under `<child>.<key>`, and runs its operations under `<child>.<tag>`.

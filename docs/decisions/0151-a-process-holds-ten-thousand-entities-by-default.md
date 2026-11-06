@@ -1,6 +1,6 @@
 # 0151. A process holds ten thousand entities by default
 
-**Status:** proposed, 2026-11-06, for the step A default capacity of the roadmap. Decides the
+**Status:** accepted, 2026-11-06, with the step A default capacity of the roadmap. Decides the
 [open question](../open-questions.md#running) of entities loaded without a capacity. Changes
 [decision 0076](archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), whose capacity has no
 default.

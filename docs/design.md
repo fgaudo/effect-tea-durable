@@ -456,10 +456,13 @@ each migration: a JSON value a version wrote of one kind, and the JSON value the
   which only an activation runs again, and with those whose mailbox holds a message a crash left before its
   step; the stored times wake the rest — except a suspended entity's, which nothing of fires
   until an operator resumes it ([decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md),
-  [decision 0071](decisions/archive/0071-a-process-starts-the-entities-with-a-message.md)). A process launched with a
-  capacity unloads the least recently used of its idle entities as soon as it holds more, and never a busy one,
-  nor one whose timer is due ([decision 0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md),
+  [decision 0071](decisions/archive/0071-a-process-starts-the-entities-with-a-message.md)). A process
+  over its capacity unloads the least recently used of its idle entities as soon as it holds more, and never a busy
+  one, nor one whose timer is due ([decision 0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md),
   [decision 0078](decisions/archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)).
+  The capacity is 10 000 entities by default, Effect Cluster's own number, and `'unbounded'` leaves time alone to
+  unload. A loaded entity holds about 8 KB beside its decoded state, so 10 000 small ones hold about 100 MB
+  ([decision 0151](decisions/0151-a-process-holds-ten-thousand-entities-by-default.md)).
 
 These rules are a pure state machine, [`src/machine.ts`](../src/machine.ts): its events are a message arriving,
 an operation completing or dying, a timer firing, a step, the process dying, and an operator resuming or

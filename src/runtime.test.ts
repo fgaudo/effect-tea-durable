@@ -1737,11 +1737,31 @@ describe('passivation', () => {
       }
     })))
 
-  test('with no capacity, only time unloads', () =>
+  test('a process launched with no capacity holds ten thousand entities', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const { entities, unloaded } = unloads()
+      // The default is Cluster's `maxResidentEntities` (decision 0151): the first entity leaves as the 10 001st enters.
       yield* process({ unloaded }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+          for (let index = 0; index < 10_000; index++) {
+            yield* toy.create(`d-${index}`, { at }, { requestId: `d-${index}`, sender: tester })
+          }
+          yield* runtime.settled
+          expect(entities).toEqual([])
+          yield* toy.create('d-last', { at }, { requestId: 'd-last', sender: tester })
+          yield* runtime.settled
+          expect(entities).toEqual(['d-0'])
+        }))
+      // The creations take seconds, past which the test clock warns of a test that waits on time.
+    }).pipe(Effect.provide(TestClock.layer({ warningDelay: '1 minute' })))), 60_000)
+
+  test('with an unbounded capacity, only time unloads', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { entities, unloaded } = unloads()
+      yield* process({ unloaded, capacity: { entities: 'unbounded' } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
           for (const entity of ['s-1', 's-2', 's-3']) {
