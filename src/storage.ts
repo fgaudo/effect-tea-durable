@@ -144,9 +144,20 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       suspended_cause ${text},
       suspended_at ${integer},
       partition INTEGER NOT NULL,
+      steps ${integer} NOT NULL DEFAULT 0,
       PRIMARY KEY (name, id)
     )
   `
+  // `steps` counts the steps that wrote the row, raised by each, which a step on Cluster reads first to know which
+  // machine in memory is the one stored (decision 0161). A database made before is given the column.
+  if (dialect === 'sqlite') {
+    const [column] = yield* sql<{ held: number }>`
+      SELECT COUNT(*) AS held FROM pragma_table_info('entities') WHERE name = 'steps'
+    `
+    if (column?.held === 0) yield* sql`ALTER TABLE entities ADD COLUMN steps INTEGER NOT NULL DEFAULT 0`
+  } else {
+    yield* sql`ALTER TABLE entities ADD COLUMN IF NOT EXISTS steps BIGINT NOT NULL DEFAULT 0`
+  }
   // One row per key the state holds work under, with its incarnation. A key whose work is gone has no row, since
   // the entity's counter keeps its incarnations from going back (decision 0132). `due` is a timer's time, by which
   // an entity nothing else holds loaded is woken (decision 0029). `key` is the key's name and `parameter` the JSON
@@ -995,6 +1006,11 @@ export interface Storage<T extends Types> {
     request: string,
     message: string,
   ) => Effect.Effect<Readonly<{ request: Request<T['sender']>; message: T['inbound'] }>>
+  /**
+   * How many steps wrote the entity `id`, or null where it is not stored: what a step on Cluster reads first, in its
+   * transaction, to know which machine in memory is the one stored (decision 0161).
+   */
+  readonly stepsOf: (id: string) => Effect.Effect<number | null>
   /** The flags of a creation that reached a door on Cluster, and its request, read as `delivered` reads them. */
   readonly deliveredCreation: (
     version: number,
@@ -1378,6 +1394,7 @@ export const storage = <T extends Types>(
             suspended_cause: cause,
             suspended_at: on === null ? null : at,
             partition: partitionOf(id, partitions),
+            steps: 1,
           })
         }`
       } else if (entity !== null) {
@@ -1389,14 +1406,16 @@ export const storage = <T extends Types>(
           SET state = ${state}, version = ${version},
               creation = ${JSON.stringify(entity.creation)}, incarnations = ${written.incarnations},
               suspended_on = ${on}, suspended_cause = ${cause},
-              suspended_at = CASE WHEN CAST(${on} AS TEXT) IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
+              suspended_at = CASE WHEN CAST(${on} AS TEXT) IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END,
+              steps = steps + 1
           WHERE name = ${name} AND id = ${id}
         `
       } else {
         yield* sql`
           UPDATE entities
           SET incarnations = ${written.incarnations}, suspended_on = ${on}, suspended_cause = ${cause},
-              suspended_at = CASE WHEN CAST(${on} AS TEXT) IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
+              suspended_at = CASE WHEN CAST(${on} AS TEXT) IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END,
+              steps = steps + 1
           WHERE name = ${name} AND id = ${id}
         `
       }
@@ -2171,8 +2190,15 @@ export const storage = <T extends Types>(
         new Error(`a creation delivered to the program '${name}' is no request the runtime sends: ${String(error)}`),
     }).pipe(Effect.orDie)
 
+  const stepsOf = (id: string) =>
+    Effect.flatMap(
+      sql`SELECT steps FROM entities WHERE name = ${name} AND id = ${id}`,
+      Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ steps: Count }))),
+    ).pipe(Effect.map((rows) => rows[0]?.steps ?? null), Effect.orDie)
+
   return {
     load,
+    stepsOf,
     delivered,
     deliveredCreation,
     reply,

@@ -1,8 +1,8 @@
 /**
  * The runtime on Effect Cluster: the `Sharding` a runner of the runtime runs, built once the runner's versions are
  * recorded, with a `RunnerHealth` that keeps the shards off a runner of an older version, and the door, Cluster's
- * entity of a program, whose steps commit only at the newest version (decision 0159). What a step does is the
- * runtime's, and is not code on Cluster yet: the roadmap's step Effect Cluster.
+ * entity of a program, whose steps commit only at the newest version (decision 0159). The runtime steps what reaches
+ * a door (decisions 0160, 0161).
  */
 import {
   ClusterSchema,
@@ -15,16 +15,17 @@ import {
   Sharding,
   ShardingConfig,
 } from 'effect/cluster'
-import * as DateTime from 'effect/DateTime'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
+import type * as Scope from 'effect/Scope'
 import * as Schema from 'effect/Schema'
 import { Rpc } from 'effect/rpc'
 import { SqlClient } from 'effect/sql'
-import * as Machine from './machine.ts'
 import { InvariantDefect, type Program, type Types, versionOf } from './program.ts'
-import { createTables, newestVersion, outranked, recordVersions, type Storage } from './storage.ts'
+import { type Delivered, launchWith, type OnCluster, type Options, type Runtime } from './runtime.ts'
+import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
 
 /** The text a runner's address is recorded under. */
 export const addressText = (address: RunnerAddress.RunnerAddress): string => `${address.host}:${address.port}`
@@ -112,15 +113,6 @@ export const doorOf = <const Name extends string>(name: Name) =>
     .annotateRpcs(ClusterSchema.WithTransaction, true)
     .annotateRpcs(ClusterSchema.Uninterruptible, 'client')
 
-/** A request that reaches a door: which RPC, and what its payload carries. */
-export type Delivered = Readonly<{
-  _tag: 'Create' | 'Message'
-  id: string
-  version: number
-  request: string
-  message: string
-}>
-
 /**
  * Dies where a launch recorded a newer version of `program` than this runner runs, inside the step's transaction,
  * so that the step commits only at the newest version. Cluster restarts the entity after a defect of its handler,
@@ -138,15 +130,13 @@ export const atNewest = (program: Pick<Program<Types>, 'name' | 'migrations'>) =
   })
 
 /**
- * The layer that serves the door of `program` on this runner. Each request is stepped by `step` in Cluster's
- * transaction, once `atNewest` has found this runner's version the newest (decision 0159). The entity type is
- * registered without `disableFatalDefects`, which would save a defect as the request's reply, and lose its message.
+ * The handlers of the door of `program`: each request is stepped by `step` in Cluster's transaction, once `atNewest`
+ * has found this runner's version the newest (decision 0159).
  */
-export const door = <R>(
+const handlersOf = <R>(
   program: Pick<Program<Types>, 'name' | 'migrations'>,
   step: (delivered: Delivered) => Effect.Effect<string, never, R>,
 ) => {
-  const entity = doorOf(program.name)
   const handle = (_tag: Delivered['_tag']) =>
   (
     { address, payload }: Readonly<{
@@ -164,12 +154,21 @@ export const door = <R>(
         message: payload.message,
       }),
     )
-  return entity.toLayer({ Create: handle('Create'), Message: handle('Message') })
+  return { Create: handle('Create'), Message: handle('Message') }
 }
 
 /**
+ * The layer that serves the door of `program` on this runner with `step`. The entity type is registered without
+ * `disableFatalDefects`, which would save a defect as the request's reply, and lose its message (decision 0159).
+ */
+export const door = <R>(
+  program: Pick<Program<Types>, 'name' | 'migrations'>,
+  step: (delivered: Delivered) => Effect.Effect<string, never, R>,
+) => doorOf(program.name).toLayer(handlersOf(program, step))
+
+/**
  * The text of what a step answers a message: a reply, `NotFound` where no entity is stored, or `Suspended`. Every
- * one is a success of the RPC, so that Cluster saves it in the step's transaction (decision 0081).
+ * one is a success of the RPC, so that Cluster saves it in the step's transaction (decisions 0081, 0160).
  */
 export const answerCodec = <T extends Types>(program: Program<T>) =>
   Schema.fromJsonString(Schema.Union([
@@ -186,66 +185,37 @@ export const creationCodec = Schema.fromJsonString(Schema.Union([
 ]))
 
 /**
- * The step a door runs for a request, in Cluster's transaction (decisions 0081, 0092). It loads the entity from what
- * is stored, steps it, writes what the machine says, and answers as the machine answers. A message is received, and
- * the mailbox is handled up to it: the step of its arrival queues it, and each `Handle` steps the head, until a step
- * answers it, or the entity suspends on the way, which answers it `Suspended`. A creation whose program dies stores
- * nothing and dies, so that Cluster delivers it again until a deploy fixes the program, and saves no defect as its
- * reply (decision 0160).
- *
- * The entity is not held in memory between two requests, and nothing a step sets going is started yet: that is the
- * pending machine of decision 0092.
+ * What the runtime is given to run on this runner's `Sharding`: a deploy registers its program's door, whose answers
+ * are encoded as text (decision 0160). The door's `maxIdleTime` is the runtime's passivation, so that a door does not
+ * outlive the runtime's entity by more than Cluster's reaper takes (decision 0092).
  */
-export const stepper = <T extends Types>(program: Program<T>, storage: Storage<T>) => {
-  const answer = Schema.encodeSync(answerCodec(program))
-  const created = Schema.encodeSync(creationCodec)
-  const write = (id: string, transition: Readonly<{ written: Machine.Written | null }>, now: DateTime.Utc) =>
-    transition.written === null
-      ? Effect.void
-      : Effect.asVoid(storage.write(id, transition.written, DateTime.toEpochMillis(now)))
-  return (delivered: Delivered): Effect.Effect<string> =>
-    Effect.gen(function*() {
-      const { id } = delivered
-      const now = yield* DateTime.now
-      if (delivered._tag === 'Create') {
-        const { request, flags } = yield* storage.deliveredCreation(
-          delivered.version,
-          delivered.request,
-          delivered.message,
-        )
-        const stored = yield* storage.load(id)
-        if (stored !== null) {
-          const transition = Machine.step(program, { stored, running: {} }, { _tag: 'Create', request })
-          yield* write(id, transition, now)
-          const reply = transition.outputs.find((output) => output._tag === 'CreationReplied')
-          return created(reply?.reply ?? { _tag: 'AlreadyExists' })
-        }
-        const started = Machine.start(program, id, flags, now, request)
-        if (started._tag === 'Defect') return yield* Effect.die(started.cause)
-        yield* write(id, started, now)
-        return created({ _tag: 'Created' })
-      }
-      const { request, message } = yield* storage.delivered(delivered.version, delivered.request, delivered.message)
-      const stored = yield* storage.load(id)
-      if (stored === null) return answer({ _tag: 'NotFound' })
-      const key = Machine.requestKey(program, request)
-      const reply = yield* storage.reply(id, request, DateTime.toEpochMillis(now))
-      let transition = Machine.step(program, { stored, running: {} }, { _tag: 'Receive', request, message, reply, at: now })
-      while (true) {
-        yield* write(id, transition, now)
-        for (const output of transition.outputs) {
-          if (output._tag === 'Replied' && Machine.requestKey(program, output.request) === key) {
-            return answer(output.reply)
-          }
-        }
-        const { suspension, mailbox } = transition.machine.stored
-        if (suspension !== null) return answer({ _tag: 'Suspended' })
-        if (mailbox.length === 0) {
-          return yield* Effect.die(new InvariantDefect({
-            reason: `the entity ${id} of ${program.name} handled its mailbox, and answered no request ${key}`,
-          }))
-        }
-        transition = Machine.step(program, transition.machine, { _tag: 'Handle', at: now })
-      }
-    })
-}
+export const onCluster: Effect.Effect<OnCluster, never, Sharding.Sharding | SqlClient.SqlClient> = Effect.gen(
+  function*() {
+    const sharding = yield* Sharding.Sharding
+    const sql = yield* SqlClient.SqlClient
+    return {
+      register: (program, step, idle) => {
+        const answer = Schema.encodeSync(answerCodec(program))
+        const created = Schema.encodeSync(creationCodec)
+        const handlers = handlersOf(program, (delivered) =>
+          Effect.map(step(delivered), (stepped) =>
+            stepped._tag === 'Create' ? created(stepped.answer) : answer(stepped.answer)).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+            ))
+        return sharding.registerEntity(doorOf(program.name), Effect.succeed(handlers), {
+          maxIdleTime: Duration.millis(idle),
+        })
+      },
+    }
+  },
+)
+
+/**
+ * The runtime of a runner of Effect Cluster: `launch`'s, whose deploys serve their programs through doors on the
+ * runner's `Sharding`, which `sharding` builds. A caller's request, an operation's, and the shards a runner holds are
+ * the later parts of the roadmap's step Effect Cluster, and not code yet.
+ */
+export const launch = (
+  options: Options = {},
+): Effect.Effect<Runtime, never, Sharding.Sharding | SqlClient.SqlClient | Scope.Scope> =>
+  Effect.flatMap(onCluster, (cluster) => launchWith(options, cluster))

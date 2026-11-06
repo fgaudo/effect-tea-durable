@@ -53,9 +53,9 @@ reply Cluster saves, under a key a fix of the same version keeps.
 
 ## Consequences
 
-- [`src/cluster.ts`](../../src/cluster.ts) gives `stepper`, the step a door runs, and the codecs of its answers. It
-  loads the entity from what is stored at each request, and holds nothing in memory: starting what a step sets
-  going, and the pending machine, are decision 0092's, and not code yet.
+- [`src/cluster.ts`](../../src/cluster.ts) gives the codecs of a door's answers, and
+  [`src/runtime.ts`](../../src/runtime.ts) the step a door runs, which settles the entity's machine first
+  ([decision 0161](0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
 - [`src/storage.ts`](../../src/storage.ts) reads a delivered request, message and flags at the version that wrote
   them.
 - `docs/design.md` says, once the step is done, that a creator on Cluster waits for a fix of a creation the program

@@ -29,9 +29,10 @@ import { SqlClient } from 'effect/sql'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addressText, byVersion, door, doorOf, sharding, stepper } from './cluster.ts'
+import { addressText, byVersion, door, doorOf, launch, sharding } from './cluster.ts'
 import { defect, InvariantDefect, noWork, operation, type Program, rejectWith, versionOf } from './program.ts'
-import { createTables, newestVersion, outranked, recordVersions, storage } from './storage.ts'
+import { Probe, type Said } from './runtime.ts'
+import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
 import { client, onEach } from './test-databases.ts'
 
 type T = {
@@ -270,14 +271,18 @@ describe('two runners on one file', () => {
       })), 30_000)
 })
 
-describe('the step a door runs', () => {
+describe('the runtime on Cluster', () => {
   type Tally = {
-    state: Readonly<{ n: number }>
+    state: Readonly<{ n: number; asking: boolean }>
     flags: Readonly<{ start: number }>
-    inbound: Readonly<{ _tag: 'Add'; n: number }> | Readonly<{ _tag: 'Refuse' }> | Readonly<{ _tag: 'Break' }>
-    internal: never
-    operation: never
-    key: never
+    inbound:
+      | Readonly<{ _tag: 'Add'; n: number }>
+      | Readonly<{ _tag: 'Refuse' }>
+      | Readonly<{ _tag: 'Break' }>
+      | Readonly<{ _tag: 'Ask' }>
+    internal: Readonly<{ _tag: 'Answered' }>
+    operation: Readonly<{ _tag: 'Ask' }>
+    key: 'ask'
     parameter: {}
     rejection: Readonly<{ why: string }>
     sender: Readonly<{ user: string }>
@@ -285,46 +290,71 @@ describe('the step a door runs', () => {
     index: never
     services: never
   }
+  /** How many times the operation `Ask` ran in the test under way. */
+  let asked = 0
   const tally: Program<Tally> = {
     name: 'Tally',
-    keys: {},
+    keys: { ask: null },
     schemas: {
-      state: Schema.Struct({ n: Schema.Int }),
+      state: Schema.Struct({ n: Schema.Int, asking: Schema.Boolean }),
       flags: Schema.Struct({ start: Schema.Int }),
       inbound: Schema.Union([
         Schema.TaggedStruct('Add', { n: Schema.Int }),
         Schema.TaggedStruct('Refuse', {}),
         Schema.TaggedStruct('Break', {}),
+        Schema.TaggedStruct('Ask', {}),
       ]),
-      internal: Schema.Never,
-      operation: Schema.Never,
+      internal: Schema.TaggedStruct('Answered', {}),
+      operation: Schema.TaggedStruct('Ask', {}),
       rejection: Schema.Struct({ why: Schema.String }),
       sender: Schema.Struct({ user: Schema.String }),
       projection: Schema.Int,
     },
-    init: ({ start }) => start < 0 ? defect('a tally starts at zero or more') : { n: start },
-    update: (message) => (state) =>
-      message._tag === 'Add'
-        ? { n: state.n + message.n }
-        : message._tag === 'Refuse'
-        ? rejectWith({ why: 'refused' })
-        : defect('broken'),
-    durable: () => noWork,
-    operations: {},
+    init: ({ start }) => start < 0 ? defect('a tally starts at zero or more') : { n: start, asking: false },
+    update: (message) => (state) => {
+      switch (message._tag) {
+        case 'Add':
+          return { ...state, n: state.n + message.n }
+        case 'Refuse':
+          return rejectWith({ why: 'refused' })
+        case 'Break':
+          return defect('broken')
+        case 'Ask':
+          return { ...state, asking: true }
+        case 'Answered':
+          return { n: state.n + 100, asking: false }
+      }
+    },
+    durable: (state) => state.asking ? { ask: { _tag: 'Ask' } } : noWork,
+    operations: { Ask: operation(() => Effect.sync(() => (asked++, { _tag: 'Answered' } as const))) },
     project: ({ n }) => n,
     indexes: {},
   }
   const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: { user: 'u' }, id })
-  const message = (inbound: Tally['inbound']) => JSON.stringify(inbound)
+  const send = (inbound: Tally['inbound'], request: string, id = 'one') =>
+    Effect.flatMap(doorOf('Tally').client, (clientOf) =>
+      clientOf(id).Message({ version: 1, request: caller(request), message: JSON.stringify(inbound) }))
+  const create = (start: number, request: string) =>
+    Effect.flatMap(doorOf('Tally').client, (clientOf) =>
+      clientOf('one').Create({ version: 1, request: caller(request), message: JSON.stringify({ start }) }))
+  const stateOf = Effect.flatMap(
+    Effect.service(SqlClient.SqlClient),
+    (sql) =>
+      Effect.map(sql<{ state: string }>`SELECT state FROM entities WHERE id = 'one'`, ([row]) =>
+        row === undefined ? undefined : JSON.parse(row.state) as Tally['state']),
+  )
 
-  /** Runs `run` on one runner of the runtime over a SQLite file, which serves the door of `tally`. */
-  const onRunner = async (run: Effect.Effect<void, unknown, Sharding.Sharding | SqlClient.SqlClient | Scope.Scope>) => {
+  /**
+   * Runs `run` on one runner over a SQLite file, whose runtime on Cluster deploys `tally`. `probe`, given the
+   * runner's client of the database, is told what the runtime does.
+   */
+  const onRunner = async (
+    run: Effect.Effect<void, unknown, Sharding.Sharding | SqlClient.SqlClient | Scope.Scope>,
+    probe?: (sql: SqlClient.SqlClient) => (said: Said) => Effect.Effect<void>,
+  ) => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
-    const served = Layer.unwrap(Effect.map(Effect.service(SqlClient.SqlClient), (sql) =>
-      door(tally, stepper(tally, storage(tally, sql)))))
-    const runner = served.pipe(
-      Layer.provideMerge(sharding([tally])),
+    const runner = sharding([tally]).pipe(
       Layer.provideMerge(Runners.layerNoop),
       Layer.provideMerge(SqlMessageStorage.layer),
       Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
@@ -336,55 +366,97 @@ describe('the step a door runs', () => {
       Layer.provideMerge(store),
       Layer.provide(Digest.layerWebCrypto),
     )
+    const launched = Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      // Outside any transaction, where SQLite takes the pragma: a probe may break a deferred foreign key, so that a
+      // COMMIT fails.
+      yield* sql`PRAGMA foreign_keys = ON`
+      yield* sql`CREATE TABLE parent (id INTEGER PRIMARY KEY)`
+      yield* sql`CREATE TABLE child (parent INTEGER REFERENCES parent (id) DEFERRABLE INITIALLY DEFERRED)`
+      const runtime = yield* (probe === undefined ? launch() : Effect.provideService(launch(), Probe, probe(sql)))
+      yield* runtime.deploy(tally)
+      yield* run
+    })
+    asked = 0
     try {
-      await Effect.runPromise(Effect.scoped(run).pipe(Effect.provide(Layer.orDie(runner))) as Effect.Effect<void>)
+      await Effect.runPromise(Effect.scoped(launched).pipe(Effect.provide(Layer.orDie(runner))) as Effect.Effect<void>)
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
   }
+  const eventually = <A>(read: Effect.Effect<A, unknown, SqlClient.SqlClient>, done: (a: A) => boolean) =>
+    Effect.repeat(read, { schedule: Schedule.spaced('25 millis'), until: done }).pipe(Effect.timeout('15 seconds'))
 
   test('a door creates, answers each message as the machine does, and stores the state with the reply', () =>
     onRunner(Effect.gen(function*() {
-      const sql = yield* SqlClient.SqlClient
-      const clientOf = yield* doorOf('Tally').client
-      const door = clientOf('one')
-      const flags = JSON.stringify({ start: 1 })
-      expect(yield* door.Create({ version: 1, request: caller('c1'), message: flags })).toBe('{"_tag":"Created"}')
-      expect(yield* door.Create({ version: 1, request: caller('c2'), message: flags })).toBe('{"_tag":"AlreadyExists"}')
-      const add = { version: 1, request: caller('m1'), message: message({ _tag: 'Add', n: 2 }) }
-      expect(yield* door.Message(add)).toBe('{"_tag":"Accepted"}')
+      expect(yield* create(1, 'c1')).toBe('{"_tag":"Created"}')
+      expect(yield* create(1, 'c2')).toBe('{"_tag":"AlreadyExists"}')
+      expect(yield* send({ _tag: 'Add', n: 2 }, 'm1')).toBe('{"_tag":"Accepted"}')
       // A retry under the same key is answered as the first time, and adds nothing to the state.
-      expect(yield* door.Message(add)).toBe('{"_tag":"Accepted"}')
-      expect(yield* door.Message({ version: 1, request: caller('m2'), message: message({ _tag: 'Refuse' }) }))
-        .toBe('{"_tag":"Rejected","reason":{"why":"refused"}}')
-      const [row] = yield* sql<{ state: string }>`SELECT state FROM entities WHERE name = 'Tally' AND id = 'one'`
-      expect(JSON.parse(row!.state)).toEqual({ n: 3 })
-      expect(yield* clientOf('none').Message({ version: 1, request: caller('m3'), message: message({ _tag: 'Add', n: 1 }) }))
-        .toBe('{"_tag":"NotFound"}')
+      expect(yield* send({ _tag: 'Add', n: 2 }, 'm1')).toBe('{"_tag":"Accepted"}')
+      expect(yield* send({ _tag: 'Refuse' }, 'm2')).toBe('{"_tag":"Rejected","reason":{"why":"refused"}}')
+      expect(yield* stateOf).toEqual({ n: 3, asking: false })
+      expect(yield* send({ _tag: 'Add', n: 1 }, 'm3', 'none')).toBe('{"_tag":"NotFound"}')
     })), 30_000)
 
-  test('a defect of the program suspends the entity, and its message is answered Suspended', () =>
+  test('a defect of the program suspends the entity, and its messages are answered Suspended', () =>
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
-      const door = (yield* doorOf('Tally').client)('one')
-      yield* door.Create({ version: 1, request: caller('c1'), message: JSON.stringify({ start: 0 }) })
-      expect(yield* door.Message({ version: 1, request: caller('m1'), message: message({ _tag: 'Break' }) }))
-        .toBe('{"_tag":"Suspended"}')
+      yield* create(0, 'c1')
+      expect(yield* send({ _tag: 'Break' }, 'm1')).toBe('{"_tag":"Suspended"}')
       const [row] = yield* sql<{ cause: string | null }>`SELECT suspended_cause AS cause FROM entities WHERE id = 'one'`
       expect(row?.cause).toContain('broken')
-      expect(yield* door.Message({ version: 1, request: caller('m2'), message: message({ _tag: 'Add', n: 1 }) }))
-        .toBe('{"_tag":"Suspended"}')
+      expect(yield* send({ _tag: 'Add', n: 1 }, 'm2')).toBe('{"_tag":"Suspended"}')
     })), 30_000)
 
   test('a creation the program dies on stores nothing, saves no reply, and is delivered again', () =>
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
-      const door = (yield* doorOf('Tally').client)('one')
-      yield* door.Create({ version: 1, request: caller('c1'), message: JSON.stringify({ start: -1 }) }, { discard: true })
+      const clientOf = yield* doorOf('Tally').client
+      yield* clientOf('one').Create({ version: 1, request: caller('c1'), message: JSON.stringify({ start: -1 }) }, {
+        discard: true,
+      })
       yield* Effect.sleep('1500 millis')
       expect(yield* sql`SELECT 1 FROM entities`).toEqual([])
       expect(yield* sql`SELECT 1 FROM cluster_replies`).toEqual([])
       const messages = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Create'`
       expect(messages.map(({ processed }) => Number(processed))).toEqual([0])
     })), 30_000)
+
+  test('what a door step sets going starts once it commits, and its completion is stepped by the loop', () =>
+    onRunner(Effect.gen(function*() {
+      yield* create(0, 'c1')
+      expect(yield* send({ _tag: 'Ask' }, 'm1')).toBe('{"_tag":"Accepted"}')
+      expect(yield* eventually(stateOf, (state) => state?.n === 100)).toEqual({ n: 100, asking: false })
+      expect(asked).toBe(1)
+      // A message after the completion is stepped from the machine the loop committed.
+      expect(yield* send({ _tag: 'Add', n: 1 }, 'm2')).toBe('{"_tag":"Accepted"}')
+      expect(yield* stateOf).toEqual({ n: 101, asking: false })
+    })), 30_000)
+
+  test('a door step whose commit fails is dropped, starts nothing, and is stepped again', () => {
+    let failed = false
+    let received = 0
+    return onRunner(
+      Effect.gen(function*() {
+        yield* create(0, 'c1')
+        expect(yield* send({ _tag: 'Ask' }, 'm1')).toBe('{"_tag":"Accepted"}')
+        expect(failed).toBe(true)
+        expect(yield* eventually(stateOf, (state) => state?.n === 100)).toEqual({ n: 100, asking: false })
+        expect(asked).toBe(1)
+        // The message was stepped twice: once in the transaction that failed, once in the one that committed.
+        expect(received).toBe(2)
+      }),
+      // The first step of `Ask` writes a row that breaks a deferred foreign key, so that its COMMIT fails.
+      (sql) => (said) =>
+        said._tag !== 'Reached' || said.point !== 'BeforeCommit' || said.event._tag !== 'Receive'
+          ? Effect.void
+          : (received++, failed)
+          ? Effect.void
+          : Effect.gen(function*() {
+            failed = true
+            yield* sql`INSERT INTO child (parent) VALUES (1)`
+          }).pipe(Effect.orDie),
+    )
+  }, 30_000)
 })
