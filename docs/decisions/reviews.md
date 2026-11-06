@@ -369,3 +369,42 @@ written for the code the review reads, and are not kept.
 - Read again, and left so: 0128 says that an operation a new program delivers otherwise keeps its idempotency key.
   It keeps its incarnation, and a runner given the digest is given another form of the same key. No harm follows,
   since the incarnation stopped has acted on nothing.
+
+## 2026-11-06: 0133, 0135, and 0137 to 0149
+
+- Fixed: the status line of [0135](0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) did
+  not say that [0138](0138-the-log-publishes-topics.md) changed its warning, which counts the projection once per
+  topic a step is written in. The index lists that change too.
+- Documented at 4.1.2, as the notes say: `Optional.replace` gives the whole unchanged where it does not focus
+  (0133); `Effect.logWarning` reaching the logger provided (0135); `Hash.string`, `@stability stable`, with the
+  values of three texts, and `entityMailboxCapacity` of 4096 (0137, 0147); `Semaphore.takeIfAvailable` taking
+  only permits available at once (0147); `SqliteClient.make`, whose explicit transaction takes the write lock
+  though it only reads (0145).
+- Seen since: [`examples/order/report.ts`](../../examples/order/report.ts) feeds a store of reports from the log,
+  which 0149 took as only reasoned.
+- Then every rule of these notes that the code keeps was taken out, one at a time, with `scripts/mutate.ts` under
+  `SCHEDULES=all`: of 74, 17 survived, and none was uncertain.
+- Tested now, which no test was: a launch with a number of partitions that is not an integer fails (0137); a step
+  counts the projection once per topic it is written in (0138); a page gives at most its limit across its
+  statements (0145), and a row found carries null for an index it lacks (0143); `reindex` writes an integer beyond
+  2^53 with its exact digits (0146); a step past the default threshold warns with no option given (0135); a child's
+  events are handled in the order it raised them, a child left as it was leaves its parent's state as it was, a
+  child that rejects an external message is a defect, the projection of a child that is not there is a defect, and
+  an operation of a parent named with a `.` is refused (0133). Each of the eleven mutations those tests are for now
+  fails a test.
+- Three change nothing a test can see. A cursor's boolean bound as `true` and not as 1 (0143), since bun:sqlite
+  1.4.2 binds a boolean as the integer 1: the conversion guards a driver that would not. A topic's signal kept after
+  the commit that completed it (0142), since a later reading then reads again at once until its time, which costs
+  statements and loses no row. The first of two entries with one id (0133), which a record by id cannot hold.
+- Three are left, as rules no test reaches. The uninterruptible region of the permit and the offer (0147), which
+  its comment in `src/runtime.ts` says no test reaches. A step that writes exactly the threshold (0135), which a
+  test would have to size to the character. Ids compared by their encoding and not by `JSON.stringify` of their
+  value (0133), which tells two apart only for an id whose value and encoding differ, and every test declares
+  string ids.
+- Reasoned, and left so: 0133's that the Guide's rules on splitting a program hold of a state stored in one row,
+  and that a state is a value nothing changes in place; 0135's that 262 144 characters is a threshold an operator
+  wants told; 0137's that a consumer acts on the order of one entity's rows, and that `position` rises with `seq`
+  on a store of two writers; 0138's and 0140's that a consumer acts on a part of the projection; 0139's that a
+  caller in the process is served by JSON; 0145's that a statement read as a range with a limit stops after the
+  rows it gives; 0147's that a caller's message is never in the stored mailbox while its caller waits; 0148's that
+  no caller sums an index of strings on purpose; 0149's that every question beyond the three forms is a report's.

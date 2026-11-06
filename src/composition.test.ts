@@ -554,3 +554,102 @@ test('a child by id removed and added again does not get the answer of its earli
       expect((yield* rehearsal.state).lines['a']!.reminders).toEqual([])
     }),
   )))
+
+const Counter = Schema.Struct({ n: Schema.Int })
+
+/** A part that raises two events at a bump, leaves its state as it is at a look, and rejects what its parent tells it. */
+const counter = part({
+  state: Counter,
+  flags: Schema.Null,
+  inbound: Schema.Union([Schema.TaggedStruct('Bump', {}), Schema.TaggedStruct('Look', {})]),
+  internal: Schema.Never,
+  operation: Schema.Never,
+  rejection: Schema.Never,
+  projection: Schema.Int,
+  event: Schema.Literals(['first', 'second']),
+  external: Schema.TaggedStruct('Refuse', {}),
+})({
+  keys: {},
+  init: () => ({ n: 0 }),
+  update: (message) => (state) =>
+    message._tag === 'Bump'
+      ? andThen(raise('first' as const)({ n: state.n + 1 }), raise('second' as const))
+      : message._tag === 'Look'
+      ? state
+      : reject,
+  durable: () => noWork,
+  operations: {},
+  project: (state) => state.n,
+})
+
+const Counters = Schema.Struct({
+  counters: Schema.Record(Schema.String, Counter),
+  heard: Schema.Array(Schema.String),
+  peek: Schema.NullOr(Schema.String),
+})
+type Counters = typeof Counters.Type
+
+const counters = part({
+  state: Counters,
+  flags: Schema.Null,
+  inbound: Schema.TaggedStruct('Tell', { id: Schema.String }),
+  internal: Schema.Never,
+  operation: Schema.Never,
+  rejection: Schema.Never,
+  projection: Schema.NullOr(Schema.Int),
+})({
+  keys: {},
+  children: {
+    Counter: each(counter, { id: Schema.String, at: Optic.id<Counters>().key('counters').compose(Optic.entries()) }),
+  },
+  init: () => ({ counters: { a: { n: 0 } }, heard: [], peek: null }),
+  update: (message, _, children) => children.Counter.update(message.id, { _tag: 'Refuse' }),
+  durable: () => noWork,
+  operations: {},
+  project: (state, children) => (state.peek === null ? null : children.Counter(state, state.peek)),
+  onEvent: { Counter: (id, event) => (state) => ({ ...state, heard: [...state.heard, `${id}:${event}`] }) },
+})
+
+test("a child's events are handled in the order it raised them, and a child left as it was leaves its parent so", () => {
+  const start = counters.init(null, at)
+  expect(outcome(() => counters.update({ _tag: 'Counter', id: 'a', message: { _tag: 'Bump' } }, meta)(start)))
+    .toMatchObject({ _tag: 'Stepped', state: { counters: { a: { n: 1 } }, heard: ['a:first', 'a:second'] } })
+  // A step that changes nothing gives the state it was given, so the machine stores nothing new.
+  expect(counters.update({ _tag: 'Counter', id: 'a', message: { _tag: 'Look' } }, meta)(start)).toBe(start)
+})
+
+test('a child that rejects an external message, and the projection of a child that is not there, are defects', () => {
+  const start = counters.init(null, at)
+  expect(outcome(() => counters.update({ _tag: 'Tell', id: 'a' }, meta)(start))).toEqual({
+    _tag: 'Defect',
+    reason: "the child 'Counter' rejected an external message, which it takes",
+  })
+  expect(counters.project({ ...start, peek: 'a' })).toBe(0)
+  expect(outcome(() => counters.project({ ...start, peek: 'ghost' }))).toEqual({
+    _tag: 'Defect',
+    reason: "the projection of the child 'Counter', which is not in this state",
+  })
+})
+
+test("a parent's operation with a '.' is refused where it is declared (decision 0133)", () => {
+  const declare = () =>
+    part({
+      state: Order,
+      flags: Schema.Null,
+      inbound: Schema.Never,
+      internal: Schema.Never,
+      operation: Schema.TaggedStruct('Li.ne', {}),
+      rejection: Schema.Never,
+      projection: Schema.Null,
+    })({
+      keys: {},
+      children: { Line: each(line, { id: Schema.String, at: lines }) },
+      init: () => ({ lines: {}, charged: 0 }),
+      update: () => () => reject,
+      durable: () => noWork,
+      operations: { 'Li.ne': operation(() => Effect.die('never run')) } as never,
+      project: () => null,
+      onEvent: { Line: () => (state: Order) => state },
+    })
+  expect(declare).toThrow("a parent has an operation 'Li.ne'")
+})

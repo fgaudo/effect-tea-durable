@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-11-05, with the step Children inside an entity of the roadmap. Decided the open question
 on large states, which [decision 0028](archive/0028-rules-the-runtime-settled.md) left open when it put aside writing
-a difference.
+a difference. Its warning, which counts the projection once in the outbox, is changed by
+[decision 0138](0138-the-log-publishes-topics.md): a step writes a row in each topic whose selection changed, and
+the warning counts the projection once per row.
 
 ## Context
 

@@ -598,14 +598,15 @@ describe('the runtime on SQLite', () => {
       const want = (nonce: string) => ({ _tag: 'Want', key: 'b', on: true, nonce }) as const
       let requests = 0
       // Each activation is a process of its own, which loads the entity again: its warning is its own.
-      const activation = (options: Options) =>
+      const activation = (options: Options, padding = '') =>
         process(options, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
             if (requests === 0) yield* toy.create(id, { at }, { requestId: 'creation', sender })
             for (let step = 0; step < 2; step++) {
               const requestId = `request-${requests++}`
-              expect(yield* toy.send(id, want(requestId), { requestId, sender })).toEqual({ _tag: 'Accepted' })
+              const sent = want(`${requestId}${padding}`)
+              expect(yield* toy.send(id, sent, { requestId, sender })).toEqual({ _tag: 'Accepted' })
             }
             yield* runtime.settled
           })).pipe(Effect.provide(Logger.layer([logger])))
@@ -617,6 +618,10 @@ describe('the runtime on SQLite', () => {
       expect(warnings[0]!['characters']).toBeGreaterThan(1)
       yield* activation({ warn: { characters: 1 } })
       expect(warnings).toHaveLength(2)
+      // A state past the default threshold of 262 144 characters warns with no option given.
+      yield* activation({}, 'x'.repeat(262_144))
+      expect(warnings).toHaveLength(3)
+      expect(warnings[2]).toMatchObject({ threshold: 262_144 })
     })))
 
   test('answers a retry from the stored reply, and NotFound for no entity', () =>
@@ -3311,6 +3316,8 @@ describe('publishing what happened', () => {
         .toBe('the log has 12 partitions, and the runtime is launched with 300')
       expect(reasonOf(yield* Effect.exit(process({ log: { partitions: 0 } }, () => Effect.void))))
         .toBe('the log has 0 partitions, which is no positive integer')
+      expect(reasonOf(yield* Effect.exit(process({ log: { partitions: 1.5 } }, () => Effect.void))))
+        .toBe('the log has 1.5 partitions, which is no positive integer')
     })))
 
   test('a consumer reads from its cursors through indexes, and never scans the log', () =>

@@ -945,6 +945,50 @@ test('a query pages past, and finds by its value, a row whose index is an intege
         .toEqual({ id: 'c', projection: '1152921504606847000', indexes: { rank: 2 ** 60 } })
     }).pipe(Effect.orDie)))
 
+// The warning of a large step counts the projection once per row of the log the step writes (decisions 0135, 0138).
+test('a step counts the projection it writes once per topic it is written in', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(receiver, sql)
+      yield* store.write('a', created(), 0)
+      const step = (topics: ReadonlyArray<string>) =>
+        written({ published: { kind: 'Inbound', message: 'm', projection: 'projected', topics } })
+      const once = yield* store.write('a', step(['one']), 0)
+      const twice = yield* store.write('a', step(['one', 'two']), 0)
+      expect(twice - once).toBe(JSON.stringify('projected').length)
+    }).pipe(Effect.orDie)))
+
+// `reindex` writes the indexes as a step does, so a row it writes again is found by its value (decision 0146).
+test('reindex writes an index that is an integer beyond 2^53 with its exact digits', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(ranked, sql)
+      const state = { last: JSON.stringify(2 ** 60) }
+      yield* store.write('a', created({ entity: { state, creation }, shown: { projection: '0', indexes: { rank: 0 } } }), 0)
+      expect(yield* store.reindex).toEqual({ written: 1, failed: [] })
+      const stored = yield* sql<{ indexes: string }>`SELECT indexes FROM projections`
+      expect(stored).toEqual([{ indexes: '{"rank":1152921504606846976}' }])
+    }).pipe(Effect.orDie)))
+
+// Each statement of a page takes what the ones before it left of the limit, and a row found carries null for an
+// index it lacks, as the query reads it (decisions 0143, 0145).
+test('a page gives at most its limit across its statements, and null for an index a row lacks', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(ranked, sql)
+      for (const [id, rank] of [['a', 1], ['b', 1], ['c', 2], ['d', 2]] as const) {
+        yield* store.write(id, created({ shown: { projection: String(rank), indexes: { rank } } }), 0)
+      }
+      yield* store.write('e', created({ shown: { projection: 'null', indexes: {} } }), 0)
+      const page = yield* store.query({ limit: 2, order: { index: 'rank' }, after: { id: 'a', indexes: { rank: 1 } } })
+      expect(page.map(({ id }) => id)).toEqual(['b', 'c'])
+      expect((yield* store.query({ limit: 1, order: { index: 'rank' } }))[0]).toEqual({
+        id: 'e',
+        projection: 'null',
+        indexes: { rank: null },
+      })
+    }).pipe(Effect.orDie)))
+
 describe('a count and a sum over the entities that match (decision 0148)', () => {
   /** Writes each entity with its rank as its projection, and with no rank at all where it is `undefined`. */
   const ranking = (store: ReturnType<typeof storage<Ranked>>, ranks: Readonly<Record<string, Scalar | undefined>>) =>
