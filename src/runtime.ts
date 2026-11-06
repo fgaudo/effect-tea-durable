@@ -1388,19 +1388,24 @@ export const launchWith = (
           const event: Machine.Event<T> = offered
           const before = loaded.machine
           const transition = Machine.step(deployed.program, before, event)
-          if (transition.written === null) return { event, before, transition, characters: 0 }
-          yield* at('BeforeCommit', entity, event)
-          const characters = yield* deployed.storage.write(entity.id, transition.written, DateTime.toEpochMillis(now))
+          let characters = 0
+          if (transition.written !== null) {
+            yield* at('BeforeCommit', entity, event)
+            characters = yield* deployed.storage.write(entity.id, transition.written, DateTime.toEpochMillis(now))
+            loaded.steps += 1
+          }
+          // Both set inside the transaction: a door's step reads them in a transaction of its own, which the
+          // connection runs after this one, so it never reads them between this one's commit and the assignments. A
+          // commit that fails crashes the entity, and nothing reads them then (decision 0161).
+          loaded.machine = transition.machine
           return { event, before, transition, characters }
         })).pipe(Effect.orDie)
         if (stepped === null) return
         const { event, before, transition, characters } = stepped
         if (transition.written !== null) {
-          loaded.steps += 1
           tell(entity.name, transition.written)
           yield* warnOfSize(loaded, entity, characters)
         }
-        loaded.machine = transition.machine
         if (before.stored.suspension !== null && transition.machine.stored.suspension === null) wake(entity)
         yield* observe(entity, event)
         if (transition.written !== null) yield* at('AfterCommit', entity, event)
@@ -1683,16 +1688,18 @@ export const launchWith = (
         return Effect.flatMap(Effect.forkChild(runsOut), (sleep) =>
           Effect.flatMap(take, (taken) => Effect.as(Fiber.interrupt(sleep), taken))).pipe(
           Effect.flatMap((taken) => {
-            // On Cluster, a machine a door's step left uncommitted keeps the entity from leaving until a step settles
-            // it: a lost `afterCommit` callback, or a rollback, leaves no other step to (decision 0161).
-            if (cluster !== null && taken._tag === 'Passivate' && loaded.uncommitted !== null) {
-              return Effect.andThen(apply(deployed, loaded, { _tag: 'Settle' }), next)
-            }
             // The wait ran out, or the entity was told to leave: it is unloaded if it has nothing to do.
             const event = taken._tag === 'Passivate' ? null : taken
             if (event === null || event._tag === 'Evict') {
+              // On Cluster, a machine a door's step left uncommitted keeps the entity from leaving until a step
+              // settles it: a lost `afterCommit` callback, or a rollback, leaves no other step to. So the loop settles
+              // first, and decides from the settled machine (decision 0161).
               const evicted = event === null ? Effect.succeed(null) : Effect.map(DateTime.now, DateTime.toEpochMillis)
-              return Effect.flatMap(Effect.flatMap(evicted, (now) => unload(deployed, loaded, now)), (gone) =>
+              const unloaded = Effect.flatMap(evicted, (now) => unload(deployed, loaded, now))
+              const settled = cluster !== null && loaded.uncommitted !== null
+                ? Effect.andThen(apply(deployed, loaded, { _tag: 'Settle' }), unloaded)
+                : unloaded
+              return Effect.flatMap(settled, (gone) =>
                 Effect.suspend(() => {
                   // One told to leave that has something to do by now stays, and may be told again.
                   if (event !== null) {

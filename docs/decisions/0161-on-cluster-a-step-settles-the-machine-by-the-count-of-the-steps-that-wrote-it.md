@@ -41,7 +41,11 @@ transaction while one holds it, and that a statement waits for the semaphore too
   from the machine, and the count proves the commit.
 - **The door's commit offers `Settle` to the entity's loop**, through `SqlClient.afterCommit`. A callback that is
   lost, where the outcome of `COMMIT` is unknown, leaves the next step to settle the machine. An entity whose
-  machine is not settled yet does not leave the process: when its wait runs out, its loop settles first.
+  machine is not settled yet does not leave the process: when its wait runs out, or it is told to leave a process
+  over its capacity, its loop settles first, and decides from the settled machine whether the entity leaves.
+- **A step of the entity's own sets the machine and the count inside its transaction.** The connection runs a door's
+  step after it, and the door reads both inside its own transaction, so the door never reads them between the
+  step's commit and the assignments. A commit that fails crashes the entity, and nothing reads them then.
 - **A door's step that writes nothing leaves no uncommitted machine.** Nothing it did can roll back, so its machine
   is the entity's at once, and what it sets going is performed at once.
 - **An operation or a timer a step sets going is forked without the step's transaction in its context.** A fiber
@@ -89,6 +93,14 @@ transaction while one holds it, and that a statement waits for the semaphore too
   them: **read in the source** of `internal/effect.ts` and `sql/SqlClient.ts` at 4.1.2, and **tested** by `an
   operation a door step sets going runs outside the step transaction` in [`src/cluster.test.ts`](../../src/cluster.test.ts),
   whose operation registers an `afterCommit`. The test fails where the fork keeps the transaction.
+- That a door's step never reads the machine and the count between a step's commit and the step's assignments, and
+  that an entity told to leave settles first: **only reasoned**, each held by the order of the code. No test reaches
+  either interleaving. The first needs the loop's fiber to yield between the commit and the assignments, which
+  Effect does only past its budget of operations, more than any step of the tests takes. The second needs the entity
+  to be spare while a door's step of its is not settled: the `Settle` a commit offers is counted as pending until it
+  is applied, which keeps the entity from being told to leave, so only a callback lost or a rollback leaves the
+  entity spare with an uncommitted machine, and a test sees no difference between a settle that drops it and an
+  unload that drops it. The scheduler of the tests drives no fiber of Cluster, whose timers it leaves waiting.
 
 ## Alternatives
 
