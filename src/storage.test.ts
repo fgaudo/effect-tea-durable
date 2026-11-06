@@ -2,17 +2,20 @@
  * The storage writes what the machine says an event writes, and decides nothing but what only it sees: another
  * entity's keys (decision 0057). Here it is given rows by hand, and what it holds afterwards is read back.
  */
+import { PGlite } from '@electric-sql/pglite'
+import { PgliteClient } from '@effect/sql-pglite'
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { describe, expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
-import { SqlClient } from 'effect/sql'
+import { SqlClient, Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
 import { InvariantDefect, isTimer, type Json, type Migration, noWork, operation, type Program, type Scalar } from './program.ts'
-import { createTables, type Found, partitionOf, type Query, renamed, storage } from './storage.ts'
+import { createTables, type Dialect, dialectOf, type Found, partitionOf, type Query, renamed, storage } from './storage.ts'
 import { everySchedule } from './testing.ts'
 
 type T = {
@@ -106,13 +109,46 @@ const inbound = (message: string): Machine.EnvelopeRow => ({
   keep: null,
 })
 
-const database = <A>(body: (sql: SqlClient.SqlClient) => Effect.Effect<A>) =>
-  Effect.runPromise(
-    Effect.flatMap(createTables, () => Effect.flatMap(SqlClient.SqlClient, body)).pipe(
-      Effect.provide(SqliteClient.layer({ filename: ':memory:' })),
-      Effect.orDie,
-    ),
-  )
+/**
+ * The data of a new database of PGlite, which each test copies, since a copy starts in a fifth of the time of a new
+ * database (decision 0157).
+ */
+let empty: Promise<File | Blob> | undefined
+const copied = () =>
+  empty ??= PGlite.create().then(async (pg) => {
+    const dump = await pg.dumpDataDir('none')
+    await pg.close()
+    return dump
+  })
+
+/** A client of a new database of `dialect`: SQLite in memory, or PostgreSQL on PGlite. */
+const client = (dialect: Dialect) =>
+  dialect === 'sqlite'
+    ? SqliteClient.layer({ filename: ':memory:' })
+    : Layer.unwrap(Effect.map(Effect.promise(copied), (loadDataDir) => PgliteClient.layer({ loadDataDir })))
+
+/**
+ * Runs `body` on a database of each of `dialects` whose tables are created, one after the other. A failure names the
+ * dialect it failed on. The storage speaks both dialects, so a test runs on both unless it reads what only one
+ * writes (decision 0157).
+ */
+const database = async <A>(
+  body: (sql: SqlClient.SqlClient) => Effect.Effect<A>,
+  dialects: ReadonlyArray<Dialect> = ['sqlite', 'pg'],
+) => {
+  for (const dialect of dialects) {
+    try {
+      await Effect.runPromise(
+        Effect.flatMap(createTables, () => Effect.flatMap(SqlClient.SqlClient, body)).pipe(
+          Effect.provide(client(dialect)),
+          Effect.orDie,
+        ),
+      )
+    } catch (thrown) {
+      throw new Error(`on ${dialect}`, { cause: thrown })
+    }
+  }
+}
 
 test('a reply asked by work that no longer holds goes as it is stored, and one whose work holds is kept', () =>
   database((sql) =>
@@ -528,6 +564,8 @@ test('a row the runtime never writes fails the call that meets it, and is read a
         const exit = yield* Effect.flip(sql.withTransaction(
           Effect.andThen(breaking, Effect.flatMap(Effect.exit<unknown, never, never>(reading), Effect.fail)),
         ))
+        // PostgreSQL refuses by the types of its columns some rows SQLite holds, such as a time that is no integer.
+        if (!Exit.isExit(exit) && dialectOf(sql) === 'pg') continue
         expect(Exit.isExit(exit) && exit._tag).toBe('Failure')
         if (Exit.isExit(exit) && exit._tag === 'Failure') {
           expect(String(Cause.squash(exit.cause))).toContain('no row the runtime writes')
@@ -597,10 +635,55 @@ test('a reply is read by the key of its table, and a caller’s again by an inde
       ).toContain('USING INDEX sqlite_autoindex_replies_1 (name=? AND id=? AND request=?)')
       expect(
         yield* plan(`SELECT request, tag, version, reason FROM replies
-                     WHERE name = 'Receiver' AND id = 'r' AND json_extract(request, '$.id') = 'x'
-                       AND version <> 2 AND json_extract(request, '$._tag') = 'Caller'`),
-      ).toContain('USING INDEX replies_request_id (name=? AND id=? AND <expr>=?)')
-    }).pipe(Effect.orDie)))
+                     WHERE name = 'Receiver' AND id = 'r' AND request_id = 'x' AND version <> 2`),
+      ).toContain('USING INDEX replies_by_request_id (name=? AND id=? AND request_id=?)')
+    }).pipe(Effect.orDie), ['sqlite']))
+
+// PostgreSQL uses an index of an expression only where the statement writes the expression as the index does. The
+// test records the statements the storage runs, and reads the plan of each with scans of whole tables turned off: an
+// index that serves a page holds its order, so that no plan sorts (decision 0157).
+test('on PostgreSQL a page, a count and a caller’s reply by its request id are read by their indexes', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(ranked, sql)
+      yield* store.indexed
+      for (const [id, rank] of [['a', 1], ['b', 'x'], ['c', null]] as const) {
+        yield* store.write(id, created({ shown: { projection: id, indexes: { rank } } }), 0)
+      }
+      const plans = <A>(reading: Effect.Effect<A>) =>
+        Effect.gen(function*() {
+          const ran: Array<readonly [string, ReadonlyArray<unknown>]> = []
+          const record: Statement.Transformer = (statement) =>
+            Effect.sync(() => {
+              ran.push(statement.compile())
+              return statement
+            })
+          yield* Effect.provideService(reading, Statement.CurrentTransformer, record)
+          const read: Array<string> = []
+          for (const [text, params] of ran) {
+            if (!text.trimStart().startsWith('SELECT')) continue
+            const plan = yield* sql.unsafe<{ 'QUERY PLAN': string }>(`EXPLAIN ${text}`, params)
+            read.push(plan.map((line) => line['QUERY PLAN']).join('\n'))
+          }
+          return read
+        })
+      yield* sql`SET enable_seqscan = off`
+      const page = /Index (Only )?Scan (Backward )?using "projections Ranked rank by id"/
+      const pages = [
+        ...yield* plans(store.query({ limit: all, order: { index: 'rank' }, after: { id: 'a', indexes: { rank: 1 } } })),
+        ...yield* plans(
+          store.query({ limit: all, order: { index: 'rank', descending: true }, after: { id: 'b', indexes: { rank: 'x' } } }),
+        ),
+        ...yield* plans(store.count({ where: [{ index: 'rank', is: '>', value: 0 }] })),
+      ]
+      expect(pages.length).toBeGreaterThan(3)
+      for (const plan of pages) {
+        expect(plan).toMatch(page)
+        expect(plan).not.toContain('Sort')
+      }
+      const replies = yield* plans(storage(receiver, sql).reply('r', { _tag: 'Caller', sender: null, id: 'x' }, 0))
+      expect(replies.at(-1)).toContain('replies_by_request_id')
+    }).pipe(Effect.orDie), ['pg']))
 
 /**
  * Version 2 of the receiver, which marks what it reads of version 1: each kind of value is read through a migration
@@ -782,12 +865,22 @@ test('reindex skips an entity that a step wrote since, though its state has the 
       yield* first.write('b', created({ entity: { state: { last: 'x' }, creation } }), 0)
       // As 'a''s row is written, version 2 steps 'b' to the state it writes as the same text, which it reads as
       // its own, with no migration: the step lands between the reading of 'b' and the writing of its row.
-      yield* sql.unsafe(`
-        CREATE TEMP TRIGGER step AFTER INSERT ON projections WHEN NEW.id = 'a' BEGIN
-          UPDATE entities SET version = 2 WHERE name = 'Receiver' AND id = 'b';
-          UPDATE projections SET projection = '"x"', version = 2 WHERE name = 'Receiver' AND id = 'b';
-        END
-      `)
+      const step = `
+        UPDATE entities SET version = 2 WHERE name = 'Receiver' AND id = 'b';
+        UPDATE projections SET projection = '"x"', version = 2 WHERE name = 'Receiver' AND id = 'b';
+      `
+      if (dialectOf(sql) === 'pg') {
+        yield* sql.unsafe(`
+          CREATE FUNCTION step() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN
+            IF NEW.id = 'a' THEN ${step} END IF;
+            RETURN NULL;
+          END $$
+        `)
+        yield* sql`CREATE TRIGGER step AFTER UPDATE ON projections FOR EACH ROW EXECUTE FUNCTION step()`
+      } else {
+        yield* sql.unsafe(`CREATE TEMP TRIGGER step AFTER UPDATE ON projections WHEN NEW.id = 'a' BEGIN ${step} END`)
+      }
       const after = storage(marked, sql)
       expect(yield* after.reindex).toEqual({ written: 1, failed: [] })
       expect(yield* after.query({ limit: all })).toEqual([{ id: 'a', projection: 'migrated', indexes: {} }, { id: 'b', projection: 'x', indexes: {} }])
@@ -907,7 +1000,7 @@ test('an index of the program holds the value and the id, and the index a databa
         name: 'projections Ranked rank by id',
         sql: `CREATE INDEX "projections Ranked rank by id" ON projections (name, ${column}, id)`,
       }])
-    }).pipe(Effect.orDie)))
+    }).pipe(Effect.orDie), ['sqlite']))
 
 // Under every schedule within one deviation, a step moves a row from the rows that tie with the cursor to the rows
 // past its value while a page reads them, and the page gives it once (decision 0145).
@@ -1239,13 +1332,15 @@ const logged = (sql: SqlClient.SqlClient, id: string, seq: number, position: num
           projection: '"start"',
         })
       }`,
-      sql`INSERT INTO outbox ${
-        sql.insert({ position, name: 'Receiver', topic: 'projection', partition: partitionOf(id, 300), seq })
-      }`,
+      // A position of PostgreSQL is drawn by the database, and a row given one by hand says so.
+      sql`INSERT INTO outbox (position, name, topic, partition, seq) ${
+        sql.literal(dialectOf(sql) === 'pg' ? 'OVERRIDING SYSTEM VALUE' : '')
+      } VALUES (${position}, 'Receiver', 'projection', ${partitionOf(id, 300)}, ${seq})`,
     ),
     sql`
       INSERT INTO heads ${sql.insert({ name: 'Receiver', partition: partitionOf(id, 300), seq })}
-      ON CONFLICT (name, partition) DO UPDATE SET seq = max(seq, excluded.seq)
+      ON CONFLICT (name, partition)
+      DO UPDATE SET seq = CASE WHEN heads.seq > excluded.seq THEN heads.seq ELSE excluded.seq END
     `,
   )
 
@@ -1404,16 +1499,19 @@ describe('renaming a program (decision 0156)', () => {
         expect(yield* stored(sql)).toEqual(before)
       }).pipe(Effect.orDie)))
 
-  test('a request whose text SQLite would write otherwise makes the rename die, and moves nothing', () =>
+  // SQLite's `json_set` would write the text without its spaces. PostgreSQL's process finds that `JSON.stringify`
+  // does not give the text back (decision 0157).
+  test('a request whose text the runtime does not write makes the rename die, and moves nothing', () =>
     database((sql) =>
       Effect.gen(function*() {
         yield* storage(asker, sql).write('a', created(), 0)
         yield* storage(receiver, sql).write('r', created(), 0)
-        // A text with spaces, which the runtime never writes, and `json_set` writes without them.
         const spaced = JSON.stringify(askedBy('Asker'), null, 1)
         yield* sql`UPDATE entities SET creation = ${spaced} WHERE name = 'Receiver'`
         expect(reasonOf(yield* Effect.exit(rename(sql, [['Asker', 'Buyer']])))).toBe(
-          "the launch renames 'Asker' to 'Buyer', and SQLite writes a request's text otherwise than the runtime",
+          dialectOf(sql) === 'pg'
+            ? "the launch renames 'Asker' to 'Buyer', and a request of 'entities' is no text the runtime writes"
+            : "the launch renames 'Asker' to 'Buyer', and SQLite writes a request's text otherwise than the runtime",
         )
         expect((yield* stored(sql)).map(({ name, creation }) => [name, creation])).toEqual([
           ['Asker', JSON.stringify(creation)],

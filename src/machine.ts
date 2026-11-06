@@ -239,7 +239,8 @@ const shown = new WeakMap<object, WeakMap<object, ShownRow>>()
 /**
  * What callers read of `state`, computed once for each program: the step that publishes compares it with the one
  * the step before computed, topic by topic (decisions 0038, 0057, 0138). A projection that does not encode, a topic
- * that selects what JSON does not hold, or an index that is a number JSON does not hold, is a defect (decision 0040).
+ * that selects what JSON does not hold, an index that is a number JSON does not hold, or an index that is a string a
+ * database does not hold, is a defect (decisions 0040, 0157).
  */
 export const shownOf = <T extends Types>(
   program: Program<T>,
@@ -257,6 +258,12 @@ export const shownOf = <T extends Types>(
   for (const [name, value] of Object.entries(indexes)) {
     if (typeof value === 'number' && !Number.isFinite(value)) {
       broken(`the index '${name}' is a number JSON does not hold`)
+    }
+    // PostgreSQL holds U+0000 in no text, and parses no JSON that escapes it, and a database writes a lone surrogate
+    // as U+FFFD, so that two strings would be one (decision 0157). A regular expression with the flag `u` reads a
+    // pair of surrogates as one code point, so `\p{Cs}` finds a lone one only.
+    if (typeof value === 'string' && (value.includes('\u0000') || /\p{Cs}/u.test(value))) {
+      broken(`the index '${name}' is a string a database does not hold`)
     }
   }
   const json = encodeBy(program.schemas.projection, projection, 'projection')

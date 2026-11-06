@@ -1,7 +1,7 @@
 /**
- * What a runtime writes: a `Stored<T>` in one SQLite database, through `SqlClient` (decisions 0007, 0019). The
- * machine says what is stored; this module says in which tables, and encodes it with the program's schemas
- * (decisions 0025, 0027). Every row carries the version of the program that wrote it, and is read by migrating
+ * What a runtime writes: a `Stored<T>` in one database of SQLite or PostgreSQL, through `SqlClient` (decisions 0007,
+ * 0019, 0157). The machine says what is stored; this module says in which tables, and encodes it with the program's
+ * schemas (decisions 0025, 0027). Every row carries the version of the program that wrote it, and is read by migrating
  * its JSON to the program's version (decision 0036). Nothing here decides anything: the machine encodes what an
  * event writes, and a caller writes it in one transaction (decision 0057).
  */
@@ -31,18 +31,43 @@ import {
   versionOf,
 } from './program.ts'
 
+/** The dialects the storage speaks (decision 0157). */
+export type Dialect = 'sqlite' | 'pg'
+
+/** The client's dialect. One the storage does not speak is the launcher's defect, and is named (decision 0157). */
+export const dialectOf = (sql: SqlClient.SqlClient): Dialect => {
+  const dialect = sql.onDialect({
+    sqlite: () => 'sqlite',
+    pg: () => 'pg',
+    mysql: () => 'mysql',
+    mssql: () => 'mssql',
+    clickhouse: () => 'clickhouse',
+  })
+  if (dialect === 'sqlite' || dialect === 'pg') return dialect
+  throw new InvariantDefect({ reason: `the storage speaks SQLite and PostgreSQL, and the client speaks ${dialect}` })
+}
+
 /** The clients a runtime of this process holds: another runtime on one of them is refused (decision 0080). */
 const held = new WeakSet<SqlClient.SqlClient>()
 
 /**
- * Holds the database for one runtime until the scope ends (decision 0080). The client is held in this process,
- * claimed in one synchronous step. The file is held by SQLite's exclusive locking mode: a write takes it only
- * while no other connection has the file open, it keeps every other from opening it, and the end of the process
- * gives it back, however it ends. A database another runtime holds, or another connection has open, is the
- * launcher's defect.
+ * The key of the advisory lock a runtime holds a database of PostgreSQL by. It is fixed, so that every release of
+ * the library takes the same lock (decision 0157).
+ */
+const advisoryKey = 7_465_616
+
+/**
+ * Holds the database for one runtime until the scope ends (decisions 0080, 0157). The client is held in this
+ * process, claimed in one synchronous step. A file of SQLite is held by SQLite's exclusive locking mode: a write
+ * takes it only while no other connection has the file open, it keeps every other from opening it, and the end of
+ * the process gives it back, however it ends. A database of PostgreSQL is held by a session advisory lock, on a
+ * connection reserved until the scope ends, and the end of the session gives it back. PGlite runs every statement on
+ * one session, which would take the lock again, so the client alone holds it. A database another runtime holds, or
+ * another connection has open, is the launcher's defect.
  */
 export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
+  const dialect = dialectOf(sql)
   const refused = () => new InvariantDefect({
     reason: 'the database is held by another runtime, or open to another connection',
   })
@@ -53,6 +78,15 @@ export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope>
     }),
     () => Effect.sync(() => held.delete(sql)),
   )
+  if (dialect === 'pg') {
+    if (sql.driver === 'pglite') return
+    const connection = yield* Effect.orDie(sql.reserve)
+    // The connection goes back to the pool when the scope ends, so it gives back the lock first.
+    yield* Effect.addFinalizer(() => Effect.ignore(connection.executeRaw('SELECT pg_advisory_unlock_all()', [])))
+    const taken = yield* Effect.orDie(connection.executeValues(`SELECT pg_try_advisory_lock(${advisoryKey})`, []))
+    if (taken[0]?.[0] !== true) return yield* Effect.die(refused())
+    return
+  }
   // The mode is the connection's, and is taken or given back by the next access of the file.
   const take = Effect.andThen(sql`PRAGMA locking_mode = EXCLUSIVE`, sql.withTransaction(Effect.void))
   const give = Effect.ignore(Effect.andThen(sql`PRAGMA locking_mode = NORMAL`, sql.withTransaction(Effect.void)))
@@ -85,6 +119,13 @@ export const partitionOf = (id: string, partitions: number): number => Math.abs(
  */
 export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
+  const dialect = dialectOf(sql)
+  // An integer of SQLite holds 64 bits, and one of PostgreSQL 32: a time, a `seq` and a count are bigints there
+  // (decision 0157).
+  const integer = sql.literal(dialect === 'pg' ? 'BIGINT' : 'INTEGER')
+  // Text of PostgreSQL is compared by its bytes, as SQLite compares it, so that ids are ordered alike in both
+  // dialects (decision 0157).
+  const text = sql.literal(dialect === 'pg' ? 'TEXT COLLATE "C"' : 'TEXT')
   // The state, the request that created the entity and the suspension: one row per entity. `suspended_at` is the
   // time the entity suspended, kept while it stays suspended, which an operator reads (decision 0114).
   // `incarnations` is the last incarnation the entity drew, which never goes back (decision 0132). `keyed_as` is
@@ -92,16 +133,16 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // (decision 0156).
   yield* sql`
     CREATE TABLE IF NOT EXISTS entities (
-      name TEXT NOT NULL,
-      id TEXT NOT NULL,
-      keyed_as TEXT,
-      state TEXT NOT NULL,
-      version INTEGER NOT NULL,
-      creation TEXT NOT NULL,
-      incarnations INTEGER NOT NULL,
-      suspended_on TEXT,
-      suspended_cause TEXT,
-      suspended_at INTEGER,
+      name ${text} NOT NULL,
+      id ${text} NOT NULL,
+      keyed_as ${text},
+      state ${text} NOT NULL,
+      version ${integer} NOT NULL,
+      creation ${text} NOT NULL,
+      incarnations ${integer} NOT NULL,
+      suspended_on ${text},
+      suspended_cause ${text},
+      suspended_at ${integer},
       partition INTEGER NOT NULL,
       PRIMARY KEY (name, id)
     )
@@ -113,15 +154,15 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // of one key coexist (decision 0136).
   yield* sql`
     CREATE TABLE IF NOT EXISTS entity_keys (
-      name TEXT NOT NULL,
-      id TEXT NOT NULL,
-      key TEXT NOT NULL,
-      parameter TEXT NOT NULL,
-      incarnation INTEGER NOT NULL,
-      version INTEGER NOT NULL,
-      work TEXT NOT NULL,
-      delivery TEXT,
-      due INTEGER,
+      name ${text} NOT NULL,
+      id ${text} NOT NULL,
+      key ${text} NOT NULL,
+      parameter ${text} NOT NULL,
+      incarnation ${integer} NOT NULL,
+      version ${integer} NOT NULL,
+      work ${text} NOT NULL,
+      delivery ${text},
+      due ${integer},
       PRIMARY KEY (name, id, key, parameter)
     )
   `
@@ -131,17 +172,17 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // message holds the key of its work as `entity_keys` does (decision 0136).
   yield* sql`
     CREATE TABLE IF NOT EXISTS mailbox (
-      name TEXT NOT NULL,
-      id TEXT NOT NULL,
-      seq INTEGER NOT NULL,
-      tag TEXT NOT NULL,
-      version INTEGER NOT NULL,
-      message TEXT NOT NULL,
-      request TEXT,
-      keep INTEGER,
-      key TEXT,
-      parameter TEXT,
-      incarnation INTEGER,
+      name ${text} NOT NULL,
+      id ${text} NOT NULL,
+      seq ${integer} NOT NULL,
+      tag ${text} NOT NULL,
+      version ${integer} NOT NULL,
+      message ${text} NOT NULL,
+      request ${text},
+      keep ${integer},
+      key ${text},
+      parameter ${text},
+      incarnation ${integer},
       PRIMARY KEY (name, id, seq)
     )
   `
@@ -149,11 +190,11 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // query across entities, written in the step's transaction (decision 0032).
   yield* sql`
     CREATE TABLE IF NOT EXISTS projections (
-      name TEXT NOT NULL,
-      id TEXT NOT NULL,
-      projection TEXT NOT NULL,
-      indexes TEXT NOT NULL,
-      version INTEGER NOT NULL,
+      name ${text} NOT NULL,
+      id ${text} NOT NULL,
+      projection ${text} NOT NULL,
+      indexes ${text} NOT NULL,
+      version ${integer} NOT NULL,
       PRIMARY KEY (name, id)
     )
   `
@@ -170,9 +211,9 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // `seq`. A head is never deleted, so a `seq` is never given again (decision 0137).
   yield* sql`
     CREATE TABLE IF NOT EXISTS heads (
-      name TEXT NOT NULL,
+      name ${text} NOT NULL,
       partition INTEGER NOT NULL,
-      seq INTEGER NOT NULL,
+      seq ${integer} NOT NULL,
       PRIMARY KEY (name, partition)
     )
   `
@@ -180,14 +221,14 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // is written in, keyed by the program, the partition and the `seq` the step drew (decision 0154).
   yield* sql`
     CREATE TABLE IF NOT EXISTS publications (
-      name TEXT NOT NULL,
+      name ${text} NOT NULL,
       partition INTEGER NOT NULL,
-      seq INTEGER NOT NULL,
-      id TEXT NOT NULL,
-      tag TEXT NOT NULL,
-      version INTEGER NOT NULL,
-      message TEXT,
-      projection TEXT NOT NULL,
+      seq ${integer} NOT NULL,
+      id ${text} NOT NULL,
+      tag ${text} NOT NULL,
+      version ${integer} NOT NULL,
+      message ${text},
+      projection ${text} NOT NULL,
       PRIMARY KEY (name, partition, seq)
     )
   `
@@ -197,34 +238,53 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // row of the database, and is never reused: it is the order `feed` reads the rows in, and no cursor.
   yield* sql`
     CREATE TABLE IF NOT EXISTS outbox (
-      position INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      topic TEXT NOT NULL,
+      position ${sql.literal(dialect === 'pg' ? 'BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT')},
+      name ${text} NOT NULL,
+      topic ${text} NOT NULL,
       partition INTEGER NOT NULL,
-      seq INTEGER NOT NULL
+      seq ${integer} NOT NULL
     )
   `
   yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS outbox_partition ON outbox (name, topic, partition, seq)`
   yield* sql`CREATE INDEX IF NOT EXISTS outbox_topic ON outbox (name, topic, position)`
   yield* sql`CREATE INDEX IF NOT EXISTS outbox_publication ON outbox (name, partition, seq)`
   // A publication goes with the last row of the outbox that names it, in the statement that drops the row, so that
-  // no statement that drops rows of the outbox leaves a publication no topic reads (decision 0154).
-  yield* sql`
-    CREATE TRIGGER IF NOT EXISTS outbox_drops_its_publication AFTER DELETE ON outbox
-    WHEN NOT EXISTS (
-      SELECT 1 FROM outbox WHERE name = old.name AND partition = old.partition AND seq = old.seq
-    )
-    BEGIN
-      DELETE FROM publications WHERE name = old.name AND partition = old.partition AND seq = old.seq;
-    END
-  `
+  // no statement that drops rows of the outbox leaves a publication no topic reads (decision 0154). A trigger of
+  // PostgreSQL runs a function, and one for each row runs once the statement has dropped every row (decision 0157).
+  if (dialect === 'pg') {
+    yield* sql.unsafe(`
+      CREATE OR REPLACE FUNCTION outbox_drops_its_publication() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM outbox WHERE name = OLD.name AND partition = OLD.partition AND seq = OLD.seq
+        ) THEN
+          DELETE FROM publications WHERE name = OLD.name AND partition = OLD.partition AND seq = OLD.seq;
+        END IF;
+        RETURN NULL;
+      END $$
+    `)
+    yield* sql`
+      CREATE OR REPLACE TRIGGER outbox_drops_its_publication AFTER DELETE ON outbox
+      FOR EACH ROW EXECUTE FUNCTION outbox_drops_its_publication()
+    `
+  } else {
+    yield* sql`
+      CREATE TRIGGER IF NOT EXISTS outbox_drops_its_publication AFTER DELETE ON outbox
+      WHEN NOT EXISTS (
+        SELECT 1 FROM outbox WHERE name = old.name AND partition = old.partition AND seq = old.seq
+      )
+      BEGIN
+        DELETE FROM publications WHERE name = old.name AND partition = old.partition AND seq = old.seq;
+      END
+    `
+  }
   // The consumers of the outbox, by topic and name, stored by the first deploy that declares them. Each holds its
   // topic of the log from then on, until it is forgotten (decisions 0138, 0152).
   yield* sql`
     CREATE TABLE IF NOT EXISTS consumers (
-      name TEXT NOT NULL,
-      topic TEXT NOT NULL,
-      consumer TEXT NOT NULL,
+      name ${text} NOT NULL,
+      topic ${text} NOT NULL,
+      consumer ${text} NOT NULL,
       PRIMARY KEY (name, topic, consumer)
     )
   `
@@ -232,11 +292,11 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // from `0` (decision 0137).
   yield* sql`
     CREATE TABLE IF NOT EXISTS cursors (
-      name TEXT NOT NULL,
-      topic TEXT NOT NULL,
-      consumer TEXT NOT NULL,
+      name ${text} NOT NULL,
+      topic ${text} NOT NULL,
+      consumer ${text} NOT NULL,
       partition INTEGER NOT NULL,
-      seq INTEGER NOT NULL,
+      seq ${integer} NOT NULL,
       PRIMARY KEY (name, topic, consumer, partition)
     )
   `
@@ -246,28 +306,35 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // (decision 0069). A reply to another entity's operation holds the work that asked, its program, id, key and
   // incarnation, and is deleted once that work no longer holds (decision 0021). The key is held as `entity_keys`
   // holds it (decision 0136). A caller's reply with an `until` is read before that time only (decision 0125).
+  // `request_id` is the id of a caller's request, null for another's, written by the process: PostgreSQL parses no
+  // JSON that holds U+0000, which the program's data may (decision 0157).
   yield* sql`
     CREATE TABLE IF NOT EXISTS replies (
-      name TEXT NOT NULL,
-      id TEXT NOT NULL,
-      request TEXT NOT NULL,
-      tag TEXT NOT NULL,
-      version INTEGER NOT NULL,
-      reason TEXT,
-      until INTEGER,
-      sender_name TEXT,
-      sender_id TEXT,
-      sender_key TEXT,
-      sender_parameter TEXT,
-      sender_incarnation INTEGER,
+      name ${text} NOT NULL,
+      id ${text} NOT NULL,
+      request ${text} NOT NULL,
+      request_id ${text},
+      tag ${text} NOT NULL,
+      version ${integer} NOT NULL,
+      reason ${text},
+      until ${integer},
+      sender_name ${text},
+      sender_id ${text},
+      sender_key ${text},
+      sender_parameter ${text},
+      sender_incarnation ${integer},
       PRIMARY KEY (name, id, request, version)
     )
   `
   yield* sql`CREATE INDEX IF NOT EXISTS replies_sender ON replies (sender_name, sender_id)`
   yield* sql`CREATE INDEX IF NOT EXISTS replies_until ON replies (name, until) WHERE until IS NOT NULL`
   // A caller's request a version before stored is found by its request id: its sender may be migrated since
-  // (decision 0065).
-  yield* sql`CREATE INDEX IF NOT EXISTS replies_request_id ON replies (name, id, json_extract(request, '$.id'))`
+  // (decision 0065). A database of SQLite made before holds the index of the id read out of the request, which goes
+  // (decision 0157).
+  if (dialect === 'sqlite') yield* sql`DROP INDEX IF EXISTS replies_request_id`
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS replies_by_request_id ON replies (name, id, request_id) WHERE request_id IS NOT NULL
+  `
 }).pipe(Effect.orDie)
 
 /**
@@ -316,64 +383,53 @@ export const renamed = (
 ): Effect.Effect<void, never, SqlClient.SqlClient> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
+    const dialect = dialectOf(sql)
     const flag = (statement: Effect.Effect<ReadonlyArray<unknown>, SqlError.SqlError>) =>
       Effect.map(
         Effect.flatMap(statement, Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ held: Count })))),
         (found) => (found[0]?.held ?? 0) > 0,
       )
+    /** A condition as a count, since PostgreSQL gives a boolean where SQLite gives an integer. */
+    const counted = (condition: Statement.Fragment) => sql`SELECT CASE WHEN ${condition} THEN 1 ELSE 0 END AS held`
     const die = (reason: string) => Effect.die(new InvariantDefect({ reason }))
     // Each `EXISTS` is a search of an index whose first column is the name, or of `replies_sender`.
     const holds = (name: string) =>
-      flag(sql`
-        SELECT (${
-        sql.or([
-          ...namedTables.map((table) => sql`EXISTS (SELECT 1 FROM ${sql(table)} WHERE name = ${name})`),
-          sql`EXISTS (SELECT 1 FROM replies WHERE sender_name = ${name})`,
-        ])
-      }) AS held
-      `)
+      flag(counted(sql.or([
+        ...namedTables.map((table) => sql`EXISTS (SELECT 1 FROM ${sql(table)} WHERE name = ${name})`),
+        sql`EXISTS (SELECT 1 FROM replies WHERE sender_name = ${name})`,
+      ])))
     const occupied = (name: string) =>
-      flag(sql`
-        SELECT (${
-        sql.or(['entities', 'heads', 'consumers'].map((table) =>
-          sql`EXISTS (SELECT 1 FROM ${sql(table)} WHERE name = ${name})`
-        ))
-      }) AS held
-      `)
+      flag(counted(sql.or(['entities', 'heads', 'consumers'].map((table) =>
+        sql`EXISTS (SELECT 1 FROM ${sql(table)} WHERE name = ${name})`
+      ))))
     // The requests the old name's entities sent name it as their `entity`: the request that created an entity, a
-    // message waiting in a mailbox, and a reply's request. `json_set` writes the new name in place, in the
-    // database, and no request is read into the process.
-    const requests = [['entities', 'creation'], ['mailbox', 'request'], ['replies', 'request']] as const
+    // message waiting in a mailbox, and a reply's request. Each table is given with the columns that key its rows.
+    const requests = [
+      ['entities', 'creation', ['name', 'id']],
+      ['mailbox', 'request', ['name', 'id', 'seq']],
+      ['replies', 'request', ['name', 'id', 'request', 'version']],
+    ] as const
     const sentBy = (column: string, from: string) =>
       sql`json_extract(${sql(column)}, '$._tag') = 'Operation' AND json_extract(${
         sql(column)
       }, '$.entity.name') = ${from}`
-    const rename = (from: string, to: string) =>
+    // On SQLite `json_set` writes the new name in place, in the database, and no request is read into the process
+    // (decision 0156). A sender's retry finds its reply by the text of its request, which `json_set` writes, and no
+    // version of SQLite the repository pins documents that text. So the rename checks, before it moves anything,
+    // that the old name set again gives each text back unchanged, and that the new name is quoted as
+    // `JSON.stringify` quotes it.
+    const inPlace = (from: string, to: string) =>
       Effect.gen(function*() {
-        if (!(yield* holds(from))) return
-        if (yield* occupied(to)) {
-          return yield* die(
-            `the launch renames '${from}' to '${to}', which holds an entity, a head of the log or a consumer already`,
-          )
-        }
-        // A sender's retry finds its reply by the text of its request, which `json_set` writes, and no version of
-        // SQLite the repository pins documents that text. So the rename checks, before it moves anything, that the
-        // old name set again gives each text back unchanged, and that the new name is quoted as `JSON.stringify`
-        // quotes it (decision 0156).
         const quoted = yield* Effect.flatMap(
           sql`SELECT json_quote(${to}) AS quoted`,
           Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ quoted: Schema.String }))),
         )
         let rewritten = quoted[0]?.quoted !== JSON.stringify(to)
         for (const [table, column] of requests) {
-          rewritten ||= yield* flag(sql`
-            SELECT EXISTS (
-              SELECT 1 FROM ${sql(table)}
-              WHERE ${sentBy(column, from)} AND json_set(${sql(column)}, '$.entity.name', ${from}) IS NOT ${
-            sql(column)
-          }
-            ) AS held
-          `)
+          rewritten ||= yield* flag(counted(sql`EXISTS (
+            SELECT 1 FROM ${sql(table)}
+            WHERE ${sentBy(column, from)} AND json_set(${sql(column)}, '$.entity.name', ${from}) IS NOT ${sql(column)}
+          )`))
         }
         if (rewritten) {
           return yield* die(
@@ -386,6 +442,51 @@ export const renamed = (
             WHERE ${sentBy(column, from)}
           `
         }
+      })
+    // On PostgreSQL no statement parses a request, since PostgreSQL parses no JSON that holds U+0000, which the
+    // program's data may. A statement finds the texts that hold the old name as JSON writes it, and the process reads
+    // each, keeps those whose `entity` is the old name, and writes the new name with `JSON.parse` and
+    // `JSON.stringify`, which keep the order of the keys. A text that `JSON.stringify` does not give back as it is
+    // was not written by the runtime, and the rename dies before it moves anything (decision 0157).
+    const inProcess = (from: string, to: string) =>
+      Effect.gen(function*() {
+        const moves: Array<Effect.Effect<unknown, SqlError.SqlError>> = []
+        for (const [table, column, keys] of requests) {
+          const found = yield* sql<Record<string, unknown>>`
+            SELECT ${sql.literal(keys.join(', '))}, ${sql(column)} AS text FROM ${sql(table)}
+            WHERE strpos(${sql(column)}, ${JSON.stringify(from)}) > 0
+          `
+          for (const row of found) {
+            const text = row.text
+            const held = typeof text === 'string' ? JSON.parse(text) as Readonly<Record<string, Json>> : null
+            const entity = held?.entity
+            if (
+              held?._tag !== 'Operation' || typeof entity !== 'object' || entity === null || Array.isArray(entity)
+              || (entity as Readonly<Record<string, Json>>).name !== from
+            ) continue
+            if (JSON.stringify(held) !== text) {
+              return yield* die(
+                `the launch renames '${from}' to '${to}', and a request of '${table}' is no text the runtime writes`,
+              )
+            }
+            const written = JSON.stringify({ ...held, entity: { ...entity, name: to } })
+            moves.push(sql`
+              UPDATE ${sql(table)} SET ${sql(column)} = ${written}
+              WHERE ${sql.and(keys.map((key) => sql`${sql(key)} = ${row[key]}`))}
+            `)
+          }
+        }
+        for (const move of moves) yield* move
+      })
+    const rename = (from: string, to: string) =>
+      Effect.gen(function*() {
+        if (!(yield* holds(from))) return
+        if (yield* occupied(to)) {
+          return yield* die(
+            `the launch renames '${from}' to '${to}', which holds an entity, a head of the log or a consumer already`,
+          )
+        }
+        yield* dialect === 'pg' ? inProcess(from, to) : inPlace(from, to)
         yield* sql`UPDATE replies SET sender_name = ${to} WHERE sender_name = ${from}`
         yield* sql`UPDATE entities SET keyed_as = COALESCE(keyed_as, ${from}) WHERE name = ${from}`
         for (const table of namedTables) yield* sql`UPDATE ${sql(table)} SET name = ${to} WHERE name = ${from}`
@@ -433,7 +534,7 @@ const Suspended = Schema.Union([
 /** The version of the program that wrote a row: the first is 1 (decision 0036). */
 const Version = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1)))
 
-/** An incarnation, a `seq` or a count, as SQLite gives an integer. */
+/** An incarnation, a `seq` or a count, as a driver gives an integer up to 2^53 (decision 0157). */
 const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
 
 /** How an operation is delivered, as its runner declared (decisions 0011, 0123). */
@@ -448,6 +549,17 @@ const keyRow = (key: Key): Readonly<{ key: string; parameter: string }> => ({
   key: key.name,
   parameter: key.parameter === undefined ? '' : JSON.stringify(key.parameter),
 })
+
+/**
+ * The id of a caller's request, from the text the machine keys it by, or null for another's request: what the column
+ * `request_id` of a reply holds (decision 0157).
+ */
+const callerOf = (request: string): string | null => {
+  const held = JSON.parse(request) as Readonly<Record<string, Json>> | null
+  return typeof held === 'object' && held !== null && held._tag === 'Caller' && typeof held.id === 'string'
+    ? held.id
+    : null
+}
 
 /** A key read from its columns, as `keyRow` writes them. */
 const keyOfRow = (name: string, parameter: string): Key =>
@@ -736,8 +848,21 @@ export type Consumer = Readonly<{
   cursors: ReadonlyArray<Cursor>
 }>
 
-/** An identifier SQLite reads as written: a program's name is the author's, and is quoted, not escaped away. */
+/** An identifier a database reads as written: a program's name is the author's, and is quoted, not escaped away. */
 const quoted = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`
+
+/**
+ * The name of an index on PostgreSQL, which keeps the first 63 bytes of a name. A longer name keeps its first 50
+ * bytes, and ends with the hash of the whole, so that two long names that share their first bytes name two indexes
+ * (decision 0157).
+ */
+const indexName = (whole: string) => {
+  const bytes = new TextEncoder().encode(whole)
+  if (bytes.length <= 63) return whole
+  const hash = (Hash.string(whole) >>> 0).toString(16).padStart(8, '0')
+  // A character cut in the middle of its bytes is decoded as U+FFFD, which is dropped.
+  return `${new TextDecoder().decode(bytes.slice(0, 50)).replace(/\uFFFD$/u, '')} ${hash}`
+}
 
 /** The entities an unloaded timer is due for, and the next time one is (decision 0029). */
 export type Due = Readonly<{
@@ -874,6 +999,19 @@ export const storage = <T extends Types>(
   const topics = new Map(topicsOf(program).map(({ topic, select }) => [topic, select]))
   const { name } = program
   const version = versionOf(program)
+  const dialect = dialectOf(sql)
+
+  /**
+   * Writes `record` into `table`, or over the row of the same `keys`: an upsert, which both dialects read alike
+   * (decision 0157).
+   */
+  const upsert = (table: string, keys: ReadonlyArray<string>, record: Readonly<Record<string, unknown>>) =>
+    sql`INSERT INTO ${sql(table)} ${sql.insert(record)} ON CONFLICT (${sql.literal(keys.join(', '))}) DO UPDATE SET ${
+      sql.literal(
+        Object.keys(record).filter((column) => !keys.includes(column)).map((column) => `${column} = excluded.${column}`)
+          .join(', '),
+      )
+    }`
 
   /**
    * The rows `read` gives from `table`, through their schema: a row it refuses fails the call that meets it, and
@@ -930,9 +1068,8 @@ export const storage = <T extends Types>(
   const upReason = (from: number) => (held: Json): Json => held === null ? held : up('rejection', from)(held)
 
   /**
-   * The expression that reads an index out of the row, written once. The index created and the query must share
-   * it, since SQLite uses an index of an expression only where the query writes the expression the same way. A
-   * program's indexes are words, which its check made sure of where it entered (decision 0054).
+   * The path of an index in the JSON of a row's indexes. A program's indexes are words, which its check made sure of
+   * where it entered (decision 0054).
    */
   const pathOf = (index: string) => {
     if (!Object.hasOwn(program.indexes, index)) {
@@ -941,9 +1078,36 @@ export const storage = <T extends Types>(
     return `'$.${index}'`
   }
 
-  const expression = (index: string) => `json_extract(indexes, ${pathOf(index)})`
+  /** The jsonb value of an index on PostgreSQL, SQL's NULL where the row lacks the index. */
+  const valueOf = (index: string) => `((indexes::jsonb) -> '${index}')`
 
-  const columnOf = (index: string) => sql.literal(expression(index))
+  /**
+   * The expressions that read an index out of the row and order it, each written once. The index created and the
+   * query must share them, since a database uses an index of an expression only where the query writes the
+   * expression the same way. On SQLite the expression is what `json_extract` gives. On PostgreSQL three expressions
+   * order a value as `json_extract` does: its kind, null first, then numbers and booleans, then strings; its
+   * number, a boolean being 1 or 0; and its string, compared by its bytes as SQLite compares text (decision 0157).
+   */
+  const expressionsOf = (index: string): ReadonlyArray<string> => {
+    const path = pathOf(index)
+    if (dialect === 'sqlite') return [`json_extract(indexes, ${path})`]
+    const value = valueOf(index)
+    return [
+      `(CASE jsonb_typeof(${value}) WHEN 'number' THEN 1 WHEN 'boolean' THEN 1 WHEN 'string' THEN 2 ELSE 0 END)`,
+      `(CASE jsonb_typeof(${value}) WHEN 'number' THEN CAST(${value} AS NUMERIC)`
+      + ` WHEN 'boolean' THEN CASE WHEN CAST(${value} AS BOOLEAN) THEN 1 ELSE 0 END ELSE 0 END)`,
+      `((CASE WHEN jsonb_typeof(${value}) = 'string' THEN ${value} #>> '{}' ELSE '' END) COLLATE "C")`,
+    ]
+  }
+
+  /** The index as one value, or as the row of its expressions on PostgreSQL, which compares as one. */
+  const columnOf = (index: string) => {
+    const expressions = expressionsOf(index)
+    return sql.literal(expressions.length === 1 ? expressions[0]! : `(${expressions.join(', ')})`)
+  }
+
+  /** The kind of an index on PostgreSQL, 0 where it holds no value. */
+  const kindOf = (index: string) => sql.literal(expressionsOf(index)[0]!)
 
   /**
    * The JSON of a row's indexes, as `json_extract` reads them equal to the value a query binds. An integer beyond
@@ -963,15 +1127,7 @@ export const storage = <T extends Types>(
 
   /** The row a query reads, as the machine computed it from a state (decision 0032). */
   const row = (id: string, shown: Machine.Shown, projection: string = JSON.stringify(shown.projection)) =>
-    sql`INSERT OR REPLACE INTO projections ${
-      sql.insert({
-        name,
-        id,
-        projection,
-        indexes: indexesText(shown.indexes),
-        version,
-      })
-    }`
+    upsert('projections', ['name', 'id'], { name, id, projection, indexes: indexesText(shown.indexes), version })
 
   const readWork = (text: string, from: number): Durable<T['operation'], T['internal']> => {
     const held = work.read(text, upWork(from))
@@ -1070,8 +1226,7 @@ export const storage = <T extends Types>(
       return replyOf(
         yield* rows('replies', Rows.reply)(sql`
           SELECT request, tag, version, reason FROM replies
-          WHERE name = ${name} AND id = ${id} AND json_extract(request, '$.id') = ${asked.id}
-            AND version <> ${version} AND json_extract(request, '$._tag') = 'Caller'
+          WHERE name = ${name} AND id = ${id} AND request_id = ${asked.id} AND version <> ${version}
             AND (until IS NULL OR until > ${at})
         `),
         key,
@@ -1110,14 +1265,14 @@ export const storage = <T extends Types>(
           SET state = ${state}, version = ${version},
               creation = ${JSON.stringify(entity.creation)}, incarnations = ${written.incarnations},
               suspended_on = ${on}, suspended_cause = ${cause},
-              suspended_at = CASE WHEN ${on} IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
+              suspended_at = CASE WHEN CAST(${on} AS TEXT) IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
           WHERE name = ${name} AND id = ${id}
         `
       } else {
         yield* sql`
           UPDATE entities
           SET incarnations = ${written.incarnations}, suspended_on = ${on}, suspended_cause = ${cause},
-              suspended_at = CASE WHEN ${on} IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
+              suspended_at = CASE WHEN CAST(${on} AS TEXT) IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END
           WHERE name = ${name} AND id = ${id}
         `
       }
@@ -1127,18 +1282,16 @@ export const storage = <T extends Types>(
         yield* row(id, written.shown, projection)
       }
       for (const held of written.keys) {
-        yield* sql`INSERT OR REPLACE INTO entity_keys ${
-          sql.insert({
-            name,
-            id,
-            ...keyRow(held.key),
-            incarnation: held.incarnation,
-            version,
-            work: JSON.stringify(held.work),
-            delivery: held.delivery,
-            due: held.due,
-          })
-        }`
+        yield* upsert('entity_keys', ['name', 'id', 'key', 'parameter'], {
+          name,
+          id,
+          ...keyRow(held.key),
+          incarnation: held.incarnation,
+          version,
+          work: JSON.stringify(held.work),
+          delivery: held.delivery,
+          due: held.due,
+        })
       }
       for (const key of written.gone) {
         const { key: held, parameter } = keyRow(key)
@@ -1200,22 +1353,21 @@ export const storage = <T extends Types>(
       for (const reply of written.replies) {
         const { asked } = reply
         const asking = asked === null ? null : keyRow(asked.key)
-        yield* sql`INSERT OR REPLACE INTO replies ${
-          sql.insert({
-            name,
-            id,
-            request: reply.request,
-            tag: reply.tag,
-            version,
-            reason: reply.reason === null ? null : JSON.stringify(reply.reason),
-            until: reply.until,
-            sender_name: asked?.name ?? null,
-            sender_id: asked?.id ?? null,
-            sender_key: asking?.key ?? null,
-            sender_parameter: asking?.parameter ?? null,
-            sender_incarnation: asked?.incarnation ?? null,
-          })
-        }`
+        yield* upsert('replies', ['name', 'id', 'request', 'version'], {
+          name,
+          id,
+          request: reply.request,
+          request_id: callerOf(reply.request),
+          tag: reply.tag,
+          version,
+          reason: reply.reason === null ? null : JSON.stringify(reply.reason),
+          until: reply.until,
+          sender_name: asked?.name ?? null,
+          sender_id: asked?.id ?? null,
+          sender_key: asking?.key ?? null,
+          sender_parameter: asking?.parameter ?? null,
+          sender_incarnation: asked?.incarnation ?? null,
+        })
         if (asked === null || asking === null) continue
         yield* sql`
           DELETE FROM replies
@@ -1250,7 +1402,7 @@ export const storage = <T extends Types>(
         const drawn = yield* rows('heads', Rows.cursor)(sql`
           INSERT INTO heads (name, partition, seq)
           SELECT name, partition, 1 FROM entities WHERE name = ${name} AND id = ${id}
-          ON CONFLICT (name, partition) DO UPDATE SET seq = seq + 1
+          ON CONFLICT (name, partition) DO UPDATE SET seq = heads.seq + 1
           RETURNING partition, seq
         `)
         const head = drawn[0]
@@ -1324,7 +1476,7 @@ export const storage = <T extends Types>(
           SELECT id, MIN(due) AS at FROM entity_keys
           WHERE name = ${name} AND due > ${now} AND id NOT IN ${onHold}
           GROUP BY id
-          ${from === null ? sql`` : sql`HAVING at > ${from.at} OR (at = ${from.at} AND id > ${from.id})`}
+          ${from === null ? sql`` : sql`HAVING MIN(due) > ${from.at} OR (MIN(due) = ${from.at} AND id > ${from.id})`}
           ORDER BY at, id LIMIT ${batch}
         `)
         next = page.find((row) => !held.has(row.id))?.at ?? null
@@ -1338,16 +1490,57 @@ export const storage = <T extends Types>(
   const indexed = Effect.gen(function*() {
     for (const index of Object.keys(program.indexes)) {
       // The id follows the value, so that the rows that tie are in the order of their id and a page reads them past
-      // its cursor as a range. A database made before holds the index without the id under the old name, which goes
-      // (decision 0145).
+      // its cursor as a range. A database of SQLite made before holds the index without the id under the old name,
+      // which goes (decision 0145). PostgreSQL takes an expression of an index in parentheses, and cuts a name past
+      // 63 bytes, so the storage cuts a longer name itself, and ends it with a hash of the whole (decision 0157).
+      if (dialect === 'pg') {
+        const on = `projections (name, ${expressionsOf(index).join(', ')}, id)`
+        const named = quoted(indexName(`projections ${name} ${index} by id`))
+        yield* sql.unsafe(`CREATE INDEX IF NOT EXISTS ${named} ON ${on}`)
+        continue
+      }
       yield* sql.unsafe(`DROP INDEX IF EXISTS ${quoted(`projections ${name} ${index}`)}`)
-      const on = `projections (name, ${expression(index)}, id)`
+      const on = `projections (name, ${expressionsOf(index)[0]}, id)`
       yield* sql.unsafe(`CREATE INDEX IF NOT EXISTS ${quoted(`projections ${name} ${index} by id`)} ON ${on}`)
     }
   }).pipe(Effect.orDie)
 
-  /** A boolean is stored as JSON's, which `json_extract` gives as 1 or 0. */
-  const bound = (value: Exclude<Scalar, null>) => typeof value === 'boolean' ? (value ? 1 : 0) : value
+  /**
+   * A value as a query compares an index with it. On SQLite a boolean is stored as JSON's, which `json_extract`
+   * gives as 1 or 0. On PostgreSQL the value is the row of its kind, its number and its string, as the expressions of
+   * an index read a row of it. A number is bound by the digits a row of it holds: the exact digits of an integer
+   * beyond 2^53 (decisions 0146, 0157).
+   */
+  const bound = (value: Exclude<Scalar, null>): Statement.Fragment => {
+    if (dialect === 'sqlite') return sql`${typeof value === 'boolean' ? (value ? 1 : 0) : value}`
+    const none = sql.literal(`CAST('' AS TEXT) COLLATE "C"`)
+    if (typeof value === 'string') return sql`(2, CAST(0 AS NUMERIC), CAST(${value} AS TEXT) COLLATE "C")`
+    if (typeof value === 'boolean') return sql`(1, CAST(${value ? 1 : 0} AS NUMERIC), ${none})`
+    const digits = Number.isInteger(value) && !Number.isSafeInteger(value) ? BigInt(value).toString() : String(value)
+    return sql`(1, CAST(${digits} AS NUMERIC), ${none})`
+  }
+
+  /**
+   * An index compared with a value. As in SQL, an index that holds no value holds of no comparison, which the
+   * kind says on PostgreSQL, where the row of a null compares as any other.
+   */
+  const compared = (index: string, is: Comparison, value: Exclude<Scalar, null>) =>
+    dialect === 'pg'
+      ? sql`${kindOf(index)} <> 0 AND ${columnOf(index)} ${sql.literal(is)} ${bound(value)}`
+      : sql`${columnOf(index)} ${sql.literal(is)} ${bound(value)}`
+
+  /** Whether an index holds no value, as the expressions of each dialect give it. */
+  const isNull = (index: string) => dialect === 'pg' ? sql`${kindOf(index)} = 0` : sql`${columnOf(index)} IS NULL`
+  const isNotNull = (index: string) =>
+    dialect === 'pg' ? sql`${kindOf(index)} <> 0` : sql`${columnOf(index)} IS NOT NULL`
+
+  /** The order of an index, each of its expressions in `direction`. */
+  const orderOf = (index: string, direction: 'ASC' | 'DESC') =>
+    sql.literal(expressionsOf(index).map((expression) => `${expression} ${direction}`).join(', '))
+
+  /** The clauses every row holds, and no row holds, written alike in both dialects. */
+  const always = sql`1 = 1`
+  const never = sql`1 = 0`
 
   /**
    * Checks `after`, and gives its value for the index ordered by, or null without an order. A row that holds no id,
@@ -1382,25 +1575,31 @@ export const storage = <T extends Types>(
     const direction = sql.literal(descending ? 'DESC' : 'ASC')
     if (order === undefined) {
       const by = sql`id ASC`
-      if (after === undefined) return [{ clause: sql`1`, by }]
+      if (after === undefined) return [{ clause: always, by }]
       cursorOf(after, undefined)
       return [{ clause: sql`id > ${after.id}`, by }]
     }
-    const column = columnOf(order.index)
-    const ordered = sql`${column} ${direction}, id ${direction}`
-    if (after === undefined) return [{ clause: sql`1`, by: ordered }]
+    const ordered = sql`${orderOf(order.index, descending ? 'DESC' : 'ASC')}, id ${direction}`
+    if (after === undefined) return [{ clause: always, by: ordered }]
     const value = cursorOf(after, order.index)
     const id = sql`id ${sql.literal(descending ? '<' : '>')} ${after.id}`
-    const byId = sql`id ${direction}`
+    // The rows that tie hold one value, so the order of the index is their order by id. PostgreSQL does not know
+    // that the expressions of a value are the same for each of them, and sorts rows ordered by the id alone
+    // (decision 0157).
+    const byId = dialect === 'pg' ? ordered : sql`id ${direction}`
     if (value === null) {
-      const tied = { clause: sql`${column} IS NULL AND ${id}`, by: byId }
-      // Every value an index stores but null is greater than -Infinity, which no stored value is, since the indexes
-      // are written by `JSON.stringify`: so the rows past the nulls are a range, where `IS NOT NULL` is not.
-      return descending ? [tied] : [tied, { clause: sql`${column} > ${-Infinity}`, by: ordered }]
+      const tied = { clause: sql`${isNull(order.index)} AND ${id}`, by: byId }
+      // On SQLite every value an index stores but null is greater than -Infinity, which no stored value is, since
+      // the indexes are written by `JSON.stringify`: so the rows past the nulls are a range, where `IS NOT NULL` is
+      // not. On PostgreSQL the kind of every value but null is past 0 (decision 0157).
+      const past = dialect === 'pg'
+        ? sql`${kindOf(order.index)} > 0`
+        : sql`${columnOf(order.index)} > ${-Infinity}`
+      return descending ? [tied] : [tied, { clause: past, by: ordered }]
     }
-    const tied = { clause: sql`${column} = ${bound(value)} AND ${id}`, by: byId }
-    const later = { clause: sql`${column} ${sql.literal(descending ? '<' : '>')} ${bound(value)}`, by: ordered }
-    return descending ? [tied, later, { clause: sql`${column} IS NULL`, by: byId }] : [tied, later]
+    const tied = { clause: sql`${compared(order.index, '=', value)} AND ${id}`, by: byId }
+    const later = { clause: compared(order.index, descending ? '<' : '>', value), by: ordered }
+    return descending ? [tied, later, { clause: isNull(order.index), by: byId }] : [tied, later]
   }
 
   /** The clauses of the rows of the program that match `where`, as a query, a count and a sum read them. */
@@ -1408,13 +1607,12 @@ export const storage = <T extends Types>(
     const clauses = [sql`name = ${name}`]
     for (const { index, is, value } of where) {
       if (!comparisons.includes(is)) throw new Error(`'${is}' is no comparison`)
-      const column = columnOf(index)
       clauses.push(
         // Nothing but `=` and `<>` says anything of an index that holds no value, as in SQL, where a
-        // comparison with null is null: `0` is the clause no row holds.
+        // comparison with null is null: `never` is the clause no row holds.
         value === null
-          ? is === '=' ? sql`${column} IS NULL` : is === '<>' ? sql`${column} IS NOT NULL` : sql`0`
-          : sql`${column} ${sql.literal(is)} ${bound(value)}`,
+          ? is === '=' ? isNull(index) : is === '<>' ? isNotNull(index) : never
+          : compared(index, is, value),
       )
     }
     return clauses
@@ -1431,6 +1629,8 @@ export const storage = <T extends Types>(
         `)
       // The parts are read in one transaction, so that a step between two of them moves no row into the page twice
       // (decision 0145).
+      // At PostgreSQL's default level each statement reads a snapshot of its own, so the transaction begins at
+      // `REPEATABLE READ`, whose statements read its first (decision 0157).
       const found = yield* sql.withTransaction(Effect.gen(function*() {
         const found: Array<Effect.Success<ReturnType<typeof page>>[number]> = []
         for (const { clause, by } of read) {
@@ -1438,7 +1638,11 @@ export const storage = <T extends Types>(
           found.push(...yield* page(clause, by, limit - found.length))
         }
         return found
-      }))
+      })).pipe(
+        dialect === 'pg'
+          ? Effect.provideService(SqlClient.BeginTransaction, 'BEGIN ISOLATION LEVEL REPEATABLE READ')
+          : (self) => self,
+      )
       // A row the version before wrote is read through its migrations; `reindex` is what writes it again.
       return found.map((held): Found<T> => ({
         id: held.id,
@@ -1455,16 +1659,37 @@ export const storage = <T extends Types>(
       return counted?.count ?? 0
     }).pipe(Effect.orDie)
 
+  /** The kind of an index's value on SQLite, NULL where the row lacks the index. */
+  const kind = (index: string) => sql.literal(`json_type(indexes, ${pathOf(index)})`)
+  /** The jsonb value of an index on PostgreSQL, and its type, NULL where the row lacks the index. */
+  const value = (index: string) => {
+    pathOf(index)
+    return sql.literal(valueOf(index))
+  }
+  const typed = (index: string) => sql.literal(`jsonb_typeof(${valueOf(index)})`)
+  /** Whether an index holds a boolean on PostgreSQL: false where the row lacks the index, as for JSON's null. */
+  const boolean = (index: string) => sql`coalesce(${typed(index)} = 'boolean', FALSE)`
+
   const sum = ({ index, where = [] }: Summed<T>) =>
     Effect.gen(function*() {
-      // `json_type` tells `true` from `1`, which `json_extract` gives alike, and is NULL where the row lacks the index.
-      // `TOTAL` gives a double and never fails on an overflow of SQLite's integers, where `SUM` does (decision 0148).
-      const kind = sql.literal(`json_type(indexes, ${pathOf(index)})`)
-      const [summed] = yield* rows('projections', Rows.total)(sql`
-        SELECT TOTAL(CASE WHEN ${kind} IN ('integer', 'real') THEN ${columnOf(index)} END) AS total,
-               MIN(CASE WHEN ${kind} NOT IN ('integer', 'real', 'null') THEN id END) AS refused
-        FROM projections WHERE ${sql.and(criteria(where))}
-      `)
+      // On SQLite `json_type` tells `true` from `1`, which `json_extract` gives alike, and is NULL where the row
+      // lacks the index. `TOTAL` gives a double and never fails on an overflow of SQLite's integers, where `SUM` does
+      // (decision 0148). On PostgreSQL each number is added as a double, so the total is a double too
+      // (decision 0157).
+      const [summed] = yield* rows('projections', Rows.total)(
+        dialect === 'pg'
+          ? sql`
+            SELECT COALESCE(SUM(CASE WHEN ${typed(index)} = 'number' THEN CAST(${value(index)} AS DOUBLE PRECISION) END),
+                     0) AS total,
+                   MIN(CASE WHEN ${typed(index)} NOT IN ('number', 'null') THEN id END) AS refused
+            FROM projections WHERE ${sql.and(criteria(where))}
+          `
+          : sql`
+            SELECT TOTAL(CASE WHEN ${kind(index)} IN ('integer', 'real') THEN ${columnOf(index)} END) AS total,
+                   MIN(CASE WHEN ${kind(index)} NOT IN ('integer', 'real', 'null') THEN id END) AS refused
+            FROM projections WHERE ${sql.and(criteria(where))}
+          `,
+      )
       if (summed === undefined) return 0
       if (summed.refused !== null) {
         return yield* Effect.die(
@@ -1474,18 +1699,32 @@ export const storage = <T extends Types>(
       return summed.total
     }).pipe(Effect.orDie)
 
+  /** On SQLite, the kind of an index's value, `null` where the row lacks it, and the value as its JSON text. */
+  const grouped = (index: string) => sql.literal(`coalesce(json_type(indexes, ${pathOf(index)}), 'null')`)
+  const text = (index: string) => sql.literal(`coalesce(indexes -> ${pathOf(index)}, 'null')`)
+
   const countBy = ({ index, where = [], limit }: CountedBy<T>) =>
     Effect.gen(function*() {
       // `json_extract` gives `true` as `1`, so the kind of the value groups too, and JSON's null and a path the row
       // lacks are one kind, as a query reads them. The value is read as its JSON text, which tells `true` from `1`
-      // where the column does not. A boolean comes after the number SQLite reads it as (decision 0150).
-      const kind = sql.literal(`coalesce(json_type(indexes, ${pathOf(index)}), 'null')`)
-      const text = sql.literal(`coalesce(indexes -> ${pathOf(index)}, 'null')`)
-      const tallies = yield* rows('projections', Rows.tally)(sql`
-        SELECT min(${text}) AS value, count(*) AS count FROM projections WHERE ${sql.and(criteria(where))}
-        GROUP BY ${columnOf(index)}, ${kind}
-        ORDER BY ${columnOf(index)}, ${kind} IN ('true', 'false') LIMIT ${limit}
-      `)
+      // where the column does not. A boolean comes after the number SQLite reads it as (decision 0150). On
+      // PostgreSQL the expressions of the index order the values as on SQLite, and jsonb's type tells a boolean from
+      // its number (decision 0157).
+      const column = columnOf(index)
+      const tallies = yield* rows('projections', Rows.tally)(
+        dialect === 'pg'
+          ? sql`
+            SELECT min(CAST(coalesce(${value(index)}, 'null'::jsonb) AS TEXT)) AS value, count(*) AS count
+            FROM projections WHERE ${sql.and(criteria(where))}
+            GROUP BY ${column}, ${boolean(index)}
+            ORDER BY ${orderOf(index, 'ASC')}, ${boolean(index)} LIMIT ${limit}
+          `
+          : sql`
+            SELECT min(${text(index)}) AS value, count(*) AS count FROM projections WHERE ${sql.and(criteria(where))}
+            GROUP BY ${column}, ${grouped(index)}
+            ORDER BY ${column}, ${grouped(index)} IN ('true', 'false') LIMIT ${limit}
+          `,
+      )
       return tallies.map(({ value, count }): Tally => ({ value: JSON.parse(value) as Scalar, count }))
     }).pipe(Effect.orDie)
 
@@ -1545,10 +1784,14 @@ export const storage = <T extends Types>(
         // (decision 0070). A step that committed since wrote its own row, which this would replace with a
         // projection the entity has moved past.
         const rewritten = yield* rows('projections', Rows.id)(sql`
-          INSERT OR REPLACE INTO projections (name, id, projection, indexes, version)
-          SELECT name, id, ${JSON.stringify(shown.projection)}, ${indexesText(shown.indexes)}, ${version}
+          INSERT INTO projections (name, id, projection, indexes, version)
+          SELECT name, id, CAST(${JSON.stringify(shown.projection)} AS TEXT), CAST(${
+          indexesText(shown.indexes)
+        } AS TEXT), CAST(${version} AS INTEGER)
           FROM entities WHERE name = ${name} AND id = ${held.id} AND state = ${held.state}
             AND version = ${held.version}
+          ON CONFLICT (name, id)
+          DO UPDATE SET projection = excluded.projection, indexes = excluded.indexes, version = excluded.version
           RETURNING id
         `)
         written += rewritten.length
@@ -1595,19 +1838,32 @@ export const storage = <T extends Types>(
         if (head > cursor) behind.push([partition, cursor])
       }
       if (behind.length === 0 || limit === 0) return []
+      // The partitions behind are given as one JSON array, which each dialect reads as rows (decision 0157).
+      const each = dialect === 'pg'
+        ? sql`(
+          SELECT CAST(value ->> 0 AS INTEGER) AS partition, CAST(value ->> 1 AS BIGINT) AS seq
+          FROM jsonb_array_elements(CAST(${JSON.stringify(behind)} AS JSONB))
+        )`
+        : sql`(
+          SELECT json_extract(value, '$[0]') AS partition, json_extract(value, '$[1]') AS seq
+          FROM json_each(${JSON.stringify(behind)})
+        )`
       const first = yield* rows('outbox', Rows.position)(sql`
         SELECT min((
           SELECT position FROM outbox
-          WHERE name = ${name} AND topic = ${topic} AND partition = json_extract(behind.value, '$[0]')
-            AND seq > json_extract(behind.value, '$[1]')
+          WHERE name = ${name} AND topic = ${topic} AND partition = behind.partition AND seq > behind.seq
           ORDER BY seq LIMIT 1
         )) AS position
-        FROM json_each(${JSON.stringify(behind)}) AS behind
+        FROM ${each} AS behind
       `)
       let from = first[0]?.position ?? null
       const given: Array<Published<T, Name>> = []
       const within = read === undefined
         ? sql``
+        : dialect === 'pg'
+        ? sql`AND outbox.partition IN (
+          SELECT CAST(value AS INTEGER) FROM jsonb_array_elements_text(CAST(${JSON.stringify([...read])} AS JSONB))
+        )`
         : sql`AND outbox.partition IN (SELECT value FROM json_each(${JSON.stringify([...read])}))`
       while (from !== null && given.length < limit) {
         // Each row finds its step's publication by the key of `publications` (decision 0154).
@@ -1677,7 +1933,8 @@ export const storage = <T extends Types>(
         if (capped === 0) continue
         yield* sql`
           INSERT INTO cursors ${sql.insert({ name, topic, consumer, partition, seq: capped })}
-          ON CONFLICT (name, topic, consumer, partition) DO UPDATE SET seq = max(seq, excluded.seq)
+          ON CONFLICT (name, topic, consumer, partition)
+          DO UPDATE SET seq = CASE WHEN cursors.seq > excluded.seq THEN cursors.seq ELSE excluded.seq END
         `
       }
     })).pipe(Effect.orDie)
@@ -1724,7 +1981,7 @@ export const storage = <T extends Types>(
       LEFT JOIN cursors ON cursors.name = consumers.name AND cursors.topic = consumers.topic
         AND cursors.consumer = consumers.consumer AND cursors.partition = outbox.partition
       WHERE consumers.name = ${name} AND outbox.seq > coalesce(cursors.seq, 0)
-      GROUP BY consumers.topic, consumers.consumer, outbox.partition
+      GROUP BY consumers.topic, consumers.consumer, outbox.partition, cursors.seq
       ORDER BY consumers.topic, consumers.consumer, outbox.partition
     `)
     return stored.map(({ topic, consumer }): Omit<Consumer, 'declared'> => {

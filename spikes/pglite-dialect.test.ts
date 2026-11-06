@@ -114,3 +114,18 @@ test('a transaction begun at REPEATABLE READ reads its first snapshot', () =>
     )
     expect(row).toEqual({ transaction_isolation: 'repeatable read' })
   })), 30_000)
+
+test('neither json nor jsonb parses a text escaping U+0000 or holding a lone surrogate, and no text holds U+0000', () =>
+  run(Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const reason = (statement: Effect.Effect<unknown, { readonly reason: { readonly cause?: unknown } }>) =>
+      Effect.map(Effect.flip(statement), (error) => String((error.reason.cause as Error | undefined)?.message))
+    // The field read is another one than the field that escapes it.
+    const nul = JSON.stringify({ id: 'x', p: 'a\u0000b' })
+    const lone = JSON.stringify({ id: 'x', p: '\ud800' })
+    expect(yield* reason(sql`SELECT (${nul}::json) ->> 'id' AS v`)).toBe('unsupported Unicode escape sequence')
+    expect(yield* reason(sql`SELECT (${nul}::jsonb) ->> 'id' AS v`)).toBe('unsupported Unicode escape sequence')
+    expect(yield* reason(sql`SELECT (${lone}::json) ->> 'id' AS v`)).toBe('invalid input syntax for type json')
+    expect(yield* reason(sql`SELECT (${lone}::jsonb) ->> 'id' AS v`)).toBe('invalid input syntax for type json')
+    expect(yield* reason(sql`SELECT ${'a\u0000b'}::text AS v`)).toBe('invalid byte sequence for encoding "UTF8": 0x00')
+  })), 30_000)
