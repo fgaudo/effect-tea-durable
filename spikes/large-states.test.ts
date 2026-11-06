@@ -77,6 +77,29 @@ const room = <P extends Json>(name: string, projection: Schema.Codec<P, Json>, p
   })
 
 const whole = room('Whole', State, (state) => state)
+
+// The same entity, whose log has five topics that each change at every step, so that a step is written in all five.
+// Each selects a few bytes, so that what the machine compares stays small and the difference is in the writes.
+const topical = program({
+  state: State,
+  flags: Schema.Struct({ size: Schema.Int }),
+  inbound: Inbound,
+  internal: Schema.Never,
+  operation: Schema.Never,
+  rejection: Schema.Never,
+  sender: Sender,
+  projection: State,
+})({
+  ...whole,
+  name: 'Topical',
+  topics: {
+    count: (projection) => projection.items.length,
+    double: (projection) => projection.items.length * 2,
+    last: (projection) => projection.items[projection.items.length - 1]?.label ?? null,
+    first: (projection) => [projection.items.length, projection.items[0]?.label ?? null],
+    shape: (projection) => ({ items: projection.items.length }),
+  },
+})
 const counted = room('Counted', Schema.Struct({ count: Schema.Int }), (state) => ({ count: state.items.length }))
 
 // The sizes stop at 10 000 items, so that `bun test` stays fast; `SIZES=10,1000,10000,100000` adds the largest.
@@ -91,7 +114,7 @@ type Measured = Readonly<{
   outboxBytesPerStep: number
 }>
 
-const measure = (rooms: typeof whole | typeof counted, label: string, size: number) =>
+const measure = (rooms: typeof whole | typeof counted | typeof topical, label: string, size: number, topics = 1) =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     const runtime = yield* launch()
@@ -109,8 +132,8 @@ const measure = (rooms: typeof whole | typeof counted, label: string, size: numb
     const after = yield* sql<{ bytes: number }>`SELECT coalesce(sum(length(projection)), 0) AS bytes FROM outbox`
     const [state] = yield* sql<{ bytes: number }>`SELECT length(state) AS bytes FROM entities WHERE id = 'r'`
     const [rows] = yield* sql<{ rows: number }>`SELECT count(*) AS rows FROM outbox`
-    // One row of the outbox for the creation and one per step, since each step changes what callers read.
-    expect(rows?.rows).toBe(steps + 1)
+    // One row of the outbox per topic for the creation and for each step, since each step changes every topic.
+    expect(rows?.rows).toBe((steps + 1) * topics)
     return {
       projection: label,
       size,
@@ -222,4 +245,26 @@ test('a small entity waits for the writes of a large one', async () => {
     'worst beside': Number(m.beside.worst.toFixed(2)),
   })))
   for (const m of measured) expect(m.beside.worst).toBeGreaterThan(0)
+}, 600_000)
+
+// A step written in five topics, beside the same step written in one. The rows of a step hold the projection
+// whole, once per topic (decision 0140).
+test('a step written in five topics writes the projection once per topic', async () => {
+  const measured: Array<Measured> = []
+  for (const size of sizes) {
+    measured.push(await onFile(Effect.scoped(measure(whole, 'one topic', size))))
+    measured.push(await onFile(Effect.scoped(measure(topical, 'five topics', size, 5))))
+  }
+  console.table(measured.map((m) => ({
+    topics: m.projection,
+    items: m.size,
+    'state KB': Math.round(m.stateBytes / 1024),
+    'ms per step': Number(m.msPerStep.toFixed(2)),
+    'outbox KB per step': Math.round(m.outboxBytesPerStep / 1024),
+  })))
+  for (const m of measured) {
+    if (m.size < 1_000) continue
+    const copies = m.projection === 'five topics' ? 5 : 1
+    expect(m.outboxBytesPerStep).toBeGreaterThan(m.stateBytes * 0.9 * copies)
+  }
 }, 600_000)
