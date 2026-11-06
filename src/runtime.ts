@@ -1159,12 +1159,19 @@ export const launchWith = (
       })
 
     /**
+     * `effect` without the transaction of the fiber that forks it. A fork keeps the services of the forking fiber,
+     * and on Cluster a step forks inside its transaction (decision 0161). A fiber that kept the transaction would run
+     * its statements on the step's connection without the client's lock, and a transaction of its own would be a
+     * savepoint there, which SQLite begins as a transaction while another fiber holds the lock.
+     */
+    const untransacted = <A, E>(effect: Effect.Effect<A, E>) =>
+      Effect.updateContext(effect, (services: Context.Context<never>) => Context.omit(sql.transactionService)(services))
+
+    /**
      * Forks `effect` in `scope`, held under `id` while it runs. Nothing ended is counted as running (decision 0068):
      * the forking fiber may yield between the fork and the registration, and the fiber end meanwhile. So one that
-     * has ended is never held, and its end is told after it has left `held`, in one step. The fork keeps the
-     * services of the forking fiber, the transaction of a step among them where a step on Cluster settles its
-     * machine (decision 0161): the transaction is taken out, so that the statements of an operation go through the
-     * client's connection, and not through a step's.
+     * has ended is never held, and its end is told after it has left `held`, in one step. The fork runs
+     * `untransacted`, so that the statements of an operation go through the client's connection.
      */
     const forkHeld = (
       held: Map<string, Fiber.Fiber<void>>,
@@ -1176,8 +1183,7 @@ export const launchWith = (
         let done = false
         const fiber = yield* Effect.forkIn(
           Effect.ensuring(
-            Effect.updateContext(effect, (services: Context.Context<never>) =>
-              Context.omit(sql.transactionService)(services)),
+            untransacted(effect),
             Effect.sync(() => {
               done = true
               held.delete(id)
@@ -1563,7 +1569,7 @@ export const launchWith = (
         const held = stepped.loaded!
         if (deployed.loaded.get(entity.id) !== held) {
           if (!(yield* entersHeld(deployed, held))) return yield* new Unheld({ id: entity.id })
-          yield* Effect.forkIn(loop(deployed, held), deployed.scope)
+          yield* Effect.forkIn(untransacted(loop(deployed, held)), deployed.scope)
         }
         if (stepped.steps === held.steps) {
           // Nothing was written, so nothing can roll back: the machine is the entity's at once (decision 0092).
@@ -1911,7 +1917,7 @@ export const launchWith = (
         yield* apply(deployed, loaded, { _tag: 'Restart' }).pipe(
           Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
         )
-        yield* Effect.forkIn(loop(deployed, loaded), deployed.scope)
+        yield* Effect.forkIn(untransacted(loop(deployed, loaded)), deployed.scope)
         return loaded
       })
 
@@ -2053,7 +2059,7 @@ export const launchWith = (
           yield* perform(deployed, loaded, entity, creation, started.outputs).pipe(
             Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
           )
-          yield* Effect.forkIn(loop(deployed, loaded), deployed.scope)
+          yield* Effect.forkIn(untransacted(loop(deployed, loaded)), deployed.scope)
           return null
         })))
         return asked === null ? { _tag: 'Created' } : yield* answered(asked)

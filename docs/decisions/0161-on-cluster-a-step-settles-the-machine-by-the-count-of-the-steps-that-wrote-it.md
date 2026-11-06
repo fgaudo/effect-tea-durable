@@ -48,10 +48,12 @@ transaction while one holds it, and that a statement waits for the semaphore too
   step's commit and the assignments. A commit that fails crashes the entity, and nothing reads them then.
 - **A door's step that writes nothing leaves no uncommitted machine.** Nothing it did can roll back, so its machine
   is the entity's at once, and what it sets going is performed at once.
-- **An operation or a timer a step sets going is forked without the step's transaction in its context.** A fiber
-  forked keeps the services of the fiber that forks it, and a step that settles forks inside its transaction. With
-  the transaction kept, the statements of an operation would run on the step's connection, outside the client's
-  semaphore, and an `afterCommit` of the operation's would die once the step has ended.
+- **An operation or a timer a step sets going, and the loop of an entity a step loads, are forked without the
+  step's transaction in their context.** A fiber forked keeps the services of the fiber that forks it, and a step
+  that settles or loads forks inside its transaction. With the transaction kept, the statements of an operation
+  would run on the step's connection, outside the client's semaphore, and an `afterCommit` of the operation's would
+  die once the step has ended. A step of the loop would begin a savepoint on that connection, which SQLite begins
+  as a transaction, outside the semaphore, and the transaction of another fiber would fail to begin.
 
 ### The door's step
 
@@ -95,7 +97,10 @@ transaction while one holds it, and that a statement waits for the semaphore too
 - That a fiber forked keeps the services of the fiber that forks it, and that the client finds a transaction among
   them: **read in the source** of `internal/effect.ts` and `sql/SqlClient.ts` at 4.1.2, and **tested** by `an
   operation a door step sets going runs outside the step transaction` in [`src/cluster.test.ts`](../../src/cluster.test.ts),
-  whose operation registers an `afterCommit`. The test fails where the fork keeps the transaction.
+  whose operation registers an `afterCommit`. The test fails where the fork keeps the transaction. For the loop:
+  **tested** by `a step of the loop of an entity a door loaded runs in a transaction of its own` in
+  [`src/runtime.test.ts`](../../src/runtime.test.ts), which holds the loop's step before its commit and begins a
+  transaction meanwhile. The test fails where the loop is forked with the door's transaction.
 - That a door's step never reads the machine and the count between a step's commit and the step's assignments, and
   that an entity told to leave settles first: **only reasoned**, each held by the order of the code. No test reaches
   either interleaving. The first needs the loop's fiber to yield between the commit and the assignments, which

@@ -5107,6 +5107,46 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
       expect(asked.filter((line) => line === 'started').length).toBe(asked.filter((line) => line === 'interrupted').length)
     })).pipe(Effect.provide(client('sqlite'))))
 
+  test('a step of the loop of an entity a door loaded runs in a transaction of its own', () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      asked = []
+      const sql = yield* SqlClient.SqlClient
+      yield* createTables
+      let step: ((delivered: Delivered) => Effect.Effect<unknown>) | null = null
+      const cluster: OnCluster = {
+        shards: 1,
+        shardOf: () => 1,
+        holds: () => true,
+        singleton: (_name, run) => Effect.asVoid(Effect.forkScoped(Effect.scoped(Effect.andThen(run, Effect.never)))),
+        register: (_program, given) =>
+          Effect.sync(() => {
+            step = given as (delivered: Delivered) => Effect.Effect<unknown>
+          }),
+      }
+      const reached = yield* Deferred.make<void>()
+      const gate = yield* Deferred.make<void>()
+      // The loop's step of the completion of `First` waits before its commit, inside its transaction.
+      const probe = (said: Said) =>
+        said._tag === 'Reached' && said.point === 'BeforeCommit' && said.event._tag === 'Handle'
+          ? Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(gate))
+          : Effect.void
+      const runtime = yield* Effect.provideService(launchWith({}, cluster), Probe, probe)
+      yield* runtime.deploy(relay)
+      const door = (delivered: Omit<Delivered, 'id' | 'version'>) =>
+        sql.withTransaction(step!({ ...delivered, id: 'one', version: versionOf(relay) }))
+      // The door loads the entity, and forks its loop, inside the door's transaction.
+      yield* door({ _tag: 'Create', request: caller('c1'), message: '{}' })
+      yield* door({ _tag: 'Message', request: caller('m1'), message: JSON.stringify({ _tag: 'Go' }) })
+      yield* Deferred.await(reached)
+      // A transaction of another fiber waits for the loop's to end. A loop that kept the door's transaction would
+      // run its step on the connection without the client's lock, and this one would begin inside it, and fail.
+      const other = yield* Effect.forkChild(Effect.exit(sql.withTransaction(sql`SELECT 1`)))
+      yield* Effect.sleep('50 millis')
+      expect(other.pollUnsafe()).toBeUndefined()
+      yield* Deferred.succeed(gate, undefined)
+      expect(Exit.isSuccess(yield* Fiber.join(other))).toBe(true)
+    })).pipe(Effect.provide(client('sqlite')))), 10_000)
+
   test('a shard let go while a step of the loop is inside its transaction waits for the step', () =>
     letGo(
       (said) => said._tag === 'Reached' && said.point === 'BeforeCommit' && said.event._tag === 'Handle',
