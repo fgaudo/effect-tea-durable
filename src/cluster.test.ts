@@ -292,6 +292,13 @@ describe('the runtime on Cluster', () => {
   }
   /** How many times the operation `Ask` ran in the test under way. */
   let asked = 0
+  /** The runner's client of the database, which `Ask` registers an `afterCommit` with. */
+  let runnerSql: SqlClient.SqlClient | null = null
+  /**
+   * What `Ask` saw of its `afterCommit` in the test under way: run at once, where no transaction is open in the
+   * operation's context; deferred, where one is; died, where one has ended already.
+   */
+  let afterCommit: 'at once' | 'deferred' | 'died' | null = null
   const tally: Program<Tally> = {
     name: 'Tally',
     keys: { ask: null },
@@ -326,7 +333,18 @@ describe('the runtime on Cluster', () => {
       }
     },
     durable: (state) => state.asking ? { ask: { _tag: 'Ask' } } : noWork,
-    operations: { Ask: operation(() => Effect.sync(() => (asked++, { _tag: 'Answered' } as const))) },
+    operations: {
+      Ask: operation(() =>
+        Effect.gen(function*() {
+          asked++
+          let ran = false
+          const exit = yield* Effect.exit(runnerSql!.afterCommit(Effect.sync(() => {
+            ran = true
+          })))
+          afterCommit = Exit.isFailure(exit) ? 'died' : ran ? 'at once' : 'deferred'
+          return { _tag: 'Answered' } as const
+        })),
+    },
     project: ({ n }) => n,
     indexes: {},
   }
@@ -373,11 +391,13 @@ describe('the runtime on Cluster', () => {
       yield* sql`PRAGMA foreign_keys = ON`
       yield* sql`CREATE TABLE parent (id INTEGER PRIMARY KEY)`
       yield* sql`CREATE TABLE child (parent INTEGER REFERENCES parent (id) DEFERRABLE INITIALLY DEFERRED)`
+      runnerSql = sql
       const runtime = yield* (probe === undefined ? launch() : Effect.provideService(launch(), Probe, probe(sql)))
       yield* runtime.deploy(tally)
       yield* run
     })
     asked = 0
+    afterCommit = null
     try {
       await Effect.runPromise(Effect.scoped(launched).pipe(Effect.provide(Layer.orDie(runner))) as Effect.Effect<void>)
     } finally {
@@ -432,6 +452,16 @@ describe('the runtime on Cluster', () => {
       // A message after the completion is stepped from the machine the loop committed.
       expect(yield* send({ _tag: 'Add', n: 1 }, 'm2')).toBe('{"_tag":"Accepted"}')
       expect(yield* stateOf).toEqual({ n: 101, asking: false })
+    })), 30_000)
+
+  test('an operation a door step sets going runs outside the step transaction', () =>
+    onRunner(Effect.gen(function*() {
+      yield* create(0, 'c1')
+      expect(yield* send({ _tag: 'Ask' }, 'm1')).toBe('{"_tag":"Accepted"}')
+      yield* eventually(stateOf, (state) => state?.n === 100)
+      // The operation is forked by the step that settles the machine, inside that step's transaction. A fork that
+      // kept the transaction in the operation's context would make its `afterCommit` die, the step having ended.
+      expect(afterCommit).toBe('at once')
     })), 30_000)
 
   test('a door step whose commit fails is dropped, starts nothing, and is stepped again', () => {

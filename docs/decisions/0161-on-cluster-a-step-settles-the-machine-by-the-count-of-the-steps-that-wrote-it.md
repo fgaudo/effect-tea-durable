@@ -44,6 +44,10 @@ transaction while one holds it, and that a statement waits for the semaphore too
   machine is not settled yet does not leave the process: when its wait runs out, its loop settles first.
 - **A door's step that writes nothing leaves no uncommitted machine.** Nothing it did can roll back, so its machine
   is the entity's at once, and what it sets going is performed at once.
+- **An operation or a timer a step sets going is forked without the step's transaction in its context.** A fiber
+  forked keeps the services of the fiber that forks it, and a step that settles forks inside its transaction. With
+  the transaction kept, the statements of an operation would run on the step's connection, outside the client's
+  semaphore, and an `afterCommit` of the operation's would die once the step has ended.
 
 ### The door's step
 
@@ -81,6 +85,10 @@ transaction while one holds it, and that a statement waits for the semaphore too
   by the loop`, which fails where the door performs before the commit.
 - That no fiber holds an entity's lock while it waits for the connection: **only reasoned**, from the paths that take
   the lock on Cluster. No test reaches the deadlock, since the paths that would take it outside a transaction die.
+- That a fiber forked keeps the services of the fiber that forks it, and that the client finds a transaction among
+  them: **read in the source** of `internal/effect.ts` and `sql/SqlClient.ts` at 4.1.2, and **tested** by `an
+  operation a door step sets going runs outside the step transaction` in [`src/cluster.test.ts`](../../src/cluster.test.ts),
+  whose operation registers an `afterCommit`. The test fails where the fork keeps the transaction.
 
 ## Alternatives
 

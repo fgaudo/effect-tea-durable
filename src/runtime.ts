@@ -1090,7 +1090,10 @@ export const launchWith = (
     /**
      * Forks `effect` in `scope`, held under `id` while it runs. Nothing ended is counted as running (decision 0068):
      * the forking fiber may yield between the fork and the registration, and the fiber end meanwhile. So one that
-     * has ended is never held, and its end is told after it has left `held`, in one step.
+     * has ended is never held, and its end is told after it has left `held`, in one step. The fork keeps the
+     * services of the forking fiber, the transaction of a step among them where a step on Cluster settles its
+     * machine (decision 0161): the transaction is taken out, so that the statements of an operation go through the
+     * client's connection, and not through a step's.
      */
     const forkHeld = (
       held: Map<string, Fiber.Fiber<void>>,
@@ -1102,7 +1105,8 @@ export const launchWith = (
         let done = false
         const fiber = yield* Effect.forkIn(
           Effect.ensuring(
-            effect,
+            Effect.updateContext(effect, (services: Context.Context<never>) =>
+              Context.omit(sql.transactionService)(services)),
             Effect.sync(() => {
               done = true
               held.delete(id)
