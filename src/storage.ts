@@ -1579,8 +1579,9 @@ export const storage = <T extends Types>(
   // reader that keeps cursors needs its rows (decision 0152). The consumers and cursors are read and the rows
   // dropped in one statement, since the two are one decision (decision 0039). A consumer is stored only by a deploy,
   // before its handle exists, so none is stored in the middle of a prune (decision 0152). The trigger of the outbox
-  // drops each publication with the last row that names it, and the transaction commits the two together, whatever
-  // SQLite does of a trigger outside one (decision 0154).
+  // drops each publication with the last row that names it, in the statement that drops the row. The transaction
+  // is a guard: it commits the rows and the publications together even if a trigger ran outside the statement that
+  // fired it (decision 0154).
   const prune = sql.withTransaction(Effect.gen(function*() {
     const gone = yield* rows('outbox', Rows.seq)(sql`
       WITH floors AS (

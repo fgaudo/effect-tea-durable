@@ -684,8 +684,9 @@ describe('topics of the log (decision 0138)', () => {
           Effect.map(store.published(topic, [], all), (read) => read.map(({ seq, topic, value }) => [seq, topic, value]))
         expect(yield* rows('upper')).toEqual([[1, 'upper', 'START'], [2, 'upper', 'HI'], [3, 'upper', 'HO']])
         expect(yield* rows('size')).toEqual([[1, 'size', 5], [2, 'size', 2]])
-        // Every row stores the projection, read through the projection's migrations whatever its topic, and gives
-        // what the topic of the program deployed selects of it (decision 0140).
+        // Every row names a publication that stores the projection, read through the projection's migrations
+        // whatever the row's topic, and gives what the topic of the program deployed selects of it (decisions 0140,
+        // 0154).
         const second: Program<Topical> = {
           ...topical,
           migrations: [{

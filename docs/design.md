@@ -331,14 +331,16 @@ kept as an audit, but nothing replays them.
 
 ### What a step costs
 
-A step writes the state whole. A step that changes the projection writes it twice: in the read model, and once in
-the outbox, in the step's publication, however many topics the step is written in. Each row of a topic names the
-publication, and the selector runs where the row is read ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md),
-[decision 0154](decisions/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). The spike
-`spikes/large-states.test.ts` saw a step written in five topics take as long as one written in one.
-The spike `spikes/large-states.test.ts` saw a step take about 5 ms with a state of 48 KB, 21 ms with 0.5 MB and
-240 ms with 5 MB, when the projection holds the state. It took about a third of that from 0.5 MB up when the
-projection holds a count. The spike `spikes/many-children.test.ts` saw a parent's step take 3.5 ms with 1 000
+A step writes the state whole. A step that changes the projection writes it in the read model, and once more in
+the outbox, in the step's publication, where what one topic selects changed, however many topics the step is
+written in. Each row of a topic names the publication, and the selector runs where the row is read
+([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md),
+[decision 0154](decisions/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). A program that declares no
+topics writes its projection twice.
+The spike `spikes/large-states.test.ts` saw a step written in five topics take as long as one written in one, and
+a step take about 5 ms with a state of 48 KB, 21 ms with 0.5 MB and 240 ms with 5 MB, when the projection holds
+the state. It took about a third of that from 0.5 MB up when the projection holds a count. The spike
+`spikes/many-children.test.ts` saw a parent's step take 3.5 ms with 1 000
 children by id and 10 ms with 10 000, about half as much again as a flat state of that size takes. Such a step is
 synchronous, and holds every other entity of the process while it runs.
 
