@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-05, with the step Children inside an entity of the roadmap. Decided the open question
 on children inside an entity, and the row of the table in `docs/design.md`, under Where it departs from effect-tea,
-that left it open.
+that left it open. Changed by [decision 0155](0155-a-foreach-of-messages-to-children-puts-them-back-once.md):
+`forEach` over messages to children by id puts them back once.
 
 ## Context
 

@@ -50,7 +50,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0064](archive/0064-the-program-is-not-the-machines-state.md) | The program is not the machine's state, and a fix is a deploy | [0075](archive/0075-a-name-is-deployed-once-in-a-process.md) |
 | [0132](0132-a-key-may-take-a-parameter.md) | A key may take a parameter, and an incarnation is drawn from one counter of the entity | [0136](0136-a-key-is-a-name-and-a-parameter-as-data.md) |
 | [0136](0136-a-key-is-a-name-and-a-parameter-as-data.md) | A key is a name and a parameter, as data, in every value and row that holds one |  |
-| [0133](0133-an-entity-composes-children-as-effect-tea-does.md) | An entity composes children as effect-tea does: a part, placed with `child` or `each`, whose messages, keys, operations and reasons the library wraps |  |
+| [0133](0133-an-entity-composes-children-as-effect-tea-does.md) | An entity composes children as effect-tea does: a part, placed with `child` or `each`, whose messages, keys, operations and reasons the library wraps | [0155](0155-a-foreach-of-messages-to-children-puts-them-back-once.md) |
 
 ## Messages, requests and replies
 
@@ -150,6 +150,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md) | The consumers of a topic are declared at deploy, and a topic no consumer holds is pruned whole |  |
 | [0153](0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md) | A reader of a consumer names the partitions it reads, and the division is the caller's |  |
 | [0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md) | A step's projection is stored once in the outbox, in a publication each topic's row names |  |
+| [0155](0155-a-foreach-of-messages-to-children-puts-them-back-once.md) | A `forEach` of messages to children by id puts them back once, with the step one message after the other gives |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for |  |
 | [0027](archive/0027-a-program-gives-the-schema-of-its-senders.md) | A program gives the schema of its senders |  |

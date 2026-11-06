@@ -16,6 +16,7 @@ import {
   child,
   defect,
   each,
+  forEach,
   InvariantDefect,
   isRejected,
   isTimer,
@@ -27,6 +28,7 @@ import {
   raise,
   reject,
   rejectWith,
+  type Step,
   timer,
 } from './program.ts'
 
@@ -652,4 +654,170 @@ test("a parent's operation with a '.' is refused where it is declared (decision 
       onEvent: { Line: () => (state: Order) => state },
     })
   expect(declare).toThrow("a parent has an operation 'Li.ne'")
+})
+
+const Tally = Schema.Struct({ n: Schema.Int })
+
+/** A part its parent tells to add, to stay as it is, to raise an event, or to refuse. */
+const tally = part({
+  state: Tally,
+  flags: Schema.Null,
+  inbound: Schema.Never,
+  internal: Schema.Never,
+  operation: Schema.Never,
+  rejection: Schema.Never,
+  projection: Schema.Int,
+  event: Schema.Literals(['drop', 'poke']),
+  external: Schema.Union([
+    Schema.TaggedStruct('Add', { by: Schema.Int }),
+    Schema.TaggedStruct('Keep', {}),
+    Schema.TaggedStruct('Raise', { event: Schema.Literals(['drop', 'poke']) }),
+    Schema.TaggedStruct('Refuse', {}),
+  ]),
+})({
+  keys: {},
+  init: () => ({ n: 0 }),
+  update: (message) => (state) => {
+    switch (message._tag) {
+      case 'Add':
+        return { n: state.n + message.by }
+      case 'Keep':
+        return state
+      case 'Raise':
+        return raise(message.event)({ n: state.n + 1 })
+      case 'Refuse':
+        return reject
+    }
+  },
+  durable: () => noWork,
+  operations: {},
+  project: (state) => state.n,
+})
+
+const Tallies = Schema.Struct({
+  tallies: Schema.Record(Schema.String, Tally),
+  own: Schema.Int,
+  heard: Schema.Array(Schema.String),
+})
+type Tallies = typeof Tallies.Type
+
+const Told = Schema.Union([
+  Schema.TaggedStruct('Tell', {
+    id: Schema.String,
+    message: Schema.Union([
+      Schema.TaggedStruct('Add', { by: Schema.Int }),
+      Schema.TaggedStruct('Keep', {}),
+      Schema.TaggedStruct('Raise', { event: Schema.Literals(['drop', 'poke']) }),
+      Schema.TaggedStruct('Refuse', {}),
+    ]),
+  }),
+  Schema.TaggedStruct('Own', {}),
+])
+type Told = typeof Told.Type
+
+let replacements = 0
+// The optic counts the records of tallies it puts back, so that a test sees how many times a step replaced them.
+const tallies = Optic.id<Tallies>().key('tallies').compose(
+  Optic.makeIso<Readonly<Record<string, typeof Tally.Type>>, ReadonlyArray<readonly [string, typeof Tally.Type]>>(
+    Object.entries,
+    (entries) => {
+      replacements++
+      return Object.fromEntries(entries)
+    },
+  ),
+)
+
+/**
+ * A parent of tallies by id that tells them a list of messages, in one `forEach` or one `andThen` after the other,
+ * with steps of its own among them. Its handler drops a tally that asks, and pokes the tally `x` behind the back of
+ * the messages still to be told, so that a run told at once must read the children again after an event.
+ */
+const talliesOf = (telling: 'forEach' | 'andThen') =>
+  part({
+    state: Tallies,
+    flags: Schema.Null,
+    inbound: Schema.TaggedStruct('Broadcast', { told: Schema.Array(Told) }),
+    internal: Schema.Never,
+    operation: Schema.Never,
+    rejection: Schema.Never,
+    projection: Schema.Null,
+    event: Schema.String,
+  })({
+    keys: {},
+    children: { Tally: each(tally, { id: Schema.String, at: tallies }) },
+    init: () => ({ tallies: {}, own: 0, heard: [] }),
+    update: (message, _, children) => (state) => {
+      // The handle's step itself, which `forEach` tells with the others of its run.
+      const next = (told: Told) =>
+        told._tag === 'Own'
+          ? (state: Tallies) => ({ ...state, own: state.own + 1 })
+          : children.Tally.update(told.id, told.message)
+      return telling === 'forEach'
+        ? forEach(state, message.told, next)
+        : message.told.reduce((step: Step<Tallies, string>, told) => andThen(step, next(told)), state)
+    },
+    durable: () => noWork,
+    operations: {},
+    project: () => null,
+    onEvent: {
+      Tally: (id, event) => (state) => {
+        const heard = { ...state, heard: [...state.heard, `${id}:${event}`] }
+        if (event === 'drop') {
+          const { [id]: _, ...kept } = state.tallies
+          return raise(`${id} dropped`)({ ...heard, tallies: kept })
+        }
+        const x = state.tallies['x']
+        return x === undefined ? heard : { ...heard, tallies: { ...state.tallies, x: { n: x.n + 100 } } }
+      },
+    },
+  })
+
+test('a forEach of messages to children by id gives the step the messages told one after the other give (decision 0155)', () => {
+  const ids = fc.constantFrom('a', 'b', 'x', 'ghost')
+  const message = fc.oneof(
+    { weight: 4, arbitrary: fc.record({ _tag: fc.constant('Add' as const), by: fc.integer({ min: -3, max: 3 }) }) },
+    { weight: 2, arbitrary: fc.constant({ _tag: 'Keep' as const }) },
+    {
+      weight: 2,
+      arbitrary: fc.record({ _tag: fc.constant('Raise' as const), event: fc.constantFrom('drop' as const, 'poke' as const) }),
+    },
+    // Rare, so that most lists are told to the end.
+    { weight: 1, arbitrary: fc.constant({ _tag: 'Refuse' as const }) },
+  )
+  const told: fc.Arbitrary<Told> = fc.oneof(
+    { weight: 6, arbitrary: fc.record({ _tag: fc.constant('Tell' as const), id: ids, message }) },
+    { weight: 1, arbitrary: fc.constant({ _tag: 'Own' as const }) },
+  )
+  const start = fc.record({
+    tallies: fc.dictionary(fc.constantFrom('a', 'b', 'x'), fc.record({ n: fc.integer({ min: 0, max: 9 }) })),
+    own: fc.constant(0),
+    heard: fc.constant([]),
+  })
+  const atOnce = talliesOf('forEach')
+  const inTurn = talliesOf('andThen')
+  fc.assert(
+    fc.property(start, fc.array(told, { maxLength: 12 }), (state, list) => {
+      const broadcast = { _tag: 'Broadcast', told: list } as const
+      expect(outcome(() => atOnce.update(broadcast, meta)(state)))
+        .toEqual(outcome(() => inTurn.update(broadcast, meta)(state)))
+    }),
+    { numRuns: 2_000 },
+  )
+})
+
+test('a forEach of messages to children by id that raise no event puts the children back once (decision 0155)', () => {
+  const start: Tallies = {
+    tallies: Object.fromEntries(Array.from({ length: 50 }, (_, id) => [`t${id}`, { n: 0 }])),
+    own: 0,
+    heard: [],
+  }
+  const told = Object.keys(start.tallies).map((id) => ({ _tag: 'Tell', id, message: { _tag: 'Add', by: 1 } }) as const)
+  const count = (telling: 'forEach' | 'andThen') => {
+    replacements = 0
+    const step = talliesOf(telling).update({ _tag: 'Broadcast', told }, meta)(start) as Tallies
+    expect(Object.values(step.tallies).every(({ n }) => n === 1)).toBe(true)
+    return replacements
+  }
+  expect(count('forEach')).toBe(1)
+  expect(count('andThen')).toBe(50)
 })

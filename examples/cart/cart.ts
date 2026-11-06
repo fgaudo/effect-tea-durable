@@ -5,7 +5,7 @@
  */
 import * as Optic from 'effect/Optic'
 import * as Schema from 'effect/Schema'
-import { each, noWork, program, reject } from '../../src/index.ts'
+import { each, forEach, noWork, program, reject } from '../../src/index.ts'
 import { line, Projection as LineProjection, type State as LineState } from './line.ts'
 
 const Line = line.schemas.state
@@ -59,9 +59,10 @@ export const cart = program({
           : reject
       case 'CheckoutRequested':
         return state.phase === 'Open'
-          ? Object.keys(state.lines).reduce<State>(
-            (next, sku) => children.Line.update(sku, { _tag: 'CheckedOut' })(next),
+          ? forEach(
             { ...state, phase: 'CheckedOut' },
+            Object.keys(state.lines),
+            (sku) => children.Line.update(sku, { _tag: 'CheckedOut' }),
           )
           : reject
     }

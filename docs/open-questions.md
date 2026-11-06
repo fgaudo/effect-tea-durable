@@ -2,17 +2,6 @@
 
 What is not decided yet. A question leaves this file when a note in [`decisions/`](decisions) decides it.
 
-## Programs
-
-- **A message to every child by id.** `children.<child>.update(id, message)` replaces the parent's state once per
-  child it is sent to, so a step that tells every child something, a checkout told to each line, copies the record
-  of children once per child: 1.7 s for 4 000 lines in `examples/cart`, where the listing of the children by id
-  costs 4 ms ([decision 0133](decisions/0133-an-entity-composes-children-as-effect-tea-does.md)). Whether a parent
-  gets a form that tells every child at once, and replaces the state once, is not decided. It would be decided by:
-  - a program whose children are told something together in numbers where the copies show;
-  - what the form returns where some children raise events, in which order, and what it does where one rejects;
-  - whether effect-tea's `forEach` is the form, made to replace once, so that the two libraries stay alike.
-
 ## Storage and reading
 
 - **A disk that is really full.** A step that cannot commit dies, and a forget and a prune free the room steps need

@@ -656,8 +656,23 @@ export const andThen: {
 })
 
 /**
+ * A message to a child by id, as `children.<child>.update(id, message)` makes it, with what tells a run of such
+ * messages to their children at once. `forEach` finds it on the step the handle returns (decision 0155).
+ */
+type Told = Readonly<{
+  id: unknown
+  message: unknown
+  /** Tells each child its message, in order, as the steps one after the other would. */
+  all: (state: unknown, told: ReadonlyArray<Told>) => unknown
+}>
+
+const toldOf = new WeakMap<(state: unknown) => unknown, Told>()
+
+/**
  * A step followed by one more for each item, in order, each made from the state the one before left: the
- * `andThen` of many, e.g. an order that cancels each of its lines. It is dual, for `pipe`.
+ * `andThen` of many, e.g. an order that cancels each of its lines. It is dual, for `pipe`. Messages to children of
+ * one name by id, one after the other, put the children back in the parent's state once, and not once per child,
+ * with the same step as a result (decision 0155).
  */
 export const forEach: {
   <Item, State, Event2 = never>(
@@ -671,10 +686,29 @@ export const forEach: {
   ): Step<State, Event1 | Event2>
 } = dual(3, (step: unknown, items: Iterable<unknown>, next: (item: unknown) => (state: unknown) => unknown) => {
   let folded = unfold(step)
-  for (const item of items) {
-    const after = unfold(next(item)(folded.state))
+  const append = (made: unknown) => {
+    const after = unfold(made)
     folded = { state: after.state, events: [...folded.events, ...after.events] }
   }
+  // A handle's step is a function of the state alone, so making the steps of a run before taking the first
+  // changes nothing: the run is told at once when a step of another kind comes, and at the end.
+  let run: Array<Told> = []
+  const flush = () => {
+    if (run.length > 0) append(run[0]!.all(folded.state, run))
+    run = []
+  }
+  for (const item of items) {
+    const made = next(item)
+    const told = toldOf.get(made)
+    if (told !== undefined && (run.length === 0 || run[0]!.all === told.all)) {
+      run.push(told)
+      continue
+    }
+    flush()
+    if (told !== undefined) run.push(told)
+    else append(made(folded.state))
+  }
+  flush()
   return stepOf(folded.state, folded.events)
 })
 
@@ -1049,17 +1083,21 @@ const assemble = (
     const position = positions.get(textOf(place.name, place.id))
     return position === undefined ? Opt.none() : Opt.some(entries[position]![1])
   }
+  /** The children by id listed of `state`, with some values replaced, put back through the optic at once. */
+  const putBack = (name: string, state: unknown, listing: Listing, replaced: Entries): unknown => {
+    const next = childOf(name).at.replace(replaced, state)
+    // The optic reads back what it was given, so the next state's listing is this one with the values replaced,
+    // and a message to each child in turn encodes no id twice.
+    if (next !== state) remember(name, next, { entries: replaced, positions: listing.positions })
+    return next
+  }
   const setAt = (place: Place, state: unknown, value: unknown): unknown => {
     if (!isEach(place.name)) return childOf(place.name).at.replace(value, state)
-    const { entries, positions } = listed(place.name, state)
-    const position = positions.get(textOf(place.name, place.id))
+    const listing = listed(place.name, state)
+    const position = listing.positions.get(textOf(place.name, place.id))
     if (position === undefined) return state
-    const replaced = entries.map((entry, index) => (index === position ? ([entry[0], value] as const) : entry))
-    const next = childOf(place.name).at.replace(replaced, state)
-    // The optic reads back what it was given, so the next state's listing is this one with the value replaced,
-    // and a message to each child in turn encodes no id twice.
-    if (next !== state) remember(place.name, next, { entries: replaced, positions })
-    return next
+    const replaced = listing.entries.map((entry, index) => (index === position ? ([entry[0], value] as const) : entry))
+    return putBack(place.name, state, listing, replaced)
   }
   const onEvents = declaration.onEvent ?? {}
   const onEventAt = (place: Place, event: unknown, meta: Meta<unknown>) => {
@@ -1090,12 +1128,63 @@ const assemble = (
     if (isRejected(result)) return defect(`the child '${place.name}' rejected an external message, which it takes`)
     return result
   }
+  // External messages to children by id of one name, told in order: each child's step is the one `tell` takes, and
+  // the children changed are put back once, before the events a child raised are handled and at the end. A handler
+  // may change any child, so the children are listed again after it. The step is the one the messages told one
+  // after the other give, with a replacement of the record of children per run of messages that raise no event,
+  // and not per message (decision 0155).
+  const tellAll = (name: string, meta: Meta<unknown>) => (state: unknown, told: ReadonlyArray<Told>): unknown => {
+    const { part } = childOf(name)
+    let current = state
+    const events: Array<unknown> = []
+    let listing = listed(name, current)
+    let replaced: Array<readonly [unknown, unknown]> | undefined
+    const settle = () => {
+      if (replaced !== undefined) current = putBack(name, current, listing, replaced)
+      replaced = undefined
+    }
+    for (const { id, message } of told) {
+      const position = listing.positions.get(textOf(name, id))
+      if (position === undefined) {
+        return defect(`an external message to the child '${name}', which is not in this state`)
+      }
+      const value = (replaced ?? listing.entries)[position]![1]
+      const result = part.update(message, meta)(value)
+      if (isRejected(result)) return defect(`the child '${name}' rejected an external message, which it takes`)
+      const { state: next, events: raised } = unfold(result)
+      if (next !== value) {
+        replaced ??= [...listing.entries]
+        replaced[position] = [listing.entries[position]![0], next]
+      }
+      if (raised.length > 0) {
+        settle()
+        const handled = raised.reduce(
+          (step: unknown, event) => andThen(step, onEventAt({ name, id }, event, meta)),
+          current,
+        )
+        if (isRejected(handled)) return defect(`the child '${name}' rejected an external message, which it takes`)
+        const unfolded = unfold(handled)
+        current = unfolded.state
+        events.push(...unfolded.events)
+        listing = listed(name, current)
+      }
+    }
+    settle()
+    return stepOf(current, events)
+  }
   const handlesOf = (meta: Meta<unknown>) =>
-    Object.fromEntries(names.map((name) => [name, {
-      update: isEach(name)
-        ? (id: unknown, message: unknown) => tell({ name, id }, message, meta)
-        : (message: unknown) => tell({ name, id: undefined }, message, meta),
-    }]))
+    Object.fromEntries(names.map((name) => {
+      if (!isEach(name)) return [name, { update: (message: unknown) => tell({ name, id: undefined }, message, meta) }]
+      const all = tellAll(name, meta)
+      return [name, {
+        update: (id: unknown, message: unknown) => {
+          const told: Told = { id, message, all }
+          const step = (state: unknown) => all(state, [told])
+          toldOf.set(step, told)
+          return step
+        },
+      }]
+    }))
   const update = (message: unknown, meta: Meta<unknown>) => (state: unknown): unknown => {
     const tag = fieldOf(message, '_tag')
     if (typeof tag === 'string' && Object.hasOwn(children, tag)) {

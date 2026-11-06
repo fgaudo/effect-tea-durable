@@ -102,6 +102,9 @@ A part may hold children of its own, so a tree is as deep as a program needs.
 - **`update`** takes the parent's own messages, `meta`, and `children`: `children.Line.update(id, message)` sends a
   child an external message, and returns the parent's step. A child that rejects it, or is not there, is a defect.
   `andThen` and `forEach` add up the steps of a parent that is itself a part, keeping their raised events.
+  `forEach` over messages to children of one name by id puts the children back once, and not once per child, with
+  the same step as one message after the other gives. A child that raises an event puts them back before its parent
+  handles it ([decision 0155](decisions/0155-a-foreach-of-messages-to-children-puts-them-back-once.md)).
 - **`onEvent`** has a handler for each child that raises events, and is required exactly when one does. A handler of
   children by id takes the id first.
 - **`project`** takes `children`, with each child's projection: `children.Line(state, id)`.
