@@ -487,7 +487,7 @@ export interface Program<T extends Types> {
 }
 
 /** The version a program writes: a migration is the bump, so there is none to declare or to forget (decision 0036). */
-export const versionOf = <T extends Types>(program: Program<T>): number => (program.migrations?.length ?? 0) + 1
+export const versionOf = (program: Pick<Program<Types>, 'migrations'>): number => (program.migrations?.length ?? 0) + 1
 
 /**
  * How the JSON a version wrote of one kind is read at the program's version: the migrations from `from` on, of

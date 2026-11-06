@@ -44,7 +44,11 @@ runs two runners on one SQLite file, with a `RunnerHealth` that answers by versi
   one would fail it. The check and the record are one transaction, so two launches see each other's versions.
 - **The runtime builds Cluster's `Sharding` itself, after the check.** It takes the launcher's `ShardingConfig`,
   `Runners`, storages and `RunnerHealth`, and gives `Sharding.layer` its own `RunnerHealth`. So a runner whose
-  launch dies never registers, and holds no shard where its entity types are missing. A shard of a runner without
+  launch dies never registers, and holds no shard where its entity types are missing.
+- **So the programs a runner runs are named where its `Sharding` is built**, by `sharding(programs)` of
+  [`src/cluster.ts`](../../src/cluster.ts). A program is deployed after a launch, and `Sharding` registers its
+  runner as it is built, so the versions cannot wait for the deploys. A process with no `runnerAddress`, a client
+  of the cluster alone, holds no shard and records nothing. A runner's address is recorded as `host:port`. A shard of a runner without
   its types holds its messages for `entityRegistrationTimeout`, then answers each with a defect
   ([decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)).
 
@@ -127,8 +131,13 @@ runs two runners on one SQLite file, with a `RunnerHealth` that answers by versi
 
 ## Consequences
 
-- The runtime on Cluster writes the table of versions at launch, gives Cluster its `RunnerHealth`, and reads the
-  newest version in each step's transaction. A test of the runtime on Cluster sees an older runner's step die and its
-  message stepped by a newer runner. Nothing of this is code yet.
+- [`src/storage.ts`](../../src/storage.ts) holds the tables `versions` and `runner_versions`, which
+  `recordVersions` writes and `outranked` reads. [`src/cluster.ts`](../../src/cluster.ts) gives `byVersion`, the
+  `RunnerHealth`, and `sharding`, which records the versions and builds `Sharding`.
+  [`src/cluster.test.ts`](../../src/cluster.test.ts) checks the record on both dialects, the health, and two
+  runners on one SQLite file during a rolling deploy.
+- What is not code yet waits for the runtime on Cluster: the check of the newest version in each step's
+  transaction, and its test, in which an older runner's step dies and a newer runner steps its message. Whether a
+  deploy of a program the runner's `sharding` does not name dies is decided with the deploy on Cluster.
 - [`docs/cluster.md`](../cluster.md#two-versions-at-once) says what this note proposes. The open question of two
   versions at once leaves `docs/open-questions.md` once the note is taken.

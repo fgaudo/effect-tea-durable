@@ -347,7 +347,86 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   yield* sql`
     CREATE INDEX IF NOT EXISTS replies_by_request_id ON replies (name, id, request_id) WHERE request_id IS NOT NULL
   `
+  // On Cluster: the newest version each program was launched with, and the version of each program each runner
+  // runs, by the runner's address (decision 0159). A runtime of one process writes neither.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS versions (
+      name ${text} PRIMARY KEY,
+      version ${integer} NOT NULL
+    )
+  `
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS runner_versions (
+      address ${text} NOT NULL,
+      name ${text} NOT NULL,
+      version ${integer} NOT NULL,
+      PRIMARY KEY (address, name)
+    )
+  `
 }).pipe(Effect.orDie)
+
+/** A program's name and the version it runs, as a launch on Cluster records them (decision 0159). */
+export type Versioned = Readonly<{ name: string; version: number }>
+
+/**
+ * Records, for the runner at `address`, the version each of `programs` runs, and raises the newest version of each
+ * program to it, in one transaction (decision 0159). A program whose version is older than the newest recorded is
+ * the launcher's defect, which names the program and both versions, and records nothing. On SQLite the transaction
+ * takes the file's writer as it begins, and on PostgreSQL it locks the table, so that two launches see each other's
+ * versions.
+ */
+export const recordVersions = (
+  address: string,
+  programs: ReadonlyArray<Versioned>,
+): Effect.Effect<void, never, SqlClient.SqlClient> =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const dialect = dialectOf(sql)
+    const record = Effect.gen(function*() {
+      if (dialect === 'pg') yield* sql`LOCK TABLE versions IN SHARE ROW EXCLUSIVE MODE`
+      for (const { name, version } of programs) {
+        const [held] = yield* Effect.flatMap(
+          sql`SELECT version FROM versions WHERE name = ${name}`,
+          Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ version: Count }))),
+        )
+        if (held !== undefined && held.version > version) {
+          return yield* Effect.die(new InvariantDefect({
+            reason: `the program ${name} is launched at version ${version}, and a launch has run it at version ${held.version}`,
+          }))
+        }
+        yield* sql`
+          INSERT INTO versions (name, version) VALUES (${name}, ${version})
+          ON CONFLICT (name) DO UPDATE SET version = excluded.version
+        `
+      }
+      yield* sql`DELETE FROM runner_versions WHERE address = ${address}`
+      for (const { name, version } of programs) {
+        yield* sql`INSERT INTO runner_versions (address, name, version) VALUES (${address}, ${name}, ${version})`
+      }
+    })
+    yield* sql.withTransaction(record).pipe(
+      dialect === 'sqlite' ? Effect.provideService(SqlClient.BeginTransaction, 'BEGIN IMMEDIATE') : (effect) => effect,
+    )
+  }).pipe(Effect.orDie)
+
+/**
+ * Whether the runner at `address` runs an older version of a program than the newest recorded: `undefined` where
+ * no launch of the runtime recorded the address, a runner without the runtime (decision 0159).
+ */
+export const outranked = (address: string): Effect.Effect<boolean | undefined, SqlError.SqlError, SqlClient.SqlClient> =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql`
+      SELECT COUNT(*) AS held, COUNT(CASE WHEN r.version < v.version THEN 1 END) AS older
+      FROM runner_versions r JOIN versions v ON v.name = r.name
+      WHERE r.address = ${address}
+    `
+    const [found] = yield* Effect.orDie(
+      Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ held: Count, older: Count })))(rows),
+    )
+    if (found === undefined || found.held === 0) return undefined
+    return found.older > 0
+  })
 
 /**
  * Stores the number of partitions of the log at the first launch, and checks it at every other: a launch given
