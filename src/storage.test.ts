@@ -1420,4 +1420,28 @@ describe('renaming a program (decision 0156)', () => {
           ['Receiver', spaced],
         ])
       }).pipe(Effect.orDie)))
+
+  test('a rename moves the log of the old name, and a consumer goes on from its cursor under the new one', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(topical, sql)
+        yield* store.declare([{ topic: 'upper', consumer: 'c' }])
+        yield* store.write('r', publishing(null, { upper: 'START', size: 5 }, ['upper', 'size']), 0)
+        yield* store.write('r', publishing('hi', { upper: 'HI', size: 2 }, ['upper', 'size']), 0)
+        yield* store.ack('upper', 'c', (yield* store.feed('upper', 'c', all)).slice(0, 1))
+        yield* rename(sql, [['Receiver', 'Buyer']])
+        const moved = storage({ ...topical, name: 'Buyer' }, sql)
+        const rows = (read: ReadonlyArray<{ seq: number; value: unknown }>) => read.map(({ seq, value }) => [seq, value])
+        // The consumer, its cursor, and the rows of both topics are under the new name.
+        expect(rows(yield* moved.feed('upper', 'c', all))).toEqual([[2, 'HI']])
+        expect(yield* moved.consumers).toEqual([
+          { topic: 'upper', consumer: 'c', behind: 1, cursors: [{ partition: partitionOf('r', 300), seq: 1 }] },
+        ])
+        expect(rows(yield* moved.published('size', [], all))).toEqual([[1, 5], [2, 2]])
+        // The head of the partition moved with its rows: the next step takes the `seq` after the last.
+        yield* moved.write('r', publishing('ho', { upper: 'HO', size: 2 }, ['upper']), 0)
+        expect(rows(yield* moved.published('upper', [], all))).toEqual([[1, 'START'], [2, 'HI'], [3, 'HO']])
+        expect(yield* store.consumers).toEqual([])
+        expect(yield* store.published('upper', [], all)).toEqual([])
+      }).pipe(Effect.orDie)))
 })
