@@ -96,10 +96,11 @@ runs two runners on one SQLite file, with a `RunnerHealth` that answers by versi
   source** of `Sharding.ts`, and **seen in the spike**, whose second test sees an older runner hold shards until the
   next health check. The rule does not rest on the health check alone, for this reason.
 - That a defect of a handler restarts the entity without end, and saves no reply: **documented** by the JSDoc of
-  `defectRetryPolicy` and `disableFatalDefects` at 4.1.2. That the defect rolls back the handler's transaction under
-  `WithTransaction`: **seen** by the spike of [decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md), which
-  sees a failure roll back. A step that dies of this check, under the runtime on Cluster, is **not run yet**: the
-  test is written with the runtime on Cluster, and the note is not taken without it.
+  `defectRetryPolicy` and `disableFatalDefects` at 4.1.2, and **tested** by the test of
+  [`src/cluster.test.ts`](../../src/cluster.test.ts) in which a step of an older version dies. Under
+  `WithTransaction`, the message stays unprocessed and no reply is saved while the older runner dies on it, and a
+  runner of the newest version steps it once. The test steps with a stub that writes a row, and not yet with the
+  runtime's step. With `disableFatalDefects`, the test fails.
 - That Cluster never marks its last healthy runner unhealthy: **read in the source** of `Sharding.ts`. Only what a
   deploy costs rests on it.
 - That SQLite runs the transactions of one file one after the other: **documented** by SQLite, and relied on by
@@ -136,8 +137,10 @@ runs two runners on one SQLite file, with a `RunnerHealth` that answers by versi
   `RunnerHealth`, and `sharding`, which records the versions and builds `Sharding`.
   [`src/cluster.test.ts`](../../src/cluster.test.ts) checks the record on both dialects, the health, and two
   runners on one SQLite file during a rolling deploy.
-- What is not code yet waits for the runtime on Cluster: the check of the newest version in each step's
-  transaction, and its test, in which an older runner's step dies and a newer runner steps its message. Whether a
-  deploy of a program the runner's `sharding` does not name dies is decided with the deploy on Cluster.
+- [`src/cluster.ts`](../../src/cluster.ts) gives the door too: `doorOf`, Cluster's entity of a program with its
+  two RPCs, and `door`, which serves it, each request stepped once `atNewest` has read the newest version in
+  Cluster's transaction. `newestVersion` of the storage reads it, `FOR SHARE` on PostgreSQL.
+- What is not code yet waits for the runtime on Cluster: the step a door runs, which is the runtime's, and whether a
+  deploy of a program the runner's `sharding` does not name dies, which is decided with the deploy on Cluster.
 - [`docs/cluster.md`](../cluster.md#two-versions-at-once) says what this note proposes. The open question of two
   versions at once leaves `docs/open-questions.md` once the note is taken.

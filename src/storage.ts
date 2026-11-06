@@ -410,6 +410,22 @@ export const recordVersions = (
   }).pipe(Effect.orDie)
 
 /**
+ * The newest version a launch on Cluster recorded of the program `name`, or `undefined` where none did. A step reads
+ * it in its transaction (decision 0159). On PostgreSQL the row is read `FOR SHARE`, so that a launch that raises it
+ * waits for the steps that read it before, and on SQLite the transactions of one file come one after the other.
+ */
+export const newestVersion = (name: string): Effect.Effect<number | undefined, never, SqlClient.SqlClient> =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const share = sql.literal(dialectOf(sql) === 'pg' ? 'FOR SHARE' : '')
+    const [held] = yield* Effect.flatMap(
+      sql`SELECT version FROM versions WHERE name = ${name} ${share}`,
+      Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ version: Count }))),
+    )
+    return held?.version
+  }).pipe(Effect.orDie)
+
+/**
  * Whether the runner at `address` runs an older version of a program than the newest recorded: `undefined` where
  * no launch of the runtime recorded the address, a runner without the runtime (decision 0159).
  */

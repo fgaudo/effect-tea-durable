@@ -91,7 +91,7 @@ flowchart TB
   machine["machine.ts: the pure machine, from an event<br/>to the next machine and the rows it writes"]
   rehearse["rehearse.ts: a scenario without storage or clock,<br/>of one entity or of a world"]
   runtime["runtime.ts: launch and deploy, each entity under its own lock,<br/>its fibers, timers and passivation"]
-  cluster["cluster.ts: on Effect Cluster, the Sharding of a runner,<br/>built once its versions are recorded, and its RunnerHealth"]
+  cluster["cluster.ts: on Effect Cluster, the Sharding of a runner,<br/>built once its versions are recorded, its RunnerHealth,<br/>and the door of each program, which steps at the newest version"]
   storage["storage.ts: entities, entity_keys, mailbox, replies,<br/>projections, publications, outbox, log, heads, consumers and cursors;<br/>on Cluster, versions and runner_versions"]
   db[(SQLite or PostgreSQL)]
 
