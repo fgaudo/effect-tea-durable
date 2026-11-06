@@ -120,5 +120,6 @@ transaction while one holds it, and that a statement waits for the semaphore too
   `stepsOf`. [`src/runtime.ts`](../../src/runtime.ts) gives `launchWith`, which runs on Cluster where it is given an
   `OnCluster`: there it holds no database, registers each deploy's door, settles each step, and steps a door's
   request in Cluster's transaction. [`src/cluster.ts`](../../src/cluster.ts) gives `onCluster` and `launch`.
-- On Cluster the waker and the activation at deploy do not run yet, so a timer of an entity not loaded is not woken.
-  A singleton per shard gives both, and is the next part of the step.
+- On Cluster the waker and the activation of the entities left with work run over the shards a runner holds, which a
+  singleton per shard tells
+  ([decision 0162](0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).

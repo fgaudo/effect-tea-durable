@@ -360,6 +360,46 @@ test('a process starts the entities holding an operation or a message, and none 
       expect(yield* store.interrupted).toEqual(['both', 'message', 'operation'])
     })))
 
+// On Cluster a runner reads the work and the timers of the shards it holds alone, by the partition each entity's row
+// stores (decision 0162).
+test('the work and the timers of some partitions are read apart from the others', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const partitions = 4
+      const store = storage(receiver, sql, partitions)
+      const operation = [{
+        key: { name: 'ask' },
+        incarnation: 1,
+        work: { _tag: 'Operation', operation: { _tag: 'Ask' } },
+        delivery: 'Idempotent',
+        due: null,
+      }] as const
+      const ringing = (due: number) =>
+        [{
+          key: { name: 'ask' },
+          incarnation: 1,
+          work: { _tag: 'Timer', at: due, message: 'rang' },
+          delivery: null,
+          due,
+        }] as const
+      // Two ids of each of two partitions.
+      const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+      const [one, two] = [...new Set(ids.map((id) => partitionOf(id, partitions)))]
+      const of = (partition: number | undefined) => ids.filter((id) => partitionOf(id, partitions) === partition)
+      const [busy = '', ready = ''] = of(one)
+      const [queued = '', later = ''] = of(two)
+      yield* store.write(busy, created({ keys: operation }), 0)
+      yield* store.write(ready, created({ keys: ringing(5) }), 0)
+      yield* store.write(queued, created({ queued: [inbound('one')] }), 0)
+      yield* store.write(later, created({ keys: ringing(50) }), 0)
+      expect(yield* store.interruptedIn(one!)).toEqual([busy])
+      expect(yield* store.interruptedIn(two!)).toEqual([queued])
+      expect(yield* store.due(10, [], [one!])).toEqual({ ready: [ready], next: null })
+      expect(yield* store.due(10, [], [two!])).toEqual({ ready: [], next: 50 })
+      expect(yield* store.due(10, [], [one!, two!])).toEqual({ ready: [ready], next: 50 })
+      expect(yield* store.due(10, [], [])).toEqual({ ready: [], next: null })
+    })))
+
 test('the mailbox keeps the order its messages were queued in, as its head is handled', () =>
   database((sql) =>
     Effect.gen(function*() {

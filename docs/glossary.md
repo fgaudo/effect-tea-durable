@@ -88,7 +88,9 @@ Cluster's says so.
   takes.
 - **Partition.** One of the parts of the log, numbered from 1 to a number fixed for the life of the database, 300 by
   default. Each entity belongs to one, drawn from its id when it is created and stored. The rows of a partition are
-  in the order of their `seq`, and the log promises no order across partitions.
+  in the order of their `seq`, and the log promises no order across partitions. On Cluster an entity's partition is
+  its shard, and the log has as many partitions as Cluster has shards per group
+  ([0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
 - **Passivation.** The runtime unloads an entity that has nothing to do. It writes nothing, and the earliest of the
   stored timers wakes the entity.
 - **Planned stop, drain.** The closing of the scope a runtime was launched in with the option `drain`. The runtime
@@ -130,6 +132,10 @@ Cluster's says so.
   ids are their sender's. A caller's sender is the identity the boundary authenticated.
 - **Settled.** The runtime's wait for the process to have nothing under way, an entity unloading included, which the
   tests use.
+- **Shard held, shard lost.** On Cluster, for one deployment: a shard is held while the deployment's singleton of
+  it runs on this runner, and lost once that singleton is interrupted, until it starts again. The waker reads the
+  shards held, and no entity of a shard lost is loaded
+  ([0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
 - **Spike.** A test in [`spikes/`](../spikes) that shows what a dependency does at the pinned version.
 - **State.** The one truth of an entity, an object, stored after each step. Everything durable is derived from it.
 - **Step.** `update` applied to one message: the next state, checked, and stored in one transaction with the message,
@@ -152,7 +158,7 @@ Cluster's says so.
 - **Version.** Of a program: how many migrations it carries, plus one. Every row carries the version that wrote it,
   and is read by migrating its JSON to the program's.
 - **Waker.** The runtime's fiber that reads the stored timers due and activates their entities, and tries again after
-  `retry` one it could not load.
+  `retry` one it could not load. On Cluster it reads the timers of the shards held alone.
 - **World, member.** In a rehearsal: entities on the machine together, with one time and one process for all of them,
   made by `rehearse.together`. A member is one entity of a world, whose `run` runs an operation's runner, and what
   the runner sends reaches the receiver's machine.

@@ -2,11 +2,12 @@
  * The runtime on Effect Cluster: the `Sharding` a runner of the runtime runs, built once the runner's versions are
  * recorded, with a `RunnerHealth` that keeps the shards off a runner of an older version, and the door, Cluster's
  * entity of a program, whose steps commit only at the newest version (decision 0159). The runtime steps what reaches
- * a door (decisions 0160, 0161).
+ * a door (decisions 0160, 0161), and learns the shards its runner holds from a singleton of each (decision 0162).
  */
 import {
   ClusterSchema,
   Entity,
+  EntityId,
   type MessageStorage,
   type RunnerAddress,
   RunnerHealth,
@@ -14,6 +15,7 @@ import {
   type RunnerStorage,
   Sharding,
   ShardingConfig,
+  ShardId,
 } from 'effect/cluster'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -185,15 +187,30 @@ export const creationCodec = Schema.fromJsonString(Schema.Union([
 ]))
 
 /**
+ * The shard group of every door: a door annotates none, so Cluster puts each in its default group, and the runtime's
+ * singletons are registered there (decision 0162).
+ */
+const group = 'default'
+
+/**
  * What the runtime is given to run on this runner's `Sharding`: a deploy registers its program's door, whose answers
  * are encoded as text (decision 0160). The door's `maxIdleTime` is the runtime's passivation, so that a door does not
  * outlive the runtime's entity by more than Cluster's reaper takes (decision 0092).
  */
-export const onCluster: Effect.Effect<OnCluster, never, Sharding.Sharding | SqlClient.SqlClient> = Effect.gen(
+export const onCluster: Effect.Effect<
+  OnCluster,
+  never,
+  Sharding.Sharding | ShardingConfig.ShardingConfig | SqlClient.SqlClient
+> = Effect.gen(
   function*() {
     const sharding = yield* Sharding.Sharding
+    const config = yield* ShardingConfig.ShardingConfig
     const sql = yield* SqlClient.SqlClient
     return {
+      shards: config.shardsPerGroup,
+      shardOf: (id) => sharding.getShardId(EntityId.make(id), group).id,
+      holds: (shard) => sharding.hasShardId(ShardId.make(group, shard)),
+      singleton: (name, run) => sharding.registerSingleton(name, run, { shardGroup: group }),
       register: (program, step, idle) => {
         const answer = Schema.encodeSync(answerCodec(program))
         const created = Schema.encodeSync(creationCodec)
@@ -212,10 +229,15 @@ export const onCluster: Effect.Effect<OnCluster, never, Sharding.Sharding | SqlC
 
 /**
  * The runtime of a runner of Effect Cluster: `launch`'s, whose deploys serve their programs through doors on the
- * runner's `Sharding`, which `sharding` builds. A caller's request, an operation's, and the shards a runner holds are
- * the later parts of the roadmap's step Effect Cluster, and not code yet.
+ * runner's `Sharding`, which `sharding` builds, and which learn their shards from a singleton of each
+ * (decision 0162). A caller's request and an operation's are a later part of the roadmap's step Effect Cluster, and
+ * not code yet.
  */
 export const launch = (
   options: Options = {},
-): Effect.Effect<Runtime, never, Sharding.Sharding | SqlClient.SqlClient | Scope.Scope> =>
+): Effect.Effect<
+  Runtime,
+  never,
+  Sharding.Sharding | ShardingConfig.ShardingConfig | SqlClient.SqlClient | Scope.Scope
+> =>
   Effect.flatMap(onCluster, (cluster) => launchWith(options, cluster))

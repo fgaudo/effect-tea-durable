@@ -1,10 +1,12 @@
 /**
  * The runtime's `Sharding` on Cluster: the versions a launch records, the `RunnerHealth` that answers by them, and
- * two runners on one SQLite file during a rolling deploy (decision 0159).
+ * two runners on one SQLite file during a rolling deploy (decision 0159). The runtime on Cluster: its doors
+ * (decisions 0160, 0161), and the shards a runner learns from its singletons (decision 0162).
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { describe, expect, test } from 'bun:test'
 import {
+  EntityId,
   RunnerAddress,
   RunnerHealth,
   Runners,
@@ -16,6 +18,7 @@ import {
 } from 'effect/cluster'
 import * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
+import * as DateTime from 'effect/DateTime'
 import { Digest } from 'effect/crypto'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -30,7 +33,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addressText, byVersion, door, doorOf, launch, sharding } from './cluster.ts'
-import { defect, InvariantDefect, noWork, operation, type Program, rejectWith, versionOf } from './program.ts'
+import { defect, InvariantDefect, noWork, operation, type Program, rejectWith, timer, versionOf } from './program.ts'
 import { Probe, type Said } from './runtime.ts'
 import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
 import { client, onEach } from './test-databases.ts'
@@ -376,7 +379,7 @@ describe('the runtime on Cluster', () => {
       Layer.provideMerge(Runners.layerNoop),
       Layer.provideMerge(SqlMessageStorage.layer),
       Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
-      Layer.provide(ShardingConfig.layer({
+      Layer.provideMerge(ShardingConfig.layer({
         runnerAddress: Option.some(RunnerAddress.make('localhost', 1)),
         shardsPerGroup: 12,
         entityMessagePollInterval: Duration.millis(100),
@@ -489,4 +492,227 @@ describe('the runtime on Cluster', () => {
           }).pipe(Effect.orDie),
     )
   }, 30_000)
+})
+
+describe('the shards of a runner on Cluster', () => {
+  /** Which runner an operation runs on, by its port. */
+  class Where extends Context.Service<Where, { readonly port: number }>()('test/Where') {}
+  type Bell = {
+    state: Readonly<{ who: string; asking: boolean; ring: number | null; rung: boolean; n: number }>
+    flags: Readonly<{ who: string }>
+    inbound: Readonly<{ _tag: 'Ask' }> | Readonly<{ _tag: 'Ring'; at: number }>
+    internal: Readonly<{ _tag: 'Answered' }> | Readonly<{ _tag: 'Rang' }>
+    operation: Readonly<{ _tag: 'Ask'; who: string }>
+    key: 'ask' | 'ring'
+    parameter: {}
+    rejection: never
+    sender: Readonly<{ user: string }>
+    projection: number
+    index: never
+    services: Where
+  }
+  /** What each operation did in the test under way, as a line such as `e1 started on 2`. */
+  let seen: Array<string> = []
+  /** Whether `Ask` answers: while it does not, it waits until it is interrupted. */
+  let answers = false
+  const bell: Program<Bell> = {
+    name: 'Bell',
+    keys: { ask: null, ring: null },
+    schemas: {
+      state: Schema.Struct({
+        who: Schema.String,
+        asking: Schema.Boolean,
+        ring: Schema.NullOr(Schema.Int),
+        rung: Schema.Boolean,
+        n: Schema.Int,
+      }),
+      flags: Schema.Struct({ who: Schema.String }),
+      inbound: Schema.Union([Schema.TaggedStruct('Ask', {}), Schema.TaggedStruct('Ring', { at: Schema.Int })]),
+      internal: Schema.Union([Schema.TaggedStruct('Answered', {}), Schema.TaggedStruct('Rang', {})]),
+      operation: Schema.TaggedStruct('Ask', { who: Schema.String }),
+      rejection: Schema.Never,
+      sender: Schema.Struct({ user: Schema.String }),
+      projection: Schema.Int,
+    },
+    init: ({ who }) => ({ who, asking: false, ring: null, rung: false, n: 0 }),
+    update: (message) => (state) => {
+      switch (message._tag) {
+        case 'Ask':
+          return { ...state, asking: true }
+        case 'Ring':
+          return { ...state, ring: message.at }
+        case 'Answered':
+          return { ...state, asking: false, n: state.n + 100 }
+        case 'Rang':
+          return { ...state, ring: null, rung: true }
+      }
+    },
+    durable: (state) => ({
+      ...(state.asking ? { ask: { _tag: 'Ask', who: state.who } as const } : {}),
+      ...(state.ring !== null ? { ring: timer(DateTime.makeUnsafe(state.ring), { _tag: 'Rang' } as const) } : {}),
+    }),
+    operations: {
+      Ask: operation(({ who }) =>
+        Effect.gen(function*() {
+          const { port } = yield* Where
+          seen.push(`${who} started on ${port}`)
+          if (!answers) {
+            yield* Effect.never.pipe(
+              Effect.onInterrupt(() => Effect.sync(() => void seen.push(`${who} interrupted on ${port}`))),
+            )
+          }
+          return { _tag: 'Answered' } as const
+        })),
+    },
+    project: ({ n }) => n,
+    indexes: {},
+  }
+  const shardsPerGroup = 4
+  const shards = Array.from({ length: shardsPerGroup }, (_, i) => ShardId.make('default', i + 1))
+  const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: { user: 'u' }, id })
+
+  /** A runner of the runtime: how many shards it holds, whether it holds an entity's, and its context. */
+  type Runner = Readonly<{
+    count: () => number
+    holds: (id: string) => boolean
+    context: Context.Context<Sharding.Sharding>
+  }>
+
+  /**
+   * Runs `run` with a function that starts a runner of the runtime on one SQLite file, at a port, whose runtime deploys
+   * `bell` until the scope the runner is started in closes. `said` is told what the runtime does. The lease is 3 s, as
+   * in the tests of two runners above.
+   */
+  const onFile = async (
+    run: (
+      start: (port: number, said?: (said: Said) => void) => Effect.Effect<Runner, never, Scope.Scope>,
+    ) => Effect.Effect<void, unknown, Scope.Scope | SqlClient.SqlClient>,
+    options: Parameters<typeof launch>[0] = {},
+  ) => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
+    const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
+    const start = (port: number, said?: (said: Said) => void) =>
+      Effect.gen(function*() {
+        const context = yield* Layer.build(
+          sharding([bell]).pipe(
+            Layer.provideMerge(Runners.layerNoop),
+            Layer.provideMerge(SqlMessageStorage.layer),
+            Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
+            Layer.provideMerge(ShardingConfig.layer({
+              runnerAddress: Option.some(RunnerAddress.make('localhost', port)),
+              shardsPerGroup,
+              refreshAssignmentsInterval: Duration.millis(50),
+              runnerHealthCheckInterval: Duration.millis(50),
+              shardLockRefreshInterval: Duration.millis(100),
+              shardLockExpiration: Duration.seconds(3),
+              entityMessagePollInterval: Duration.millis(100),
+            })),
+            Layer.provideMerge(store),
+            Layer.provide(Digest.layerWebCrypto),
+          ),
+        ).pipe(Effect.orDie)
+        const probe = (told: Said) => Effect.sync(() => said?.(told))
+        const runtime = yield* Effect.provide(Effect.provideService(launch(options), Probe, probe), context)
+        yield* Effect.provide(Effect.provideService(runtime.deploy(bell), Where, { port }), context)
+        const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
+        return {
+          count: () => shards.filter((shard) => held.hasShardId(shard)).length,
+          holds: (id: string) => held.hasShardId(held.getShardId(EntityId.make(id), 'default')),
+          context: context as Context.Context<Sharding.Sharding>,
+        }
+      })
+    seen = []
+    answers = false
+    try {
+      await Effect.runPromise(Effect.scoped(run(start)).pipe(Effect.provide(store)) as Effect.Effect<void, unknown>)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }
+  const until = <A>(read: Effect.Effect<A, unknown, SqlClient.SqlClient>, done: (a: A) => boolean) =>
+    Effect.repeat(read, { schedule: Schedule.spaced('25 millis'), until: done }).pipe(Effect.timeout('15 seconds'))
+  const create = (runner: Runner, who: string) =>
+    Effect.provide(
+      Effect.flatMap(doorOf('Bell').client, (clientOf) =>
+        clientOf(who).Create({ version: 1, request: caller(`c-${who}`), message: JSON.stringify({ who }) })),
+      runner.context,
+    )
+  const send = (runner: Runner, who: string, inbound: Bell['inbound'], request: string) =>
+    Effect.provide(
+      Effect.flatMap(doorOf('Bell').client, (clientOf) =>
+        clientOf(who).Message({ version: 1, request: caller(request), message: JSON.stringify(inbound) })),
+      runner.context,
+    )
+  const stateOf = (who: string) =>
+    Effect.flatMap(
+      Effect.service(SqlClient.SqlClient),
+      (sql) =>
+        Effect.map(sql<{ state: string }>`SELECT state FROM entities WHERE id = ${who}`, ([row]) =>
+          row === undefined ? undefined : JSON.parse(row.state) as Bell['state']),
+    )
+
+  test('a timer of an entity no runner holds is woken by the runner that holds its shard', () => {
+    const unloaded: Array<string> = []
+    return onFile((start) =>
+      Effect.gen(function*() {
+        const runner = yield* start(1, (said) => {
+          if (said._tag === 'Unloaded') unloaded.push(said.entity.id)
+        })
+        yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
+        yield* create(runner, 'one')
+        const at = DateTime.toEpochMillis(yield* DateTime.now) + 1_500
+        yield* send(runner, 'one', { _tag: 'Ring', at }, 'm1')
+        // The entity is unloaded long before its timer is due, so that only the waker can wake it.
+        yield* until(Effect.sync(() => unloaded.length), (n) => n > 0)
+        expect((yield* stateOf('one'))?.rung).toBe(false)
+        expect(yield* until(stateOf('one'), (state) => state?.rung === true)).toMatchObject({ ring: null, rung: true })
+        expect(DateTime.toEpochMillis(yield* DateTime.now)).toBeGreaterThanOrEqual(at)
+      }), { passivate: { millis: 200 } })
+  }, 30_000)
+
+  test('an entity left with work is activated by the runner that gains its shard', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const scope = yield* Scope.make()
+        const first = yield* Scope.provide(start(1), scope)
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        yield* create(first, 'one')
+        yield* send(first, 'one', { _tag: 'Ask' }, 'm1')
+        yield* until(Effect.sync(() => seen), (lines) => lines.includes('one started on 1'))
+        // The runner stops with the operation under way, and nothing sends to the entity again.
+        yield* Scope.close(scope, Exit.void)
+        answers = true
+        const second = yield* start(2)
+        yield* until(Effect.sync(second.count), (n) => n === shardsPerGroup)
+        expect(yield* until(stateOf('one'), (state) => state?.n === 100)).toMatchObject({ asking: false, n: 100 })
+        expect(seen).toContain('one started on 2')
+      })), 30_000)
+
+  test('a shard that moves to a second runner crashes its entities on the first, and the second activates them', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        const ids = Array.from({ length: 8 }, (_, i) => `e${i}`)
+        for (const id of ids) {
+          yield* create(first, id)
+          yield* send(first, id, { _tag: 'Ask' }, `m-${id}`)
+        }
+        yield* until(Effect.sync(() => seen.length), (n) => n === ids.length)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const moved = ids.filter((id) => second.holds(id))
+        const kept = ids.filter((id) => first.holds(id))
+        expect(moved.length).toBeGreaterThan(0)
+        expect(kept.length).toBeGreaterThan(0)
+        const expected = moved.flatMap((id) => [`${id} interrupted on 1`, `${id} started on 2`])
+        yield* until(Effect.sync(() => seen), (lines) => expected.every((line) => lines.includes(line)))
+        for (const id of kept) {
+          expect(seen).not.toContain(`${id} interrupted on 1`)
+          expect(seen).not.toContain(`${id} started on 2`)
+        }
+      })), 30_000)
 })

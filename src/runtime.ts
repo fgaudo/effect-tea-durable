@@ -20,6 +20,7 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as MutableList from 'effect/MutableList'
 import * as Queue from 'effect/Queue'
+import * as Schedule from 'effect/Schedule'
 import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import { SqlClient } from 'effect/sql'
@@ -51,6 +52,7 @@ import {
   type Found,
   type Published,
   hold,
+  partitionOf,
   partitioned,
   renamed,
   type Query,
@@ -469,6 +471,24 @@ type Stepped<T extends Types> = Readonly<{
   outputs: ReadonlyArray<Machine.Output<T>>
 }>
 
+/**
+ * On Cluster: what the steps of one entity in one transaction have made so far, a door's or an activation's. The
+ * entity loaded or created, if any, the machine its last step gave, the count of steps its row will hold once the
+ * transaction commits, and the events stepped (decision 0161).
+ */
+interface Stepping<T extends Types> {
+  loaded: Loaded<T> | null
+  machine: Machine.Machine<T> | null
+  steps: number
+  readonly transitions: Array<Stepped<T>>
+}
+
+/**
+ * On Cluster: an entity of a shard this runner may not load, since Cluster does not route the shard here, or the
+ * runtime has let the shard go (decision 0162). Nothing of the transaction that finds it is kept.
+ */
+class Unheld extends Data.TaggedError('Unheld')<Readonly<{ id: string }>> {}
+
 /** A request that reaches a program's door on Cluster: which RPC, the entity, and what its payload carries. */
 export type Delivered = Readonly<{
   _tag: 'Create' | 'Message'
@@ -492,6 +512,21 @@ export interface OnCluster {
     program: Program<T>,
     step: (delivered: Delivered) => Effect.Effect<DoorAnswer<T['rejection']>>,
     idle: number,
+  ) => Effect.Effect<void, never, Scope.Scope>
+  /** How many shards the doors' group has: Cluster's `shardsPerGroup`. */
+  readonly shards: number
+  /** The number of the shard Cluster routes the id or the singleton's name `id` to, in the doors' group. */
+  readonly shardOf: (id: string) => number
+  /** Whether this runner holds the shard of that number now, as Cluster says. */
+  readonly holds: (shard: number) => boolean
+  /**
+   * Registers `run` as the singleton `name`, in the doors' group, for as long as the scope lasts. Cluster starts it
+   * where this runner holds the name's shard, and interrupts it before the runner lets the shard go, waiting for its
+   * finalizers to end (decision 0092).
+   */
+  readonly singleton: (
+    name: string,
+    run: Effect.Effect<void, never, Scope.Scope>,
   ) => Effect.Effect<void, never, Scope.Scope>
 }
 
@@ -572,6 +607,11 @@ interface Deployment<T extends Types> {
   readonly waker: Waker
   /** The waker's fiber, once it is forked: a planned stop interrupts it (decision 0119). */
   waking: Fiber.Fiber<void, never> | null
+  /**
+   * On Cluster, by shard: `held` while the shard's singleton runs, and `lost` once it is interrupted, until it starts
+   * again (decision 0162). Off Cluster, empty.
+   */
+  readonly shards: Map<number, 'held' | 'lost'>
   /** The services the program was deployed with, which its operations run in. */
   readonly run: (operation: Effect.Effect<void, never, T['services'] | Entities>) => Effect.Effect<void>
 }
@@ -746,9 +786,15 @@ export const launchWith = (
     // The runtime's own scope, sequential whatever its caller's: a parallel scope would run the drain, the closing of
     // `running` and the release of the database at once (decision 0120).
     const scope = yield* Scope.fork(yield* Effect.scope, 'sequential')
-    const partitions = options.log?.partitions ?? defaultPartitions
+    // On Cluster a partition of the log is the shard of its entity, so the log has as many partitions as Cluster has
+    // shards per group (decision 0162).
+    const partitions = options.log?.partitions ?? cluster?.shards ?? defaultPartitions
     if (!(Number.isSafeInteger(partitions) && partitions >= 1)) {
       const reason = `the log has ${partitions} partitions, which is no positive integer`
+      return yield* Effect.die(new InvariantDefect({ reason }))
+    }
+    if (cluster !== null && partitions !== cluster.shards) {
+      const reason = `the log has ${partitions} partitions, and Cluster ${cluster.shards} shards per group`
       return yield* Effect.die(new InvariantDefect({ reason }))
     }
     const renames = new Map(yield* Effect.sync(() => renamesOf(options.renames ?? {})))
@@ -1007,24 +1053,49 @@ export const launchWith = (
      * (decisions 0067, 0076).
      */
     const enter = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) =>
+      Effect.map(DateTime.now, (at) => admit(deployed, loaded, at))
+
+    /**
+     * On Cluster, the entity enters the process only where its shard may be loaded here, which gives whether it
+     * entered (decision 0162). The check and the entry are one step: a shard let go marks itself in a step that also
+     * reads the entities held, so an entity either entered before the mark and is read, or finds the mark.
+     */
+    const entersHeld = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>) =>
       Effect.map(DateTime.now, (at) => {
-        const now = DateTime.toEpochMillis(at)
-        deployed.loaded.set(loaded.machine.stored.id, loaded)
-        recent.set(addressOf(loaded.machine.stored), erased(loaded))
-        if (capacity === 'unbounded') return
-        let over = recent.size - capacity
-        for (const other of recent.values()) {
-          if (over <= 0) return
-          if (other === erased(loaded)) continue
-          if (other.evicted) {
-            over -= 1
-          } else if (spare(other, now)) {
-            other.evicted = true
-            Queue.offerUnsafe(other.events, { _tag: 'Evict' })
-            over -= 1
-          }
-        }
+        if (!loadable(deployed, loaded.machine.stored.id)) return false
+        admit(deployed, loaded, at)
+        return true
       })
+
+    /** The entity enters the process at `at`, as `enter` says. */
+    const admit = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>, at: DateTime.Utc) => {
+      const now = DateTime.toEpochMillis(at)
+      deployed.loaded.set(loaded.machine.stored.id, loaded)
+      recent.set(addressOf(loaded.machine.stored), erased(loaded))
+      if (capacity === 'unbounded') return
+      let over = recent.size - capacity
+      for (const other of recent.values()) {
+        if (over <= 0) return
+        if (other === erased(loaded)) continue
+        if (other.evicted) {
+          over -= 1
+        } else if (spare(other, now)) {
+          other.evicted = true
+          Queue.offerUnsafe(other.events, { _tag: 'Evict' })
+          over -= 1
+        }
+      }
+    }
+
+    /**
+     * On Cluster, whether the entity `id` may be loaded on this runner: Cluster routes its shard here, and the runtime
+     * has not let the shard go since its singleton last started (decision 0162). Off Cluster, always.
+     */
+    const loadable = <T extends Types>(deployed: Deployment<T>, id: string) => {
+      if (cluster === null) return true
+      const shard = cluster.shardOf(id)
+      return cluster.holds(shard) && deployed.shards.get(shard) !== 'lost'
+    }
 
     /** Wakes every sender waiting for the entity's resumption: it sends again, and is answered (decision 0063). */
     const wake = (entity: Address) => {
@@ -1376,6 +1447,8 @@ export const launchWith = (
       offered: Machine.Offered<T> | Settle,
     ): Effect.Effect<void> =>
       Effect.gen(function*() {
+        // An event taken before its entity left the process is dropped, as the loop's end says (decision 0162).
+        if (deployed.loaded.get(loaded.machine.stored.id) !== loaded) return
         loaded.applying = true
         const entity: Address = { name: loaded.machine.stored.name, id: loaded.machine.stored.id }
         const now = yield* DateTime.now
@@ -1415,76 +1488,143 @@ export const launchWith = (
         end()
       })))
 
+    /** On Cluster, the steps of an entity in one transaction, from the entity `loaded`, or from none. */
+    const stepping = <T extends Types>(loaded: Loaded<T> | null): Stepping<T> => ({
+      loaded,
+      machine: loaded?.machine ?? null,
+      steps: loaded?.steps ?? 0,
+      transitions: [],
+    })
+
+    /** One event of the entity `stepped` steps, written in the transaction under way if it writes (decision 0161). */
+    const stepIn = <T extends Types>(
+      deployed: Deployment<T>,
+      stepped: Stepping<T>,
+      entity: Address,
+      event: Machine.Event<T>,
+      now: DateTime.Utc,
+    ) =>
+      Effect.gen(function*() {
+        const transition = Machine.step(deployed.program, stepped.machine!, event)
+        if (transition.written !== null) {
+          yield* at('BeforeCommit', entity, event)
+          yield* deployed.storage.write(entity.id, transition.written, DateTime.toEpochMillis(now))
+          stepped.steps += 1
+        }
+        stepped.transitions.push({ event, written: transition.written, outputs: transition.outputs })
+        stepped.machine = transition.machine
+        return transition
+      })
+
+    /**
+     * Loads the entity into `stepped` where `stepped` holds none yet: its stored machine, with its `Restart` stepped
+     * first. It fails with `Unheld` where the entity's shard may not be loaded here (decision 0162), and leaves
+     * `stepped` without an entity where none is stored.
+     */
+    const loadIn = <T extends Types>(
+      deployed: Deployment<T>,
+      stepped: Stepping<T>,
+      entity: Address,
+      now: DateTime.Utc,
+    ): Effect.Effect<void, Unheld> =>
+      Effect.gen(function*() {
+        if (stepped.loaded !== null) return
+        if (!loadable(deployed, entity.id)) return yield* new Unheld({ id: entity.id })
+        const held = yield* deployed.storage.load(entity.id)
+        if (held === null) return
+        const loaded = yield* fresh<T>({ stored: held, running: {} }, (yield* deployed.storage.stepsOf(entity.id)) ?? 0)
+        stepped.loaded = loaded
+        stepped.steps = loaded.steps
+        stepped.machine = loaded.machine
+        yield* stepIn(deployed, stepped, entity, { _tag: 'Restart' }, now)
+      })
+
+    /**
+     * The end of the steps in `stepped`, inside their transaction. An entity created or loaded enters the process with
+     * its loop, or fails with `Unheld` where its shard may no longer be loaded here. The machine is the entity's at
+     * once if nothing was written. Otherwise it is left uncommitted, and the commit tells the loop to settle it: what
+     * it sets going is started then, from a commit the count proves (decision 0161).
+     */
+    const finishIn = <T extends Types>(
+      deployed: Deployment<T>,
+      stepped: Stepping<T>,
+      entity: Address,
+    ): Effect.Effect<void, Unheld> =>
+      Effect.gen(function*() {
+        const held = stepped.loaded!
+        if (deployed.loaded.get(entity.id) !== held) {
+          if (!(yield* entersHeld(deployed, held))) return yield* new Unheld({ id: entity.id })
+          yield* Effect.forkIn(loop(deployed, held), deployed.scope)
+        }
+        if (stepped.steps === held.steps) {
+          // Nothing was written, so nothing can roll back: the machine is the entity's at once (decision 0092).
+          held.machine = stepped.machine!
+          for (const { event, outputs } of stepped.transitions) {
+            yield* observe(entity, event)
+            yield* perform(deployed, held, entity, event, outputs)
+          }
+        } else {
+          held.uncommitted = { machine: stepped.machine!, steps: stepped.steps, transitions: stepped.transitions }
+          yield* sql.afterCommit(offer(held, { _tag: 'Settle' }))
+        }
+      })
+
+    /** The defect of a door's step whose entity this runner may not load (decision 0162). */
+    const unheld = (name: string, id: string) =>
+      new InvariantDefect({ reason: `the shard of the entity ${id} of ${name} is not held by this runner` })
+
     /**
      * The step of a request that reaches a program's door on Cluster, in Cluster's transaction (decisions 0081,
      * 0092, 0160, 0161). The entity's lock is taken inside the transaction, so that nothing holds the lock while it
      * waits for the connection the transaction holds. A held entity is settled first, and one not held is loaded
-     * from what is stored, its `Restart` stepped first. The step's machine is the entity's at once if nothing was
-     * written. Otherwise it is left uncommitted, and the commit tells the loop to settle it: what it sets going is
-     * started then, from a commit the count proves.
+     * from what is stored, its `Restart` stepped first. A step whose entity's shard may not be loaded here dies, and
+     * Cluster delivers the request again (decision 0162).
      */
     const doorStep = <T extends Types>(deployed: Deployment<T>) =>
     (delivered: Delivered): Effect.Effect<DoorAnswer<T['rejection']>> => {
       const { program, storage: stored } = deployed
       const { id } = delivered
       const entity: Address = { name: program.name, id }
-      return holding(entity)(Effect.gen(function*() {
+      return holding(entity)(Effect.gen(function*(): Effect.fn.Return<DoorAnswer<T['rejection']>, Unheld> {
         const now = yield* DateTime.now
-        let loaded = deployed.loaded.get(id) ?? null
-        if (loaded !== null && !(yield* settle(deployed, loaded))) {
-          // The loop settles too, finds the same count, and ends as a crash.
-          yield* crash(deployed, loaded, Cause.die(unsettled(program.name, id)))
-          Queue.offerUnsafe(loaded.events, { _tag: 'Settle' })
-          loaded = null
+        let found = deployed.loaded.get(id) ?? null
+        if (found !== null && !(yield* settle(deployed, found))) {
+          // The crash takes the entity out of the process. Its loop is woken, finds the entity gone, and ends.
+          yield* crash(deployed, found, Cause.die(unsettled(program.name, id)))
+          Queue.offerUnsafe(found.events, { _tag: 'Settle' })
+          found = null
         }
-        const transitions: Array<Stepped<T>> = []
-        let steps = loaded?.steps ?? 0
-        let machine: Machine.Machine<T> | null = loaded?.machine ?? null
-        const run = (event: Machine.Event<T>) =>
-          Effect.gen(function*() {
-            const transition = Machine.step(program, machine!, event)
-            if (transition.written !== null) {
-              yield* at('BeforeCommit', entity, event)
-              yield* stored.write(id, transition.written, DateTime.toEpochMillis(now))
-              steps += 1
-            }
-            transitions.push({ event, written: transition.written, outputs: transition.outputs })
-            machine = transition.machine
-            return transition
-          })
-        if (loaded === null) {
-          const held = yield* stored.load(id)
-          if (held !== null) {
-            loaded = yield* fresh<T>({ stored: held, running: {} }, (yield* stored.stepsOf(id)) ?? 0)
-            steps = loaded.steps
-            machine = loaded.machine
-            yield* run({ _tag: 'Restart' })
-          }
-        }
+        const stepped = stepping(found)
+        yield* loadIn(deployed, stepped, entity, now)
         let answer: DoorAnswer<T['rejection']>
         if (delivered._tag === 'Create') {
           const { request, flags } = yield* stored.deliveredCreation(delivered.version, delivered.request, delivered.message)
-          if (loaded === null) {
+          if (stepped.loaded === null) {
             const started = Machine.start(program, id, flags, now, request)
             // A creation the program dies on stores nothing, and dies: Cluster delivers it again (decision 0160).
             if (started._tag === 'Defect') return yield* Effect.die(started.cause)
             yield* stored.write(id, started.written, DateTime.toEpochMillis(now))
-            loaded = yield* fresh<T>(started.machine, 0)
-            steps = 1
-            machine = started.machine
-            transitions.push({ event: { _tag: 'Create', request }, written: started.written, outputs: started.outputs })
+            stepped.loaded = yield* fresh<T>(started.machine, 0)
+            stepped.steps = 1
+            stepped.machine = started.machine
+            stepped.transitions.push({
+              event: { _tag: 'Create', request },
+              written: started.written,
+              outputs: started.outputs,
+            })
             answer = { _tag: 'Create', answer: { _tag: 'Created' } }
           } else {
-            const transition = yield* run({ _tag: 'Create', request })
+            const transition = yield* stepIn(deployed, stepped, entity, { _tag: 'Create', request }, now)
             const reply = transition.outputs.find((output) => output._tag === 'CreationReplied')
             answer = { _tag: 'Create', answer: reply?._tag === 'CreationReplied' ? reply.reply : { _tag: 'AlreadyExists' } }
           }
         } else {
           const { request, message } = yield* stored.delivered(delivered.version, delivered.request, delivered.message)
-          if (loaded === null) return { _tag: 'Message', answer: { _tag: 'NotFound' } }
+          if (stepped.loaded === null) return { _tag: 'Message', answer: { _tag: 'NotFound' } }
           const key = Machine.requestKey(program, request)
           const reply = yield* stored.reply(id, request, DateTime.toEpochMillis(now))
-          let transition = yield* run({ _tag: 'Receive', request, message, reply, at: now })
+          const arrival: Machine.Event<T> = { _tag: 'Receive', request, message, reply, at: now }
+          let transition = yield* stepIn(deployed, stepped, entity, arrival, now)
           // The mailbox is handled up to the message, each `Handle` stepping its head (decision 0160).
           let replied: DoorAnswer<T['rejection']> | null = null
           while (replied === null) {
@@ -1502,29 +1642,31 @@ export const launchWith = (
                 reason: `the entity ${id} of ${program.name} handled its mailbox, and answered no request ${key}`,
               }))
             } else {
-              transition = yield* run({ _tag: 'Handle', at: now })
+              transition = yield* stepIn(deployed, stepped, entity, { _tag: 'Handle', at: now }, now)
             }
           }
           answer = replied
         }
-        const held = loaded
-        if (deployed.loaded.get(id) !== held) {
-          yield* enter(deployed, held)
-          yield* Effect.forkIn(loop(deployed, held), deployed.scope)
-        }
-        if (steps === held.steps) {
-          // Nothing was written, so nothing can roll back: the machine is the entity's at once (decision 0092).
-          held.machine = machine!
-          for (const { event, outputs } of transitions) {
-            yield* observe(entity, event)
-            yield* perform(deployed, held, entity, event, outputs)
-          }
-        } else {
-          held.uncommitted = { machine: machine!, steps, transitions }
-          yield* sql.afterCommit(offer(held, { _tag: 'Settle' }))
-        }
+        yield* finishIn(deployed, stepped, entity)
         return answer
-      }))
+      })).pipe(Effect.catchTag('Unheld', (refused) => Effect.die(unheld(program.name, refused.id))))
+    }
+
+    /**
+     * On Cluster, loads the entity `id` into this process if it is stored, this process does not hold it already, and
+     * its shard may be loaded here. It runs in a transaction of its own, and takes the entity's lock inside it, as a
+     * door's step does, so that nothing holds the lock while it waits for the connection (decisions 0161, 0162). The
+     * entity's `Restart` is stepped in the same transaction. It is not interrupted halfway, so that the entity is
+     * either loaded with its loop or not at all.
+     */
+    const activateOnCluster = <T extends Types>(deployed: Deployment<T>, id: string): Effect.Effect<void> => {
+      const entity: Address = { name: deployed.program.name, id }
+      return Effect.uninterruptible(sql.withTransaction(holding(entity)(Effect.gen(function*() {
+        if (deployed.loaded.has(id)) return
+        const stepped = stepping<T>(null)
+        yield* loadIn(deployed, stepped, entity, yield* DateTime.now)
+        if (stepped.loaded !== null) yield* finishIn(deployed, stepped, entity)
+      })))).pipe(Effect.catchTag('Unheld', () => Effect.void), Effect.orDie)
     }
 
     /**
@@ -1667,6 +1809,10 @@ export const launchWith = (
         handles() || Queue.sizeUnsafe(loaded.events) > 0 ? Effect.andThen(Effect.yieldNow, next) : next
       )
       const next: Effect.Effect<void> = Effect.suspend(() => {
+        // On Cluster an entity leaves the process by a crash its loop does not make: a shard let go, or a door that
+        // found its row written by another runner. Its loop then ends, since a step of it would write for an entity
+        // another runner may hold (decision 0162).
+        if (cluster !== null && deployed.loaded.get(loaded.machine.stored.id) !== loaded) return Effect.void
         if (handles()) {
           return DateTime.now.pipe(
             Effect.flatMap((now) => apply(deployed, loaded, { _tag: 'Handle', at: now })),
@@ -2061,14 +2207,19 @@ export const launchWith = (
           if (at <= now) waker.failed.delete(id)
           else next = Math.min(next, at)
         }
-        const due = yield* deployed.storage.due(now, [...deployed.loaded.keys(), ...waker.failed.keys()])
+        const due = yield* deployed.storage.due(
+          now,
+          [...deployed.loaded.keys(), ...waker.failed.keys()],
+          cluster === null ? undefined : held(deployed),
+        )
         next = Math.min(next, due.next ?? Infinity)
         waker.next = next === Infinity ? null : next
         // The entities just activated are this process's, and the reading of the next round leaves them out, as
         // it leaves out the ones that failed until their time.
         if (due.ready.length > 0) {
           for (const id of due.ready) {
-            yield* loads(deployed, id).pipe(Effect.catchCause((cause) =>
+            const activation = cluster === null ? loads(deployed, id) : activateOnCluster(deployed, id)
+            yield* activation.pipe(Effect.catchCause((cause) =>
               Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.sync(() => {
                 waker.failed.set(id, now + retry)
               })
@@ -2091,6 +2242,122 @@ export const launchWith = (
         waker.busy = true
       }))
     }
+
+    /** The shards whose singleton runs on this runner: the partitions the waker reads on Cluster (decision 0162). */
+    const held = <T extends Types>(deployed: Deployment<T>) =>
+      [...deployed.shards].flatMap(([shard, state]) => state === 'held' ? [shard] : [])
+
+    /** The waker reads again: the shards it reads have changed, or an entity left the process (decision 0068). */
+    const poke = <T extends Types>(deployed: Deployment<T>) => {
+      deployed.waker.busy = true
+      Queue.offerUnsafe(deployed.waker.poke, undefined)
+      end()
+    }
+
+    /**
+     * The name of a singleton of the program `name` for each shard: the first of `effect-tea-durable/<name>/<n>`, for
+     * `n` from 0, that Cluster routes to the shard (decision 0162). Each name found is checked against the partition
+     * the storage gives it, so that a hash of Cluster's that came to differ from the storage's is a defect at deploy,
+     * and not an entity whose timers no runner reads.
+     */
+    const singletonsOf = (on: OnCluster, name: string): ReadonlyMap<number, string> => {
+      const found = new Map<number, string>()
+      // Every shard is found within a few times `shards` names, by the coupon collector's bound: `shards * 64` names
+      // leave one out with a chance of about `shards * e^-64`.
+      for (let n = 0; found.size < on.shards; n++) {
+        const candidate = `effect-tea-durable/${name}/${n}`
+        if (n >= on.shards * 64) {
+          throw new InvariantDefect({ reason: `no singleton of ${name} is found for some of the ${on.shards} shards` })
+        }
+        const shard = on.shardOf(candidate)
+        const partition = partitionOf(candidate, on.shards)
+        if (shard !== partition) {
+          const reason = `Cluster routes ${candidate} to the shard ${shard}, the storage to the partition ${partition}`
+          throw new InvariantDefect({ reason })
+        }
+        if (!found.has(shard)) found.set(shard, candidate)
+      }
+      return found
+    }
+
+    /**
+     * The shard `shard` of `deployed` while its singleton runs (decision 0092). The shard is gained as the singleton
+     * starts: the waker reads it, and the entities of it that hold an operation or a message are activated. The
+     * shard is lost as the singleton is interrupted, by its finalizer, which Cluster waits for before the shard moves.
+     */
+    const serving = <T extends Types>(on: OnCluster, deployed: Deployment<T>, shard: number) =>
+      Effect.andThen(
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            deployed.shards.set(shard, 'held')
+            poke(deployed)
+          }),
+          () => losing(on, deployed, shard),
+        ),
+        activating(deployed, shard),
+      )
+
+    /**
+     * Activates the entities of the shard that hold an operation or a message, as a process does as it starts
+     * (decision 0071). A door may have loaded one first, and the activation leaves it as it is. A round that fails, in
+     * its reading or in an activation, is made again after `retry`: a defect that ended the singleton would run its
+     * finalizer, and the shard would be let go while Cluster still routes it here. A round is counted while it runs,
+     * so that the process is not settled meanwhile.
+     */
+    const activating = <T extends Types>(deployed: Deployment<T>, shard: number): Effect.Effect<void> => {
+      const round = Effect.gen(function*() {
+        let failed = false
+        for (const id of yield* deployed.storage.interruptedIn(shard)) {
+          const exit = yield* Effect.exit(activateOnCluster(deployed, id))
+          if (Exit.isFailure(exit)) failed = true
+        }
+        return failed
+      })
+      const counted = Effect.acquireUseRelease(
+        Effect.sync(() => {
+          detachments += 1
+        }),
+        () => Effect.exit(round),
+        () =>
+          Effect.sync(() => {
+            detachments -= 1
+            end()
+          }),
+      )
+      return Effect.asVoid(Effect.repeat(counted, {
+        schedule: Schedule.spaced(`${retry} millis`),
+        until: (exit) => Exit.isSuccess(exit) && !exit.value,
+      }))
+    }
+
+    /**
+     * The shard is lost: marked so, and read by the waker no more, and then every entity of it this process holds
+     * crashes, each under its own lock (decision 0092). The mark and the reading of the entities held are one step,
+     * so that an entity a door or an activation loads either is read here or finds the mark. A crash forks the
+     * interruption of the entity's operations, and waits for none of them: Cluster waits for this finalizer with no
+     * bound, and keeps the shard from every runner while it runs (decision 0056).
+     */
+    const losing = <T extends Types>(on: OnCluster, deployed: Deployment<T>, shard: number) =>
+      Effect.gen(function*() {
+        const leaving = yield* Effect.sync(() => {
+          deployed.shards.set(shard, 'lost')
+          poke(deployed)
+          return [...deployed.loaded.values()].filter((loaded) => on.shardOf(loaded.machine.stored.id) === shard)
+        })
+        const left = new InvariantDefect({ reason: `the shard ${shard} left this runner` })
+        for (const loaded of leaving) {
+          const { name, id } = loaded.machine.stored
+          yield* holding({ name, id })(Effect.suspend(() =>
+            deployed.loaded.get(id) === loaded
+              ? Effect.andThen(
+                crash(deployed, loaded, Cause.die(left)),
+                // The loop is woken, finds the entity gone, and ends.
+                Effect.sync(() => Queue.offerUnsafe(loaded.events, { _tag: 'Settle' })),
+              )
+              : Effect.void
+          ))
+        }
+      })
 
     const deploy = <T extends Types, const C extends Consumers<T> = {}>(
       program: Program<T>,
@@ -2131,6 +2398,7 @@ export const launchWith = (
               // Nothing is known of the stored timers until the waker has read them once.
               waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1), failed: new Map() },
               waking: null,
+              shards: new Map(),
               run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
             }
             return yield* Effect.onError(restore(deploying<T, C>(deployed)), () =>
@@ -2170,11 +2438,15 @@ export const launchWith = (
               behind: stored.behind,
             }))
         }
-        // On Cluster the entities a crash left with work are activated by the runner that holds their shard, and the
-        // program's requests reach its door (decision 0092). The waker reads the shards a runner holds: neither is
-        // code yet on Cluster, so a timer there is armed only while its entity is loaded.
+        // On Cluster the program's requests reach its door, and a singleton per shard tells the deployment which shards
+        // the runner holds: the one of a shard held starts as it is registered, and activates the entities the shard
+        // left with work (decisions 0092, 0162).
         if (cluster !== null) {
           yield* Scope.provide(cluster.register(program, doorStep(deployed), passivate), deployed.scope)
+          const singletons = yield* Effect.sync(() => singletonsOf(cluster, program.name))
+          for (const [shard, name] of singletons) {
+            yield* Scope.provide(cluster.singleton(name, serving(cluster, deployed, shard)), deployed.scope)
+          }
         } else {
           for (const id of yield* deployed.storage.interrupted) yield* loads(deployed, id)
         }
@@ -2186,9 +2458,7 @@ export const launchWith = (
           const awaited = undeployed.get(program.name)
           undeployed.delete(program.name)
           if (awaited !== undefined) Deferred.doneUnsafe(awaited, Effect.void)
-          if (cluster === null) {
-            deployed.waking = yield* Effect.forkIn(waking(deployed), deployed.scope, { uninterruptible: false })
-          }
+          deployed.waking = yield* Effect.forkIn(waking(deployed), deployed.scope, { uninterruptible: false })
         }))
         const handle: Handle<T, C> = {
           partitions,

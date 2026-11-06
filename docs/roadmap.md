@@ -26,9 +26,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    On Cluster an entity's type is its program's name, and Cluster stores its messages under it, so a rename moves
    Cluster's rows too ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)).
 
-   Whether a partition of the log is Cluster's shard is decided with this step: the head of a partition keeps the
-   order without it, and a test with two writers checks that the steps of a partition commit in the order of their
-   `seq` ([decision 0137](decisions/0137-the-log-is-ordered-within-a-partition.md)).
+   On Cluster a partition of the log is its entity's shard
+   ([decision 0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
+   The head of a partition keeps the order without it, and a test with two writers checks that the steps of a
+   partition commit in the order of their `seq` ([decision 0137](decisions/0137-the-log-is-ordered-within-a-partition.md)).
 
    A consumer's wait ends at the commit of a row in its topic, which the runner that commits tells, and only at its
    time where another runner commits ([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md)).

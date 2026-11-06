@@ -22,10 +22,11 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md) | On Cluster, a request is keyed and answered as on one process |  |
 | [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
 | [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) | On Cluster, an interrupted caller leaves its request alone |  |
-| [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each |  |
+| [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each | [0162](0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md) |
 | [0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md) | On Cluster, an older version serves no shard once a newer one launches, and a step commits only at the newest version |  |
 | [0160](0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md) | On Cluster, a door answers as text, and a creation the program dies on waits for a fix |  |
 | [0161](0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md) | On Cluster, a step settles the machine by the count of the steps that wrote it, and an entity's lock is taken only inside a transaction |  |
+| [0162](0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md) | On Cluster, an entity's shard is its partition, and each deployment serves its shards from a singleton of each |  |
 
 ## The project
 
@@ -137,7 +138,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0121](0121-a-read-answers-from-the-row-of-the-read-model.md) | A read answers from the row of the read model, and calls no `project` | [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) |
 | [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) | `reindex` leaves a row it cannot compute, and names its entity |  |
 | [0135](0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) | A large state is split by the program, and the runtime warns of a large step | [0138](0138-the-log-publishes-topics.md), [0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md) |
-| [0137](0137-the-log-is-ordered-within-a-partition.md) | The log is ordered within a partition, and a consumer keeps a cursor per partition | [0138](0138-the-log-publishes-topics.md), [0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md) |
+| [0137](0137-the-log-is-ordered-within-a-partition.md) | The log is ordered within a partition, and a consumer keeps a cursor per partition | [0138](0138-the-log-publishes-topics.md), [0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md), [0162](0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md) |
 | [0138](0138-the-log-publishes-topics.md) | The log publishes topics, and a consumer reads one | [0139](0139-the-projection-is-json.md), [0140](0140-a-row-of-a-topic-gives-its-value.md), [0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md), [0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md) |
 | [0139](0139-the-projection-is-json.md) | The projection is JSON, and `project` converts |  |
 | [0140](0140-a-row-of-a-topic-gives-its-value.md) | A row of a topic gives the value the topic selects | [0154](0154-a-steps-projection-is-stored-once-in-the-outbox.md) |

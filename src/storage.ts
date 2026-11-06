@@ -1043,10 +1043,21 @@ export interface Storage<T extends Types> {
    */
   readonly interrupted: Effect.Effect<ReadonlyArray<string>>
   /**
-   * The stored timers of the entities this process does not hold: `loaded` are the ones it does, whose timers are
-   * armed in it, and a suspended entity is left out, since no timer of its fires (decision 0029).
+   * The entities of `interrupted` whose stored partition is `partition`: on Cluster, the ones a runner activates when
+   * it gains the shard of that number (decision 0162).
    */
-  readonly due: (now: number, loaded: ReadonlyArray<string>) => Effect.Effect<Due>
+  readonly interruptedIn: (partition: number) => Effect.Effect<ReadonlyArray<string>>
+  /**
+   * The stored timers of the entities this process does not hold: `loaded` are the ones it does, whose timers are
+   * armed in it, and a suspended entity is left out, since no timer of its fires (decision 0029). Given
+   * `partitions`, only the entities whose stored partition is among them are read: on Cluster, the shards the
+   * runner holds (decision 0162).
+   */
+  readonly due: (
+    now: number,
+    loaded: ReadonlyArray<string>,
+    partitions?: ReadonlyArray<number>,
+  ) => Effect.Effect<Due>
   /**
    * Creates one expression index per index the program declares, so that a query over it is a lookup. Run once,
    * where the program is deployed: an index the program no longer declares is left behind, and costs nothing.
@@ -1581,22 +1592,36 @@ export const storage = <T extends Types>(
   /** The entities of the program an operator has to resume: nothing of theirs is handled, and no timer of theirs fires. */
   const onHold = sql`(SELECT id FROM entities WHERE name = ${name} AND suspended_on IS NOT NULL)`
 
+  /**
+   * The entities of the program whose stored partition is among `partitions`, or every entity where none are given.
+   * The partition is the entity's row's, written once with it (decisions 0137, 0162).
+   */
+  const within = (partitions: ReadonlyArray<number> | undefined) =>
+    partitions === undefined
+      ? sql``
+      : sql`AND id IN (SELECT id FROM entities WHERE name = ${name} AND partition IN ${sql.in(partitions)})`
+
   // A key holding an operation has no `due`: the time of a timer is what that column is for.
-  const interrupted = Effect.gen(function*() {
-    const found = yield* rows('entity_keys', Rows.id)(sql`
-      SELECT id FROM entity_keys
-      WHERE name = ${name} AND due IS NULL AND id NOT IN ${onHold}
-      UNION
-      SELECT id FROM mailbox WHERE name = ${name} AND id NOT IN ${onHold}
-      ORDER BY id
-    `)
-    return found.map((row) => row.id)
-  }).pipe(Effect.orDie)
+  const interruptedWithin = (partitions: ReadonlyArray<number> | undefined) =>
+    Effect.gen(function*() {
+      const found = yield* rows('entity_keys', Rows.id)(sql`
+        SELECT id FROM entity_keys
+        WHERE name = ${name} AND due IS NULL AND id NOT IN ${onHold} ${within(partitions)}
+        UNION
+        SELECT id FROM mailbox WHERE name = ${name} AND id NOT IN ${onHold} ${within(partitions)}
+        ORDER BY id
+      `)
+      return found.map((row) => row.id)
+    }).pipe(Effect.orDie)
+  const interrupted = interruptedWithin(undefined)
+  const interruptedIn = (partition: number) => interruptedWithin([partition])
 
   // The entities this process holds are left out as the rows are read, not by the query: a query that listed them
   // would take one parameter each, and fail past SQLite's limit on them. Each page skips at most the loaded ones.
-  const due = (now: number, loaded: ReadonlyArray<string>) =>
+  const due = (now: number, loaded: ReadonlyArray<string>, partitions?: ReadonlyArray<number>) =>
     Effect.gen(function*() {
+      // No partition held reads nothing: `IN ()` is no SQL.
+      if (partitions !== undefined && partitions.length === 0) return { ready: [], next: null } satisfies Due
       const held = new Set(loaded)
       const ready: Array<string> = []
       let after = ''
@@ -1604,7 +1629,7 @@ export const storage = <T extends Types>(
         const page = yield* rows('entity_keys', Rows.id)(sql`
           SELECT DISTINCT id FROM entity_keys
           WHERE name = ${name} AND due IS NOT NULL AND due <= ${now}
-            AND id > ${after} AND id NOT IN ${onHold}
+            AND id > ${after} AND id NOT IN ${onHold} ${within(partitions)}
           ORDER BY id LIMIT ${batch}
         `)
         for (const { id } of page) if (!held.has(id) && ready.length < batch) ready.push(id)
@@ -1617,7 +1642,7 @@ export const storage = <T extends Types>(
       while (next === null) {
         const page: ReadonlyArray<{ id: string; at: number }> = yield* rows('entity_keys', Rows.due)(sql`
           SELECT id, MIN(due) AS at FROM entity_keys
-          WHERE name = ${name} AND due > ${now} AND id NOT IN ${onHold}
+          WHERE name = ${name} AND due > ${now} AND id NOT IN ${onHold} ${within(partitions)}
           GROUP BY id
           ${from === null ? sql`` : sql`HAVING MIN(due) > ${from.at} OR (MIN(due) = ${from.at} AND id > ${from.id})`}
           ORDER BY at, id LIMIT ${batch}
@@ -2204,6 +2229,7 @@ export const storage = <T extends Types>(
     reply,
     write,
     interrupted,
+    interruptedIn,
     due,
     indexed,
     query,
