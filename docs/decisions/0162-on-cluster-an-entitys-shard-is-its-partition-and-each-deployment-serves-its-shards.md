@@ -5,7 +5,8 @@
 from a singleton of each, and changes two of its rules: each deployment registers its own singletons, and the rows
 the waker and an activation read carry their entity's shard through the entity's row. Decides the roadmap's
 question of whether a partition of the log is Cluster's shard
-([decision 0137](0137-the-log-is-ordered-within-a-partition.md)).
+([decision 0137](0137-the-log-is-ordered-within-a-partition.md)), and says how that note's order of a partition holds
+on Cluster.
 
 ## Context
 
@@ -43,6 +44,19 @@ defect, as the JSDoc of `Singleton.make` says.
   Otherwise the waker of the shard Cluster routes an entity to would never read the entity's timers.
 - **Every door is in Cluster's default shard group**, since a door annotates none, and so is every singleton of the
   runtime.
+
+### The order of a partition
+
+- **On Cluster the steps of a partition commit in the order of their `seq` by SQLite's write lock.** Every
+  transaction of a writable connection begins with `BEGIN IMMEDIATE`, which holds the file's write lock until the
+  transaction ends. So the transactions of every runner on the file commit one after the other, and a step draws its
+  `seq` inside its own transaction. The lock on the head's row of decision 0137 keeps the order where transactions
+  commit side by side, which on Cluster is PostgreSQL. The runtime runs there only once Cluster has a fence
+  ([decision 0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
+- **The test with two writers of one partition waits for a server of PostgreSQL**, with the
+  [open question](../open-questions.md#running) of PostgreSQL with many connections. On SQLite, and on PGlite, which
+  runs one statement at a time on one session, two writers commit one after the other whatever the head does, so no
+  test there can fail without its lock.
 
 ### A singleton per shard, for each deployment
 
@@ -93,6 +107,11 @@ defect, as the JSDoc of `Singleton.make` says.
 
 ## What it rests on
 
+- That the transactions of every runner on one SQLite file commit one after the other: **documented** by the JSDoc of
+  `SqliteClient.layer` of `@effect/sql-sqlite-bun` at 4.1.2, which begins every transaction of a writable connection
+  with `BEGIN IMMEDIATE`, and by SQLite, whose `BEGIN IMMEDIATE` takes the write lock at once. The order of a partition
+  on Cluster rests on it, and on PostgreSQL on the lock of the head's row, which is **documented** by PostgreSQL and
+  not tested (decision 0137).
 - That Cluster starts a shard's singleton on the runner that holds the shard, interrupts it before the shard moves,
   and waits for its finalizer: **seen** in the spike of decision 0092, and **tested** by `a shard that moves to a second
   runner crashes its entities on the first, and the second activates them` in

@@ -49,7 +49,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   ([decision 0158](decisions/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
   It would be decided by:
   - the storage's tests and the runtime's tests of the log run against a server, in CI or by hand;
-  - a test with two writers of one partition, which checks that its steps commit in the order of their `seq`;
+  - a test with two writers of one partition, which checks that its steps commit in the order of their `seq`. On
+    SQLite and on PGlite two writers commit one after the other whatever the head does, so only a server runs it
+    ([decision 0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md));
   - whether a step whose transaction fails with `DeadlockError` or `SerializationError` is retried, as the JSDoc of
     `SqlClient.withTransaction` shows, or crashes its entity, as a write that fails does.
 - **Bookkeeping in transactions.** What another fiber reads changes in one synchronous step
