@@ -121,6 +121,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0043](archive/0043-a-row-no-version-reads-fails-what-reads-it.md) | A row no version reads fails what reads it, not the process | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) |
 | [0100](archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md) | A rejection's reason is kept as long as a reply of its version is stored |  |
 | [0126](0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md) | A program keeps every migration, and a test records what each did |  |
+| [0156](0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md) | A program is renamed by its launch, which moves what is stored under its old name, and its entities keep their keys |  |
 | [0051](archive/0051-a-deploy-that-fails-leaves-nothing-running.md) | A deploy that fails leaves nothing running | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0102](archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md) |
 | [0058](archive/0058-work-is-compared-by-what-is-stored.md) | Work is compared by what is stored |  |
 | [0075](archive/0075-a-name-is-deployed-once-in-a-process.md) | A name is deployed once in a process | [0078](archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) |
