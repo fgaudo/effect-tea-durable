@@ -200,6 +200,11 @@ export type ConsumerOf<C, Name extends string> = Name extends keyof C
 
 /** What a caller does with one program's entities, deployed with the consumers `C`. */
 export interface Handle<T extends Types, C = {}> {
+  /**
+   * How many partitions the log has, as the first launch of its database stored it: what the readers of one consumer
+   * divide among them (decisions 0137, 0153).
+   */
+  readonly partitions: number
   /** Creates the entity `id`. A retry of the request that created it is answered `Created` (decision 0017). */
   readonly create: (
     id: string,
@@ -298,12 +303,16 @@ export interface Handle<T extends Types, C = {}> {
    * most `wait.millis` from the call: it gives the first page with a row, or none once the time is over or the
    * runtime stops. A limit of 0 gives none at once. `wait.millis` is a non-negative integer, and anything else is
    * the caller's defect (decision 0142).
+   * Given `partitions`, a reading reads those partitions only, so that the readers of one name divide its
+   * partitions among them. The division is the caller's: the runtime holds no reader, and two readers that name one
+   * partition are given the same rows. A list that is empty, or holds what is no partition of the log, is the
+   * caller's defect (decision 0153).
    */
   readonly feed: <Name extends Topic<T>>(
     topic: Name,
     consumer: ConsumerOf<C, Name>,
     limit: number,
-    wait?: Readonly<{ millis: number }>,
+    options?: Readonly<{ wait?: Readonly<{ millis: number }>; partitions?: ReadonlyArray<number> }>,
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * Moves a consumer's cursor in each partition `through` names, and no other. The rows `feed` gave are such a
@@ -526,6 +535,30 @@ const cursored = <A>(
       }
       if (!(Number.isSafeInteger(seq) && seq >= 0)) {
         return Effect.die(new InvariantDefect({ reason: `the cursor is ${seq}, which is no non-negative integer` }))
+      }
+    }
+    return effect
+  })
+
+/**
+ * Runs `effect` once the partitions a reader names, if any, are a list of at least one partition of the log, each
+ * an integer from 1 to `partitions`: anything else is the caller's defect, and nothing is read for it
+ * (decisions 0053, 0153).
+ */
+const named = <A>(
+  given: ReadonlyArray<number> | undefined,
+  partitions: number,
+  effect: Effect.Effect<A>,
+): Effect.Effect<A> =>
+  Effect.suspend(() => {
+    if (given === undefined) return effect
+    if (!Array.isArray(given) || given.length === 0) {
+      return Effect.die(new InvariantDefect({ reason: 'the partitions a reader names are no list of at least one' }))
+    }
+    for (const partition of given) {
+      if (!(Number.isSafeInteger(partition) && partition >= 1 && partition <= partitions)) {
+        const reason = `the partition is ${partition}, which is no integer from 1 to ${partitions}`
+        return Effect.die(new InvariantDefect({ reason }))
       }
     }
     return effect
@@ -1797,6 +1830,7 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
           deployed.waking = yield* Effect.forkIn(waking(deployed), deployed.scope, { uninterruptible: false })
         }))
         const handle: Handle<T, C> = {
+          partitions,
           create: (id, flags, request) =>
             admitted(faulted(
               create(deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
@@ -1826,17 +1860,22 @@ export const launch = (options: Options = {}): Effect.Effect<Runtime, never, Sql
               topic,
               cursored(after, partitions, counted({ limit }, deployed.storage.published(topic, after, limit))),
             ),
-          feed: (topic, consumer, limit, wait) =>
-            topical(
+          feed: (topic, consumer, limit, options) => {
+            const wait = options?.wait
+            const read = deployed.storage.feed(topic, consumer, limit, options?.partitions)
+            return topical(
               program,
               topic,
               enlisted(deployed, topic, consumer, true, counted(
                 wait === undefined ? { limit } : { limit, wait: wait.millis },
-                wait === undefined || limit === 0
-                  ? deployed.storage.feed(topic, consumer, limit)
-                  : waited(program.name, topic, wait.millis, deployed.storage.feed(topic, consumer, limit)),
+                named(
+                  options?.partitions,
+                  partitions,
+                  wait === undefined || limit === 0 ? read : waited(program.name, topic, wait.millis, read),
+                ),
               )),
-            ),
+            )
+          },
           ack: (topic, consumer, through) =>
             topical(
               program,

@@ -1,6 +1,6 @@
 # 0153. A reader of a consumer names the partitions it reads
 
-**Status:** proposed, 2026-11-06, for the step Readers of one consumer of the [roadmap](../roadmap.md). Decides the
+**Status:** accepted, 2026-11-06, with the step Readers of one consumer of the roadmap. Decides the
 [open question](../open-questions.md#storage-and-reading) of the readers of one consumer. Changes
 [decision 0142](0142-a-consumer-waits-for-a-row-of-its-topic.md), whose `wait` is the fourth argument of `feed`.
 
@@ -99,7 +99,7 @@ The cursors are already kept per partition. What is missing is a reading that re
 - [`src/runtime.ts`](../../src/runtime.ts) takes `feed`'s options as an object, checks `partitions`, and gives the
   handle `partitions`. [`src/storage.ts`](../../src/storage.ts) reads a consumer's page from the partitions given.
 - [`src/runtime.test.ts`](../../src/runtime.test.ts) checks that a reader is given only its partitions, that a slow
-  reader holds no other, that two readers' acks are pruned as one consumer's, and that a list of partitions it
-  cannot read is a defect.
-- `docs/design.md` says so under Consumers. The glossary's consumer says that its readers may divide its partitions.
+  reader holds no other, that two readers' acks are pruned as one consumer's, that a reader that waits waits through
+  the commits of other partitions, and that a list of partitions it cannot read is a defect.
+- `docs/design.md` says so under Readers of one consumer. The glossary's consumer says that its readers may divide its partitions.
   The open question of the readers of one consumer leaves `docs/open-questions.md`.

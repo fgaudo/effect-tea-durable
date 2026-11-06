@@ -689,11 +689,15 @@ export interface Storage<T extends Types> {
    * topic of the log, acked or not, until it is forgotten (decision 0152).
    */
   readonly declare: (consumers: ReadonlyArray<Readonly<{ topic: string; consumer: string }>>) => Effect.Effect<void>
-  /** `Handle.feed`, as the storage keeps it: it reads the consumer's cursors, and writes nothing (decision 0152). */
+  /**
+   * `Handle.feed`, as the storage keeps it: it reads the consumer's cursors, and writes nothing (decision 0152).
+   * Given `partitions`, it reads those partitions only (decision 0153). The partitions are the caller's to check.
+   */
   readonly feed: <Name extends Topic<T>>(
     topic: Name,
     consumer: string,
     limit: number,
+    partitions?: ReadonlyArray<number>,
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
    * `Handle.ack`, as the storage keeps it, in one transaction: the head of each partition is read first, and caps
@@ -1440,13 +1444,22 @@ export const storage = <T extends Types>(
   // only the rows of the steps that committed out of their order, and each page is a range of an index.
   // A topic's rows have gaps in their `seq`, where a step published only other topics, so a partition whose head is
   // past a cursor may hold no row of the topic past it (decision 0138).
-  const published = <Name extends Topic<T>>(topic: Name, after: ReadonlyArray<Cursor>, limit: number) =>
+  // A reading of some partitions starts from their first rows, and the statement leaves out the rows of the others.
+  // The index of the topic holds no partition, so a reader of a few partitions passes over many rows (decision 0153).
+  const published = <Name extends Topic<T>>(
+    topic: Name,
+    after: ReadonlyArray<Cursor>,
+    limit: number,
+    partitions?: ReadonlyArray<number>,
+  ) =>
     Effect.gen(function*() {
       const select = topics.get(topic)
       if (select === undefined) throw new Error(`'${topic}' is no topic of the program '${name}'`)
       const cursors = cursorsOf(after)
+      const read = partitions === undefined ? undefined : new Set(partitions)
       const behind: Array<readonly [number, number]> = []
       for (const [partition, head] of yield* heads) {
+        if (read !== undefined && !read.has(partition)) continue
         const cursor = cursors.get(partition) ?? 0
         if (head > cursor) behind.push([partition, cursor])
       }
@@ -1461,18 +1474,21 @@ export const storage = <T extends Types>(
         FROM json_each(${JSON.stringify(behind)}) AS behind
       `)
       let from = first[0]?.position ?? null
-      const read: Array<Published<T, Name>> = []
-      while (from !== null && read.length < limit) {
+      const given: Array<Published<T, Name>> = []
+      const within = read === undefined
+        ? sql``
+        : sql`AND partition IN (SELECT value FROM json_each(${JSON.stringify([...read])}))`
+      while (from !== null && given.length < limit) {
         const page = yield* rows('outbox', Rows.published)(sql`
           SELECT position, partition, seq, id, tag, version, message, projection FROM outbox
-          WHERE name = ${name} AND topic = ${topic} AND position >= ${from} ORDER BY position LIMIT ${batch}
+          WHERE name = ${name} AND topic = ${topic} AND position >= ${from} ${within} ORDER BY position LIMIT ${batch}
         `)
         for (const row of page) {
           if (row.seq <= (cursors.get(row.partition) ?? 0)) continue
           // The selector of the program deployed, on the row at the program's version: one that dies gives the
           // defect to the reader, as the schema does (decisions 0121, 0140).
           const shown = projection.read(row.projection, up('projection', row.version))
-          read.push({
+          given.push({
             partition: row.partition,
             seq: row.seq,
             id: row.id,
@@ -1485,12 +1501,12 @@ export const storage = <T extends Types>(
               : internal.read(row.message, up('internal', row.version)),
             value: (select === null ? shown : select(shown)) as Value<T, Name>,
           })
-          if (read.length === limit) break
+          if (given.length === limit) break
         }
         const last = page[page.length - 1]
         from = page.length < batch || last === undefined ? null : last.position + 1
       }
-      return read
+      return given
     }).pipe(Effect.orDie)
 
   const declare = (consumers: ReadonlyArray<Readonly<{ topic: string; consumer: string }>>) =>
@@ -1499,12 +1515,17 @@ export const storage = <T extends Types>(
         INSERT INTO consumers ${sql.insert({ name, topic, consumer })} ON CONFLICT (name, topic, consumer) DO NOTHING
       `, { discard: true })).pipe(Effect.orDie)
 
-  const feed = <Name extends Topic<T>>(topic: Name, consumer: string, limit: number) =>
+  const feed = <Name extends Topic<T>>(
+    topic: Name,
+    consumer: string,
+    limit: number,
+    partitions?: ReadonlyArray<number>,
+  ) =>
     Effect.gen(function*() {
       const cursors = yield* rows('cursors', Rows.cursor)(sql`
         SELECT partition, seq FROM cursors WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}
       `)
-      return yield* published(topic, cursors, limit)
+      return yield* published(topic, cursors, limit, partitions)
     }).pipe(Effect.orDie)
 
   // A cursor goes no further than the head of its partition: one past it would have the rows written after it

@@ -2,6 +2,8 @@
 
 **Status:** accepted, 2026-11-05. Changes
 [decision 0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md), whose `feed` gives at once what it reads.
+Changed by [decision 0153](0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md), which moves `wait` into an
+object of `feed`'s options, beside the partitions a reader names.
 
 ## Context
 

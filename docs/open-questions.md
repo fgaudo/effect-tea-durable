@@ -25,20 +25,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     prune run on it;
   - whether the runtime keeps room of its own, a file it drops once the disk is full, so that a prune always has
     the room it needs.
-- **Readers of one consumer.** A consumer is a name within a topic, and `feed` gives every reader of the name the
-  rows past its cursors: two fibers that read under one name are given the same rows, and act on them twice, with
-  only the ack between them ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)).
-  A pool of workers that reads one topic in parallel takes a name per worker today, and divides the partitions
-  among the names by hand: a worker added moves the division, and the cursors stay with the old names. Whether the
-  readers of one name are assigned partitions, as the consumers of a group are on Kafka, is not decided. It would
-  be decided by:
-  - a program whose consumer cannot keep up with one reader, measured for the rows a reader acts on in a second
-    against the rows its topic gains;
-  - what a reader holds, a lease of its partitions for a time, and what becomes of a lease whose reader died,
-    since the runtime holds nothing for a consumer between two calls
-    ([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md));
-  - whether the division is the runtime's or the caller's, which would name the partitions it reads, as
-    `published` is given its cursors.
 - **The projection written once per topic.** A row of a topic stores the projection whole, and the selector runs
   where the row is read, so that a topic needs no migration of its own
   ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md)). A step that changes what five topics

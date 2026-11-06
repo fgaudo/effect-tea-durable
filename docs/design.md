@@ -687,7 +687,7 @@ and in which partitions.
 `published(topic, after, limit)` reads past cursors the caller holds, and registers nothing; `[]` is the whole
 topic
 ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)).
-`feed(topic, consumer, limit, { millis })` waits where it finds no row: until a step commits a row in the topic,
+`feed(topic, consumer, limit, { wait: { millis } })` waits where it finds no row: until a step commits a row in the topic,
 and then reads again, for at most `millis` from the call. It gives the first page with a row, or none once the
 time is over or the runtime stops. A step tells each topic it wrote in once its transaction has committed, and a
 consumer of another topic is not woken. The reading takes its topic's signal before it reads, so that a commit
@@ -704,6 +704,22 @@ consumers and is not an archive: a program whose past must stay readable keeps i
 state or in entities of its own.
 The runtime writes the log and does not deliver it — the transport, the retries and the acknowledgements are
 the consumer's.
+
+### Readers of one consumer
+
+A consumer whose work on a row is slow is read by several readers, each of which names the partitions it reads:
+`feed(topic, consumer, limit, { partitions })` reads those partitions only, from the consumer's cursors there
+([decision 0153](decisions/0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md)). The cursors stay the
+consumer's, whichever reader acked them, so a prune reads them as one, and a reader added or removed moves no
+cursor. A slow row holds only its reader's partitions. The handle gives the number of partitions as `partitions`.
+The division is the caller's, and the runtime holds no reader. A fixed pool divides with a line, the reader `i` of
+`n` reading the partitions `p` where `p % n === i`. A pool whose readers come and go divides with what tells it its
+members, an orchestrator's ordinal or a lease of its own. Two readers that name one partition are given the same
+rows, and their work on them interleaves. So a division that changes keeps the order within each partition only
+where the readers of the old division stop, after their acks, before the readers of the new one start. A partition
+no reader names is read by nobody, and holds its topic, which `consumers` shows. A wait ends at a commit in the
+topic, so a reader woken by a commit in another reader's partition reads an empty page and waits again. A list of
+partitions that is empty, or holds what is no partition of the log, is the caller's defect.
 
 ### Declared consumers
 

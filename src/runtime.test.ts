@@ -3140,7 +3140,7 @@ describe('publishing what happened', () => {
             yield* toy.ack('projection', 'queue', yield* toy.feed('projection', 'queue', all))
             yield* opened(window, true)
             const [read] = yield* together<unknown, never, never>([
-              toy.feed('projection', 'queue', all, { millis: 60_000 }),
+              toy.feed('projection', 'queue', all, { wait: { millis: 60_000 } }),
               toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester }),
             ])
             yield* opened(window, false)
@@ -3165,8 +3165,8 @@ describe('publishing what happened', () => {
           yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
           yield* toy.ack('high', 'queue', yield* toy.feed('high', 'queue', all))
           // A limit of 0 is given nothing at once, since no row could be given.
-          expect(yield* toy.feed('high', 'queue', 0, { millis: 50 })).toEqual([])
-          const waiting = yield* running(toy.feed('high', 'queue', all, { millis: 50 }))
+          expect(yield* toy.feed('high', 'queue', 0, { wait: { millis: 50 } })).toEqual([])
+          const waiting = yield* running(toy.feed('high', 'queue', all, { wait: { millis: 50 } }))
           yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
           expect((yield* toy.published('count', [], all)).map(({ value }) => value)).toEqual([4, 3])
           yield* TestClock.adjust('49 millis')
@@ -3188,7 +3188,7 @@ describe('publishing what happened', () => {
           yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
           yield* toy.ack('projection', 'queue', yield* toy.feed('projection', 'queue', all))
           const waiting = yield* Effect.forkIn(
-            Effect.delay(toy.feed('projection', 'queue', all, { millis: 60_000 }), '1 millis'),
+            Effect.delay(toy.feed('projection', 'queue', all, { wait: { millis: 60_000 } }), '1 millis'),
             outside,
           )
           yield* TestClock.adjust('1 millis')
@@ -3256,9 +3256,13 @@ describe('publishing what happened', () => {
             toy.feed('projection', 'queue', -1),
             toy.feed('projection', 'queue', Number.POSITIVE_INFINITY),
             // A wait is counted as a limit is (decision 0142).
-            toy.feed('projection', 'queue', all, { millis: -1 }),
-            toy.feed('projection', 'queue', all, { millis: 0.5 }),
-            toy.feed('projection', 'queue', all, {} as never),
+            toy.feed('projection', 'queue', all, { wait: { millis: -1 } }),
+            toy.feed('projection', 'queue', all, { wait: { millis: 0.5 } }),
+            toy.feed('projection', 'queue', all, { wait: {} } as never),
+            // A partition a reader names is checked as a cursor's is (decision 0153).
+            toy.feed('projection', 'queue', all, { partitions: [0] }),
+            toy.feed('projection', 'queue', all, { partitions: [partition, 301] }),
+            toy.feed('projection', 'queue', all, { partitions: [1.5] }),
             toy.query({ limit: -1 }),
             toy.query({ limit: 0.5 }),
             // A limit left out is refused too, since the types do not hold a cast (decision 0141).
@@ -3269,6 +3273,11 @@ describe('publishing what happened', () => {
           for (const call of refused) {
             expect(reasonOf(yield* Effect.exit(call)))
               .toMatch(/^the (cursor|limit|wait) is .+, which is no non-negative|^the partition is .+, which is no integer/)
+          }
+          // A reader of no partition reads nothing, and is refused too (decision 0153).
+          for (const partitions of [[], 3 as never]) {
+            expect(reasonOf(yield* Effect.exit(toy.feed('projection', 'queue', all, { partitions }))))
+              .toBe('the partitions a reader names are no list of at least one')
           }
           // A topic the program does not publish is refused too, before anything is read or stored (decision 0138):
           // a cast lets it through the types.
@@ -3289,7 +3298,7 @@ describe('publishing what happened', () => {
           for (
             const call of [
               toy.feed('projection', stranger, all),
-              toy.feed('projection', stranger, all, { millis: 10 }),
+              toy.feed('projection', stranger, all, { wait: { millis: 10 } }),
               toy.ack('projection', stranger, [{ partition, seq: 1 }]),
             ]
           ) {
@@ -3405,6 +3414,71 @@ describe('publishing what happened', () => {
           // The prune drops what the consumer read in each partition, and keeps the partition it acked nothing of.
           expect(yield* toy.prune).toBe(2)
           expect((yield* toy.published('projection', [], all)).map(({ id }) => id)).toEqual([other])
+        }))
+    })))
+
+  test('two readers of one consumer read their own partitions, and a slow one holds no other', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const [one, other] = ['a', 'b']
+      const [mine, theirs] = [partitionOf(one, 300), partitionOf(other, 300)]
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
+          expect(toy.partitions).toBe(300)
+          yield* toy.create(one, { at }, { requestId: 'c-one', sender: tester })
+          yield* toy.create(other, { at }, { requestId: 'c-other', sender: tester })
+          yield* toy.send(one, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
+          // Each reader is given the rows of its partitions only, the oldest first. A partition named twice is
+          // read once, and a partition with no row past its cursor gives nothing.
+          const slow = yield* toy.feed('projection', 'queue', all, { partitions: [mine, mine] })
+          expect(slow.map(({ id, seq }) => ({ id, seq }))).toEqual([{ id: one, seq: 1 }, { id: one, seq: 2 }])
+          const fast = yield* toy.feed('projection', 'queue', all, { partitions: [theirs] })
+          expect(fast.map(({ id, seq }) => ({ id, seq }))).toEqual([{ id: other, seq: 1 }])
+          expect(yield* toy.feed('projection', 'queue', all, { partitions: [mine === 1 ? 2 : 1] })).toEqual([])
+          // The fast reader acks and goes on while the slow one has acked nothing: what it is given next is its
+          // own partition's alone, and the slow reader is given its rows again.
+          yield* toy.ack('projection', 'queue', fast)
+          yield* toy.send(other, { _tag: 'Want', key: 't', on: false, nonce: 'o' }, { requestId: 'o', sender: tester })
+          expect((yield* toy.feed('projection', 'queue', all, { partitions: [theirs] })).map(({ id, seq }) => ({ id, seq })))
+            .toEqual([{ id: other, seq: 2 }])
+          expect(yield* toy.feed('projection', 'queue', all, { partitions: [mine] })).toEqual(slow)
+          // A reading of every partition is given what both readers have not acked.
+          expect((yield* toy.feed('projection', 'queue', all)).map(({ id, seq }) => ({ id, seq }))).toEqual([
+            { id: one, seq: 1 },
+            { id: one, seq: 2 },
+            { id: other, seq: 2 },
+          ])
+          // The cursors the two readers moved are one consumer's: the prune drops what the fast reader acked, and
+          // keeps the partition of the slow one until it acks too.
+          expect(yield* toy.prune).toBe(1)
+          yield* toy.ack('projection', 'queue', slow)
+          expect(yield* toy.prune).toBe(2)
+          expect((yield* toy.published('projection', [], all)).map(({ id, seq }) => ({ id, seq })))
+            .toEqual([{ id: other, seq: 2 }])
+        }))
+    })))
+
+  test('a reader of some partitions waits through the commits of the others, and is given its own', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const [one, other] = ['a', 'b']
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
+          yield* toy.create(one, { at }, { requestId: 'c-one', sender: tester })
+          yield* toy.create(other, { at }, { requestId: 'c-other', sender: tester })
+          const partitions = [partitionOf(one, 300)]
+          yield* toy.ack('projection', 'queue', yield* toy.feed('projection', 'queue', all, { partitions }))
+          const waiting = yield* running(toy.feed('projection', 'queue', all, { partitions, wait: { millis: 50 } }))
+          // A commit in another partition wakes the reader, which finds nothing of its own and waits again.
+          yield* toy.send(other, { _tag: 'Want', key: 't', on: false, nonce: 'o' }, { requestId: 'o', sender: tester })
+          yield* TestClock.adjust('10 millis')
+          expect(waiting.pollUnsafe()).toBeUndefined()
+          yield* toy.send(one, { _tag: 'Want', key: 't', on: false, nonce: 'm' }, { requestId: 'm', sender: tester })
+          expect((yield* Fiber.join(waiting)).map(({ id, seq }) => ({ id, seq }))).toEqual([{ id: one, seq: 2 }])
         }))
     })))
 

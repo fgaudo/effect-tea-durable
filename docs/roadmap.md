@@ -5,11 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Readers of one consumer** ([open question](open-questions.md#storage-and-reading)). A pool of workers that
-   reads one topic in parallel takes a name per worker today, and a worker added leaves the cursors with the old
-   names. The step decides whether the readers of one name divide its partitions, who divides them, and what keeps
-   the order within a partition while the division changes. It is taken by a note of its own.
-2. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
+1. **Two versions at once** ([open question](open-questions.md#running)). It waits for Effect Cluster: Cluster's
    runners carry no version, and a shard may go back to an older one.
 
 ## Later

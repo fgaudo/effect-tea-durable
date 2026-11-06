@@ -14,6 +14,7 @@ Cluster's says so.
   holds its work under `<child>.<key>`, and runs its operations under `<child>.<tag>`.
 - **Consumer.** A name under which one topic of the outbox is read, declared where the program is deployed, with
   a stored cursor per partition that `ack` moves forward and never back. One name in two topics is two consumers.
+  Several readers may read one consumer, each naming the partitions it reads, and the division is the caller's.
 - **Crash.** The process dies at a point of the crash table, or an entity leaves the process on an event the runtime
   cannot finish. To the machine, a passivation is a crash the runtime chose.
 - **Defect.** What the program does that it should not: a function or a schema of its that throws, or a rule of the

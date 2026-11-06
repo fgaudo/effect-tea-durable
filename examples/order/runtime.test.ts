@@ -141,7 +141,7 @@ test('what an order published is what another system learns of it, each consumer
     // A consumer that has read everything waits for the next row of its topic instead of polling: the creation of
     // another order ends its wait, and a wait with no row would give none after ten seconds (decision 0142).
     yield* orders.ack('status', 'dashboard', statuses)
-    const next = yield* Effect.forkChild(orders.feed('status', 'dashboard', all, { millis: 10_000 }))
+    const next = yield* Effect.forkChild(orders.feed('status', 'dashboard', all, { wait: { millis: 10_000 } }))
     yield* orders.create('o-2', { order: { customer: 'ada', totalInCents: 500 } }, { requestId: 'c-o-2', sender: ada })
     expect((yield* Fiber.join(next)).map(({ id, value }) => [id, value])).toEqual([['o-2', 'AwaitingPayment']])
   }))))
