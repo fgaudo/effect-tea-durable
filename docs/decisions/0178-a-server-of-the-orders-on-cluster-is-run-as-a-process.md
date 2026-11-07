@@ -60,7 +60,11 @@ the scheduler of the tests, inside one process. They are not tested between proc
 - That two processes on one file of SQLite share Cluster's shards through the lease of `cluster_locks`: **read in
   the source** of `cluster/SqlRunnerStorage.ts` at 4.1.2, as [`docs/cluster.md`](../cluster.md#who-holds-an-entity)
   says. That two processes of Bun commit to one file in WAL mode without a failure the runtime does not expect is
-  **only reasoned**, and the second part tests it.
+  **tested** by the second test of [`examples/server/server.test.ts`](../../examples/server/server.test.ts).
+- That a runner whose heartbeat stopped leaves the assignment once its lease expires, whatever `RunnerHealth`
+  answers: **read in the source** of `cluster/SqlRunnerStorage.ts` at 4.1.2, whose `getRunners` reads only the
+  runners whose `last_heartbeat` is younger than the lease's expiration. The second test passes with
+  `RunnerHealth.layerNoop` as with `RunnerHealth.layerPing`.
 - That `HttpRunner.layerHttp` and `RunnerServer.layerWithClients` build `Sharding.layer`, and that
   `RunnerServer.layer` does not: **read in the source** of `cluster/HttpRunner.ts` and `cluster/RunnerServer.ts` at
   4.1.2.
@@ -78,6 +82,10 @@ the scheduler of the tests, inside one process. They are not tested between proc
   - `HttpRouter.toWebHandler` with `Bun.serve` would serve the routes with no new dependency, and the process would
     handle its own signals. `@effect/platform-bun` does both, which is what a deployment on Bun uses.
   - `TestRunner.layer` keeps everything in memory, and no process could die and start again on it.
+  - `BunClusterHttp.layer` builds `HttpRunner.layerHttp`, and so `Sharding` too. Its parts are used one by one:
+    `BunClusterHttp.layerHttpServer` listens at the runner's address, `ShardingConfig.layerFromEnv` reads the
+    runner's address and its lease from the environment, and `RpcSerialization.layerSchemaBinary` and
+    `RunnerHealth.layerPing` are its defaults.
 - **An example inside a test alone.** It is what `examples/order/cluster.test.ts` is already, and it never kills a
   process.
 - **Two runners on PostgreSQL.** On Cluster a step commits only on SQLite until Cluster has a fence
@@ -99,8 +107,29 @@ the scheduler of the tests, inside one process. They are not tested between proc
 - **No gap of the library was met.** A restarted runner activates the order that was charging, and the charge runs
   again with its idempotency key, as the design says.
 
+## What the second part found
+
+- **The second part holds.** The second test of
+  [`examples/server/server.test.ts`](../../examples/server/server.test.ts) starts two runners on one file, and
+  creates and pays sixteen orders through one of them. The world holds the first charge of each order, and records
+  in `x-runner` which runner asked. The test checks that the other runner asked for some of them, kills it, and
+  releases the charges. Every order is then `Paid`, each charge the killed runner asked for was asked again by the
+  runner that is left, and the world took sixteen charges.
+- **A runner's boundary and its transport share one server.** The boundary's routes and `RunnerServer.layer`, served
+  by `RpcServer.layerProtocolHttp` at `/runner`, are one `HttpRouter`, at the runner's address. A caller of either
+  runner reaches every order, since the door's client sends through Cluster to the runner that holds the shard.
+- **A runner that dies frees its shards by its heartbeat.** `SqlRunnerStorage` stops reading a runner whose heartbeat
+  is older than the lease's expiration, so the runner that is left takes the shards with no check of health. The
+  ping of `RunnerHealth.layerPing` adds a check of a runner that still beats but does not answer, which no test of
+  the example reaches.
+- **The test waits four seconds before it creates the orders.** Each runner reads the healthy runners every
+  `refreshAssignmentsInterval`, three seconds by default, so the wait lets both runners hold their shards first.
+  The test checks that the killed runner held some, and fails where it held none.
+- **No gap of the library was met.** The runner that is left activates the orders it takes, and their charges run
+  again with their idempotency keys.
+
 ## Consequences
 
-- The test of `examples/server` starts two processes and runs in about a second and a half, so `bun test` runs it
-  every time.
+- The tests of `examples/server` start four processes and run in about eleven seconds, so `bun test` runs them every
+  time.
 - The README's diagram of the modules gains no module, since the example adds none to `src/`.

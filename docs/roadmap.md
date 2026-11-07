@@ -13,10 +13,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   2. Two runners on one file, sending to each other over HTTP. A test kills the runner that holds an order's shard,
      and checks that the other one takes the shard and finishes the order with one charge.
 
-  The first part is done, in `examples/server`, and decision 0178 says what it found. The second part is next. It
-  begins in `examples/server/server.ts`, where the runner gains `RunnerServer.layer` and `Runners.layerRpc` over
-  HTTP in place of `Runners.layerNoop`, with a `shardLockExpiration` the test shortens. A gap of the library that a part meets
-  becomes a note, a test or an open question before the step is taken.
+  Both parts are done, in `examples/server`, and decision 0178 says what each found. What is left is to take the
+  step once the maintainer has read it. Taking it accepts decision 0178 and moves the step out of this file. A gap
+  of the library that a part meets becomes a note, a test or an open question before the step is taken.
 
 ## Later
 

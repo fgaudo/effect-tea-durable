@@ -6,9 +6,10 @@
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import {
-  RunnerAddress,
+  HttpRunner,
   RunnerHealth,
   Runners,
+  RunnerServer,
   ShardingConfig,
   SqlMessageStorage,
   SqlRunnerStorage,
@@ -33,21 +34,28 @@ import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Schedule from 'effect/Schedule'
 import * as Schema from 'effect/Schema'
+import { RpcSerialization, RpcServer } from 'effect/rpc'
 import { type Handle, launchOnCluster, type Program, sharding } from '../../src/index.ts'
 import { Mailer, order, Payments, type Sender, Warehouse } from '../order/order.ts'
 
-/** Where the runner's file and the world are, and the port its boundary listens on. */
-export type Settings = Readonly<{ filename: string; world: string; host: string; port: number }>
+/**
+ * Where the runner's file and the world are. The runner's address, which its boundary listens on too, and the
+ * lease's expiration are Cluster's `ShardingConfig`, read from the environment.
+ */
+export type Settings = Readonly<{ filename: string; world: string }>
 
 /**
- * The world over HTTP, through one client of the world's address. A transport's failure is retried for a while and
- * is then a defect, which suspends the order: the world's `402` is the only failure an operation of the orders
- * declares.
+ * The world over HTTP, through one client of the world's address, which tells the world the runner that calls in
+ * `x-runner`. A transport's failure is retried for a while and is then a defect, which suspends the order: the
+ * world's `402` is the only failure an operation of the orders declares.
  */
 const world = (base: string) =>
   Layer.effectContext(Effect.gen(function*() {
+    const { runnerAddress } = yield* ShardingConfig.ShardingConfig
+    const runner = Option.match(runnerAddress, { onNone: () => '', onSome: ({ host, port }) => `${host}:${port}` })
     const client = (yield* HttpClient.HttpClient).pipe(
       HttpClient.mapRequest(HttpClientRequest.prependUrl(base)),
+      HttpClient.mapRequest(HttpClientRequest.setHeader('x-runner', runner)),
       HttpClient.retryTransient({ schedule: Schedule.spaced('200 millis'), times: 50 }),
     )
     const post = (path: string, body: unknown) => client.post(path, { body: HttpBody.jsonUnsafe(body) })
@@ -82,9 +90,13 @@ type OrderTypes = typeof order extends Program<infer T> ? T : never
 export class Orders extends Context.Service<Orders, Handle<OrderTypes>>()('examples/server/Orders') {}
 
 /**
- * The runner: the layers `SingleRunner.layer` builds, with `sharding` in place of `Sharding.layer`, so that the
- * versions are recorded before Cluster registers the runner (decision 0174). The runtime is launched and the
- * orders deployed in the layer's scope, so that they stop when the server stops.
+ * The runner: the layers `HttpRunner.layerHttp` builds, with `sharding` in place of `Sharding.layer`, so that the
+ * versions are recorded before Cluster registers the runner (decision 0174). The runners send to each other over
+ * HTTP at `/runner`, with the serialization `BunClusterHttp.layer` chooses. A runner that dies stops its heartbeat,
+ * and `SqlRunnerStorage` stops reading it once its lease expires, so that its shards move with no check of health.
+ * The ping of `RunnerHealth.layerPing`, `BunClusterHttp.layer`'s default, also takes the shards of a runner that
+ * still beats but does not answer. The runtime is launched and the orders deployed in the layer's scope, so that
+ * they stop when the server stops.
  */
 const orders = (settings: Settings) =>
   Layer.effect(
@@ -92,20 +104,23 @@ const orders = (settings: Settings) =>
     Effect.flatMap(launchOnCluster(), (runtime) => runtime.deploy(order)),
   ).pipe(
     Layer.provide(world(settings.world)),
-    Layer.provide(
+    Layer.provideMerge(
       sharding([order]).pipe(
-        Layer.provideMerge(Runners.layerNoop),
+        Layer.provide(RunnerHealth.layerPing),
+        Layer.provideMerge(Runners.layerRpc),
+        Layer.provide(HttpRunner.layerClientProtocolHttp({ path: runnerPath }).pipe(Layer.provide(FetchHttpClient.layer))),
         Layer.provideMerge(SqlMessageStorage.layer),
-        Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
-        Layer.provideMerge(ShardingConfig.layer({
-          runnerAddress: Option.some(RunnerAddress.make(settings.host, settings.port)),
-        })),
+        Layer.provide(Layer.orDie(SqlRunnerStorage.layer)),
+        Layer.provideMerge(RpcSerialization.layerSchemaBinary()),
         Layer.provideMerge(SqliteClient.layer({ filename: settings.filename })),
         Layer.provide(Digest.layerWebCrypto),
         Layer.orDie,
       ),
     ),
   )
+
+/** The path the runners send to each other at, beside the boundary's routes. */
+const runnerPath = '/runner'
 
 /**
  * A request the boundary refuses, answered with its status. It is `Respondable`, so the router answers it as it
@@ -228,6 +243,12 @@ const routes = Layer.mergeAll(
   ),
 )
 
-/** The server: the routes, given the orders from outside `serve`, so that the routes share one deployment. */
+/**
+ * The server: the boundary's routes and the runner's, given the orders and the runner from outside `serve`, so that
+ * both share one deployment and one `Sharding`.
+ */
 export const server = (settings: Settings) =>
-  HttpRouter.serve(routes, { disableListenLog: true }).pipe(Layer.provide(orders(settings)))
+  HttpRouter.serve(
+    Layer.mergeAll(routes, RunnerServer.layer.pipe(Layer.provide(RpcServer.layerProtocolHttp({ path: runnerPath })))),
+    { disableListenLog: true, disableLogger: true },
+  ).pipe(Layer.provide(orders(settings)))
