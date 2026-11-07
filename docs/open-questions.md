@@ -54,6 +54,17 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     ([decision 0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md));
   - whether a step whose transaction fails with `DeadlockError` or `SerializationError` is retried, as the JSDoc of
     `SqlClient.withTransaction` shows, or crashes its entity, as a write that fails does.
+- **A fiber that outlives its transaction.** A fiber forked inside a transaction keeps the transaction's connection
+  in its context. At 4.1.2 its statements and savepoints then run on that connection after the commit, outside the
+  client's semaphore, and nothing says so: on SQLite another fiber's transaction later fails to begin. The runtime
+  forks every fiber a step sets going without the transaction
+  ([decision 0161](decisions/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)),
+  and a test holds the rule for the operations and for the loop. A fork that the tests do not reach would still fail
+  in silence. Reported as [Effect-TS/effect#10431](https://github.com/Effect-TS/effect/issues/10431), with
+  [Effect-TS/effect#10433](https://github.com/Effect-TS/effect/pull/10433) open on 2026-11-07, which makes such a
+  statement fail with a `SqlError`. It would be decided by:
+  - a release of Effect with the fix, after which a fork that keeps the transaction fails where it runs;
+  - the spikes and the tests of the runtime run at that release, which a fork the rule missed would then fail.
 - **Bookkeeping in transactions.** What another fiber reads changes in one synchronous step
   ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)): a rule kept by hand, which
   a step that waits cannot keep. The waker reads the entities held and then waits for a poke, and only the steps
