@@ -19,10 +19,10 @@ each read and found, are in [`reviews.md`](reviews.md).
 | --- | --- | --- |
 | [0081](0081-on-cluster-a-step-commits-with-its-reply.md) | On Cluster, a step commits with its reply | [0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md), [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md), [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
 | [0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) | A step commits only where the commit checks the shard | [0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md) |
-| [0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md) | On Cluster, a request is keyed and answered as on one process | [0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md), [0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md) |
+| [0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md) | On Cluster, a request is keyed and answered as on one process | [0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md), [0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md), [0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md) |
 | [0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) | On Cluster, a reply is deleted as on one process, and Cluster's rows with it | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) |
 | [0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md) | On Cluster, an interrupted caller leaves its request alone |  |
-| [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each | [0162](0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md) |
+| [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each | [0162](0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md), [0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md) |
 | [0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md) | On Cluster, an older version serves no shard once a newer one launches, and a step commits only at the newest version |  |
 | [0160](0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md) | On Cluster, a door answers as text, and a creation the program dies on waits for a fix |  |
 | [0161](0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md) | On Cluster, a step settles the machine by the count of the steps that wrote it, and an entity's lock is taken only inside a transaction | [0164](0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md) |
@@ -30,6 +30,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0163](0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md) | On Cluster, a reading that waits learns of another runner's commit from the file, read while it waits |  |
 | [0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) | On Cluster, a caller sends through the door's client, and is never answered `Full` |  |
 | [0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md) | On Cluster, an operator resumes and discards through the door's client, each event a request of its own |  |
+| [0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md) | On Cluster, an operation sends through the door's client, and is woken by `Resumed` |  |
 
 ## The project
 

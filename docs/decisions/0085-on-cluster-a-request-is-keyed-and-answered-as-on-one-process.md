@@ -164,5 +164,5 @@ under `WithTransaction`, saw:
 - A caller's request is code: its client resets an answer `Suspended` or `NotFound` and sends again
   ([decision 0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md)). So is an
   operator's `Resume` and `Discard`, each a request of its own with no primary key
-  ([decision 0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)). An operation's
-  request is not code yet.
+  ([decision 0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)), and an operation's,
+  which a resumption wakes by `Resumed` ([decision 0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)).

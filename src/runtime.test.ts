@@ -5082,6 +5082,7 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
         create: () => Effect.die('no creation is sent through the client here'),
         send: () => Effect.die('no message is sent through the client here'),
         operate: () => Effect.die('no operator’s event is sent through the client here'),
+        resume: () => Effect.die('no sender is told of a resumption here'),
       }
       const reached = yield* Deferred.make<void>()
       const gate = yield* Deferred.make<void>()
@@ -5134,6 +5135,7 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
         create: () => Effect.die('no creation is sent through the client here'),
         send: () => Effect.die('no message is sent through the client here'),
         operate: () => Effect.die('no operator’s event is sent through the client here'),
+        resume: () => Effect.die('no sender is told of a resumption here'),
       }
       const reached = yield* Deferred.make<void>()
       const gate = yield* Deferred.make<void>()
@@ -5256,6 +5258,7 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
           create: () => Effect.die('no creation is sent through the client here'),
           send: () => Effect.die('no message is sent through the client here'),
           operate: () => Effect.die('no operator’s event is sent through the client here'),
+          resume: () => Effect.die('no sender is told of a resumption here'),
         }
         return { cluster, step: () => step! }
       }

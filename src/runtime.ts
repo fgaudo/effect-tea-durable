@@ -522,10 +522,15 @@ export type DoorAnswer<Reason> =
  * program's door, whose requests the runtime steps in Cluster's transaction. `src/cluster.ts` gives it.
  */
 export interface OnCluster {
+  /**
+   * Registers the door of `program`, whose requests `step` steps, and whose `Resumed` from the entity `receiver`
+   * calls `resumed` with it (decisions 0092, 0167).
+   */
   readonly register: <T extends Types>(
     program: Program<T>,
     step: (delivered: Delivered | Operating) => Effect.Effect<DoorAnswer<T['rejection']>>,
     idle: number,
+    resumed: (receiver: Address) => Effect.Effect<void>,
   ) => Effect.Effect<void, never, Scope.Scope>
   /** How many shards the doors' group has: Cluster's `shardsPerGroup`. */
   readonly shards: number
@@ -569,6 +574,12 @@ export interface OnCluster {
    * the operator is on: what the door's step answered it (decision 0166).
    */
   readonly operate: <T extends Types>(program: Program<T>, operating: Operating) => Effect.Effect<Operated>
+  /**
+   * Tells the door of the entity `sender` that the entity `receiver` is out of its suspension, from the transaction
+   * of the step that took it out, without waiting for the door: Cluster saves the request in that transaction, and
+   * delivers it once the transaction commits (decision 0167).
+   */
+  readonly resume: (sender: Address, receiver: Address) => Effect.Effect<void>
 }
 
 /** An entity loaded in this process: its machine, the events waiting, and what is running for it. */
@@ -1513,14 +1524,6 @@ export const launchWith = (
         return stored === loaded.steps
       })
 
-    /**
-     * On Cluster, a request reaches an entity through its door, sent by Cluster's client, which the runtime gives a
-     * caller and an operator and does not give an operation yet: one sent in the process would take the entity's lock
-     * and read the database outside a transaction, which a door's step waits on (decisions 0161, 0165, 0166).
-     */
-    const notYetOnCluster = (what: string) =>
-      new InvariantDefect({ reason: `${what} on Cluster is sent through the door's client, which is not code yet` })
-
     /** The defect of an entity whose row this runner did not write (decision 0161). */
     const unsettled = (name: string, id: string) =>
       new InvariantDefect({ reason: `the entity ${id} of ${name} was written by a step this runner did not make` })
@@ -1746,6 +1749,9 @@ export const launchWith = (
               transition = yield* stepIn(deployed, stepped, entity, { _tag: 'Handle', at: now }, now)
             }
           }
+          // An operation answered `Suspended` waits for the entity's resumption, which another runner may make: its
+          // entity is recorded, and told by the step that takes this one out of its suspension (decision 0167).
+          if (replied.answer._tag === 'Suspended' && request._tag === 'Operation') yield* stored.wait(id, request.entity)
           answer = replied
         } else {
           // An operator's event is stepped as on one process, in the door's transaction, and answered with what it
@@ -1754,6 +1760,11 @@ export const launchWith = (
           const before = stepped.machine!
           const transition = yield* stepIn(deployed, stepped, entity, { _tag: delivered._tag }, now)
           answer = { _tag: 'Operated', answer: operated(delivered._tag, before, transition.machine) }
+          // The senders an earlier step answered `Suspended` are told, from this transaction, so that a step that
+          // rolls back tells nobody (decision 0167).
+          if (before.stored.suspension !== null && transition.machine.stored.suspension === null) {
+            for (const sender of yield* stored.waiters(id)) yield* cluster!.resume(sender, entity)
+          }
         }
         yield* finishIn(deployed, stepped, entity)
         return answer
@@ -2126,8 +2137,8 @@ export const launchWith = (
           },
           catch: (defect) => new Faulted({ defect }),
         })
+        // On Cluster a creation, a caller's or an operation's, goes through the door's client (decisions 0165, 0167).
         if (cluster !== null) {
-          if (request._tag !== 'Caller') return yield* Effect.die(notYetOnCluster('a creation of an operation'))
           const version = versionOf(deployed.program)
           return yield* cluster.create(deployed.program, { id, version, request: requested, message: JSON.stringify(written) })
         }
@@ -2188,10 +2199,9 @@ export const launchWith = (
           },
           catch: (defect) => new Faulted({ defect }),
         })
-        // On Cluster a caller's message waits in Cluster's table while the entity is busy, and is never answered
-        // `Full` (decision 0165).
+        // On Cluster a message, a caller's or an operation's, goes through the door's client. It waits in Cluster's
+        // table while the entity is busy, and is never answered `Full` (decisions 0165, 0167).
         if (cluster !== null) {
-          if (request._tag !== 'Caller') return yield* Effect.die(notYetOnCluster('a message of an operation'))
           const version = versionOf(deployed.program)
           const sent = { id, version, request: requested, message: JSON.stringify(written) }
           return yield* cluster.send(deployed.program, keep === undefined ? sent : { ...sent, keep })
@@ -2567,7 +2577,8 @@ export const launchWith = (
         // the runner holds: the one of a shard held starts as it is registered, and activates the entities the shard
         // left with work (decisions 0092, 0162).
         if (cluster !== null) {
-          yield* Scope.provide(cluster.register(program, doorStep(deployed), passivate), deployed.scope)
+          const resumed = (receiver: Address) => Effect.sync(() => wake(receiver))
+          yield* Scope.provide(cluster.register(program, doorStep(deployed), passivate, resumed), deployed.scope)
           const singletons = yield* Effect.sync(() => singletonsOf(cluster, program.name))
           for (const [shard, name] of singletons) {
             yield* Scope.provide(cluster.singleton(name, serving(cluster, deployed, shard)), deployed.scope)

@@ -28,7 +28,7 @@ import type * as Scope from 'effect/Scope'
 import * as Schema from 'effect/Schema'
 import { Rpc } from 'effect/rpc'
 import { SqlClient } from 'effect/sql'
-import { InvariantDefect, type Program, type Types, versionOf } from './program.ts'
+import { type Address, InvariantDefect, type Program, type Types, versionOf } from './program.ts'
 import { type Delivered, launchWith, type OnCluster, type Operating, type Options, type Runtime } from './runtime.ts'
 import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
 
@@ -111,7 +111,8 @@ const primaryKey = ({ version, request }: Readonly<{ version: number; request: s
 
 /**
  * The entity of the program `name` on Cluster, the door to the runtime's entity: one RPC for a creation and one for
- * a message (decision 0085), and one for each event of an operator's (decision 0166). Each is persisted, and its
+ * a message (decision 0085), one for each event of an operator's (decision 0166), and `Resumed`, which tells the
+ * entity that an entity its operations sent to is out of its suspension (decision 0167). Each is persisted, and its
  * handler runs in Cluster's transaction, so a step commits with its reply (decision 0081). Its answer is the
  * runtime's encoding of whatever the step answers, as text, and it fails with nothing. A caller that stops waiting
  * leaves its request to be handled (decision 0091). An operator's event has no primary key: each one sent is a
@@ -123,6 +124,7 @@ export const doorOf = <const Name extends string>(name: Name) =>
     Rpc.make('Message', { payload, success: Schema.String, primaryKey }),
     Rpc.make('Resume', { success: Schema.String }),
     Rpc.make('Discard', { success: Schema.String }),
+    Rpc.make('Resumed', { payload: { name: Schema.String, id: Schema.String } }),
   ])
     .annotateRpcs(ClusterSchema.Persisted, true)
     .annotateRpcs(ClusterSchema.WithTransaction, true)
@@ -151,6 +153,7 @@ export const atNewest = (program: Pick<Program<Types>, 'name' | 'migrations'>) =
 const handlersOf = <R>(
   program: Pick<Program<Types>, 'name' | 'migrations'>,
   step: (delivered: Delivered | Operating) => Effect.Effect<string, never, R>,
+  resumed: (receiver: Address) => Effect.Effect<void>,
 ) => {
   const handle = (_tag: Delivered['_tag']) =>
   (
@@ -172,7 +175,13 @@ const handlersOf = <R>(
     )
   const operate = (_tag: Operating['_tag']) => ({ address }: Readonly<{ address: Readonly<{ entityId: string }> }>) =>
     Effect.andThen(atNewest(program), step({ _tag, id: address.entityId }))
-  return { Create: handle('Create'), Message: handle('Message'), Resume: operate('Resume'), Discard: operate('Discard') }
+  return {
+    Create: handle('Create'),
+    Message: handle('Message'),
+    Resume: operate('Resume'),
+    Discard: operate('Discard'),
+    Resumed: ({ payload }: Readonly<{ payload: Address }>) => resumed({ name: payload.name, id: payload.id }),
+  }
 }
 
 /**
@@ -272,7 +281,7 @@ export const onCluster: Effect.Effect<
         }),
         millis: Duration.toMillis(config.entityReplyPollInterval),
       },
-      register: (program, step, idle) => {
+      register: (program, step, idle, resumed) => {
         const answer = Schema.encodeSync(answerCodec(program))
         const created = Schema.encodeSync(creationCodec)
         const operated = Schema.encodeSync(operatedCodec)
@@ -284,7 +293,7 @@ export const onCluster: Effect.Effect<
               ? operated(stepped.answer)
               : answer(stepped.answer)).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
-            ))
+            ), resumed)
         return sharding.registerEntity(doorOf(program.name), Effect.succeed(handlers), {
           maxIdleTime: Duration.millis(idle),
         })
@@ -316,6 +325,13 @@ export const onCluster: Effect.Effect<
             ? Effect.andThen(reset(program.name, sent), once)
             : Effect.succeed(first)).pipe(Effect.orDie)
       },
+      // Sent with `discard` from the transaction of the step that resumes: Cluster saves the request in it, and
+      // delivers it after the commit, so that the step never waits for the door it tells (decision 0167).
+      resume: (sender, receiver) =>
+        Effect.flatMap(
+          sharding.makeClient(doorOf(sender.name)),
+          (clientOf) => clientOf(sender.id).Resumed({ name: receiver.name, id: receiver.id }, { discard: true }),
+        ).pipe(Effect.orDie),
       operate: (program, { _tag, id }) =>
         Effect.flatMap(sharding.makeClient(doorOf(program.name)), (clientOf) =>
           Effect.flatMap(clientOf(id)[_tag](), Schema.decodeEffect(operatedCodec))).pipe(Effect.orDie),
@@ -326,8 +342,8 @@ export const onCluster: Effect.Effect<
 /**
  * The runtime of a runner of Effect Cluster: `launch`'s, whose deploys serve their programs through doors on the
  * runner's `Sharding`, which `sharding` builds, and which learn their shards from a singleton of each
- * (decision 0162). A caller's request and an operator's go through Cluster's client of the door (decisions 0165,
- * 0166). An operation's request is a later part of the roadmap's step Effect Cluster, and not code yet.
+ * (decision 0162). Every request to an entity goes through Cluster's client of the door: a caller's, an operator's
+ * and an operation's (decisions 0165, 0166, 0167).
  */
 export const launch = (
   options: Options = {},

@@ -35,9 +35,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    answered `Suspended` or `NotFound` is reset and sent again
    ([decision 0165](decisions/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
    proposed). An operator's `Resume` and `Discard` go through it too, each a request of its own
-   ([decision 0166](decisions/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md), proposed). What is left of requests on Cluster:
-   - an operation's request, which still dies there. It goes through the door's client too, as decisions 0085, 0090
-     and 0092 decide, and the step that resumes or discards an entity tells `Resumed` to the senders that wait;
+   ([decision 0166](decisions/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md), proposed).
+   So do an operation's, and a step that resumes or discards an entity tells `Resumed` to the entities whose
+   operations it answered `Suspended` ([decision 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md), proposed). What is left of
+   requests on Cluster:
+   - an answer of Cluster's own defect to an operation, which the operation's client resets by the defect's id, after
+     it keeps the request's id under the work that asked, as decision 0092 decides. Until then the operation sends
+     again after every `retry`, and is given the same defect;
+   - the Cluster request ids an operation's requests are answered under, kept under the work that asked, and the
+     pending id a `Resumed` leaves (decisions 0090, 0092);
    - the deletion of Cluster's rows by the Cluster `requestId` a door's handler is given: an operation's with the
      work that asked ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)), and a
      caller's with its reply once past its time (decision 0165). Until then Cluster answers a retry past `keep`

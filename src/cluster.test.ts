@@ -34,7 +34,19 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addressText, byVersion, doorOf, launch, sharding } from './cluster.ts'
-import { defect, InvariantDefect, noWork, operation, type Program, rejectWith, timer, versionOf } from './program.ts'
+import {
+  create as createFrom,
+  defect,
+  type Entities,
+  InvariantDefect,
+  noWork,
+  operation,
+  type Program,
+  rejectWith,
+  send as sendFrom,
+  timer,
+  versionOf,
+} from './program.ts'
 import { type Handle, Probe, type Said } from './runtime.ts'
 import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
 import { client, onEach } from './test-databases.ts'
@@ -597,18 +609,31 @@ describe('the shards of a runner on Cluster', () => {
   /** Which runner an operation runs on, by its port. */
   class Where extends Context.Service<Where, { readonly port: number }>()('test/Where') {}
   type Bell = {
-    state: Readonly<{ who: string; asking: boolean; ring: number | null; rung: boolean; n: number }>
+    state: Readonly<{
+      who: string
+      asking: boolean
+      ring: number | null
+      rung: boolean
+      n: number
+      relay: string | null
+      relayed: string | null
+    }>
     flags: Readonly<{ who: string }>
-    inbound: Readonly<{ _tag: 'Ask' }> | Readonly<{ _tag: 'Ring'; at: number }>
-    internal: Readonly<{ _tag: 'Answered' }> | Readonly<{ _tag: 'Rang' }>
-    operation: Readonly<{ _tag: 'Ask'; who: string }>
-    key: 'ask' | 'ring'
+    inbound:
+      | Readonly<{ _tag: 'Ask' }>
+      | Readonly<{ _tag: 'Ring'; at: number }>
+      | Readonly<{ _tag: 'Relay'; to: string }>
+      | Readonly<{ _tag: 'Poke' }>
+      | Readonly<{ _tag: 'Break' }>
+    internal: Readonly<{ _tag: 'Answered' }> | Readonly<{ _tag: 'Rang' }> | Readonly<{ _tag: 'Relayed'; what: string }>
+    operation: Readonly<{ _tag: 'Ask'; who: string }> | Readonly<{ _tag: 'Relay'; to: string }>
+    key: 'ask' | 'ring' | 'relay'
     parameter: {}
     rejection: never
     sender: Readonly<{ user: string }>
     projection: number
     index: never
-    services: Where
+    services: Where | Entities
   }
   /** What each operation did in the test under way, as a line such as `e1 started on 2`. */
   let seen: Array<string> = []
@@ -616,7 +641,7 @@ describe('the shards of a runner on Cluster', () => {
   let answers = false
   const bell: Program<Bell> = {
     name: 'Bell',
-    keys: { ask: null, ring: null },
+    keys: { ask: null, ring: null, relay: null },
     schemas: {
       state: Schema.Struct({
         who: Schema.String,
@@ -624,33 +649,64 @@ describe('the shards of a runner on Cluster', () => {
         ring: Schema.NullOr(Schema.Int),
         rung: Schema.Boolean,
         n: Schema.Int,
+        relay: Schema.NullOr(Schema.String),
+        relayed: Schema.NullOr(Schema.String),
       }),
       flags: Schema.Struct({ who: Schema.String }),
-      inbound: Schema.Union([Schema.TaggedStruct('Ask', {}), Schema.TaggedStruct('Ring', { at: Schema.Int })]),
-      internal: Schema.Union([Schema.TaggedStruct('Answered', {}), Schema.TaggedStruct('Rang', {})]),
-      operation: Schema.TaggedStruct('Ask', { who: Schema.String }),
+      inbound: Schema.Union([
+        Schema.TaggedStruct('Ask', {}),
+        Schema.TaggedStruct('Ring', { at: Schema.Int }),
+        Schema.TaggedStruct('Relay', { to: Schema.String }),
+        Schema.TaggedStruct('Poke', {}),
+        Schema.TaggedStruct('Break', {}),
+      ]),
+      internal: Schema.Union([
+        Schema.TaggedStruct('Answered', {}),
+        Schema.TaggedStruct('Rang', {}),
+        Schema.TaggedStruct('Relayed', { what: Schema.String }),
+      ]),
+      operation: Schema.Union([
+        Schema.TaggedStruct('Ask', { who: Schema.String }),
+        Schema.TaggedStruct('Relay', { to: Schema.String }),
+      ]),
       rejection: Schema.Never,
       sender: Schema.Struct({ user: Schema.String }),
       projection: Schema.Int,
     },
-    init: ({ who }) => ({ who, asking: false, ring: null, rung: false, n: 0 }),
+    init: ({ who }) => ({ who, asking: false, ring: null, rung: false, n: 0, relay: null, relayed: null }),
     update: (message) => (state) => {
       switch (message._tag) {
         case 'Ask':
           return { ...state, asking: true }
         case 'Ring':
           return { ...state, ring: message.at }
+        case 'Relay':
+          return { ...state, relay: message.to }
+        case 'Poke':
+          return { ...state, n: state.n + 1 }
+        case 'Break':
+          return defect('broken')
         case 'Answered':
           return { ...state, asking: false, n: state.n + 100 }
         case 'Rang':
           return { ...state, ring: null, rung: true }
+        case 'Relayed':
+          return { ...state, relay: null, relayed: message.what }
       }
     },
     durable: (state) => ({
       ...(state.asking ? { ask: { _tag: 'Ask', who: state.who } as const } : {}),
       ...(state.ring !== null ? { ring: timer(DateTime.makeUnsafe(state.ring), { _tag: 'Rang' } as const) } : {}),
+      ...(state.relay !== null ? { relay: { _tag: 'Relay', to: state.relay } as const } : {}),
     }),
     operations: {
+      // Creates the entity `to`, which is there already, and pokes it: what each answered is the entity's state.
+      Relay: operation(({ to }) =>
+        Effect.gen(function*() {
+          const created = yield* createFrom(bell, to, { who: to }, 'make')
+          const poked = yield* sendFrom(bell, to, { _tag: 'Poke' }, 'poke')
+          return { _tag: 'Relayed', what: `${created._tag}/${poked._tag}` } as const
+        })),
       Ask: operation(({ who }) =>
         Effect.gen(function*() {
           const { port } = yield* Where
@@ -818,6 +874,38 @@ describe('the shards of a runner on Cluster', () => {
           expect(seen).not.toContain(`${id} interrupted on 1`)
           expect(seen).not.toContain(`${id} started on 2`)
         }
+      })), 30_000)
+
+  test('an operation creates and sends through the door, and a resumption on another runner wakes it', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const ids = Array.from({ length: 64 }, (_, i) => `r${i}`)
+        const sender = ids.find((id) => first.holds(id))!
+        const receiver = ids.find((id) => second.holds(id))!
+        yield* create(first, sender)
+        yield* create(first, receiver)
+        expect(yield* send(first, receiver, { _tag: 'Break' }, 'm-break')).toBe('{"_tag":"Suspended"}')
+        yield* send(first, sender, { _tag: 'Relay', to: receiver }, 'm-relay')
+        // The operation on the first runner is answered `Suspended`, and waits: nothing on its runner resumes the
+        // receiver, so only `Resumed`, from the step on the second runner, wakes it.
+        yield* until(Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) =>
+          sql<{ held: number }>`SELECT COUNT(*) AS held FROM waiting`), ([row]) => row?.held === 1)
+        expect((yield* stateOf(sender))?.relayed).toBe(null)
+        expect(yield* first.bell.discard(receiver)).toEqual({ _tag: 'Discarded' })
+        expect(yield* until(stateOf(sender), (state) => state?.relayed !== null)).toMatchObject({
+          relay: null,
+          relayed: 'AlreadyExists/Accepted',
+        })
+        expect((yield* stateOf(receiver))?.n).toBe(1)
+        const [left] = yield* Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) =>
+          sql<{ held: number }>`SELECT COUNT(*) AS held FROM waiting`)
+        expect(left?.held).toBe(0)
       })), 30_000)
 
   test('a consumer that waits is woken by a commit of another runner, within its poll', () =>

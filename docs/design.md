@@ -302,7 +302,9 @@ the same requests, and gets the receiver's stored replies, kept while the work t
 suspended, `send` waits for its resumption, and an operation that reaches a program not deployed yet waits for
 its deploy ([decision 0045](decisions/archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md)): each is woken by
 what it waits for, and nothing looks again on a clock
-([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)). A receiver that crashes has no reply
+([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)). On Effect Cluster the
+receiver may be resumed on another runner, which tells the sender's entity `Resumed`
+([decision 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md), proposed). A receiver that crashes has no reply
 yet either, and the operation sends again after a while; only a defect of the sender's own suspends it
 ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). A full receiver stored nothing
 of the message, and the operation sends again after the same while: it is never given `Full`

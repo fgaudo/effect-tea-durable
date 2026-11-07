@@ -374,6 +374,17 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       PRIMARY KEY (address, name)
     )
   `
+  // On Cluster: the entities whose operations were answered `Suspended` by a suspended entity, one row for each
+  // sender, which the step that takes the entity out of its suspension tells and deletes (decisions 0092, 0167).
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS waiting (
+      name ${text} NOT NULL,
+      id ${text} NOT NULL,
+      sender_name ${text} NOT NULL,
+      sender_id ${text} NOT NULL,
+      PRIMARY KEY (name, id, sender_name, sender_id)
+    )
+  `
 }).pipe(Effect.orDie)
 
 /** A program's name and the version it runs, as a launch on Cluster records them (decision 0159). */
@@ -1122,6 +1133,13 @@ export interface Storage<T extends Types> {
   readonly expire: (at: number) => Effect.Effect<number>
   /** The suspended entities of the program, the longest suspended first (decision 0114). */
   readonly suspended: Effect.Effect<ReadonlyArray<Suspension>>
+  /**
+   * On Cluster: records that an operation of the entity `sender` was answered `Suspended` by the entity `id`, once
+   * for each sender however often it is answered so (decision 0167).
+   */
+  readonly wait: (id: string, sender: Readonly<{ name: string; id: string }>) => Effect.Effect<void>
+  /** On Cluster: the senders recorded for the entity `id`, deleted as they are read (decision 0167). */
+  readonly waiters: (id: string) => Effect.Effect<ReadonlyArray<Readonly<{ name: string; id: string }>>>
 }
 
 /**
@@ -2215,6 +2233,21 @@ export const storage = <T extends Types>(
         new Error(`a creation delivered to the program '${name}' is no request the runtime sends: ${String(error)}`),
     }).pipe(Effect.orDie)
 
+  const wait = (id: string, sender: Readonly<{ name: string; id: string }>) =>
+    sql`
+      INSERT INTO waiting (name, id, sender_name, sender_id) VALUES (${name}, ${id}, ${sender.name}, ${sender.id})
+      ON CONFLICT (name, id, sender_name, sender_id) DO NOTHING
+    `.pipe(Effect.asVoid, Effect.orDie)
+
+  const waiters = (id: string) =>
+    Effect.flatMap(
+      sql`DELETE FROM waiting WHERE name = ${name} AND id = ${id} RETURNING sender_name, sender_id`,
+      Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ sender_name: Schema.String, sender_id: Schema.String }))),
+    ).pipe(
+      Effect.map((rows) => rows.map((row) => ({ name: row.sender_name, id: row.sender_id }))),
+      Effect.orDie,
+    )
+
   const stepsOf = (id: string) =>
     Effect.flatMap(
       sql`SELECT steps FROM entities WHERE name = ${name} AND id = ${id}`,
@@ -2247,5 +2280,7 @@ export const storage = <T extends Types>(
     forget,
     expire,
     suspended: suspensions,
+    wait,
+    waiters,
   }
 }

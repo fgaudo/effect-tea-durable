@@ -12,7 +12,8 @@ Decides what decision 0096 (deleted; git keeps it) left to it: who
 keeps the Cluster id of a request answered with Cluster's defect, which changes which steps keep an id in
 [decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md); and corrects 0096's rule of what Cluster
 stores without a step. A pending id is written by more than a step, which changes how many decision 0090 says the
-database holds.
+database holds. A resumption is told once for each sender's entity, with the receiver's address alone, by
+[decision 0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md).
 
 ## Context
 
