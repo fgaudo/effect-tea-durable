@@ -26,9 +26,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    On Cluster an entity's type is its program's name, and Cluster stores its messages under it, so a rename moves
    Cluster's rows too ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)).
 
-   A consumer's wait ends at the commit of a row in its topic, which the runner that commits tells, and only at its
-   time where another runner commits ([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md)).
-   Whether runners tell each other of their commits is decided with this step.
+   A consumer's wait on Cluster ends at a commit of its own runner in its topic, and at another runner's commit, which
+   a runner learns from SQLite's `data_version` while a reading waits
+   ([decision 0163](decisions/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md),
+   proposed). The signal of PostgreSQL is decided with that database.
 
    A caller's request and an operation's are not code on Cluster yet: `create` and `send` of a handle die there, and so
    does an operation that sends. They go through the door's client, as decisions 0085 and 0091 decide. Four things
