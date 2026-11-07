@@ -388,7 +388,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // On Cluster: the Cluster request id of each request an entity's operation sent, kept under the work that sent it,
   // whose step deletes Cluster's rows under the id once the work ends. An id with no sender is pending: its request
   // was answered after its work ended, or nothing waits for its answer, and the next step of any entity deletes
-  // Cluster's rows under it (decisions 0090, 0092). The id is an integer, as Cluster's column of it is, so that the
+  // Cluster's rows under it (decision 0169). The id is an integer, as Cluster's column of it is, so that the
   // two compare as numbers.
   yield* sql`
     CREATE TABLE IF NOT EXISTS sent_requests (
@@ -419,7 +419,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
 /**
  * Cluster's tables of messages and replies, under the prefix `SqlMessageStorage` takes by default: the runtime on
  * Cluster deletes their rows by request id, as Cluster has no operation that forgets a processed request
- * (decision 0090). A launcher that gives `SqlMessageStorage` another prefix keeps those rows.
+ * (decision 0169). A launcher that gives `SqlMessageStorage` another prefix keeps those rows.
  */
 const clusterMessages = 'cluster_messages'
 const clusterReplies = 'cluster_replies'
@@ -427,7 +427,7 @@ const clusterReplies = 'cluster_replies'
 /**
  * Deletes Cluster's rows under the request ids of `table`, `sent_requests` or `given_requests`, that `where`
  * selects, then those ids. Every row under an id goes: the request, its replies and any envelope stored under it
- * (decisions 0090, 0171).
+ * (decisions 0169, 0171).
  */
 const forgetUnder = (
   sql: SqlClient.SqlClient,
@@ -1202,18 +1202,18 @@ export interface Storage<T extends Types> {
   readonly waiters: (id: string) => Effect.Effect<ReadonlyArray<Readonly<{ name: string; id: string }>>>
   /**
    * On Cluster: keeps the Cluster request id `requestId` of a request the operation `asked` sent, under its work if
-   * the asker's work still holds, and pending otherwise. An id already kept is not kept again (decision 0090). It
-   * gives whether the work still holds (decision 0092).
+   * the asker's work still holds, and pending otherwise. An id already kept is not kept again (decision 0169). It
+   * gives whether the work still holds (decision 0170).
    */
   readonly keepSent: (
     requestId: string,
     asked: Readonly<{ entity: Readonly<{ name: string; id: string }>; key: Key; incarnation: number }>,
   ) => Effect.Effect<boolean>
-  /** On Cluster: keeps the Cluster request id `requestId` pending, as a request nothing waits for (decision 0092). */
+  /** On Cluster: keeps the Cluster request id `requestId` pending, as a request nothing waits for (decision 0169). */
   readonly pendSent: (requestId: string) => Effect.Effect<void>
   /**
    * On Cluster: deletes Cluster's rows under every pending id, and the pending ids. A step runs it first, before
-   * Cluster saves the rows of the step's own request (decision 0090).
+   * Cluster saves the rows of the step's own request (decision 0169).
    */
   readonly forgetPending: Effect.Effect<void>
   /**
@@ -1227,7 +1227,7 @@ export interface Storage<T extends Types> {
 /**
  * The storage of one program's entities, on one client, with its schemas read once. `partitions` is the number of
  * partitions of the log, which `partitioned` checks against the database. `onCluster` says whether Cluster's tables
- * are beside the runtime's, whose rows a step deletes with the work that sent them (decision 0090).
+ * are beside the runtime's, whose rows a step deletes with the work that sent them (decision 0169).
  */
 export const storage = <T extends Types>(
   program: Program<T>,
@@ -1643,7 +1643,7 @@ export const storage = <T extends Types>(
             AND sender_parameter = ${ended.parameter} AND sender_incarnation = ${incarnation}
         `
         // On Cluster, the work takes Cluster's rows of the requests it sent with it, as it takes its replies
-        // (decision 0090).
+        // (decision 0169).
         if (onCluster) {
           yield* forgetSent(
             sql,
@@ -2349,7 +2349,7 @@ export const storage = <T extends Types>(
     )
 
   // The asker's work is read in the step's transaction, which on SQLite comes after every other: the step that ends
-  // the work either commits before, and the id is pending, or after, and deletes the id's rows (decision 0090).
+  // the work either commits before, and the id is pending, or after, and deletes the id's rows (decision 0169).
   const keepSent = (
     requestId: string,
     asked: Readonly<{ entity: Readonly<{ name: string; id: string }>; key: Key; incarnation: number }>,

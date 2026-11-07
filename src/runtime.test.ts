@@ -71,7 +71,7 @@ import {
 
 /**
  * Cluster's tables of messages and replies, with the one column the runtime on Cluster deletes their rows by, for the
- * tests that run the runtime on a fake of Cluster (decision 0090).
+ * tests that run the runtime on a fake of Cluster (decision 0169).
  */
 const clusterTables = Effect.flatMap(SqlClient.SqlClient, (sql) =>
   Effect.andThen(
