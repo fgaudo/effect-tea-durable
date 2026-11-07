@@ -5,61 +5,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Effect Cluster.** The runtime runs on it as [`docs/cluster.md`](cluster.md) and decisions 0081 to 0092 decide,
-   with sharding and rolling deploys. Its runners share one database. It runs on SQLite, whose commit checks the
-   shard, and across machines on PostgreSQL once Cluster has a fence, or the runtime one of its own
-   ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md),
-   [decision 0157](decisions/0157-the-storage-speaks-sqlite-and-postgresql.md)).
-
-   Cluster's runners carry no version, and a shard may go from a new runner back to an old one
-   ([open question](open-questions.md#running)). The step decides what keeps an older version from the rows a newer
-   one wrote, with what the runtime holds alone, whatever Cluster comes to give. A runner deploys only the programs
-   its `sharding` names, at the version named
-   ([decision 0174](decisions/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md), proposed).
-
-   The two interleavings [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)
-   reached hold on Cluster
-   ([decision 0172](decisions/0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md), proposed). An
-   operation registers for its receiver's resumption before it sends, and a test on two runners holds it. On SQLite
-   two loaders of one entity never wait for its lock at once, and a move to PostgreSQL reads that again.
-
-   On Cluster an entity's type is its program's name, and Cluster stores its messages under it, so a rename moves
-   Cluster's rows too ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)).
-
-   A consumer's wait on Cluster ends at a commit of its own runner in its topic, and at another runner's commit, which
-   a runner learns from SQLite's `data_version` while a reading waits
-   ([decision 0163](decisions/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md),
-   proposed). The signal of PostgreSQL is decided with that database.
-
-   A caller's `create` and `send` go through Cluster's client of the door, with `keep` in the payload, and a message
-   answered `Suspended` or `NotFound` is reset and sent again
-   ([decision 0165](decisions/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
-   proposed). An operator's `Resume` and `Discard` go through it too, each a request of its own
-   ([decision 0166](decisions/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md), proposed).
-   So do an operation's, and a step that resumes or discards an entity tells `Resumed` to the entities whose
-   operations it answered `Suspended` ([decision 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md), proposed). A failure
-   Cluster saved of its own is reset before it is given
-   ([decision 0168](decisions/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md), proposed). An
-   operation's request ids are kept under its work, and Cluster's rows deleted with it, and `Resumed` leaves its id
-   pending ([decision 0169](decisions/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md),
-   proposed). An operation's client keeps the request's id before it resets a failure Cluster saved
-   ([decision 0170](decisions/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md),
-   proposed). A caller's client keeps its message's id once it has the answer, and Cluster's rows go once the time
-   is past, by a step of the entity or `Handle.expire`
-   ([decision 0171](decisions/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md),
-   proposed). A reply Cluster saves of its own after the request's rows are gone is left, since only a deploy that
-   registers no receiver in time leaves one
-   ([decision 0173](decisions/0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md), proposed).
-
-   Effect-TS/effect#10239, which asks Cluster to forget a processed request, was closed by a merged pull request
-   that no release holds at 4.1.2. Until one does, the deletions are the runtime's own statements (decision 0090).
-
-2. **The runtime's bookkeeping in Effect's `Tx` modules**, if the open question of bookkeeping in transactions, under
+1. **The runtime's bookkeeping in Effect's `Tx` modules**, if the open question of bookkeeping in transactions, under
    [Running](open-questions.md#running), decides for them. What another fiber reads would change in one transaction,
    and not in one synchronous step kept by hand
    ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). The waker's reading of the
-   entities held and its wait for a poke would be one transaction. The step comes after Effect Cluster, which says
-   what bookkeeping a runner keeps. The tests under prioritized schedules check the rewrite, and the seeds they pin
+   entities held and its wait for a poke would be one transaction. On Effect Cluster a runner keeps the same
+   bookkeeping over the shards it holds
+   ([decision 0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
+   The tests under prioritized schedules check the rewrite, and the seeds they pin
    are found again after it.
 
 ## Later
@@ -69,7 +22,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   The release archives the notes the design has come to cover since the last archiving, as
   [`AGENTS.md`](../AGENTS.md) says. It passes `bun run test:release`, which runs every seed of the explored tests.
 
-- **A model of the runtime's protocol on Cluster**, in TLA+ or a model checker like it, if the step Effect Cluster
-  keeps finding interleavings between runners. The model checks every state the protocol reaches within its bounds:
+- **The runtime on Cluster across machines, on PostgreSQL**, once Cluster has a fence
+  ([Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058)), or the runtime one of its own. Until
+  then a step commits only where the commit checks the shard, which on Cluster is SQLite
+  ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)). A fence of the runtime's
+  own waits for tests on a server of PostgreSQL with a pool, which the open question of many connections asks for.
+
+- **A model of the runtime's protocol on Cluster**, in TLA+ or a model checker like it, if the tests on Cluster
+  keep finding interleavings between runners. The model checks every state the protocol reaches within its bounds:
   the shards a runner holds and lets go, a step's commit that checks the shard, and two versions at once
   (decisions 0084, 0159 and 0162). A model proves the protocol and not the code, so the tests stay.

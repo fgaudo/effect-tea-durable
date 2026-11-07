@@ -75,7 +75,8 @@ no life of its own, a profile or a product, does not need it.
 - [`examples/order`](examples/order): an order's lifecycle, with its scenarios as tests, the question a
   query across entities answers — which orders nobody paid, how many, and what they owe — what each of its steps publishes for other
   systems, and a report fed from the log, how many orders are in each status
-  ([`examples/order/runtime.test.ts`](examples/order/runtime.test.ts)). If an example reads badly, the
+  ([`examples/order/runtime.test.ts`](examples/order/runtime.test.ts)), and the orders on a runner of Effect Cluster
+  ([`examples/order/cluster.test.ts`](examples/order/cluster.test.ts)). If an example reads badly, the
   API is wrong;
 - [`examples/subscription`](examples/subscription): a subscription billed every month, which never ends;
 - [`examples/cart`](examples/cart): a cart whose lines are children by id, each reserving its own stock;

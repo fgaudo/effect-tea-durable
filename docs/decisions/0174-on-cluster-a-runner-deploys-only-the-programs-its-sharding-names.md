@@ -1,6 +1,6 @@
 # 0174. On Cluster, a runner deploys only the programs its sharding names
 
-**Status:** proposed, 2026-11-07, for the step Effect Cluster of the roadmap. Decides what
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Decides what
 [decision 0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md) left to the deploy on
 Cluster: whether a deploy of a program that the runner's `sharding` does not name dies.
 

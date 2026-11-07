@@ -73,6 +73,7 @@ export {
   type Suspended,
   type Waiting,
 } from './runtime.ts'
+export { launch as launchOnCluster, sharding } from './cluster.ts'
 export {
   type Comparison,
   type Consumer,

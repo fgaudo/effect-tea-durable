@@ -1,6 +1,6 @@
 # 0173. On Cluster, a reply Cluster saves after its request is gone is left
 
-**Status:** proposed, 2026-11-07, for the step Effect Cluster of the roadmap. Decides the open question of a reply
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Decides the open question of a reply
 Cluster saves after its request's rows are gone, which
 [decision 0170](0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md)
 raised.

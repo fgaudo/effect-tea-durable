@@ -1,6 +1,6 @@
 # 0161. On Cluster, a step settles the machine by the count of the steps that wrote it
 
-**Status:** proposed, 2026-11-06, for the step Effect Cluster of the roadmap. Says how the pending machine of
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Says how the pending machine of
 [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) is kept, and changes two
 of its rules: what a door's step sets going is performed by the step that finds it committed, and an entity's lock
 on Cluster is taken only inside a transaction. [Decision 0164](0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md) extends the fork without the

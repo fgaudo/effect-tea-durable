@@ -1,6 +1,6 @@
 # 0165. On Cluster, a caller sends through the door's client, and is never answered `Full`
 
-**Status:** proposed, 2026-11-07, for the step Effect Cluster of the roadmap. Says how
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Says how
 [decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md) is code for a caller's request.
 Changes how [decision 0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md) holds on Cluster: a caller
 is never answered `Full` there. Changes how [decision 0125](0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)

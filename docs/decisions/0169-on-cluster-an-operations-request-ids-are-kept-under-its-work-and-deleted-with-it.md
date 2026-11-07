@@ -1,6 +1,6 @@
 # 0169. On Cluster, an operation's request ids are kept under its work, and Cluster's rows deleted with it
 
-**Status:** proposed, 2026-11-07, for the step Effect Cluster of the roadmap. Says how
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Says how
 [decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) is code for an operation's request, and how
 [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) is code for `Resumed`. The
 client given Cluster's failure keeps the request's id too, by [decision 0170](0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md).

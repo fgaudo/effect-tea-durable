@@ -1,6 +1,6 @@
 # 0160. On Cluster, a door answers as text, and a creation the program dies on waits for a fix
 
-**Status:** proposed, 2026-11-06, for the step Effect Cluster of the roadmap. Changes how
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Changes how
 [decision 0124](0124-the-boundary-authenticates-and-update-authorizes.md) holds on Cluster: a creator is not given
 the defect of a creation the program dies on.
 

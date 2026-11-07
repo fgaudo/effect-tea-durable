@@ -1,6 +1,6 @@
 # 0168. On Cluster, a failure Cluster saved of its own is reset before it is given
 
-**Status:** proposed, 2026-11-07, for the step Effect Cluster of the roadmap. Says how
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Says how
 [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) is code for a defect Cluster
 saves as a request's reply, and extends it from an operation's request to a caller's. An operation's client keeps
 the request's Cluster id before the reset, by [decision 0170](0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md).

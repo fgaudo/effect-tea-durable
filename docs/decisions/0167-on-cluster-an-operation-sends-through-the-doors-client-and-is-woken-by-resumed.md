@@ -1,6 +1,6 @@
 # 0167. On Cluster, an operation sends through the door's client, and is woken by `Resumed`
 
-**Status:** proposed, 2026-11-07, for the step Effect Cluster of the roadmap. Says how
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Says how
 [decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md) is code for an operation's
 request. Changes how [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) tells a
 resumption: once for each sender's entity, not once for each request, and with the receiver's address alone.

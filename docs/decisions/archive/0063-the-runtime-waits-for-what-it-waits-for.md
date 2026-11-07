@@ -3,8 +3,7 @@
 **Status:** accepted, 2026-10-31. Replaces the bullet of [decision 0028](0028-rules-the-runtime-settled.md) that
 has a sender to a suspended receiver send again every few milliseconds, and the wait of
 [decision 0045](0045-an-operation-waits-for-a-program-not-deployed-yet.md) every `retry` milliseconds. Narrowed on
-Cluster by [decision 0163](../0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md),
-proposed: while a reading waits, a runner reads the file's version of the other runners' commits.
+Cluster by [decision 0163](../0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md): while a reading waits, a runner reads the file's version of the other runners' commits.
 
 ## Context
 

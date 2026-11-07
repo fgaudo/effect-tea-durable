@@ -1,7 +1,6 @@
 # 0085. On Cluster, a request is keyed and answered as on one process
 
-**Status:** proposed, for the Effect Cluster step of the [roadmap](../roadmap.md); rewritten in place while the step
-is under way. Holds what decisions 0085 to 0088 (0086 to 0088 deleted; git keeps them) decided on 2026-10-31, each correcting the one before, as one note:
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Holds what decisions 0085 to 0088 (0086 to 0088 deleted; git keeps them) decided on 2026-10-31, each correcting the one before, as one note:
 how [decision 0015](archive/0015-a-request-belongs-to-its-sender.md),
 [0017](archive/0017-creation-in-the-machine.md), [0006](archive/0006-a-defect-suspends-the-entity.md) and
 [0023](archive/0023-suspended-means-no-reply-yet.md) hold on

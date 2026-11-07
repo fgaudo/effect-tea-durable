@@ -304,7 +304,7 @@ its deploy ([decision 0045](decisions/archive/0045-an-operation-waits-for-a-prog
 what it waits for, and nothing looks again on a clock
 ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)). On Effect Cluster the
 receiver may be resumed on another runner, which tells the sender's entity `Resumed`
-([decision 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md), proposed). A receiver that crashes has no reply
+([decision 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)). A receiver that crashes has no reply
 yet either, and the operation sends again after a while; only a defect of the sender's own suspends it
 ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). A full receiver stored nothing
 of the message, and the operation sends again after the same while: it is never given `Full`
@@ -480,7 +480,7 @@ with Cluster.
   activation logs a warning that names the entity
   ([decision 0147](decisions/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)). On Effect Cluster a
   caller is never answered `Full`: its message waits in Cluster's table until the entity takes it
-  ([decision 0165](decisions/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md), proposed).
+  ([decision 0165](decisions/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md)).
 - **Passivation.** An entity with no message for a while is unloaded. An operation under way keeps it loaded, a
   suspended entity's too; a suspended entity whose operations have ended is unloaded with the message it died on,
   and the completions recorded behind it. To the machine, a passivation is
@@ -1013,10 +1013,93 @@ operation such a step starts, and for a creation committed whose work has not st
 scope of its own, so that the drain runs first and the database is let go last whatever the strategy of the scope it
 was launched in ([decision 0120](decisions/0120-the-runtime-closes-a-sequential-scope-of-its-own.md)).
 
+### On Effect Cluster
+
+On Effect Cluster, each runner runs the runtime beside Cluster's tables, in one SQLite file that every runner
+shares, on one machine. `sharding(programs)` builds a runner's `Sharding`, and `launchOnCluster` gives its runtime,
+whose `deploy` serves each program through the program's door
+([decisions 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md),
+[0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)). A step commits
+only where its commit checks the shard. On Cluster that is SQLite, until Cluster has a fence, so the runtime does
+not run on Cluster across machines yet
+([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
+[`examples/order/cluster.test.ts`](../examples/order/cluster.test.ts) shows a runner. What Cluster gives and what it
+leaves to the runtime is in [`cluster.md`](cluster.md).
+
+#### A runner and its versions
+
+- `sharding` records the version of each program the runner names, before Cluster registers the runner. A launch
+  older than the newest version recorded dies, so a rollback is refused.
+- A runner is alive, for the `RunnerHealth` the runtime gives Cluster, only while it runs the newest version of
+  every program it names, and while the launcher's own `RunnerHealth` says so. A rolling deploy then moves every
+  shard to the newer runners.
+- A step commits only while its program's version is the newest recorded, which it reads in its transaction. A step
+  of an older version dies and rolls back, and Cluster delivers its message again until a runner of the newest
+  version steps it ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+- A deploy dies unless the runner's `sharding` named its program at the version deployed. A process with no
+  `runnerAddress` is a client of the cluster alone: it holds no shard, and deploys any program
+  ([decision 0174](decisions/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).
+
+#### A door and its step
+
+- A program's door is Cluster's entity of the program's name, with the RPCs `Create`, `Message`, `Resume`,
+  `Discard` and `Resumed`. Each is persisted, and its handler steps the runtime's entity in Cluster's transaction, so
+  a step commits with its reply ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)). A
+  rename moves Cluster's rows too, since they are stored under the entity's type
+  ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)).
+- A request is keyed by the version that keyed it and its `requestKey`. Cluster answers a retry within a version, and
+  the runtime's replies answer one across versions
+  ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).
+- Everything a step answers is a success of the RPC, as text. A creation the program dies on stores nothing, and
+  Cluster delivers it again until a deploy fixes the program
+  ([decision 0160](decisions/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)).
+- What a door's step sets going starts once the step has committed. The entity's row counts the steps that wrote it,
+  and the next step of the entity settles the uncommitted machine by that count
+  ([decision 0161](decisions/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
+
+#### Shards
+
+- An entity's shard is its partition of the log. Each deployment registers a singleton per shard, and a shard is held
+  while its singleton runs on this runner. The waker reads the timers of the shards held, a shard lost crashes its
+  entities on this runner, and the runner that gains it activates its entities left with work
+  ([decision 0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
+- Passivation, the capacity and the timers stay the runtime's: a door's `maxIdleTime` is the runtime's passivation,
+  and Cluster's `maxResidentEntities` is left unbounded
+  ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)).
+
+#### Requests through the door's client
+
+- A caller's `create` and `send`, an operator's `resume` and `discard`, and an operation's requests go through
+  Cluster's client of the door, from whatever runner they are on. A message answered `Suspended` or `NotFound` is
+  reset once and sent again, and a caller is never answered `Full`
+  ([decisions 0165](decisions/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
+  [0166](decisions/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
+- An operation answered `Suspended` registers for the receiver's resumption before it sends. The step that resumes or
+  discards the receiver tells `Resumed` to the entities whose operations it answered `Suspended`
+  ([decisions 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md),
+  [0172](decisions/0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md)).
+- A failure Cluster saved of its own, for an entity type no runner registered in time, is reset before the client
+  gives it, so that a retry is delivered again. An operation's client keeps the request's id first
+  ([decisions 0168](decisions/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md),
+  [0170](decisions/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md)).
+
+#### Cluster's rows
+
+- Cluster deletes no reply of its own, so the runtime deletes Cluster's rows by statements of its own
+  ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). An operation's request ids
+  are kept under its work, and the step whose work ends deletes Cluster's rows under them
+  ([decision 0169](decisions/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md)).
+- A caller's client keeps its message's id once it has the answer, and Cluster's rows go once the message's `keep`
+  is past, by a step of the entity or by `Handle.expire`
+  ([decision 0171](decisions/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
+  A message sent without `keep` keeps its rows for ever.
+- A reply Cluster saves of its own after its request's rows are gone is left
+  ([decision 0173](decisions/0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md)).
+
 ### The public surface
 
 The library exports
 what a program, a test and an operator use, and nothing the runtime alone uses: the machine, the storage and
 their helpers may change without a note, and a runtime on another store imports them from their modules, as the
-tests do ([decision 0055](decisions/archive/0055-the-public-surface-is-what-its-users-use.md)). Effect Cluster's
-entities, sharding and message storage come next ([roadmap](roadmap.md)).
+tests do ([decision 0055](decisions/archive/0055-the-public-surface-is-what-its-users-use.md)). A launcher on Effect
+Cluster uses `sharding` and `launchOnCluster`, which `src/cluster.ts` gives as `sharding` and `launch`.

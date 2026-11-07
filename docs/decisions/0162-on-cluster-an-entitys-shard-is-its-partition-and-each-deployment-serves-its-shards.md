@@ -1,6 +1,6 @@
 # 0162. On Cluster, an entity's shard is its partition, and each deployment serves its shards
 
-**Status:** proposed, 2026-11-06, for the step Effect Cluster of the roadmap. Says how
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Says how
 [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) learns a runner's shards
 from a singleton of each, and changes two of its rules: each deployment registers its own singletons, and the rows
 the waker and an activation read carry their entity's shard through the entity's row. Decides the roadmap's

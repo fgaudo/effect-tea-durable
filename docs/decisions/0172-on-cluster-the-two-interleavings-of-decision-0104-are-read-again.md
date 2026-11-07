@@ -1,6 +1,6 @@
 # 0172. On Cluster, the two interleavings of decision 0104 are read again
 
-**Status:** proposed, 2026-11-07, for the step Effect Cluster of the roadmap. Says how
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Says how
 [decision 0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) and
 [decision 0067](archive/0067-each-entity-is-held-by-its-own-lock.md) hold on Cluster, as the roadmap asks before the
 step is done.

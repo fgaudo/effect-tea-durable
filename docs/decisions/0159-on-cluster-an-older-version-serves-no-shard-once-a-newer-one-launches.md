@@ -1,6 +1,6 @@
 # 0159. On Cluster, an older version serves no shard once a newer one launches
 
-**Status:** proposed, 2026-11-06, for the step Effect Cluster of the roadmap. Decides the
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Decides the
 [open question](../open-questions.md#running) of two versions at once on Cluster. Changes what an alternative of
 [decision 0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) says of a step that dies, which rested
 on decision 0082 (deleted; git keeps it): since 4.1.2, Cluster's JSDoc promises that a handler's defect restarts its
@@ -153,5 +153,5 @@ runs two runners on one SQLite file, with a `RunnerHealth` that answers by versi
   Cluster's transaction. `newestVersion` of the storage reads it, `FOR SHARE` on PostgreSQL.
 - A deploy of a program the runner's `sharding` does not name, at the version deployed, dies
   ([decision 0174](0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).
-- [`docs/cluster.md`](../cluster.md#two-versions-at-once) says what this note proposes. The open question of two
-  versions at once leaves `docs/open-questions.md` once the note is taken.
+- [`docs/cluster.md`](../cluster.md#two-versions-at-once) says what this note decides, and the open question of two
+  versions at once leaves `docs/open-questions.md` with it.

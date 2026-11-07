@@ -1,6 +1,6 @@
 # 0163. On Cluster, a reading that waits learns of another runner's commit from the file
 
-**Status:** proposed, 2026-11-06, for the step Effect Cluster of the roadmap. Changes
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Changes
 [decision 0142](0142-a-consumer-waits-for-a-row-of-its-topic.md), whose wait on Cluster ends at its time where another
 runner commits, and decides the question it left to the step: whether runners tell each other of their commits.
 Narrows [decision 0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) on Cluster: the runtime polls one

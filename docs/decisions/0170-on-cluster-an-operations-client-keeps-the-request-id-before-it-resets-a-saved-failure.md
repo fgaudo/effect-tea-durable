@@ -1,6 +1,6 @@
 # 0170. On Cluster, an operation's client keeps the request's id before it resets a failure Cluster saved
 
-**Status:** proposed, 2026-11-07, for the step Effect Cluster of the roadmap. Says how
+**Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Says how
 [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) is code for the keep of a
 request's Cluster id by the client given Cluster's failure. Adds to it what a keep that fails does, and that a client
 which finds the work ended waits until it is interrupted.

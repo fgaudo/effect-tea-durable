@@ -4,7 +4,7 @@
 [decision 0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md), whose `feed` gives at once what it reads.
 Changed by [decision 0153](0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md), which moves `wait` into an
 object of `feed`'s options, beside the partitions a reader names. Changed by
-[decision 0163](0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md), proposed: on Cluster a reading that waits is woken by another runner's commit, which the runner
+[decision 0163](0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md): on Cluster a reading that waits is woken by another runner's commit, which the runner
 learns from the file.
 
 ## Context
