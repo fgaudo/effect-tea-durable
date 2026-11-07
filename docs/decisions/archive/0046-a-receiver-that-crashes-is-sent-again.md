@@ -3,7 +3,7 @@
 **Status:** accepted, 2026-10-31. That a sender takes a crash as it takes `Suspended` is changed by
 [decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md): a sender to a suspended receiver waits for its
 resumption, and `retry` is the wait after a crash alone. A sender to a full receiver sends again after `retry` too,
-since [decision 0147](../0147-an-entity-holds-a-bounded-number-of-callers-messages.md), and is never given `Full`.
+since [decision 0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md), and is never given `Full`.
 
 ## Context
 

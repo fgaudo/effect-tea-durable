@@ -2,7 +2,7 @@
 
 **Status:** accepted, 2026-10-30. Replaces the consequence of
 [decision 0015](0015-a-request-belongs-to-its-sender.md) on renaming a program. Its rename outside the runtime is replaced by
-[decision 0156](../0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md), which renames a program at its
+[decision 0156](0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md), which renames a program at its
 launch.
 
 ## Context

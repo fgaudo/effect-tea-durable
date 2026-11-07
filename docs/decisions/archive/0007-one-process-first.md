@@ -2,8 +2,8 @@
 
 **Status:** accepted, 2026-10-30. Its one process is made a rule the runtime keeps by
 [decision 0080](0080-a-database-is-held-by-one-runtime.md), and its consequence for Cluster is changed by
-[decision 0081](../0081-on-cluster-a-step-commits-with-its-reply.md). Its database is SQLite or PostgreSQL, by
-[decision 0157](../0157-the-storage-speaks-sqlite-and-postgresql.md).
+[decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md). Its database is SQLite or PostgreSQL, by
+[decision 0157](0157-the-storage-speaks-sqlite-and-postgresql.md).
 
 ## Context
 

@@ -3,9 +3,9 @@
 **Status:** accepted, 2026-10-30. What it counts as a defect is narrowed to what the program does by
 [decision 0061](0061-only-what-the-program-does-is-its-defect.md), and an operation is not given its receiver's
 crash by [decision 0046](0046-a-receiver-that-crashes-is-sent-again.md). What it says of the operations under way is
-replaced by [decision 0113](../0113-a-suspended-entitys-operations-run-to-their-end.md): they run to their end. The
+replaced by [decision 0113](0113-a-suspended-entitys-operations-run-to-their-end.md): they run to their end. The
 list of suspended entities its consequences ask for is added by [decision
-0114](../0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md).
+0114](0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md).
 
 ## Context
 

@@ -5,7 +5,7 @@
 completion. Its bullet that discards a timer's firing is replaced by [decision 0044](0044-a-firing-is-not-discarded.md). How a fixed program is brought is changed by
 [decision 0064](0064-the-program-is-not-the-machines-state.md): it is deployed, and `Resume` takes no program. What a
 `discard` that drops nothing answers is added by [decision
-0114](../0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md).
+0114](0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md).
 
 ## Context
 

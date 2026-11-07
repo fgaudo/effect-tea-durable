@@ -69,14 +69,14 @@ A program is checked where it enters — `deploy`, which a fix is too, and `rehe
 or run: one whose name is empty, or one of whose indexes is not a word, is refused. The check is pure and made
 once, since a program is never mutated
 ([decision 0054](decisions/archive/0054-a-program-is-checked-where-it-enters.md),
-[decision 0136](decisions/0136-a-key-is-a-name-and-a-parameter-as-data.md)).
+[decision 0136](decisions/archive/0136-a-key-is-a-name-and-a-parameter-as-data.md)).
 
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
 
 ## Children
 
 A program may hold children inside its entity, as effect-tea's parent does, stored in its one state
-([decision 0133](decisions/0133-an-entity-composes-children-as-effect-tea-does.md)). The library routes each child's
+([decision 0133](decisions/archive/0133-an-entity-composes-children-as-effect-tea-does.md)). The library routes each child's
 messages, holds its work under its keys, lifts its runners and wraps its reasons, so the composed program is a
 program the machine takes as any other. [`examples/cart`](../examples/cart) holds a line of a cart for each article.
 
@@ -104,7 +104,7 @@ A part may hold children of its own, so a tree is as deep as a program needs.
   `andThen` and `forEach` add up the steps of a parent that is itself a part, keeping their raised events.
   `forEach` over messages to children of one name by id puts the children back once, and not once per child, with
   the same step as one message after the other gives. A child that raises an event puts them back before its parent
-  handles it ([decision 0155](decisions/0155-a-foreach-of-messages-to-children-puts-them-back-once.md)).
+  handles it ([decision 0155](decisions/archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md)).
 - **`onEvent`** has a handler for each child that raises events, and is required exactly when one does. A handler of
   children by id takes the id first.
 - **`project`** takes `children`, with each child's projection: `children.Line(state, id)`.
@@ -146,7 +146,7 @@ A message is one of two kinds, and the rule for a message that does not apply fo
   protocol retries for. The reply is then kept for that time from the step that answers, and a retry after it is a
   new request, applied again. Without `keep` the reply is kept for ever. A step that stores a reply deletes its
   entity's replies past their time, and `Handle.expire` those of the whole program
-  ([decision 0125](decisions/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). Request ids are their
+  ([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). Request ids are their
   sender's: another entity's are
   stored under its address, apart from everyone else's
   ([decision 0015](decisions/archive/0015-a-request-belongs-to-its-sender.md)), and a caller's under its sender, as the
@@ -161,7 +161,7 @@ A message is one of two kinds, and the rule for a message that does not apply fo
   authenticates the caller and writes the sender as the identity it authenticated. A caller the boundary does not
   authenticate never reaches the runtime, and nothing is stored for it. What a sender may do is domain, so a sender
   that may not is rejected, never a defect
-  ([decision 0124](decisions/0124-the-boundary-authenticates-and-update-authorizes.md)).
+  ([decision 0124](decisions/archive/0124-the-boundary-authenticates-and-update-authorizes.md)).
   A caller may be another entity's operation: `meta.from` is then `Entity`, with the sender's name and id,
   filled in by the runtime (see [entities that talk](#entities-that-talk)).
 - **Internal** messages come from the entity's own durable work: an operation's completion, a timer's firing.
@@ -182,7 +182,7 @@ and each is answered apart ([decision 0050](decisions/archive/0050-a-creation-is
 sees no sender, so the program does not decide who may create an entity. The boundary decides it, or an entity
 does: the entity's `update` rejects the request, or keeps work whose operation calls `create`. A defect at creation
 is given to its creator, and nothing is stored, so a retry after a fix creates the entity
-([decision 0124](decisions/0124-the-boundary-authenticates-and-update-authorizes.md)).
+([decision 0124](decisions/archive/0124-the-boundary-authenticates-and-update-authorizes.md)).
 
 ## Durable work
 
@@ -215,7 +215,7 @@ Two kinds of work exist.
   a schedule that ends, under the same idempotency key. Once the schedule ends, the runner delivers a message
   that says so, and the state decides what follows: a new attempt behind a timer, with a count of attempts the
   state holds, or an end. The runtime counts no retries, and never makes a defect of them
-  ([decision 0130](decisions/0130-a-runner-retries-and-the-state-counts-the-attempts.md)). The runner says what a
+  ([decision 0130](decisions/archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md)). The runner says what a
   crash does to it
   ([decision 0011](decisions/archive/0011-an-operation-declares-what-a-crash-does.md)): an idempotent
   one receives an **idempotency key** (the entity's program and id, the operation's key and its incarnation:
@@ -226,23 +226,23 @@ Two kinds of work exist.
   service that caps a key's length gets its digest: a runner declared with `operation.digest` is given the SHA-256
   of the key, in 43 characters of base64url. The key's form is part of the delivery stored with the operation, so a
   deploy cannot change it under an operation under way
-  ([decision 0123](decisions/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md)). An
+  ([decision 0123](decisions/archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md)). An
   operation leaves the state only through its completion: a step whose next state drops the key of an operation
   still running is a defect ([decision 0005](decisions/archive/0005-an-operation-leaves-only-by-completing.md)).
   A droppable operation, declared with `operation.droppable`, is the exception. It acts on nothing, a computation
   or a read, so a step may drop it or change it while it runs: the runtime interrupts it without waiting for its
   finalizers, and a change starts it again as new work. A crash runs it again. It sends to no entity and creates
   none, since a request acts on its receiver: one that does dies
-  ([decision 0128](decisions/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)). A droppable runner whose
+  ([decision 0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)). A droppable runner whose
   services hold `Entities` does not compile, and the runtime's check is for one that escapes the type
-  ([decision 0129](decisions/0129-a-droppable-runner-that-sends-does-not-compile.md)).
+  ([decision 0129](decisions/archive/0129-a-droppable-runner-that-sends-does-not-compile.md)).
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
   nothing yet.
 
 A stream from a socket or a feed is no work of a program, since it dies with the process. The boundary reads it,
 and sends each item as an inbound message, under a request id it derives from the item's offset or id, so that an
 item sent again after a crash gets the stored reply. `update` rejects an item the state does not want
-([decision 0127](decisions/0127-a-live-stream-feeds-its-entities-from-the-boundary.md)).
+([decision 0127](decisions/archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md)).
 
 A kept key keeps its work only if the work is the same as it is stored: an operation that encodes to the JSON of
 the one under way, a timer at the same time whose message encodes alike. A property a schema does not declare is
@@ -268,14 +268,14 @@ changes or drops an operation under way, delivers it otherwise, or bears another
 A program declares its keys as a record: each name maps to the schema of its parameter, or to `null` for a key
 without one, as in `keys: { fee: null, charge: Schema.String }`. Under a key with a parameter, `durable` returns a
 list of pairs, each a parameter and the piece of work under it. An order holds a charge for each of its lines so,
-in the step that changes the order ([decision 0132](decisions/0132-a-key-may-take-a-parameter.md)).
+in the step that changes the order ([decision 0132](decisions/archive/0132-a-key-may-take-a-parameter.md)).
 
 A key is a name and a parameter, as data: the declared name, and the parameter as its schema encodes it, with the
 fields of each object in order. A key without a parameter has none. So two parameters that encode alike are one
 key, as two pieces of work that encode alike are one piece of work. A parameter its schema refuses is a defect, and
 so are two pieces of work whose parameters encode alike. Every output, message, suspension and row that names a key
 holds the name and the parameter apart, and nothing reads a key's text to tell them apart
-([decision 0136](decisions/0136-a-key-is-a-name-and-a-parameter-as-data.md)). The idempotency key holds the name,
+([decision 0136](decisions/archive/0136-a-key-is-a-name-and-a-parameter-as-data.md)). The idempotency key holds the name,
 or the name and the parameter's JSON, in place: `["Order","o-1",["charge","line-7"],4]`.
 
 ### Incarnations
@@ -285,7 +285,7 @@ starts anew under any key draws the next one: work under a key that comes back a
 its work delivered, that changes kind, or a timer that changed. An internal message carries the incarnation of the
 work that sent it, and the runtime drops it when the key's incarnation has moved on. The counter never goes back,
 so a key whose work is gone has no row: when it comes back, it draws an incarnation no run of it had
-([decision 0132](decisions/0132-a-key-may-take-a-parameter.md)).
+([decision 0132](decisions/archive/0132-a-key-may-take-a-parameter.md)).
 
 Without it, the second attempt of a payment could receive the late answer of the first. The runtime makes this
 impossible, so that no program has to remember attempt numbers.
@@ -304,11 +304,11 @@ its deploy ([decision 0045](decisions/archive/0045-an-operation-waits-for-a-prog
 what it waits for, and nothing looks again on a clock
 ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)). On Effect Cluster the
 receiver may be resumed on another runner, which tells the sender's entity `Resumed`
-([decision 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)). A receiver that crashes has no reply
+([decision 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)). A receiver that crashes has no reply
 yet either, and the operation sends again after a while; only a defect of the sender's own suspends it
 ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). A full receiver stored nothing
 of the message, and the operation sends again after the same while: it is never given `Full`
-([decision 0147](decisions/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)). An operation creates an
+([decision 0147](decisions/archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)). An operation creates an
 entity the same way, with `create` and a name. So an operation that talks only to entities may run at least once:
 run again, it sends the same requests, and acts once. `update` never sends: a step never waits on another entity
 ([decision 0009](decisions/archive/0009-entities-talk-through-operations.md)).
@@ -328,7 +328,7 @@ After each message the runtime stores, in one transaction:
   ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md));
 - and, in each topic of the log whose selection changed with it, the row other systems learn from
   ([decision 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md),
-  [decision 0138](decisions/0138-the-log-publishes-topics.md), see [publishing](#publishing-what-happened)).
+  [decision 0138](decisions/archive/0138-the-log-publishes-topics.md), see [publishing](#publishing-what-happened)).
 
 It stores the state, not the messages that led to it: a fixed `update` changes what happens next, never what
 already happened ([decision 0002](decisions/archive/0002-store-the-state-not-the-messages.md)). The messages may be
@@ -339,8 +339,8 @@ kept as an audit, but nothing replays them.
 A step writes the state whole. A step that changes the projection writes it in the read model. A step that changes
 what at least one topic selects writes it once more, in the step's publication of the outbox, however many topics
 the step is written in. Each row of a topic names the publication, and the selector runs where the row is read
-([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md),
-[decision 0154](decisions/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). A program that declares no
+([decision 0140](decisions/archive/0140-a-row-of-a-topic-gives-its-value.md),
+[decision 0154](decisions/archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). A program that declares no
 topics writes its projection twice.
 The spike `spikes/large-states.test.ts` saw a step written in five topics take as long as one written in one, and
 a step take about 5 ms with a state of 48 KB, 21 ms with 0.5 MB and 240 ms with 5 MB, when the projection holds
@@ -354,7 +354,7 @@ So the runtime refuses no state for its size, and warns of a large step. A step 
 logs a warning through Effect's logger, once per activation of the entity. A large state is split by the program:
 an item goes into an entity of its own
 once its parent would hold more than one step should write
-([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)).
+([decision 0135](decisions/archive/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)).
 
 ### The tables
 
@@ -404,7 +404,7 @@ in the database. `migrations` is how it reads it, in order: the first is the ste
 and **the program's version is how many migrations it carries, plus one** — a migration is the bump, and there is
 none to declare ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)). A rejection's reason
 is kept as long as the reply that carries it: a caller's for the time its boundary gave, or for ever
-([decision 0125](decisions/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)), and an entity's until the work
+([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)), and an entity's until the work
 that asked ends. The migrations of `rejection` are kept as long as a reply of a version they read is stored
 ([decision 0100](decisions/archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md)).
 
@@ -429,10 +429,10 @@ entity at its activation, as a program that changes an operation does
 the program does not have is not read at all: the call that meets it fails, and the process serves the entities
 it can read ([decision 0043](decisions/archive/0043-a-row-no-version-reads-fails-what-reads-it.md)). `reindex` is
 the exception, since it meets every row: it passes over such an entity, and names it
-([decision 0122](decisions/0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md)).
+([decision 0122](decisions/archive/0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md)).
 
 A program keeps every migration it ever had, since a row is migrated only when it is written again
-([decision 0126](decisions/0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md)). A migration
+([decision 0126](decisions/archive/0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md)). A migration
 once deployed is never changed, since it is how a version that exists in storage is read. A test records cases of
 each migration: a JSON value a version wrote of one kind, and the JSON value the next version reads of it.
 `migrationViolations` checks the program against them.
@@ -440,7 +440,7 @@ each migration: a JSON value a version wrote of one kind, and the JSON value the
 ### Renaming a program
 
 A program is renamed by its launch: `launch` takes `renames`, a record from each old name to its new name
-([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). A rename is a move of the
+([decision 0156](decisions/archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). A rename is a move of the
 database, as the number of partitions is, so it is the launch's, and the program only carries its new name.
 
 The launch runs every rename in one transaction, after it holds the database and before any deploy, so no entity
@@ -459,7 +459,7 @@ A rename whose old name holds nothing moves nothing, so it may stay in the launc
 old name may be launched. A rename onto a name that holds an entity, a head of the log or a consumer dies, and
 moves nothing. An empty name, a name renamed to itself, and a name both renamed and the new name of another are
 refused before the database is held. Two names may be renamed to one, as a program renamed twice declares both of
-its former names: `{ a: 'c', b: 'c' }` ([decision 0176](decisions/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)). A deploy of a program whose name the launch
+its former names: `{ a: 'c', b: 'c' }` ([decision 0176](decisions/archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)). A deploy of a program whose name the launch
 renames dies, since it is the old program.
 
 On Effect Cluster other runners share the database, and Cluster stores a door's requests under the program's name.
@@ -468,7 +468,7 @@ the new name. The check of every step dies for a renamed name, a runner of it is
 and a runner of the old code that launches again dies. The new program's door is registered under each old name
 too, and steps the entity under the new name, so a request Cluster saved under the old name is delivered. A door's
 step names an operation's sender by its new name, so that a retry sent under the old name is answered from the
-reply the rename wrote again, and not applied twice ([decision 0176](decisions/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)).
+reply the rename wrote again, and not applied twice ([decision 0176](decisions/archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)).
 
 ## Execution
 
@@ -486,9 +486,9 @@ reply the rename wrote again, and not applied twice ([decision 0176](decisions/0
   of `send` offered to it and not yet applied. A `send` past the bound is answered `Full` at once, and nothing of
   its message is offered or stored, so a retry under the same request id is a new try. The first refusal of an
   activation logs a warning that names the entity
-  ([decision 0147](decisions/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)). On Effect Cluster a
+  ([decision 0147](decisions/archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)). On Effect Cluster a
   caller is never answered `Full`: its message waits in Cluster's table until the entity takes it
-  ([decision 0165](decisions/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md)).
+  ([decision 0165](decisions/archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md)).
 - **Passivation.** An entity with no message for a while is unloaded. An operation under way keeps it loaded, a
   suspended entity's too; a suspended entity whose operations have ended is unloaded with the message it died on,
   and the completions recorded behind it. To the machine, a passivation is
@@ -504,7 +504,7 @@ reply the rename wrote again, and not applied twice ([decision 0176](decisions/0
   [decision 0078](decisions/archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)).
   The capacity is 10 000 entities by default, Effect Cluster's own number, and `'unbounded'` leaves time alone to
   unload. A loaded entity holds about 8 KB beside its decoded state, so 10 000 small ones hold about 100 MB
-  ([decision 0151](decisions/0151-a-process-holds-ten-thousand-entities-by-default.md)).
+  ([decision 0151](decisions/archive/0151-a-process-holds-ten-thousand-entities-by-default.md)).
 
 These rules are a pure state machine, [`src/machine.ts`](../src/machine.ts): its events are a message arriving,
 an operation completing or dying, a timer firing, a step, the process dying, and an operator resuming or
@@ -539,7 +539,7 @@ resumes it or discards the message ([decision 0006](decisions/archive/0006-a-def
 operations under way run to their end: each completion is recorded behind the message the entity died on, and is
 handled once the entity is resumed, so a charge under way when an unrelated message dies is neither run again nor
 left `unknown`. An operation still running at the resumption is kept. One that dies meanwhile leaves the suspension
-as it is, and runs again at the resumption ([decision 0113](decisions/0113-a-suspended-entitys-operations-run-to-their-end.md)). A defect in an
+as it is, and runs again at the resumption ([decision 0113](decisions/archive/0113-a-suspended-entitys-operations-run-to-their-end.md)). A defect in an
 operation, in `durable` or `project` on a step's next state, or in a new program activating the stored state,
 suspends it too. A defect is what the program does: what one of its functions or schemas throws, each caught on
 its own, or a rule of the design it breaks. Anything else thrown while an event is applied — a bug of the machine,
@@ -566,7 +566,7 @@ sender waits as long as it takes, and a deployment that wants an alarm reads the
 what they did: `Resumed` or `Discarded`; `NotDiscarded`, for an entity that died on an internal message, in an
 operation or on its activation; `StillSuspended`, with the new cause, when the program deployed dies on the stored
 state, and a discard then keeps its message; `NotSuspended`; or `NotFound`. Each operator is told what the
-operator's own event did, even when two operate on one entity at once ([decision 0114](decisions/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)).
+operator's own event did, even when two operate on one entity at once ([decision 0114](decisions/archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)).
 
 ## Reading
 
@@ -576,12 +576,12 @@ A caller learns how an operation ended by reading the projection. The reply says
 accepted and, for a rejection, perhaps why: an acceptance never carries data. The projection is JSON, and
 `project` converts what the state holds, a time to its milliseconds: `read`, a query, an index and a topic read
 one shape, and the compiler refuses a projection schema that decodes to anything else
-([decision 0139](decisions/0139-the-projection-is-json.md)). A projection shows what a caller
+([decision 0139](decisions/archive/0139-the-projection-is-json.md)). A projection shows what a caller
 acts on, not the whole state: it is written twice in each step that changes it, and the outbox keeps it
-([decision 0135](decisions/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)).
+([decision 0135](decisions/archive/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)).
 The projection is the one contract of the entity: what a consumer of the log needs of it is in the projection
 too, and a boundary that answers a caller leaves out what that caller is not shown
-([decision 0138](decisions/0138-the-log-publishes-topics.md)).
+([decision 0138](decisions/archive/0138-the-log-publishes-topics.md)).
 
 Queries across entities — "the orders nobody paid" — read the same thing. The runtime keeps one row per
 entity, written in the step's transaction, holding the encoded projection; `indexes` gives, for each name, a
@@ -591,27 +591,27 @@ with the values a caller reads of a single entity, and nothing is queried that a
 
 `read` gives the same row for one entity, and never calls `project`. It takes no sender, so the boundary alone
 decides who may read a projection
-([decision 0124](decisions/0124-the-boundary-authenticates-and-update-authorizes.md)). A new `project` that dies on a stored state
+([decision 0124](decisions/archive/0124-the-boundary-authenticates-and-update-authorizes.md)). A new `project` that dies on a stored state
 is then no reader's defect. The entity suspends at its activation or its next step, as on any defect of the
 program, and a reader meanwhile gets the projection its last event wrote. After a deploy that changes `project`,
 `read` and `query` both give the rows as they are, until a step or `reindex` writes them again. A row is read
 through the projection's migrations and schema, and one of them that dies on it gives the defect to whoever reads
-the row, `read` or `query` ([decision 0121](decisions/0121-a-read-answers-from-the-row-of-the-read-model.md)).
+the row, `read` or `query` ([decision 0121](decisions/archive/0121-a-read-answers-from-the-row-of-the-read-model.md)).
 
 `query` takes the criteria that hold, an index to order by and a limit, and gives the ids found with their
 projections, at most `limit` of them. The limit is required: a reading that holds a program's whole read model in
 one array is never what its caller meant, and a call without one is the caller's defect
-([decision 0141](decisions/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)).
+([decision 0141](decisions/archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)).
 
 A query pages after the last row it gave. Each row found carries `indexes`, the value of each index as its row
 stores it, which is what the query compared. A caller passes the last row of a page as `after`, and is given the
 rows past it in the order of the query: past the value of that row for the index ordered by, and, among the rows that tie,
 past the id of that row, since the id breaks ties in either order. Nothing is held between two pages, so a row no step changes
 is given once, on one page, and a row whose index a step changes between two pages is given where it stands when
-the next is read ([decision 0143](decisions/0143-a-query-pages-after-the-last-row-it-gave.md)). An index that is
+the next is read ([decision 0143](decisions/archive/0143-a-query-pages-after-the-last-row-it-gave.md)). An index that is
 an integer beyond 2^53 is written with the exact digits of its double, so that the database reads the number the
 query compares: the digits `JSON.stringify` writes spell another integer to SQLite and to PostgreSQL
-([decision 0146](decisions/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md)).
+([decision 0146](decisions/archive/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md)).
 
 A number over the entities that match is read in one statement, which reads no projection. `count` takes the
 criteria a query takes, and gives how many entities match them. `sum` takes an index and the same criteria, and
@@ -619,7 +619,7 @@ gives the total of that index over the entities that match, a double, `0` over n
 or no value at all, adds nothing, as in SQL. A row whose index holds a string or a boolean is the caller's defect:
 SQLite would read the string as `0` and `true` as `1`, and the total would look right. The call dies, naming the
 index and the least id of such a row. Both read the rows as they stand while `reindex` runs, as a query does
-([decision 0148](decisions/0148-a-count-and-a-sum-are-read-in-one-statement.md)).
+([decision 0148](decisions/archive/0148-a-count-and-a-sum-are-read-in-one-statement.md)).
 
 A count per value of an index is read in one statement too. `countBy` takes an index, the criteria a query takes
 and a limit, and gives each value the index holds among the entities that match, with how many hold it, so every
@@ -627,7 +627,7 @@ count is read on one snapshot. The values come in the order a query orders the i
 `limit` of them, and a value no entity holds has no entry. `true` and `1` are two values, though a query orders a
 boolean as its number, and a boolean comes after that number. An index a row lacks is null, as a query reads it.
 A grouping by an index of many values, such as a customer, is a report's question past its limit. A sum is not
-grouped ([decision 0150](decisions/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)).
+grouped ([decision 0150](decisions/archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)).
 
 The read model answers what the program's application reads to act, from the rows a step writes in its own
 transaction, so its answers are consistent with the states. Its questions are declared: an index for each value a
@@ -638,14 +638,14 @@ entities whose status is one of several, a word in a text, an entity with what a
 topic writes a store made for the question, a table of a relational database, a search index or a warehouse, and
 the question is asked of that store. What such a consumer needs is in the projection, which is the entity's one
 contract. A form the read model gains is one statement over the indexes, under the criteria a query takes, which
-reads no projection ([decision 0149](decisions/0149-the-read-model-answers-what-a-program-acts-on.md),
-[decision 0150](decisions/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)).
+reads no projection ([decision 0149](decisions/archive/0149-the-read-model-answers-what-a-program-acts-on.md),
+[decision 0150](decisions/archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)).
 
 A descending order is the ascending order reversed, the ids of the rows that tie included, so the rows that hold no
 value come last. A page reads only the rows it gives, however late in the order its cursor is. The storage indexes
 each index of the program by its value and then the id, and reads a page as at most three ranges of that index, in
 one transaction: the rows that tie with the cursor past its id, the rows past its value, and, in a descending
-order, the rows that hold no value ([decision 0145](decisions/0145-a-page-is-read-as-ranges-of-its-index.md)).
+order, the rows that hold no value ([decision 0145](decisions/archive/0145-a-page-is-read-as-ranges-of-its-index.md)).
 
 `reindex` writes every row again from the stored states, which is what an index added or changed
 by a new version of the program needs. It runs while entities step, and writes a row only if the state it was
@@ -654,7 +654,7 @@ computed from is still the one stored, in one statement: a step that committed s
 cannot compute keeps the row it had: its state is one no version reads, or a migration, a schema, `project` or an
 index dies on it. `reindex` writes the rest, and gives how many it wrote and the entities it passed over, each with
 the cause. What the runtime throws, a corrupted row's included, still fails the whole call
-([decision 0122](decisions/0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md)).
+([decision 0122](decisions/archive/0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md)).
 [`examples/order/runtime.test.ts`](../examples/order/runtime.test.ts) asks for the orders still awaiting their
 payment.
 
@@ -671,21 +671,21 @@ projection is already the public contract
 ### Topics
 
 A program may declare `topics`: by name, a pure function that selects, of the projection, what the topic
-watches, as JSON ([decision 0138](decisions/0138-the-log-publishes-topics.md)). Different readers act on
+watches, as JSON ([decision 0138](decisions/archive/0138-the-log-publishes-topics.md)). Different readers act on
 different parts of what an entity shows: a billing service reads what an order was charged, a dashboard its
 status. A topic per reader writes a row only when what that reader acts on changes, compared as canonical JSON by
 the runtime, and a consumer of one topic reads none of the others' rows. A row gives the value its topic selects,
 typed by the selector, so a consumer has a contract of its own: the row's publication stores the projection, which is read
 through the projection's migrations, and the selector of the program deployed is applied to it where the row is
-read ([decision 0140](decisions/0140-a-row-of-a-topic-gives-its-value.md)). A step stores its message and its
+read ([decision 0140](decisions/archive/0140-a-row-of-a-topic-gives-its-value.md)). A step stores its message and its
 projection once, in a **publication** keyed by its partition and its `seq`, and each of its rows names it. A prune
 drops a publication with the last row that names it, so a publication stays while one topic has not read past it
-([decision 0154](decisions/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). A selector that dies on a row gives
+([decision 0154](decisions/archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). A selector that dies on a row gives
 the defect to whoever reads it, as the schema does. A program that declares no topics publishes its projection as
 the one topic `projection`, whose value is the projection whole. A topic selects and does not decide, as `indexes`
 do: a part of the projection, the whole of it, all of it but a field, a value nested in it, or a comparison of it
 with a threshold, which changes when the threshold is crossed. What it selects is JSON, as the projection is
-([decision 0139](decisions/0139-the-projection-is-json.md)). A topic has no schema and no migration of its own:
+([decision 0139](decisions/archive/0139-the-projection-is-json.md)). A topic has no schema and no migration of its own:
 what a consumer needs is in the projection, and a boundary that answers a caller leaves out what the caller is not
 shown. A topic that dies on a projection, or selects what JSON does not hold, suspends
 the entity, as `project` does. [`examples/order`](../examples/order/order.ts) publishes its status and its
@@ -694,7 +694,7 @@ charge.
 ### The order of the log
 
 The log is ordered within a **partition**, and promises no order across partitions
-([decision 0137](decisions/0137-the-log-is-ordered-within-a-partition.md)). Each entity belongs to one partition,
+([decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md)). Each entity belongs to one partition,
 drawn from its id when it is created and stored with it. The partition is `Math.abs(Hash.string(id) % partitions) + 1`,
 Cluster's formula for a shard. `launch` takes the number of partitions as `log.partitions`, 300 by default. The
 first launch stores the number in the database, and a launch given another number fails, since a change would
@@ -723,11 +723,11 @@ and acks in one transaction: `ack` joins a transaction the caller left open on t
 launched with, so the store and the cursors commit together. Within that transaction the caller waits for nothing
 a step does, since the transaction may hold the one connection of the database, as on SQLite and PGlite, and a
 step's commit waits for it
-([decision 0150](decisions/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)). A partition a
+([decision 0150](decisions/archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)). A partition a
 consumer has no cursor for is read from `0`.
 `prune` drops, in each topic and partition, what every consumer of the topic has read there, through the lowest
 cursor. A topic no consumer is stored for is dropped whole, since no reader that keeps cursors needs its rows
-([decision 0152](decisions/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
+([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
 `consumers` says the topic of each consumer, whether the deploy declares it, how many rows are past its cursors,
 and in which partitions.
 `published(topic, after, limit)` reads past cursors the caller holds, and registers nothing; `[]` is the whole
@@ -739,14 +739,14 @@ time is over or the runtime stops. A step tells each topic it wrote in once its 
 consumer of another topic is not woken. The reading takes its topic's signal before it reads, so that a commit
 between its reading and its wait is not missed. A consumer that waits polls nothing, and a consumer that stops
 calling costs the runtime nothing
-([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md)). On Effect Cluster a runner learns of
+([decision 0142](decisions/archive/0142-a-consumer-waits-for-a-row-of-its-topic.md)). On Effect Cluster a runner learns of
 another runner's commit from the file: while a reading waits, it reads SQLite's `data_version` at Cluster's
 interval of replies, and wakes every reading that waits where the version moved
-([decision 0163](decisions/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)). A partition a handle is
+([decision 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)). A partition a handle is
 given is an integer from 1 to the number of partitions, a topic is one the program publishes, and a `seq`, a limit
 and a wait are non-negative integers. The limit is required, of `feed` and `published` as of `query`, so that no
 reading holds a whole topic in one array; a caller that wants more reads again, past the last row it was given
-([decision 0141](decisions/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)). Anything else is its
+([decision 0141](decisions/archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)). Anything else is its
 caller's defect, which stores nothing
 ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). The log is kept for its
 consumers and is not an archive: a program whose past must stay readable keeps it where callers read it, in the
@@ -758,7 +758,7 @@ the consumer's.
 
 A consumer whose work on a row is slow is read by several readers, each of which names the partitions it reads:
 `feed(topic, consumer, limit, { partitions })` reads those partitions only, from the consumer's cursors there
-([decision 0153](decisions/0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md)). The cursors stay the
+([decision 0153](decisions/archive/0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md)). The cursors stay the
 consumer's, whichever reader acked them, so a prune reads them as one, and a reader added or removed moves no
 cursor. A slow row holds only its reader's partitions. The handle gives the number of partitions as `partitions`.
 The division is the caller's, and the runtime holds no reader. A fixed pool divides with a line, the reader `i` of
@@ -780,12 +780,12 @@ declares that is not stored yet, so a consumer holds its topic from the deploy t
 reading writes nothing. A consumer stored and no longer declared is kept, and holds its topic: the deploy logs a
 warning for it, `consumers` shows it as not declared, and `forget` drops it. A consumer the deploy declares is not
 forgotten, since a deploy without it is how it goes
-([decision 0152](decisions/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
+([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
 
 The runtime caps nothing of the log, and drops nothing by time. A database that is full fails the commit of every
 step, and each caller is given the defect, while the readings, the acks and `forget` still answer. An operator
 finds in `consumers` the consumer that holds the log, deploys without it, forgets it and prunes, and the steps
-commit again ([decision 0152](decisions/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
+commit again ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
 
 ### What a step publishes
 
@@ -802,7 +802,7 @@ selects, and a
 consumer that needs every entity as the new program shows it reads them through `query`, once `reindex` has run.
 A projection whose schema changed is read through its migrations in the log too
 ([decision 0072](decisions/archive/0072-the-log-shows-what-a-step-changed.md),
-[decision 0138](decisions/0138-the-log-publishes-topics.md)).
+[decision 0138](decisions/archive/0138-the-log-publishes-topics.md)).
 
 ## Testing
 
@@ -818,7 +818,7 @@ Most of a program is pure, so most tests need no runtime:
   [`examples/order/order.test.ts`](../examples/order/order.test.ts) checks it for generated states;
 - **the migrations**: each migration still reads the cases recorded when it was written, and what a version wrote is
   still read at the program's version. `migrationViolations` checks it, and names a migration no case records
-  ([decision 0126](decisions/0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md));
+  ([decision 0126](decisions/archive/0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md));
 - **the defects**: an internal message in a state without its key.
 
 ### Rehearsing
@@ -835,7 +835,7 @@ dies:
 - `answer(pending, message)` completes an operation, and says whether the message was delivered or dropped. It
   fails the test when the step that handles the message returns the same operation under its key, since that
   operation would run again at once, turn after turn, with no pause
-  ([decision 0130](decisions/0130-a-runner-retries-and-the-state-counts-the-attempts.md));
+  ([decision 0130](decisions/archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md));
 - `fire(pending)` fires a timer;
 - `restart` drops everything that is not stored, and activates the entity again: an at-most-once operation
   under way delivers its `unknown` message. It rehearses a passivation too, which is the same thing — on an
@@ -858,7 +858,7 @@ projection schemas changed.
 `rehearse` runs one entity, and the test answers for the entities it talks to. So two programs that disagree on
 what a state accepts pass both rehearsals. `rehearse.together(at, scenario)` runs a world of entities on the
 machine, with one time and one process for all of them
-([decision 0131](decisions/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md)):
+([decision 0131](decisions/archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md)):
 
 - `world.create(program, id, flags)` creates an entity, and gives a member of the world: the surface of `rehearse`
   without `restart` and `deploy`, and with `run`. A world runs one program under each name, as a process does, so a
@@ -897,7 +897,12 @@ the wall clock ahead of the sleeps, to stand for a clock that moved between two 
 where fibers yield: a scheduler of the tests' answers Effect's `Scheduler` from a schedule it records, so a run
 that fails is replayed exactly, and explores by random priorities over many seeds, or by delay bounding around one
 point; none runs under budgets of steps
-([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)). PCT finds a bug of depth
+([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)). The scheduler preempts a
+fiber from the third step of a run and never before, since Effect makes no fiber yield earlier under any budget
+([decision 0115](decisions/archive/0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md)). A fiber that began
+its run on another fiber's stack, started or resumed inline, is asked whether it yields even with no task ready, so
+that a run reaches the orders in which Effect's budgets give a parent back before its child's run goes on
+([decision 0117](decisions/archive/0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md)). PCT finds a bug of depth
 `d` with a probability of at least `1 / (n k^(d - 1))`, for `n` fibers and `k` steps; the explored tests have 3 to 48
 fibers and 79 to 3,584 steps in their window, so no number of seeds guarantees a bug of depth 2, but the bound is the
 worst case, and a bug most schedules reach is found in a few runs. A run of the tests runs one seed in twenty of each
@@ -935,7 +940,7 @@ that what an event writes, applied to the rows before it, gives the rows after i
 ## Where it runs
 
 On one process, with SQLite or PostgreSQL: the mailbox, the states and the timers sit in one database, so each step
-is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md), [0157](decisions/0157-the-storage-speaks-sqlite-and-postgresql.md)). A runtime holds its
+is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md), [0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). A runtime holds its
 database until it ends: a second runtime on it, or a launch while another connection has the file of SQLite open,
 dies as it launches ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). A database of
 PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. `launch` gives a runtime, `deploy(program)`
@@ -947,13 +952,21 @@ the operations of a program are run with the services it was deployed with
 ### Databases
 
 The storage speaks SQLite and PostgreSQL, in the same tables, with the same columns, and a statement both read alike
-is written once. A launch on a client of any other dialect is the launcher's defect ([decision 0157](decisions/0157-the-storage-speaks-sqlite-and-postgresql.md)).
+is written once. A launch on a client of any other dialect is the launcher's defect ([decision 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)).
 
 - A query finds and orders the same rows on both. On PostgreSQL an index of the read model is three expressions,
   which order a value as SQLite's `json_extract` does: its kind, its number, and its string, by its bytes. Text of
   PostgreSQL is compared by its bytes, so ids are ordered alike too.
 - A column of JSON is text on both, and no statement of PostgreSQL parses JSON that holds the program's data, since
-  PostgreSQL parses no JSON that escapes U+0000. A reply holds the id of a caller's request in a column of its own.
+  PostgreSQL parses no JSON that escapes U+0000. A reply holds the id of a caller's request in a column of its own,
+  `request_id`. A database of SQLite made before the column is given it where `createTables` finds it missing, filled
+  with the id read out of each caller's request
+  ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
+- A page of a query reads its ranges in one transaction, begun at `REPEATABLE READ` on PostgreSQL where the
+  transaction is the page's own. Inside a transaction a caller left open, the page reads at the caller's level: on one
+  connection nothing commits between its parts, and on a server at PostgreSQL's default level a step committed between
+  two parts may move a row into the page twice
+  ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
 - An id, a name, a key's name, a topic's, a consumer's, and a string an index holds are text every database holds as
   it is: no U+0000, which PostgreSQL holds in no text, and no lone surrogate, which no database gives back as written, so
   that two ids would be one. Anything else is the defect of whoever gave it.
@@ -985,17 +998,20 @@ a region that cannot be interrupted says it is interruptible, whatever Effect's 
 ([decision 0112](decisions/archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md)).
 Bookkeeping another fiber reads changes in one synchronous step, never across a yield: a fiber is held only while
 it has not ended, and an entity leaves the process in one step
-([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). An idle entity's wait
+([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). That bookkeeping stays in
+plain values, changed in one `Effect.sync`, and in none of Effect's `Tx` modules: each wait of the runtime depends on
+I/O or on the time, which no transaction waits for, and an entity's lock stays a `Semaphore`, which serves its waiters
+in order ([decision 0177](decisions/archive/0177-the-runtimes-bookkeeping-stays-in-synchronous-steps.md)). An idle entity's wait
 ends with an item a sleep puts in the entity's queue, and nothing races its take, so an event offered as the wait
-runs out is not lost ([decision 0116](decisions/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md)).
+runs out is not lost ([decision 0116](decisions/archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md)).
 Every fork of the runtime runs without the transaction of the fiber that forks it, and a count another fiber reads
 is raised and lowered by one `Effect.acquireUseRelease`, unless a comment says why two fibers raise and lower it. A
 test of the suite reads the code and fails on any other form
-([decision 0164](decisions/0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md)).
+([decision 0164](decisions/archive/0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md)).
 An entity's loop yields after a step that leaves it more to do, so that another entity waits for one step of a busy
 one at most. Effect yields a fiber after a count of operations, and a step whose encoding and write take long is few
 operations. A loop with nothing to do starts its wait at once
-([decision 0134](decisions/0134-an-entitys-loop-yields-between-two-steps.md)).
+([decision 0134](decisions/archive/0134-an-entitys-loop-yields-between-two-steps.md)).
 
 ### Deployments
 
@@ -1017,22 +1033,26 @@ activation stop at once, and a step of the drain starts no such operation and ar
 `millis`, for the at-most-once operations under way and the commits of their completions, for an at-most-once
 operation such a step starts, and for a creation committed whose work has not started. Whatever is under way after
 `millis` stops as in a crash. A process launched without the option ends with a crash, as it always did
-([decision 0119](decisions/0119-a-planned-stop-drains-the-at-most-once-operations.md)). The runtime closes a sequential
+([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). The runtime closes a sequential
 scope of its own, so that the drain runs first and the database is let go last whatever the strategy of the scope it
-was launched in ([decision 0120](decisions/0120-the-runtime-closes-a-sequential-scope-of-its-own.md)).
+was launched in ([decision 0120](decisions/archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md)).
 
 ### On Effect Cluster
 
 On Effect Cluster, each runner runs the runtime beside Cluster's tables, in one SQLite file that every runner
 shares, on one machine. `sharding(programs)` builds a runner's `Sharding`, and `launchOnCluster` gives its runtime,
 whose `deploy` serves each program through the program's door
-([decisions 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md),
-[0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)). A step commits
+([decisions 0081](decisions/archive/0081-on-cluster-a-step-commits-with-its-reply.md),
+[0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)). A step commits
 only where its commit checks the shard. On Cluster that is SQLite, until Cluster has a fence, so the runtime does
 not run on Cluster across machines yet
-([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
-[`examples/order/cluster.test.ts`](../examples/order/cluster.test.ts) shows a runner. What Cluster gives and what it
-leaves to the runtime is in [`cluster.md`](cluster.md).
+([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
+[`examples/order/cluster.test.ts`](../examples/order/cluster.test.ts) shows a runner inside a test's process.
+[`examples/server`](../examples/server) runs the orders as a deployment does: a process that serves them over HTTP,
+killed during a charge and started again on the same file, and two runners on one file, of which the one that survives
+finishes the orders of the one killed
+([decision 0178](decisions/archive/0178-a-server-of-the-orders-on-cluster-is-run-as-a-process.md)). What Cluster gives and what
+it leaves to the runtime is in [`cluster.md`](cluster.md).
 
 #### A runner and its versions
 
@@ -1043,74 +1063,83 @@ leaves to the runtime is in [`cluster.md`](cluster.md).
   shard to the newer runners.
 - Every step on Cluster, a door's, a step of the entity's loop and an activation, commits only while its program's
   version is the newest recorded, which it reads in its transaction
-  ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+  ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
 - Every step on Cluster commits only while the lease of its entity's shard, a row of `cluster_locks`, names its
   runner and has not expired, which it reads in its transaction too. The condition is the exact complement of the
   one under which Cluster lets another runner take the lease
-  ([decision 0175](decisions/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md)).
+  ([decision 0175](decisions/archive/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md)).
 - A step that either check refuses dies and rolls back. Cluster delivers a door's request again, a step of the loop
   crashes its entity, and an activation is tried again after `retry`, until a runner of the newest version that
   holds the shard steps it. The checks are a guard beside the count of the steps that wrote the entity's row.
 - A deploy dies unless the runner's `sharding` named its program at the version deployed. A process with no
   `runnerAddress` is a client of the cluster alone: it holds no shard, and deploys any program
-  ([decision 0174](decisions/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).
+  ([decision 0174](decisions/archive/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).
 
 #### A door and its step
 
 - A program's door is Cluster's entity of the program's name, with the RPCs `Create`, `Message`, `Resume`,
   `Discard` and `Resumed`. Each is persisted, and its handler steps the runtime's entity in Cluster's transaction, so
-  a step commits with its reply ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)). A
-  rename ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)) moves none of
+  a step commits with its reply ([decision 0081](decisions/archive/0081-on-cluster-a-step-commits-with-its-reply.md)). A
+  rename ([decision 0156](decisions/archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)) moves none of
   Cluster's rows, which are stored under the entity's type. The program's door is registered under each old name
-  too, and steps what Cluster saved there ([decision 0176](decisions/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)).
+  too, and steps what Cluster saved there ([decision 0176](decisions/archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)).
 - A request is keyed by the version that keyed it and its `requestKey`. Cluster answers a retry within a version, and
   the runtime's replies answer one across versions
-  ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).
+  ([decision 0085](decisions/archive/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).
 - Everything a step answers is a success of the RPC, as text. A creation the program dies on stores nothing, and
   Cluster delivers it again until a deploy fixes the program
-  ([decision 0160](decisions/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)).
+  ([decision 0160](decisions/archive/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)).
 - What a door's step sets going starts once the step has committed. The entity's row counts the steps that wrote it,
-  and the next step of the entity settles the uncommitted machine by that count
-  ([decision 0161](decisions/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
+  and the next step of the entity settles the uncommitted machine by that count. On Cluster an entity's lock is
+  taken only inside a transaction, or by code that touches no database while it holds it, so nothing holds the lock
+  while it waits for the connection a transaction holds
+  ([decision 0161](decisions/archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
+  On SQLite a runner runs one transaction at a time, so two loaders of one entity never wait for its lock at once, and
+  the lock's rule of one process holds all the same
+  ([decision 0172](decisions/archive/0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md)).
 
 #### Shards
 
 - An entity's shard is its partition of the log. Each deployment registers a singleton per shard, and a shard is held
   while its singleton runs on this runner. The waker reads the timers of the shards held, a shard lost crashes its
   entities on this runner, and the runner that gains it activates its entities left with work
-  ([decision 0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
+  ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
 - Passivation, the capacity and the timers stay the runtime's: a door's `maxIdleTime` is the runtime's passivation,
   and Cluster's `maxResidentEntities` is left unbounded
-  ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)).
+  ([decision 0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)).
 
 #### Requests through the door's client
 
 - A caller's `create` and `send`, an operator's `resume` and `discard`, and an operation's requests go through
   Cluster's client of the door, from whatever runner they are on. A message answered `Suspended` or `NotFound` is
   reset once and sent again, and a caller is never answered `Full`
-  ([decisions 0165](decisions/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
-  [0166](decisions/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
+  ([decisions 0165](decisions/archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
+  [0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
+- The door's RPCs are uninterruptible for the client. A caller that stops waiting, an operation's fiber stopped or a
+  caller's timeout, stops only its wait: the request is handled when its turn comes, its answer is stored as any
+  other, and a retry under the same key gets it
+  ([decision 0091](decisions/archive/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
 - An operation answered `Suspended` registers for the receiver's resumption before it sends. The step that resumes or
   discards the receiver tells `Resumed` to the entities whose operations it answered `Suspended`
-  ([decisions 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md),
-  [0172](decisions/0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md)).
+  ([decisions 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md),
+  [0172](decisions/archive/0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md)).
 - A failure Cluster saved of its own, for an entity type no runner registered in time, is reset before the client
   gives it, so that a retry is delivered again. An operation's client keeps the request's id first
-  ([decisions 0168](decisions/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md),
-  [0170](decisions/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md)).
+  ([decisions 0168](decisions/archive/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md),
+  [0170](decisions/archive/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md)).
 
 #### Cluster's rows
 
 - Cluster deletes no reply of its own, so the runtime deletes Cluster's rows by statements of its own
-  ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). An operation's request ids
+  ([decision 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). An operation's request ids
   are kept under its work, and the step whose work ends deletes Cluster's rows under them
-  ([decision 0169](decisions/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md)).
+  ([decision 0169](decisions/archive/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md)).
 - A caller's client keeps its message's id once it has the answer, and Cluster's rows go once the message's `keep`
   is past, by a step of the entity or by `Handle.expire`
-  ([decision 0171](decisions/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
+  ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
   A message sent without `keep` keeps its rows for ever.
 - A reply Cluster saves of its own after its request's rows are gone is left
-  ([decision 0173](decisions/0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md)).
+  ([decision 0173](decisions/archive/0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md)).
 
 ### The public surface
 

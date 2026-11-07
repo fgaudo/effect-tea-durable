@@ -6,7 +6,7 @@ holds as it was. What a process over its capacity may unload is corrected by
 [decision 0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md). `settled` waits for
 an entity unloading too, by [decision 0109](0109-settled-waits-for-an-entity-unloading.md). The capacity is 10 000
 entities by default, and `'unbounded'` says none, by
-[decision 0151](../0151-a-process-holds-ten-thousand-entities-by-default.md).
+[decision 0151](0151-a-process-holds-ten-thousand-entities-by-default.md).
 
 ## Context
 

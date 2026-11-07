@@ -3,8 +3,8 @@
 **Status:** accepted, 2026-10-31. Decides [a mailbox under a burst](../../open-questions.md#storage-and-reading), and
 takes the alternative [decision 0071](0071-a-process-starts-the-entities-with-a-message.md) left, which that
 decision still holds beside. It does not hold on Cluster, as
-[decision 0081](../0081-on-cluster-a-step-commits-with-its-reply.md) says. A burst is bounded since
-[decision 0147](../0147-an-entity-holds-a-bounded-number-of-callers-messages.md): an entity holds a bounded number of callers' messages, and a `send` past it is
+[decision 0081](0081-on-cluster-a-step-commits-with-its-reply.md) says. A burst is bounded since
+[decision 0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md): an entity holds a bounded number of callers' messages, and a `send` past it is
 answered `Full`.
 
 ## Context

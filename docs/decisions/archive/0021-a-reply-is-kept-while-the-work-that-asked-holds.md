@@ -1,10 +1,10 @@
 # 0021. A reply to an entity is kept while the work that asked is stored
 
 **Status:** accepted, 2026-10-30. What its consequences say of Cluster is corrected by
-[decision 0090](../0090-on-cluster-a-reply-is-deleted-as-on-one-process.md): one statement reads both shards. Which
+[decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md): one statement reads both shards. Which
 replies are deleted is given by the machine's step since [decision 0057](0057-the-machine-gives-what-is-written.md): the
 storage checks only another entity's keys. How long a caller's replies are kept, which this note left open, is decided
-by [decision 0125](../0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md): as long as its boundary says.
+by [decision 0125](0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md): as long as its boundary says.
 
 ## Context
 

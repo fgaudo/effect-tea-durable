@@ -9,9 +9,9 @@ Moving them found [decision 0109](0109-settled-waits-for-an-entity-unloading.md)
 [decision 0110](0110-detached-work-is-counted-until-it-ends-however-it-ends.md). Its 2,000 seeds run only at a release,
 and a twentieth of them otherwise, as [`AGENTS.md`](../../../AGENTS.md) says.
 Its preemptions under `inline` resumptions are changed by
-[decision 0115](../0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md): none comes before a run's
+[decision 0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md): none comes before a run's
 third step, where Effect never makes a fiber yield. A fiber on another's stack is asked even with no task ready, by
-[decision 0117](../0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md).
+[decision 0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md).
 
 ## Context
 
@@ -390,7 +390,7 @@ the runtime sets `Scheduler.MaxOpsBeforeYield`.
 - **A model of the runtime checked by TLA+.** It would check every state of the model, not of the code, and the model
   would be kept in step with [`src/runtime.ts`](../../../src/runtime.ts) by hand. Worth it later, for what no scheduler of
   one process reaches: the fence between processes on Cluster
-  ([decision 0084](../0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
+  ([decision 0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
 - **More budgets and more yields.** Each run costs the suite seconds, and it stays a sample of the same kind.
 - **The real clock under load.** It reaches interleavings by chance, and does not replay them.
 

@@ -30,7 +30,7 @@ Cluster's says so.
   query finds and orders the same rows in both.
 - **Door.** Cluster's entity of a program, with one RPC for a creation and one for a message: the handler that
   finds the runtime's entity and steps it in Cluster's transaction, only at the newest version of the program any
-  launch recorded ([0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+  launch recorded ([0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
 - **Durable work, work.** What the state holds under its keys, operations and timers, computed by `durable(state)` and
   compared with the previous state's after each step: a new key starts its work, a missing one ends it.
 - **Entity.** One long-lived thing with an id, an order or a booking, with one state, one mailbox and one message
@@ -91,7 +91,7 @@ Cluster's says so.
   default. Each entity belongs to one, drawn from its id when it is created and stored. The rows of a partition are
   in the order of their `seq`, and the log promises no order across partitions. On Cluster an entity's partition is
   its shard, and the log has as many partitions as Cluster has shards per group
-  ([0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
+  ([0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
 - **Passivation.** The runtime unloads an entity that has nothing to do. It writes nothing, and the earliest of the
   stored timers wakes the entity.
 - **Planned stop, drain.** The closing of the scope a runtime was launched in with the option `drain`. The runtime
@@ -136,7 +136,7 @@ Cluster's says so.
 - **Shard held, shard lost.** On Cluster, for one deployment: a shard is held while the deployment's singleton of
   it runs on this runner, and lost once that singleton is interrupted, until it starts again. The waker reads the
   shards held, and no entity of a shard lost is loaded
-  ([0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
+  ([0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
 - **Spike.** A test in [`spikes/`](../spikes) that shows what a dependency does at the pinned version.
 - **State.** The one truth of an entity, an object, stored after each step. Everything durable is derived from it.
 - **Step.** `update` applied to one message: the next state, checked, and stored in one transaction with the message,
@@ -155,14 +155,14 @@ Cluster's says so.
   topic `projection`.
 - **Uncommitted machine.** On Cluster: the machine a door's step computed in Cluster's transaction, held beside the
   entity's until a later step reads the count of the steps that wrote the entity's row, and finds whether that
-  transaction committed ([0161](decisions/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
+  transaction committed ([0161](decisions/archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
 - **Version.** Of a program: how many migrations it carries, plus one. Every row carries the version that wrote it,
   and is read by migrating its JSON to the program's.
 - **Waker.** The runtime's fiber that reads the stored timers due and activates their entities, and tries again after
   `retry` one it could not load. On Cluster it reads the timers of the shards held alone.
 - **Watcher.** On Cluster: the runtime's fiber that, while a reading of `feed` waits, reads the version of the other
   runners' commits at an interval, and wakes every reading that waits where the version moved
-  ([0163](decisions/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)).
+  ([0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)).
 - **World, member.** In a rehearsal: entities on the machine together, with one time and one process for all of them,
   made by `rehearse.together`. A member is one entity of a world, whose `run` runs an operation's runner, and what
   the runner sends reaches the receiver's machine.

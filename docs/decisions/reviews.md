@@ -282,14 +282,14 @@ written for the code the review reads, and are not kept.
 
 ## 2026-11-04: 0098 to 0104, 0109 to 0117, and 0119
 
-- [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md): the order of the finalizers that
-  [0119](0119-a-planned-stop-drains-the-at-most-once-operations.md)'s drain and
+- [0120](archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md): the order of the finalizers that
+  [0119](archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)'s drain and
   [0080](archive/0080-a-database-is-held-by-one-runtime.md)'s hold rest on holds only in a sequential scope, and a
   caller may launch the runtime in a parallel one. The runtime forks a sequential scope of its own, and
   `a drain holds in a scope that closes its finalizers in parallel` does not end without it. Found too: at 4.1.2,
   `Scope.close` documents that a finalizer runs uninterruptibly, which 0119 said it did not.
 - Fixed: the status lines of [0101](archive/0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md) and
-  [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) did not say that
+  [0117](archive/0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) did not say that
   [0104](archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) moved every test off budgets, nor that the open
   question 0117 left its count of seeds in was answered by a rule of work.
 - Documented at 4.1.2, as the notes say: `Schema.Json` (0098); `acquireUseRelease`, `ensuring` and `Fiber.await`
@@ -331,11 +331,11 @@ written for the code the review reads, and are not kept.
 ## 2026-11-04: 0120 to 0132, 0134 and 0136; 0133 and 0135, proposed for their step, are left to it
 
 - Fixed: the status lines of [0054](archive/0054-a-program-is-checked-where-it-enters.md),
-  [0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) and
-  [0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) did not say that
-  [0136](0136-a-key-is-a-name-and-a-parameter-as-data.md) took out the check of a name that starts with `[`, which
-  [0132](0132-a-key-may-take-a-parameter.md) had put there, nor that
-  [0134](0134-an-entitys-loop-yields-between-two-steps.md) moved the seeds the two notes name. The index lists
+  [0116](archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) and
+  [0117](archive/0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md) did not say that
+  [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md) took out the check of a name that starts with `[`, which
+  [0132](archive/0132-a-key-may-take-a-parameter.md) had put there, nor that
+  [0134](archive/0134-an-entitys-loop-yields-between-two-steps.md) moved the seeds the two notes name. The index lists
   those changes too.
 - Documented at 4.1.2, as the notes say: `Scope.fork`'s strategy that defaults to sequential, and `Scope.close`'s
   finalizers run uninterruptibly (0120); `Base64Url.encode`, unpadded and `@stability stable` (0123); `Fiber.interrupt`
@@ -372,8 +372,8 @@ written for the code the review reads, and are not kept.
 
 ## 2026-11-06: 0133, 0135, and 0137 to 0149
 
-- Fixed: the status line of [0135](0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) did
-  not say that [0138](0138-the-log-publishes-topics.md) changed its warning, which counts the projection once per
+- Fixed: the status line of [0135](archive/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md) did
+  not say that [0138](archive/0138-the-log-publishes-topics.md) changed its warning, which counts the projection once per
   topic a step is written in. The index lists that change too.
 - Documented at 4.1.2, as the notes say: `Optional.replace` gives the whole unchanged where it does not focus
   (0133); `Effect.logWarning` reaching the logger provided (0135); `Hash.string`, `@stability stable`, with the
@@ -412,9 +412,9 @@ written for the code the review reads, and are not kept.
 ## 2026-11-07: 0150 to 0174
 
 - Fixed: the status lines of
-  [0161](0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md),
-  [0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) and
-  [0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md) did not say that 0165, 0166 and
+  [0161](archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md),
+  [0165](archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) and
+  [0166](archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md) did not say that 0165, 0166 and
   0167 made code of the requests each said still die on Cluster. The index lists those changes too.
 - Fixed in [`docs/design.md`](../design.md): it said that every step on Cluster reads the newest version, which only
   a door's step does, and that a rename moves Cluster's rows, which nothing does. Both are open questions now, and

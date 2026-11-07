@@ -10,7 +10,7 @@ Decision 0036 says that "a rejection's reason is kept as long as its reply, whic
 kept as long". The review of 0031 to 0045 found that it was not so when it was written: a reply to another entity's
 work is kept while the work that asked is stored, and is deleted with it
 ([decision 0021](0021-a-reply-is-kept-while-the-work-that-asked-holds.md), and on Cluster
-[decision 0090](../0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). Only a caller's reply is kept for ever,
+[decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). Only a caller's reply is kept for ever,
 which is an [open question](../../open-questions.md#running).
 
 ## Decision

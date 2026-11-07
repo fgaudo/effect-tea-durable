@@ -3,7 +3,7 @@
 **Status:** accepted, 2026-10-30. Its consequence on renaming a program is replaced by
 [decision 0022](0022-a-new-program-keeps-what-work-started-with.md), and the one that callers share one space of
 request ids by [decision 0048](0048-a-callers-request-belongs-to-its-sender.md). A runner may be given the key's
-digest instead of the key, by [decision 0123](../0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md).
+digest instead of the key, by [decision 0123](0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md).
 
 ## Context
 

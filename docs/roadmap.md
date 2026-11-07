@@ -17,7 +17,7 @@ Nothing, until a step under Later can start.
 - **The runtime on Cluster across machines, on PostgreSQL**, once Cluster has a fence
   ([Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058)), or the runtime one of its own. Until
   then a step commits only where the commit checks the shard, which on Cluster is SQLite
-  ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)). A fence of the runtime's
+  ([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)). A fence of the runtime's
   own waits for tests on a server of PostgreSQL with a pool, which the open question of many connections asks for.
 
 - **A model of the runtime's protocol on Cluster**, in TLA+ or a model checker like it, if the tests on Cluster

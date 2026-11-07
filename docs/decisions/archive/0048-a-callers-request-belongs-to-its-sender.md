@@ -7,7 +7,7 @@ tag. That a load computes a stored request's key again is changed by
 [decision 0065](0065-the-machine-holds-no-replies.md): the machine holds no replies, and the storage reads a
 caller's by its text, then among the rows other versions wrote under its request id, compared once migrated. A
 reply's row is keyed by its version too, by [decision 0069](0069-a-reply-is-keyed-by-the-version-that-wrote-it.md).
-Who a sender is, the identity the boundary authenticated, is decided by [decision 0124](../0124-the-boundary-authenticates-and-update-authorizes.md).
+Who a sender is, the identity the boundary authenticated, is decided by [decision 0124](0124-the-boundary-authenticates-and-update-authorizes.md).
 
 ## Context
 

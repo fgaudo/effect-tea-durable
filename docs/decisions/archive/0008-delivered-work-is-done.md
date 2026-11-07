@@ -2,7 +2,7 @@
 
 **Status:** accepted, 2026-10-30. What it says of discarding an internal message is replaced, for an operation's
 completion, by [decision 0041](0041-a-completion-is-not-discarded.md). What it left open of work that comes back
-at once is decided by [decision 0130](../0130-a-runner-retries-and-the-state-counts-the-attempts.md): the runtime
+at once is decided by [decision 0130](0130-a-runner-retries-and-the-state-counts-the-attempts.md): the runtime
 does not stop it, and a rehearsal fails on an operation its own completion returns the same.
 
 ## Context

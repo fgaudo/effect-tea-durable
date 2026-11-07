@@ -1,15 +1,15 @@
 # 0039. A consumer of the outbox keeps its cursor
 
 **Status:** accepted, 2026-10-30. Its one cursor per consumer is changed by
-[decision 0137](../0137-the-log-is-ordered-within-a-partition.md): a consumer keeps a cursor per partition of the
-log. Its consumer of every row of the program is changed by [decision 0138](../0138-the-log-publishes-topics.md): a
+[decision 0137](0137-the-log-is-ordered-within-a-partition.md): a consumer keeps a cursor per partition of the
+log. Its consumer of every row of the program is changed by [decision 0138](0138-the-log-publishes-topics.md): a
 consumer reads one topic. Its limit as an option of `feed` and `published` is changed by
-[decision 0141](../0141-a-query-and-a-reading-of-the-log-take-a-limit.md): each takes one. Its `feed` that gives
-at once what it reads is changed by [decision 0142](../0142-a-consumer-waits-for-a-row-of-its-topic.md): given a
+[decision 0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md): each takes one. Its `feed` that gives
+at once what it reads is changed by [decision 0142](0142-a-consumer-waits-for-a-row-of-its-topic.md): given a
 `wait`, a reading that finds no row waits for a commit in its topic. Its ack, a transaction of its own, is changed
-by [decision 0150](../0150-a-count-per-value-of-an-index-is-read-in-one-statement.md): an ack joins a transaction
+by [decision 0150](0150-a-count-per-value-of-an-index-is-read-in-one-statement.md): an ack joins a transaction
 the caller left open. Its consumer that declares itself by reading, and its topic with no consumer that keeps every
-row, are changed by [decision 0152](../0152-the-consumers-of-a-topic-are-declared-at-deploy.md): consumers are declared at deploy,
+row, are changed by [decision 0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md): consumers are declared at deploy,
 and a topic no consumer holds is pruned whole.
 
 ## Context

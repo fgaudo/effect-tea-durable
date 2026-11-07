@@ -72,7 +72,7 @@ This repository is a design and its pure core, not a library yet: read [`README.
   would check it, and goes in `docs/open-questions.md`.
 - A dependency is never changed by hand: not in `node_modules`, not in bun's cache, not with a patch of the package
   manager, not for a spike. A fix the library needs is waited for in a release of the library. Until then the code
-  works around it, as [decision 0116](docs/decisions/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) does,
+  works around it, as [decision 0116](docs/decisions/archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) does,
   and the premise goes in `docs/open-questions.md`. A test run against a changed dependency proves nothing: a seed
   draws its schedule from the code it runs, and the suite is red or green for a reason the repository does not hold.
 - A promise of a stable API of Effect, in the JSDoc of the version pinned, is trusted within the major: a premise

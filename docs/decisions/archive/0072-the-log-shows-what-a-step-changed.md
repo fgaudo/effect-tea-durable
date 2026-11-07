@@ -3,7 +3,7 @@
 **Status:** accepted, 2026-10-31. Corrects a consequence of
 [decision 0038](0038-what-happened-is-published-through-an-outbox.md): "the entity's next step publishes the new
 projection" holds only for a step that changes it. Its rule that a step publishes when what callers read changed
-is changed by [decision 0138](../0138-the-log-publishes-topics.md): a step is written in each topic of the log
+is changed by [decision 0138](0138-the-log-publishes-topics.md): a step is written in each topic of the log
 whose selection of the projection changed, and a program that declares no topics has the one topic `projection`.
 
 ## Context

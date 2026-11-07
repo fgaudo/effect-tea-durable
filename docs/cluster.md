@@ -92,7 +92,7 @@ does: the check commits with the step. On PostgreSQL and MySQL it is weaker: the
 writer outright, the shard's lock is confirmed before a commit, not by it. Decided: the window is not accepted, and
 until Cluster has a fence the runtime on Cluster does not run on PostgreSQL or MySQL; it waits for #10058, or for a
 fence of its own, decided then
-([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
+([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
 
 SQLite is a store for one runner. Two runners can share a file only on one machine, and a cluster of several
 machines needs PostgreSQL or MySQL. `@effect/sql-sqlite-bun` is all the project depends on today.
@@ -144,7 +144,7 @@ persisted RPC has Cluster's client store an `Interrupt` under the request's id, 
 tearing the caller down; the receiver interrupts the request if it waits or runs, and saves the interruption as its
 reply, so the same key sent again is answered with it and the handler never runs. `ClusterSchema.Uninterruptible`
 set to `"client"` keeps the client from sending it, and the request is handled when its turn comes
-([decision 0091](decisions/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
+([decision 0091](decisions/archive/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
 
 What stays two transactions:
 
@@ -160,22 +160,22 @@ What stays two transactions:
 
 | What | Cluster | The runtime | Finding |
 | --- | --- | --- | --- |
-| Mailbox | `cluster_messages`, read per shard in `rowid` order; a message read is claimed (`last_read`) and read again if its claim is ten minutes old; polled every `entityMessagePollInterval` (10 s), and woken at once by a send through its runner | its own table, in one transaction with the step | Cluster's, if steps run in its transaction; the runtime's mailbox keeps what the machine queues: the message an entity died on, and its own work's ([0085](decisions/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)) |
-| Deduplication | only for a payload that implements `PrimaryKey`, under `entityType/entityId/tag/id`; a duplicate is answered with the last reply stored; keys over 255 characters stored as their SHA-256 | under the sender and its request id ([0015](decisions/archive/0015-a-request-belongs-to-its-sender.md)) | adapted: the primary key is the request's version and `requestKey`, which carries its sender, so no sender takes another's ids ([0085](decisions/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)) |
-| Replies | `cluster_replies`, kept until `clearAddress` deletes an entity's messages and replies, or `Sharding.reset` (which the workflow engine calls) deletes a request's reply and marks the request unprocessed, so that it is handled again; processed messages are never pruned by Cluster | kept while the sender's work holds ([0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)) | Cluster keeps everything; the runtime deletes its replies as on one process, and Cluster's rows with them, by statements of its own ([0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)) |
-| Timers | `DeliverAt` on a payload: a message not delivered before its time, and not woken at it either: the next read of storage finds it, up to `entityMessagePollInterval` (10 s) late | `entity_keys.due`, armed by an activation, woken by the waker ([0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)) | kept by the runtime: a timer is never a `DeliverAt` message, and the waker reads the shards its runner holds ([0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)) |
-| Passivation | `maxIdleTime` per entity (1 min by default), measured from the end of its last request, while none is active, and checked every `maxIdleTime` or 30 s, whichever is shorter, but no more often than every 5 s | `passivate.millis`, measured from the last event, and nothing under way ([0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)) | kept by the runtime: Cluster's handler is a door to the runtime's entity, with a `maxIdleTime` no longer than `passivate.millis`, and `Entity.keepAlive` is not used ([0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)) |
-| Capacity | `maxResidentEntities` (10 000): beyond it, no new entity starts, and its messages wait in storage | past 10 000 by default, the least recently used of the idle leave ([0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), [0151](decisions/0151-a-process-holds-ten-thousand-entities-by-default.md)) | kept by the runtime: `maxResidentEntities` is left unbounded, since it counts doors the runtime has already closed ([0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)) |
-| A defect | the entity restarts after `defectRetryPolicy` and its messages are delivered again | the entity is suspended with the message it died on ([0006](decisions/archive/0006-a-defect-suspends-the-entity.md)) | the runtime catches its own defects, stores the suspension and answers the RPC, so Cluster never sees one; the message it died on stays in the runtime's mailbox, where a resumption handles it ([0085](decisions/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)) |
-| A type not registered | the message waits in storage while the runner's registration window lasts (`entityRegistrationTimeout`, 1 min, counted from the first entity of any type the runner registers; twice that, from the first message of a missing type, if it registers none), then is answered with a defect; the window never opens again, so a type registered after it fails every message that finds it missing | the operation waits for the program ([0045](decisions/archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md)) | adapted: a send to a program no runner deploys fails in Cluster; the operation would retry it. The defect stored for it is the one answer of an entity's that no step gave, and a retry under the same key is given it: the client resets it and sends again ([0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)) |
+| Mailbox | `cluster_messages`, read per shard in `rowid` order; a message read is claimed (`last_read`) and read again if its claim is ten minutes old; polled every `entityMessagePollInterval` (10 s), and woken at once by a send through its runner | its own table, in one transaction with the step | Cluster's, if steps run in its transaction; the runtime's mailbox keeps what the machine queues: the message an entity died on, and its own work's ([0085](decisions/archive/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)) |
+| Deduplication | only for a payload that implements `PrimaryKey`, under `entityType/entityId/tag/id`; a duplicate is answered with the last reply stored; keys over 255 characters stored as their SHA-256 | under the sender and its request id ([0015](decisions/archive/0015-a-request-belongs-to-its-sender.md)) | adapted: the primary key is the request's version and `requestKey`, which carries its sender, so no sender takes another's ids ([0085](decisions/archive/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)) |
+| Replies | `cluster_replies`, kept until `clearAddress` deletes an entity's messages and replies, or `Sharding.reset` (which the workflow engine calls) deletes a request's reply and marks the request unprocessed, so that it is handled again; processed messages are never pruned by Cluster | kept while the sender's work holds ([0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)) | Cluster keeps everything; the runtime deletes its replies as on one process, and Cluster's rows with them, by statements of its own ([0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)) |
+| Timers | `DeliverAt` on a payload: a message not delivered before its time, and not woken at it either: the next read of storage finds it, up to `entityMessagePollInterval` (10 s) late | `entity_keys.due`, armed by an activation, woken by the waker ([0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)) | kept by the runtime: a timer is never a `DeliverAt` message, and the waker reads the shards its runner holds ([0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)) |
+| Passivation | `maxIdleTime` per entity (1 min by default), measured from the end of its last request, while none is active, and checked every `maxIdleTime` or 30 s, whichever is shorter, but no more often than every 5 s | `passivate.millis`, measured from the last event, and nothing under way ([0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)) | kept by the runtime: Cluster's handler is a door to the runtime's entity, with a `maxIdleTime` no longer than `passivate.millis`, and `Entity.keepAlive` is not used ([0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)) |
+| Capacity | `maxResidentEntities` (10 000): beyond it, no new entity starts, and its messages wait in storage | past 10 000 by default, the least recently used of the idle leave ([0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), [0151](decisions/archive/0151-a-process-holds-ten-thousand-entities-by-default.md)) | kept by the runtime: `maxResidentEntities` is left unbounded, since it counts doors the runtime has already closed ([0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)) |
+| A defect | the entity restarts after `defectRetryPolicy` and its messages are delivered again | the entity is suspended with the message it died on ([0006](decisions/archive/0006-a-defect-suspends-the-entity.md)) | the runtime catches its own defects, stores the suspension and answers the RPC, so Cluster never sees one; the message it died on stays in the runtime's mailbox, where a resumption handles it ([0085](decisions/archive/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)) |
+| A type not registered | the message waits in storage while the runner's registration window lasts (`entityRegistrationTimeout`, 1 min, counted from the first entity of any type the runner registers; twice that, from the first message of a missing type, if it registers none), then is answered with a defect; the window never opens again, so a type registered after it fails every message that finds it missing | the operation waits for the program ([0045](decisions/archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md)) | adapted: a send to a program no runner deploys fails in Cluster; the operation would retry it. The defect stored for it is the one answer of an entity's that no step gave, and a retry under the same key is given it: the client resets it and sends again ([0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)) |
 
 Cluster polls: its mailbox every 10 s, its replies every `entityReplyPollInterval` (200 ms), its assignments every
 3 s, as a fallback beside the notifications a runner sends itself. The runtime polls nothing
 ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)); on Cluster that holds of the
 runtime's own fibers, not of Cluster's, with one exception. While a consumer's reading waits, a runner reads
 SQLite's `data_version` every `entityReplyPollInterval`, and wakes its readings where another runner has committed
-([decision 0163](decisions/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)). A commit on the reading's own runner wakes it at once
-([decision 0142](decisions/0142-a-consumer-waits-for-a-row-of-its-topic.md)).
+([decision 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)). A commit on the reading's own runner wakes it at once
+([decision 0142](decisions/archive/0142-a-consumer-waits-for-a-row-of-its-topic.md)).
 
 ## Two versions at once
 
@@ -204,38 +204,38 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
 
 Decided: a runner is alive, for the `RunnerHealth` the runtime gives Cluster, only while
 it runs the newest version of each of its programs, and a step commits only at the newest version, which it reads in
-its transaction ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+its transaction ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
 Every step makes that check, a door's, a step of the entity's loop and an activation, and checks the shard's lease
-with it ([decision 0175](decisions/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md)).
+with it ([decision 0175](decisions/archive/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md)).
 A rolling deploy then moves every shard to the newer runners, and nothing of the older version steps a newer row.
 A runner deploys only the programs its `sharding` names, at the version named, so that no program escapes the
-record both checks read ([decision 0174](decisions/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).
+record both checks read ([decision 0174](decisions/archive/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).
 
 ## The decisions it bears on
 
 - **[0007](decisions/archive/0007-one-process-first.md)** — one transaction is possible with `WithTransaction` and one
   `SqlClient`; the state need not record the last message it handled. Decided: a step commits with its reply
-  ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)), and a caller that stops waiting stores
-  no answer ([decision 0091](decisions/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
+  ([decision 0081](decisions/archive/0081-on-cluster-a-step-commits-with-its-reply.md)), and a caller that stops waiting stores
+  no answer ([decision 0091](decisions/archive/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
 - **[0015](decisions/archive/0015-a-request-belongs-to-its-sender.md)**, **[0017](decisions/archive/0017-creation-in-the-machine.md)**
   — Cluster's deduplication is by a primary key global to the receiver; the sender's address goes into the key.
   The 255-character limit is Cluster's own and is met by its hashing, apart from the
   [idempotency keys services cap](open-questions.md#running). Decided: the primary key is the version that keyed the
   request and its `requestKey`, under one RPC for a creation and one for messages; Cluster answers a retry within a
   version, and the runtime's replies one across versions
-  ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).
+  ([decision 0085](decisions/archive/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).
 - **[0006](decisions/archive/0006-a-defect-suspends-the-entity.md)**, **[0023](decisions/archive/0023-suspended-means-no-reply-yet.md)**
   — Cluster stores `Suspended` and `NotFound` as it stores a reply, and marks processed the message an entity dies
   on. Decided: a request so answered is handled again when sent again, through `Sharding.reset`, and the message an
   entity dies on stays in the runtime's mailbox, as the machine writes it
-  ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).
+  ([decision 0085](decisions/archive/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).
 - **[0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)** — Cluster deletes no reply by
   itself, and has no operation that forgets a processed request without delivering it again
   ([Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239)). The sender's work and the receiver's
   replies are on different shards, but in one database, where the runtime on Cluster's transactions come one after
   the other: one statement still reads both. So the runtime's replies are deleted as on one process, and
   Cluster's rows with them, by the runtime's own statements
-  ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). What 0090 relies on of
+  ([decision 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). What 0090 relies on of
   Cluster's rows, which are not its contract, is tested by
   [`spikes/cluster-forgets-a-request-deleted-by-its-id.test.ts`](../spikes/cluster-forgets-a-request-deleted-by-its-id.test.ts),
   so that a release that changes them fails it: the tables have the columns the statements name and no foreign key;
@@ -249,11 +249,11 @@ record both checks read ([decision 0174](decisions/0174-on-cluster-a-runner-depl
   **[0076](decisions/archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md)** — the runtime keeps its
   own passivation and capacity; Cluster's handler is a door to the runtime's entity, its `maxIdleTime` no longer than
   `passivate.millis`, and its `maxResidentEntities` unbounded
-  ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)).
+  ([decision 0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)).
 - **[0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md)** — on PostgreSQL or MySQL, runners on
   different shards commit at once, so a `seq` from the database no longer orders the log as it commits. A `seq` is
   drawn within a partition of the log, under the lock of the partition's head, and a consumer keeps a cursor per
-  partition ([decision 0137](decisions/0137-the-log-is-ordered-within-a-partition.md)).
+  partition ([decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md)).
 - **[0045](decisions/archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md)** — an operation waits by retrying
   a send that Cluster fails after `entityRegistrationTimeout`, a window that runs once per runner, from the first entity it registers.
 - **[0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md)**,
@@ -262,11 +262,11 @@ record both checks read ([decision 0174](decisions/0174-on-cluster-a-runner-depl
   still meet in its memory. What a node keeps is per shard, which is what a shard leaving interrupts.
 - **[0074](decisions/archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)** — on Cluster a
   message is stored, then handled: two transactions
-  ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)).
+  ([decision 0081](decisions/archive/0081-on-cluster-a-step-commits-with-its-reply.md)).
 - **[0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)** — the shard's lock replaces the file's; on
   SQLite it is confirmed by the step's commit, on PostgreSQL and MySQL before it, not by it. Decided: the runtime
   runs only where the commit checks the shard, until Cluster has the fence
   [#10058](https://github.com/Effect-TS/effect/issues/10058) asks for
-  ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
+  ([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
 - **[0019](decisions/archive/0019-unstable-effect-modules.md)** — everything read here is `@stability unstable` in
   `effect` 4.1.0, 4.1.1 and 4.1.2.

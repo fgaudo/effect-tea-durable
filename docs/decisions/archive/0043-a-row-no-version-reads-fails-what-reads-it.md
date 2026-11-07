@@ -4,7 +4,7 @@
 [decision 0036](0036-a-migration-is-a-function-on-the-json.md) that says the runtime dies on such a row. Its
 consequence that the waker dies on such an entity is changed by
 [decision 0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md): the waker goes on, and tries it again.
-For `reindex`, changed by [decision 0122](../0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md):
+For `reindex`, changed by [decision 0122](0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md):
 `reindex` passes over such an entity, names it, and writes the rest.
 
 ## Context
