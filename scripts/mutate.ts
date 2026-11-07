@@ -8,7 +8,9 @@
  * the tests of the file it changes, then, if those pass, the whole suite, and stops at the first failure; if the
  * suite passes too, the compiler checks the copy, so that a rule of the types is taken out as well. A test that
  * hangs past the timeout fails. A mutation a test killed is run again alone once the others are done, since a test
- * on real time may fail under the load of the workers: one that survives then is `uncertain`.
+ * on real time may fail under the load of the workers: one that survives then is `uncertain`. The run alone runs
+ * only the file of the test that failed, which `bun test` names before the failure, and the tests and the suite
+ * again where no file is named.
  *
  *     bun scripts/mutate.ts <mutations.ts> [--workers 4] [--only id,prefix,...] [--timeout 5000]
  *
@@ -44,6 +46,8 @@ export type Result = Readonly<{
   by: 'targeted' | 'suite' | 'typecheck'
   seconds: number
   failed: string | null
+  /** The file of the test that failed, where `bun test` named it. */
+  file: string | null
 }>
 
 const root = resolve(import.meta.dir, '..')
@@ -112,28 +116,48 @@ const spawned = async (at: string, command: ReadonlyArray<string>) => {
   return { passed: (await child.exited) === 0, output: `${err}${out}` }
 }
 
+/** The file `bun test` names on a line of its own, before what a test of the file printed and its failure. */
+const fileOf = (output: string, failed: string | null): string | null => {
+  if (failed === null) return null
+  const before = output.slice(0, output.indexOf(`(fail) ${failed}`))
+  const named = [...before.matchAll(/^(\S+[._](?:test|spec)[._]\S*):$/gm)].at(-1)?.[1]
+  return named === undefined ? null : named.replaceAll('\\', '/')
+}
+
 const tested = async (at: string, tests: ReadonlyArray<string>, timeout: number) => {
   const { passed, output } = await spawned(at, ['bun', 'test', '--bail', '--timeout', String(timeout), ...tests])
-  return { passed, failed: output.match(/^\(fail\) (.*)$/m)?.[1] ?? null }
+  const failed = output.match(/^\(fail\) (.*)$/m)?.[1] ?? null
+  return { passed, failed, file: fileOf(output, failed) }
 }
 
 const typechecked = async (at: string) => {
   const { passed, output } = await spawned(at, ['bun', 'run', 'typecheck'])
-  return { passed, failed: output.match(/^.*error TS\d+.*$/m)?.[0] ?? null }
+  return { passed, failed: output.match(/^.*error TS\d+.*$/m)?.[0] ?? null, file: null }
 }
 
-const mutate = async (at: string, mutation: Mutation, timeout: number): Promise<Result> => {
+/** Runs `run` on the copy with the mutation made, and gives the file back as it was. */
+const mutated = async <A>(at: string, mutation: Mutation, run: () => Promise<A>): Promise<A> => {
   const path = join(at, mutation.file)
   const original = readFileSync(path, 'utf8')
   const { text, crlf } = normalized(original)
-  let mutated = text
-  for (const [find, replace] of mutation.edits) mutated = mutated.replace(find, () => replace)
-  writeFileSync(path, crlf ? mutated.replaceAll('\n', '\r\n') : mutated)
-  const started = Date.now()
+  let changed = text
+  for (const [find, replace] of mutation.edits) changed = changed.replace(find, () => replace)
+  writeFileSync(path, crlf ? changed.replaceAll('\n', '\r\n') : changed)
   try {
+    return await run()
+  } finally {
+    writeFileSync(path, original)
+  }
+}
+
+const secondsSince = (started: number) => Math.round((Date.now() - started) / 100) / 10
+
+const mutate = (at: string, mutation: Mutation, timeout: number): Promise<Result> =>
+  mutated(at, mutation, async () => {
+    const started = Date.now()
     const tests = testsOf(mutation)
     let by: Result['by'] = 'targeted'
-    let outcome = tests.length === 0 ? { passed: true, failed: null } : await tested(at, tests, timeout)
+    let outcome = tests.length === 0 ? { passed: true, failed: null, file: null } : await tested(at, tests, timeout)
     if (outcome.passed) {
       by = 'suite'
       outcome = await tested(at, [], timeout)
@@ -142,11 +166,25 @@ const mutate = async (at: string, mutation: Mutation, timeout: number): Promise<
       by = 'typecheck'
       outcome = await typechecked(at)
     }
-    const seconds = Math.round((Date.now() - started) / 100) / 10
-    return { id: mutation.id, status: outcome.passed ? 'survived' : 'killed', by, seconds, failed: outcome.failed }
-  } finally {
-    writeFileSync(path, original)
-  }
+    const status = outcome.passed ? 'survived' : 'killed'
+    return { id: mutation.id, status, by, seconds: secondsSince(started), failed: outcome.failed, file: outcome.file }
+  })
+
+/**
+ * Runs again, alone, a mutation a test killed: only the file of the test that failed, where it is named, since every
+ * test before it passed. A run that passes gives the first result `uncertain`.
+ */
+const confirmed = async (at: string, mutation: Mutation, first: Result, timeout: number): Promise<Result> => {
+  const file = first.file
+  const again = file === null
+    ? await mutate(at, mutation, timeout)
+    : await mutated(at, mutation, async () => {
+      const started = Date.now()
+      const outcome = await tested(at, [file], timeout)
+      const status = outcome.passed ? 'survived' as const : 'killed' as const
+      return { ...first, status, seconds: secondsSince(started) }
+    })
+  return again.status === 'killed' ? first : { ...again, status: 'uncertain' }
 }
 
 /** What fails in a copy no mutation changed, and so would kill each one: `null` if nothing does. */
@@ -207,8 +245,7 @@ export const mutateAll = async (
       const first = results[index]
       if (first === undefined || !byTest(first)) continue
       options.progress?.(`again alone: ${++rerun}/${killed}, ${mutation.id}`)
-      const again = await mutate(alone, mutation, options.timeout)
-      const result = again.status === 'killed' ? first : { ...again, status: 'uncertain' as const }
+      const result = await confirmed(alone, mutation, first, options.timeout)
       results[index] = result
       options.each?.(result)
     }
