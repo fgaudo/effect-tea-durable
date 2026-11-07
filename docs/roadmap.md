@@ -45,7 +45,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    proposed). A caller's client keeps its message's id once it has the answer, and Cluster's rows go once the time
    is past, by a step of the entity or `Handle.expire`
    ([decision 0171](decisions/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md),
-   proposed).
+   proposed). A reply Cluster saves of its own after the request's rows are gone is left, since only a deploy that
+   registers no receiver in time leaves one
+   ([decision 0173](decisions/0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md), proposed).
 
    Effect-TS/effect#10239, which asks Cluster to forget a processed request, was closed by a merged pull request
    that no release holds at 4.1.2. Until one does, the deletions are the runtime's own statements (decision 0090).

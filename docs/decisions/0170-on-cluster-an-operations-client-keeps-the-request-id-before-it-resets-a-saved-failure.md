@@ -55,8 +55,8 @@ own, and keep it pending if the work has ended, neither resetting nor sending.
   the request's row is still there: **read in the source**. Once the registration window has passed, Cluster fails a
   delivery as soon as it reads it, so the time between the read and the save is short, and the test above does not
   reach it. A delivery that falls in it leaves one row in `cluster_replies` under an id no table keeps, for ever. The
-  row loses nothing and is never delivered, since its request is gone; the question is in
-  [open questions](../open-questions.md#storage-and-reading).
+  row loses nothing and is never delivered, since its request is gone, and
+  [decision 0173](0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md) leaves it.
 - That the keep gives whether the work holds, kept and pending: **tested** by `on Cluster, an id kept under work goes
   with it, and a pending one with the next step, to its last digit` in [`src/storage.test.ts`](../../src/storage.test.ts).
 - That a client finds the asker's work ended only on a runner that no longer holds the asker's shard: **only

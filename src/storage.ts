@@ -1643,7 +1643,8 @@ export const storage = <T extends Types>(
             AND sender_parameter = ${ended.parameter} AND sender_incarnation = ${incarnation}
         `
         // On Cluster, the work takes Cluster's rows of the requests it sent with it, as it takes its replies
-        // (decision 0169).
+        // (decision 0169). A reply Cluster saves of its own after this, for a delivery it read before, is left
+        // (decision 0173).
         if (onCluster) {
           yield* forgetSent(
             sql,
