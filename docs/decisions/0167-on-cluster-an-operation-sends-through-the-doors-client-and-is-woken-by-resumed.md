@@ -46,8 +46,8 @@ Three things in Cluster's source at 4.1.2 bear on how that message is sent:
 - **What is left of an operation's request on Cluster is not code yet.** The step that answers an operation's
   request does not keep its Cluster request id, and no step deletes Cluster's rows
   ([decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). An answer of Cluster's own defect is
-  not reset by its id (decision 0092). The operation takes it as a receiver's crash, sends again after `retry`, and
-  is given the same defect, for as long as Cluster's row of it stays.
+  reset by the client before it is given, and the operation takes it as a receiver's crash, and sends again after
+  `retry` ([decision 0168](0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md)).
 
 ## What it rests on
 
@@ -95,5 +95,3 @@ Other ways:
 - An operation can send to an entity on any runner, and waits for a suspended receiver at no cost.
 - Every `Resumed` leaves a request and a reply in Cluster's tables, as an operator's event does, until the
   deletions of decision 0090 are code.
-- Until Cluster's defect is reset by its id, an operation whose request Cluster answered with a defect sends again
-  after every `retry`, and never ends, as long as that row stays.

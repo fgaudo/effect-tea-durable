@@ -734,7 +734,45 @@ describe('the shards of a runner on Cluster', () => {
     holds: (id: string) => boolean
     context: Context.Context<Sharding.Sharding>
     bell: Handle<Bell, (typeof queue)['consumers']>
+    /** Deploys `ghost` on the runner, until the scope the runner is started in closes. */
+    deployGhost: Effect.Effect<Handle<Ghost>>
   }>
+
+  type Ghost = {
+    state: Readonly<{ n: number }>
+    flags: Readonly<{}>
+    inbound: Readonly<{ _tag: 'Add' }>
+    internal: never
+    operation: never
+    key: never
+    parameter: {}
+    rejection: never
+    sender: Readonly<{ user: string }>
+    projection: number
+    index: never
+    services: never
+  }
+  /** A program a test deploys on one runner and not the other, so that Cluster finds its type unregistered. */
+  const ghost: Program<Ghost> = {
+    name: 'Ghost',
+    keys: {},
+    schemas: {
+      state: Schema.Struct({ n: Schema.Int }),
+      flags: Schema.Struct({}),
+      inbound: Schema.TaggedStruct('Add', {}),
+      internal: Schema.Never,
+      operation: Schema.Never,
+      rejection: Schema.Never,
+      sender: Schema.Struct({ user: Schema.String }),
+      projection: Schema.Int,
+    },
+    init: () => ({ n: 0 }),
+    update: () => (state) => ({ n: state.n + 1 }),
+    durable: () => noWork,
+    operations: {},
+    project: ({ n }) => n,
+    indexes: {},
+  }
 
   /**
    * Runs `run` with a function that starts a runner of the runtime on one SQLite file, at a port, whose runtime deploys
@@ -746,11 +784,13 @@ describe('the shards of a runner on Cluster', () => {
       start: (port: number, said?: (said: Said) => void) => Effect.Effect<Runner, never, Scope.Scope>,
     ) => Effect.Effect<void, unknown, Scope.Scope | SqlClient.SqlClient>,
     options: Parameters<typeof launch>[0] = {},
+    registration: Duration.Input = Duration.minutes(1),
   ) => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
     const start = (port: number, said?: (said: Said) => void) =>
       Effect.gen(function*() {
+        const scope = yield* Effect.scope
         const context = yield* Layer.build(
           sharding([bell]).pipe(
             Layer.provideMerge(Runners.layerNoop),
@@ -764,6 +804,7 @@ describe('the shards of a runner on Cluster', () => {
               shardLockRefreshInterval: Duration.millis(100),
               shardLockExpiration: Duration.seconds(3),
               entityMessagePollInterval: Duration.millis(100),
+              entityRegistrationTimeout: registration,
             })),
             // Each runner its own connection, as a runner of its own process has: a layer built once is shared.
             Layer.provideMerge(SqliteClient.layer({ filename: join(directory, 'store.db') })),
@@ -779,6 +820,7 @@ describe('the shards of a runner on Cluster', () => {
           holds: (id: string) => held.hasShardId(held.getShardId(EntityId.make(id), 'default')),
           context: context as Context.Context<Sharding.Sharding>,
           bell: deployed,
+          deployGhost: Effect.provide(Scope.provide(runtime.deploy(ghost), scope), context),
         }
       })
     seen = []
@@ -907,6 +949,28 @@ describe('the shards of a runner on Cluster', () => {
           sql<{ held: number }>`SELECT COUNT(*) AS held FROM waiting`)
         expect(left?.held).toBe(0)
       })), 30_000)
+
+  test('a request Cluster failed, its type registered by no runner in time, is reset, and handled once it is', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const id = Array.from({ length: 64 }, (_, i) => `g${i}`).find((id) => second.holds(id))!
+        const handle = yield* first.deployGhost
+        const sender = { user: 'u' }
+        // The second runner holds the entity's shard and registers no `Ghost`. Cluster saves a failure, which the
+        // client resets before it gives it.
+        const exit = yield* Effect.exit(handle.create(id, {}, { requestId: 'c1', sender }))
+        expect(Exit.isFailure(exit)).toBe(true)
+        yield* second.deployGhost
+        // Without the reset, the retry would be given the failure Cluster saved, for ever.
+        expect(yield* handle.create(id, {}, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+        expect(yield* handle.send(id, { _tag: 'Add' }, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })
+      }), {}, Duration.millis(300)), 30_000)
 
   test('a consumer that waits is woken by a commit of another runner, within its poll', () =>
     onFile((start) =>

@@ -37,13 +37,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    proposed). An operator's `Resume` and `Discard` go through it too, each a request of its own
    ([decision 0166](decisions/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md), proposed).
    So do an operation's, and a step that resumes or discards an entity tells `Resumed` to the entities whose
-   operations it answered `Suspended` ([decision 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md), proposed). What is left of
-   requests on Cluster:
-   - an answer of Cluster's own defect to an operation, which the operation's client resets by the defect's id, after
-     it keeps the request's id under the work that asked, as decision 0092 decides. Until then the operation sends
-     again after every `retry`, and is given the same defect;
+   operations it answered `Suspended` ([decision 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md), proposed). A failure
+   Cluster saved of its own is reset before it is given
+   ([decision 0168](decisions/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md), proposed). What is left of requests on Cluster:
    - the Cluster request ids an operation's requests are answered under, kept under the work that asked, and the
-     pending id a `Resumed` leaves (decisions 0090, 0092);
+     pending id a `Resumed` leaves (decisions 0090, 0092). The client that resets a failure Cluster saved keeps the
+     request's id first (decision 0092);
    - the deletion of Cluster's rows by the Cluster `requestId` a door's handler is given: an operation's with the
      work that asked ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)), and a
      caller's with its reply once past its time (decision 0165). Until then Cluster answers a retry past `keep`

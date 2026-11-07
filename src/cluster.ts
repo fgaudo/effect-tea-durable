@@ -11,6 +11,7 @@ import {
   EntityId,
   EntityType,
   MessageStorage,
+  type Reply,
   type RunnerAddress,
   RunnerHealth,
   type Runners,
@@ -20,6 +21,7 @@ import {
   ShardId,
   Snowflake,
 } from 'effect/cluster'
+import * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -241,15 +243,21 @@ export const onCluster: Effect.Effect<
     const messages = yield* MessageStorage.MessageStorage
     const sql = yield* SqlClient.SqlClient
     /**
-     * Resets the latest answer Cluster saved for the message `sent` to the program `name`, so that the message is
-     * delivered again, as `ClusterWorkflowEngine` resets an activity: the request's id read by its primary key, the
-     * latest reply by that id, and `Sharding.reset` with that reply as the one expected (decision 0085). The latest
-     * reply is reset only while it is still no reply, `Suspended` or `NotFound`, as the engine resets only a
-     * `Suspended` one: a concurrent retry may have reset it and stored a step's reply since, and a reset of that reply
-     * would apply the message again once its `keep` is past (decision 0165). A reset that finds a newer reply leaves
-     * it, and the send after it is given that reply. The result of the reset is not read (decision 0092).
+     * Resets the latest answer Cluster saved for the request `sent` of the RPC `tag` to the program `name`, so that
+     * the request is delivered again, as `ClusterWorkflowEngine` resets an activity: the request's id read by its
+     * primary key, the latest reply by that id, and `Sharding.reset` with that reply as the one expected (decision
+     * 0085). The latest reply is reset only while `resettable` holds of it, as the engine resets only a `Suspended`
+     * one: a concurrent retry may have reset it and stored a step's reply since, and a reset of that reply would apply
+     * the message again once its `keep` is past (decision 0165). A reset that finds a newer reply leaves it, and the
+     * send after it is given that reply. It gives whether it called the reset, whose result it does not read
+     * (decision 0092).
      */
-    const reset = (name: string, sent: Omit<Delivered, '_tag'>) =>
+    const reset = (
+      name: string,
+      tag: Delivered['_tag'],
+      sent: Omit<Delivered, '_tag'>,
+      resettable: (latest: Reply.Encoded) => boolean,
+    ) =>
       Effect.gen(function*() {
         const entityId = EntityId.make(sent.id)
         const address = EntityAddress.make({
@@ -257,13 +265,37 @@ export const onCluster: Effect.Effect<
           entityId,
           shardId: sharding.getShardId(entityId, group),
         })
-        const requestId = yield* messages.requestIdForPrimaryKey({ address, tag: 'Message', id: primaryKey(sent) })
-        if (Option.isNone(requestId)) return
+        const requestId = yield* messages.requestIdForPrimaryKey({ address, tag, id: primaryKey(sent) })
+        if (Option.isNone(requestId)) return false
         const latest = (yield* messages.repliesForUnfiltered([requestId.value])).at(-1)
-        if (latest?._tag !== 'WithExit' || latest.exit._tag !== 'Success') return
-        if (Option.isNone(Schema.decodeUnknownOption(noReply)(latest.exit.value))) return
+        if (latest === undefined || !resettable(latest)) return false
         yield* sharding.reset(requestId.value, { expectedReplyId: Snowflake.Snowflake(latest.id) })
+        return true
       })
+    /** A step's answer that is no reply, `Suspended` or `NotFound`, as Cluster saved it (decision 0165). */
+    const noReplySaved = (latest: Reply.Encoded) =>
+      latest._tag === 'WithExit' && latest.exit._tag === 'Success' &&
+      Option.isSome(Schema.decodeUnknownOption(noReply)(latest.exit.value))
+    /**
+     * A failure Cluster saved of its own: a door's handler fails with nothing, and a defect of it is not saved. The
+     * one the runtime meets is an entity type no runner registered in time (decisions 0092, 0168).
+     */
+    const failureSaved = (latest: Reply.Encoded) => latest._tag === 'WithExit' && latest.exit._tag === 'Failure'
+    /**
+     * Where `call` fails, and Cluster saved a failure of its own as the request's latest reply, resets that reply
+     * before the failure is given, so that a retry under the same request id is delivered again. A failure that saved
+     * nothing died at the sender, and a retry sends the request again (decision 0168).
+     */
+    const resettingSavedFailure = <A, E>(
+      name: string,
+      tag: Delivered['_tag'],
+      sent: Omit<Delivered, '_tag'>,
+      call: Effect.Effect<A, E>,
+    ): Effect.Effect<A, E> =>
+      Effect.onError(
+        call,
+        (cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.ignore(reset(name, tag, sent, failureSaved)),
+      )
     return {
       shards: config.shardsPerGroup,
       shardOf: (id) => sharding.getShardId(EntityId.make(id), group).id,
@@ -301,28 +333,38 @@ export const onCluster: Effect.Effect<
       // A failure of Cluster's client or storage is no answer of the program's, and is a defect, as a failure of the
       // runtime's own storage is.
       create: (program, sent) =>
-        Effect.flatMap(sharding.makeClient(doorOf(program.name)), (clientOf) =>
-          Effect.flatMap(
-            clientOf(sent.id).Create({ version: sent.version, request: sent.request, message: sent.message }),
-            Schema.decodeEffect(creationCodec),
-          )).pipe(Effect.orDie),
+        resettingSavedFailure(
+          program.name,
+          'Create',
+          sent,
+          Effect.flatMap(sharding.makeClient(doorOf(program.name)), (clientOf) =>
+            Effect.flatMap(
+              clientOf(sent.id).Create({ version: sent.version, request: sent.request, message: sent.message }),
+              Schema.decodeEffect(creationCodec),
+            )),
+        ).pipe(Effect.orDie),
       send: (program, sent) => {
         const answered = Schema.decodeEffect(answerCodec(program))
-        const once = Effect.flatMap(sharding.makeClient(doorOf(program.name)), (clientOf) =>
-          Effect.flatMap(
-            clientOf(sent.id).Message({
-              version: sent.version,
-              request: sent.request,
-              message: sent.message,
-              ...(sent.keep === undefined ? {} : { keep: sent.keep }),
-            }),
-            answered,
-          ))
+        const once = resettingSavedFailure(
+          program.name,
+          'Message',
+          sent,
+          Effect.flatMap(sharding.makeClient(doorOf(program.name)), (clientOf) =>
+            Effect.flatMap(
+              clientOf(sent.id).Message({
+                version: sent.version,
+                request: sent.request,
+                message: sent.message,
+                ...(sent.keep === undefined ? {} : { keep: sent.keep }),
+              }),
+              answered,
+            )),
+        )
         // Cluster's client gives a stored answer as it gives a new one, so either answer that is no reply is reset
         // and the message sent once more: the second answer is a step's, made as the entity is then (decision 0085).
         return Effect.flatMap(once, (first) =>
           first._tag === 'Suspended' || first._tag === 'NotFound'
-            ? Effect.andThen(reset(program.name, sent), once)
+            ? Effect.andThen(reset(program.name, 'Message', sent, noReplySaved), once)
             : Effect.succeed(first)).pipe(Effect.orDie)
       },
       // Sent with `discard` from the transaction of the step that resumes: Cluster saves the request in it, and

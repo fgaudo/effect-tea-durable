@@ -14,6 +14,7 @@ keeps the Cluster id of a request answered with Cluster's defect, which changes 
 stores without a step. A pending id is written by more than a step, which changes how many decision 0090 says the
 database holds. A resumption is told once for each sender's entity, with the receiver's address alone, by
 [decision 0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md).
+A defect Cluster saves is reset for a caller's request too, before it is given, by [decision 0168](0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md).
 
 ## Context
 
