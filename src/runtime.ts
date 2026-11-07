@@ -43,6 +43,7 @@ import {
   type Topic,
   topicsOf,
   type Types,
+  versionOf,
 } from './program.ts'
 import {
   type Consumer,
@@ -68,7 +69,8 @@ import {
 /**
  * What a caller is answered: the replies stored under its request id, `NotFound` for no entity, `Suspended`,
  * which says that the request has no reply yet (decision 0023), and `Full`, which says that the entity holds as many
- * callers' messages as its bound, and nothing of this one was offered or stored (decision 0147).
+ * callers' messages as its bound, and nothing of this one was offered or stored (decision 0147). On Cluster a caller
+ * is never answered `Full` (decision 0165).
  */
 export type Answer<Reason> = Reply<Reason> | Readonly<{ _tag: 'Suspended' }> | Readonly<{ _tag: 'Full' }>
 
@@ -181,7 +183,8 @@ export interface Options {
    * How many callers' messages an entity holds before a `send` is answered `Full`: the messages of `send` offered
    * to it and not yet applied, whose callers wait. A positive integer, 4096 by default. The first refusal of an
    * activation logs a warning. An operation of another entity is never answered `Full`: it sends again after `retry`
-   * (decision 0147).
+   * (decision 0147). On Cluster the bound does not hold: a caller's message waits in Cluster's table, and Cluster's
+   * `mailboxCapacity` bounds the messages in memory (decision 0165).
    */
   readonly callers?: Readonly<{ messages: number }>
   /**
@@ -254,6 +257,8 @@ export interface Handle<T extends Types, C = {}> {
    * for ever. `keep.millis` is a non-negative integer, and anything else is the caller's defect (decision 0125). An
    * entity that holds as many callers' messages as `callers.messages` answers `Full` at once, and nothing of the
    * message is offered or stored: the caller retries later, under the same request id or another (decision 0147).
+   * On Cluster a caller is never answered `Full`, and its message waits for the entity. There, until Cluster's rows
+   * of a reply past its time are deleted, a retry after `keep` is given the reply Cluster saved (decision 0165).
    */
   readonly send: (
     id: string,
@@ -490,13 +495,17 @@ interface Stepping<T extends Types> {
  */
 class Unheld extends Data.TaggedError('Unheld')<Readonly<{ id: string }>> {}
 
-/** A request that reaches a program's door on Cluster: which RPC, the entity, and what its payload carries. */
+/**
+ * A request that reaches a program's door on Cluster: which RPC, the entity, and what its payload carries. A
+ * caller's message carries the time to keep its reply, `keep`, in milliseconds (decision 0165).
+ */
 export type Delivered = Readonly<{
   _tag: 'Create' | 'Message'
   id: string
   version: number
   request: string
   message: string
+  keep?: number
 }>
 
 /** What a door's step answers: a message's answer, or a creation's. */
@@ -535,6 +544,22 @@ export interface OnCluster {
    * (decision 0163).
    */
   readonly others: Readonly<{ version: Effect.Effect<number, unknown>; millis: number }>
+  /**
+   * A caller's creation, sent through the program's door by Cluster's client, from whatever runner the caller is on:
+   * what the door's step answered it (decision 0165).
+   */
+  readonly create: <T extends Types>(
+    program: Program<T>,
+    sent: Omit<Delivered, '_tag' | 'keep'>,
+  ) => Effect.Effect<Creation>
+  /**
+   * A caller's message, sent through the program's door by Cluster's client. An answer `Suspended` or `NotFound` is
+   * no reply: Cluster's row of it is reset, and the message sent again, whose answer is given (decisions 0085, 0165).
+   */
+  readonly send: <T extends Types>(
+    program: Program<T>,
+    sent: Omit<Delivered, '_tag'>,
+  ) => Effect.Effect<Reply<T['rejection']> | Readonly<{ _tag: 'Suspended' }>>
 }
 
 /** An entity loaded in this process: its machine, the events waiting, and what is running for it. */
@@ -1480,9 +1505,9 @@ export const launchWith = (
       })
 
     /**
-     * On Cluster, a request reaches an entity through its door, sent by Cluster's client, which the runtime does not
-     * give yet: one sent in the process would take the entity's lock and read the database outside a transaction,
-     * which a door's step waits on (decision 0161).
+     * On Cluster, a request reaches an entity through its door, sent by Cluster's client, which the runtime gives a
+     * caller and does not give an operation or an operator yet: one sent in the process would take the entity's lock
+     * and read the database outside a transaction, which a door's step waits on (decisions 0161, 0165).
      */
     const notYetOnCluster = (what: string) =>
       new InvariantDefect({ reason: `${what} on Cluster is sent through the door's client, which is not code yet` })
@@ -1688,7 +1713,9 @@ export const launchWith = (
           if (stepped.loaded === null) return { _tag: 'Message', answer: { _tag: 'NotFound' } }
           const key = Machine.requestKey(program, request)
           const reply = yield* stored.reply(id, request, DateTime.toEpochMillis(now))
-          const arrival: Machine.Event<T> = { _tag: 'Receive', request, message, reply, at: now }
+          const arrival: Machine.Event<T> = delivered.keep === undefined
+            ? { _tag: 'Receive', request, message, reply, at: now }
+            : { _tag: 'Receive', request, message, reply, at: now, keep: delivered.keep }
           let transition = yield* stepIn(deployed, stepped, entity, arrival, now)
           // The mailbox is handled up to the message, each `Handle` stepping its head (decision 0160).
           let replied: DoorAnswer<T['rejection']> | null = null
@@ -2070,19 +2097,23 @@ export const launchWith = (
       request: Request<T['sender']>,
     ): Effect.Effect<Creation, Faulted> =>
       Effect.gen(function*() {
-        if (cluster !== null) return yield* Effect.die(notYetOnCluster('a creation'))
         const entity: Address = { name: deployed.program.name, id }
         // A caller's creation is stored under its sender, which a sender that does not encode cannot be: the
         // caller's defect, as for a message (decisions 0040, 0048). So are flags that do not encode, whether the
         // entity exists or not (decision 0049).
-        const requested = yield* Effect.try({
+        const { requested, written } = yield* Effect.try({
           try: () => {
-            encode(deployed.program.schemas.flags, flags, 'value of the flags')
+            const written = encode(deployed.program.schemas.flags, flags, 'value of the flags')
             if (request._tag === 'Caller') encode(deployed.program.schemas.sender, request.sender, 'sender')
-            return Machine.requestKey(deployed.program, request)
+            return { requested: Machine.requestKey(deployed.program, request), written }
           },
           catch: (defect) => new Faulted({ defect }),
         })
+        if (cluster !== null) {
+          if (request._tag !== 'Caller') return yield* Effect.die(notYetOnCluster('a creation of an operation'))
+          const version = versionOf(deployed.program)
+          return yield* cluster.create(deployed.program, { id, version, request: requested, message: JSON.stringify(written) })
+        }
         // Detached from the caller: a creation committed is always started, and its entity loaded (decision 0079).
         const asked = yield* detached(deployed, holding(entity)(Effect.gen(function*() {
           const held = deployed.loaded.get(id) ?? null
@@ -2128,19 +2159,26 @@ export const launchWith = (
       keep?: number,
     ): Effect.Effect<Answer<T['rejection']>, Faulted> =>
       Effect.gen(function*() {
-        if (cluster !== null) return yield* Effect.die(notYetOnCluster('a message'))
         const entity: Address = { name: deployed.program.name, id }
         // A message is stored as its schema writes it: one that does not encode is its caller's defect, and
         // reaches no entity (decision 0040).
-        const requested = yield* Effect.try({
+        const { requested, written } = yield* Effect.try({
           try: () => {
             const { schemas } = deployed.program
-            encode(schemas.inbound, message, 'inbound message')
+            const written = encode(schemas.inbound, message, 'inbound message')
             if (request._tag === 'Caller') encode(schemas.sender, request.sender, 'sender')
-            return Machine.requestKey(deployed.program, request)
+            return { requested: Machine.requestKey(deployed.program, request), written }
           },
           catch: (defect) => new Faulted({ defect }),
         })
+        // On Cluster a caller's message waits in Cluster's table while the entity is busy, and is never answered
+        // `Full` (decision 0165).
+        if (cluster !== null) {
+          if (request._tag !== 'Caller') return yield* Effect.die(notYetOnCluster('a message of an operation'))
+          const version = versionOf(deployed.program)
+          const sent = { id, version, request: requested, message: JSON.stringify(written) }
+          return yield* cluster.send(deployed.program, keep === undefined ? sent : { ...sent, keep })
+        }
         const event: Machine.Offered<T> = keep === undefined
           ? { _tag: 'Receive', request, message }
           : { _tag: 'Receive', request, message, keep }

@@ -31,18 +31,16 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    ([decision 0163](decisions/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md),
    proposed). The signal of PostgreSQL is decided with that database.
 
-   A caller's request and an operation's are not code on Cluster yet: `create` and `send` of a handle die there, and so
-   does an operation that sends. They go through the door's client, as decisions 0085 and 0091 decide. Four things
-   found in Cluster's source at 4.1.2 bear on them:
-   - a door's handler is given Cluster's `requestId` with the request, the id
-     [decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) keeps;
-   - a request answered `Suspended` or `NotFound` is reset as `ClusterWorkflowEngine` resets an activity: its id read
-     by `MessageStorage.requestIdForPrimaryKey`, its latest reply by `repliesForUnfiltered`, then `Sharding.reset` with
-     that reply as `expectedReplyId` ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md));
-   - a caller's `keep` is not in the door's payload, which holds the version, the request and the message;
-   - Cluster answers a retry within a version from the reply it saved, before any step runs, so a caller's reply past
-     its time ([decision 0125](decisions/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)) is still
-     given until Cluster's rows of its request are deleted with it, as an entity's are (decision 0090).
+   A caller's `create` and `send` go through Cluster's client of the door, with `keep` in the payload, and a message
+   answered `Suspended` or `NotFound` is reset and sent again
+   ([decision 0165](decisions/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
+   proposed). What is left of requests on Cluster:
+   - an operation's request and an operator's `Resume` and `Discard`, which still die there. They go through the
+     door's client too, as decisions 0085, 0090 and 0092 decide, with `Resumed` told to the senders that wait;
+   - the deletion of Cluster's rows by the Cluster `requestId` a door's handler is given: an operation's with the
+     work that asked ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)), and a
+     caller's with its reply once past its time (decision 0165). Until then Cluster answers a retry past `keep`
+     within a version from the reply it saved.
 
    Effect-TS/effect#10239, which asks Cluster to forget a processed request, was closed by a merged pull request
    that no release holds at 4.1.2. Until one does, the deletions are the runtime's own statements (decision 0090).

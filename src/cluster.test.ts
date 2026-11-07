@@ -300,6 +300,8 @@ describe('the runtime on Cluster', () => {
   let asked = 0
   /** The runner's client of the database, which `Ask` registers an `afterCommit` with. */
   let runnerSql: SqlClient.SqlClient | null = null
+  /** The handle of `tally` deployed on the runner of the test under way, as a caller holds it. */
+  let handle: Handle<Tally> | null = null
   /**
    * What `Ask` saw of its `afterCommit` in the test under way: run at once, where no transaction is open in the
    * operation's context; deferred, where one is; died, where one has ended already.
@@ -399,7 +401,7 @@ describe('the runtime on Cluster', () => {
       yield* sql`CREATE TABLE child (parent INTEGER REFERENCES parent (id) DEFERRABLE INITIALLY DEFERRED)`
       runnerSql = sql
       const runtime = yield* (probe === undefined ? launch() : Effect.provideService(launch(), Probe, probe(sql)))
-      yield* runtime.deploy(tally)
+      handle = yield* runtime.deploy(tally)
       yield* run
     })
     asked = 0
@@ -423,6 +425,77 @@ describe('the runtime on Cluster', () => {
       expect(yield* send({ _tag: 'Refuse' }, 'm2')).toBe('{"_tag":"Rejected","reason":{"why":"refused"}}')
       expect(yield* stateOf).toEqual({ n: 3, asking: false })
       expect(yield* send({ _tag: 'Add', n: 1 }, 'm3', 'none')).toBe('{"_tag":"NotFound"}')
+    })), 30_000)
+
+  test('a caller creates and sends through the door, and a retry is answered as the first time', () =>
+    onRunner(Effect.gen(function*() {
+      const sender = { user: 'u' }
+      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+      expect(yield* handle!.create('one', { start: 5 }, { requestId: 'c2', sender })).toEqual({ _tag: 'AlreadyExists' })
+      const add = { _tag: 'Add', n: 2 } as const
+      expect(yield* handle!.send('one', add, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })
+      expect(yield* handle!.send('one', add, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })
+      expect(yield* handle!.send('one', { _tag: 'Refuse' }, { requestId: 'm2', sender })).toEqual({
+        _tag: 'Rejected',
+        reason: { why: 'refused' },
+      })
+      expect(yield* stateOf).toEqual({ n: 3, asking: false })
+      // The door answers what the runtime sent: the request is the caller's, under its sender.
+      expect(yield* send(add, 'm1')).toBe('{"_tag":"Accepted"}')
+      expect(yield* stateOf).toEqual({ n: 3, asking: false })
+    })), 30_000)
+
+  test('a message answered NotFound is handled when it is sent again, once its entity is created', () =>
+    onRunner(Effect.gen(function*() {
+      const sender = { user: 'u' }
+      const add = { _tag: 'Add', n: 2 } as const
+      expect(yield* handle!.send('one', add, { requestId: 'm1', sender })).toEqual({ _tag: 'NotFound' })
+      yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })
+      // Cluster saved `NotFound` under the request: the client resets it, and the step applies the message.
+      expect(yield* handle!.send('one', add, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })
+      expect(yield* stateOf).toEqual({ n: 3, asking: false })
+    })), 30_000)
+
+  test('a message answered Suspended is answered Suspended again while its entity is suspended', () =>
+    onRunner(Effect.gen(function*() {
+      const sender = { user: 'u' }
+      yield* handle!.create('one', { start: 0 }, { requestId: 'c1', sender })
+      expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender })).toEqual({ _tag: 'Suspended' })
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })).toEqual({
+        _tag: 'Suspended',
+      })
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })).toEqual({
+        _tag: 'Suspended',
+      })
+    })), 30_000)
+
+  test('a caller’s keep reaches the door, and its reply is kept until the time it gives', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const sender = { user: 'u' }
+      yield* handle!.create('one', { start: 0 }, { requestId: 'c1', sender })
+      const before = DateTime.toEpochMillis(yield* DateTime.now)
+      const keep = { millis: 60_000 }
+      yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep })
+      yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })
+      const rows = yield* sql<{ id: string; until: number | null }>`
+        SELECT request_id AS id, until FROM replies WHERE name = 'Tally' ORDER BY request_id
+      `
+      expect(rows.map((row) => row.id)).toEqual(['m1', 'm2'])
+      expect(Number(rows[0]?.until)).toBeGreaterThanOrEqual(before + keep.millis)
+      expect(rows[1]?.until).toBeNull()
+    })), 30_000)
+
+  test('a caller’s message that does not encode is the caller’s defect, and reaches no door', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const sender = { user: 'u' }
+      yield* handle!.create('one', { start: 0 }, { requestId: 'c1', sender })
+      const broken = { _tag: 'Add', n: 0.5 } as const
+      const exit = yield* Effect.exit(handle!.send('one', broken, { requestId: 'm1', sender }))
+      expect(Exit.isFailure(exit)).toBe(true)
+      const [row] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM cluster_messages WHERE tag = 'Message'`
+      expect(Number(row?.held)).toBe(0)
     })), 30_000)
 
   test('a defect of the program suspends the entity, and its messages are answered Suspended', () =>

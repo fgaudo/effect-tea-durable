@@ -43,7 +43,7 @@ Cluster's says so.
 - **Full.** What `send` answers for an entity that holds as many callers' messages as the runtime's option
   `callers.messages`, 4096 by default: the messages of `send` offered to it and not yet applied. Nothing of the
   message is offered or stored. An operation of another entity is never answered `Full`, and sends again after the
-  retry.
+  retry. On Effect Cluster a caller is never answered `Full`, and its message waits in Cluster's table.
 - **Handle.** What `deploy` gives: `create`, `send`, `read`, `query`, `count`, `sum` and `countBy` for callers, `feed`, `ack` and the rest of the
   outbox for its consumers, `reindex`, and `suspended`, `resume` and `discard` for an operator.
 - **Hold, lock.** Each entity is found, loaded, unloaded and crashed under a lock of its own. A caller holds the entity

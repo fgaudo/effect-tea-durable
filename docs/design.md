@@ -476,7 +476,9 @@ with Cluster.
   of `send` offered to it and not yet applied. A `send` past the bound is answered `Full` at once, and nothing of
   its message is offered or stored, so a retry under the same request id is a new try. The first refusal of an
   activation logs a warning that names the entity
-  ([decision 0147](decisions/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)).
+  ([decision 0147](decisions/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)). On Effect Cluster a
+  caller is never answered `Full`: its message waits in Cluster's table until the entity takes it
+  ([decision 0165](decisions/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md), proposed).
 - **Passivation.** An entity with no message for a while is unloaded. An operation under way keeps it loaded, a
   suspended entity's too; a suspended entity whose operations have ended is unloaded with the message it died on,
   and the completions recorded behind it. To the machine, a passivation is

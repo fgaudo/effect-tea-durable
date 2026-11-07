@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-11-04. Decides the open question on callers' stored replies, which
 [decision 0021](archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md) left open: until now a caller's reply
-was kept for ever. What decision 0021 decides of a reply to another entity is left as it is.
+was kept for ever. What decision 0021 decides of a reply to another entity is left as it is. On Effect Cluster a
+caller's `keep` is in the door's payload, and Cluster's rows of the request go with its reply once its time is past,
+by [decision 0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md), proposed.
 
 ## Context
 

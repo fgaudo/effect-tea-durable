@@ -7,8 +7,10 @@
 import {
   ClusterSchema,
   Entity,
+  EntityAddress,
   EntityId,
-  type MessageStorage,
+  EntityType,
+  MessageStorage,
   type RunnerAddress,
   RunnerHealth,
   type Runners,
@@ -16,6 +18,7 @@ import {
   Sharding,
   ShardingConfig,
   ShardId,
+  Snowflake,
 } from 'effect/cluster'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -89,10 +92,16 @@ export const sharding = (
 
 /**
  * What a request to an entity on Cluster carries: the version that wrote it, the request and the message, each as
- * the JSON text the runtime encodes (decision 0085). Cluster's schema decodes text alone, so a payload of any version
- * reaches the runtime, which reads the request and the message through the program's migrations.
+ * the JSON text the runtime encodes (decision 0085), and a caller's `keep`, which is no part of its key
+ * (decision 0165). Cluster's schema decodes text alone, so a payload of any version reaches the runtime, which reads
+ * the request and the message through the program's migrations.
  */
-const payload = { version: Schema.Int, request: Schema.String, message: Schema.String }
+const payload = {
+  version: Schema.Int,
+  request: Schema.String,
+  message: Schema.String,
+  keep: Schema.optionalKey(Schema.Int),
+}
 
 /**
  * Cluster keys a request by the version that keyed it and its request's text, under the receiver's address and the
@@ -143,7 +152,7 @@ const handlersOf = <R>(
   (
     { address, payload }: Readonly<{
       address: Readonly<{ entityId: string }>
-      payload: Readonly<{ version: number; request: string; message: string }>
+      payload: Readonly<{ version: number; request: string; message: string; keep?: number }>
     }>,
   ) =>
     Effect.andThen(
@@ -154,6 +163,7 @@ const handlersOf = <R>(
         version: payload.version,
         request: payload.request,
         message: payload.message,
+        ...(payload.keep === undefined ? {} : { keep: payload.keep }),
       }),
     )
   return { Create: handle('Create'), Message: handle('Message') }
@@ -170,6 +180,12 @@ export const answerCodec = <T extends Types>(program: Program<T>) =>
     Schema.TaggedStruct('NotFound', {}),
     Schema.TaggedStruct('Suspended', {}),
   ]))
+
+/** The text of a step's answer to a message that is no reply: Cluster saves it, and a caller's client resets it. */
+const noReply = Schema.fromJsonString(Schema.Union([
+  Schema.TaggedStruct('NotFound', {}),
+  Schema.TaggedStruct('Suspended', {}),
+]))
 
 /** The text of what a step answers a creation. */
 export const creationCodec = Schema.fromJsonString(Schema.Union([
@@ -192,12 +208,37 @@ const group = 'default'
 export const onCluster: Effect.Effect<
   OnCluster,
   never,
-  Sharding.Sharding | ShardingConfig.ShardingConfig | SqlClient.SqlClient
+  Sharding.Sharding | ShardingConfig.ShardingConfig | MessageStorage.MessageStorage | SqlClient.SqlClient
 > = Effect.gen(
   function*() {
     const sharding = yield* Sharding.Sharding
     const config = yield* ShardingConfig.ShardingConfig
+    const messages = yield* MessageStorage.MessageStorage
     const sql = yield* SqlClient.SqlClient
+    /**
+     * Resets the latest answer Cluster saved for the message `sent` to the program `name`, so that the message is
+     * delivered again, as `ClusterWorkflowEngine` resets an activity: the request's id read by its primary key, the
+     * latest reply by that id, and `Sharding.reset` with that reply as the one expected (decision 0085). The latest
+     * reply is reset only while it is still no reply, `Suspended` or `NotFound`, as the engine resets only a
+     * `Suspended` one: a concurrent retry may have reset it and stored a step's reply since, and a reset of that reply
+     * would apply the message again once its `keep` is past (decision 0165). A reset that finds a newer reply leaves
+     * it, and the send after it is given that reply. The result of the reset is not read (decision 0092).
+     */
+    const reset = (name: string, sent: Omit<Delivered, '_tag'>) =>
+      Effect.gen(function*() {
+        const entityId = EntityId.make(sent.id)
+        const address = EntityAddress.make({
+          entityType: EntityType.make(name),
+          entityId,
+          shardId: sharding.getShardId(entityId, group),
+        })
+        const requestId = yield* messages.requestIdForPrimaryKey({ address, tag: 'Message', id: primaryKey(sent) })
+        if (Option.isNone(requestId)) return
+        const latest = (yield* messages.repliesForUnfiltered([requestId.value])).at(-1)
+        if (latest?._tag !== 'WithExit' || latest.exit._tag !== 'Success') return
+        if (Option.isNone(Schema.decodeUnknownOption(noReply)(latest.exit.value))) return
+        yield* sharding.reset(requestId.value, { expectedReplyId: Snowflake.Snowflake(latest.id) })
+      })
     return {
       shards: config.shardsPerGroup,
       shardOf: (id) => sharding.getShardId(EntityId.make(id), group).id,
@@ -227,6 +268,33 @@ export const onCluster: Effect.Effect<
           maxIdleTime: Duration.millis(idle),
         })
       },
+      // A failure of Cluster's client or storage is no answer of the program's, and is a defect, as a failure of the
+      // runtime's own storage is.
+      create: (program, sent) =>
+        Effect.flatMap(sharding.makeClient(doorOf(program.name)), (clientOf) =>
+          Effect.flatMap(
+            clientOf(sent.id).Create({ version: sent.version, request: sent.request, message: sent.message }),
+            Schema.decodeEffect(creationCodec),
+          )).pipe(Effect.orDie),
+      send: (program, sent) => {
+        const answered = Schema.decodeEffect(answerCodec(program))
+        const once = Effect.flatMap(sharding.makeClient(doorOf(program.name)), (clientOf) =>
+          Effect.flatMap(
+            clientOf(sent.id).Message({
+              version: sent.version,
+              request: sent.request,
+              message: sent.message,
+              ...(sent.keep === undefined ? {} : { keep: sent.keep }),
+            }),
+            answered,
+          ))
+        // Cluster's client gives a stored answer as it gives a new one, so either answer that is no reply is reset
+        // and the message sent once more: the second answer is a step's, made as the entity is then (decision 0085).
+        return Effect.flatMap(once, (first) =>
+          first._tag === 'Suspended' || first._tag === 'NotFound'
+            ? Effect.andThen(reset(program.name, sent), once)
+            : Effect.succeed(first)).pipe(Effect.orDie)
+      },
     }
   },
 )
@@ -234,14 +302,18 @@ export const onCluster: Effect.Effect<
 /**
  * The runtime of a runner of Effect Cluster: `launch`'s, whose deploys serve their programs through doors on the
  * runner's `Sharding`, which `sharding` builds, and which learn their shards from a singleton of each
- * (decision 0162). A caller's request and an operation's are a later part of the roadmap's step Effect Cluster, and
- * not code yet.
+ * (decision 0162). A caller's request goes through Cluster's client of the door (decision 0165). An operation's
+ * request and an operator's are a later part of the roadmap's step Effect Cluster, and not code yet.
  */
 export const launch = (
   options: Options = {},
 ): Effect.Effect<
   Runtime,
   never,
-  Sharding.Sharding | ShardingConfig.ShardingConfig | SqlClient.SqlClient | Scope.Scope
+  | Sharding.Sharding
+  | ShardingConfig.ShardingConfig
+  | MessageStorage.MessageStorage
+  | SqlClient.SqlClient
+  | Scope.Scope
 > =>
   Effect.flatMap(onCluster, (cluster) => launchWith(options, cluster))

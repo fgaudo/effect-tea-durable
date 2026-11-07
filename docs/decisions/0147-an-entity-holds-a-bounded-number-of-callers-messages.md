@@ -4,7 +4,8 @@
 [decision 0074](archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md), where nothing but
 the server in front of the process bounds a burst, and
 [decision 0046](archive/0046-a-receiver-that-crashes-is-sent-again.md), whose sender sends again only to a receiver
-that crashed.
+that crashed. On Effect Cluster a caller is never answered `Full`, and its message waits in Cluster's table, by
+[decision 0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md), proposed.
 
 ## Context
 

@@ -5078,6 +5078,9 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
             step = given as (delivered: Delivered) => Effect.Effect<unknown>
           }),
         others: { version: Effect.succeed(0), millis: 1_000 },
+        // These tests step the door directly, and send nothing through Cluster's client.
+        create: () => Effect.die('no creation is sent through the client here'),
+        send: () => Effect.die('no message is sent through the client here'),
       }
       const reached = yield* Deferred.make<void>()
       const gate = yield* Deferred.make<void>()
@@ -5126,6 +5129,9 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
             step = given as (delivered: Delivered) => Effect.Effect<unknown>
           }),
         others: { version: Effect.succeed(0), millis: 1_000 },
+        // These tests step the door directly, and send nothing through Cluster's client.
+        create: () => Effect.die('no creation is sent through the client here'),
+        send: () => Effect.die('no message is sent through the client here'),
       }
       const reached = yield* Deferred.make<void>()
       const gate = yield* Deferred.make<void>()
@@ -5244,6 +5250,9 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
               step = given as (delivered: Delivered) => Effect.Effect<unknown>
             }),
           others,
+          // These tests step the door directly, and send nothing through Cluster's client.
+          create: () => Effect.die('no creation is sent through the client here'),
+          send: () => Effect.die('no message is sent through the client here'),
         }
         return { cluster, step: () => step! }
       }
