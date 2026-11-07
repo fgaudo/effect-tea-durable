@@ -50,6 +50,12 @@ This repository is a design and its pure core, not a library yet: read [`README.
   `docs/open-questions.md`, as the question in a few sentences and, as bullets, what would decide it; an
   analysis longer than that is a spike. It leaves the file when a note decides it. A step of the roadmap leaves it when done.
   The roadmap holds only the steps ahead: what a done step decided is in its notes, and is not retold there.
+- A step under way is continued by a session that knows nothing of the session before it. So before a session
+  proposes to move to the next part of a step, the repository says how to continue: the step in the roadmap names
+  the parts done and the part next, and the step's `proposed` notes say what the parts done decided. What only the
+  conversation holds is written there first: a premise found, a test still red, a choice the maintainer made in
+  chat, work left uncommitted. A session that cannot name the file where the next part begins has not finished
+  the part it is on.
 - A note moves to `docs/decisions/archive/` once the document that says what holds of it does: `docs/design.md`
   for the design, `README.md` for the project. A note of a step the roadmap still holds stays. A note a later note
   changes may move without it: its status line links the note that changes it, wherever that one is. The index
