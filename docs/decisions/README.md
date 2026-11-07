@@ -35,6 +35,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0169](0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md) | On Cluster, an operation's request ids are kept under its work, and Cluster's rows deleted with it |  |
 | [0170](0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md) | On Cluster, an operation's client keeps the request's id before it resets a failure Cluster saved |  |
 | [0171](0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md) | On Cluster, a caller's rows go once its client has the answer and its time is past |  |
+| [0172](0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md) | On Cluster, an operation registers for a resumption before it sends, and two loaders of an entity never wait for its lock at once on SQLite |  |
 
 ## The project
 

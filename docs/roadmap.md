@@ -15,13 +15,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    ([open question](open-questions.md#running)). The step decides what keeps an older version from the rows a newer
    one wrote, with what the runtime holds alone, whatever Cluster comes to give.
 
-   Before the step is done, the two interleavings
-   [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) reached are read again,
-   since the runtime on Cluster may change them:
-   - a sender that registers for its receiver's resumption only after it is answered `Suspended`
-     ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)), which a resumption told by a
-     message changes ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md));
-   - an entity's lock dropped while others wait for it ([decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md)).
+   The two interleavings [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)
+   reached hold on Cluster
+   ([decision 0172](decisions/0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md), proposed). An
+   operation registers for its receiver's resumption before it sends, and a test on two runners holds it. On SQLite
+   two loaders of one entity never wait for its lock at once, and a move to PostgreSQL reads that again.
 
    On Cluster an entity's type is its program's name, and Cluster stores its messages under it, so a rename moves
    Cluster's rows too ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)).

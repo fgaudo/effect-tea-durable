@@ -7,6 +7,8 @@ import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { describe, expect, test } from 'bun:test'
 import {
   EntityId,
+  MessageStorage,
+  Reply,
   RunnerAddress,
   RunnerHealth,
   Runners,
@@ -91,6 +93,22 @@ const at = (name: string, version: number): Program<T> => ({
 
 const defectOf = <A, E>(exit: Exit.Exit<A, E>): unknown =>
   Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+
+/**
+ * Cluster's storage of messages on SQLite, whose reading of replies for the clients that wait leaves out a reply
+ * while `withheld` holds of it. The client is then given that reply at a later reading, once `withheld` no longer
+ * holds of it.
+ */
+const withholding = (withheld: (reply: Reply.Reply<any>) => boolean) =>
+  Layer.effect(
+    MessageStorage.MessageStorage,
+    Effect.map(Effect.service(MessageStorage.MessageStorage), (storage) =>
+      MessageStorage.MessageStorage.of({
+        ...storage,
+        repliesFor: (messages) =>
+          Effect.map(storage.repliesFor(messages), (replies) => replies.filter((reply) => !withheld(reply))),
+      })),
+  ).pipe(Layer.provide(SqlMessageStorage.layer))
 
 describe('the versions a launch records', () => {
   test('a launch older than the newest recorded dies, naming the program and both versions, and records nothing', () =>
@@ -853,20 +871,24 @@ describe('the shards of a runner on Cluster', () => {
    */
   const onFile = async (
     run: (
-      start: (port: number, said?: (said: Said) => void) => Effect.Effect<Runner, never, Scope.Scope>,
+      start: (
+        port: number,
+        said?: (said: Said) => void,
+        withheld?: (reply: Reply.Reply<any>) => boolean,
+      ) => Effect.Effect<Runner, never, Scope.Scope>,
     ) => Effect.Effect<void, unknown, Scope.Scope | SqlClient.SqlClient>,
     options: Parameters<typeof launch>[0] = {},
     registration: Duration.Input = Duration.minutes(1),
   ) => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
-    const start = (port: number, said?: (said: Said) => void) =>
+    const start = (port: number, said?: (said: Said) => void, withheld?: (reply: Reply.Reply<any>) => boolean) =>
       Effect.gen(function*() {
         const scope = yield* Effect.scope
         const context = yield* Layer.build(
           sharding([bell]).pipe(
             Layer.provideMerge(Runners.layerNoop),
-            Layer.provideMerge(SqlMessageStorage.layer),
+            Layer.provideMerge(withheld === undefined ? SqlMessageStorage.layer : withholding(withheld)),
             Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
             Layer.provideMerge(ShardingConfig.layer({
               runnerAddress: Option.some(RunnerAddress.make('localhost', port)),
@@ -1021,6 +1043,60 @@ describe('the shards of a runner on Cluster', () => {
           sql<{ held: number }>`SELECT COUNT(*) AS held FROM waiting`)
         expect(left?.held).toBe(0)
       })), 30_000)
+
+  test('an operation is woken by a `Resumed` delivered before its client gives it the answer Suspended', () => {
+    // Decision 0063, read again on Cluster (decision 0172): the operation registers for the receiver's resumption
+    // before it sends. The client resets a first answer `Suspended` and sends again, and gives the operation the
+    // second (decision 0165). The first runner's storage withholds that second answer from the client until `Resumed`
+    // has been handled there. A registration made once the answer is given would miss that `Resumed`, and the
+    // operation would wait for ever.
+    const passed = new Set<string>()
+    let withholding = true
+    let withheld = false
+    const suspended = (reply: Reply.Reply<any>) => {
+      if (!withholding || reply._tag !== 'WithExit' || !Exit.isSuccess(reply.exit)) return false
+      if (!String(reply.exit.value).includes('Suspended')) return false
+      if (passed.size === 0) passed.add(String(reply.id))
+      if (passed.has(String(reply.id))) return false
+      withheld = true
+      return true
+    }
+    return onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1, undefined, suspended)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const ids = Array.from({ length: 64 }, (_, i) => `w${i}`)
+        const sender = ids.find((id) => first.holds(id))!
+        const receiver = ids.find((id) => second.holds(id))!
+        yield* create(first, sender)
+        yield* create(first, receiver)
+        // Sent through the second runner, which holds the receiver, so that the first runner's storage reads no
+        // answer `Suspended` before the operation's.
+        expect(yield* send(second, receiver, { _tag: 'Break' }, 'm-break')).toBe('{"_tag":"Suspended"}')
+        yield* send(first, sender, { _tag: 'Relay', to: receiver }, 'm-relay')
+        yield* until(Effect.sync(() => withheld), (held) => held)
+        expect(yield* second.bell.discard(receiver)).toEqual({ _tag: 'Discarded' })
+        // `Resumed` is handled on the first runner while its storage still withholds the answer.
+        const sql = yield* SqlClient.SqlClient
+        yield* until(
+          Effect.map(
+            sql<{ held: number }>`SELECT COUNT(*) AS held FROM cluster_messages WHERE tag = 'Resumed' AND processed = 1`,
+            ([row]) => Number(row?.held ?? 0),
+          ),
+          (held) => held === 1,
+        )
+        expect((yield* stateOf(sender))?.relayed).toBe(null)
+        withholding = false
+        expect(yield* until(stateOf(sender), (state) => state?.relayed !== null)).toMatchObject({
+          relay: null,
+          relayed: 'AlreadyExists/Accepted',
+        })
+      }))
+  }, 30_000)
 
   test("an operation's work takes Cluster's rows of its requests as it ends, and the next step those of `Resumed`", () =>
     onFile((start) =>

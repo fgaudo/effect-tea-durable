@@ -1224,7 +1224,8 @@ export const launchWith = (
      * Registers a sender's wait for the entity's resumption, before it sends. `resumed` is what it waits on if it
      * is answered `Suspended`, and `forget` takes it back whatever it is answered. A registration made after the
      * answer would miss a resumption between the two, and wait for ever. `a sender answered Suspended is woken by
-     * the resumption`, in the tests, reaches that under the scheduler of the tests (decision 0104). `waiting` is
+     * the resumption`, in the tests, reaches that under the scheduler of the tests (decision 0104), and a test on two
+     * runners of Cluster reaches it with `Resumed` (decision 0172). `waiting` is
      * who registers, for `suspended` to list (decision 0114).
      */
     const awaitResumption = (entity: Address, waiting: Waiting) =>
