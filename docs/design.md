@@ -1033,11 +1033,16 @@ leaves to the runtime is in [`cluster.md`](cluster.md).
 - A runner is alive, for the `RunnerHealth` the runtime gives Cluster, only while it runs the newest version of
   every program it names, and while the launcher's own `RunnerHealth` says so. A rolling deploy then moves every
   shard to the newer runners.
-- A door's step commits only while its program's version is the newest recorded, which it reads in its transaction.
-  A step of an older version dies and rolls back, and Cluster delivers its message again until a runner of the newest
-  version steps it ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
-  A step of the entity's own loop and the `Restart` of an activation read no version yet, and no step checks the
-  shard's lease: see [the open question](open-questions.md#running).
+- Every step on Cluster, a door's, a step of the entity's loop and an activation, commits only while its program's
+  version is the newest recorded, which it reads in its transaction
+  ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+- Every step on Cluster commits only while the lease of its entity's shard, a row of `cluster_locks`, names its
+  runner and has not expired, which it reads in its transaction too. The condition is the exact complement of the
+  one under which Cluster lets another runner take the lease
+  ([decision 0175](decisions/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md)).
+- A step that either check refuses dies and rolls back. Cluster delivers a door's request again, a step of the loop
+  crashes its entity, and an activation is tried again after `retry`, until a runner of the newest version that
+  holds the shard steps it. The checks are a guard beside the count of the steps that wrote the entity's row.
 - A deploy dies unless the runner's `sharding` named its program at the version deployed. A process with no
   `runnerAddress` is a client of the cluster alone: it holds no shard, and deploys any program
   ([decision 0174](decisions/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).

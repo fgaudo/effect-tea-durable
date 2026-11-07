@@ -205,6 +205,8 @@ writes (no rolling deploy), forward compatibility for one version, or a change t
 Decided: a runner is alive, for the `RunnerHealth` the runtime gives Cluster, only while
 it runs the newest version of each of its programs, and a step commits only at the newest version, which it reads in
 its transaction ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+Every step makes that check, a door's, a step of the entity's loop and an activation, and checks the shard's lease
+with it ([decision 0175](decisions/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md)).
 A rolling deploy then moves every shard to the newer runners, and nothing of the older version steps a newer row.
 A runner deploys only the programs its `sharding` names, at the version named, so that no program escapes the
 record both checks read ([decision 0174](decisions/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).

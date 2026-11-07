@@ -539,6 +539,13 @@ export interface OnCluster {
    * shard. A deploy of a program not recorded at its version dies (decision 0174).
    */
   readonly versions: ReadonlyMap<string, number> | null
+  /**
+   * Dies unless a step of the entity `id` of `program` may commit on this runner: the program's version is the
+   * newest a launch recorded, and the lease of the entity's shard names this runner and has not expired. It reads in
+   * the transaction under way, and every step on Cluster runs it first, a door's, the loop's and an activation's, so
+   * that the commit makes the check (decisions 0159, 0175).
+   */
+  readonly guard: (program: Pick<Program<Types>, 'name' | 'migrations'>, id: string) => Effect.Effect<void>
   /** How many shards the doors' group has: Cluster's `shardsPerGroup`. */
   readonly shards: number
   /** The number of the shard Cluster routes the id or the singleton's name `id` to, in the doors' group. */
@@ -1566,6 +1573,8 @@ export const launchWith = (
           yield* deployed.storage.forgetPending
           // An event taken before its entity left the process is dropped, as the loop's end says (decision 0162).
           if (deployed.loaded.get(entity.id) !== loaded) return null
+          // A step that cannot commit here dies, and its entity crashes (decision 0175).
+          yield* cluster!.guard(deployed.program, entity.id)
           if (!(yield* settle(deployed, loaded))) return yield* Effect.die(unsettled(entity.name, entity.id))
           // A message of a caller reaches the entity through its door alone, never its loop.
           if (offered._tag === 'Settle' || offered._tag === 'Receive') return null
@@ -1706,7 +1715,9 @@ export const launchWith = (
       const { id } = delivered
       const entity: Address = { name: program.name, id }
       return holding(entity)(Effect.gen(function*(): Effect.fn.Return<DoorAnswer<T['rejection']>, Unheld> {
-        // First, before Cluster saves this request's own rows after the step, which would be deleted unanswered
+        // A step that cannot commit here dies, and Cluster delivers the request again (decisions 0159, 0175).
+        yield* cluster!.guard(program, id)
+        // Before Cluster saves this request's own rows after the step, which would be deleted unanswered
         // (decision 0169).
         yield* stored.forgetPending
         const now = yield* DateTime.now
@@ -1809,7 +1820,11 @@ export const launchWith = (
         if (deployed.loaded.has(id)) return
         const stepped = stepping<T>(null)
         yield* loadIn(deployed, stepped, entity, yield* DateTime.now)
-        if (stepped.loaded !== null) yield* finishIn(deployed, stepped, entity)
+        if (stepped.loaded === null) return
+        // An activation that cannot commit here dies, and the waker or the shard's round tries it again after
+        // `retry` (decision 0175).
+        yield* cluster!.guard(deployed.program, id)
+        yield* finishIn(deployed, stepped, entity)
       })))).pipe(Effect.catchTag('Unheld', () => Effect.void), Effect.orDie)
     }
 

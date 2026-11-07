@@ -5079,6 +5079,7 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
         shards: 1,
         versions: null,
         shardOf: () => 1,
+        guard: () => Effect.void,
         holds: () => true,
         singleton: (_name, run) =>
           Effect.flatMap(
@@ -5138,6 +5139,7 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
         shards: 1,
         versions: null,
         shardOf: () => 1,
+        guard: () => Effect.void,
         holds: () => true,
         singleton: (_name, run) => Effect.asVoid(Effect.forkScoped(Effect.scoped(Effect.andThen(run, Effect.never)))),
         register: (_program, given) =>
@@ -5262,6 +5264,7 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
           shards: 1,
           versions: null,
           shardOf: () => 1,
+          guard: () => Effect.void,
           holds: () => true,
           singleton: (_name, run) => Effect.asVoid(Effect.forkScoped(Effect.scoped(Effect.andThen(run, Effect.never)))),
           register: (_program, given) =>

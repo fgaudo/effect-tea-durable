@@ -504,6 +504,29 @@ export const newestVersion = (name: string): Effect.Effect<number | undefined, n
   }).pipe(Effect.orDie)
 
 /**
+ * Whether the lease of the shard `shard`, a row of Cluster's `cluster_locks`, names the runner at `address` and has
+ * not expired after `expiration` seconds. Each condition is the exact complement of the one under which Cluster's
+ * `SqlRunnerStorage` lets another runner take the lease, in whole seconds on SQLite (decision 0175). A step reads it
+ * in its transaction. On PostgreSQL the row is read `FOR SHARE`, as `newestVersion` reads its own.
+ */
+export const leased = (
+  shard: string,
+  address: string,
+  expiration: number,
+): Effect.Effect<boolean, never, SqlClient.SqlClient> =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const seconds = sql.literal(String(Math.trunc(expiration)))
+    const live = dialectOf(sql) === 'pg'
+      ? sql`acquired_at >= NOW() - INTERVAL '${seconds} seconds' FOR SHARE`
+      : sql`(strftime('%s', CURRENT_TIMESTAMP) - strftime('%s', acquired_at)) <= ${seconds}`
+    const rows = yield* sql`
+      SELECT 1 AS held FROM cluster_locks WHERE shard_id = ${shard} AND address = ${address} AND ${live}
+    `
+    return rows.length > 0
+  }).pipe(Effect.orDie)
+
+/**
  * Whether the runner at `address` runs an older version of a program than the newest recorded: `undefined` where
  * no launch of the runtime recorded the address, a runner without the runtime (decision 0159).
  */

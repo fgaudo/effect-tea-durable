@@ -17,6 +17,8 @@ database holds. A resumption is told once for each sender's entity, with the rec
 A defect Cluster saves is reset for a caller's request too, before it is given, by [decision 0168](0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md).
 A keep that fails resets nothing, and a client that finds the work ended waits until it is interrupted, by
 [decision 0170](0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md).
+The lease check of a step of the entity's own work, which no code made, is made by every step, a door's and an
+activation's too, by [decision 0175](0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md).
 
 ## Context
 

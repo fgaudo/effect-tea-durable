@@ -12,6 +12,7 @@ import {
   RunnerAddress,
   RunnerHealth,
   Runners,
+  RunnerStorage,
   Sharding,
   ShardingConfig,
   ShardId,
@@ -50,7 +51,7 @@ import {
   versionOf,
 } from './program.ts'
 import { type Handle, Probe, type Said } from './runtime.ts'
-import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
+import { createTables, leased, newestVersion, outranked, recordVersions } from './storage.ts'
 import { client, onEach } from './test-databases.ts'
 
 type T = {
@@ -145,6 +146,51 @@ describe('the versions a launch records', () => {
         yield* recordVersions('a:1', [{ name: 'Toy', version: 2 }, { name: 'Other', version: 1 }])
         expect(yield* outranked('a:1')).toBe(false)
       }).pipe(Effect.provide(client(dialect))))))
+})
+
+describe('the lease of a shard', () => {
+  test('a lease the runtime reads as held is one Cluster lets no other runner take, at the boundary of its expiration', () =>
+    onEach(['sqlite', 'pg'], (dialect) =>
+      Effect.runPromise(Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const storage = yield* RunnerStorage.RunnerStorage
+        const shard = ShardId.make('default', 1)
+        const holder = RunnerAddress.make('a', 1)
+        const other = RunnerAddress.make('b', 1)
+        const ago = (seconds: number) =>
+          dialect === 'pg'
+            ? sql.unsafe(`UPDATE cluster_locks SET acquired_at = NOW() - INTERVAL '${seconds} seconds'`)
+            : sql.unsafe(`UPDATE cluster_locks SET acquired_at = datetime(CURRENT_TIMESTAMP, '-${seconds} seconds')`)
+        const clock = sql.unsafe<{ now: string }>(
+          dialect === 'pg' ? 'SELECT CAST(NOW() AS TEXT) AS now' : 'SELECT CURRENT_TIMESTAMP AS now',
+        )
+        // PostgreSQL's clock moves between the check and the take, so its ages stand a tenth of a second off the
+        // boundary, where both readings fall on the same side of it.
+        const ages = dialect === 'pg' ? [33.5, 34.5, 34.9, 35.1, 35.5, 36.5] : [33, 34, 35, 36, 37]
+        for (const age of ages) {
+          // SQLite counts whole seconds: a reading that a tick of the second splits is made again.
+          for (;;) {
+            yield* storage.releaseAll(other)
+            expect(yield* storage.acquire(holder, [shard])).toHaveLength(1)
+            const [before] = yield* clock
+            yield* ago(age)
+            const held = yield* leased(shard.toString(), addressText(holder), 35)
+            const taken = (yield* storage.acquire(other, [shard])).length > 0
+            const [after] = yield* clock
+            if (dialect === 'sqlite' && before?.now !== after?.now) continue
+            expect([age, held]).toEqual([age, !taken])
+            break
+          }
+        }
+        yield* storage.releaseAll(other)
+        expect(yield* storage.acquire(holder, [shard])).toHaveLength(1)
+        expect(yield* leased(shard.toString(), addressText(other), 35)).toBe(false)
+      }).pipe(
+        Effect.provide(Layer.orDie(SqlRunnerStorage.layer).pipe(
+          Layer.provide(ShardingConfig.layer({ shardLockExpiration: Duration.seconds(35) })),
+          Layer.provideMerge(client(dialect)),
+        )),
+      ))), 30_000)
 })
 
 describe('the health of a runner', () => {
@@ -896,7 +942,7 @@ describe('the shards of a runner on Cluster', () => {
   /**
    * Runs `run` with a function that starts a runner of the runtime on one SQLite file, at a port, whose sharding names
    * `bell` and `ghost`, and whose runtime deploys `bell` until the scope the runner is started in closes. `said` is told what the runtime does. The lease is 3 s, as
-   * in the tests of two runners above.
+   * in the tests of two runners above, unless `locks` says otherwise.
    */
   const onFile = async (
     run: (
@@ -908,6 +954,10 @@ describe('the shards of a runner on Cluster', () => {
     ) => Effect.Effect<void, unknown, Scope.Scope | SqlClient.SqlClient>,
     options: Parameters<typeof launch>[0] = {},
     registration: Duration.Input = Duration.minutes(1),
+    locks: Readonly<{ refresh: Duration.Input; expiration: Duration.Input }> = {
+      refresh: Duration.millis(100),
+      expiration: Duration.seconds(3),
+    },
   ) => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
@@ -924,8 +974,8 @@ describe('the shards of a runner on Cluster', () => {
               shardsPerGroup,
               refreshAssignmentsInterval: Duration.millis(50),
               runnerHealthCheckInterval: Duration.millis(50),
-              shardLockRefreshInterval: Duration.millis(100),
-              shardLockExpiration: Duration.seconds(3),
+              shardLockRefreshInterval: locks.refresh,
+              shardLockExpiration: locks.expiration,
               entityMessagePollInterval: Duration.millis(100),
               entityRegistrationTimeout: registration,
             })),
@@ -994,6 +1044,81 @@ describe('the shards of a runner on Cluster', () => {
         expect(DateTime.toEpochMillis(yield* DateTime.now)).toBeGreaterThanOrEqual(at)
       }), { passivate: { millis: 200 } })
   }, 30_000)
+
+  test("a timer of an older version, stepped by the entity's loop, dies and writes nothing", () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const runner = yield* start(1)
+        yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
+        yield* create(runner, 'one')
+        const at = DateTime.toEpochMillis(yield* DateTime.now) + 1_000
+        yield* send(runner, 'one', { _tag: 'Ring', at }, 'm1')
+        // A launch of a newer version is recorded, and its runner is not up yet. This runner is the only one, and
+        // Cluster never marks its last runner unhealthy, so it keeps its shards, and the entity stays loaded.
+        yield* recordVersions('localhost:9', [{ name: 'Bell', version: 2 }])
+        yield* Effect.sleep('2500 millis')
+        expect(runner.count()).toBe(shardsPerGroup)
+        expect((yield* stateOf('one'))?.rung).toBe(false)
+      }), { passivate: { millis: 60_000 } }), 30_000)
+
+  test('an activation of an older version dies before it steps the restart', () => {
+    const unloaded: Array<string> = []
+    const restarts: Array<string> = []
+    let newer = false
+    return onFile((start) =>
+      Effect.gen(function*() {
+        const runner = yield* start(1, (said) => {
+          if (said._tag === 'Unloaded') unloaded.push(said.entity.id)
+          if (newer && said._tag === 'Applied' && said.event._tag === 'Restart') restarts.push(said.entity.id)
+        })
+        yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
+        yield* create(runner, 'one')
+        const at = DateTime.toEpochMillis(yield* DateTime.now) + 1_500
+        yield* send(runner, 'one', { _tag: 'Ring', at }, 'm1')
+        // The entity is unloaded before its timer is due, so that only the waker's activation can step it.
+        yield* until(Effect.sync(() => unloaded.length), (n) => n > 0)
+        yield* recordVersions('localhost:9', [{ name: 'Bell', version: 2 }])
+        newer = true
+        yield* Effect.sleep('3000 millis')
+        expect(runner.count()).toBe(shardsPerGroup)
+        expect((yield* stateOf('one'))?.rung).toBe(false)
+        expect(restarts).toEqual([])
+      }), { passivate: { millis: 200 } })
+  }, 30_000)
+
+  test("a step under a lease another runner took, or that expired, dies, a door's as the loop's", async () => {
+    for (const overwrite of ["address = 'localhost:9'", "acquired_at = datetime(CURRENT_TIMESTAMP, '-120 seconds')"]) {
+      await onFile(
+        (start) =>
+          Effect.gen(function*() {
+            const sql = yield* SqlClient.SqlClient
+            const runner = yield* start(1)
+            yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
+            yield* create(runner, 'one')
+            const now = DateTime.toEpochMillis(yield* DateTime.now)
+            yield* send(runner, 'one', { _tag: 'Ring', at: now + 1_000 }, 'm1')
+            const held = runner.context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
+            const shard = held.getShardId(EntityId.make('one'), 'default').toString()
+            // Cluster refreshes the lease only after 20 s here, so this runner still holds the shard meanwhile.
+            yield* sql.unsafe(`UPDATE cluster_locks SET ${overwrite} WHERE shard_id = '${shard}'`)
+            yield* Effect.provide(
+              Effect.flatMap(doorOf('Bell').client, (clientOf) =>
+                clientOf('one').Message(
+                  { version: 1, request: caller('m2'), message: JSON.stringify({ _tag: 'Poke' }) },
+                  { discard: true },
+                )),
+              runner.context,
+            )
+            yield* Effect.sleep('2500 millis')
+            expect(runner.holds('one')).toBe(true)
+            expect(yield* stateOf('one')).toMatchObject({ rung: false, n: 0 })
+          }),
+        { passivate: { millis: 60_000 } },
+        Duration.minutes(1),
+        { refresh: Duration.seconds(30), expiration: Duration.seconds(60) },
+      )
+    }
+  }, 60_000)
 
   test('an entity left with work is activated by the runner that gains its shard', () =>
     onFile((start) =>

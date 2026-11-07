@@ -1,8 +1,9 @@
 /**
  * The runtime on Effect Cluster: the `Sharding` a runner of the runtime runs, built once the runner's versions are
- * recorded, with a `RunnerHealth` that keeps the shards off a runner of an older version, and the door, Cluster's
- * entity of a program, whose steps commit only at the newest version (decision 0159). The runtime steps what reaches
- * a door (decisions 0160, 0161), and learns the shards its runner holds from a singleton of each (decision 0162).
+ * recorded, with a `RunnerHealth` that keeps the shards off a runner of an older version, the door, Cluster's entity
+ * of a program, and the guard, which lets a step commit only at the newest version and under the shard's lease
+ * (decisions 0159, 0175). The runtime steps what reaches a door (decisions 0160, 0161), and learns the shards its
+ * runner holds from a singleton of each (decision 0162).
  */
 import {
   ClusterSchema,
@@ -27,16 +28,20 @@ import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
+import * as PrimaryKey from 'effect/PrimaryKey'
 import type * as Scope from 'effect/Scope'
 import * as Schema from 'effect/Schema'
 import { Rpc } from 'effect/rpc'
 import { SqlClient } from 'effect/sql'
 import { type Address, InvariantDefect, type Program, type Types, versionOf } from './program.ts'
 import { type Delivered, launchWith, type OnCluster, type Operating, type Options, type Runtime } from './runtime.ts'
-import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
+import { createTables, leased, newestVersion, outranked, recordVersions } from './storage.ts'
 
-/** The text a runner's address is recorded under. */
-export const addressText = (address: RunnerAddress.RunnerAddress): string => `${address.host}:${address.port}`
+/**
+ * The text a runner's address is recorded under: `host:port`, the address's primary key, which Cluster's
+ * `SqlRunnerStorage` writes as a lease's `address` too (decision 0175).
+ */
+export const addressText = (address: RunnerAddress.RunnerAddress): string => PrimaryKey.value(address)
 
 /**
  * A `RunnerHealth` that answers a runner alive only where `launched` does, and where the runner runs the newest
@@ -146,9 +151,8 @@ export const doorOf = <const Name extends string>(name: Name) =>
 
 /**
  * Dies where a launch recorded a newer version of `program` than this runner runs, inside the step's transaction,
- * so that the step commits only at the newest version. Cluster restarts the entity after a defect of its handler,
- * without end, and saves no reply, so the message is delivered again until its shard moves to a runner of the
- * newest version (decision 0159).
+ * so that the step commits only at the newest version. The guard of `onCluster` runs it first in every step
+ * (decisions 0159, 0175).
  */
 export const atNewest = (program: Pick<Program<Types>, 'name' | 'migrations'>) =>
   Effect.flatMap(newestVersion(program.name), (newest) => {
@@ -161,11 +165,10 @@ export const atNewest = (program: Pick<Program<Types>, 'name' | 'migrations'>) =
   })
 
 /**
- * The handlers of the door of `program`: each request is stepped by `step` in Cluster's transaction, once `atNewest`
- * has found this runner's version the newest (decision 0159).
+ * The handlers of a program's door: each request is stepped by `step` in Cluster's transaction, whose first
+ * statement is the runtime's guard (decisions 0159, 0175).
  */
 const handlersOf = <R>(
-  program: Pick<Program<Types>, 'name' | 'migrations'>,
   step: (delivered: Delivered | Operating, requestId: string) => Effect.Effect<string, never, R>,
   resumed: (receiver: Address, requestId: string) => Effect.Effect<void>,
 ) => {
@@ -177,21 +180,18 @@ const handlersOf = <R>(
       requestId: Snowflake.Snowflake
     }>,
   ) =>
-    Effect.andThen(
-      atNewest(program),
-      step({
-        _tag,
-        id: address.entityId,
-        version: payload.version,
-        request: payload.request,
-        message: payload.message,
-        ...(payload.keep === undefined ? {} : { keep: payload.keep }),
-      }, String(requestId)),
-    )
+    step({
+      _tag,
+      id: address.entityId,
+      version: payload.version,
+      request: payload.request,
+      message: payload.message,
+      ...(payload.keep === undefined ? {} : { keep: payload.keep }),
+    }, String(requestId))
   const operate = (_tag: Operating['_tag']) =>
   (
     { address, requestId }: Readonly<{ address: Readonly<{ entityId: string }>; requestId: Snowflake.Snowflake }>,
-  ) => Effect.andThen(atNewest(program), step({ _tag, id: address.entityId }, String(requestId)))
+  ) => step({ _tag, id: address.entityId }, String(requestId))
   return {
     Create: handle('Create'),
     Message: handle('Message'),
@@ -333,7 +333,25 @@ export const onCluster: Effect.Effect<
             ),
             (holds) => holds ? Effect.failCause(cause) : Effect.never,
           ))
+    const runner = Option.map(config.runnerAddress, addressText)
+    // Rounded up, as Cluster's `SqlRunnerStorage` rounds it, so that the lease's check is the complement of its take.
+    const expiration = Math.ceil(Duration.toSeconds(config.shardLockExpiration))
     return {
+      guard: (program, id) =>
+        Effect.andThen(
+          atNewest(program),
+          Effect.suspend(() => {
+            const shard = sharding.getShardId(EntityId.make(id), group).toString()
+            if (Option.isNone(runner)) {
+              const reason = `a process with no runner address steps the shard ${shard}`
+              return Effect.die(new InvariantDefect({ reason }))
+            }
+            return Effect.flatMap(leased(shard, runner.value, expiration), (held) =>
+              held ? Effect.void : Effect.die(new InvariantDefect({
+                reason: `the lease of the shard ${shard} does not name the runner ${runner.value}, or has expired`,
+              })))
+          }),
+        ).pipe(Effect.provideService(SqlClient.SqlClient, sql)),
       shards: config.shardsPerGroup,
       shardOf: (id) => sharding.getShardId(EntityId.make(id), group).id,
       holds: (shard) => sharding.hasShardId(ShardId.make(group, shard)),
@@ -355,7 +373,7 @@ export const onCluster: Effect.Effect<
         const answer = Schema.encodeSync(answerCodec(program))
         const created = Schema.encodeSync(creationCodec)
         const operated = Schema.encodeSync(operatedCodec)
-        const handlers = handlersOf(program, (delivered, requestId) =>
+        const handlers = handlersOf((delivered, requestId) =>
           Effect.map(step(delivered, requestId), (stepped) =>
             stepped._tag === 'Create'
               ? created(stepped.answer)

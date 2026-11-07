@@ -54,26 +54,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   statement fail with a `SqlError`. It would be decided by:
   - a release of Effect with the fix, after which a fork that keeps the transaction fails where it runs;
   - the spikes and the tests of the runtime run at that release, which a fork the rule missed would then fail.
-- **A step on Cluster that is not a door's, and the shard's lease.** On Cluster only a door's step reads the
-  newest version recorded in its transaction
-  ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)). A step
-  of the entity's own loop, as a timer or an operation's completion, and the `Restart` of an activation commit
-  without it (`applyOnCluster` and `activateOnCluster` in `src/runtime.ts`). So an older runner still steps the
-  entities it holds until the health check takes its shards. No step reads the shard's lease in `cluster_locks`
-  either, which [decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)
-  found a transaction can read, and which
-  [decision 0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)
-  names the guard of a runner whose finalizer did not run. The count of `steps`
-  ([decision 0161](decisions/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md))
-  refuses a row another runner wrote, so no row is lost. What the gap costs is a step of an older version, and a
-  frozen runner's step where the other runner has not written yet. It would be decided by:
-  - a test with two runners on one file, in which a timer of an entity the older runner holds falls due after a
-    newer launch is recorded, and fails where the loop's step commits;
-  - whether the version and the lease are read by `settle`, which every step on Cluster runs first in its
-    transaction, so that one check covers the door, the loop and an activation;
-  - whether a lease read in the step's transaction is a premise of Cluster's storage that no release promises, and
-    so a guard beside the count, or the fence of
-    [Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058) to wait for.
 - **A rename on Cluster.** A launch's `renames` move the runtime's rows to the new name, in one transaction
   ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). Cluster's rows of a
   door's requests, in `cluster_messages` and `cluster_replies`, are stored under the entity's type, which is the
