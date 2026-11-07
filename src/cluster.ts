@@ -253,14 +253,16 @@ export const onCluster: Effect.Effect<
      * 0085). The latest reply is reset only while `resettable` holds of it, as the engine resets only a `Suspended`
      * one: a concurrent retry may have reset it and stored a step's reply since, and a reset of that reply would apply
      * the message again once its `keep` is past (decision 0165). A reset that finds a newer reply leaves it, and the
-     * send after it is given that reply. It gives whether it called the reset, whose result it does not read
-     * (decision 0092).
+     * send after it is given that reply. The result of the reset is not read (decision 0092). `kept`, an operation's,
+     * keeps the request's id before the reset, and the reset is called only where it gives that the asker's work still
+     * holds. The function gives false where the work has ended, and true otherwise (decisions 0092, 0170).
      */
     const reset = (
       name: string,
       tag: Delivered['_tag'],
       sent: Omit<Delivered, '_tag'>,
       resettable: (latest: Reply.Encoded) => boolean,
+      kept?: (requestId: string) => Effect.Effect<boolean>,
     ) =>
       Effect.gen(function*() {
         const entityId = EntityId.make(sent.id)
@@ -270,9 +272,10 @@ export const onCluster: Effect.Effect<
           shardId: sharding.getShardId(entityId, group),
         })
         const requestId = yield* messages.requestIdForPrimaryKey({ address, tag, id: primaryKey(sent) })
-        if (Option.isNone(requestId)) return false
+        if (Option.isNone(requestId)) return true
         const latest = (yield* messages.repliesForUnfiltered([requestId.value])).at(-1)
-        if (latest === undefined || !resettable(latest)) return false
+        if (latest === undefined || !resettable(latest)) return true
+        if (kept !== undefined && !(yield* kept(String(requestId.value)))) return false
         yield* sharding.reset(requestId.value, { expectedReplyId: Snowflake.Snowflake(latest.id) })
         return true
       })
@@ -288,18 +291,28 @@ export const onCluster: Effect.Effect<
     /**
      * Where `call` fails, and Cluster saved a failure of its own as the request's latest reply, resets that reply
      * before the failure is given, so that a retry under the same request id is delivered again. A failure that saved
-     * nothing died at the sender, and a retry sends the request again (decision 0168).
+     * nothing died at the sender, and a retry sends the request again (decision 0168). A keep or a reset that fails
+     * gives the request's own failure, and the next retry keeps and resets again. The keep and the reset are not
+     * interrupted halfway, so that a reset never runs without the keep before it. Where `kept` finds the asker's work
+     * ended, nothing waits for the answer, and the call waits until the operation is interrupted: a retry would send
+     * the request anew once a step has deleted its rows, and apply it to the receiver again (decisions 0092, 0170).
      */
     const resettingSavedFailure = <A, E>(
       name: string,
       tag: Delivered['_tag'],
       sent: Omit<Delivered, '_tag'>,
       call: Effect.Effect<A, E>,
+      kept?: (requestId: string) => Effect.Effect<boolean>,
     ): Effect.Effect<A, E> =>
-      Effect.onError(
-        call,
-        (cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.ignore(reset(name, tag, sent, failureSaved)),
-      )
+      Effect.catchCause(call, (cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause)
+          : Effect.flatMap(
+            Effect.uninterruptible(
+              Effect.catchCause(reset(name, tag, sent, failureSaved, kept), () => Effect.succeed(true)),
+            ),
+            (holds) => holds ? Effect.failCause(cause) : Effect.never,
+          ))
     return {
       shards: config.shardsPerGroup,
       shardOf: (id) => sharding.getShardId(EntityId.make(id), group).id,
@@ -336,7 +349,7 @@ export const onCluster: Effect.Effect<
       },
       // A failure of Cluster's client or storage is no answer of the program's, and is a defect, as a failure of the
       // runtime's own storage is.
-      create: (program, sent) =>
+      create: (program, sent, kept) =>
         resettingSavedFailure(
           program.name,
           'Create',
@@ -346,8 +359,9 @@ export const onCluster: Effect.Effect<
               clientOf(sent.id).Create({ version: sent.version, request: sent.request, message: sent.message }),
               Schema.decodeEffect(creationCodec),
             )),
+          kept,
         ).pipe(Effect.orDie),
-      send: (program, sent) => {
+      send: (program, sent, kept) => {
         const answered = Schema.decodeEffect(answerCodec(program))
         const once = resettingSavedFailure(
           program.name,
@@ -363,6 +377,7 @@ export const onCluster: Effect.Effect<
               }),
               answered,
             )),
+          kept,
         )
         // Cluster's client gives a stored answer as it gives a new one, so either answer that is no reply is reset
         // and the message sent once more: the second answer is a step's, made as the entity is then (decision 0085).

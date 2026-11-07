@@ -555,20 +555,26 @@ export interface OnCluster {
    */
   readonly others: Readonly<{ version: Effect.Effect<number, unknown>; millis: number }>
   /**
-   * A caller's creation, sent through the program's door by Cluster's client, from whatever runner the caller is on:
-   * what the door's step answered it (decision 0165).
+   * A creation, sent through the program's door by Cluster's client, from whatever runner the sender is on: what the
+   * door's step answered it (decision 0165). A failure Cluster saved as its reply is reset before it is given
+   * (decision 0168). `kept` is an operation's: the client calls it with the request's Cluster id before that reset,
+   * and it gives whether the asker's work still holds. Where the work has ended, the client neither resets nor gives
+   * the failure, and waits until it is interrupted (decisions 0092, 0170).
    */
   readonly create: <T extends Types>(
     program: Program<T>,
     sent: Omit<Delivered, '_tag' | 'keep'>,
+    kept?: (requestId: string) => Effect.Effect<boolean>,
   ) => Effect.Effect<Creation>
   /**
-   * A caller's message, sent through the program's door by Cluster's client. An answer `Suspended` or `NotFound` is
-   * no reply: Cluster's row of it is reset, and the message sent again, whose answer is given (decisions 0085, 0165).
+   * A message, sent through the program's door by Cluster's client. An answer `Suspended` or `NotFound` is no reply:
+   * Cluster's row of it is reset, and the message sent again, whose answer is given (decisions 0085, 0165). A failure
+   * Cluster saved, and `kept`, are as for `create`.
    */
   readonly send: <T extends Types>(
     program: Program<T>,
     sent: Omit<Delivered, '_tag'>,
+    kept?: (requestId: string) => Effect.Effect<boolean>,
   ) => Effect.Effect<Reply<T['rejection']> | Readonly<{ _tag: 'Suspended' }>>
   /**
    * An operator's `Resume` or `Discard`, sent through the program's door by Cluster's client, from whatever runner
@@ -2128,6 +2134,16 @@ export const launchWith = (
         (operator) => operator === null ? Effect.succeed<Operated>({ _tag: 'NotFound' }) : Deferred.await(operator),
       )
 
+    /**
+     * On Cluster: what keeps the Cluster id of an operation's request before its client resets a failure Cluster
+     * saved, in a transaction of its own (decision 0092). The transaction checks no lease, since it writes an id and no
+     * state. A caller's request keeps no id: its rows stay in Cluster's tables (decision 0090).
+     */
+    const keptFor = <T extends Types>(deployed: Deployment<T>, request: Request<T['sender']>) =>
+      request._tag === 'Operation'
+        ? (requestId: string) => sql.withTransaction(deployed.storage.keepSent(requestId, request)).pipe(Effect.orDie)
+        : undefined
+
     const create = <T extends Types>(
       deployed: Deployment<T>,
       id: string,
@@ -2150,7 +2166,8 @@ export const launchWith = (
         // On Cluster a creation, a caller's or an operation's, goes through the door's client (decisions 0165, 0167).
         if (cluster !== null) {
           const version = versionOf(deployed.program)
-          return yield* cluster.create(deployed.program, { id, version, request: requested, message: JSON.stringify(written) })
+          const sent = { id, version, request: requested, message: JSON.stringify(written) }
+          return yield* cluster.create(deployed.program, sent, keptFor(deployed, request))
         }
         // Detached from the caller: a creation committed is always started, and its entity loaded (decision 0079).
         const asked = yield* detached(deployed, holding(entity)(Effect.gen(function*() {
@@ -2214,7 +2231,8 @@ export const launchWith = (
         if (cluster !== null) {
           const version = versionOf(deployed.program)
           const sent = { id, version, request: requested, message: JSON.stringify(written) }
-          return yield* cluster.send(deployed.program, keep === undefined ? sent : { ...sent, keep })
+          const kept = keptFor(deployed, request)
+          return yield* cluster.send(deployed.program, keep === undefined ? sent : { ...sent, keep }, kept)
         }
         const event: Machine.Offered<T> = keep === undefined
           ? { _tag: 'Receive', request, message }

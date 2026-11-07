@@ -256,10 +256,10 @@ test('on Cluster, an id kept under work goes with it, and a pending one with the
           (rows) => rows.map(({ id }) => id),
         )
       const ask = { entity: { name: 'Asker', id: 'a' }, key: { name: 'ask' }, incarnation: 1 }
-      yield* asking.keepSent(held, ask)
-      yield* asking.keepSent(held, ask)
+      expect(yield* asking.keepSent(held, ask)).toBe(true)
+      expect(yield* asking.keepSent(held, ask)).toBe(true)
       // The work of the second incarnation no longer holds: its request was answered after its work ended.
-      yield* asking.keepSent(late, { ...ask, incarnation: 2 })
+      expect(yield* asking.keepSent(late, { ...ask, incarnation: 2 })).toBe(false)
       yield* asking.pendSent(told)
       yield* asking.forgetPending
       expect(yield* ids('cluster_messages')).toEqual([held])

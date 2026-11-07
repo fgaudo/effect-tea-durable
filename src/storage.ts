@@ -1181,12 +1181,13 @@ export interface Storage<T extends Types> {
   readonly waiters: (id: string) => Effect.Effect<ReadonlyArray<Readonly<{ name: string; id: string }>>>
   /**
    * On Cluster: keeps the Cluster request id `requestId` of a request the operation `asked` sent, under its work if
-   * the asker's work still holds, and pending otherwise. An id already kept is not kept again (decision 0090).
+   * the asker's work still holds, and pending otherwise. An id already kept is not kept again (decision 0090). It
+   * gives whether the work still holds (decision 0092).
    */
   readonly keepSent: (
     requestId: string,
     asked: Readonly<{ entity: Readonly<{ name: string; id: string }>; key: Key; incarnation: number }>,
-  ) => Effect.Effect<void>
+  ) => Effect.Effect<boolean>
   /** On Cluster: keeps the Cluster request id `requestId` pending, as a request nothing waits for (decision 0092). */
   readonly pendSent: (requestId: string) => Effect.Effect<void>
   /**
@@ -2326,7 +2327,7 @@ export const storage = <T extends Types>(
         WHERE name = ${asked.entity.name} AND id = ${asked.entity.id} AND key = ${asking.key}
           AND parameter = ${asking.parameter} AND incarnation = ${asked.incarnation}
       `
-      if (Number(held?.held ?? 0) === 0) return yield* pendSent(requestId)
+      if (Number(held?.held ?? 0) === 0) return yield* Effect.as(pendSent(requestId), false)
       yield* sql`
         INSERT INTO sent_requests ${
         sql.insert({
@@ -2340,6 +2341,7 @@ export const storage = <T extends Types>(
       }
         ON CONFLICT (request_id) DO NOTHING
       `
+      return true
     }).pipe(Effect.orDie)
 
   const pendSent = (requestId: string) =>
