@@ -1,6 +1,7 @@
 # 0178. A server of the orders on Cluster is run as a process, on one runner and then on two
 
-**Status:** proposed, 2026-11-07, for the step A server on Cluster of the [roadmap](../roadmap.md).
+**Status:** accepted, 2026-11-08, with the step A server on Cluster of the [roadmap](../roadmap.md). Proposed on
+2026-11-07, and read by a review in another session before it was taken.
 
 ## Context
 
