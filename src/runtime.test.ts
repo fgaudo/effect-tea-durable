@@ -4789,9 +4789,9 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
 test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {
   // Decision 0116: an entity's wait ends with an item of its queue, and nothing races its take. A take raced against a
   // timeout loses the event when the racing fiber is preempted at the third step after its resumption, and its caller
-  // waits for ever. Seed 54, pinned, reaches it against the wait written as `Effect.timeoutOption` of the take, mapped
-  // to a `Passivate` where it runs out, with the sleep and the pass-over left in place unused, under the writes of a
-  // step of decision 0137. A seed draws its schedule from the yields of the code it runs, so another form of the old
+  // waits for ever. Seed 818138843, pinned, reaches it against the wait written as `Effect.timeoutOption` of the take,
+  // mapped to a `Passivate` where it runs out, with the sleep and the pass-over left in place unused, under the loop
+  // forked without the step's transaction of decision 0161. A seed draws its schedule from the yields of the code it runs, so another form of the old
   // wait needs a seed of its own, which `bun run test:explore` finds in a round or two.
   explored((window) =>
     Effect.gen(function*() {
@@ -4813,7 +4813,7 @@ test('a message that arrives as the wait of its entity runs out is handled, unde
           yield* runtime.settled
           return reply
         }))
-    }), { _tag: 'Accepted' }, { open: false, pinned: [54] })
+    }), { _tag: 'Accepted' }, { open: false, pinned: [818138843] })
 }, 60_000)
 
 test('settled never returns between a crash and the activation its due timer brings, under prioritized schedules', () => {
@@ -4821,7 +4821,8 @@ test('settled never returns between a crash and the activation its due timer bri
   // crash makes its entity leave without counting it as unloading, so it leaves and pokes the waker in one step. A
   // `settled` that looked between two steps would find the entity neither held nor known to the waker, with its timer
   // due. The message's commit waits at a gate while the timer comes due, then dies once the window is open. A leave
-  // split in two steps returns early at 18 seeds of 2,000, the first 39, pinned, under the yields of decision 0134.
+  // split in two steps, the entity taken out of the process in one and the waker poked in the next, returns early at
+  // seed 394, pinned, under the loop forked without the step's transaction of decision 0161.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -4859,7 +4860,7 @@ test('settled never returns between a crash and the activation its due timer bri
           yield* runtime.settled
           return { early, restarted }
         }))
-    }), { early: false, restarted: true }, { open: false, pinned: [39] })
+    }), { early: false, restarted: true }, { open: false, pinned: [394] })
 }, 60_000)
 
 test('settled never returns while the waker rests from a reading another entity left during, under bounded schedules', () => {
