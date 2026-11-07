@@ -508,10 +508,14 @@ export type Delivered = Readonly<{
   keep?: number
 }>
 
-/** What a door's step answers: a message's answer, or a creation's. */
+/** An operator's `Resume` or `Discard` that reaches a program's door on Cluster, for the entity `id` (decision 0166). */
+export type Operating = Readonly<{ _tag: 'Resume' | 'Discard'; id: string }>
+
+/** What a door's step answers: a message's answer, a creation's, or what an operator's event did. */
 export type DoorAnswer<Reason> =
   | Readonly<{ _tag: 'Message'; answer: Reply<Reason> | Readonly<{ _tag: 'Suspended' }> }>
   | Readonly<{ _tag: 'Create'; answer: Creation }>
+  | Readonly<{ _tag: 'Operated'; answer: Operated }>
 
 /**
  * What the runtime is given to run on Effect Cluster (decisions 0081, 0092, 0161): how a deploy registers its
@@ -520,7 +524,7 @@ export type DoorAnswer<Reason> =
 export interface OnCluster {
   readonly register: <T extends Types>(
     program: Program<T>,
-    step: (delivered: Delivered) => Effect.Effect<DoorAnswer<T['rejection']>>,
+    step: (delivered: Delivered | Operating) => Effect.Effect<DoorAnswer<T['rejection']>>,
     idle: number,
   ) => Effect.Effect<void, never, Scope.Scope>
   /** How many shards the doors' group has: Cluster's `shardsPerGroup`. */
@@ -560,6 +564,11 @@ export interface OnCluster {
     program: Program<T>,
     sent: Omit<Delivered, '_tag'>,
   ) => Effect.Effect<Reply<T['rejection']> | Readonly<{ _tag: 'Suspended' }>>
+  /**
+   * An operator's `Resume` or `Discard`, sent through the program's door by Cluster's client, from whatever runner
+   * the operator is on: what the door's step answered it (decision 0166).
+   */
+  readonly operate: <T extends Types>(program: Program<T>, operating: Operating) => Effect.Effect<Operated>
 }
 
 /** An entity loaded in this process: its machine, the events waiting, and what is running for it. */
@@ -1506,8 +1515,8 @@ export const launchWith = (
 
     /**
      * On Cluster, a request reaches an entity through its door, sent by Cluster's client, which the runtime gives a
-     * caller and does not give an operation or an operator yet: one sent in the process would take the entity's lock
-     * and read the database outside a transaction, which a door's step waits on (decisions 0161, 0165).
+     * caller and an operator and does not give an operation yet: one sent in the process would take the entity's lock
+     * and read the database outside a transaction, which a door's step waits on (decisions 0161, 0165, 0166).
      */
     const notYetOnCluster = (what: string) =>
       new InvariantDefect({ reason: `${what} on Cluster is sent through the door's client, which is not code yet` })
@@ -1671,7 +1680,7 @@ export const launchWith = (
      * Cluster delivers the request again (decision 0162).
      */
     const doorStep = <T extends Types>(deployed: Deployment<T>) =>
-    (delivered: Delivered): Effect.Effect<DoorAnswer<T['rejection']>> => {
+    (delivered: Delivered | Operating): Effect.Effect<DoorAnswer<T['rejection']>> => {
       const { program, storage: stored } = deployed
       const { id } = delivered
       const entity: Address = { name: program.name, id }
@@ -1708,7 +1717,7 @@ export const launchWith = (
             const reply = transition.outputs.find((output) => output._tag === 'CreationReplied')
             answer = { _tag: 'Create', answer: reply?._tag === 'CreationReplied' ? reply.reply : { _tag: 'AlreadyExists' } }
           }
-        } else {
+        } else if (delivered._tag === 'Message') {
           const { request, message } = yield* stored.delivered(delivered.version, delivered.request, delivered.message)
           if (stepped.loaded === null) return { _tag: 'Message', answer: { _tag: 'NotFound' } }
           const key = Machine.requestKey(program, request)
@@ -1738,6 +1747,13 @@ export const launchWith = (
             }
           }
           answer = replied
+        } else {
+          // An operator's event is stepped as on one process, in the door's transaction, and answered with what it
+          // did (decisions 0114, 0166).
+          if (stepped.loaded === null) return { _tag: 'Operated', answer: { _tag: 'NotFound' } }
+          const before = stepped.machine!
+          const transition = yield* stepIn(deployed, stepped, entity, { _tag: delivered._tag }, now)
+          answer = { _tag: 'Operated', answer: operated(delivered._tag, before, transition.machine) }
         }
         yield* finishIn(deployed, stepped, entity)
         return answer
@@ -2067,14 +2083,15 @@ export const launchWith = (
 
     /**
      * An operator's `Resume` or `Discard`: offered while the entity is held, as a caller's message is, and answered
-     * with what it did once applied (decision 0114).
+     * with what it did once applied (decision 0114). On Cluster it is sent through the door's client, and stepped in
+     * the door's transaction (decision 0166).
      */
     const operate = <T extends Types>(
       deployed: Deployment<T>,
       id: string,
       event: Extract<Machine.Offered<T>, { _tag: 'Resume' | 'Discard' }>,
     ): Effect.Effect<Operated> =>
-      cluster !== null ? Effect.die(notYetOnCluster(`a ${event._tag}`)) : Effect.flatMap(
+      cluster !== null ? cluster.operate(deployed.program, { _tag: event._tag, id }) : Effect.flatMap(
         withEntity(deployed, id, (loaded): Effect.Effect<Deferred.Deferred<Operated> | null> =>
           loaded === null ? Effect.succeed(null) : Effect.uninterruptible(Effect.gen(function*() {
             // Registered and offered under the entity's lock, and in one step: the line keeps the order of the

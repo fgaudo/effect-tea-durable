@@ -469,6 +469,29 @@ describe('the runtime on Cluster', () => {
       })
     })), 30_000)
 
+  test('an operator’s resume and discard go through the door, each a request of its own', () =>
+    onRunner(Effect.gen(function*() {
+      const sender = { user: 'u' }
+      expect(yield* handle!.resume('one')).toEqual({ _tag: 'NotFound' })
+      yield* handle!.create('one', { start: 0 }, { requestId: 'c1', sender })
+      expect(yield* handle!.discard('one')).toEqual({ _tag: 'NotSuspended' })
+      expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender })).toEqual({ _tag: 'Suspended' })
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })).toEqual({
+        _tag: 'Suspended',
+      })
+      // The message the entity died on is handled next, by the loop, which dies on it again.
+      expect(yield* handle!.resume('one')).toEqual({ _tag: 'Resumed' })
+      yield* eventually(handle!.suspended, (listed) => listed.length === 1)
+      // A discard is a request of its own, stepped again, and not answered from the reply Cluster saved before.
+      expect(yield* handle!.discard('one')).toEqual({ _tag: 'Discarded' })
+      // A message answered Suspended was not queued: its retry is reset, and handled once the entity is back.
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })).toEqual({
+        _tag: 'Accepted',
+      })
+      expect(yield* stateOf).toEqual({ n: 1, asking: false })
+      expect(yield* handle!.discard('one')).toEqual({ _tag: 'NotSuspended' })
+    })), 30_000)
+
   test('a caller’s keep reaches the door, and its reply is kept until the time it gives', () =>
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient

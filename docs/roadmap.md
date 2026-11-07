@@ -34,9 +34,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    A caller's `create` and `send` go through Cluster's client of the door, with `keep` in the payload, and a message
    answered `Suspended` or `NotFound` is reset and sent again
    ([decision 0165](decisions/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
-   proposed). What is left of requests on Cluster:
-   - an operation's request and an operator's `Resume` and `Discard`, which still die there. They go through the
-     door's client too, as decisions 0085, 0090 and 0092 decide, with `Resumed` told to the senders that wait;
+   proposed). An operator's `Resume` and `Discard` go through it too, each a request of its own
+   ([decision 0166](decisions/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md), proposed). What is left of requests on Cluster:
+   - an operation's request, which still dies there. It goes through the door's client too, as decisions 0085, 0090
+     and 0092 decide, and the step that resumes or discards an entity tells `Resumed` to the senders that wait;
    - the deletion of Cluster's rows by the Cluster `requestId` a door's handler is given: an operation's with the
      work that asked ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)), and a
      caller's with its reply once past its time (decision 0165). Until then Cluster answers a retry past `keep`

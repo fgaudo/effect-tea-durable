@@ -29,7 +29,7 @@ import * as Schema from 'effect/Schema'
 import { Rpc } from 'effect/rpc'
 import { SqlClient } from 'effect/sql'
 import { InvariantDefect, type Program, type Types, versionOf } from './program.ts'
-import { type Delivered, launchWith, type OnCluster, type Options, type Runtime } from './runtime.ts'
+import { type Delivered, launchWith, type OnCluster, type Operating, type Options, type Runtime } from './runtime.ts'
 import { createTables, newestVersion, outranked, recordVersions } from './storage.ts'
 
 /** The text a runner's address is recorded under. */
@@ -111,14 +111,18 @@ const primaryKey = ({ version, request }: Readonly<{ version: number; request: s
 
 /**
  * The entity of the program `name` on Cluster, the door to the runtime's entity: one RPC for a creation and one for
- * a message (decision 0085). Each is persisted, and its handler runs in Cluster's transaction, so a step commits
- * with its reply (decision 0081). Its answer is the runtime's encoding of whatever the step answers, as text, and it
- * fails with nothing. A caller that stops waiting leaves its request to be handled (decision 0091).
+ * a message (decision 0085), and one for each event of an operator's (decision 0166). Each is persisted, and its
+ * handler runs in Cluster's transaction, so a step commits with its reply (decision 0081). Its answer is the
+ * runtime's encoding of whatever the step answers, as text, and it fails with nothing. A caller that stops waiting
+ * leaves its request to be handled (decision 0091). An operator's event has no primary key: each one sent is a
+ * request of its own, which a saved reply of an earlier one never answers (decision 0166).
  */
 export const doorOf = <const Name extends string>(name: Name) =>
   Entity.make(name, [
     Rpc.make('Create', { payload, success: Schema.String, primaryKey }),
     Rpc.make('Message', { payload, success: Schema.String, primaryKey }),
+    Rpc.make('Resume', { success: Schema.String }),
+    Rpc.make('Discard', { success: Schema.String }),
   ])
     .annotateRpcs(ClusterSchema.Persisted, true)
     .annotateRpcs(ClusterSchema.WithTransaction, true)
@@ -146,7 +150,7 @@ export const atNewest = (program: Pick<Program<Types>, 'name' | 'migrations'>) =
  */
 const handlersOf = <R>(
   program: Pick<Program<Types>, 'name' | 'migrations'>,
-  step: (delivered: Delivered) => Effect.Effect<string, never, R>,
+  step: (delivered: Delivered | Operating) => Effect.Effect<string, never, R>,
 ) => {
   const handle = (_tag: Delivered['_tag']) =>
   (
@@ -166,7 +170,9 @@ const handlersOf = <R>(
         ...(payload.keep === undefined ? {} : { keep: payload.keep }),
       }),
     )
-  return { Create: handle('Create'), Message: handle('Message') }
+  const operate = (_tag: Operating['_tag']) => ({ address }: Readonly<{ address: Readonly<{ entityId: string }> }>) =>
+    Effect.andThen(atNewest(program), step({ _tag, id: address.entityId }))
+  return { Create: handle('Create'), Message: handle('Message'), Resume: operate('Resume'), Discard: operate('Discard') }
 }
 
 /**
@@ -185,6 +191,16 @@ export const answerCodec = <T extends Types>(program: Program<T>) =>
 const noReply = Schema.fromJsonString(Schema.Union([
   Schema.TaggedStruct('NotFound', {}),
   Schema.TaggedStruct('Suspended', {}),
+]))
+
+/** The text of what an operator's event did (decision 0166). */
+export const operatedCodec = Schema.fromJsonString(Schema.Union([
+  Schema.TaggedStruct('Resumed', {}),
+  Schema.TaggedStruct('Discarded', {}),
+  Schema.TaggedStruct('NotDiscarded', {}),
+  Schema.TaggedStruct('StillSuspended', { cause: Schema.String }),
+  Schema.TaggedStruct('NotSuspended', {}),
+  Schema.TaggedStruct('NotFound', {}),
 ]))
 
 /** The text of what a step answers a creation. */
@@ -259,9 +275,14 @@ export const onCluster: Effect.Effect<
       register: (program, step, idle) => {
         const answer = Schema.encodeSync(answerCodec(program))
         const created = Schema.encodeSync(creationCodec)
+        const operated = Schema.encodeSync(operatedCodec)
         const handlers = handlersOf(program, (delivered) =>
           Effect.map(step(delivered), (stepped) =>
-            stepped._tag === 'Create' ? created(stepped.answer) : answer(stepped.answer)).pipe(
+            stepped._tag === 'Create'
+              ? created(stepped.answer)
+              : stepped._tag === 'Operated'
+              ? operated(stepped.answer)
+              : answer(stepped.answer)).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
             ))
         return sharding.registerEntity(doorOf(program.name), Effect.succeed(handlers), {
@@ -295,6 +316,9 @@ export const onCluster: Effect.Effect<
             ? Effect.andThen(reset(program.name, sent), once)
             : Effect.succeed(first)).pipe(Effect.orDie)
       },
+      operate: (program, { _tag, id }) =>
+        Effect.flatMap(sharding.makeClient(doorOf(program.name)), (clientOf) =>
+          Effect.flatMap(clientOf(id)[_tag](), Schema.decodeEffect(operatedCodec))).pipe(Effect.orDie),
     }
   },
 )
@@ -302,8 +326,8 @@ export const onCluster: Effect.Effect<
 /**
  * The runtime of a runner of Effect Cluster: `launch`'s, whose deploys serve their programs through doors on the
  * runner's `Sharding`, which `sharding` builds, and which learn their shards from a singleton of each
- * (decision 0162). A caller's request goes through Cluster's client of the door (decision 0165). An operation's
- * request and an operator's are a later part of the roadmap's step Effect Cluster, and not code yet.
+ * (decision 0162). A caller's request and an operator's go through Cluster's client of the door (decisions 0165,
+ * 0166). An operation's request is a later part of the roadmap's step Effect Cluster, and not code yet.
  */
 export const launch = (
   options: Options = {},
