@@ -1549,6 +1549,26 @@ describe('renaming a program (decision 0156)', () => {
         ])
       }).pipe(Effect.orDie)))
 
+  test('on Cluster, a rename moves the senders a receiver tells of its resumption, and the request ids they sent', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const seller = named('Seller')
+        const key = { key: { name: 'ask' }, incarnation: 1, work, delivery: 'Idempotent', due: null } as const
+        yield* storage(asker, sql, undefined, true).write('a', created({ keys: [key], incarnations: 1 }), 0)
+        yield* storage(receiver, sql, undefined, true).write('r', created(), 0)
+        yield* storage(receiver, sql, undefined, true).wait('r', { name: 'Asker', id: 'a' })
+        const ask = { entity: { name: 'Asker', id: 'a' }, key: { name: 'ask' }, incarnation: 1 }
+        yield* storage(receiver, sql, undefined, true).keepSent('7', ask)
+        yield* rename(sql, [['Asker', 'Buyer'], ['Receiver', 'Seller']])
+        expect(yield* storage(receiver, sql, undefined, true).waiters('r')).toEqual([])
+        expect(yield* storage(seller, sql, undefined, true).waiters('r')).toEqual([{ name: 'Buyer', id: 'a' }])
+        const sent = yield* Effect.flatMap(
+          sql`SELECT sender_name FROM sent_requests`,
+          Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ sender_name: Schema.String }))),
+        )
+        expect(sent).toEqual([{ sender_name: 'Buyer' }])
+      }).pipe(Effect.orDie)))
+
   test("a rewritten request's text is the one the runtime writes for the new name, whatever its key holds", () =>
     database((sql) =>
       Effect.gen(function*() {

@@ -95,3 +95,7 @@ Other ways:
 - An operation can send to an entity on any runner, and waits for a suspended receiver at no cost.
 - Every `Resumed` leaves its own id pending, and the next step of any entity deletes its rows in Cluster's
   tables (decision 0169).
+- A rename moves the receiver's name and the sender's in `waiting`, with their other rows
+  ([decision 0156](0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). It is **tested** by `on Cluster,
+  a rename moves the senders a receiver tells of its resumption, and the request ids they sent` in
+  [`src/storage.test.ts`](../../src/storage.test.ts).

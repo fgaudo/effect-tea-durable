@@ -534,6 +534,7 @@ const namedTables = [
   'consumers',
   'cursors',
   'replies',
+  'waiting',
 ] as const
 
 /**
@@ -654,6 +655,7 @@ export const renamed = (
         yield* dialect === 'pg' ? inProcess(from, to) : inPlace(from, to)
         yield* sql`UPDATE replies SET sender_name = ${to} WHERE sender_name = ${from}`
         yield* sql`UPDATE sent_requests SET sender_name = ${to} WHERE sender_name = ${from}`
+        yield* sql`UPDATE waiting SET sender_name = ${to} WHERE sender_name = ${from}`
         yield* sql`UPDATE entities SET keyed_as = COALESCE(keyed_as, ${from}) WHERE name = ${from}`
         for (const table of namedTables) yield* sql`UPDATE ${sql(table)} SET name = ${to} WHERE name = ${from}`
       })
