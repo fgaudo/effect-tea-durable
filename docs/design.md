@@ -457,10 +457,18 @@ migration moves.
 
 A rename whose old name holds nothing moves nothing, so it may stay in the launch for as long as a database of the
 old name may be launched. A rename onto a name that holds an entity, a head of the log or a consumer dies, and
-moves nothing. An empty name, a name renamed to itself, a name both renamed and the new name of another, and two
-names renamed to one are refused before the database is held. A deploy of a program whose name the launch renames
-dies, since it is the old program. On Effect Cluster an entity's type is the name, and a rename there is decided
-with Cluster.
+moves nothing. An empty name, a name renamed to itself, and a name both renamed and the new name of another are
+refused before the database is held. Two names may be renamed to one, as a program renamed twice declares both of
+its former names: `{ a: 'c', b: 'c' }` ([decision 0176](decisions/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)). A deploy of a program whose name the launch
+renames dies, since it is the old program.
+
+On Effect Cluster other runners share the database, and Cluster stores a door's requests under the program's name.
+So the launch marks each old name renamed, in the transaction that moves the rows, and the newest version moves to
+the new name. The check of every step dies for a renamed name, a runner of it is outranked as an older version is,
+and a runner of the old code that launches again dies. The new program's door is registered under each old name
+too, and steps the entity under the new name, so a request Cluster saved under the old name is delivered. A door's
+step names an operation's sender by its new name, so that a retry sent under the old name is answered from the
+reply the rename wrote again, and not applied twice ([decision 0176](decisions/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)).
 
 ## Execution
 
@@ -1052,8 +1060,9 @@ leaves to the runtime is in [`cluster.md`](cluster.md).
 - A program's door is Cluster's entity of the program's name, with the RPCs `Create`, `Message`, `Resume`,
   `Discard` and `Resumed`. Each is persisted, and its handler steps the runtime's entity in Cluster's transaction, so
   a step commits with its reply ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)). A
-  rename ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)) does not move
-  Cluster's rows yet, which are stored under the entity's type: see [the open question](open-questions.md#running).
+  rename ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)) moves none of
+  Cluster's rows, which are stored under the entity's type. The program's door is registered under each old name
+  too, and steps what Cluster saved there ([decision 0176](decisions/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)).
 - A request is keyed by the version that keyed it and its `requestKey`. Cluster answers a retry within a version, and
   the runtime's replies answer one across versions
   ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).

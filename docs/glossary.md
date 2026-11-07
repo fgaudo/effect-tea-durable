@@ -72,7 +72,8 @@ Cluster's says so.
   recorded by a test when the migration is written. `migrationViolations` checks a program against its cases.
 - **Name.** What the runtime stores a program's entities under, and what other entities address them by. A process
   deploys a name once. A launch renames a program by moving what is stored under its old name to the new one, and a
-  renamed entity's idempotency keys are drawn from the name it held before its first rename.
+  renamed entity's idempotency keys are drawn from the name it held before its first rename. On Cluster the old
+  name is marked renamed, no runner steps it again, and the program's door stays registered under it.
 - **Note.** A decision, numbered, in [`decisions/`](decisions); what one is, and when it is taken, is in
   [`AGENTS.md`](../AGENTS.md).
 - **Operation.** Work that acts on the world, as a value of the program's own type. Its runner turns it into an effect

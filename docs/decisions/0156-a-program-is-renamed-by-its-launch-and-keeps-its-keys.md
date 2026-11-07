@@ -4,7 +4,9 @@
 [open question](../open-questions.md#storage-and-reading) of renaming a program. Changes
 [decision 0022](archive/0022-a-new-program-keeps-what-work-started-with.md), which leaves a rename outside the
 runtime. On PostgreSQL a rename writes a request's text again in the process, by
-[decision 0157](0157-the-storage-speaks-sqlite-and-postgresql.md).
+[decision 0157](0157-the-storage-speaks-sqlite-and-postgresql.md). On Cluster a rename
+marks the old name and keeps a door under it, and two names may be renamed to one, by
+[decision 0176](0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md).
 
 ## Context
 

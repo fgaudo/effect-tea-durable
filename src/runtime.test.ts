@@ -4995,7 +4995,6 @@ describe('renaming a program (decision 0156)', () => {
         [{ Toy: '' }, "the launch renames 'Toy' to '', and a name is a string that is not empty"],
         [{ Toy: 'Toy' }, "the launch renames 'Toy' to itself"],
         [{ Toy: 'Game', Game: 'Plaything' }, "the launch renames 'Toy' to 'Game', which it renames too"],
-        [{ Toy: 'Plaything', Game: 'Plaything' }, "the launch renames both 'Toy' and 'Game' to 'Plaything'"],
         // A name is stored as text, which a database holds as it is (decision 0157).
         [{ Toy: 'Toy\ud800' }, 'the launch renames "Toy" to "Toy\\ud800", and a name is text a database holds'],
       ] as const

@@ -198,16 +198,22 @@ export interface Options {
    * the new one in one transaction, before any deploy, and an entity keeps the idempotency keys of its work. A
    * rename whose old name holds nothing moves nothing, so it may stay here for as long as a database of the old
    * name may be launched. One onto a name that holds an entity, a head of the log or a consumer dies. So do an
-   * empty name, a name renamed to itself, a name both renamed and the new name of another, and two names renamed
-   * to one, before the database is held. A deploy of a name renamed dies (decision 0156).
+   * empty name, a name renamed to itself, and a name both renamed and the new name of another, before the database
+   * is held. Two names may be renamed to one, as a program renamed twice is: `{ a: 'c', b: 'c' }`. A deploy of a
+   * name renamed dies (decisions 0156, 0176). On Cluster the old name is marked renamed, so that no runner of the old
+   * code steps it again, and the new program's door is registered under each old name too, so that a request Cluster
+   * saved under the old name is delivered to the new program (decision 0176).
    */
   readonly renames?: Readonly<Record<string, string>>
 }
 
-/** The renames of a launch as pairs, or the launcher's defect where they cannot run as written (decision 0156). */
+/**
+ * The renames of a launch as pairs, or the launcher's defect where they cannot run as written (decision 0156). Two
+ * names renamed to one are not refused here: the storage refuses a move onto a name that holds an entity already
+ * (decision 0176).
+ */
 const renamesOf = (renames: Readonly<Record<string, string>>): ReadonlyArray<readonly [string, string]> => {
   const pairs = Object.entries(renames)
-  const targets = new Map<string, string>()
   for (const [from, to] of pairs) {
     const reason = typeof to !== 'string' || from === '' || to === ''
       ? `the launch renames '${from}' to '${String(to)}', and a name is a string that is not empty`
@@ -217,11 +223,8 @@ const renamesOf = (renames: Readonly<Record<string, string>>): ReadonlyArray<rea
       ? `the launch renames '${from}' to itself`
       : Object.hasOwn(renames, to)
       ? `the launch renames '${from}' to '${to}', which it renames too`
-      : targets.has(to)
-      ? `the launch renames both '${targets.get(to)}' and '${from}' to '${to}'`
       : null
     if (reason !== null) throw new InvariantDefect({ reason })
-    targets.set(to, from)
   }
   return pairs
 }
@@ -526,13 +529,16 @@ export interface OnCluster {
   /**
    * Registers the door of `program`, whose requests `step` steps, and whose `Resumed` from the entity `receiver`
    * calls `resumed` with it (decisions 0092, 0167). Each is given the Cluster request id of the request, in its
-   * decimal digits, in Cluster's transaction (decision 0169).
+   * decimal digits, in Cluster's transaction (decision 0169). The same door is registered under each name of
+   * `formerly`, the names the launch renames to the program's, so that what Cluster saved under one is stepped by
+   * the program (decision 0176).
    */
   readonly register: <T extends Types>(
     program: Program<T>,
     step: (delivered: Delivered | Operating, requestId: string) => Effect.Effect<DoorAnswer<T['rejection']>>,
     idle: number,
     resumed: (receiver: Address, requestId: string) => Effect.Effect<void>,
+    formerly: ReadonlyArray<string>,
   ) => Effect.Effect<void, never, Scope.Scope>
   /**
    * The version of each program this runner's `sharding` recorded, by name, or `null` on a process that holds no
@@ -886,7 +892,7 @@ export const launchWith = (
     if (cluster === null) yield* Scope.provide(hold, scope)
     yield* partitioned(partitions)
     // Nothing is deployed yet, so no entity is loaded while the rows move, and no reader reads (decision 0156).
-    yield* renamed([...renames])
+    yield* renamed([...renames], cluster !== null)
     // Everything the runtime runs is forked in `running`, which closes after the drain: a scope runs its finalizers
     // in the reverse order of their adding, so the drain, added after it, runs first (decision 0119).
     const running = yield* Scope.fork(scope)
@@ -1698,6 +1704,21 @@ export const launchWith = (
         }
       })
 
+    /** The address `entity` names now: the new name, where the launch renames the name it holds (decision 0176). */
+    const current = (entity: Address): Address => {
+      const name = renames.get(entity.name)
+      return name === undefined ? entity : { ...entity, name }
+    }
+    /**
+     * A request that reached a door, with its sender named as the launch names it. A runner of the old code may send
+     * under the old name until its shards move, and its request would then be keyed otherwise than the one the
+     * rename wrote again, and applied twice (decision 0176).
+     */
+    const sentNow = <S>(request: Request<S>): Request<S> =>
+      request._tag === 'Operation' && renames.has(request.entity.name)
+        ? { ...request, entity: current(request.entity) }
+        : request
+
     /** The defect of a door's step whose entity this runner may not load (decision 0162). */
     const unheld = (name: string, id: string) =>
       new InvariantDefect({ reason: `the shard of the entity ${id} of ${name} is not held by this runner` })
@@ -1732,7 +1753,9 @@ export const launchWith = (
         yield* loadIn(deployed, stepped, entity, now)
         let answer: DoorAnswer<T['rejection']>
         if (delivered._tag === 'Create') {
-          const { request, flags } = yield* stored.deliveredCreation(delivered.version, delivered.request, delivered.message)
+          const created = yield* stored.deliveredCreation(delivered.version, delivered.request, delivered.message)
+          const { flags } = created
+          const request = sentNow(created.request)
           if (request._tag === 'Operation') yield* stored.keepSent(requestId, request)
           if (stepped.loaded === null) {
             const started = Machine.start(program, id, flags, now, request)
@@ -1754,7 +1777,9 @@ export const launchWith = (
             answer = { _tag: 'Create', answer: reply?._tag === 'CreationReplied' ? reply.reply : { _tag: 'AlreadyExists' } }
           }
         } else if (delivered._tag === 'Message') {
-          const { request, message } = yield* stored.delivered(delivered.version, delivered.request, delivered.message)
+          const arrived = yield* stored.delivered(delivered.version, delivered.request, delivered.message)
+          const { message } = arrived
+          const request = sentNow(arrived.request)
           // Kept whatever the step answers: a request answered `Suspended` or `NotFound` is reset and answered again
           // under the same id, which is not kept twice (decision 0169).
           if (request._tag === 'Operation') yield* stored.keepSent(requestId, request)
@@ -2650,9 +2675,14 @@ export const launchWith = (
         // left with work (decisions 0092, 0162).
         if (cluster !== null) {
           // Nothing waits for the answer to `Resumed`, so its own Cluster request id is pending (decision 0169).
+          // A `Resumed` saved before a rename names the receiver by its old name (decision 0176).
           const resumed = (receiver: Address, requestId: string) =>
-            Effect.andThen(deployed.storage.pendSent(requestId), Effect.sync(() => wake(receiver)))
-          yield* Scope.provide(cluster.register(program, doorStep(deployed), passivate, resumed), deployed.scope)
+            Effect.andThen(deployed.storage.pendSent(requestId), Effect.sync(() => wake(current(receiver))))
+          const formerly = [...renames].flatMap(([from, to]) => to === program.name ? [from] : [])
+          yield* Scope.provide(
+            cluster.register(program, doorStep(deployed), passivate, resumed, formerly),
+            deployed.scope,
+          )
           const singletons = yield* Effect.sync(() => singletonsOf(cluster, program.name))
           for (const [shard, name] of singletons) {
             yield* Scope.provide(cluster.singleton(name, serving(cluster, deployed, shard)), deployed.scope)

@@ -5,7 +5,8 @@
 [decision 0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md) says of a step that dies, which rested
 on decision 0082 (deleted; git keeps it): since 4.1.2, Cluster's JSDoc promises that a handler's defect restarts its
 entity without end. The check by the commit is made by every step, the loop's and an activation's too, with the
-shard's lease, by [decision 0175](0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md).
+shard's lease, by [decision 0175](0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md). A
+runner of a name a launch renamed is outranked as an older version is, by [decision 0176](0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md).
 
 ## Context
 

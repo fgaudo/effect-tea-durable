@@ -35,7 +35,7 @@ import { Rpc } from 'effect/rpc'
 import { SqlClient } from 'effect/sql'
 import { type Address, InvariantDefect, type Program, type Types, versionOf } from './program.ts'
 import { type Delivered, launchWith, type OnCluster, type Operating, type Options, type Runtime } from './runtime.ts'
-import { createTables, leased, newestVersion, outranked, recordVersions } from './storage.ts'
+import { createTables, leased, outranked, recordVersions, standingOf } from './storage.ts'
 
 /**
  * The text a runner's address is recorded under: `host:port`, the address's primary key, which Cluster's
@@ -150,16 +150,20 @@ export const doorOf = <const Name extends string>(name: Name) =>
     .annotateRpcs(ClusterSchema.Uninterruptible, 'client')
 
 /**
- * Dies where a launch recorded a newer version of `program` than this runner runs, inside the step's transaction,
- * so that the step commits only at the newest version. The guard of `onCluster` runs it first in every step
- * (decisions 0159, 0175).
+ * Dies where a launch recorded a newer version of `program` than this runner runs, or renamed the program, inside
+ * the step's transaction, so that the step commits only at the newest version and under the program's newest name.
+ * The guard of `onCluster` runs it first in every step (decisions 0159, 0175, 0176).
  */
 export const atNewest = (program: Pick<Program<Types>, 'name' | 'migrations'>) =>
-  Effect.flatMap(newestVersion(program.name), (newest) => {
+  Effect.flatMap(standingOf(program.name), (held) => {
     const version = versionOf(program)
-    return newest !== undefined && newest > version
+    return held?.renamedTo != null
       ? Effect.die(new InvariantDefect({
-        reason: `the program ${program.name} runs at version ${version} here, and a launch has run it at version ${newest}`,
+        reason: `the program ${program.name} runs here, and a launch has renamed it to ${held.renamedTo}`,
+      }))
+      : held !== undefined && held.version > version
+      ? Effect.die(new InvariantDefect({
+        reason: `the program ${program.name} runs at version ${version} here, and a launch has run it at version ${held.version}`,
       }))
       : Effect.void
   })
@@ -369,7 +373,7 @@ export const onCluster: Effect.Effect<
         }),
         millis: Duration.toMillis(config.entityReplyPollInterval),
       },
-      register: (program, step, idle, resumed) => {
+      register: (program, step, idle, resumed, formerly) => {
         const answer = Schema.encodeSync(answerCodec(program))
         const created = Schema.encodeSync(creationCodec)
         const operated = Schema.encodeSync(operatedCodec)
@@ -382,9 +386,15 @@ export const onCluster: Effect.Effect<
               : answer(stepped.answer)).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
             ), resumed)
-        return sharding.registerEntity(doorOf(program.name), Effect.succeed(handlers), {
-          maxIdleTime: Duration.millis(idle),
-        })
+        // A door under a name the launch renames to the program's delivers what Cluster saved under that name. An
+        // entity's shard is drawn from its id alone, so both doors' entities are on the shards this runner holds
+        // (decision 0176).
+        return Effect.forEach(
+          [program.name, ...formerly],
+          (name) =>
+            sharding.registerEntity(doorOf(name), Effect.succeed(handlers), { maxIdleTime: Duration.millis(idle) }),
+          { discard: true },
+        )
       },
       // A failure of Cluster's client or storage is no answer of the program's, and is a defect, as a failure of the
       // runtime's own storage is.

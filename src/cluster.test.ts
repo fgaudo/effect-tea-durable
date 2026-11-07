@@ -50,7 +50,7 @@ import {
   timer,
   versionOf,
 } from './program.ts'
-import { type Handle, Probe, type Said } from './runtime.ts'
+import { type Handle, type Options, Probe, type Said } from './runtime.ts'
 import { createTables, leased, newestVersion, outranked, recordVersions } from './storage.ts'
 import { client, onEach } from './test-databases.ts'
 
@@ -69,7 +69,10 @@ type T = {
   services: never
 }
 
-/** A program named `name` at `version`, which carries `version - 1` migrations that change nothing. */
+/**
+ * A program named `name` at `version`, which carries `version - 1` migrations that change nothing. An entity whose
+ * last message is `wait` holds the work `ask`, whose operation never ends.
+ */
 const at = (name: string, version: number): Program<T> => ({
   name,
   keys: { ask: null },
@@ -85,8 +88,8 @@ const at = (name: string, version: number): Program<T> => ({
   },
   init: () => ({ last: 'start' }),
   update: (message) => () => ({ last: message }),
-  durable: () => noWork,
-  operations: { Ask: operation(() => Effect.succeed('asked')) },
+  durable: ({ last }) => last === 'wait' ? { ask: { _tag: 'Ask' } } : noWork,
+  operations: { Ask: operation(() => Effect.never) },
   project: ({ last }) => last,
   indexes: {},
   migrations: Array.from({ length: version - 1 }, () => ({})),
@@ -228,7 +231,8 @@ describe('two runners on one file', () => {
 
   /**
    * Runs `run` with a function that starts a runner of the runtime on one SQLite file, at a port, whose sharding names
-   * `programs` and whose runtime deploys `deployed`, `programs` by default, and gives back how many shards it holds.
+   * `programs` and whose runtime, launched with `options`, deploys `deployed`, `programs` by default, and gives back
+   * how many shards it holds.
    * The lease is 3 s, since SQLite's `CURRENT_TIMESTAMP` counts whole seconds, and a lease of 1 s drops a runner that
    * has just beaten.
    */
@@ -238,12 +242,13 @@ describe('two runners on one file', () => {
         port: number,
         programs: ReadonlyArray<Program<T>>,
         deployed?: ReadonlyArray<Program<T>>,
+        options?: Options,
       ) => Effect.Effect<(() => number) & { context: Context.Context<Sharding.Sharding> }, never, Scope.Scope>,
     ) => Effect.Effect<void, unknown, Scope.Scope | SqlClient.SqlClient>,
   ) => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
-    const start = (port: number, programs: ReadonlyArray<Program<T>>, deployed = programs) =>
+    const start = (port: number, programs: ReadonlyArray<Program<T>>, deployed = programs, options?: Options) =>
       Effect.gen(function*() {
         const context = yield* Layer.build(
           sharding(programs).pipe(
@@ -264,7 +269,7 @@ describe('two runners on one file', () => {
             Layer.provide(Digest.layerWebCrypto),
           ),
         ).pipe(Effect.orDie)
-        const runtime = yield* Effect.provide(launch(), context)
+        const runtime = yield* Effect.provide(launch(options), context)
         for (const program of deployed) yield* Effect.provide(runtime.deploy(program), context)
         const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
         return Object.assign(() => shards.filter((shard) => held.hasShardId(shard)).length, {
@@ -379,6 +384,66 @@ describe('two runners on one file', () => {
           until: (rows) => rows.every(([, done]) => done === 1),
         }).pipe(Effect.timeout('15 seconds'))
         expect((yield* sql<{ id: number }>`SELECT id FROM cluster_replies`).length).toBe(4)
+      })), 30_000)
+
+  test('a rename stops the runners of the old name, and its door delivers what Cluster saved under it (decision 0176)', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: null, id })
+        const asked = (name: string) =>
+          JSON.stringify({ _tag: 'Operation', entity: { name, id: 's' }, key: { name: 'ask' }, incarnation: 1, name: 'request' })
+        const entities = sql<{ name: string; state: string; steps: number }>`
+          SELECT name, state, steps FROM entities WHERE id = 'one'
+        `.pipe(Effect.map((rows) => rows.map((row) => ({ ...row, steps: Number(row.steps) }))))
+        const older = yield* start(1, [at('Toy', 1)])
+        yield* until(older, (n) => n === shardsPerGroup)
+        const toyOf = yield* Effect.provide(doorOf('Toy').client, older.context)
+        expect(yield* toyOf('one').Create({ version: 1, request: caller('c1'), message: 'null' }))
+          .toBe('{"_tag":"Created"}')
+        // The entity `s` holds the work whose request `one` answers, so that the reply is kept.
+        expect(yield* toyOf('s').Create({ version: 1, request: caller('c2'), message: 'null' }))
+          .toBe('{"_tag":"Created"}')
+        expect(yield* toyOf('s').Message({ version: 1, request: caller('w'), message: '"wait"' }))
+          .toBe('{"_tag":"Accepted"}')
+        expect(yield* toyOf('one').Message({ version: 1, request: asked('Toy'), message: '"asked"' }))
+          .toBe('{"_tag":"Accepted"}')
+
+        // The launch that renames marks the old name in its transaction: the older runner's steps die from then
+        // on, and Cluster keeps the message under the old name until the newer runner takes the shards.
+        const newer = yield* start(2, [at('Plaything', 1)], undefined, { renames: { Toy: 'Plaything' } })
+        expect(yield* entities).toEqual([{ name: 'Plaything', state: '{"last":"asked"}', steps: 2 }])
+        yield* toyOf('one').Message({ version: 1, request: caller('m1'), message: '"m"' }, { discard: true })
+        yield* until(newer, (n) => n === shardsPerGroup)
+        expect(older()).toBe(0)
+        const stepped = yield* Effect.repeat(entities, {
+          schedule: Schedule.spaced('50 millis'),
+          until: (rows) => rows[0]?.state === '{"last":"m"}',
+        }).pipe(Effect.timeout('15 seconds'))
+        expect(stepped).toEqual([{ name: 'Plaything', state: '{"last":"m"}', steps: 3 }])
+
+        // A retry under the old name is answered from Cluster's reply, and one under the new name, a request new to
+        // Cluster, from the runtime's: neither is applied again.
+        expect(yield* toyOf('one').Message({ version: 1, request: caller('m1'), message: '"m"' }))
+          .toBe('{"_tag":"Accepted"}')
+        const playthingOf = yield* Effect.provide(doorOf('Plaything').client, newer.context)
+        expect(yield* playthingOf('one').Message({ version: 1, request: caller('m1'), message: '"m"' }))
+          .toBe('{"_tag":"Accepted"}')
+        // An operation's request that names its sender by the old name is the one the rename wrote again. Without
+        // the sender named anew at the door, it would be keyed otherwise, and applied a second time.
+        expect(yield* playthingOf('one').Message({ version: 1, request: asked('Toy'), message: '"asked"' }))
+          .toBe('{"_tag":"Accepted"}')
+        expect(yield* entities).toEqual([{ name: 'Plaything', state: '{"last":"m"}', steps: 3 }])
+
+        // A runner of the old code that launches again is refused, and the newer keeps every shard.
+        const scope = yield* Scope.make()
+        const exit = yield* Effect.exit(Scope.provide(start(3, [at('Toy', 1)]), scope))
+        expect((defectOf(exit) as InvariantDefect).reason)
+          .toBe('the program Toy is launched, and a launch has renamed it to Plaything')
+        yield* Scope.close(scope, Exit.void)
+        // A runner launched later with the same renames moves nothing, and starts.
+        yield* start(4, [at('Plaything', 1)], undefined, { renames: { Toy: 'Plaything' } })
+        expect(yield* entities).toEqual([{ name: 'Plaything', state: '{"last":"m"}', steps: 3 }])
       })), 30_000)
 })
 

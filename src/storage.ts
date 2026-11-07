@@ -359,13 +359,24 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     CREATE INDEX IF NOT EXISTS replies_by_request_id ON replies (name, id, request_id) WHERE request_id IS NOT NULL
   `
   // On Cluster: the newest version each program was launched with, and the version of each program each runner
-  // runs, by the runner's address (decision 0159). A runtime of one process writes neither.
+  // runs, by the runner's address (decision 0159). A runtime of one process writes neither. `renamed_to` is the name
+  // a launch renamed the program to, which the check of every step reads in the same row (decision 0176). A
+  // database made before is given the column.
   yield* sql`
     CREATE TABLE IF NOT EXISTS versions (
       name ${text} PRIMARY KEY,
-      version ${integer} NOT NULL
+      version ${integer} NOT NULL,
+      renamed_to ${text}
     )
   `
+  if (dialect === 'sqlite') {
+    const [column] = yield* sql<{ held: number }>`
+      SELECT COUNT(*) AS held FROM pragma_table_info('versions') WHERE name = 'renamed_to'
+    `
+    if (column?.held === 0) yield* sql`ALTER TABLE versions ADD COLUMN renamed_to TEXT`
+  } else {
+    yield* sql`ALTER TABLE versions ADD COLUMN IF NOT EXISTS renamed_to TEXT COLLATE "C"`
+  }
   yield* sql`
     CREATE TABLE IF NOT EXISTS runner_versions (
       address ${text} NOT NULL,
@@ -449,7 +460,8 @@ export type Versioned = Readonly<{ name: string; version: number }>
 /**
  * Records, for the runner at `address`, the version each of `programs` runs, and raises the newest version of each
  * program to it, in one transaction (decision 0159). A program whose version is older than the newest recorded is
- * the launcher's defect, which names the program and both versions, and records nothing. On SQLite the transaction
+ * the launcher's defect, which names the program and both versions, and records nothing. So is a program a launch
+ * has renamed, which a runner of the old code would run under the name left (decision 0176). On SQLite the transaction
  * takes the file's write lock as it begins, which the driver does by default and this asks for by name, so that the
  * rule holds if the default changes; on PostgreSQL it locks the table. So two launches see each other's versions.
  */
@@ -464,9 +476,14 @@ export const recordVersions = (
       if (dialect === 'pg') yield* sql`LOCK TABLE versions IN SHARE ROW EXCLUSIVE MODE`
       for (const { name, version } of programs) {
         const [held] = yield* Effect.flatMap(
-          sql`SELECT version FROM versions WHERE name = ${name}`,
-          Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ version: Count }))),
+          sql`SELECT version, renamed_to FROM versions WHERE name = ${name}`,
+          Schema.decodeUnknownEffect(Schema.Array(Standing)),
         )
+        if (held?.renamed_to != null) {
+          return yield* Effect.die(new InvariantDefect({
+            reason: `the program ${name} is launched, and a launch has renamed it to ${held.renamed_to}`,
+          }))
+        }
         if (held !== undefined && held.version > version) {
           return yield* Effect.die(new InvariantDefect({
             reason: `the program ${name} is launched at version ${version}, and a launch has run it at version ${held.version}`,
@@ -488,20 +505,27 @@ export const recordVersions = (
   }).pipe(Effect.orDie)
 
 /**
- * The newest version a launch on Cluster recorded of the program `name`, or `undefined` where none did. A step reads
- * it in its transaction (decision 0159). On PostgreSQL the row is read `FOR SHARE`, so that a launch that raises it
- * waits for the steps that read it before, and on SQLite the transactions of one file come one after the other.
+ * What a launch on Cluster recorded of the program `name`: the newest version, and the name a launch renamed it
+ * to, or null; `undefined` where no launch recorded it. A step reads it in its transaction (decisions 0159, 0176).
+ * On PostgreSQL the row is read `FOR SHARE`, so that a launch that raises the version or renames the program waits
+ * for the steps that read it before, and on SQLite the transactions of one file come one after the other.
  */
-export const newestVersion = (name: string): Effect.Effect<number | undefined, never, SqlClient.SqlClient> =>
+export const standingOf = (
+  name: string,
+): Effect.Effect<Readonly<{ version: number; renamedTo: string | null }> | undefined, never, SqlClient.SqlClient> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     const share = sql.literal(dialectOf(sql) === 'pg' ? 'FOR SHARE' : '')
     const [held] = yield* Effect.flatMap(
-      sql`SELECT version FROM versions WHERE name = ${name} ${share}`,
-      Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ version: Count }))),
+      sql`SELECT version, renamed_to FROM versions WHERE name = ${name} ${share}`,
+      Schema.decodeUnknownEffect(Schema.Array(Standing)),
     )
-    return held?.version
+    return held === undefined ? undefined : { version: held.version, renamedTo: held.renamed_to }
   }).pipe(Effect.orDie)
+
+/** The newest version a launch on Cluster recorded of the program `name`, as `standingOf` reads it. */
+export const newestVersion = (name: string): Effect.Effect<number | undefined, never, SqlClient.SqlClient> =>
+  Effect.map(standingOf(name), (held) => held?.version)
 
 /**
  * Whether the lease of the shard `shard`, a row of Cluster's `cluster_locks`, names the runner at `address` and has
@@ -527,14 +551,16 @@ export const leased = (
   }).pipe(Effect.orDie)
 
 /**
- * Whether the runner at `address` runs an older version of a program than the newest recorded: `undefined` where
- * no launch of the runtime recorded the address, a runner without the runtime (decision 0159).
+ * Whether the runner at `address` runs an older version of a program than the newest recorded, or a program a
+ * launch has renamed: `undefined` where no launch of the runtime recorded the address, a runner without the runtime
+ * (decisions 0159, 0176).
  */
 export const outranked = (address: string): Effect.Effect<boolean | undefined, SqlError.SqlError, SqlClient.SqlClient> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     const rows = yield* sql`
-      SELECT COUNT(*) AS held, COUNT(CASE WHEN r.version < v.version THEN 1 END) AS older
+      SELECT COUNT(*) AS held,
+        COUNT(CASE WHEN r.version < v.version OR v.renamed_to IS NOT NULL THEN 1 END) AS older
       FROM runner_versions r JOIN versions v ON v.name = r.name
       WHERE r.address = ${address}
     `
@@ -586,9 +612,12 @@ const namedTables = [
  * One onto a name that holds an entity, a head of the log or a consumer is the launcher's defect. An entity keeps
  * the name its idempotency keys are drawn from, and every request its entities sent names the new name
  * (decision 0156). The runtime checks `renames` first, and runs this before any deploy, while nothing is loaded.
+ * `marked` is a launch's on Cluster, where other runners may still run the old name: the old name is then marked
+ * renamed in `versions`, in the same transaction, and its newest version moves to the new name (decision 0176).
  */
 export const renamed = (
   renames: ReadonlyArray<readonly [from: string, to: string]>,
+  marked = false,
 ): Effect.Effect<void, never, SqlClient.SqlClient> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
@@ -703,7 +732,54 @@ export const renamed = (
         yield* sql`UPDATE entities SET keyed_as = COALESCE(keyed_as, ${from}) WHERE name = ${from}`
         for (const table of namedTables) yield* sql`UPDATE ${sql(table)} SET name = ${to} WHERE name = ${from}`
       })
-    yield* sql.withTransaction(Effect.forEach(renames, ([from, to]) => rename(from, to), { discard: true }))
+    const standing = (name: string) =>
+      Effect.map(
+        Effect.flatMap(
+          sql`SELECT version, renamed_to FROM versions WHERE name = ${name}`,
+          Schema.decodeUnknownEffect(Schema.Array(Standing)),
+        ),
+        (rows) => rows[0],
+      )
+    // The old name is marked whether or not it holds anything: a runner of the old code may create an entity under
+    // it after the move, and the check of every step reads the mark in its transaction (decision 0176). A version
+    // 0 is the mark of a name no launch on Cluster recorded, which every version of a program outranks.
+    // The new names this transaction gave a version, which a later old name of the same new name raises: two names
+    // renamed to one would otherwise die or not by the order of the renames (decision 0176).
+    const given = new Set<string>()
+    const mark = (from: string, to: string) =>
+      Effect.gen(function*() {
+        const old = yield* standing(from)
+        const held = yield* standing(to)
+        if (old !== undefined && held !== undefined && old.version > held.version) {
+          if (!given.has(to)) {
+            return yield* die(
+              `the launch renames '${from}' to '${to}', and a launch has run '${from}' at version ${old.version}, newer than ${held.version}`,
+            )
+          }
+          yield* sql`UPDATE versions SET version = ${old.version} WHERE name = ${to}`
+        }
+        if (old !== undefined && held === undefined) {
+          yield* sql`INSERT INTO versions (name, version) VALUES (${to}, ${old.version})`
+          given.add(to)
+        }
+        yield* sql`
+          INSERT INTO versions (name, version, renamed_to) VALUES (${from}, ${old?.version ?? 0}, ${to})
+          ON CONFLICT (name) DO UPDATE SET renamed_to = excluded.renamed_to
+        `
+      })
+    const run = Effect.gen(function*() {
+      // As `recordVersions` takes `versions`, so that a launch that renames and one that records see each other.
+      if (marked && dialect === 'pg') yield* sql`LOCK TABLE versions IN SHARE ROW EXCLUSIVE MODE`
+      for (const [from, to] of renames) {
+        yield* rename(from, to)
+        if (marked) yield* mark(from, to)
+      }
+    })
+    yield* sql.withTransaction(run).pipe(
+      marked && dialect === 'sqlite'
+        ? Effect.provideService(SqlClient.BeginTransaction, 'BEGIN IMMEDIATE')
+        : (effect) => effect,
+    )
   }).pipe(Effect.orDie)
 
 /**
@@ -748,6 +824,9 @@ const Version = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1)))
 
 /** An incarnation, a `seq` or a count, as a driver gives an integer up to 2^53 (decision 0157). */
 const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
+
+/** A row of `versions`: the newest version of a program, and the name a launch renamed it to, if any. */
+const Standing = Schema.Struct({ version: Count, renamed_to: Schema.NullOr(Schema.String) })
 
 /** How an operation is delivered, as its runner declared (decisions 0011, 0123). */
 const Delivery = Schema.Literals(['Idempotent', 'IdempotentDigest', 'AtLeastOnce', 'AtMostOnce', 'Droppable'])

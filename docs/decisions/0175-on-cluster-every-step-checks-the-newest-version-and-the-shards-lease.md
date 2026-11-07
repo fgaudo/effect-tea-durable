@@ -5,7 +5,8 @@ the [open question](../open-questions.md#running) of a step on Cluster that is n
 Changes [decision 0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md), whose check by
 the commit only a door's step made, and makes the lease check of
 [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md), which no code made, a check
-of every step.
+of every step. The check refuses a name a launch renamed too, by
+[decision 0176](0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md).
 
 ## Context
 

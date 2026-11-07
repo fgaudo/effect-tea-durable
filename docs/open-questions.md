@@ -54,17 +54,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   statement fail with a `SqlError`. It would be decided by:
   - a release of Effect with the fix, after which a fork that keeps the transaction fails where it runs;
   - the spikes and the tests of the runtime run at that release, which a fork the rule missed would then fail.
-- **A rename on Cluster.** A launch's `renames` move the runtime's rows to the new name, in one transaction
-  ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). Cluster's rows of a
-  door's requests, in `cluster_messages` and `cluster_replies`, are stored under the entity's type, which is the
-  program's name, and nothing moves them. A request saved and not yet delivered under the old name is then never
-  delivered, and a retry under the new name is a new request to Cluster, answered from the runtime's replies. No
-  test runs a rename on Cluster. It would be decided by:
-  - whether a launch on Cluster with `renames` dies until a rename moves Cluster's rows, as a guard of a few lines;
-  - whether the runtime writes Cluster's tables, whose names and columns are read in Cluster's source and are no
-    stable API ([decision 0169](decisions/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md)),
-    or a rename waits for the old type's requests to be delivered first;
-  - a test with two runners, in which a message saved for the old name is delivered after the launch that renames.
 - **Bookkeeping in transactions.** What another fiber reads changes in one synchronous step
   ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)): a rule kept by hand, which
   a step that waits cannot keep. The waker reads the entities held and then waits for a poke, and only the steps

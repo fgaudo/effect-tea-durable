@@ -12,7 +12,19 @@ import * as Schema from 'effect/Schema'
 import { SqlClient, Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
 import { InvariantDefect, isTimer, type Json, type Migration, noWork, operation, type Program, type Scalar } from './program.ts'
-import { createTables, type Dialect, dialectOf, type Found, partitionOf, type Query, renamed, storage } from './storage.ts'
+import {
+  createTables,
+  type Dialect,
+  dialectOf,
+  type Found,
+  outranked,
+  partitionOf,
+  type Query,
+  recordVersions,
+  renamed,
+  standingOf,
+  storage,
+} from './storage.ts'
 import { client, onEach } from './test-databases.ts'
 import { everySchedule } from './testing.ts'
 
@@ -1547,8 +1559,8 @@ describe('renaming a program (decision 0156)', () => {
       }))),
     )
   /** The renames run against the database of the test, as the launch runs them. */
-  const rename = (sql: SqlClient.SqlClient, renames: ReadonlyArray<readonly [string, string]>) =>
-    Effect.provideService(renamed(renames), SqlClient.SqlClient, sql)
+  const rename = (sql: SqlClient.SqlClient, renames: ReadonlyArray<readonly [string, string]>, marked = false) =>
+    Effect.provideService(renamed(renames, marked), SqlClient.SqlClient, sql)
   const reasonOf = (exit: Exit.Exit<unknown>) => {
     const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
     return cause instanceof InvariantDefect ? cause.reason : null
@@ -1656,6 +1668,69 @@ describe('renaming a program (decision 0156)', () => {
           "the launch renames 'Asker' to 'Buyer', which holds an entity, a head of the log or a consumer already",
         )
         expect(yield* stored(sql)).toEqual(before)
+      }).pipe(Effect.orDie)))
+
+  test('two names renamed to one move where one of them holds entities, and die where both do (decision 0176)', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        yield* storage(asker, sql).write('a', created(), 0)
+        // `Receiver` holds nothing: a program renamed twice declares both of its former names.
+        yield* rename(sql, [['Asker', 'Client'], ['Receiver', 'Client']])
+        expect((yield* stored(sql)).map(({ name, id }) => [name, id])).toEqual([['Client', 'a']])
+        yield* storage(asker, sql).write('a', created(), 0)
+        yield* storage(receiver, sql).write('r', created(), 0)
+        const before = yield* stored(sql)
+        expect(reasonOf(yield* Effect.exit(rename(sql, [['Asker', 'Shopper'], ['Receiver', 'Shopper']])))).toBe(
+          "the launch renames 'Receiver' to 'Shopper', which holds an entity, a head of the log or a consumer already",
+        )
+        expect(yield* stored(sql)).toEqual(before)
+      }).pipe(Effect.orDie)))
+
+  test('on Cluster, a rename marks the old name though it holds nothing, and its newest version moves (decision 0176)', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const provided = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+          Effect.provideService(effect, SqlClient.SqlClient, sql)
+        yield* provided(recordVersions('old:1', [{ name: 'Asker', version: 2 }]))
+        yield* provided(recordVersions('new:1', [{ name: 'Buyer', version: 2 }]))
+        expect(yield* provided(outranked('old:1'))).toBe(false)
+        yield* rename(sql, [['Asker', 'Buyer'], ['Seller', 'Vendor']], true)
+        expect(yield* provided(standingOf('Asker'))).toEqual({ version: 2, renamedTo: 'Buyer' })
+        expect(yield* provided(standingOf('Buyer'))).toEqual({ version: 2, renamedTo: null })
+        // A name no launch on Cluster recorded is marked at version 0, and its new name is not recorded.
+        expect(yield* provided(standingOf('Seller'))).toEqual({ version: 0, renamedTo: 'Vendor' })
+        expect(yield* provided(standingOf('Vendor'))).toBeUndefined()
+        // A runner of the old name is outranked, and one of the old code that launches again is refused.
+        expect(yield* provided(outranked('old:1'))).toBe(true)
+        expect(yield* provided(outranked('new:1'))).toBe(false)
+        expect(reasonOf(yield* Effect.exit(provided(recordVersions('old:1', [{ name: 'Asker', version: 2 }])))))
+          .toBe('the program Asker is launched, and a launch has renamed it to Buyer')
+        // A rename runs again at every launch that declares it, and changes nothing.
+        yield* rename(sql, [['Asker', 'Buyer']], true)
+        expect(yield* provided(standingOf('Asker'))).toEqual({ version: 2, renamedTo: 'Buyer' })
+        // A new name not recorded is given the old name's version.
+        yield* provided(recordVersions('old:2', [{ name: 'Tiny', version: 3 }]))
+        yield* rename(sql, [['Tiny', 'Small']], true)
+        expect(yield* provided(standingOf('Small'))).toEqual({ version: 3, renamedTo: null })
+        // Two names renamed to one not recorded give it the newer version, in either order.
+        yield* provided(recordVersions('old:3', [{ name: 'Former', version: 1 }, { name: 'Latter', version: 4 }]))
+        yield* rename(sql, [['Former', 'Joined'], ['Latter', 'Joined']], true)
+        expect(yield* provided(standingOf('Joined'))).toEqual({ version: 4, renamedTo: null })
+      }).pipe(Effect.orDie)))
+
+  test('on Cluster, a rename from a version newer than the new name runs dies, and moves nothing (decision 0176)', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const provided = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+          Effect.provideService(effect, SqlClient.SqlClient, sql)
+        yield* storage(asker, sql).write('a', created(), 0)
+        yield* provided(recordVersions('old:1', [{ name: 'Asker', version: 3 }]))
+        yield* provided(recordVersions('new:1', [{ name: 'Buyer', version: 2 }]))
+        expect(reasonOf(yield* Effect.exit(rename(sql, [['Asker', 'Buyer']], true)))).toBe(
+          "the launch renames 'Asker' to 'Buyer', and a launch has run 'Asker' at version 3, newer than 2",
+        )
+        expect((yield* stored(sql)).map(({ name }) => name)).toEqual(['Asker'])
+        expect(yield* provided(standingOf('Asker'))).toEqual({ version: 3, renamedTo: null })
       }).pipe(Effect.orDie)))
 
   // SQLite's `json_set` would write the text without its spaces. PostgreSQL's process finds that `JSON.stringify`
