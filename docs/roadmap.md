@@ -5,15 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **The runtime's bookkeeping in Effect's `Tx` modules**, if the open question of bookkeeping in transactions, under
-   [Running](open-questions.md#running), decides for them. What another fiber reads would change in one transaction,
-   and not in one synchronous step kept by hand
-   ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). The waker's reading of the
-   entities held and its wait for a poke would be one transaction. On Effect Cluster a runner keeps the same
-   bookkeeping over the shards it holds
-   ([decision 0162](decisions/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
-   The tests under prioritized schedules check the rewrite, and the seeds they pin
-   are found again after it.
+Nothing, until a step under Later can start.
 
 ## Later
 

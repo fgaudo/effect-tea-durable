@@ -224,3 +224,4 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0134](0134-an-entitys-loop-yields-between-two-steps.md) | An entity's loop yields after a step that leaves it more to do, so that a busy entity holds no other for more than a step |  |
 | [0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md) | An entity holds a bounded number of callers' messages, and a `send` past it is answered `Full` | [0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) |
 | [0164](0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md) | Every fork of the runtime drops the transaction, and a count is raised and lowered by one `acquireUseRelease`, as a test reads in the code |  |
+| [0177](0177-the-runtimes-bookkeeping-stays-in-synchronous-steps.md) | The runtime's bookkeeping stays in synchronous steps, and not in Effect's `Tx` modules |  |

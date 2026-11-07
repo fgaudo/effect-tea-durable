@@ -1,6 +1,6 @@
 /**
- * What the open question "Bookkeeping in transactions" asks a spike of `effect` 4.1.2's transactions, under the
- * scheduler of the tests (decision 0104), before the runtime's bookkeeping is written with them.
+ * What a rewrite of the runtime's bookkeeping would find of `effect` 4.1.2's transactions, under the scheduler of
+ * the tests (decision 0104). The bookkeeping stays in synchronous steps, and why is decision 0177.
  *
  * Read in the source (`tx`, `awaitPendingTransaction` and `commitTransaction` in `Effect.ts`): a body that calls
  * `txRetry` checks its reads and registers its wait on every `TxRef` it read in one synchronous step. A commit
