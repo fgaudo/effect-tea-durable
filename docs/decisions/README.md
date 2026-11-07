@@ -40,6 +40,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0174](0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md) | On Cluster, a runner deploys only the programs its `sharding` names, at the version named |  |
 | [0175](0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md) | On Cluster, every step checks the newest version and the shard's lease, a door's, the loop's and an activation's | [0176](0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md) |
 | [0176](0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md) | On Cluster, a rename marks the old name, which no runner steps again, and keeps a door under it that delivers to the new program |  |
+| [0178](0178-a-server-of-the-orders-on-cluster-is-run-as-a-process.md) | A server of the orders on Cluster is run as a process, on one runner and then on two |  |
 
 ## The project
 

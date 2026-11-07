@@ -5,7 +5,18 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-Nothing, until a step under Later can start.
+- **A server on Cluster.** `examples/server` runs the orders of `examples/order` as a process on a file of SQLite,
+  behind a boundary of HTTP, as [decision 0178](decisions/0178-a-server-of-the-orders-on-cluster-is-run-as-a-process.md)
+  proposes. It has two parts.
+  1. One runner. A test kills the process during a charge, starts it again on the same file, and checks that the
+     order finishes with one charge.
+  2. Two runners on one file, sending to each other over HTTP. A test kills the runner that holds an order's shard,
+     and checks that the other one takes the shard and finishes the order with one charge.
+
+  No part is done. The first part begins with the maintainer's answer to the two questions of decision 0178: whether
+  the example may use `effect/http` and `effect/http-api`, and whether it serves with `Bun.serve` or with
+  `@effect/platform-bun`. Then it begins in `examples/server/main.ts`. A gap of the library that a part meets
+  becomes a note, a test or an open question before the step is taken.
 
 ## Later
 
