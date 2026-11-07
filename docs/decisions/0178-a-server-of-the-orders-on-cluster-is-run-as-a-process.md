@@ -46,8 +46,8 @@ the scheduler of the tests, inside one process. They are not tested between proc
 - **The boundary uses `effect/http`.** The module is marked `@stability unstable`, and `src/` does not import it, so
   the example uses it because the maintainer agreed on 2026-11-07. The example imports it, and `src/` still does not.
   `effect/http-api` was not asked for, so the routes are written with `HttpRouter`.
-- **The server is `@effect/platform-bun`'s.** `BunHttpServer` gives the `HttpServer` layer, and `BunRuntime.runMain`
-  runs the process. The package is a dependency of development, pinned at the version of `effect`, and a move of
+- **The server is `@effect/platform-bun`'s.** `BunClusterHttp.layerHttpServer` gives the `HttpServer` layer, at the
+  runner's address, and `BunRuntime.runMain` runs the process. The package is a dependency of development, pinned at the version of `effect`, and a move of
   Effect's version pins it with `effect` and `@effect/sql-sqlite-bun`.
 
 ## What it rests on
@@ -56,19 +56,32 @@ the scheduler of the tests, inside one process. They are not tested between proc
   [`examples/order/cluster.test.ts`](../../examples/order/cluster.test.ts).
 - That a charge asked again after a crash carries the same idempotency key: **documented** in
   [`docs/design.md`](../design.md), which says that a crash runs an idempotent operation again
-  ([decision 0011](archive/0011-an-operation-declares-what-a-crash-does.md)).
+  ([decision 0011](archive/0011-an-operation-declares-what-a-crash-does.md)), and **tested** by both tests of
+  [`examples/server/server.test.ts`](../../examples/server/server.test.ts), in which the world takes one charge for
+  each order whatever the number of times it was asked.
 - That two processes on one file of SQLite share Cluster's shards through the lease of `cluster_locks`: **read in
   the source** of `cluster/SqlRunnerStorage.ts` at 4.1.2, as [`docs/cluster.md`](../cluster.md#who-holds-an-entity)
   says. That two processes of Bun commit to one file in WAL mode without a failure the runtime does not expect is
   **tested** by the second test of [`examples/server/server.test.ts`](../../examples/server/server.test.ts).
 - That a runner whose heartbeat stopped leaves the assignment once its lease expires, whatever `RunnerHealth`
   answers: **read in the source** of `cluster/SqlRunnerStorage.ts` at 4.1.2, whose `getRunners` reads only the
-  runners whose `last_heartbeat` is younger than the lease's expiration. The second test passes with
-  `RunnerHealth.layerNoop` as with `RunnerHealth.layerPing`.
+  runners whose `last_heartbeat` is younger than the lease's expiration. A run of the second test with
+  `RunnerHealth.layerNoop` in place of `RunnerHealth.layerPing` passed too, which the repository does not keep.
+- That `sharding` answers through the `RunnerHealth` it is given whether a runner runs the newest version, so that
+  the check of health moves the shards of an older version every `runnerHealthCheckInterval`, a minute by default:
+  **read in the code** of [`src/cluster.ts`](../../src/cluster.ts), in `byVersion`, and **documented** in the
+  default of `ShardingConfig.ts` at 4.1.2. What the minute costs a deploy is in
+  [decision 0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md).
+- That `ShardingConfig.layerFromEnv` reads the runner's address from `HOST` and `PORT`, and the lease's expiration
+  from `SHARD_LOCK_EXPIRATION`: **read in the source** of `cluster/ShardingConfig.ts` at 4.1.2, whose `config`
+  names `host`, `port` and `shardLockExpiration` and whose `configFromEnv` reads them in constant case.
+- That a client of SQLite of `@effect/sql-sqlite-bun` writes in WAL mode, so that two processes and the test read
+  and write one file: **documented** in the JSDoc of its `SqliteClient` at 4.1.2.
+- That `HttpRunner.layerClientProtocolHttp` sends to the path that `RpcServer.layerProtocolHttp` serves on the
+  boundary's router: **tested** by the second test, whose orders are created through one runner and stepped by both.
 - That `HttpRunner.layerHttp` and `RunnerServer.layerWithClients` build `Sharding.layer`, and that
   `RunnerServer.layer` does not: **read in the source** of `cluster/HttpRunner.ts` and `cluster/RunnerServer.ts` at
   4.1.2.
-- That `HttpRouter.toWebHandler` serves a router from a `fetch` handler: **documented** in its JSDoc at 4.1.2.
 
 ## Alternatives
 
@@ -82,6 +95,8 @@ the scheduler of the tests, inside one process. They are not tested between proc
   - `HttpRouter.toWebHandler` with `Bun.serve` would serve the routes with no new dependency, and the process would
     handle its own signals. `@effect/platform-bun` does both, which is what a deployment on Bun uses.
   - `TestRunner.layer` keeps everything in memory, and no process could die and start again on it.
+  - `HttpRunner.toHttpEffect` serves the runner's RPCs as one handler, given a `Sharding`. `RunnerServer.layer` over
+    `RpcServer.layerProtocolHttp` does the same on the boundary's router, beside its routes.
   - `BunClusterHttp.layer` builds `HttpRunner.layerHttp`, and so `Sharding` too. Its parts are used one by one:
     `BunClusterHttp.layerHttpServer` listens at the runner's address, `ShardingConfig.layerFromEnv` reads the
     runner's address and its lease from the environment, and `RpcSerialization.layerSchemaBinary` and
@@ -118,18 +133,32 @@ the scheduler of the tests, inside one process. They are not tested between proc
 - **A runner's boundary and its transport share one server.** The boundary's routes and `RunnerServer.layer`, served
   by `RpcServer.layerProtocolHttp` at `/runner`, are one `HttpRouter`, at the runner's address. A caller of either
   runner reaches every order, since the door's client sends through Cluster to the runner that holds the shard.
-- **A runner that dies frees its shards by its heartbeat.** `SqlRunnerStorage` stops reading a runner whose heartbeat
+- **A runner that dies frees its shards once its heartbeat stops.** `SqlRunnerStorage` stops reading a runner whose heartbeat
   is older than the lease's expiration, so the runner that is left takes the shards with no check of health. The
   ping of `RunnerHealth.layerPing` adds a check of a runner that still beats but does not answer, which no test of
-  the example reaches.
-- **The test waits four seconds before it creates the orders.** Each runner reads the healthy runners every
-  `refreshAssignmentsInterval`, three seconds by default, so the wait lets both runners hold their shards first.
-  The test checks that the killed runner held some, and fails where it held none.
+  the example reaches. The same check moves the shards of an older version once a newer one launches, since
+  `sharding` answers through it, and it runs every `runnerHealthCheckInterval`, a minute by default. The comment of
+  `examples/server/main.ts` says that a deployment that rolls out often shortens it
+  ([decision 0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+- **The test waits until both runners hold a lock before it creates the orders.** It reads `cluster_locks` in the
+  file until each runner's address holds one. A wait of a fixed time would not do: a runner takes its shards at its
+  next reading of the runners, every `refreshAssignmentsInterval`, and a shard another runner lets go may stay free
+  for two of them, as the JSDoc of `runnerJoinDebounce` says. The test also checks that the killed runner held some
+  of the orders, and fails where it held none.
+- **The email is sent once.** The world's client retries a call that carries an idempotency key, since the world
+  acts on it once. The email carries none and runs at most once
+  ([decision 0011](archive/0011-an-operation-declares-what-a-crash-does.md)), so its client does not retry, and a
+  lost answer cannot send it twice.
+- **A suspended order is answered `409`.** An HTTP client retries a `503` as transient, as
+  `HttpClient.isTransientResponse` does, and a suspended order waits for an operator, not for a retry.
+- **A stop on a signal is not tested.** The tests kill each runner with `SIGKILL`. A runner that stops on `SIGTERM`
+  unregisters and lets its shards go before its lease expires, which is what a rolling deploy relies on. The
+  question is in [`docs/open-questions.md`](../open-questions.md#running).
 - **No gap of the library was met.** The runner that is left activates the orders it takes, and their charges run
   again with their idempotency keys.
 
 ## Consequences
 
-- The tests of `examples/server` start four processes and run in about eleven seconds, so `bun test` runs them every
+- The tests of `examples/server` start four processes and run in about ten seconds, so `bun test` runs them every
   time.
 - The README's diagram of the modules gains no module, since the example adds none to `src/`.

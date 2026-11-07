@@ -4,6 +4,7 @@
  * it, and records the runners that asked for each one.
  */
 import { BunHttpServer, BunServices } from '@effect/platform-bun'
+import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
 import * as Context from 'effect/Context'
 import * as Deferred from 'effect/Deferred'
@@ -28,6 +29,7 @@ import * as Ref from 'effect/Ref'
 import * as Schedule from 'effect/Schedule'
 import * as Schema from 'effect/Schema'
 import * as Scope from 'effect/Scope'
+import { SqlClient } from 'effect/sql'
 
 /** The port of a server built by `layer`, which listens until `scope` closes. */
 const portOf = <E, R>(layer: Layer.Layer<HttpServer.HttpServer, E, R>, scope: Scope.Scope) =>
@@ -153,6 +155,21 @@ const paid = (client: HttpClient.HttpClient, id: string) =>
     Effect.retry({ schedule: Schedule.spaced('100 millis'), times: 400 }),
   )
 
+/**
+ * Waits until each runner of `addresses` holds a lock of `cluster_locks`, so that the orders created next are divided
+ * between them. A runner takes its shards at its next reading of the runners, which `refreshAssignmentsInterval`
+ * spaces, and a shard another runner lets go may stay free for two of them, as the JSDoc of `runnerJoinDebounce`
+ * says.
+ */
+const holdingShards = (settings: Settings, addresses: ReadonlyArray<string>) =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql<{ address: string }>`SELECT DISTINCT address FROM cluster_locks`.pipe(
+      Effect.filterOrFail((rows) => addresses.every((address) => rows.some((row) => row.address === address))),
+      Effect.retry({ schedule: Schedule.spaced('100 millis'), times: 300 }),
+    )
+  }).pipe(Effect.provide(SqliteClient.layer({ filename: settings.filename })))
+
 /** Runs `body` with a world and a file of SQLite in a directory removed afterwards. */
 const run = <A, E>(body: (settings: Settings, theWorld: Effect.Success<typeof world>) => Effect.Effect<A, E, any>) =>
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
@@ -194,9 +211,7 @@ test('the orders of a runner killed during their charges are paid once by the ot
       const doomed = yield* Scope.make()
       const killed = yield* start(settings, yield* freePort).pipe(Scope.provide(doomed))
       const survivor = yield* start(settings, yield* freePort)
-      // Both runners are registered and answer a ping before the orders are created, so that their shards are
-      // divided between them.
-      yield* Effect.sleep('4 seconds')
+      yield* holdingShards(settings, [killed.address, survivor.address])
       for (const id of ids) yield* order(survivor.client, id)
       yield* theWorld.holding(ids.length)
 

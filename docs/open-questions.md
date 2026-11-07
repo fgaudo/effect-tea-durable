@@ -66,6 +66,17 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   statement fail with a `SqlError`. It would be decided by:
   - a release of Effect with the fix, after which a fork that keeps the transaction fails where it runs;
   - the spikes and the tests of the runtime run at that release, which a fork the rule missed would then fail.
+- **A runner that stops on a signal.** A rolling deploy stops each runner with `SIGTERM`. `BunRuntime.runMain`
+  interrupts the main fiber on `SIGINT` and `SIGTERM`, so the layer's scope closes. Cluster then unregisters the
+  runner and lets its shards go before its lease expires. The tests of `examples/server` kill each runner with
+  `SIGKILL` alone ([decision 0178](decisions/0178-a-server-of-the-orders-on-cluster-is-run-as-a-process.md)), so that
+  the orders of a runner that stops are taken by another one before its lease expires is only reasoned. So is what
+  the runtime's planned stop does there, which drains the at-most-once operations and stops the rest at once
+  ([decision 0119](decisions/0119-a-planned-stop-drains-the-at-most-once-operations.md)). On Windows a child process
+  is ended at once by any signal, so a test of the stop runs only elsewhere. It would be decided by:
+  - a test of `examples/server` that stops one of two runners with `SIGTERM`, under a lease longer than the test, and
+    checks that the other runner finishes the orders;
+  - where such a test runs: in CI on Linux, or skipped on Windows by the test itself.
 - **What the runtime tells a tracer.** The runtime opens no span and records no metric of its own: `src/` calls
   neither `Effect.withSpan` nor `Metric`. A deployment sees only the spans Effect opens beneath the runtime: a
   statement of `effect/sql`, a request of `effect/rpc`, and a message to an entity of Cluster. So a step, an

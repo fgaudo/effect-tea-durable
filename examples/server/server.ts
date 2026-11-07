@@ -45,26 +45,29 @@ import { Mailer, order, Payments, type Sender, Warehouse } from '../order/order.
 export type Settings = Readonly<{ filename: string; world: string }>
 
 /**
- * The world over HTTP, through one client of the world's address, which tells the world the runner that calls in
- * `x-runner`. A transport's failure is retried for a while and is then a defect, which suspends the order: the
- * world's `402` is the only failure an operation of the orders declares.
+ * The world over HTTP, through a client of the world's address, which tells the world the runner that calls in
+ * `x-runner`. A transport's failure is a defect, which suspends the order: the world's `402` is the only failure an
+ * operation of the orders declares. A call that carries an idempotency key is retried for a while first, since the
+ * world acts on it once whatever the number of tries. The email carries none and runs at most once
+ * (decision 0011), so it is sent once: a retry after a lost answer would send the email twice.
  */
 const world = (base: string) =>
   Layer.effectContext(Effect.gen(function*() {
     const { runnerAddress } = yield* ShardingConfig.ShardingConfig
     const runner = Option.match(runnerAddress, { onNone: () => '', onSome: ({ host, port }) => `${host}:${port}` })
-    const client = (yield* HttpClient.HttpClient).pipe(
+    const once = (yield* HttpClient.HttpClient).pipe(
       HttpClient.mapRequest(HttpClientRequest.prependUrl(base)),
       HttpClient.mapRequest(HttpClientRequest.setHeader('x-runner', runner)),
-      HttpClient.retryTransient({ schedule: Schedule.spaced('200 millis'), times: 50 }),
     )
-    const post = (path: string, body: unknown) => client.post(path, { body: HttpBody.jsonUnsafe(body) })
-    const told = (path: string, body: unknown) =>
-      post(path, body).pipe(Effect.flatMap(HttpClientResponse.filterStatusOk), Effect.orDie, Effect.asVoid)
+    const keyed = once.pipe(HttpClient.retryTransient({ schedule: Schedule.spaced('200 millis'), times: 50 }))
+    const post = (client: HttpClient.HttpClient, path: string, body: unknown) =>
+      client.post(path, { body: HttpBody.jsonUnsafe(body) })
+    const told = (client: HttpClient.HttpClient, path: string, body: unknown) =>
+      post(client, path, body).pipe(Effect.flatMap(HttpClientResponse.filterStatusOk), Effect.orDie, Effect.asVoid)
     const Charged = Schema.Struct({ charge: Schema.String })
     const payments = Payments.of({
       charge: (request) =>
-        post('/charge', request).pipe(
+        post(keyed, '/charge', request).pipe(
           Effect.orDie,
           Effect.flatMap(HttpClientResponse.matchStatus({
             402: () => Effect.fail('Declined' as const),
@@ -76,11 +79,11 @@ const world = (base: string) =>
               ),
           })),
         ),
-      refund: (request) => told('/refund', request),
+      refund: (request) => told(keyed, '/refund', request),
     })
     return Context.make(Payments, payments).pipe(
-      Context.add(Warehouse, Warehouse.of({ prepare: (request) => told('/prepare', request) })),
-      Context.add(Mailer, Mailer.of({ send: (email) => told('/mail', email) })),
+      Context.add(Warehouse, Warehouse.of({ prepare: (request) => told(keyed, '/prepare', request) })),
+      Context.add(Mailer, Mailer.of({ send: (email) => told(once, '/mail', email) })),
     )
   })).pipe(Layer.provide(FetchHttpClient.layer))
 
@@ -95,7 +98,9 @@ export class Orders extends Context.Service<Orders, Handle<OrderTypes>>()('examp
  * HTTP at `/runner`, with the serialization `BunClusterHttp.layer` chooses. A runner that dies stops its heartbeat,
  * and `SqlRunnerStorage` stops reading it once its lease expires, so that its shards move with no check of health.
  * The ping of `RunnerHealth.layerPing`, `BunClusterHttp.layer`'s default, also takes the shards of a runner that
- * still beats but does not answer. The runtime is launched and the orders deployed in the layer's scope, so that
+ * still beats but does not answer. `sharding` answers through it whether a runner runs the newest version, so the
+ * check of health is also what moves the shards of an older version once a newer one launches (decision 0159). The
+ * runtime is launched and the orders deployed in the layer's scope, so that
  * they stop when the server stops.
  */
 const orders = (settings: Settings) =>
@@ -110,7 +115,7 @@ const orders = (settings: Settings) =>
         Layer.provideMerge(Runners.layerRpc),
         Layer.provide(HttpRunner.layerClientProtocolHttp({ path: runnerPath }).pipe(Layer.provide(FetchHttpClient.layer))),
         Layer.provideMerge(SqlMessageStorage.layer),
-        Layer.provide(Layer.orDie(SqlRunnerStorage.layer)),
+        Layer.provide(SqlRunnerStorage.layer),
         Layer.provideMerge(RpcSerialization.layerSchemaBinary()),
         Layer.provideMerge(SqliteClient.layer({ filename: settings.filename })),
         Layer.provide(Digest.layerWebCrypto),
@@ -176,11 +181,15 @@ const operator = Effect.flatMap(
 
 const id = Effect.map(HttpRouter.schemaPathParams(Schema.Struct({ id: Schema.NonEmptyString })), ({ id }) => id)
 
+/**
+ * The status of each answer. A suspended order is answered `409` and not `503`: an HTTP client retries a `503` as
+ * transient, and a suspended order waits for an operator.
+ */
 const status: Readonly<Record<string, number>> = {
   Created: 201,
   Rejected: 409,
   NotFound: 404,
-  Suspended: 503,
+  Suspended: 409,
   StillSuspended: 409,
   NotSuspended: 409,
   NotDiscarded: 409,

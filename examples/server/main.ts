@@ -5,7 +5,9 @@
  *
  * `HOST` and `PORT` are the runner's address, which the other runners reach it at and its boundary listens on.
  * Cluster's `ShardingConfig` reads them, and the rest of its settings, from the environment, such as
- * `SHARD_LOCK_EXPIRATION`. The process stops on a signal, and the runtime stops with the layer's scope.
+ * `SHARD_LOCK_EXPIRATION`. `RUNNER_HEALTH_CHECK_INTERVAL`, a minute by default, is how long the steps of an older
+ * version die and wait once a newer one launches, and a deployment that rolls out often shortens it
+ * (decision 0159). The process stops on a signal, and the runtime stops with the layer's scope.
  */
 import { BunClusterHttp, BunRuntime } from '@effect/platform-bun'
 import { ShardingConfig } from 'effect/cluster'
