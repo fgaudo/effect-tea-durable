@@ -25,7 +25,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each | [0162](0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md) |
 | [0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md) | On Cluster, an older version serves no shard once a newer one launches, and a step commits only at the newest version |  |
 | [0160](0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md) | On Cluster, a door answers as text, and a creation the program dies on waits for a fix |  |
-| [0161](0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md) | On Cluster, a step settles the machine by the count of the steps that wrote it, and an entity's lock is taken only inside a transaction |  |
+| [0161](0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md) | On Cluster, a step settles the machine by the count of the steps that wrote it, and an entity's lock is taken only inside a transaction | [0164](0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md) |
 | [0162](0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md) | On Cluster, an entity's shard is its partition, and each deployment serves its shards from a singleton of each |  |
 | [0163](0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md) | On Cluster, a reading that waits learns of another runner's commit from the file, read while it waits |  |
 
@@ -211,3 +211,4 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md) | The runtime closes a sequential scope of its own, whatever its caller's |  |
 | [0134](0134-an-entitys-loop-yields-between-two-steps.md) | An entity's loop yields after a step that leaves it more to do, so that a busy entity holds no other for more than a step |  |
 | [0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md) | An entity holds a bounded number of callers' messages, and a `send` past it is answered `Full` |  |
+| [0164](0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md) | Every fork of the runtime drops the transaction, and a count is raised and lowered by one `acquireUseRelease`, as a test reads in the code |  |

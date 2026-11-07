@@ -976,6 +976,10 @@ it has not ended, and an entity leaves the process in one step
 ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). An idle entity's wait
 ends with an item a sleep puts in the entity's queue, and nothing races its take, so an event offered as the wait
 runs out is not lost ([decision 0116](decisions/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md)).
+Every fork of the runtime runs without the transaction of the fiber that forks it, and a count another fiber reads
+is raised and lowered by one `Effect.acquireUseRelease`, unless a comment says why two fibers raise and lower it. A
+test of the suite reads the code and fails on any other form
+([decision 0164](decisions/0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md)).
 An entity's loop yields after a step that leaves it more to do, so that another entity waits for one step of a busy
 one at most. Effect yields a fiber after a count of operations, and a step whose encoding and write take long is few
 operations. A loop with nothing to do starts its wait at once

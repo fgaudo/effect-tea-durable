@@ -790,6 +790,15 @@ export const launchWith = (
 ): Effect.Effect<Runtime, never, SqlClient.SqlClient | Scope.Scope> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
+    /**
+     * `effect` without the transaction of the fiber that forks it, which every fork of the runtime is given
+     * (decision 0164). A fork keeps the services of the forking fiber, and on Cluster a step forks inside its
+     * transaction (decision 0161). A fiber that kept the transaction would run its statements on the step's connection
+     * without the client's lock, and a transaction of its own would be a savepoint there, which SQLite begins as a
+     * transaction while another fiber holds the lock.
+     */
+    const untransacted = <A, E>(effect: Effect.Effect<A, E>) =>
+      Effect.updateContext(effect, (services: Context.Context<never>) => Context.omit(sql.transactionService)(services))
     // The runtime's own scope, sequential whatever its caller's: a parallel scope would run the drain, the closing of
     // `running` and the release of the database at once (decision 0120).
     const scope = yield* Scope.fork(yield* Effect.scope, 'sequential')
@@ -934,7 +943,7 @@ export const launchWith = (
       // its time. A launch that cannot read it keeps -1, which no version is, so the first reading wakes once.
       let seen = yield* read(-1)
       yield* Effect.forkIn(
-        Effect.forever(Effect.gen(function*() {
+        untransacted(Effect.forever(Effect.gen(function*() {
           yield* waiting.await
           const now = yield* read(seen)
           if (now !== seen) {
@@ -942,7 +951,7 @@ export const launchWith = (
             tellAll()
           }
           yield* Effect.sleep(`${millis} millis`)
-        })),
+        }))),
         running,
       )
     }
@@ -1086,6 +1095,8 @@ export const launchWith = (
      */
     const offer = <T extends Types>(loaded: Loaded<T>, event: Machine.Offered<T> | Settle) =>
       Effect.sync(() => {
+        // Raised and lowered by two fibers: raised by the fiber that offers the event, lowered by the entity's loop
+        // once the event's step is done (decision 0063).
         loaded.pending += 1
         Queue.offerUnsafe(loaded.events, event)
         const address = addressOf(loaded.machine.stored)
@@ -1197,7 +1208,7 @@ export const launchWith = (
         const fiber = held.get(id)
         if (fiber === undefined) return Effect.void
         held.delete(id)
-        return Effect.asVoid(Effect.forkIn(Fiber.interrupt(fiber), scope))
+        return Effect.asVoid(Effect.forkIn(untransacted(Fiber.interrupt(fiber)), scope))
       })
 
     const stopAll = <T extends Types>(loaded: Loaded<T>) =>
@@ -1205,15 +1216,6 @@ export const launchWith = (
         for (const id of [...loaded.operations.keys()]) yield* stop(loaded.operations, id)
         for (const id of [...loaded.timers.keys()]) yield* stop(loaded.timers, id)
       })
-
-    /**
-     * `effect` without the transaction of the fiber that forks it. A fork keeps the services of the forking fiber,
-     * and on Cluster a step forks inside its transaction (decision 0161). A fiber that kept the transaction would run
-     * its statements on the step's connection without the client's lock, and a transaction of its own would be a
-     * savepoint there, which SQLite begins as a transaction while another fiber holds the lock.
-     */
-    const untransacted = <A, E>(effect: Effect.Effect<A, E>) =>
-      Effect.updateContext(effect, (services: Context.Context<never>) => Context.omit(sql.transactionService)(services))
 
     /**
      * Forks `effect` in `scope`, held under `id` while it runs. Nothing ended is counted as running (decision 0068):
@@ -1230,14 +1232,14 @@ export const launchWith = (
       Effect.gen(function*() {
         let done = false
         const fiber = yield* Effect.forkIn(
-          Effect.ensuring(
-            untransacted(effect),
+          untransacted(Effect.ensuring(
+            effect,
             Effect.sync(() => {
               done = true
               held.delete(id)
               end()
             }),
-          ),
+          )),
           scope,
         )
         if (!done) held.set(id, fiber)
@@ -1827,7 +1829,7 @@ export const launchWith = (
         // Its stored timers are the waker's again. A crash may run where the step that died cannot be interrupted, as
         // a creation's `onError` does: the fork's option keeps it stoppable by the scope (decision 0112).
         yield* leave(deployed, loaded)
-        yield* Effect.forkIn(stopAll(loaded), deployed.scope, { uninterruptible: false })
+        yield* Effect.forkIn(untransacted(stopAll(loaded)), deployed.scope, { uninterruptible: false })
         const address = addressOf({ name, id })
         const fail = <A>(waiting: Callers<A>) =>
           Effect.gen(function*() {
@@ -1894,7 +1896,7 @@ export const launchWith = (
           Queue.take(loaded.events),
           (taken) => taken._tag === 'Passivate' && taken.wait !== wait ? take : Effect.succeed(taken),
         )
-        return Effect.flatMap(Effect.forkChild(runsOut), (sleep) =>
+        return Effect.flatMap(Effect.forkChild(untransacted(runsOut)), (sleep) =>
           Effect.flatMap(take, (taken) => Effect.as(Fiber.interrupt(sleep), taken))).pipe(
           Effect.flatMap((taken) => {
             // The wait ran out, or the entity was told to leave: it is unloaded if it has nothing to do.
@@ -1923,6 +1925,7 @@ export const launchWith = (
                 // The permit first: a process settled holds no permit of a message applied (decision 0147).
                 event._tag === 'Receive' ? loaded.callers.release(1) : Effect.void,
                 Effect.sync(() => {
+                  // Raised and lowered by two fibers: raised by the fiber that offered the event, lowered here by the loop.
                   loaded.pending -= 1
                   end()
                 }),
@@ -1981,16 +1984,20 @@ export const launchWith = (
     const detached = <T extends Types, A, E>(deployed: Deployment<T>, effect: Effect.Effect<A, E>) =>
       Effect.flatMap(
         Effect.uninterruptible(Effect.gen(function*() {
+          // Raised and lowered by two fibers: the caller raises it, uninterruptible with the fork, and a fiber of the
+          // process's scope lowers it once the effect ends, since a fiber stopped before its first step runs no
+          // finalizer (decision 0110).
           detachments += 1
-          const fiber = yield* Effect.forkIn(effect, deployed.scope, { uninterruptible: false })
+          const fiber = yield* Effect.forkIn(untransacted(effect), deployed.scope, { uninterruptible: false })
           yield* Effect.forkIn(
-            Effect.andThen(
+            untransacted(Effect.andThen(
               Fiber.await(fiber),
               Effect.sync(() => {
+                // Raised and lowered by two fibers: raised by the caller of `detached`, lowered here once the effect ends.
                 detachments -= 1
                 end()
               }),
-            ),
+            )),
             running,
             { uninterruptible: false },
           )
@@ -2521,7 +2528,7 @@ export const launchWith = (
           const awaited = undeployed.get(program.name)
           undeployed.delete(program.name)
           if (awaited !== undefined) Deferred.doneUnsafe(awaited, Effect.void)
-          deployed.waking = yield* Effect.forkIn(waking(deployed), deployed.scope, { uninterruptible: false })
+          deployed.waking = yield* Effect.forkIn(untransacted(waking(deployed)), deployed.scope, { uninterruptible: false })
         }))
         const handle: Handle<T, C> = {
           partitions,

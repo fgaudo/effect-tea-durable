@@ -5,19 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **Rules kept by the form of the code.** Two rules that `src/runtime.ts` keeps by hand are kept by one function
-   each, and a check of `bun run` fails on any other form:
-   - a fiber a step forks runs without the step's transaction
-     ([decision 0161](decisions/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)),
-     so every fork of the runtime goes through the one function that takes the transaction out;
-   - a count another fiber reads is raised and lowered by one `Effect.acquireUseRelease`
-     ([decision 0163](decisions/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)),
-     and never lowered by an `ensuring` added after the raise.
-
-   A fork that must keep the transaction says why, where the check lets it. The step decides, in a note, what the
-   check reads and where it runs. A mutation that writes the other form of such a rule is then killed by the check.
-
-2. **Effect Cluster.** The runtime runs on it as [`docs/cluster.md`](cluster.md) and decisions 0081 to 0092 decide,
+1. **Effect Cluster.** The runtime runs on it as [`docs/cluster.md`](cluster.md) and decisions 0081 to 0092 decide,
    with sharding and rolling deploys. Its runners share one database. It runs on SQLite, whose commit checks the
    shard, and across machines on PostgreSQL once Cluster has a fence, or the runtime one of its own
    ([decision 0084](decisions/0084-a-step-commits-only-where-the-commit-checks-the-shard.md),
@@ -59,7 +47,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    Effect-TS/effect#10239, which asks Cluster to forget a processed request, was closed by a merged pull request
    that no release holds at 4.1.2. Until one does, the deletions are the runtime's own statements (decision 0090).
 
-3. **The runtime's bookkeeping in Effect's `Tx` modules**, if the open question of bookkeeping in transactions, under
+2. **The runtime's bookkeeping in Effect's `Tx` modules**, if the open question of bookkeeping in transactions, under
    [Running](open-questions.md#running), decides for them. What another fiber reads would change in one transaction,
    and not in one synchronous step kept by hand
    ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). The waker's reading of the

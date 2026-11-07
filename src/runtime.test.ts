@@ -4822,7 +4822,7 @@ test('settled never returns between a crash and the activation its due timer bri
   // `settled` that looked between two steps would find the entity neither held nor known to the waker, with its timer
   // due. The message's commit waits at a gate while the timer comes due, then dies once the window is open. A leave
   // split in two steps, the entity taken out of the process in one and the waker poked in the next, returns early at
-  // seed 394, pinned, under the loop forked without the step's transaction of decision 0161.
+  // seed 169, pinned, under every fork of the runtime given `untransacted` of decision 0164.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -4860,7 +4860,7 @@ test('settled never returns between a crash and the activation its due timer bri
           yield* runtime.settled
           return { early, restarted }
         }))
-    }), { early: false, restarted: true }, { open: false, pinned: [394] })
+    }), { early: false, restarted: true }, { open: false, pinned: [169] })
 }, 60_000)
 
 test('settled never returns while the waker rests from a reading another entity left during, under bounded schedules', () => {
