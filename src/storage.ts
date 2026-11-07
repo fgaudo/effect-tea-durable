@@ -385,7 +385,43 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
       PRIMARY KEY (name, id, sender_name, sender_id)
     )
   `
+  // On Cluster: the Cluster request id of each request an entity's operation sent, kept under the work that sent it,
+  // whose step deletes Cluster's rows under the id once the work ends. An id with no sender is pending: its request
+  // was answered after its work ended, or nothing waits for its answer, and the next step of any entity deletes
+  // Cluster's rows under it (decisions 0090, 0092). The id is an integer, as Cluster's column of it is, so that the
+  // two compare as numbers.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS sent_requests (
+      request_id ${integer} PRIMARY KEY,
+      sender_name ${text},
+      sender_id ${text},
+      sender_key ${text},
+      sender_parameter ${text},
+      sender_incarnation ${integer}
+    )
+  `
+  yield* sql`CREATE INDEX IF NOT EXISTS sent_requests_sender ON sent_requests (sender_name, sender_id)`
 }).pipe(Effect.orDie)
+
+/**
+ * Cluster's tables of messages and replies, under the prefix `SqlMessageStorage` takes by default: the runtime on
+ * Cluster deletes their rows by request id, as Cluster has no operation that forgets a processed request
+ * (decision 0090). A launcher that gives `SqlMessageStorage` another prefix keeps those rows.
+ */
+const clusterMessages = 'cluster_messages'
+const clusterReplies = 'cluster_replies'
+
+/**
+ * Deletes Cluster's rows under the request ids of `sent_requests` that `where` selects, then those ids. Every row
+ * under an id goes: the request, its replies and any envelope stored under it (decision 0090).
+ */
+const forgetSent = (sql: SqlClient.SqlClient, where: Statement.Fragment) =>
+  Effect.gen(function*() {
+    const ids = sql`SELECT request_id FROM sent_requests WHERE ${where}`
+    yield* sql`DELETE FROM ${sql(clusterReplies)} WHERE request_id IN (${ids})`
+    yield* sql`DELETE FROM ${sql(clusterMessages)} WHERE request_id IN (${ids})`
+    yield* sql`DELETE FROM sent_requests WHERE ${where}`
+  })
 
 /** A program's name and the version it runs, as a launch on Cluster records them (decision 0159). */
 export type Versioned = Readonly<{ name: string; version: number }>
@@ -617,6 +653,7 @@ export const renamed = (
         }
         yield* dialect === 'pg' ? inProcess(from, to) : inPlace(from, to)
         yield* sql`UPDATE replies SET sender_name = ${to} WHERE sender_name = ${from}`
+        yield* sql`UPDATE sent_requests SET sender_name = ${to} WHERE sender_name = ${from}`
         yield* sql`UPDATE entities SET keyed_as = COALESCE(keyed_as, ${from}) WHERE name = ${from}`
         for (const table of namedTables) yield* sql`UPDATE ${sql(table)} SET name = ${to} WHERE name = ${from}`
       })
@@ -1140,16 +1177,33 @@ export interface Storage<T extends Types> {
   readonly wait: (id: string, sender: Readonly<{ name: string; id: string }>) => Effect.Effect<void>
   /** On Cluster: the senders recorded for the entity `id`, deleted as they are read (decision 0167). */
   readonly waiters: (id: string) => Effect.Effect<ReadonlyArray<Readonly<{ name: string; id: string }>>>
+  /**
+   * On Cluster: keeps the Cluster request id `requestId` of a request the operation `asked` sent, under its work if
+   * the asker's work still holds, and pending otherwise. An id already kept is not kept again (decision 0090).
+   */
+  readonly keepSent: (
+    requestId: string,
+    asked: Readonly<{ entity: Readonly<{ name: string; id: string }>; key: Key; incarnation: number }>,
+  ) => Effect.Effect<void>
+  /** On Cluster: keeps the Cluster request id `requestId` pending, as a request nothing waits for (decision 0092). */
+  readonly pendSent: (requestId: string) => Effect.Effect<void>
+  /**
+   * On Cluster: deletes Cluster's rows under every pending id, and the pending ids. A step runs it first, before
+   * Cluster saves the rows of the step's own request (decision 0090).
+   */
+  readonly forgetPending: Effect.Effect<void>
 }
 
 /**
  * The storage of one program's entities, on one client, with its schemas read once. `partitions` is the number of
- * partitions of the log, which `partitioned` checks against the database.
+ * partitions of the log, which `partitioned` checks against the database. `onCluster` says whether Cluster's tables
+ * are beside the runtime's, whose rows a step deletes with the work that sent them (decision 0090).
  */
 export const storage = <T extends Types>(
   program: Program<T>,
   sql: SqlClient.SqlClient,
   partitions: number = defaultPartitions,
+  onCluster: boolean = false,
 ): Storage<T> => {
   const state = json(program.schemas.state)
   const inbound = json(program.schemas.inbound)
@@ -1558,6 +1612,15 @@ export const storage = <T extends Types>(
           WHERE sender_name = ${name} AND sender_id = ${id} AND sender_key = ${ended.key}
             AND sender_parameter = ${ended.parameter} AND sender_incarnation = ${incarnation}
         `
+        // On Cluster, the work takes Cluster's rows of the requests it sent with it, as it takes its replies
+        // (decision 0090).
+        if (onCluster) {
+          yield* forgetSent(
+            sql,
+            sql`sender_name = ${name} AND sender_id = ${id} AND sender_key = ${ended.key}
+              AND sender_parameter = ${ended.parameter} AND sender_incarnation = ${incarnation}`,
+          )
+        }
       }
       // A step that answers a caller takes its entity's replies past their time with it (decision 0125).
       if (written.replies.length > 0) {
@@ -2248,6 +2311,43 @@ export const storage = <T extends Types>(
       Effect.orDie,
     )
 
+  // The asker's work is read in the step's transaction, which on SQLite comes after every other: the step that ends
+  // the work either commits before, and the id is pending, or after, and deletes the id's rows (decision 0090).
+  const keepSent = (
+    requestId: string,
+    asked: Readonly<{ entity: Readonly<{ name: string; id: string }>; key: Key; incarnation: number }>,
+  ) =>
+    Effect.gen(function*() {
+      const asking = keyRow(asked.key)
+      const [held] = yield* sql<{ held: number }>`
+        SELECT COUNT(*) AS held FROM entity_keys
+        WHERE name = ${asked.entity.name} AND id = ${asked.entity.id} AND key = ${asking.key}
+          AND parameter = ${asking.parameter} AND incarnation = ${asked.incarnation}
+      `
+      if (Number(held?.held ?? 0) === 0) return yield* pendSent(requestId)
+      yield* sql`
+        INSERT INTO sent_requests ${
+        sql.insert({
+          request_id: requestId,
+          sender_name: asked.entity.name,
+          sender_id: asked.entity.id,
+          sender_key: asking.key,
+          sender_parameter: asking.parameter,
+          sender_incarnation: asked.incarnation,
+        })
+      }
+        ON CONFLICT (request_id) DO NOTHING
+      `
+    }).pipe(Effect.orDie)
+
+  const pendSent = (requestId: string) =>
+    sql`INSERT INTO sent_requests ${sql.insert({ request_id: requestId })} ON CONFLICT (request_id) DO NOTHING`.pipe(
+      Effect.asVoid,
+      Effect.orDie,
+    )
+
+  const forgetPending = forgetSent(sql, sql`sender_name IS NULL`).pipe(Effect.orDie)
+
   const stepsOf = (id: string) =>
     Effect.flatMap(
       sql`SELECT steps FROM entities WHERE name = ${name} AND id = ${id}`,
@@ -2282,5 +2382,8 @@ export const storage = <T extends Types>(
     suspended: suspensions,
     wait,
     waiters,
+    keepSent,
+    pendSent,
+    forgetPending,
   }
 }

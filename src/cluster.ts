@@ -154,14 +154,15 @@ export const atNewest = (program: Pick<Program<Types>, 'name' | 'migrations'>) =
  */
 const handlersOf = <R>(
   program: Pick<Program<Types>, 'name' | 'migrations'>,
-  step: (delivered: Delivered | Operating) => Effect.Effect<string, never, R>,
-  resumed: (receiver: Address) => Effect.Effect<void>,
+  step: (delivered: Delivered | Operating, requestId: string) => Effect.Effect<string, never, R>,
+  resumed: (receiver: Address, requestId: string) => Effect.Effect<void>,
 ) => {
   const handle = (_tag: Delivered['_tag']) =>
   (
-    { address, payload }: Readonly<{
+    { address, payload, requestId }: Readonly<{
       address: Readonly<{ entityId: string }>
       payload: Readonly<{ version: number; request: string; message: string; keep?: number }>
+      requestId: Snowflake.Snowflake
     }>,
   ) =>
     Effect.andThen(
@@ -173,16 +174,19 @@ const handlersOf = <R>(
         request: payload.request,
         message: payload.message,
         ...(payload.keep === undefined ? {} : { keep: payload.keep }),
-      }),
+      }, String(requestId)),
     )
-  const operate = (_tag: Operating['_tag']) => ({ address }: Readonly<{ address: Readonly<{ entityId: string }> }>) =>
-    Effect.andThen(atNewest(program), step({ _tag, id: address.entityId }))
+  const operate = (_tag: Operating['_tag']) =>
+  (
+    { address, requestId }: Readonly<{ address: Readonly<{ entityId: string }>; requestId: Snowflake.Snowflake }>,
+  ) => Effect.andThen(atNewest(program), step({ _tag, id: address.entityId }, String(requestId)))
   return {
     Create: handle('Create'),
     Message: handle('Message'),
     Resume: operate('Resume'),
     Discard: operate('Discard'),
-    Resumed: ({ payload }: Readonly<{ payload: Address }>) => resumed({ name: payload.name, id: payload.id }),
+    Resumed: ({ payload, requestId }: Readonly<{ payload: Address; requestId: Snowflake.Snowflake }>) =>
+      resumed({ name: payload.name, id: payload.id }, String(requestId)),
   }
 }
 
@@ -317,8 +321,8 @@ export const onCluster: Effect.Effect<
         const answer = Schema.encodeSync(answerCodec(program))
         const created = Schema.encodeSync(creationCodec)
         const operated = Schema.encodeSync(operatedCodec)
-        const handlers = handlersOf(program, (delivered) =>
-          Effect.map(step(delivered), (stepped) =>
+        const handlers = handlersOf(program, (delivered, requestId) =>
+          Effect.map(step(delivered, requestId), (stepped) =>
             stepped._tag === 'Create'
               ? created(stepped.answer)
               : stepped._tag === 'Operated'

@@ -69,6 +69,16 @@ import {
   type Strategy,
 } from './testing.ts'
 
+/**
+ * Cluster's tables of messages and replies, with the one column the runtime on Cluster deletes their rows by, for the
+ * tests that run the runtime on a fake of Cluster (decision 0090).
+ */
+const clusterTables = Effect.flatMap(SqlClient.SqlClient, (sql) =>
+  Effect.andThen(
+    sql`CREATE TABLE IF NOT EXISTS cluster_messages (request_id BIGINT NOT NULL)`,
+    sql`CREATE TABLE IF NOT EXISTS cluster_replies (request_id BIGINT NOT NULL)`,
+  )).pipe(Effect.orDie)
+
 // The toy of `machine.test.ts`, with the schemas a runtime needs: `a` is idempotent, `b` at most once, `c` at
 // least once, and `t` a timer. Each key's work ends by removing its key, unless a message brings it back.
 const keys = ['a', 'b', 'c', 't'] as const
@@ -5061,6 +5071,7 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
       const sql = yield* SqlClient.SqlClient
       // On Cluster the tables are created where `sharding` is built, before the runtime launches.
       yield* createTables
+      yield* clusterTables
       // One shard, held until the test interrupts its singleton, which runs what the runtime runs as the shard goes.
       let step: ((delivered: Delivered) => Effect.Effect<unknown>) | null = null
       const singletons: Array<Fiber.Fiber<never>> = []
@@ -5120,6 +5131,7 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
       asked = []
       const sql = yield* SqlClient.SqlClient
       yield* createTables
+      yield* clusterTables
       let step: ((delivered: Delivered) => Effect.Effect<unknown>) | null = null
       const cluster: OnCluster = {
         shards: 1,
@@ -5262,6 +5274,7 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
         }
         return { cluster, step: () => step! }
       }
+      yield* clusterTables
       const sql = yield* SqlClient.SqlClient
       const reading = played({ version, millis })
       const writing = played({ version: Effect.succeed(0), millis })

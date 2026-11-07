@@ -77,5 +77,7 @@ Other ways:
 
 - A caller or an operation that sends to a program a runner does not deploy yet is failed until that runner
   deploys it, and is handled at its next retry after that.
-- Every failure Cluster saved and reset leaves rows in Cluster's tables, until the deletions of
-  [decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) are code.
+- A failure Cluster saved and reset for an operation's request goes with the operation's work, under the request's
+  id ([decision 0169](0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md)), once
+  a step has answered the request. One for a caller's request stays in Cluster's tables, as the caller's request does
+  ([decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)).

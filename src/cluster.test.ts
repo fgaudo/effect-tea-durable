@@ -950,6 +950,48 @@ describe('the shards of a runner on Cluster', () => {
         expect(left?.held).toBe(0)
       })), 30_000)
 
+  test("an operation's work takes Cluster's rows of its requests as it ends, and the next step those of `Resumed`", () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const ids = Array.from({ length: 64 }, (_, i) => `f${i}`)
+        const sender = ids.find((id) => first.holds(id))!
+        const receiver = ids.find((id) => second.holds(id))!
+        yield* create(first, sender)
+        yield* create(first, receiver)
+        yield* send(first, receiver, { _tag: 'Break' }, 'm-break')
+        yield* send(first, sender, { _tag: 'Relay', to: receiver }, 'm-relay')
+        const sql = yield* SqlClient.SqlClient
+        const count = (rows: Effect.Effect<ReadonlyArray<{ held: number }>, unknown>) =>
+          Effect.map(rows, ([row]) => Number(row?.held ?? 0))
+        // The operation's creation and message, whose request text names the sender's operation.
+        const operations = count(sql<{ held: number }>`
+          SELECT COUNT(*) AS held FROM cluster_messages WHERE payload LIKE '%Operation%'
+        `)
+        const resumed = count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM cluster_messages WHERE tag = 'Resumed'`)
+        const kept = count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM sent_requests`)
+        yield* until(count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM waiting`), (held) => held === 1)
+        // While the work holds, its requests' rows and their ids are kept.
+        expect(yield* operations).toBe(2)
+        expect(yield* kept).toBe(2)
+        yield* first.bell.discard(receiver)
+        yield* until(stateOf(sender), (state) => state?.relayed !== null)
+        // The step that delivered the completion ended the work, and deleted the rows under its ids. The receiver's
+        // step that answered the message sent again came after `Resumed`'s, and deleted the rows of its pending id.
+        expect(yield* operations).toBe(0)
+        expect(yield* resumed).toBe(0)
+        expect(yield* kept).toBe(0)
+        expect(yield* count(sql<{ held: number }>`
+          SELECT COUNT(*) AS held FROM cluster_replies
+          WHERE request_id NOT IN (SELECT request_id FROM cluster_messages)
+        `)).toBe(0)
+      })), 30_000)
+
   test('a request Cluster failed, its type registered by no runner in time, is reset, and handled once it is', () =>
     onFile((start) =>
       Effect.gen(function*() {

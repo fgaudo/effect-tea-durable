@@ -524,13 +524,14 @@ export type DoorAnswer<Reason> =
 export interface OnCluster {
   /**
    * Registers the door of `program`, whose requests `step` steps, and whose `Resumed` from the entity `receiver`
-   * calls `resumed` with it (decisions 0092, 0167).
+   * calls `resumed` with it (decisions 0092, 0167). Each is given the Cluster request id of the request, in its
+   * decimal digits, in Cluster's transaction (decision 0090).
    */
   readonly register: <T extends Types>(
     program: Program<T>,
-    step: (delivered: Delivered | Operating) => Effect.Effect<DoorAnswer<T['rejection']>>,
+    step: (delivered: Delivered | Operating, requestId: string) => Effect.Effect<DoorAnswer<T['rejection']>>,
     idle: number,
-    resumed: (receiver: Address) => Effect.Effect<void>,
+    resumed: (receiver: Address, requestId: string) => Effect.Effect<void>,
   ) => Effect.Effect<void, never, Scope.Scope>
   /** How many shards the doors' group has: Cluster's `shardsPerGroup`. */
   readonly shards: number
@@ -1546,6 +1547,8 @@ export const launchWith = (
         // The step holds the entity's lock inside its transaction, as a door's step does, so that a crash from a shard
         // let go waits for it, and stops what its settling starts (decision 0162).
         const stepped = yield* sql.withTransaction(holding(entity)(Effect.gen(function*() {
+          // Every step deletes Cluster's rows under the pending ids, as a door's step does (decision 0090).
+          yield* deployed.storage.forgetPending
           // An event taken before its entity left the process is dropped, as the loop's end says (decision 0162).
           if (deployed.loaded.get(entity.id) !== loaded) return null
           if (!(yield* settle(deployed, loaded))) return yield* Effect.die(unsettled(entity.name, entity.id))
@@ -1683,11 +1686,14 @@ export const launchWith = (
      * Cluster delivers the request again (decision 0162).
      */
     const doorStep = <T extends Types>(deployed: Deployment<T>) =>
-    (delivered: Delivered | Operating): Effect.Effect<DoorAnswer<T['rejection']>> => {
+    (delivered: Delivered | Operating, requestId: string): Effect.Effect<DoorAnswer<T['rejection']>> => {
       const { program, storage: stored } = deployed
       const { id } = delivered
       const entity: Address = { name: program.name, id }
       return holding(entity)(Effect.gen(function*(): Effect.fn.Return<DoorAnswer<T['rejection']>, Unheld> {
+        // First, before Cluster saves this request's own rows after the step, which would be deleted unanswered
+        // (decision 0090).
+        yield* stored.forgetPending
         const now = yield* DateTime.now
         let found = deployed.loaded.get(id) ?? null
         if (found !== null && !(yield* settle(deployed, found))) {
@@ -1701,6 +1707,7 @@ export const launchWith = (
         let answer: DoorAnswer<T['rejection']>
         if (delivered._tag === 'Create') {
           const { request, flags } = yield* stored.deliveredCreation(delivered.version, delivered.request, delivered.message)
+          if (request._tag === 'Operation') yield* stored.keepSent(requestId, request)
           if (stepped.loaded === null) {
             const started = Machine.start(program, id, flags, now, request)
             // A creation the program dies on stores nothing, and dies: Cluster delivers it again (decision 0160).
@@ -1722,6 +1729,9 @@ export const launchWith = (
           }
         } else if (delivered._tag === 'Message') {
           const { request, message } = yield* stored.delivered(delivered.version, delivered.request, delivered.message)
+          // Kept whatever the step answers: a request answered `Suspended` or `NotFound` is reset and answered again
+          // under the same id, which is not kept twice (decision 0090).
+          if (request._tag === 'Operation') yield* stored.keepSent(requestId, request)
           if (stepped.loaded === null) return { _tag: 'Message', answer: { _tag: 'NotFound' } }
           const key = Machine.requestKey(program, request)
           const reply = yield* stored.reply(id, request, DateTime.toEpochMillis(now))
@@ -2527,7 +2537,7 @@ export const launchWith = (
             const deployed: Deployment<T> = {
               program,
               consumers,
-              storage: storage(program, sql, partitions),
+              storage: storage(program, sql, partitions, cluster !== null),
               scope: yield* Scope.fork(running),
               loaded: new Map(),
               // Nothing is known of the stored timers until the waker has read them once.
@@ -2577,7 +2587,9 @@ export const launchWith = (
         // the runner holds: the one of a shard held starts as it is registered, and activates the entities the shard
         // left with work (decisions 0092, 0162).
         if (cluster !== null) {
-          const resumed = (receiver: Address) => Effect.sync(() => wake(receiver))
+          // Nothing waits for the answer to `Resumed`, so its own Cluster request id is pending (decision 0092).
+          const resumed = (receiver: Address, requestId: string) =>
+            Effect.andThen(deployed.storage.pendSent(requestId), Effect.sync(() => wake(receiver)))
           yield* Scope.provide(cluster.register(program, doorStep(deployed), passivate, resumed), deployed.scope)
           const singletons = yield* Effect.sync(() => singletonsOf(cluster, program.name))
           for (const [shard, name] of singletons) {

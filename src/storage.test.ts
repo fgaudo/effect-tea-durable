@@ -230,6 +230,50 @@ test('the work that ended takes the replies to its requests with it, and no othe
       expect(loaded?.incarnations).toBe(1)
     })))
 
+// On Cluster, Cluster's tables sit beside the runtime's. Here they are made with the one column the runtime reads,
+// as Cluster makes it on SQLite.
+test('on Cluster, an id kept under work goes with it, and a pending one with the next step, to its last digit', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      yield* sql`CREATE TABLE cluster_messages (request_id BIGINT NOT NULL)`
+      yield* sql`CREATE TABLE cluster_replies (request_id BIGINT NOT NULL)`
+      const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
+      const asking = storage(asker, sql, undefined, true)
+      yield* asking.write(
+        'a',
+        created({ keys: [{ key: { name: 'ask' }, incarnation: 1, work, delivery: 'Idempotent', due: null }], incarnations: 1 }),
+        0,
+      )
+      // Ids past 2^53, which differ in their last digit alone.
+      const [held, late, told] = ['9007199254740993', '9007199254740995', '9007199254740997']
+      for (const id of [held, late, told]) {
+        yield* sql`INSERT INTO cluster_messages (request_id) VALUES (${id})`
+        yield* sql`INSERT INTO cluster_replies (request_id) VALUES (${id})`
+      }
+      const ids = (table: string) =>
+        Effect.map(
+          sql<{ id: string }>`SELECT CAST(request_id AS TEXT) AS id FROM ${sql(table)} ORDER BY request_id`,
+          (rows) => rows.map(({ id }) => id),
+        )
+      const ask = { entity: { name: 'Asker', id: 'a' }, key: { name: 'ask' }, incarnation: 1 }
+      yield* asking.keepSent(held, ask)
+      yield* asking.keepSent(held, ask)
+      // The work of the second incarnation no longer holds: its request was answered after its work ended.
+      yield* asking.keepSent(late, { ...ask, incarnation: 2 })
+      yield* asking.pendSent(told)
+      yield* asking.forgetPending
+      expect(yield* ids('cluster_messages')).toEqual([held])
+      expect(yield* ids('cluster_replies')).toEqual([held])
+      yield* asking.write(
+        'a',
+        written({ gone: [{ name: 'ask' }], incarnations: 1, ended: [{ key: { name: 'ask' }, incarnation: 1 }] }),
+        0,
+      )
+      expect(yield* ids('cluster_messages')).toEqual([])
+      expect(yield* ids('cluster_replies')).toEqual([])
+      expect(yield* ids('sent_requests')).toEqual([])
+    }).pipe(Effect.orDie), ['sqlite']))
+
 // A request is found by its text, and a caller's by its sender as a version before stored it (decision 0065).
 test('a reply is read by its request alone, and a caller is given its own', () =>
   database((sql) =>

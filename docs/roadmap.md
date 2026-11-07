@@ -39,14 +39,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    So do an operation's, and a step that resumes or discards an entity tells `Resumed` to the entities whose
    operations it answered `Suspended` ([decision 0167](decisions/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md), proposed). A failure
    Cluster saved of its own is reset before it is given
-   ([decision 0168](decisions/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md), proposed). What is left of requests on Cluster:
-   - the Cluster request ids an operation's requests are answered under, kept under the work that asked, and the
-     pending id a `Resumed` leaves (decisions 0090, 0092). The client that resets a failure Cluster saved keeps the
-     request's id first (decision 0092);
-   - the deletion of Cluster's rows by the Cluster `requestId` a door's handler is given: an operation's with the
-     work that asked ([decision 0090](decisions/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)), and a
-     caller's with its reply once past its time (decision 0165). Until then Cluster answers a retry past `keep`
-     within a version from the reply it saved.
+   ([decision 0168](decisions/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md), proposed). An
+   operation's request ids are kept under its work, and Cluster's rows deleted with it, and `Resumed` leaves its id
+   pending ([decision 0169](decisions/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md),
+   proposed). What is left of requests on Cluster:
+   - the client that resets a failure Cluster saved keeps the request's id first, under the asker's work or pending
+     ([decision 0092](decisions/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md));
+   - the deletion of a caller's rows in Cluster's tables with its reply once past its time (decision 0165). Until
+     then Cluster answers a retry past `keep` within a version from the reply it saved.
 
    Effect-TS/effect#10239, which asks Cluster to forget a processed request, was closed by a merged pull request
    that no release holds at 4.1.2. Until one does, the deletions are the runtime's own statements (decision 0090).

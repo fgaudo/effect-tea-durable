@@ -43,9 +43,9 @@ Three things in Cluster's source at 4.1.2 bear on how that message is sent:
   that receiver**, as a resumption wakes them on one process. The handler writes nothing. A sender whose operation
   no longer runs on that runner is woken by nothing there. Its operation runs again at its entity's next
   activation, and sends again (decision 0092).
-- **What is left of an operation's request on Cluster is not code yet.** The step that answers an operation's
-  request does not keep its Cluster request id, and no step deletes Cluster's rows
-  ([decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). An answer of Cluster's own defect is
+- **An operation's request ids are kept under its work, and Cluster's rows deleted with it**, as
+  [decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) decides and [decision 0169](0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md) makes
+  code. An answer of Cluster's own defect is
   reset by the client before it is given, and the operation takes it as a receiver's crash, and sends again after
   `retry` ([decision 0168](0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md)).
 
@@ -93,5 +93,5 @@ Other ways:
 ## Consequences
 
 - An operation can send to an entity on any runner, and waits for a suspended receiver at no cost.
-- Every `Resumed` leaves a request and a reply in Cluster's tables, as an operator's event does, until the
-  deletions of decision 0090 are code.
+- Every `Resumed` leaves its own id pending, and the next step of any entity deletes its rows in Cluster's
+  tables (decision 0169).

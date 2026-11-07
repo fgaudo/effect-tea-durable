@@ -32,6 +32,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md) | On Cluster, an operator resumes and discards through the door's client, each event a request of its own |  |
 | [0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md) | On Cluster, an operation sends through the door's client, and is woken by `Resumed` |  |
 | [0168](0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md) | On Cluster, a failure Cluster saved of its own is reset before it is given |  |
+| [0169](0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md) | On Cluster, an operation's request ids are kept under its work, and Cluster's rows deleted with it |  |
 
 ## The project
 

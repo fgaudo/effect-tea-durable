@@ -36,9 +36,9 @@ non-persisted request saves no reply, and its success is delivered when the hand
   ([decision 0160](0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)).
   What the event sets going starts once a later step finds the commit, as for any door's step (decision 0161).
 - **An operator's event has no primary key.** Cluster saves each one sent as a request of its own, and no saved
-  reply of an earlier event answers a later one. Cluster keeps the rows of every event, until the deletions that
-  [decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) decides for an operation's request reach
-  them too.
+  reply of an earlier event answers a later one. Cluster keeps the rows of every event: the operator's client reads the reply
+  from storage, which the deletions of an operation's rows would take first
+  ([decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md), [decision 0169](0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md)).
 - **Every answer of an operator's event is a reply.** `NotFound` and `NotSuspended` are what the event found, and a
   new event is a new request, so the client resets nothing, unlike a caller's `Suspended`
   ([decision 0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md)).
@@ -60,8 +60,7 @@ non-persisted request saves no reply, and its success is delivered when the hand
 - The door's step of an operator's event answers as the loop does on one process: **tested** by the same test, for
   `NotFound`, `NotSuspended`, `Resumed` and `Discarded`. `NotDiscarded` and `StillSuspended` are read off the
   machine by the same function on both paths, and are tested on one process for decision 0114.
-- That an operator's event is rare enough for Cluster's rows of it to wait for the deletions of decision 0090:
-  **only reasoned**.
+- That an operator's event is rare enough for Cluster's rows of it to be kept: **only reasoned**.
 
 ## Alternatives
 
@@ -86,7 +85,6 @@ Other ways:
 ## Consequences
 
 - An operator can resume or discard an entity from any runner, and the step runs where the entity's shard is.
-- Every event an operator sends leaves a request and a reply in Cluster's tables, until the deletions of decision
-  0090 are code.
+- Every event an operator sends leaves a request and a reply in Cluster's tables.
 - A `Discard` whose answer is lost to the operator, by a timeout or an interruption, is still applied once. The
   operator reads `Handle.suspended` before sending another, as on one process.
