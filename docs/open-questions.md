@@ -4,6 +4,19 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Storage and reading
 
+- **A reply Cluster saves after its request's rows are gone.** On Cluster, the step that ends an operation's work
+  deletes Cluster's rows of the requests that work sent, a request Cluster failed and reset among them
+  ([decision 0170](decisions/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md)).
+  `saveReply` of `SqlMessageStorage` at 4.1.2 inserts a reply without checking that its request is still there. A
+  delivery Cluster read before the deletion, and failed after it, leaves one row in `cluster_replies` for ever. The
+  window is short, and no test reaches it. Whether the runtime deletes such rows, and when, is not decided. It would
+  be decided by:
+  - a release of Cluster whose retention of completed requests, from the pull request for Effect-TS/effect#10239,
+    deletes replies with no request;
+  - a test that holds Cluster's delivery between its read and its save, which shows how often the row is left;
+  - what a sweep of `cluster_replies` by the ids absent from `cluster_messages` costs in a step, next to one on a
+    timer.
+
 - **A disk that is really full.** A step that cannot commit dies, and a forget and a prune free the room steps need
   ([decision 0152](decisions/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). The spike `spikes/full-database.test.ts` sees it
   under `PRAGMA max_page_count`, with the rollback journal, which caps the database file and not its journal. On a

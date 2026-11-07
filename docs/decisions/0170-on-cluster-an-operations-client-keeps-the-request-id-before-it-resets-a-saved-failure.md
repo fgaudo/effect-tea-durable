@@ -47,9 +47,16 @@ own, and keep it pending if the work has ended, neither resetting nor sending.
 
 - The step that ends the work deletes the rows of a request Cluster failed and reset, before a runner that registers
   the type delivers it: **tested** by `an operation's request Cluster failed is kept under its work, and goes with it
-  before it is delivered` in [`src/cluster.test.ts`](../../src/cluster.test.ts). It fails without the keep: the
-  creation's row is still in `cluster_messages` once the work has ended. The test is in `src/cluster.test.ts` and
-  not in `src/runtime.test.ts`, since only Cluster saves such a failure.
+  before it is delivered`, once `by create` and once `by send`, in [`src/cluster.test.ts`](../../src/cluster.test.ts).
+  Each fails without its keep: the request's row is still in `cluster_messages` once the work has ended. The test is
+  in `src/cluster.test.ts` and not in `src/runtime.test.ts`, since only Cluster saves such a failure.
+- That no delivery Cluster read before the step that ends the work saves its failure after that step: **only
+  reasoned**, and not promised. `saveReply` of `SqlMessageStorage` at 4.1.2 inserts the reply without checking that
+  the request's row is still there: **read in the source**. Once the registration window has passed, Cluster fails a
+  delivery as soon as it reads it, so the time between the read and the save is short, and the test above does not
+  reach it. A delivery that falls in it leaves one row in `cluster_replies` under an id no table keeps, for ever. The
+  row loses nothing and is never delivered, since its request is gone; the question is in
+  [open questions](../open-questions.md#storage-and-reading).
 - That the keep gives whether the work holds, kept and pending: **tested** by `on Cluster, an id kept under work goes
   with it, and a pending one with the next step, to its last digit` in [`src/storage.test.ts`](../../src/storage.test.ts).
 - That a client finds the asker's work ended only on a runner that no longer holds the asker's shard: **only
@@ -63,8 +70,10 @@ own, and keep it pending if the work has ended, neither resetting nor sending.
 - That `Effect.uninterruptible` keeps the keep and the reset whole: **documented** in its JSDoc, `@stability stable`.
   That `Effect.onError` cannot wait for an interruption: **documented** in its JSDoc, which says its handler is not
   interrupted.
-- That a handler of `Effect.catchCause` can be interrupted: **only reasoned**, since its JSDoc says nothing of
-  interruption. Were it not, the wait above would last for ever, on a runner no test reaches, and lose no row.
+- That a handler of `Effect.catchCause` can be interrupted: **read in the source**, since its JSDoc says nothing of
+  interruption. At 4.1.2 `catchCause` is the primitive `OnFailure` of `internal/effect.ts`, whose handler runs as a
+  continuation of the fiber, with the fiber's interruptibility, and is wrapped in no region that cannot be
+  interrupted. Were it not, the wait above would last for ever, on a runner no test reaches, and lose no row.
 
 ## Alternatives
 
@@ -90,6 +99,7 @@ Other ways:
 ## Consequences
 
 - An operation that times out a request to a program no runner deploys yet leaves nothing in Cluster's tables once
-  its work ends, and the receiver never sees the request.
+  its work ends, and the receiver never sees the request. The one exception is a delivery Cluster read before the
+  step that ends the work and failed after it, which leaves one reply in `cluster_replies` with no request.
 - A caller's request Cluster failed is still reset without a keep, and its rows stay in Cluster's tables, as every
   caller's do until their deletion past their time (decision 0165).

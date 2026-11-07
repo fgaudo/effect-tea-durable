@@ -617,7 +617,7 @@ describe('the shards of a runner on Cluster', () => {
       n: number
       relay: string | null
       relayed: string | null
-      haunt: string | null
+      haunt: Readonly<{ to: string; by: 'create' | 'send' }> | null
     }>
     flags: Readonly<{ who: string }>
     inbound:
@@ -626,7 +626,7 @@ describe('the shards of a runner on Cluster', () => {
       | Readonly<{ _tag: 'Relay'; to: string }>
       | Readonly<{ _tag: 'Poke' }>
       | Readonly<{ _tag: 'Break' }>
-      | Readonly<{ _tag: 'Haunt'; to: string }>
+      | Readonly<{ _tag: 'Haunt'; to: string; by: 'create' | 'send' }>
     internal:
       | Readonly<{ _tag: 'Answered' }>
       | Readonly<{ _tag: 'Rang' }>
@@ -635,7 +635,7 @@ describe('the shards of a runner on Cluster', () => {
     operation:
       | Readonly<{ _tag: 'Ask'; who: string }>
       | Readonly<{ _tag: 'Relay'; to: string }>
-      | Readonly<{ _tag: 'Haunt'; to: string }>
+      | Readonly<{ _tag: 'Haunt'; to: string; by: 'create' | 'send' }>
     key: 'ask' | 'ring' | 'relay' | 'haunt'
     parameter: {}
     rejection: never
@@ -660,7 +660,7 @@ describe('the shards of a runner on Cluster', () => {
         n: Schema.Int,
         relay: Schema.NullOr(Schema.String),
         relayed: Schema.NullOr(Schema.String),
-        haunt: Schema.NullOr(Schema.String),
+        haunt: Schema.NullOr(Schema.Struct({ to: Schema.String, by: Schema.Literals(['create', 'send']) })),
       }),
       flags: Schema.Struct({ who: Schema.String }),
       inbound: Schema.Union([
@@ -669,7 +669,7 @@ describe('the shards of a runner on Cluster', () => {
         Schema.TaggedStruct('Relay', { to: Schema.String }),
         Schema.TaggedStruct('Poke', {}),
         Schema.TaggedStruct('Break', {}),
-        Schema.TaggedStruct('Haunt', { to: Schema.String }),
+        Schema.TaggedStruct('Haunt', { to: Schema.String, by: Schema.Literals(['create', 'send']) }),
       ]),
       internal: Schema.Union([
         Schema.TaggedStruct('Answered', {}),
@@ -680,7 +680,7 @@ describe('the shards of a runner on Cluster', () => {
       operation: Schema.Union([
         Schema.TaggedStruct('Ask', { who: Schema.String }),
         Schema.TaggedStruct('Relay', { to: Schema.String }),
-        Schema.TaggedStruct('Haunt', { to: Schema.String }),
+        Schema.TaggedStruct('Haunt', { to: Schema.String, by: Schema.Literals(['create', 'send']) }),
       ]),
       rejection: Schema.Never,
       sender: Schema.Struct({ user: Schema.String }),
@@ -700,7 +700,7 @@ describe('the shards of a runner on Cluster', () => {
         case 'Break':
           return defect('broken')
         case 'Haunt':
-          return { ...state, haunt: message.to }
+          return { ...state, haunt: { to: message.to, by: message.by } }
         case 'Haunted':
           return { ...state, haunt: null }
         case 'Answered':
@@ -715,7 +715,7 @@ describe('the shards of a runner on Cluster', () => {
       ...(state.asking ? { ask: { _tag: 'Ask', who: state.who } as const } : {}),
       ...(state.ring !== null ? { ring: timer(DateTime.makeUnsafe(state.ring), { _tag: 'Rang' } as const) } : {}),
       ...(state.relay !== null ? { relay: { _tag: 'Relay', to: state.relay } as const } : {}),
-      ...(state.haunt !== null ? { haunt: { _tag: 'Haunt', to: state.haunt } as const } : {}),
+      ...(state.haunt !== null ? { haunt: { _tag: 'Haunt', ...state.haunt } as const } : {}),
     }),
     operations: {
       // Creates the entity `to`, which is there already, and pokes it: what each answered is the entity's state.
@@ -725,10 +725,18 @@ describe('the shards of a runner on Cluster', () => {
           const poked = yield* sendFrom(bell, to, { _tag: 'Poke' }, 'poke')
           return { _tag: 'Relayed', what: `${created._tag}/${poked._tag}` } as const
         })),
-      // Creates the entity `to` of `ghost`, a program a test deploys on one runner alone, and stops waiting for the
-      // creation after two seconds.
-      Haunt: operation(({ to }) =>
-        Effect.as(Effect.timeoutOption(createFrom(ghost, to, {}, 'haunt'), '2 seconds'), { _tag: 'Haunted' } as const)),
+      // Creates the entity `to` of `ghost`, a program a test deploys on one runner alone, or sends it a message, and
+      // stops waiting for the request after two seconds.
+      Haunt: operation(({ to, by }) =>
+        Effect.as(
+          Effect.timeoutOption(
+            by === 'create'
+              ? Effect.asVoid(createFrom(ghost, to, {}, 'haunt'))
+              : Effect.asVoid(sendFrom(ghost, to, { _tag: 'Add' }, 'haunt')),
+            '2 seconds',
+          ),
+          { _tag: 'Haunted' } as const,
+        )),
       Ask: operation(({ who }) =>
         Effect.gen(function*() {
           const { port } = yield* Where
@@ -1036,44 +1044,50 @@ describe('the shards of a runner on Cluster', () => {
         expect(yield* handle.send(id, { _tag: 'Add' }, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })
       }), {}, Duration.millis(300)), 30_000)
 
-  test("an operation's request Cluster failed is kept under its work, and goes with it before it is delivered", () =>
-    onFile((start) =>
-      Effect.gen(function*() {
-        const first = yield* start(1)
-        const second = yield* start(2)
-        yield* until(
-          Effect.sync(() => [first.count(), second.count()] as const),
-          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
-        )
-        const ids = Array.from({ length: 64 }, (_, i) => `h${i}`)
-        const sender = ids.find((id) => first.holds(id))!
-        const haunted = ids.find((id) => second.holds(id))!
-        yield* first.deployGhost
-        yield* create(first, sender)
-        // The second runner registers no `Ghost`, and Cluster saves a failure as the creation's reply, which the
-        // client resets at each retry. The operation stops waiting, and completes with the creation still in
-        // Cluster's tables.
-        yield* send(first, sender, { _tag: 'Haunt', to: haunted }, 'm-haunt')
-        yield* until(stateOf(sender), (state) => state?.haunt === null)
-        const sql = yield* SqlClient.SqlClient
-        const count = (rows: Effect.Effect<ReadonlyArray<{ held: number }>, unknown>) =>
-          Effect.map(rows, ([row]) => Number(row?.held ?? 0))
-        // The step that ended the work deleted the creation's rows under the id the client kept. Without that keep,
-        // Cluster would deliver the creation once `Ghost` is registered, after the work that sent it ended.
-        expect(yield* count(sql<{ held: number }>`
-          SELECT COUNT(*) AS held FROM cluster_messages WHERE entity_type = 'Ghost'
-        `)).toBe(0)
-        expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM sent_requests`)).toBe(0)
-        // Past Cluster's wait for the type, so that no delivery it read before the deletion is still waiting.
-        yield* Effect.sleep('1 second')
-        yield* second.deployGhost
-        yield* Effect.sleep('1 second')
-        expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM entities WHERE name = 'Ghost'`)).toBe(0)
-        expect(yield* count(sql<{ held: number }>`
-          SELECT COUNT(*) AS held FROM cluster_replies
-          WHERE request_id NOT IN (SELECT request_id FROM cluster_messages)
-        `)).toBe(0)
-      }), {}, Duration.millis(300)), 30_000)
+  for (const by of ['create', 'send'] as const) {
+    test(
+      `an operation's request Cluster failed is kept under its work, and goes with it before it is delivered, by ${by}`,
+      () =>
+      onFile((start) =>
+        Effect.gen(function*() {
+          const first = yield* start(1)
+          const second = yield* start(2)
+          yield* until(
+            Effect.sync(() => [first.count(), second.count()] as const),
+            ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+          )
+          const ids = Array.from({ length: 64 }, (_, i) => `h${i}`)
+          const sender = ids.find((id) => first.holds(id))!
+          const haunted = ids.find((id) => second.holds(id))!
+          yield* first.deployGhost
+          yield* create(first, sender)
+          // The second runner registers no `Ghost`, and Cluster saves a failure as the request's reply, which the
+          // client resets at each retry. The operation stops waiting, and completes with the request still in
+          // Cluster's tables.
+          yield* send(first, sender, { _tag: 'Haunt', to: haunted, by }, 'm-haunt')
+          yield* until(stateOf(sender), (state) => state?.haunt === null)
+          const sql = yield* SqlClient.SqlClient
+          const count = (rows: Effect.Effect<ReadonlyArray<{ held: number }>, unknown>) =>
+            Effect.map(rows, ([row]) => Number(row?.held ?? 0))
+          // The step that ended the work deleted the request's rows under the id the client kept. Without that keep,
+          // Cluster would deliver the request once `Ghost` is registered, after the work that sent it ended.
+          expect(yield* count(sql<{ held: number }>`
+            SELECT COUNT(*) AS held FROM cluster_messages WHERE entity_type = 'Ghost'
+          `)).toBe(0)
+          expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM sent_requests`)).toBe(0)
+          // Past Cluster's wait for the type, so that no delivery it read before the deletion is still waiting. A
+          // delivery failed between the deletion and the save would leave a reply with no request, which this test
+          // does not reach (decision 0170).
+          yield* Effect.sleep('1 second')
+          yield* second.deployGhost
+          yield* Effect.sleep('1 second')
+          expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM entities WHERE name = 'Ghost'`)).toBe(0)
+          expect(yield* count(sql<{ held: number }>`
+            SELECT COUNT(*) AS held FROM cluster_replies
+            WHERE request_id NOT IN (SELECT request_id FROM cluster_messages)
+          `)).toBe(0)
+        }), {}, Duration.millis(300)), 30_000)
+  }
 
   test('a consumer that waits is woken by a commit of another runner, within its poll', () =>
     onFile((start) =>
