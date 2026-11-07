@@ -54,6 +54,18 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   statement fail with a `SqlError`. It would be decided by:
   - a release of Effect with the fix, after which a fork that keeps the transaction fails where it runs;
   - the spikes and the tests of the runtime run at that release, which a fork the rule missed would then fail.
+- **What the runtime tells a tracer.** The runtime opens no span and records no metric of its own: `src/` calls
+  neither `Effect.withSpan` nor `Metric`. A deployment sees only the spans Effect opens beneath the runtime: a
+  statement of `effect/sql`, a request of `effect/rpc`, and a message to an entity of Cluster. So a step, an
+  operation, a timer's firing and a suspension are no span, and the length of a mailbox or the age of the oldest
+  row a consumer has not read is no metric. Which spans and metrics the runtime records, under which names, and
+  whether a span follows a request into the operation it sets going, is not decided. It would be decided by:
+  - the questions an operator asks of a stuck entity, such as why an order did not move, each answered by a span
+    or a metric of the machine's events;
+  - whether a span opened in the loop of `src/runtime.ts` adds a point where fibers yield, after which the pinned
+    seeds of the explored tests are found again;
+  - the modules of `effect/observability`, `OtlpTracer`, `OtlpMetrics` and `PrometheusMetrics`, which export what
+    the runtime records and need only its names.
 
 ## Naming
 
