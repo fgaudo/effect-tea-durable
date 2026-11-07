@@ -910,11 +910,18 @@ export const launchWith = (
           const page = yield* read
           const now = yield* Clock.currentTimeMillis
           if (page.length > 0 || now >= until) return page
-          if (++readings === 1) waiting.openUnsafe()
-          yield* Effect.raceAll([Deferred.await(commit), Deferred.await(closing), Effect.sleep(`${until - now} millis`)])
-            .pipe(Effect.ensuring(Effect.sync(() => {
-              if (--readings === 0) waiting.closeUnsafe()
-            })))
+          // Counted as one uninterruptible acquisition with its release. A count raised before an `ensuring` was
+          // left raised by an interruption at a yield between the two, and the watcher read for ever (decision 0163).
+          yield* Effect.acquireUseRelease(
+            Effect.sync(() => {
+              if (++readings === 1) waiting.openUnsafe()
+            }),
+            () => Effect.raceAll([Deferred.await(commit), Deferred.await(closing), Effect.sleep(`${until - now} millis`)]),
+            () =>
+              Effect.sync(() => {
+                if (--readings === 0) waiting.closeUnsafe()
+              }),
+          )
         }
         return []
       })

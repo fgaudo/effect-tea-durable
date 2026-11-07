@@ -5214,12 +5214,14 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
     body: (
       reader: Handle<Count, (typeof queue)['consumers']>,
       commit: (request: string) => Effect.Effect<void>,
+      reads: () => number,
     ) => Effect.Effect<A, unknown, Scope.Scope>,
     millis: number,
     blocks: boolean,
   ) =>
     Effect.gen(function*() {
       let moved = 0
+      let read = 0
       let given: number | null = null
       let bumped = Deferred.makeUnsafe<void>()
       const version = blocks
@@ -5228,7 +5230,7 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
           given = moved
           return moved
         })
-        : Effect.sync(() => moved)
+        : Effect.sync(() => (read++, moved))
       const played = (others: OnCluster['others']) => {
         let step: ((delivered: Delivered) => Effect.Effect<unknown>) | null = null
         const cluster: OnCluster = {
@@ -5263,7 +5265,7 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
             Deferred.doneUnsafe(was, Effect.void)
           }),
         )
-      return yield* body(reader, commit)
+      return yield* body(reader, commit, () => read)
     }).pipe(Effect.orDie)
 
   test('a reading that waits is given the row another runner commits, within the interval', () =>
@@ -5277,6 +5279,24 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
         const rows = yield* Fiber.join(waiting)
         expect(rows.map(({ value }) => value)).toEqual([1])
       }), 200, false))), 10_000)
+
+  test('a reading interrupted as it begins its wait leaves the watcher still, under every schedule of one deviation', () => {
+    // The count of the readings that wait is raised before the wait and lowered by its finalizer. A fiber may yield
+    // between the two, and an interruption there would leave the count raised: the watcher would read the version
+    // at every interval for ever, though no reading waits.
+    explored((window) =>
+      Effect.scoped(twoRunners((reader, _commit, reads) =>
+        Effect.gen(function*() {
+          yield* opened(window, true)
+          const reading = yield* Effect.forkChild(reader.feed('projection', 'queue', all, { wait: { millis: 60_000 } }))
+          yield* Fiber.join(yield* Effect.forkChild(Fiber.interrupt(reading)))
+          yield* opened(window, false)
+          yield* TestClock.adjust('200 millis')
+          const before = reads()
+          yield* TestClock.adjust('1 second')
+          return reads() - before
+        }), 200, false)), 0, { open: false, bound: 1 })
+  }, 60_000)
 
   test('a reading is woken by a commit of another runner between its page and its wait, under prioritized schedules', () => {
     // The watcher keeps the version it last read while no reading waits. A watcher that read a new version as a wait

@@ -27,7 +27,9 @@ not move at the connection's own commits. A runner's client of SQLite has one co
   `PRAGMA data_version`. Where it has moved since the last reading, every reading that waits on this runner is
   woken, whatever its topic, and reads again.
 - **Nothing reads while no reading waits.** A count of the readings that wait opens a `Latch`, and closes it as the
-  last one ends. The watcher waits on the latch.
+  last one ends. The watcher waits on the latch. The count is raised and lowered by one `Effect.acquireUseRelease`,
+  whose raise no interruption splits from its lowering. A count raised before an `ensuring` stayed raised where a
+  reading was interrupted at a yield between the two, and the watcher read at every interval for ever.
 - **The version is read once at launch, and kept while no reading waits.** So a commit of another runner after a
   reading's page and before its wait still moves the version from the one kept, and the reading is woken at the next
   read. A version read anew whenever a wait begins would already count that commit, and the reading would wait out
@@ -36,7 +38,8 @@ not move at the connection's own commits. A runner's client of SQLite has one co
   find an empty page, and waits again. Cluster's own writes, its lease refreshes among them, move the version too: a
   reading that waits is read again at most once per interval.
 - **A version that cannot be read is a version that has not moved.** The reading waits out its time, as before this
-  note. A launch that cannot read it keeps a value no version is, so that the first reading after it is woken once.
+  note. On SQLite a `PRAGMA data_version` that gives no row fails, so that no `NaN`, which differs from itself, is
+  ever kept as a version. A launch that cannot read it keeps a value no version is, so that the first reading after it is woken once.
 - **A step's commit on this runner is told as before**, at once and to its topics alone (decision 0142).
 - **What gives the version is the storage's.** `OnCluster` takes it, with its interval, so that another database
   gives its own: on PostgreSQL, a `LISTEN` the steps `NOTIFY`, decided with that database.
@@ -58,6 +61,11 @@ not move at the connection's own commits. A runner's client of SQLite has one co
   [`src/runtime.test.ts`](../../src/runtime.test.ts), whose clock never moves. It fails where the watcher reads a new
   version as a wait begins after another has ended. That a reading is woken within the interval: **tested** by `a
   reading that waits is given the row another runner commits, within the interval`, which fails without the watcher.
+- That a reading interrupted as its wait begins lowers the count it raised: **documented** by the JSDoc of
+  `Effect.acquireUseRelease` at 4.1.2, `@stability stable`, whose acquisition is not interrupted and whose release runs
+  once it has acquired. **Tested** by `a reading interrupted as it begins its wait leaves the watcher still, under
+  every schedule of one deviation` in [`src/runtime.test.ts`](../../src/runtime.test.ts), which fails where the count
+  is raised before an `ensuring`.
 - That a `Latch` opened releases its waiters and later ones, and that `openUnsafe` and `closeUnsafe` change it in one
   step: **documented** by the JSDoc of `Latch` at 4.1.2, `@stability stable`.
 - That Cluster has no way to tell every runner: **read in the source** of `Runners.ts` and `Sharding.ts` at 4.1.2.
