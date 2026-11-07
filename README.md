@@ -82,7 +82,9 @@ no life of its own, a profile or a product, does not need it.
 - [`examples/cart`](examples/cart): a cart whose lines are children by id, each reserving its own stock;
 - [`examples/booking`](examples/booking): a booking that holds seats in an event's inventory, two entities
   that talk, rehearsed and also run on the runtime
-  ([`examples/booking/runtime.test.ts`](examples/booking/runtime.test.ts)).
+  ([`examples/booking/runtime.test.ts`](examples/booking/runtime.test.ts));
+- [`examples/server`](examples/server): the orders served over HTTP by a runner of Effect Cluster, run as a
+  process, which a test kills during a charge and starts again on the same file.
 
 The modules of `src/`, each built on the one above it:
 

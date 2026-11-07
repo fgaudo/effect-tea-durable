@@ -13,9 +13,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   2. Two runners on one file, sending to each other over HTTP. A test kills the runner that holds an order's shard,
      and checks that the other one takes the shard and finishes the order with one charge.
 
-  No part is done. The first part begins with the maintainer's answer to the two questions of decision 0178: whether
-  the example may use `effect/http` and `effect/http-api`, and whether it serves with `Bun.serve` or with
-  `@effect/platform-bun`. Then it begins in `examples/server/main.ts`. A gap of the library that a part meets
+  The first part is done, in `examples/server`, and decision 0178 says what it found. The second part is next. It
+  begins in `examples/server/server.ts`, where the runner gains `RunnerServer.layer` and `Runners.layerRpc` over
+  HTTP in place of `Runners.layerNoop`, with a `shardLockExpiration` the test shortens. A gap of the library that a part meets
   becomes a note, a test or an open question before the step is taken.
 
 ## Later

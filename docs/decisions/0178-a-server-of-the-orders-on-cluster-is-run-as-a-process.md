@@ -41,14 +41,14 @@ the scheduler of the tests, inside one process. They are not tested between proc
 - **What the example finds is written down.** A gap of the library that the example meets becomes a note, a test or
   an open question before the step is taken. The example does not work around a gap in silence.
 
-## Asked of the maintainer
+## Agreed with the maintainer
 
-- **The HTTP modules.** The boundary needs `effect/http`, and perhaps `effect/http-api`. Both are marked
-  `@stability unstable`, and `src/` imports neither, so the example uses them only once the maintainer agrees. The
-  boundary without them is a door of `effect/rpc`, which `src/cluster.ts` imports already, served over HTTP by
-  `RpcServer.layerProtocolHttp`, which still needs `effect/http`.
-- **The server of Bun.** `HttpRouter.toWebHandler` gives a handler that `Bun.serve` serves, with no new dependency.
-  `@effect/platform-bun` would give an `HttpServer` layer, and would be pinned with `effect`.
+- **The boundary uses `effect/http`.** The module is marked `@stability unstable`, and `src/` does not import it, so
+  the example uses it because the maintainer agreed on 2026-11-07. The example imports it, and `src/` still does not.
+  `effect/http-api` was not asked for, so the routes are written with `HttpRouter`.
+- **The server is `@effect/platform-bun`'s.** `BunHttpServer` gives the `HttpServer` layer, and `BunRuntime.runMain`
+  runs the process. The package is a dependency of development, pinned at the version of `effect`, and a move of
+  Effect's version pins it with `effect` and `@effect/sql-sqlite-bun`.
 
 ## What it rests on
 
@@ -75,14 +75,32 @@ the scheduler of the tests, inside one process. They are not tested between proc
     `HttpRunner.layerClientProtocolHttpDefault` gives the same transport under `sharding`.
   - `SocketRunner.layer` needs a socket server, which the pinned packages give only on Node.
   - `HttpApi` would give the boundary a schema and an OpenAPI description, at the cost of a second unstable module.
+  - `HttpRouter.toWebHandler` with `Bun.serve` would serve the routes with no new dependency, and the process would
+    handle its own signals. `@effect/platform-bun` does both, which is what a deployment on Bun uses.
   - `TestRunner.layer` keeps everything in memory, and no process could die and start again on it.
 - **An example inside a test alone.** It is what `examples/order/cluster.test.ts` is already, and it never kills a
   process.
 - **Two runners on PostgreSQL.** On Cluster a step commits only on SQLite until Cluster has a fence
   ([decision 0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
 
+## What the first part found
+
+- **The first part holds.** [`examples/server/server.test.ts`](../../examples/server/server.test.ts) kills the
+  process while the world holds the charge, and starts it again on the same file. The order is `Paid`, the world was
+  asked for the charge at least twice, and it took one charge.
+- **The example is built of Effect's structures.** The maintainer asked on 2026-11-07 that the example use the
+  structures of `effect/http` and of `@effect/platform-bun` wherever they fit. The boundary decodes its headers
+  with `HttpServerRequest.schemaHeaders`, its path with `HttpRouter.schemaPathParams` and its bodies with
+  `HttpServerRequest.schemaBodyJson`. A request it refuses fails with an error that is
+  `HttpServerRespondable.Respondable`, so the router answers it with no handler of its own. The world is called
+  through one `HttpClient` with `prependUrl` and `retryTransient`. The test runs the world with `HttpRouter.serve`
+  on `BunHttpServer`, starts the process with `ChildProcessSpawner`, waits with `Effect.retry` and a `Schedule`,
+  and keeps the world's charges in a `Ref` and its held charge in a `Deferred`.
+- **No gap of the library was met.** A restarted runner activates the order that was charging, and the charge runs
+  again with its idempotency key, as the design says.
+
 ## Consequences
 
-- The tests of `examples/server` start processes, so they are slower than the other tests of the examples. Whether
-  `bun test` runs them every time, or only `bun run test:release`, is decided by the first part.
+- The test of `examples/server` starts two processes and runs in about a second and a half, so `bun test` runs it
+  every time.
 - The README's diagram of the modules gains no module, since the example adds none to `src/`.

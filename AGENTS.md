@@ -78,7 +78,7 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A promise of a stable API of Effect, in the JSDoc of the version pinned, is trusted within the major: a premise
   that rests on it needs no spike, no test and no comparison between releases. effect.website, Effect's blog and its
   maintainers' answers are tied to no release, and make no premise documented. A move of Effect's version pins
-  `effect` and `@effect/sql-sqlite-bun` together, runs `bun scripts/compare-docs.ts <old> <new>` and puts what it
+  `effect`, `@effect/sql-sqlite-bun` and `@effect/platform-bun` together, runs `bun scripts/compare-docs.ts <old> <new>` and puts what it
   found of Cluster in `docs/cluster.md` and the rest in the commit's body, runs the spikes, writes the fixture of the
   new release with `scripts/write-cluster-fixture.ts` and commits it, and reads Effect's release policy again, naming
   the commit read in the script's comment. Until the first release, a move may drop the fixtures older than the
