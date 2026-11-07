@@ -731,6 +731,53 @@ test('a database made before holds its replies without request_id, which createT
       expect(yield* sql`SELECT request_id FROM replies WHERE request_id IS NOT NULL`).toEqual([{ request_id: 'one' }])
     }).pipe(Effect.orDie), ['sqlite']))
 
+// A database made before decision 0161 holds its entities without `steps`. `createTables` adds the column at 0, and
+// the next write raises it.
+test('a database made before holds its entities without steps, which createTables adds at 0', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(receiver, sql)
+      yield* store.write('r', created(), 0)
+      yield* sql`ALTER TABLE entities DROP COLUMN steps`
+      yield* Effect.provideService(createTables, SqlClient.SqlClient, sql)
+      expect(yield* store.stepsOf('r')).toBe(0)
+      yield* store.write('r', written({ shown: { projection: 'start', indexes: {} } }), 0)
+      expect(yield* store.stepsOf('r')).toBe(1)
+    }).pipe(Effect.orDie)))
+
+// PostgreSQL compares text by the collation of its column, and the database's own may order by language. Every text
+// column the storage makes is `C`, which compares bytes as SQLite's `BINARY` does. PGlite's database is `C` itself,
+// so the order of the read model's ids is the same without the collation, and the test reads it off the columns
+// (decision 0157).
+test('on PostgreSQL every text column the storage makes compares bytes', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      yield* storage(ranked, sql).indexed
+      const columns = yield* sql<{ table_name: string; column_name: string; collation_name: string | null }>`
+        SELECT table_name, column_name, collation_name FROM information_schema.columns
+        WHERE table_schema = current_schema() AND data_type = 'text'
+      `
+      expect(columns.length).toBeGreaterThan(0)
+      expect(columns.filter((column) => column.collation_name !== 'C')).toEqual([])
+    }).pipe(Effect.orDie), ['pg']))
+
+// PostgreSQL keeps the first 63 bytes of a name. Two indexes whose long names share their first bytes are two
+// indexes, each named by the hash of its whole name (decision 0157).
+test('on PostgreSQL two long names of indexes that share their first bytes name two indexes', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const long = 'a'.repeat(60)
+      const program = {
+        ...ranked,
+        indexes: { [`${long}1`]: ranked.indexes.rank, [`${long}2`]: ranked.indexes.rank },
+      } as unknown as Program<Ranked>
+      yield* storage(program, sql).indexed
+      const indexes = yield* sql<{ indexname: string }>`
+        SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname LIKE ${`projections Ranked %`}
+      `
+      expect(new Set(indexes.map(({ indexname }) => indexname)).size).toBe(2)
+    }).pipe(Effect.orDie), ['pg']))
+
 // PostgreSQL uses an index of an expression only where the statement writes the expression as the index does. The
 // test records the statements the storage runs, and reads the plan of each with scans of whole tables turned off: an
 // index that serves a page holds its order, so that no plan sorts (decision 0157).

@@ -285,7 +285,7 @@ describe('two runners on one file', () => {
         expect(defectOf(yield* deploys([at('Toy', 1)]))).toBeUndefined()
       })), 30_000)
 
-  test('a step of an older version dies and saves no reply, and a runner of the newest version steps its message', () =>
+  test('a step of an older version dies and saves no reply, and a runner of the newest version steps its requests', () =>
     onFile((start) =>
       Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
@@ -299,18 +299,25 @@ describe('two runners on one file', () => {
         expect(yield* clientOf('one').Create({ version: 1, request: caller('c1'), message: 'null' }))
           .toBe('{"_tag":"Created"}')
         expect(yield* entity).toEqual([{ state: '{"last":"start"}', version: 1, steps: 1 }])
+        expect(yield* clientOf('two').Create({ version: 1, request: caller('c2'), message: 'null' }))
+          .toBe('{"_tag":"Created"}')
         // A launch of the newer version is recorded, and its runner is not up yet. The older runner is the only one,
         // and Cluster never marks its last runner unhealthy, so it keeps its shards.
         yield* recordVersions('localhost:9', [{ name: 'Toy', version: 2 }])
         yield* clientOf('one').Message({ version: 1, request: caller('m1'), message: '"m"' }, { discard: true })
+        // An operator's event is a door's step too, and dies as the message does. It goes to another entity, since
+        // Cluster delivers the requests of one entity one after the other, and the message never ends.
+        yield* clientOf('two').Discard(undefined, { discard: true })
 
         // The older runner's step dies, again and again, and nothing is stepped, answered or marked processed.
         yield* Effect.sleep('1500 millis')
         expect(older()).toBe(shardsPerGroup)
-        const before = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Message'`
-        expect(before.map(({ processed }) => Number(processed))).toEqual([0])
+        const processed = sql<{ tag: string; processed: number }>`
+          SELECT tag, processed FROM cluster_messages WHERE tag IN ('Message', 'Discard') ORDER BY tag
+        `.pipe(Effect.map((rows) => rows.map(({ tag, processed }) => [tag, Number(processed)])))
+        expect(yield* processed).toEqual([['Discard', 0], ['Message', 0]])
         const replies = yield* sql<{ id: number }>`SELECT id FROM cluster_replies`
-        expect(replies.length).toBe(1)
+        expect(replies.length).toBe(2)
         expect(yield* entity).toEqual([{ state: '{"last":"start"}', version: 1, steps: 1 }])
 
         // A runner of the newest version takes the shards, and steps the message once, at its version.
@@ -321,9 +328,11 @@ describe('two runners on one file', () => {
           until: (rows) => rows[0]?.state === '{"last":"m"}',
         }).pipe(Effect.timeout('15 seconds'))
         expect(stepped).toEqual([{ state: '{"last":"m"}', version: 2, steps: 2 }])
-        const after = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Message'`
-        expect(after.map(({ processed }) => Number(processed))).toEqual([1])
-        expect((yield* sql<{ id: number }>`SELECT id FROM cluster_replies`).length).toBe(2)
+        yield* Effect.repeat(processed, {
+          schedule: Schedule.spaced('50 millis'),
+          until: (rows) => rows.every(([, done]) => done === 1),
+        }).pipe(Effect.timeout('15 seconds'))
+        expect((yield* sql<{ id: number }>`SELECT id FROM cluster_replies`).length).toBe(4)
       })), 30_000)
 })
 

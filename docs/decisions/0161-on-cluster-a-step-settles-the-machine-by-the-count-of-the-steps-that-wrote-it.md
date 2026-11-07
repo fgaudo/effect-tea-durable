@@ -4,7 +4,11 @@
 [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) is kept, and changes two
 of its rules: what a door's step sets going is performed by the step that finds it committed, and an entity's lock
 on Cluster is taken only inside a transaction. [Decision 0164](0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md) extends the fork without the
-transaction to every fork of the runtime, and has a test read it in the code.
+transaction to every fork of the runtime, and has a test read it in the code. A caller's request, an operator's
+and an operation's no longer die on Cluster: each goes through the door's client, by
+[decision 0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
+[decision 0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md) and
+[decision 0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md).
 
 ## Context
 

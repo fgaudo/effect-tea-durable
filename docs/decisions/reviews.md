@@ -408,3 +408,46 @@ written for the code the review reads, and are not kept.
   caller in the process is served by JSON; 0145's that a statement read as a range with a limit stops after the
   rows it gives; 0147's that a caller's message is never in the stored mailbox while its caller waits; 0148's that
   no caller sums an index of strings on purpose; 0149's that every question beyond the three forms is a report's.
+
+## 2026-11-07: 0150 to 0174
+
+- Fixed: the status lines of
+  [0161](0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md),
+  [0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) and
+  [0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md) did not say that 0165, 0166 and
+  0167 made code of the requests each said still die on Cluster. The index lists those changes too.
+- Fixed in [`docs/design.md`](../design.md): it said that every step on Cluster reads the newest version, which only
+  a door's step does, and that a rename moves Cluster's rows, which nothing does. Both are open questions now, and
+  steps of the roadmap.
+- Documented at 4.1.2, as the notes say: `maxResidentEntities` of 10 000 (0151); `entityRegistrationTimeout`, which
+  fails the message (0168); `defectRetryPolicy`, whose restarts never stop (0159); `Effect.acquireUseRelease`,
+  `@stability stable` (0163).
+- Then every rule of these notes that the code keeps was taken out, one at a time, with `scripts/mutate.ts` under
+  `SCHEDULES=all`: of 111, 23 survived, and none was uncertain.
+- Tested now, which no test was: a database made before is given `steps` at 0 (0161); every text column the storage
+  makes on PostgreSQL is collated `C` (0157), which 0157 took as tested by the order of ids, though PGlite's
+  database is `C` itself and orders them so without it; two long names of indexes that share their first bytes
+  name two indexes (0157); an operator's `Discard` at an older version dies as a message does (0159). Each of the
+  four mutations those tests are for now fails a test.
+- Five change nothing a test can see. Either deletion of the pending ids alone (0169), since every step deletes
+  every pending id, and a test fails without both. A door's step that writes nothing left uncommitted (0161), whose
+  machine then waits for the next step. A reset tried on an interruption (0168), which finds no failure saved and
+  gives the interruption. A `data_version` kept as `NaN` (0163), which SQLite always gives as a number.
+- Fourteen are left, as rules no test reaches. The transaction of a prune (0154) and of the renames of one launch
+  (0156), which hold only where a statement fails halfway. The tag of an operation's text in a rename on PostgreSQL
+  (0157). The check of Cluster's hash against `Hash.string` (0162), which holds only where Effect changes it. The
+  checks of the shard held and lost, at an entry, a load and a step of the loop, and the retry of a round of
+  activation (0162), which 0162 takes as only reasoned. A count of `steps` another runner wrote (0161), which only a
+  runner whose finalizer did not run reaches. A reset of a reply that is no longer `Suspended` or `NotFound` (0165).
+  The keep and the wait of an operation's client whose work ended (0170).
+- Open: a step of the loop or of an activation on Cluster reads no version, and no step reads the shard's lease; a
+  rename on Cluster leaves Cluster's rows under the old name. Each is an open question under
+  [Running](../open-questions.md#running), and a step of the [roadmap](../roadmap.md).
+- Reasoned, and left so: 0151's that 10 000 is a capacity an operator wants by default; 0152's that a topic no
+  consumer holds has no reader that needs its rows; 0158's that a consumer reads a page in the transaction it acks
+  in; 0161's that no fiber holds an entity's lock while it waits for the connection; 0163's that `data_version`
+  costs little beside the steps; 0165's that a caller who waits for a busy entity is served better than one answered
+  `Full`; 0166's that an operator's events are rare enough for their rows to be kept; 0167's that one `Resumed` per
+  sender's entity wakes every request of it that waits; 0171's that the client's clock is no earlier than the
+  step's; 0173's that the time between Cluster's read and its save is short; 0174's that a program deployed without
+  its record escapes both checks of 0159.

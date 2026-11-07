@@ -5,7 +5,10 @@
 Changes how [decision 0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md) holds on Cluster: a caller
 is never answered `Full` there. Changes how [decision 0125](0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)
 holds on Cluster: Cluster's rows of a caller's request go once its client has the answer and its time is past, by
-[decision 0171](0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md).
+[decision 0171](0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md). An
+operator's request and an operation's no longer die on Cluster: each goes through the door's client too, by
+[decision 0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md) and
+[decision 0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md).
 
 ## Context
 

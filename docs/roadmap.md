@@ -5,7 +5,17 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-1. **The runtime's bookkeeping in Effect's `Tx` modules**, if the open question of bookkeeping in transactions, under
+1. **Every step on Cluster checks the newest version, and the shard's lease if it can**, as the open question of a
+   step on Cluster that is not a door's, under [Running](open-questions.md#running), decides. A step of the loop and
+   the `Restart` of an activation commit today without the check that a door's step makes
+   ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)). The
+   step changes `src/runtime.ts`, so it passes `bun run test:release` before it is taken.
+
+2. **A rename on Cluster**, as the open question of a rename on Cluster, under [Running](open-questions.md#running),
+   decides: a launch that dies while Cluster's rows stay under the old name, or a rename that moves them too
+   ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)).
+
+3. **The runtime's bookkeeping in Effect's `Tx` modules**, if the open question of bookkeeping in transactions, under
    [Running](open-questions.md#running), decides for them. What another fiber reads would change in one transaction,
    and not in one synchronous step kept by hand
    ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). The waker's reading of the

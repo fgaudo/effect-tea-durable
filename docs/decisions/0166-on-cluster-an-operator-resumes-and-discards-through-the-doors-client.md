@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Says how
 [decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md) is code for an operator's
-`Resume` and `Discard`, which it decides are steps of the entity on the runner that holds its shard.
+`Resume` and `Discard`, which it decides are steps of the entity on the runner that holds its shard. The step that
+resumes or discards tells the senders that wait for the entity's resumption by `Resumed`, by
+[decision 0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md).
 
 ## Context
 

@@ -1033,9 +1033,11 @@ leaves to the runtime is in [`cluster.md`](cluster.md).
 - A runner is alive, for the `RunnerHealth` the runtime gives Cluster, only while it runs the newest version of
   every program it names, and while the launcher's own `RunnerHealth` says so. A rolling deploy then moves every
   shard to the newer runners.
-- A step commits only while its program's version is the newest recorded, which it reads in its transaction. A step
-  of an older version dies and rolls back, and Cluster delivers its message again until a runner of the newest
+- A door's step commits only while its program's version is the newest recorded, which it reads in its transaction.
+  A step of an older version dies and rolls back, and Cluster delivers its message again until a runner of the newest
   version steps it ([decision 0159](decisions/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+  A step of the entity's own loop and the `Restart` of an activation read no version yet, and no step checks the
+  shard's lease: see [the open question](open-questions.md#running).
 - A deploy dies unless the runner's `sharding` named its program at the version deployed. A process with no
   `runnerAddress` is a client of the cluster alone: it holds no shard, and deploys any program
   ([decision 0174](decisions/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).
@@ -1045,8 +1047,8 @@ leaves to the runtime is in [`cluster.md`](cluster.md).
 - A program's door is Cluster's entity of the program's name, with the RPCs `Create`, `Message`, `Resume`,
   `Discard` and `Resumed`. Each is persisted, and its handler steps the runtime's entity in Cluster's transaction, so
   a step commits with its reply ([decision 0081](decisions/0081-on-cluster-a-step-commits-with-its-reply.md)). A
-  rename moves Cluster's rows too, since they are stored under the entity's type
-  ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)).
+  rename ([decision 0156](decisions/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)) does not move
+  Cluster's rows yet, which are stored under the entity's type: see [the open question](open-questions.md#running).
 - A request is keyed by the version that keyed it and its `requestKey`. Cluster answers a retry within a version, and
   the runtime's replies answer one across versions
   ([decision 0085](decisions/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).
