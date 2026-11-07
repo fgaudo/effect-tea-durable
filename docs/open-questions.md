@@ -25,6 +25,18 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - a program with a migration of many branches, whose recorded cases a change could keep while it reads other
     rows otherwise;
   - what an arbitrary of an older version costs to keep, next to the cases recorded of it.
+- **A caller that follows a projection.** A caller learns that an entity changed only by reading its projection
+  again: `read` answers once, and the runtime writes the log without delivering it. A program of effect-tea in a
+  browser would follow an entity with a subscription, and send to it with a command that retries under the same
+  request id while the entity answers `Suspended`. That client would be a module of its own, which depends on both
+  libraries while neither depends on the other. How a caller follows the changes of one projection, and whether the
+  library ships that client, is not decided. It would be decided by:
+  - whether a boundary reads the log as one consumer and sends each row to the callers that follow its entity, given
+    that the consumers of a topic are declared at deploy
+    ([decision 0152](decisions/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)) and a browser is not one;
+  - what a caller that reconnects reads first, so that it misses no change between its last row and the next;
+  - an example in which a program of effect-tea drives an entity of `examples/order`, whose view shows only the
+    actions the projection allows.
 
 ## Running
 
