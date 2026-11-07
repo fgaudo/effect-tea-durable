@@ -4,7 +4,8 @@
 [decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md) is code for a caller's request.
 Changes how [decision 0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md) holds on Cluster: a caller
 is never answered `Full` there. Changes how [decision 0125](0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)
-holds on Cluster: Cluster's rows of a caller's request go with its reply once its time is past.
+holds on Cluster: Cluster's rows of a caller's request go once its client has the answer and its time is past, by
+[decision 0171](0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md).
 
 ## Context
 
@@ -51,12 +52,9 @@ permits that bound an entity's callers' messages on one process
   chooses: a caller that stops waiting leaves its request to be handled
   ([decision 0091](0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)). What bounds the messages
   in memory there is Cluster's `mailboxCapacity`.
-- **Cluster's rows of a caller's request go with its reply once the reply's time is past.** The door's step keeps
-  Cluster's `requestId` with a caller's reply that has an `until`. The statements that delete a reply past its time,
-  a step's and `Handle.expire`, delete Cluster's rows under those ids too, as
-  [decision 0090](0090-on-cluster-a-reply-is-deleted-as-on-one-process.md) deletes an operation's. A reply without
-  `keep` is kept for ever, and so are its rows in Cluster's tables. This part is not code yet: it comes with the
-  deletions decision 0090 decides.
+- **Cluster's rows of a caller's request go once its client has the answer and its time is past**, as
+  [decision 0171](0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md) decides.
+  A reply without `keep` is kept for ever, and so are its rows in Cluster's tables.
 - **An operation's request and an operator's still die on Cluster.** They go through the door's client too, as
   decisions 0085, 0090 and 0092 decide, in a later part of the step.
 
@@ -113,6 +111,6 @@ Other ways:
 - A caller's message answered `Suspended` or `NotFound` costs two steps, as decision 0085 says.
 - A caller on Cluster that wants a bound on its wait sets a timeout on `send`. Its message is still handled when its
   turn comes, and a retry under the same request id is given its answer.
-- Until Cluster's rows of an expired reply are deleted, a retry past `keep` within a version is answered from
-  Cluster's saved reply, where on one process it is applied again.
+- Until Cluster's rows of an expired reply are deleted, by a step of the entity or `Handle.expire`, a retry past
+  `keep` within a version is answered from Cluster's saved reply, where on one process it is applied again.
 - The door's payload has a field more. A row Cluster saved without it decodes, with no `keep`.

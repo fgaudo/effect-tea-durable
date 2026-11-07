@@ -44,8 +44,8 @@ request and a reply in Cluster's tables
 - **Cluster's tables are named with `SqlMessageStorage`'s default prefix, `cluster`.** A launcher that gives
   another prefix keeps Cluster's rows, and loses nothing.
 - **An operator's event and a caller's request keep their rows.** Their client waits for the reply, which a later
-  step would delete before the client reads it from storage. A caller's rows go with its reply once past its time
-  (decision 0165), which is not code yet.
+  step would delete before the client reads it from storage. A caller's rows go once its client has the answer and
+  its time is past ([decision 0171](0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
 
 ## What it rests on
 

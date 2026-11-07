@@ -246,6 +246,15 @@ export const onCluster: Effect.Effect<
     const config = yield* ShardingConfig.ShardingConfig
     const messages = yield* MessageStorage.MessageStorage
     const sql = yield* SqlClient.SqlClient
+    /** The address of the entity `id` of the door of the program `name`, as Cluster routes it. */
+    const addressOf = (name: string, id: string) => {
+      const entityId = EntityId.make(id)
+      return EntityAddress.make({
+        entityType: EntityType.make(name),
+        entityId,
+        shardId: sharding.getShardId(entityId, group),
+      })
+    }
     /**
      * Resets the latest answer Cluster saved for the request `sent` of the RPC `tag` to the program `name`, so that
      * the request is delivered again, as `ClusterWorkflowEngine` resets an activity: the request's id read by its
@@ -265,13 +274,11 @@ export const onCluster: Effect.Effect<
       kept?: (requestId: string) => Effect.Effect<boolean>,
     ) =>
       Effect.gen(function*() {
-        const entityId = EntityId.make(sent.id)
-        const address = EntityAddress.make({
-          entityType: EntityType.make(name),
-          entityId,
-          shardId: sharding.getShardId(entityId, group),
+        const requestId = yield* messages.requestIdForPrimaryKey({
+          address: addressOf(name, sent.id),
+          tag,
+          id: primaryKey(sent),
         })
-        const requestId = yield* messages.requestIdForPrimaryKey({ address, tag, id: primaryKey(sent) })
         if (Option.isNone(requestId)) return true
         const latest = (yield* messages.repliesForUnfiltered([requestId.value])).at(-1)
         if (latest === undefined || !resettable(latest)) return true
@@ -361,7 +368,7 @@ export const onCluster: Effect.Effect<
             )),
           kept,
         ).pipe(Effect.orDie),
-      send: (program, sent, kept) => {
+      send: (program, sent, kept, given) => {
         const answered = Schema.decodeEffect(answerCodec(program))
         const once = resettingSavedFailure(
           program.name,
@@ -381,10 +388,26 @@ export const onCluster: Effect.Effect<
         )
         // Cluster's client gives a stored answer as it gives a new one, so either answer that is no reply is reset
         // and the message sent once more: the second answer is a step's, made as the entity is then (decision 0085).
-        return Effect.flatMap(once, (first) =>
+        const final = Effect.flatMap(once, (first) =>
           first._tag === 'Suspended' || first._tag === 'NotFound'
             ? Effect.andThen(reset(program.name, 'Message', sent, noReplySaved), once)
-            : Effect.succeed(first)).pipe(Effect.orDie)
+            : Effect.succeed(first))
+        if (given === undefined) return final.pipe(Effect.orDie)
+        // Kept once the answer is given, and not before: a client on another runner reads its reply from Cluster's
+        // table, and a deletion past the reply's time would otherwise take a reply it has not read (decision 0171).
+        // The id is read and kept without interruption, so that a caller that stops waiting after its answer came
+        // keeps it all the same.
+        return Effect.uninterruptibleMask((restore) =>
+          Effect.tap(restore(final), () =>
+            Effect.flatMap(
+              messages.requestIdForPrimaryKey({
+                address: addressOf(program.name, sent.id),
+                tag: 'Message',
+                id: primaryKey(sent),
+              }),
+              Option.match({ onNone: () => Effect.void, onSome: (requestId) => given(String(requestId)) }),
+            ))
+        ).pipe(Effect.orDie)
       },
       // Sent with `discard` from the transaction of the step that resumes: Cluster saves the request in it, and
       // delivers it after the commit, so that the step never waits for the door it tells (decision 0167).

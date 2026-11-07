@@ -257,8 +257,9 @@ export interface Handle<T extends Types, C = {}> {
    * for ever. `keep.millis` is a non-negative integer, and anything else is the caller's defect (decision 0125). An
    * entity that holds as many callers' messages as `callers.messages` answers `Full` at once, and nothing of the
    * message is offered or stored: the caller retries later, under the same request id or another (decision 0147).
-   * On Cluster a caller is never answered `Full`, and its message waits for the entity. There, until Cluster's rows
-   * of a reply past its time are deleted, a retry after `keep` is given the reply Cluster saved (decision 0165).
+   * On Cluster a caller is never answered `Full`, and its message waits for the entity. There, until a step of the
+   * entity or `expire` deletes Cluster's rows of a reply past its time, a retry after `keep` is given the reply
+   * Cluster saved (decisions 0165, 0171).
    */
   readonly send: (
     id: string,
@@ -569,12 +570,14 @@ export interface OnCluster {
   /**
    * A message, sent through the program's door by Cluster's client. An answer `Suspended` or `NotFound` is no reply:
    * Cluster's row of it is reset, and the message sent again, whose answer is given (decisions 0085, 0165). A failure
-   * Cluster saved, and `kept`, are as for `create`.
+   * Cluster saved, and `kept`, are as for `create`. `given` is a caller's message's with `keep`: the client calls it
+   * with the request's Cluster id once Cluster has given it the answer, before it gives the answer (decision 0171).
    */
   readonly send: <T extends Types>(
     program: Program<T>,
     sent: Omit<Delivered, '_tag'>,
     kept?: (requestId: string) => Effect.Effect<boolean>,
+    given?: (requestId: string) => Effect.Effect<void>,
   ) => Effect.Effect<Reply<T['rejection']> | Readonly<{ _tag: 'Suspended' }>>
   /**
    * An operator's `Resume` or `Discard`, sent through the program's door by Cluster's client, from whatever runner
@@ -2137,7 +2140,7 @@ export const launchWith = (
     /**
      * On Cluster: what keeps the Cluster id of an operation's request before its client resets a failure Cluster
      * saved, in a transaction of its own (decision 0092). The transaction checks no lease, since it writes an id and no
-     * state. A caller's request keeps no id: its rows stay in Cluster's tables (decision 0090).
+     * state. A caller's message keeps its id once given its answer, by `given` (decision 0171).
      */
     const keptFor = <T extends Types>(deployed: Deployment<T>, request: Request<T['sender']>) =>
       request._tag === 'Operation'
@@ -2232,7 +2235,17 @@ export const launchWith = (
           const version = versionOf(deployed.program)
           const sent = { id, version, request: requested, message: JSON.stringify(written) }
           const kept = keptFor(deployed, request)
-          return yield* cluster.send(deployed.program, keep === undefined ? sent : { ...sent, keep }, kept)
+          if (keep === undefined) return yield* cluster.send(deployed.program, sent, kept)
+          // A caller's Cluster rows go once its client has the answer and the reply's time is past, counted from
+          // the client's clock, which reads after the step's (decision 0171). An operation's go with its work.
+          const given = request._tag === 'Caller'
+            ? (requestId: string) =>
+              Effect.flatMap(
+                DateTime.now,
+                (now) => deployed.storage.keepGiven(requestId, id, DateTime.toEpochMillis(now) + keep),
+              )
+            : undefined
+          return yield* cluster.send(deployed.program, { ...sent, keep }, kept, given)
         }
         const event: Machine.Offered<T> = keep === undefined
           ? { _tag: 'Receive', request, message }

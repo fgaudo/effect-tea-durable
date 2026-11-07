@@ -44,9 +44,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
    pending ([decision 0169](decisions/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md),
    proposed). An operation's client keeps the request's id before it resets a failure Cluster saved
    ([decision 0170](decisions/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md),
-   proposed). What is left of requests on Cluster is the deletion of a caller's rows in Cluster's tables with its
-   reply once past its time (decision 0165). Until then Cluster answers a retry past `keep` within a version from the
-   reply it saved.
+   proposed). A caller's client keeps its message's id once it has the answer, and Cluster's rows go once the time
+   is past, by a step of the entity or `Handle.expire`
+   ([decision 0171](decisions/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md),
+   proposed).
 
    Effect-TS/effect#10239, which asks Cluster to forget a processed request, was closed by a merged pull request
    that no release holds at 4.1.2. Until one does, the deletions are the runtime's own statements (decision 0090).

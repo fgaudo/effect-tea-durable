@@ -521,6 +521,48 @@ describe('the runtime on Cluster', () => {
       expect(rows[1]?.until).toBeNull()
     })), 30_000)
 
+  test('a caller’s Cluster rows go once its client has the answer and its time is past, by a step or by expire', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const sender = { user: 'u' }
+      const rowsOf = (requestId: string) =>
+        Effect.map(
+          sql<{ held: number }>`
+            SELECT (SELECT COUNT(*) FROM cluster_messages WHERE request_id = given.request_id)
+              + (SELECT COUNT(*) FROM cluster_replies WHERE request_id = given.request_id) AS held
+            FROM cluster_messages AS given
+            WHERE tag = 'Message' AND payload LIKE ${`%${requestId}%`}
+          `,
+          (rows) => Number(rows[0]?.held ?? 0),
+        )
+      yield* handle!.create('one', { start: 0 }, { requestId: 'c1', sender })
+      // A keep of 0 deletes the reply in its own step, and the client is given the answer all the same.
+      const zero = { millis: 0 }
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep: zero }))
+        .toEqual({ _tag: 'Accepted' })
+      expect(yield* rowsOf('m1')).toBe(2)
+      const [kept] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM given_requests`
+      expect(Number(kept?.held)).toBe(1)
+      yield* Effect.sleep('5 millis')
+      // The next step that answers a caller takes the rows of m1, and keeps those of m2, whose client keeps its id.
+      yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender, keep: { millis: 60_000 } })
+      const gone = yield* sql`SELECT 1 FROM cluster_replies WHERE request_id NOT IN (SELECT request_id FROM cluster_messages)`
+      expect(gone).toEqual([])
+      const left = yield* sql<{ id: string }>`SELECT request_id AS id FROM given_requests`
+      expect(left.length).toBe(1)
+      expect(yield* rowsOf('m1')).toBe(0)
+      expect(yield* rowsOf('m2')).toBe(2)
+      // `expire` takes the rows of a request past its time, without a step.
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm3', sender, keep: zero }))
+        .toEqual({ _tag: 'Accepted' })
+      yield* Effect.sleep('5 millis')
+      yield* handle!.expire
+      expect(yield* rowsOf('m3')).toBe(0)
+      expect(yield* rowsOf('m2')).toBe(2)
+      const [held] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM given_requests`
+      expect(Number(held?.held)).toBe(1)
+    })), 30_000)
+
   test('a caller’s message that does not encode is the caller’s defect, and reaches no door', () =>
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient

@@ -401,6 +401,19 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     )
   `
   yield* sql`CREATE INDEX IF NOT EXISTS sent_requests_sender ON sent_requests (sender_name, sender_id)`
+  // On Cluster: the Cluster request id of each caller's message sent with `keep`, under its entity, kept by the
+  // caller's client once Cluster has given it its answer, with the time the client counts the reply kept until. A
+  // step that deletes its entity's replies past their time deletes Cluster's rows under the ids past theirs, and so
+  // does `Handle.expire` (decision 0171).
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS given_requests (
+      request_id ${integer} PRIMARY KEY,
+      name ${text} NOT NULL,
+      id ${text} NOT NULL,
+      until ${integer} NOT NULL
+    )
+  `
+  yield* sql`CREATE INDEX IF NOT EXISTS given_requests_until ON given_requests (name, id, until)`
 }).pipe(Effect.orDie)
 
 /**
@@ -412,16 +425,23 @@ const clusterMessages = 'cluster_messages'
 const clusterReplies = 'cluster_replies'
 
 /**
- * Deletes Cluster's rows under the request ids of `sent_requests` that `where` selects, then those ids. Every row
- * under an id goes: the request, its replies and any envelope stored under it (decision 0090).
+ * Deletes Cluster's rows under the request ids of `table`, `sent_requests` or `given_requests`, that `where`
+ * selects, then those ids. Every row under an id goes: the request, its replies and any envelope stored under it
+ * (decisions 0090, 0171).
  */
-const forgetSent = (sql: SqlClient.SqlClient, where: Statement.Fragment) =>
+const forgetUnder = (
+  sql: SqlClient.SqlClient,
+  table: 'sent_requests' | 'given_requests',
+  where: Statement.Fragment,
+) =>
   Effect.gen(function*() {
-    const ids = sql`SELECT request_id FROM sent_requests WHERE ${where}`
+    const ids = sql`SELECT request_id FROM ${sql(table)} WHERE ${where}`
     yield* sql`DELETE FROM ${sql(clusterReplies)} WHERE request_id IN (${ids})`
     yield* sql`DELETE FROM ${sql(clusterMessages)} WHERE request_id IN (${ids})`
-    yield* sql`DELETE FROM sent_requests WHERE ${where}`
+    yield* sql`DELETE FROM ${sql(table)} WHERE ${where}`
   })
+
+const forgetSent = (sql: SqlClient.SqlClient, where: Statement.Fragment) => forgetUnder(sql, 'sent_requests', where)
 
 /** A program's name and the version it runs, as a launch on Cluster records them (decision 0159). */
 export type Versioned = Readonly<{ name: string; version: number }>
@@ -655,6 +675,7 @@ export const renamed = (
         yield* dialect === 'pg' ? inProcess(from, to) : inPlace(from, to)
         yield* sql`UPDATE replies SET sender_name = ${to} WHERE sender_name = ${from}`
         yield* sql`UPDATE sent_requests SET sender_name = ${to} WHERE sender_name = ${from}`
+        yield* sql`UPDATE given_requests SET name = ${to} WHERE name = ${from}`
         yield* sql`UPDATE waiting SET sender_name = ${to} WHERE sender_name = ${from}`
         yield* sql`UPDATE entities SET keyed_as = COALESCE(keyed_as, ${from}) WHERE name = ${from}`
         for (const table of namedTables) yield* sql`UPDATE ${sql(table)} SET name = ${to} WHERE name = ${from}`
@@ -1195,6 +1216,12 @@ export interface Storage<T extends Types> {
    * Cluster saves the rows of the step's own request (decision 0090).
    */
   readonly forgetPending: Effect.Effect<void>
+  /**
+   * On Cluster: keeps the Cluster request id `requestId` of a caller's message to the entity `id`, once its client
+   * was given the answer, until the time `until`, in milliseconds. Past it, a step of the entity that answers a caller
+   * and `expire` delete Cluster's rows under the id. An id already kept is not kept again (decision 0171).
+   */
+  readonly keepGiven: (requestId: string, id: string, until: number) => Effect.Effect<void>
 }
 
 /**
@@ -1625,9 +1652,14 @@ export const storage = <T extends Types>(
           )
         }
       }
-      // A step that answers a caller takes its entity's replies past their time with it (decision 0125).
+      // A step that answers a caller takes its entity's replies past their time with it (decision 0125). On
+      // Cluster it takes Cluster's rows of the requests whose clients were given their answers and whose time is past
+      // too. The step's own request has no such row yet: its client keeps it once given the answer (decision 0171).
       if (written.replies.length > 0) {
         yield* sql`DELETE FROM replies WHERE name = ${name} AND id = ${id} AND until IS NOT NULL AND until <= ${at}`
+        if (onCluster) {
+          yield* forgetUnder(sql, 'given_requests', sql`name = ${name} AND id = ${id} AND until <= ${at}`)
+        }
       }
       // The rows of the log are written last. Their `seq` is drawn once, by moving the head of the entity's
       // partition, which holds the head's row until the transaction ends, so the head is held for the least of the
@@ -1665,13 +1697,15 @@ export const storage = <T extends Types>(
       return characters
     }).pipe(Effect.orDie)
 
+  // One transaction, so that a crash leaves no request of Cluster's without its replies (decision 0171).
   const expire = (at: number) =>
-    Effect.gen(function*() {
+    sql.withTransaction(Effect.gen(function*() {
       const gone = yield* rows('replies', Rows.id)(sql`
         DELETE FROM replies WHERE name = ${name} AND until IS NOT NULL AND until <= ${at} RETURNING id
       `)
+      if (onCluster) yield* forgetUnder(sql, 'given_requests', sql`name = ${name} AND until <= ${at}`)
       return gone.length
-    }).pipe(Effect.orDie)
+    })).pipe(Effect.orDie)
 
   /** The entities of the program an operator has to resume: nothing of theirs is handled, and no timer of theirs fires. */
   const onHold = sql`(SELECT id FROM entities WHERE name = ${name} AND suspended_on IS NOT NULL)`
@@ -2352,6 +2386,12 @@ export const storage = <T extends Types>(
 
   const forgetPending = forgetSent(sql, sql`sender_name IS NULL`).pipe(Effect.orDie)
 
+  const keepGiven = (requestId: string, id: string, until: number) =>
+    sql`
+      INSERT INTO given_requests ${sql.insert({ request_id: requestId, name, id, until })}
+      ON CONFLICT (request_id) DO NOTHING
+    `.pipe(Effect.asVoid, Effect.orDie)
+
   const stepsOf = (id: string) =>
     Effect.flatMap(
       sql`SELECT steps FROM entities WHERE name = ${name} AND id = ${id}`,
@@ -2389,5 +2429,6 @@ export const storage = <T extends Types>(
     keepSent,
     pendSent,
     forgetPending,
+    keepGiven,
   }
 }
