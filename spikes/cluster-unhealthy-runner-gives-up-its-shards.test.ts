@@ -67,7 +67,11 @@ const cluster = async (healthCheck: Duration.Input, run: (start: Start) => Effec
   const start: Start = (port, version) =>
     Effect.gen(function*() {
       versions.set(port, version)
-      const context = yield* Layer.build(runner(port)).pipe(Effect.provide([store, Digest.layerWebCrypto]))
+      // Each runner its own connection, as a runner of its own process has: a layer built once is shared.
+      const own = SqliteClient.layer({ filename: join(directory, 'store.db') })
+      const context = yield* Layer.build(runner(port).pipe(Layer.provide(own))).pipe(
+        Effect.provide(Digest.layerWebCrypto),
+      )
       const sharding = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
       return () => shards.filter((shard) => sharding.hasShardId(shard)).length
     }).pipe(Effect.orDie)

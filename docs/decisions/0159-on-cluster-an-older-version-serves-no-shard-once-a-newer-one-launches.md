@@ -90,6 +90,11 @@ runs two runners on one SQLite file, with a `RunnerHealth` that answers by versi
 
 ## What it rests on
 
+- That the spike and the tests of two runners see what two processes would: each runner opens a connection of its
+  own to the file, as a runner of its own process does. A layer of the client built once is shared by whatever is
+  built under it, so two runners in one process would otherwise share one connection, and no lock of the file
+  would come between them. **Seen**: with one layer built once, the `data_version` of one runner did not move at
+  the other's commits ([decision 0163](0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)).
 - That a runner not alive gives up its shards, and that the ring holds only the runners marked healthy:
   **documented** by the JSDoc of `RunnerHealth`, **seen in the spike**, and **read in the source** of `Sharding.ts`
   at 4.1.2.

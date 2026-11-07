@@ -181,7 +181,8 @@ describe('two runners on one file', () => {
               shardLockExpiration: Duration.seconds(3),
               entityMessagePollInterval: Duration.millis(100),
             })),
-            Layer.provideMerge(store),
+            // Each runner its own connection, as a runner of its own process has: a layer built once is shared.
+            Layer.provideMerge(SqliteClient.layer({ filename: join(directory, 'store.db') })),
             Layer.provide(Digest.layerWebCrypto),
           ),
         ).pipe(Effect.orDie)
