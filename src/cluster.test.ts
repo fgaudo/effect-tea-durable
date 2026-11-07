@@ -160,7 +160,9 @@ describe('the lease of a shard', () => {
         const shard = ShardId.make('default', 1)
         const holder = RunnerAddress.make('a', 1)
         const other = RunnerAddress.make('b', 1)
-        const ago = (seconds: number) =>
+        // An expiration that is not a whole second, which both readings round up to 35 s.
+        const expiration = Duration.seconds(34.5)
+        const ago =(seconds: number) =>
           dialect === 'pg'
             ? sql.unsafe(`UPDATE cluster_locks SET acquired_at = NOW() - INTERVAL '${seconds} seconds'`)
             : sql.unsafe(`UPDATE cluster_locks SET acquired_at = datetime(CURRENT_TIMESTAMP, '-${seconds} seconds')`)
@@ -177,7 +179,7 @@ describe('the lease of a shard', () => {
             expect(yield* storage.acquire(holder, [shard])).toHaveLength(1)
             const [before] = yield* clock
             yield* ago(age)
-            const held = yield* leased(shard.toString(), addressText(holder), 35)
+            const held = yield* leased(shard.toString(), addressText(holder), expiration)
             const taken = (yield* storage.acquire(other, [shard])).length > 0
             const [after] = yield* clock
             if (dialect === 'sqlite' && before?.now !== after?.now) continue
@@ -187,10 +189,10 @@ describe('the lease of a shard', () => {
         }
         yield* storage.releaseAll(other)
         expect(yield* storage.acquire(holder, [shard])).toHaveLength(1)
-        expect(yield* leased(shard.toString(), addressText(other), 35)).toBe(false)
+        expect(yield* leased(shard.toString(), addressText(other), expiration)).toBe(false)
       }).pipe(
         Effect.provide(Layer.orDie(SqlRunnerStorage.layer).pipe(
-          Layer.provide(ShardingConfig.layer({ shardLockExpiration: Duration.seconds(35) })),
+          Layer.provide(ShardingConfig.layer({ shardLockExpiration: Duration.seconds(34.5) })),
           Layer.provideMerge(client(dialect)),
         )),
       ))), 30_000)

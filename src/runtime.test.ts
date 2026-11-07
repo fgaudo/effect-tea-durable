@@ -5003,6 +5003,9 @@ describe('renaming a program (decision 0156)', () => {
       }
       // None of them held the database: a launch after them holds it.
       yield* process({}, () => Effect.void)
+      // Two names renamed to one are not refused: the storage refuses only a move onto a name that holds an entity
+      // already (decision 0176).
+      yield* process({ renames: { Toy: 'Plaything', Game: 'Plaything' } }, () => Effect.void)
     })))
 })
 

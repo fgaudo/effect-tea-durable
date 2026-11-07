@@ -757,6 +757,18 @@ test('a database made before holds its entities without steps, which createTable
       expect(yield* store.stepsOf('r')).toBe(1)
     }).pipe(Effect.orDie)))
 
+// A database made before decision 0176 holds its versions without `renamed_to`. `createTables` adds the column, which
+// the check of every step on Cluster reads.
+test('a database made before holds its versions without renamed_to, which createTables adds', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      yield* sql`INSERT INTO versions (name, version) VALUES ('Toy', 2)`
+      yield* sql`ALTER TABLE versions DROP COLUMN renamed_to`
+      yield* Effect.provideService(createTables, SqlClient.SqlClient, sql)
+      expect(yield* Effect.provideService(standingOf('Toy'), SqlClient.SqlClient, sql))
+        .toEqual({ version: 2, renamedTo: null })
+    }).pipe(Effect.orDie)))
+
 // PostgreSQL compares text by the collation of its column, and the database's own may order by language. Every text
 // column the storage makes is `C`, which compares bytes as SQLite's `BINARY` does. PGlite's database is `C` itself,
 // so the order of the read model's ids is the same without the collation, and the test reads it off the columns

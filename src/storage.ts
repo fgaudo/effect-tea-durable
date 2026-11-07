@@ -6,6 +6,7 @@
  * event writes, and a caller writes it in one transaction (decision 0057).
  */
 import * as DateTime from 'effect/DateTime'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Hash from 'effect/Hash'
 import * as Schema from 'effect/Schema'
@@ -529,18 +530,20 @@ export const newestVersion = (name: string): Effect.Effect<number | undefined, n
 
 /**
  * Whether the lease of the shard `shard`, a row of Cluster's `cluster_locks`, names the runner at `address` and has
- * not expired after `expiration` seconds. Each condition is the exact complement of the one under which Cluster's
- * `SqlRunnerStorage` lets another runner take the lease, in whole seconds on SQLite (decision 0175). A step reads it
- * in its transaction. On PostgreSQL the row is read `FOR SHARE`, as `newestVersion` reads its own.
+ * not expired after `expiration`, Cluster's `shardLockExpiration`. Each condition is the exact complement of the one
+ * under which Cluster's `SqlRunnerStorage` lets another runner take the lease, in whole seconds on SQLite
+ * (decision 0175). A step reads it in its transaction. On PostgreSQL the row is read `FOR SHARE`, as `newestVersion`
+ * reads its own.
  */
 export const leased = (
   shard: string,
   address: string,
-  expiration: number,
+  expiration: Duration.Input,
 ): Effect.Effect<boolean, never, SqlClient.SqlClient> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
-    const seconds = sql.literal(String(Math.trunc(expiration)))
+    // Rounded up to whole seconds, as `SqlRunnerStorage` rounds the expiration it takes a lease by.
+    const seconds = sql.literal(String(Math.ceil(Duration.toSeconds(expiration))))
     const live = dialectOf(sql) === 'pg'
       ? sql`acquired_at >= NOW() - INTERVAL '${seconds} seconds' FOR SHARE`
       : sql`(strftime('%s', CURRENT_TIMESTAMP) - strftime('%s', acquired_at)) <= ${seconds}`

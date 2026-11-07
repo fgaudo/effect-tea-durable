@@ -338,8 +338,6 @@ export const onCluster: Effect.Effect<
             (holds) => holds ? Effect.failCause(cause) : Effect.never,
           ))
     const runner = Option.map(config.runnerAddress, addressText)
-    // Rounded up, as Cluster's `SqlRunnerStorage` rounds it, so that the lease's check is the complement of its take.
-    const expiration = Math.ceil(Duration.toSeconds(config.shardLockExpiration))
     return {
       guard: (program, id) =>
         Effect.andThen(
@@ -350,7 +348,7 @@ export const onCluster: Effect.Effect<
               const reason = `a process with no runner address steps the shard ${shard}`
               return Effect.die(new InvariantDefect({ reason }))
             }
-            return Effect.flatMap(leased(shard, runner.value, expiration), (held) =>
+            return Effect.flatMap(leased(shard, runner.value, config.shardLockExpiration), (held) =>
               held ? Effect.void : Effect.die(new InvariantDefect({
                 reason: `the lease of the shard ${shard} does not name the runner ${runner.value}, or has expired`,
               })))

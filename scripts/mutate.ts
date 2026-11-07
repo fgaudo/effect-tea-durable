@@ -17,7 +17,7 @@
  * The mutations module exports `mutations: ReadonlyArray<Mutation>`. It is written for the code a review reads,
  * and kept outside the repository: an edit stops finding its text once the code changes. One line per mutation is
  * printed, tab separated: its id, `killed`, `SURVIVED` or `uncertain`, what ran it to the end — its own tests, the
- * suite or the compiler — the seconds it took, and the first test that failed. A survivor is a rule no test holds,
+ * suite or the compiler — the seconds it took, and the first test that failed in the run alone that held the kill. A survivor is a rule no test holds,
  * or a mutation that changes nothing, which only reading tells apart. What is running, and how many mutations each
  * run has done, is printed on stderr, which a terminal shows on one line. A kill of a test is printed on stdout only
  * once it holds alone, so stdout stays quiet through the first run.
@@ -182,9 +182,11 @@ const confirmed = async (at: string, mutation: Mutation, first: Result, timeout:
       const started = Date.now()
       const outcome = await tested(at, [file], timeout)
       const status = outcome.passed ? 'survived' as const : 'killed' as const
-      return { ...first, status, seconds: secondsSince(started) }
+      return { ...first, status, seconds: secondsSince(started), failed: outcome.failed, file: outcome.file }
     })
-  return again.status === 'killed' ? first : { ...again, status: 'uncertain' }
+  // A kill is named by the test that failed alone: under the load of the workers, the first run may name a test that
+  // ran out of time.
+  return again.status === 'killed' ? { ...again, seconds: first.seconds } : { ...again, status: 'uncertain' }
 }
 
 /** What fails in a copy no mutation changed, and so would kill each one: `null` if nothing does. */

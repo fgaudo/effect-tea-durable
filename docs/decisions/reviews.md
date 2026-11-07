@@ -451,3 +451,36 @@ written for the code the review reads, and are not kept.
   sender's entity wakes every request of it that waits; 0171's that the client's clock is no earlier than the
   step's; 0173's that the time between Cluster's read and its save is short; 0174's that a program deployed without
   its record escapes both checks of 0159.
+
+## 2026-11-07: 0175 to 0177
+
+- Documented at 4.1.2, as the notes say: `RunnerAddress`'s primary key is `host:port` and `ShardId` formats as
+  `group:id` (0175); `Effect.tx` is optimistic with retry (0177). `Semaphore.take` serves its waiters in the order
+  they came where each takes one permit, as an entity's lock does, and a smaller later request may overtake a larger
+  one otherwise (0177).
+- Read in the source at 4.1.2, as the notes say: `SqlRunnerStorage` rounds `shardLockExpiration` up to whole
+  seconds, and takes a lease on SQLite past that age by `strftime('%s', …)` (0175); `getShardId` hashes the entity
+  id alone (0176); `cluster/Sharding.ts` imports no `Tx` module (0177).
+- Then every rule of these notes that the code keeps was taken out, one at a time, with `scripts/mutate.ts` under
+  `SCHEDULES=all`: of 38, 3 survived and 8 were uncertain. 0177 keeps the code as it was, and has no mutation.
+- Tested now, which no test was: the guard rounds a lease's expiration up as Cluster does (0175), which the test of
+  the lease's boundary checked only for an expiration of whole seconds, passed to `leased` and not drawn from
+  `ShardingConfig`; `leased` now takes the expiration as Cluster's config gives it, and the test runs at 34.5 s. A
+  database made before is given `renamed_to` (0176). A launch that renames two names to one is not refused (0176),
+  which only the storage's tests ran. Each of the five mutations those tests are for now fails a test.
+- Fixed: `scripts/mutate.ts` named a kill by the test that failed in the first run, under the load of the workers,
+  where that test may only have run out of time. It names the test that failed in the run alone now.
+- Two change nothing a test can see. A launch of one process that marks its renames (0176), since nothing of one
+  process reads `versions`. The `BEGIN IMMEDIATE` of a rename on SQLite (0176), which the client begins with by
+  default.
+- Six are left, as rules no test reaches. A process with no runner address that passes the guard (0175), since it
+  registers no door and holds no shard, so that no step of it reaches the guard. The `FOR SHARE` of `leased` and of
+  `standingOf`, and the lock of `versions` by a rename (0175, 0176), which hold only between two sessions of
+  PostgreSQL, and PGlite runs one; the [open question](../open-questions.md#running) of many connections asks for
+  that server. A `Resumed` saved under the old name and delivered after the rename (0176), which a test would reach
+  with an operation waiting on a suspended entity across a rename on two runners.
+- Not exact, and left: 0175 says every step runs the check first in its transaction. A step of the loop deletes
+  Cluster's rows under the pending ids, and drops an event of an entity gone, before it, and the step's rollback
+  undoes both where the check dies.
+- Reasoned, and left so: 0177's that I/O in a `Tx` transaction would run again at each retry, which the JSDoc does
+  not say.
