@@ -181,21 +181,23 @@ describe('two runners on one file', () => {
   const shards = Array.from({ length: shardsPerGroup }, (_, i) => ShardId.make('default', i + 1))
 
   /**
-   * Runs `run` with a function that starts a runner of the runtime on one SQLite file, at a port, whose runtime deploys
-   * `programs`, and gives back how many shards it holds. The lease is 3 s, since SQLite's `CURRENT_TIMESTAMP` counts
-   * whole seconds, and a lease of 1 s drops a runner that has just beaten.
+   * Runs `run` with a function that starts a runner of the runtime on one SQLite file, at a port, whose sharding names
+   * `programs` and whose runtime deploys `deployed`, `programs` by default, and gives back how many shards it holds.
+   * The lease is 3 s, since SQLite's `CURRENT_TIMESTAMP` counts whole seconds, and a lease of 1 s drops a runner that
+   * has just beaten.
    */
   const onFile = async (
     run: (
       start: (
         port: number,
         programs: ReadonlyArray<Program<T>>,
+        deployed?: ReadonlyArray<Program<T>>,
       ) => Effect.Effect<(() => number) & { context: Context.Context<Sharding.Sharding> }, never, Scope.Scope>,
     ) => Effect.Effect<void, unknown, Scope.Scope | SqlClient.SqlClient>,
   ) => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
-    const start = (port: number, programs: ReadonlyArray<Program<T>>) =>
+    const start = (port: number, programs: ReadonlyArray<Program<T>>, deployed = programs) =>
       Effect.gen(function*() {
         const context = yield* Layer.build(
           sharding(programs).pipe(
@@ -217,7 +219,7 @@ describe('two runners on one file', () => {
           ),
         ).pipe(Effect.orDie)
         const runtime = yield* Effect.provide(launch(), context)
-        for (const program of programs) yield* Effect.provide(runtime.deploy(program), context)
+        for (const program of deployed) yield* Effect.provide(runtime.deploy(program), context)
         const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
         return Object.assign(() => shards.filter((shard) => held.hasShardId(shard)).length, {
           context: context as Context.Context<Sharding.Sharding>,
@@ -263,6 +265,24 @@ describe('two runners on one file', () => {
         const registered = yield* sql<{ address: string }>`SELECT address FROM cluster_runners`
         expect(registered.map(({ address }) => address)).toEqual(['localhost:2'])
         expect(newer()).toBe(shardsPerGroup)
+      })), 30_000)
+
+  test("a deploy of a program the runner's sharding does not name, or names at another version, dies", () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const deploys = (deployed: ReadonlyArray<Program<T>>) =>
+          Effect.scoped(Effect.exit(start(1, [at('Toy', 1)], deployed)))
+        const unnamed = defectOf(yield* deploys([at('Toy', 1), at('Other', 1)]))
+        expect(unnamed).toBeInstanceOf(InvariantDefect)
+        expect((unnamed as InvariantDefect).reason).toBe(
+          "the program 'Other' is deployed at version 1, and the runner's sharding does not name it",
+        )
+        const other = defectOf(yield* deploys([at('Toy', 2)]))
+        expect(other).toBeInstanceOf(InvariantDefect)
+        expect((other as InvariantDefect).reason).toBe(
+          "the program 'Toy' is deployed at version 2, and the runner's sharding names it at version 1",
+        )
+        expect(defectOf(yield* deploys([at('Toy', 1)]))).toBeUndefined()
       })), 30_000)
 
   test('a step of an older version dies and saves no reply, and a runner of the newest version steps its message', () =>
@@ -865,8 +885,8 @@ describe('the shards of a runner on Cluster', () => {
   }
 
   /**
-   * Runs `run` with a function that starts a runner of the runtime on one SQLite file, at a port, whose runtime deploys
-   * `bell` until the scope the runner is started in closes. `said` is told what the runtime does. The lease is 3 s, as
+   * Runs `run` with a function that starts a runner of the runtime on one SQLite file, at a port, whose sharding names
+   * `bell` and `ghost`, and whose runtime deploys `bell` until the scope the runner is started in closes. `said` is told what the runtime does. The lease is 3 s, as
    * in the tests of two runners above.
    */
   const onFile = async (
@@ -886,7 +906,7 @@ describe('the shards of a runner on Cluster', () => {
       Effect.gen(function*() {
         const scope = yield* Effect.scope
         const context = yield* Layer.build(
-          sharding([bell]).pipe(
+          sharding([bell, ghost]).pipe(
             Layer.provideMerge(Runners.layerNoop),
             Layer.provideMerge(withheld === undefined ? SqlMessageStorage.layer : withholding(withheld)),
             Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),

@@ -534,6 +534,11 @@ export interface OnCluster {
     idle: number,
     resumed: (receiver: Address, requestId: string) => Effect.Effect<void>,
   ) => Effect.Effect<void, never, Scope.Scope>
+  /**
+   * The version of each program this runner's `sharding` recorded, by name, or `null` on a process that holds no
+   * shard. A deploy of a program not recorded at its version dies (decision 0174).
+   */
+  readonly versions: ReadonlyMap<string, number> | null
   /** How many shards the doors' group has: Cluster's `shardsPerGroup`. */
   readonly shards: number
   /** The number of the shard Cluster routes the id or the singleton's name `id` to, in the doors' group. */
@@ -2563,6 +2568,16 @@ export const launchWith = (
             const renamedTo = renames.get(program.name)
             if (renamedTo !== undefined) {
               const reason = `the program '${program.name}' is deployed, and the launch renames it to '${renamedTo}'`
+              return yield* Effect.die(new InvariantDefect({ reason }))
+            }
+            // The versions a runner's `sharding` recorded are what keeps an older runner from a newer version's rows,
+            // and a program deployed without its record escapes both the health check and the check by the commit
+            // (decision 0174).
+            const recorded = cluster?.versions?.get(program.name)
+            if (cluster !== null && cluster.versions !== null && recorded !== versionOf(program)) {
+              const named = recorded === undefined ? 'does not name it' : `names it at version ${recorded}`
+              const reason =
+                `the program '${program.name}' is deployed at version ${versionOf(program)}, and the runner's sharding ${named}`
               return yield* Effect.die(new InvariantDefect({ reason }))
             }
             names.add(program.name)

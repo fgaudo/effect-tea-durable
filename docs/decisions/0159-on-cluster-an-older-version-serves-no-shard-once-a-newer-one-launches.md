@@ -151,7 +151,7 @@ runs two runners on one SQLite file, with a `RunnerHealth` that answers by versi
 - [`src/cluster.ts`](../../src/cluster.ts) gives the door too: `doorOf`, Cluster's entity of a program with its
   two RPCs, and `door`, which serves it, each request stepped once `atNewest` has read the newest version in
   Cluster's transaction. `newestVersion` of the storage reads it, `FOR SHARE` on PostgreSQL.
-- What is not code yet waits for the runtime on Cluster: the step a door runs, which is the runtime's, and whether a
-  deploy of a program the runner's `sharding` does not name dies, which is decided with the deploy on Cluster.
+- A deploy of a program the runner's `sharding` does not name, at the version deployed, dies
+  ([decision 0174](0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).
 - [`docs/cluster.md`](../cluster.md#two-versions-at-once) says what this note proposes. The open question of two
   versions at once leaves `docs/open-questions.md` once the note is taken.

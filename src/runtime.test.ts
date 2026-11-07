@@ -5077,6 +5077,7 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
       const singletons: Array<Fiber.Fiber<never>> = []
       const cluster: OnCluster = {
         shards: 1,
+        versions: null,
         shardOf: () => 1,
         holds: () => true,
         singleton: (_name, run) =>
@@ -5135,6 +5136,7 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
       let step: ((delivered: Delivered) => Effect.Effect<unknown>) | null = null
       const cluster: OnCluster = {
         shards: 1,
+        versions: null,
         shardOf: () => 1,
         holds: () => true,
         singleton: (_name, run) => Effect.asVoid(Effect.forkScoped(Effect.scoped(Effect.andThen(run, Effect.never)))),
@@ -5258,6 +5260,7 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
         let step: ((delivered: Delivered) => Effect.Effect<unknown>) | null = null
         const cluster: OnCluster = {
           shards: 1,
+          versions: null,
           shardOf: () => 1,
           holds: () => true,
           singleton: (_name, run) => Effect.asVoid(Effect.forkScoped(Effect.scoped(Effect.andThen(run, Effect.never)))),

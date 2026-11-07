@@ -22,6 +22,7 @@ import {
   Snowflake,
 } from 'effect/cluster'
 import * as Cause from 'effect/Cause'
+import * as Context from 'effect/Context'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -60,15 +61,26 @@ export const byVersion = (
   })
 
 /**
+ * The version of each program a runner's `sharding` recorded, by name, or `null` on a process with no
+ * `runnerAddress`, which holds no shard. `launch` takes it, so that a runner deploys only the programs its
+ * `sharding` named, each at the version named (decision 0174). It has no default, so that a `Sharding` built
+ * without `sharding` does not launch.
+ */
+export class Recorded extends Context.Service<Recorded, {
+  readonly versions: ReadonlyMap<string, number> | null
+}>()('effect-tea-durable/Recorded') {}
+
+/**
  * Cluster's `Sharding` for a runner that runs `programs`. It records the version of each program under the
  * runner's address first, and dies if one is older than the newest a launch recorded, so that a runner of an older
  * version never registers (decision 0159). It gives `Sharding` the `RunnerHealth` of `byVersion` over the one the
- * launcher provides. A process with no `runnerAddress`, a client of the cluster alone, records nothing.
+ * launcher provides, and gives `Recorded` the versions it recorded. A process with no `runnerAddress`, a client of
+ * the cluster alone, records nothing.
  */
 export const sharding = (
   programs: ReadonlyArray<Pick<Program<Types>, 'name' | 'migrations'>>,
 ): Layer.Layer<
-  Sharding.Sharding,
+  Sharding.Sharding | Recorded,
   never,
   | ShardingConfig.ShardingConfig
   | Runners.Runners
@@ -83,13 +95,13 @@ export const sharding = (
     const launched = yield* RunnerHealth.RunnerHealth
     yield* createTables
     const address = Option.getOrUndefined(config.runnerAddress)
-    if (address !== undefined) {
-      yield* recordVersions(
-        addressText(address),
-        programs.map((program) => ({ name: program.name, version: versionOf(program) })),
-      )
-    }
-    return Sharding.layer.pipe(Layer.provide(Layer.succeed(RunnerHealth.RunnerHealth, byVersion(launched, sql))))
+    const versioned = programs.map((program) => ({ name: program.name, version: versionOf(program) }))
+    if (address !== undefined) yield* recordVersions(addressText(address), versioned)
+    const versions = address === undefined ? null : new Map(versioned.map(({ name, version }) => [name, version]))
+    return Layer.merge(
+      Sharding.layer.pipe(Layer.provide(Layer.succeed(RunnerHealth.RunnerHealth, byVersion(launched, sql)))),
+      Layer.succeed(Recorded, { versions }),
+    )
   }))
 
 /**
@@ -239,10 +251,11 @@ const group = 'default'
 export const onCluster: Effect.Effect<
   OnCluster,
   never,
-  Sharding.Sharding | ShardingConfig.ShardingConfig | MessageStorage.MessageStorage | SqlClient.SqlClient
+  Sharding.Sharding | Recorded | ShardingConfig.ShardingConfig | MessageStorage.MessageStorage | SqlClient.SqlClient
 > = Effect.gen(
   function*() {
     const sharding = yield* Sharding.Sharding
+    const { versions } = yield* Recorded
     const config = yield* ShardingConfig.ShardingConfig
     const messages = yield* MessageStorage.MessageStorage
     const sql = yield* SqlClient.SqlClient
@@ -328,6 +341,7 @@ export const onCluster: Effect.Effect<
       // SQLite moves `data_version` on a connection once another connection commits to the file, and not at the
       // connection's own commits. The runner's client has one connection (decision 0163). A row without a version
       // fails, so that the watcher keeps the version it had: as `NaN` it would differ from itself at every reading.
+      versions,
       others: {
         version: Effect.flatMap(sql<{ data_version: number | bigint }>`PRAGMA data_version`, ([row]) => {
           const version = Number(row?.data_version)
@@ -435,6 +449,7 @@ export const launch = (
   Runtime,
   never,
   | Sharding.Sharding
+  | Recorded
   | ShardingConfig.ShardingConfig
   | MessageStorage.MessageStorage
   | SqlClient.SqlClient

@@ -13,7 +13,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
    Cluster's runners carry no version, and a shard may go from a new runner back to an old one
    ([open question](open-questions.md#running)). The step decides what keeps an older version from the rows a newer
-   one wrote, with what the runtime holds alone, whatever Cluster comes to give.
+   one wrote, with what the runtime holds alone, whatever Cluster comes to give. A runner deploys only the programs
+   its `sharding` names, at the version named
+   ([decision 0174](decisions/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md), proposed).
 
    The two interleavings [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)
    reached hold on Cluster
