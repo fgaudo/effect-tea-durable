@@ -16,7 +16,9 @@
  * and kept outside the repository: an edit stops finding its text once the code changes. One line per mutation is
  * printed, tab separated: its id, `killed`, `SURVIVED` or `uncertain`, what ran it to the end — its own tests, the
  * suite or the compiler — the seconds it took, and the first test that failed. A survivor is a rule no test holds,
- * or a mutation that changes nothing, which only reading tells apart.
+ * or a mutation that changes nothing, which only reading tells apart. What is running, and how many mutations each
+ * run has done, is printed on stderr, which a terminal shows on one line. A kill of a test is printed on stdout only
+ * once it holds alone, so stdout stays quiet through the first run.
  */
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { availableParallelism, tmpdir } from 'node:os'
@@ -164,10 +166,17 @@ const byTest = (result: Result) => result.status === 'killed' && result.by !== '
  */
 export const mutateAll = async (
   mutations: ReadonlyArray<Mutation>,
-  options: Readonly<{ workers: number; timeout: number; each?: (result: Result) => void }>,
+  options: Readonly<{
+    workers: number
+    timeout: number
+    each?: (result: Result) => void
+    /** What is running, and how many of its mutations are done. */
+    progress?: (text: string) => void
+  }>,
 ): Promise<ReadonlyArray<Result>> => {
   const results: Array<Result | undefined> = Array.from({ length: mutations.length })
   let next = 0
+  let done = 0
   const worker = async () => {
     const at = copy()
     try {
@@ -177,6 +186,7 @@ export const mutateAll = async (
         if (mutation === undefined) continue
         const result = await mutate(at, mutation, options.timeout)
         results[index] = result
+        options.progress?.(`first run: ${++done}/${mutations.length} done, ${mutations.length - next} waiting`)
         // A kill of a test is told once it holds alone.
         if (!byTest(result)) options.each?.(result)
       }
@@ -187,12 +197,16 @@ export const mutateAll = async (
   if (mutations.length === 0) return []
   const alone = copy()
   try {
+    options.progress?.('the suite and the compiler on the code unchanged')
     const failing = await unmutated(alone, options.timeout)
     if (failing !== null) throw new Error(failing)
     await Promise.all(Array.from({ length: Math.min(options.workers, mutations.length) }, worker))
+    const killed = results.filter((result) => result !== undefined && byTest(result)).length
+    let rerun = 0
     for (const [index, mutation] of mutations.entries()) {
       const first = results[index]
       if (first === undefined || !byTest(first)) continue
+      options.progress?.(`again alone: ${++rerun}/${killed}, ${mutation.id}`)
       const again = await mutate(alone, mutation, options.timeout)
       const result = again.status === 'killed' ? first : { ...again, status: 'uncertain' as const }
       results[index] = result
@@ -232,18 +246,35 @@ if (import.meta.main) {
     process.exit(1)
   }
   const started = Date.now()
+  const elapsed = () => {
+    const seconds = Math.round((Date.now() - started) / 1000)
+    return `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, '0')}s`
+  }
+  // A terminal shows the progress on one line, written over; a file or a pipe is given a line each time.
+  const terminal = process.stderr.isTTY === true
+  const progress = (text: string) => {
+    process.stderr.write(terminal ? `\r\x1b[K[${elapsed()}] ${text}` : `[${elapsed()}] ${text}\n`)
+  }
+  // A result's line starts at the start of the line, over the progress a terminal shows.
+  const clear = () => {
+    if (terminal) process.stderr.write('\r\x1b[K')
+  }
   const results = await mutateAll(chosen, {
     workers,
     timeout,
-    each: (result) =>
+    progress,
+    each: (result) => {
+      clear()
       console.log([
         result.id,
         result.status === 'survived' ? 'SURVIVED' : result.status,
         result.by,
         `${result.seconds}s`,
         result.failed ?? '',
-      ].join('\t')),
+      ].join('\t'))
+    },
   })
+  clear()
   const left = (status: Result['status']) => results.filter((result) => result.status === status).map(({ id }) => id)
   const seconds = Math.round((Date.now() - started) / 1000)
   console.log(
