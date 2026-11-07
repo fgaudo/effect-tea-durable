@@ -204,9 +204,15 @@ export const onCluster: Effect.Effect<
       holds: (shard) => sharding.hasShardId(ShardId.make(group, shard)),
       singleton: (name, run) => sharding.registerSingleton(name, run, { shardGroup: group }),
       // SQLite moves `data_version` on a connection once another connection commits to the file, and not at the
-      // connection's own commits. The runner's client has one connection (decision 0163).
+      // connection's own commits. The runner's client has one connection (decision 0163). A row without a version
+      // fails, so that the watcher keeps the version it had: as `NaN` it would differ from itself at every reading.
       others: {
-        version: Effect.map(sql<{ data_version: number }>`PRAGMA data_version`, ([row]) => Number(row?.data_version)),
+        version: Effect.flatMap(sql<{ data_version: number | bigint }>`PRAGMA data_version`, ([row]) => {
+          const version = Number(row?.data_version)
+          return Number.isFinite(version)
+            ? Effect.succeed(version)
+            : Effect.fail(new Error('PRAGMA data_version gave no version'))
+        }),
         millis: Duration.toMillis(config.entityReplyPollInterval),
       },
       register: (program, step, idle) => {
