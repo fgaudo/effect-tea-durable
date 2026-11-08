@@ -115,6 +115,35 @@ test('work under a key the program does not declare does not compile where the s
   expect([alone, beside]).toHaveLength(2)
 })
 
+test('a list of keys whose names widened to string does not compile, since it would declare every key (decision 0199)', () => {
+  const pieces = {
+    name: 'Charges',
+    keys: ['charge'],
+    init: () => ({ charging: true }),
+    update: () => () => ({ charging: false }),
+    operations: { Charge: operation(() => Effect.succeed('Charged' as const)) },
+    project: () => null,
+    work: ({ charging }: { charging: boolean }) => (charging ? { charg: charge } : noWork),
+  }
+  // @ts-expect-error `keys` is `string[]` without `as const`, which would let `charg` through
+  const widened = program(schemas)(pieces)
+  const named: string = 'charge'
+  const parameterOf = program(schemas)({
+    ...pieces,
+    // @ts-expect-error a key with a parameter is named by a literal too
+    keys: [key(named, Schema.String)],
+    work: () => noWork,
+  })
+  const ofPart = part(schemas)({
+    ...pieces,
+    // @ts-expect-error a part's list of keys is checked as a program's is
+    keys: pieces.keys,
+    work: () => noWork,
+  })
+  const literal = program(schemas)({ ...pieces, keys: ['charge'], work: () => ({ charge }) })
+  expect([widened, parameterOf, ofPart, literal]).toHaveLength(4)
+})
+
 test('a runner that answers a message the program does not have does not compile', () => {
   const pieces = {
     name: 'Charges',
@@ -581,7 +610,8 @@ test('a name listed twice among the keys is refused where it is declared, with o
   const declare = (keys: ReadonlyArray<string | ReturnType<typeof key<string, string>>>) => () =>
     program(schemas)({
       name: 'Charges',
-      keys,
+      // A list of names typed `string` does not compile (decision 0199), and the check under test is at runtime.
+      keys: keys as unknown as readonly [],
       init: () => ({ charging: true }),
       update: () => () => ({ charging: false }),
       work: () => noWork,

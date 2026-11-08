@@ -73,7 +73,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md) | A key is a name and a parameter, as data, in every value and row that holds one |  |
 | [0133](archive/0133-an-entity-composes-children-as-effect-tea-does.md) | An entity composes children as effect-tea does: a part, placed with `child` or `each`, whose messages, keys, operations and reasons the library wraps | [0155](archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md) |
 | [0180](0180-a-program-leaves-out-what-it-does-not-have.md) | A program leaves out what it does not have, and each piece left out is empty | [0197](0197-a-program-lists-its-keys-and-key-gives-one-a-parameter.md) |
-| [0197](0197-a-program-lists-its-keys-and-key-gives-one-a-parameter.md) | A program lists its keys, and `key` gives one a parameter |  |
+| [0197](0197-a-program-lists-its-keys-and-key-gives-one-a-parameter.md) | A program lists its keys, and `key` gives one a parameter | [0199](0199-a-list-of-keys-names-each-key-by-a-literal-type.md) |
+| [0199](0199-a-list-of-keys-names-each-key-by-a-literal-type.md) | A list of keys names each key by a literal type, and a list typed `string[]` does not compile |  |
 
 ## Messages, requests and replies
 

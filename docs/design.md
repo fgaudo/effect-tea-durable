@@ -290,7 +290,9 @@ changes or drops an operation under way, delivers it otherwise, or bears another
 
 A program lists its keys. A key without a parameter is its name, and a key with one is `key(name, schema)`, as in
 `keys: ['fee', key('charge', Schema.String)]`. A name listed twice is a defect where the program is declared
-([decision 0197](decisions/0197-a-program-lists-its-keys-and-key-gives-one-a-parameter.md)). Under a key with a
+([decision 0197](decisions/0197-a-program-lists-its-keys-and-key-gives-one-a-parameter.md)). Each name is a
+literal type: a list written outside the call without `as const` is typed `string[]`, and does not compile
+([decision 0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md)). Under a key with a
 parameter, `work` returns a list of pairs, each a parameter and the piece of work under it. An order holds a charge
 for each of its lines so, in the step that changes the order
 ([decision 0132](decisions/archive/0132-a-key-may-take-a-parameter.md)).

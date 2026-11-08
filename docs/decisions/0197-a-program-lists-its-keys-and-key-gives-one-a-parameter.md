@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-11-08. Changes the first point of
 [decision 0132](archive/0132-a-key-may-take-a-parameter.md): a program declared its keys as a record, with `null`
 for a key without a parameter. Changes the point of [decision 0180](0180-a-program-leaves-out-what-it-does-not-have.md)
-that says `keys` left out is `{}`: it is the empty list.
+that says `keys` left out is `{}`: it is the empty list. Its first premise holds only of a list written in the call:
+a list typed `string[]` does not compile, by [decision 0199](0199-a-list-of-keys-names-each-key-by-a-literal-type.md).
 
 ## Context
 

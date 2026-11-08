@@ -384,11 +384,23 @@ export const key = <const Name extends string, Parameter>(
 /** What a declaration lists as its keys: a name for a key without a parameter, or a `key` for one with. */
 export type DeclaredKeys = ReadonlyArray<string | KeyWithParameter<string, unknown>>
 
+/** The name of an entry of a declaration's list of keys. */
+type NameOf<Entry> = Entry extends KeyWithParameter<infer Name, unknown> ? Name : Entry & string
+
 /** The record of keys a declaration's list makes, as `Keys` holds them. */
 type KeysOf<List extends DeclaredKeys> = {
-  readonly [Entry in List[number] as Entry extends KeyWithParameter<infer Name, unknown> ? Name : Entry & string]:
+  readonly [Entry in List[number] as NameOf<Entry>]:
     Entry extends KeyWithParameter<string, infer Parameter> ? Schema.Codec<Parameter, Json> : null
 }
+
+/**
+ * What a list of keys must also be: nothing more where every name is a literal type. A list whose names widened to
+ * `string`, as an array written outside the call without `as const` does, would make every key declared, so it does
+ * not compile (decision 0199).
+ */
+type LiteralNames<List extends DeclaredKeys> = string extends NameOf<List[number]>
+  ? Readonly<{ 'each key is named by a literal: write the list in the call, or `as const`': never }>
+  : unknown
 
 export const noWork: Readonly<Record<string, never>> = Object.freeze({})
 
@@ -1049,10 +1061,11 @@ type Pieces<
   & Readonly<{
     /**
      * Every key `work` may return a piece under: its name, or `key` with the schema of its parameter. Work under any
-     * other key is a type error (decisions 0033, 0197). A name listed twice is a defect where the program is
-     * declared. A declaration that leaves the list out declares no key (decision 0180).
+     * other key is a type error (decisions 0033, 0197). A list whose names are typed `string`, not literals, does not
+     * compile (decision 0199). A name listed twice is a defect where the program is declared. A declaration that
+     * leaves the list out declares no key (decision 0180).
      */
-    keys?: List
+    keys?: List & LiteralNames<List>
     /** The children, each placed with `child` or `each`: their messages, work and keys are the library's to route. */
     children?: C
     /** The own messages, and the external ones for a part: a child's messages are routed to the child. */

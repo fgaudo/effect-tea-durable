@@ -453,7 +453,8 @@ test("a parent's name with a '.' is refused where it is declared, since a child'
       rejection: Schema.Never,
       projection: Schema.Null,
     })({
-      keys,
+      // A list of names typed `string` does not compile (decision 0199), and the check under test is at runtime.
+      keys: keys as unknown as readonly [],
       children: { [name]: each(line, { id: Schema.String, at: lines }) },
       init: () => ({ lines: {}, charged: 0 }),
       update: () => () => reject,
