@@ -18,6 +18,15 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     before the other has committed;
   - a name of its table that no `Migrator` of the application uses in the same database.
 
+- **The runtime's tables in a schema of PostgreSQL of their own.** No statement of the storage names a schema, so on
+  PostgreSQL every table resolves through the `search_path` of the connection, and a launcher could put the
+  runtime's tables in a schema apart from the application's. The prefix `tea_` already keeps them apart
+  ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)), and the design promises no
+  schema. Whether it does is not decided. It would be decided by:
+  - a test of a launch whose client sets a `search_path`, which finds every table, index, trigger and function in
+    that schema, the advisory locks and the trigger's function included;
+  - whether a statement of the storage would ever need a name qualified by its schema, which the promise forbids.
+
 - **A disk that is really full.** A step that cannot commit dies, and a forget and a prune free the room steps need
   ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). The spike `spikes/full-database.test.ts` sees it
   under `PRAGMA max_page_count`, with the rollback journal, which caps the database file and not its journal. On a

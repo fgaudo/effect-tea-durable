@@ -5,6 +5,30 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
+- **A README for whoever arrives from outside.** It comes before the guide, so that the guide follows the register
+  and the words the README sets, and so that the reader who checks the guide starts from a README written for them.
+  The README is now a map of the repository: its first paragraph uses incarnation, projection, topic and outbox
+  before any definition, its first diagram is the whole semantics, and the second is the modules with the storage's
+  tables, each named with `tea_` ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)).
+  The step writes it for a reader who knows TypeScript and nothing of the design: the problem before the solution,
+  an order that waits for its payment while the process restarts, the "Why" as it is, what the library is not for, a
+  comparison in one line each with Temporal, Restate, Akka Persistence and a cron over a table, and the quick start's
+  code. It says that the state is the only truth and nothing is replayed, as durable execution replays elsewhere, and
+  in what state the library is: experimental, one process on SQLite or PostgreSQL, Cluster on one machine
+  ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
+  - The section Quick start keeps both files of [`examples/quick-start`](../examples/quick-start) whole: the test
+    `the README's quick start is the code of examples/quick-start, each file whole` in
+    [`src/form.test.ts`](../src/form.test.ts) fails on a block that differs from its file
+    ([decision 0196](decisions/0196-the-quick-start-is-an-example-the-readme-shows-whole.md)).
+  - The documents, the modules and the tables move to `CONTRIBUTING.md`, with the diagram of the modules. The rule of
+    [`AGENTS.md`](../AGENTS.md) on the two diagrams moves with it, and says where each diagram now is. A change of
+    that rule is a commit to `AGENTS.md`, and no note.
+  - The README of effect-tea, `README.md` of `github.com/fgaudo/effect-tea`, is the model of its sections, since the
+    two libraries are read by the same readers. Its local copy is the working directory `effect-tea` beside this
+    repository.
+  - The guide does not exist yet. The README points to [`docs/design.md`](design.md) where it would point to the
+    guide, and the step of the guide replaces that link.
+
 - **A guide from requirements to a program.** An agent that built a backend from the documentation alone, a rental
   of bikes, learned five rules of modelling only from the examples' code. The design states each rule it rests on,
   but no document says what the rule asks of a program. A guide for whoever writes a program says each one, with
@@ -18,13 +42,19 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - A projection reads no clock. An action that becomes allowed at a time is a field of the state, which a timer
     changes at that time.
   - A row with no life of its own, such as a customer, is a table of the application. The table may live in the
-    runtime's database, written on the client the runtime was launched with, as a consumer's store already may.
+    runtime's database, written on the client the runtime was launched with, as a consumer's store already may. The
+    guide says that every name with `tea_` is the runtime's, and that an application names no table of its own with
+    it ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)).
 
   The guide is written in another register than the design: the example first, the rule after it, and a word of
   the glossary introduced by an example before it is used. Cluster, children, the outbox, schemas that change and
   the operator's calls are pages of the guide by topic, read when needed, and not a second guide for an advanced
   reader. The guide is checked as the bike rental was: a reader who has not seen the code builds a program from the
-  documents alone, and what they get wrong is what the guide lacks.
+  documents alone, and what they get wrong is what the guide lacks. The reader is given a requirement no example
+  holds, such as a gym membership with counted entries or a loan of books with a due date, may read the README and
+  `docs/` but not `src/` nor `examples/`, and writes the program with its rehearsals. Whether the reader is a
+  subagent of the session that writes the guide is the maintainer's to say, asked before it starts. The README is
+  rewritten before the guide, by the step above.
 
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point
@@ -57,18 +87,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   server in a container, in the CI of the step above, so that what is only reasoned of many connections is tested:
   the order of a partition's commits, the advisory lock, a deadlock or a failure of serialization in a step
   ([open question](open-questions.md#running)). A library for most backends needs it before its release.
-
-- **A README for whoever arrives from outside.** The README is a map of the repository: its first paragraph uses
-  incarnation, projection, topic and outbox before any definition, its first diagram is the whole semantics, and
-  the second is the modules with the storage's tables. The step writes it for a reader who knows TypeScript and
-  nothing of the design: the problem before the solution, an order that waits for its payment while the process
-  restarts, the "Why" as it is, what the library is not for, a comparison in one line each with Temporal, Restate,
-  Akka Persistence and a cron over a table, and the quick start's code. It says that the state is the only truth and
-  nothing is replayed, as durable execution replays elsewhere, and in what state the library is:
-  experimental, one process on SQLite or PostgreSQL, Cluster on one machine. The documents, the modules and the
-  tables move to `CONTRIBUTING.md`, with the diagram of the modules, and the rule of [`AGENTS.md`](../AGENTS.md) on
-  the diagrams moves with it. The README of effect-tea is the model of its sections, since the two libraries are
-  read by the same readers. It comes after the guide, which it links, as it links the quick start.
 
 - **A site with the guide and the API reference.** [`design.md`](design.md) is a specification, not a reference:
   no document lists what each export takes and gives. The site is built as effect-tea's, with typedoc, and holds
