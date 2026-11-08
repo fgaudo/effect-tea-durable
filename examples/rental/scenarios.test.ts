@@ -197,10 +197,11 @@ describe('ride and bike together', () => {
         const bike7 = yield* world.create(bike, 'bike-7', { centsPerMinute: 20 })
         const annRide = yield* world.create(ride, 'ride-1', flags)
         yield* annRide.run('unlock')
-        expect(yield* bike7.projection).toMatchObject({ status: 'Ridden', canUnlock: false })
+        // A ride is counted when it docks, so the ride under way is not counted yet.
+        expect(yield* bike7.projection).toMatchObject({ status: 'Ridden', rides: 0, canUnlock: false })
         yield* annRide.send({ _tag: 'EndRequested' }, ann)
         yield* annRide.run('dock')
-        expect(yield* bike7.projection).toMatchObject({ status: 'Docked', canUnlock: true })
+        expect(yield* bike7.projection).toMatchObject({ status: 'Docked', rides: 1, canUnlock: true })
         expect((yield* annRide.state)._tag).toBe('Ended')
       }),
     ).pipe(Effect.provide(mailer))))

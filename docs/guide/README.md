@@ -361,7 +361,7 @@ UnlockRequested: ({ centsPerMinute }) =>
     ? rejectWith('InUse')
     : centsPerMinute !== state.centsPerMinute
     ? rejectWith('RateChanged')
-    : { _tag: 'Ridden', centsPerMinute: state.centsPerMinute, ride },
+    : { ...state, _tag: 'Ridden', ride },
 ```
 
 **A value one entity needs of another travels with the request, and the receiver refuses a value that changed
@@ -546,7 +546,8 @@ expect(yield* rides.read(rideOf(request))).toMatchObject({ status: 'Riding' })
    when it is not known.
 
 The pages of this guide by topic are read when a program needs them. [Children](children.md) holds items inside
-an entity, each with a life of its own. [The outbox](outbox.md) tells other systems what an entity did. The pages
-on schemas that change, Effect Cluster and the operator's calls are not written yet. Until then, each is a section
-of [`design.md`](../design.md): [schemas that change](../design.md#schemas-that-change),
-[on Effect Cluster](../design.md#on-effect-cluster), and [defects](../design.md#defects) for `suspended`, `resume`, `discard` and `inspect`.
+an entity, each with a life of its own. [The outbox](outbox.md) tells other systems what an entity did.
+[Schemas that change](schemas.md) changes a program whose entities are stored. The pages on Effect Cluster and the
+operator's calls are not written yet. Until then, each is a section of [`design.md`](../design.md):
+[on Effect Cluster](../design.md#on-effect-cluster), and [defects](../design.md#defects) for `suspended`, `resume`,
+`discard` and `inspect`.

@@ -1,10 +1,12 @@
 /**
  * A bike of the rental, docked or ridden. An operator sets its rate per minute. A ride unlocks it at the rate the
- * customer was shown, and docks it at the end. The guide's running example, with `ride.ts`.
+ * customer was shown, and docks it at the end. The operator's page shows how many rides the bike has had, which
+ * version 2 added. The guide's running example, with `ride.ts`.
  */
 import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
 import {
+  type Json,
   type Origin,
   program,
   reference,
@@ -19,9 +21,13 @@ const Ride = reference<typeof ride>('Ride')
 
 const Rate = Schema.Int.check(Schema.isGreaterThan(0))
 
+// The rides a bike has had, counted when each one docks. A bike version 1 wrote has 0: the business counts from
+// the deploy of version 2, so the migration below gives no number it does not know.
+const Rides = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
 const State = Schema.Union([
-  Schema.TaggedStruct('Docked', { centsPerMinute: Rate }),
-  Schema.TaggedStruct('Ridden', { centsPerMinute: Rate, ride: Schema.String }),
+  Schema.TaggedStruct('Docked', { centsPerMinute: Rate, rides: Rides }),
+  Schema.TaggedStruct('Ridden', { centsPerMinute: Rate, rides: Rides, ride: Schema.String }),
 ])
 type State = typeof State.Type
 
@@ -46,6 +52,7 @@ export type Sender = typeof Sender.Type
 const Projection = Schema.Struct({
   status: Schema.Literals(['Docked', 'Ridden']),
   centsPerMinute: Schema.Int,
+  rides: Schema.Int,
   canUnlock: Schema.Boolean,
 })
 export type Projection = typeof Projection.Type
@@ -57,6 +64,9 @@ const rideOf = (from: Origin<Sender>): string | null =>
 
 const isOperator = (from: Origin<Sender>) => from._tag === 'Caller' && from.sender._tag === 'Operator'
 
+/** A value version 1 wrote, with the count of rides it did not have. */
+const withNoRides = (json: Json): Json => ({ ...json as Readonly<Record<string, Json>>, rides: 0 })
+
 export const bike = program({
   state: State,
   flags: Flags,
@@ -67,7 +77,7 @@ export const bike = program({
 })({
   name: 'Bike',
 
-  init: ({ centsPerMinute }) => ({ _tag: 'Docked', centsPerMinute }),
+  init: ({ centsPerMinute }) => ({ _tag: 'Docked', centsPerMinute, rides: 0 }),
 
   update: (message, { from }) => (state) => {
     const ride = rideOf(from)
@@ -81,11 +91,11 @@ export const bike = program({
             ? rejectWith('InUse')
             : centsPerMinute !== state.centsPerMinute
             ? rejectWith('RateChanged')
-            : { _tag: 'Ridden', centsPerMinute: state.centsPerMinute, ride },
+            : { ...state, _tag: 'Ridden', ride },
 
         DockRequested: () =>
           state._tag === 'Ridden' && ride === state.ride
-            ? { _tag: 'Docked', centsPerMinute: state.centsPerMinute }
+            ? { _tag: 'Docked', centsPerMinute: state.centsPerMinute, rides: state.rides + 1 }
             : reject,
 
         // A ride under way keeps the rate it was unlocked at: the new rate is for the next one.
@@ -97,6 +107,11 @@ export const bike = program({
   project: (state) => ({
     status: state._tag,
     centsPerMinute: state.centsPerMinute,
+    rides: state.rides,
     canUnlock: state._tag === 'Docked',
   }),
+
+  // Version 2 counts the rides. The projection's migration gives what `project` gives of the migrated state, so a
+  // row of the read model that version 1 wrote shows what version 2 would show. `bike.test.ts` records each case.
+  migrations: [{ state: withNoRides, projection: withNoRides }],
 })

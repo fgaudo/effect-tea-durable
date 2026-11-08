@@ -46,8 +46,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     rehearsal's `send` draws a new request id, so that a retry is tested on the runtime.
   - Done: the page on children, [`guide/children.md`](guide/children.md), on [`examples/cart`](../examples/cart).
   - Done: the page on the outbox, [`guide/outbox.md`](guide/outbox.md), on [`examples/order`](../examples/order).
+  - Done: the page on schemas that change, [`guide/schemas.md`](guide/schemas.md), on the bike's version 2, which
+    counts its rides, with the cases of its migration in [`bike.test.ts`](../examples/rental/bike.test.ts).
   - Next: the pages by topic left, in `docs/guide/`, each replacing the link to its section of the design at the end
-    of the first page: schemas that change, then Effect Cluster and the operator's calls.
+    of the first page: Effect Cluster, then the operator's calls.
   - Then: a second reader, a subagent given a loan of books with a due date, to check the pages by topic.
 
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
