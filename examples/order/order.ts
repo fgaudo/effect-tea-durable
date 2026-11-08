@@ -113,8 +113,12 @@ export class Warehouse extends Context.Service<Warehouse, {
   readonly prepare: (request: Readonly<{ order: Order; idempotencyKey: IdempotencyKey }>) => Effect.Effect<void>
 }>()('Warehouse') {}
 
+/**
+ * The application's mailer, which finds a customer's address in its own table: the order knows its customer by id
+ * alone, and holds no address.
+ */
 export class Mailer extends Context.Service<Mailer, {
-  readonly send: (email: Readonly<{ to: string; subject: string }>) => Effect.Effect<void>
+  readonly send: (email: Readonly<{ customer: string; subject: string }>) => Effect.Effect<void>
 }>()('Mailer') {}
 
 const paymentWindow = { minutes: 30 }
@@ -128,7 +132,7 @@ const isWarehouse = (from: Origin<Sender>) => from._tag === 'Caller' && from.sen
 const Operation = Schema.TaggedUnion({
   Charge: { payment: Schema.String, totalInCents: Schema.Int },
   TellWarehouse: { order: Order },
-  EmailShipment: { to: Schema.String, tracking: Schema.String },
+  EmailShipment: { customer: Schema.String, tracking: Schema.String },
   Refund: { charge: ChargeId },
 })
 type Operation = typeof Operation.Type
@@ -153,9 +157,9 @@ const tellWarehouse = Effect.fn('TellWarehouse')(
 )
 
 const emailShipment = Effect.fn('EmailShipment')(
-  function*({ to, tracking }: Extract<Operation, { _tag: 'EmailShipment' }>) {
+  function*({ customer, tracking }: Extract<Operation, { _tag: 'EmailShipment' }>) {
     const mailer = yield* Mailer
-    yield* mailer.send({ to, subject: `Your order has shipped: ${tracking}` })
+    yield* mailer.send({ customer, subject: `Your order has shipped: ${tracking}` })
     return { _tag: 'ShipmentEmailed' } satisfies Internal
   },
 )
@@ -263,7 +267,7 @@ export const order = program({
       Refunding: ({ charge }) => ({ refund: Operation.cases.Refund.make({ charge }) }),
       Shipped: ({ order, tracking, email }) =>
         email === 'Sending'
-          ? { 'email-shipment': Operation.cases.EmailShipment.make({ to: order.customer, tracking }) }
+          ? { 'email-shipment': Operation.cases.EmailShipment.make({ customer: order.customer, tracking }) }
           : noWork,
       Cancelled: () => noWork,
     }),
