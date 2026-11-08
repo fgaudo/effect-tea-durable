@@ -101,6 +101,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
   declares a program imports from `effect-tea-durable/program`, so that it shows the import a browser can load. A
   test of the form of `src/` fails on an example that imports a file of `src/`. When the design changes, the code,
   its tests and the examples change with it, and `bun run typecheck`, `bun test` and `bun run links` pass.
+- The library's tests run on programs of [`src/fixtures/`](src/fixtures), copied from the examples once, and import
+  no example, so that a change of an example breaks no test of the library. A test of the form of `src/` checks it.
 - Before code adds a helper, a data structure or a coordination of fibers, it looks in `node_modules/effect/src`
   for a module of the pinned version that does the same, among the modules marked `@stability unstable` too. A
   primitive of Effect is used where it does the same, since its contract is in its JSDoc and needs no test of its

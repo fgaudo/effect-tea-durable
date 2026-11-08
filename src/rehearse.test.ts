@@ -10,9 +10,9 @@ import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
-import { booking } from '../examples/booking/booking.ts'
-import { inventory } from '../examples/booking/inventory.ts'
-import { order, type Sender } from '../examples/order/order.ts'
+import { booking } from './fixtures/booking.ts'
+import { inventory } from './fixtures/inventory.ts'
+import { order, type Sender } from './fixtures/order.ts'
 import {
   create,
   type Entities,

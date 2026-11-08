@@ -283,6 +283,18 @@ describe('the form of src', () => {
     expect(found.filter((line) => !/: (node|bun)(:|$)/.test(line)).map((line) => relative(import.meta.dir, line)))
       .toEqual([])
   })
+  // The library's tests run on its own programs, in `src/fixtures/`, so that a change of an example breaks none.
+  test('no file of src imports an example', () => {
+    const files = readdirSync(import.meta.dir, { recursive: true, encoding: 'utf8' })
+      .filter((file) => file.endsWith('.ts'))
+    expect(files).toContain(join('fixtures', 'order.ts'))
+    const found = files.flatMap((file) =>
+      importsOf(readFileSync(join(import.meta.dir, file), 'utf8'))
+        .filter((specifier) => specifier.includes('examples/'))
+        .map((specifier) => `${file}: ${specifier}`)
+    )
+    expect(found).toEqual([])
+  })
 })
 
 describe('the form of the examples', () => {

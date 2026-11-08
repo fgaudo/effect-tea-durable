@@ -1,16 +1,16 @@
 /**
- * The runtime on the booking and its inventory of `examples/booking`, where what a test checks is the library's
- * and no user's: what the runtime did, told to a probe (decision 0073), the rows of its tables, and values frozen
- * through, which a mutation of the runtime's throws on (decision 0052). The example's `runtime.test.ts` runs the
- * same programs through the public surface alone.
+ * The runtime on the booking and its inventory of `src/fixtures/`, where what a test checks is the library's and no
+ * user's: what the runtime did, told to a probe (decision 0073), the rows of its tables, and values frozen through,
+ * which a mutation of the runtime's throws on (decision 0052). These tests run on real time, as the example's
+ * `runtime.test.ts` does, so they stay apart from `runtime.test.ts`, whose tests move time (decision 0066).
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import { SqlClient } from 'effect/sql'
-import { booking } from '../examples/booking/booking.ts'
-import { inventory } from '../examples/booking/inventory.ts'
+import { booking } from './fixtures/booking.ts'
+import { inventory } from './fixtures/inventory.ts'
 import { create, defect, operation, send } from './program.ts'
 import { launch, Probe } from './runtime.ts'
 import { freezing, frozen } from './testing.ts'
