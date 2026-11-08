@@ -47,7 +47,22 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - **`inspect`.** An operator sees of a suspended entity its cause and since when, and not its state or its mailbox.
     A handle gives what is stored of one entity, read as `load` reads it.
   - **A rehearsal in fewer words.** `answer(yield* pending('charge'), message)` recurs in every scenario: `answer`
-    and `fire` take a key too, and the pending stays for who asserts it.
+    and `fire` take a key too, and the pending stays for who asserts it. A test that asserts that a key holds no
+    work wraps `pending` in `Effect.exit`, since `pending` fails where there is none. A reading that gives the work
+    or nothing asserts it in one line.
+  - **A rehearsal that moves the clock.** The time of a rehearsal moves only to the time of a timer that fires. So a
+    rule that reads the time between two inbound messages, a price by the hours ridden, cannot be rehearsed. Its
+    test calls `update` with a `meta` it builds. `send` that takes a time, or an act that moves the clock forward,
+    rehearses it.
+  - **The types of a program, exported.** A boundary or a test that names a program's `Handle`, `Rehearsal` or
+    inbound message writes `typeof p extends Program<infer T extends Types> ? T : never` by hand, as
+    [`examples/server/server.ts`](../examples/server/server.ts) does. The library exports a type that gives them.
+  - **A world's services.** `rehearse.together` asks for every service of a program's runners, even when the test
+    runs only the runners that talk to other entities. Such a test provides stubs that die. Either a world asks
+    only for the services of the runners it runs, or the design says why it cannot.
+  - **A caller's answer over HTTP.** A boundary maps each `Answer` and `Creation` to a status of HTTP, and each
+    application writes the map again from [`examples/server/server.ts`](../examples/server/server.ts). The step
+    decides whether the library gives the map, or whether the example stays the template.
   - **`createTables` and `launch`.** Every example calls both. Either `launch` creates the tables, or the README says
     why it does not.
   - **`digestOf` out of the pure core.** [`src/program.ts`](../src/program.ts) imports `node:crypto` for the digest
@@ -75,6 +90,21 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   312 lines; a quick start shows a program of a screen, its rehearsal and its `launch` in forty. `src/runtime.ts` is
   one closure of 2 850 lines, with one process and Cluster interleaved: it is divided by responsibility, the loop of
   an entity, the callers, the waker, the steps on Cluster, with no change of semantics and no note.
+
+- **A guide from requirements to a program.** An agent that built a backend from the documentation alone, a rental
+  of bikes, learned five rules of modelling only from the examples' code. The design states each rule it rests on,
+  but no document says what the rule asks of a program. A guide for whoever writes a program says each one, with
+  its example:
+  - A reply carries no data, so a value one entity needs of another travels with the request. The receiver refuses
+    a value that changed since, as a rate read by the boundary and sent with the request.
+  - The id of an entity a caller creates is derived from the caller's request id. An id drawn anew at each try
+    creates a second entity on a retry.
+  - An operation under way leaves the state only by its completion, so a state that follows it carries it as a
+    field, with its key. An email sent at most once that is under way when a ride ends is carried into the end.
+  - A projection reads no clock. An action that becomes allowed at a time is a field of the state, which a timer
+    changes at that time.
+  - A row with no life of its own, such as a customer, is a table of the application. The table may live in the
+    runtime's database, written on the client the runtime was launched with, as a consumer's store already may.
 
 - **The library's name and release**, once there is code to publish. It is released as experimental while it depends
   on Effect's unstable modules ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
