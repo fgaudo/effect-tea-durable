@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Schema from 'effect/Schema'
@@ -197,7 +198,7 @@ describe('a rehearsal', () => {
     )))
 
   // Time stands at the start's time, and moves to a timer's when it fires: a message after it is handled at the
-  // latest time the scenario reached, never at the start's again (decision 0014).
+  // latest time the scenario reached, never at the start's again (decision 0187).
   test('handles each message at the latest time it reached', () => {
     const seen: Array<DateTime.Utc> = []
     const clocked: typeof order = {
@@ -671,4 +672,225 @@ describe('a rehearsal by a key', () => {
         expect((yield* held.state)._tag).toBe('Held')
       }),
     )))
+})
+
+// A meter arms a timer under a key at a time it is sent, and records the time each message is handled at. Given
+// `every`, each firing arms the timer again `every` later, under `next` when it is given one, which then arms the
+// first key in its turn (decision 0187).
+describe('time that passes', () => {
+  const Name = Schema.Literals(['a', 'b'])
+  type Name = typeof Name.Type
+  const Armed = Schema.Struct({
+    key: Name,
+    at: Schema.DateTimeUtcFromMillis,
+    every: Schema.NullOr(Schema.Number),
+    next: Schema.NullOr(Name),
+  })
+  type Metered = {
+    state: { armed: ReadonlyArray<typeof Armed.Type>; seen: ReadonlyArray<string> }
+    flags: Readonly<{}>
+    inbound: Readonly<{ _tag: 'Arm' } & typeof Armed.Type> | Readonly<{ _tag: 'Ping' }>
+    internal: Readonly<{ _tag: 'Rang'; key: Name }>
+    operation: never
+    key: Name
+    parameter: {}
+    rejection: never
+    sender: Readonly<{ _tag: 'Tester' }>
+    projection: number
+    index: never
+    services: never
+  }
+  const seenAs = (what: string, at: DateTime.Utc) => `${what}@${DateTime.formatIso(at)}`
+  const meter = (name: string): Program<Metered> => ({
+    name,
+    keys: { a: null, b: null },
+    schemas: {
+      state: Schema.Struct({ armed: Schema.Array(Armed), seen: Schema.Array(Schema.String) }),
+      flags: Schema.Struct({}),
+      inbound: Schema.Union([
+        Schema.TaggedStruct('Arm', Armed.fields),
+        Schema.TaggedStruct('Ping', {}),
+      ]),
+      internal: Schema.TaggedStruct('Rang', { key: Name }),
+      operation: Schema.Never,
+      rejection: Schema.Never,
+      sender: Schema.TaggedStruct('Tester', {}),
+      projection: Schema.Int,
+    },
+    init: () => ({ armed: [], seen: [] }),
+    update: (message, { at }) => (state) => {
+      const seen = [...state.seen, seenAs(message._tag === 'Ping' ? 'Ping' : message.key, at)]
+      if (message._tag === 'Ping') return { ...state, seen }
+      const others = state.armed.filter(({ key }) => key !== message.key)
+      if (message._tag === 'Arm') {
+        const { _tag: _, ...armed } = message
+        return { armed: [...others, armed], seen }
+      }
+      const rang = state.armed.find(({ key }) => key === message.key)
+      if (rang === undefined || rang.every === null) return { armed: others, seen }
+      const again = {
+        key: rang.next ?? rang.key,
+        at: DateTime.addDuration(at, Duration.millis(rang.every)),
+        every: rang.every,
+        next: rang.next === null ? null : rang.key,
+      }
+      return { armed: [...others.filter(({ key }) => key !== again.key), again], seen }
+    },
+    durable: (state) =>
+      Object.fromEntries(state.armed.map(({ key, at }) => [key, timer(at, { _tag: 'Rang', key } as const)])),
+    operations: {},
+    project: (state) => state.seen.length,
+    indexes: {},
+  })
+  const tester = { _tag: 'Tester' } as const
+  const hours = (count: number) => DateTime.add(placedAt, { hours: count })
+  const failure = (exit: Exit.Exit<unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+
+  test('handles a message after it at the time it reached', () =>
+    Effect.runPromise(rehearse(
+      meter('Meter'),
+      { flags: {}, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Ping' }, tester)
+        yield* rehearsal.advance('3 hours')
+        yield* rehearsal.send({ _tag: 'Ping' }, tester)
+        yield* rehearsal.advance(0)
+        yield* rehearsal.send({ _tag: 'Ping' }, tester)
+        expect((yield* rehearsal.state).seen).toEqual([
+          seenAs('Ping', placedAt),
+          seenAs('Ping', hours(3)),
+          seenAs('Ping', hours(3)),
+        ])
+      }),
+    )))
+
+  test('fires each timer due within it at its time, in their order, and none due after it', () =>
+    Effect.runPromise(rehearse(
+      meter('Meter'),
+      { flags: {}, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Arm', key: 'b', at: hours(2), every: null, next: null }, tester)
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 30 * 60 * 1000, next: null }, tester)
+        // Within two hours, `a` fires at 1h, 1h30 and 2h. `b` fires at 2h before `a` does, since `a` came back at
+        // 2h after `b` was armed.
+        yield* rehearsal.advance('2 hours')
+        expect(yield* rehearsal.underWay('b')).toBeNull()
+        yield* rehearsal.send({ _tag: 'Ping' }, tester)
+        expect((yield* rehearsal.state).seen.slice(2)).toEqual([
+          seenAs('a', hours(1)),
+          seenAs('a', hours(1.5)),
+          seenAs('b', hours(2)),
+          seenAs('a', hours(2)),
+          seenAs('Ping', hours(2)),
+        ])
+        expect((yield* rehearsal.pending('a')).work).toEqual(timer(hours(2.5), { _tag: 'Rang', key: 'a' }))
+      }),
+    )))
+
+  test('fires a timer due before the time already reached when it passes', () =>
+    Effect.runPromise(rehearse(
+      meter('Meter'),
+      { flags: {}, at: hours(1) },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: placedAt, every: null, next: null }, tester)
+        yield* rehearsal.advance(0)
+        expect((yield* rehearsal.state).seen).toEqual([seenAs('a', hours(1)), seenAs('a', hours(1))])
+      }),
+    )))
+
+  test('fails on a duration below zero, and on a timer armed again at a time already reached', async () => {
+    const backwards = await Effect.runPromiseExit(rehearse(
+      meter('Meter'),
+      { flags: {}, at: placedAt },
+      (rehearsal) => rehearsal.advance('-1 second'),
+    ))
+    expect(failure(backwards)).toBe('time passes by a finite duration of zero or more, not -1s')
+    const looping = await Effect.runPromiseExit(rehearse(
+      meter('Meter'),
+      { flags: {}, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 0, next: null }, tester)
+        yield* rehearsal.advance('1 day')
+      }),
+    ))
+    expect(failure(looping)).toBe(
+      "the timer under 'a' of Meter 'rehearsal' fires twice at 2026-10-30T11:00:00.000Z, and time would never pass",
+    )
+  })
+
+  // Two timers that arm each other at one time loop as one timer does, though neither arms itself.
+  test('fails on two timers that arm each other again at a time already reached', async () => {
+    const looping = await Effect.runPromiseExit(rehearse(
+      meter('Meter'),
+      { flags: {}, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 0, next: 'b' }, tester)
+        yield* rehearsal.advance('1 day')
+      }),
+    ))
+    expect(failure(looping)).toBe(
+      "the timer under 'a' of Meter 'rehearsal' fires twice at 2026-10-30T11:00:00.000Z, and time would never pass",
+    )
+  })
+
+  // A key fires again at a later time: each firing arms the other key an hour on, and three hours pass.
+  test('fires two timers that arm each other later, each at its time', () =>
+    Effect.runPromise(rehearse(
+      meter('Meter'),
+      { flags: {}, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 60 * 60 * 1000, next: 'b' }, tester)
+        yield* rehearsal.advance('3 hours')
+        expect((yield* rehearsal.state).seen.slice(1)).toEqual([
+          seenAs('a', hours(1)),
+          seenAs('b', hours(2)),
+          seenAs('a', hours(3)),
+        ])
+        expect((yield* rehearsal.pending('b')).work).toEqual(timer(hours(4), { _tag: 'Rang', key: 'b' }))
+      }),
+    )))
+
+  test('fires the timers of every entity of a world in the order of their times', () =>
+    Effect.runPromise(rehearse.together(
+      placedAt,
+      Effect.fnUntraced(function*(world) {
+        const one = yield* world.create(meter('One'), 'one', {})
+        const other = yield* world.create(meter('Other'), 'other', {})
+        yield* other.send({ _tag: 'Arm', key: 'a', at: hours(1), every: null, next: null }, tester)
+        yield* one.send({ _tag: 'Arm', key: 'a', at: hours(2), every: null, next: null }, tester)
+        yield* world.advance('90 minutes')
+        yield* one.send({ _tag: 'Ping' }, tester)
+        expect((yield* other.state).seen.slice(1)).toEqual([seenAs('a', hours(1))])
+        expect((yield* one.state).seen.slice(1)).toEqual([seenAs('Ping', hours(1.5))])
+        yield* world.advance('1 hour')
+        expect((yield* one.state).seen.slice(2)).toEqual([seenAs('a', hours(2))])
+      }),
+    )))
+
+  // Of two timers due at one time, the one of the entity created first fires first, whatever the order they were
+  // armed in, so a scenario replays the same steps.
+  test('fires the timers of two entities due at one time in the order the entities were created', () => {
+    const fired: Array<string> = []
+    const logged = (name: string): Program<Metered> => {
+      const plain = meter(name)
+      return {
+        ...plain,
+        update: (message, meta) => {
+          if (message._tag === 'Rang') fired.push(name)
+          return plain.update(message, meta)
+        },
+      }
+    }
+    return Effect.runPromise(rehearse.together(
+      placedAt,
+      Effect.fnUntraced(function*(world) {
+        const first = yield* world.create(logged('First'), 'first', {})
+        const second = yield* world.create(logged('Second'), 'second', {})
+        yield* second.send({ _tag: 'Arm', key: 'a', at: hours(1), every: null, next: null }, tester)
+        yield* first.send({ _tag: 'Arm', key: 'a', at: hours(1), every: null, next: null }, tester)
+        yield* world.advance('1 hour')
+        expect(fired).toEqual(['First', 'Second'])
+      }),
+    ))
+  })
 })

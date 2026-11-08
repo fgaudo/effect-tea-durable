@@ -6,6 +6,8 @@
 That a resumption may bring a fixed program is replaced by
 [decision 0064](0064-the-program-is-not-the-machines-state.md): a fix is a deploy, and the resumption follows it.
 What a creator is answered for a defect at creation is decided by [decision 0124](0124-the-boundary-authenticates-and-update-authorizes.md): the defect, with nothing stored.
+[Decision 0187](../0187-a-rehearsal-moves-time-by-a-duration.md) changes time in a rehearsal: `advance` moves it by a
+duration, and fires the timers due within it.
 
 ## Context
 

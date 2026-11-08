@@ -59,7 +59,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0002](archive/0002-store-the-state-not-the-messages.md) | Store the state after each message, never replay messages |  |
 | [0003](archive/0003-durable-work-derived-from-state.md) | All durable work is derived from the state |  |
 | [0013](archive/0013-the-runtime-is-a-pure-machine.md) | The runtime's semantics are a pure machine | [0065](archive/0065-the-machine-holds-no-replies.md) |
-| [0014](archive/0014-rules-the-machine-settled.md) | The rules the pure machine settled | [0023](archive/0023-suspended-means-no-reply-yet.md), [0041](archive/0041-a-completion-is-not-discarded.md), [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) |
+| [0014](archive/0014-rules-the-machine-settled.md) | The rules the pure machine settled | [0023](archive/0023-suspended-means-no-reply-yet.md), [0041](archive/0041-a-completion-is-not-discarded.md), [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md) |
 | [0031](archive/0031-a-state-is-an-object.md) | A state is an object |  |
 | [0033](archive/0033-a-program-declares-its-keys.md) | A program declares its keys | [0132](archive/0132-a-key-may-take-a-parameter.md) |
 | [0035](archive/0035-one-place-where-a-program-is-declared.md) | One place where a program is declared | [0180](0180-a-program-leaves-out-what-it-does-not-have.md) |
@@ -89,8 +89,9 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) | A reply is keyed by the version that wrote it |  |
 | [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes | [0182](0182-init-may-reject-the-flags.md) |
 | [0125](archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) | A caller's reply is kept as long as its boundary says, from the step that answers | [0165](archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) |
-| [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md), [0186](0186-a-rehearsal-names-the-work-by-its-key.md) |
+| [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md), [0186](0186-a-rehearsal-names-the-work-by-its-key.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md) |
 | [0186](0186-a-rehearsal-names-the-work-by-its-key.md) | A rehearsal names the work by its key, and `underWay` gives it or null (proposed) |  |
+| [0187](0187-a-rehearsal-moves-time-by-a-duration.md) | A rehearsal moves time by a duration with `advance`, and fires the timers due within it (proposed) |  |
 | [0183](0183-a-receiver-is-named-by-a-reference.md) | A receiver is named by a reference, which carries its program's name and types and none of its code (proposed) |  |
 
 ## Operations and timers

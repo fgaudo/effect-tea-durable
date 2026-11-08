@@ -12,13 +12,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   ([decision 0182](decisions/0182-init-may-reject-the-flags.md)), a receiver named by a reference
   ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md)), `consume`
   ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)), and `inspect`
-  ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)), and a rehearsal in fewer words
-  ([decision 0186](decisions/0186-a-rehearsal-names-the-work-by-its-key.md)). Next: a rehearsal that moves the
-  clock, which begins in `send` and `fire` of [`src/rehearse.ts`](../src/rehearse.ts).
-  - **A rehearsal that moves the clock.** The time of a rehearsal moves only to the time of a timer that fires. So a
-    rule that reads the time between two inbound messages, a price by the hours ridden, cannot be rehearsed. Its
-    test calls `update` with a `meta` it builds. `send` that takes a time, or an act that moves the clock forward,
-    rehearses it.
+  ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)), a rehearsal in fewer words
+  ([decision 0186](decisions/0186-a-rehearsal-names-the-work-by-its-key.md)), and a rehearsal that moves time
+  ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)). Next: the types of a program,
+  exported, which begins in the type `Program` of [`src/program.ts`](../src/program.ts).
   - **The types of a program, exported.** A boundary or a test that names a program's `Handle`, `Rehearsal` or
     inbound message writes `typeof p extends Program<infer T> ? T : never` by hand, as
     [`examples/server/server.ts`](../examples/server/server.ts) does. The library exports a type that gives them.

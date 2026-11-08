@@ -122,8 +122,8 @@ Cluster's says so.
   a text, a join across programs, a series over time. It is answered by a store made for it, which a consumer of
   the log feeds.
 - **Rehearsal, `rehearse`.** A scenario run on the machine without storage, cluster or clock, where the test answers
-  or runs the operations, fires the timers, kills the process and deploys new versions. `rehearse` runs one entity,
-  and `rehearse.together` a world.
+  or runs the operations, fires the timers or lets time pass, kills the process and deploys new versions.
+  `rehearse` runs one entity, and `rehearse.together` a world.
 - **Reply.** The stored answer to a request, which a retry under the same request id reads. A caller's is kept for
   the `keep` its boundary gave `send`, from the step that answers, and for ever without one. Another entity's is kept
   while the work that asked is stored.

@@ -1,4 +1,5 @@
 import * as DateTime from 'effect/DateTime'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Machine from './machine.ts'
 import {
@@ -101,6 +102,11 @@ export interface Rehearsal<T extends Types> extends Acts<T> {
    * A program that cannot run as written fails it before the process dies (decision 0054).
    */
   readonly deploy: (program: Program<T>) => Effect.Effect<void>
+  /**
+   * Time passes by `duration`. Each timer due within it fires at its time, in the order of the times, and its
+   * message is handled before the next one fires (decision 0187).
+   */
+  readonly advance: (duration: Duration.Input) => Effect.Effect<void>
 }
 
 /** The services a runner of `T` needs from the scenario: all of them but `Entities`, which the world provides. */
@@ -148,6 +154,11 @@ export interface World {
    * program that cannot run as written fails the test before the process dies (decision 0054).
    */
   readonly deploy: <T extends Types>(program: Program<T>) => Effect.Effect<void>
+  /**
+   * Time passes by `duration` for every entity of the world. Each timer due within it fires at its time, in the
+   * order of the times, and every mailbox it reaches is handled before the next one fires (decision 0187).
+   */
+  readonly advance: (duration: Duration.Input) => Effect.Effect<void>
 }
 
 /** A reply stored under a request of another entity's operation, kept while that work holds (decision 0021). */
@@ -311,6 +322,80 @@ const makeWorld = (at: DateTime.Utc) => {
       })
     })
 
+  /** The time of the timer under `pending` comes, and time moves to it, never back (decision 0187). */
+  const fireOf = <T extends Types>(entity: Entity<T>, pending: Pending) =>
+    Effect.suspend(() => {
+      const kind = kindOf(entity, pending)
+      if (kind === 'Operation') {
+        return Effect.die(`the work under '${Machine.shownKey(pending.key)}' is an operation: it is answered`)
+      }
+      const work = entity.machine.stored.keys[Machine.keyText(pending.key)]?.work
+      if (kind === 'Timer' && isTimer(work)) now = DateTime.max(now, work.at)
+      const { key, incarnation } = pending
+      return Effect.map(apply(entity, { _tag: 'Fire', key, incarnation }), outcome(pending))
+    })
+
+  /**
+   * The timer under way in the world due earliest, and no later than `until`, or undefined. Of two due at one time,
+   * the one of the entity created first fires first, and within an entity the one its machine holds first.
+   */
+  const dueBy = (until: DateTime.Utc) => {
+    let next: Readonly<{ entity: Entity<Types>; pending: Pending; at: DateTime.Utc }> | undefined
+    for (const entity of entities.values()) {
+      for (const [text, running] of Object.entries(entity.machine.running)) {
+        const held = entity.machine.stored.keys[text]
+        if (running.kind !== 'Timer' || held === undefined || !isTimer(held.work)) continue
+        const { at } = held.work
+        if (DateTime.isGreaterThan(at, until) || (next !== undefined && !DateTime.isLessThan(at, next.at))) continue
+        const pending: Pending = {
+          key: held.key,
+          incarnation: running.incarnation,
+          idempotencyKey: Machine.idempotencyKeyOf(entity.machine, held.key, running.incarnation),
+          work: held.work,
+        }
+        next = { entity, pending, at }
+      }
+    }
+    return next
+  }
+
+  const advance = (duration: Duration.Input): Effect.Effect<void> =>
+    Effect.suspend(() => {
+      const length = Duration.fromInputUnsafe(duration)
+      if (Duration.isNegative(length) || !Duration.isFinite(length)) {
+        return Effect.die(`time passes by a finite duration of zero or more, not ${Duration.format(length)}`)
+      }
+      const until = DateTime.addDuration(now, length)
+      // A timer that fires twice at one time was armed again at a time already reached, by its own firing or by
+      // another timer's at that time. It would fire again at once, turn after turn, and time would never pass, so
+      // the rehearsal fails, as it does for an operation that comes back the same on its completion (decision 0187).
+      let instant = now
+      const fired = new Set<string>()
+      const loop: Effect.Effect<void> = Effect.suspend(() => {
+        const next = dueBy(until)
+        if (next === undefined) {
+          now = DateTime.max(now, until)
+          return Effect.void
+        }
+        const { entity, pending, at } = next
+        const firesAt = DateTime.max(now, at)
+        if (!DateTime.Equivalence(firesAt, instant)) {
+          instant = firesAt
+          fired.clear()
+        }
+        const which = JSON.stringify([entity.address.name, entity.address.id, Machine.keyText(pending.key)])
+        if (fired.has(which)) {
+          return Effect.die(
+            `the timer under '${Machine.shownKey(pending.key)}' of ${entity.address.name} '${entity.address.id}' ` +
+              `fires twice at ${DateTime.formatIso(firesAt)}, and time would never pass`,
+          )
+        }
+        fired.add(which)
+        return Effect.andThen(fireOf(entity, pending), loop)
+      })
+      return loop
+    })
+
   const restart: Effect.Effect<void> = Effect.suspend(() =>
     Effect.forEach([...entities.values()], (entity) => apply(entity, { _tag: 'Restart' }), { discard: true })
   )
@@ -452,17 +537,7 @@ const makeWorld = (at: DateTime.Utc) => {
           ? Effect.die(`the work under '${Machine.shownKey(pending.key)}' is a timer: it fires`)
           : complete(entity, pending, message)
       )
-    const fire = (pending: Pending) =>
-      Effect.suspend(() => {
-        const kind = kindOf(entity, pending)
-        if (kind === 'Operation') {
-          return Effect.die(`the work under '${Machine.shownKey(pending.key)}' is an operation: it is answered`)
-        }
-        const work = entity.machine.stored.keys[Machine.keyText(pending.key)]?.work
-        if (kind === 'Timer' && isTimer(work)) now = DateTime.max(now, work.at)
-        const { key, incarnation } = pending
-        return Effect.map(apply(entity, { _tag: 'Fire', key, incarnation }), outcome(pending))
-      })
+    const fire = (pending: Pending) => fireOf(entity, pending)
     return {
       state: Effect.sync(() => entity.machine.stored.state),
       projection: Effect.sync(() => programOf(entity).project(entity.machine.stored.state)),
@@ -510,6 +585,7 @@ const makeWorld = (at: DateTime.Utc) => {
         })
       }),
     restart,
+    advance,
     deploy: (program) =>
       Effect.andThen(
         Effect.sync(() => {
@@ -527,8 +603,8 @@ const makeWorld = (at: DateTime.Utc) => {
  * fires timers and restarts the process. After each of them, the mailbox is handled to its end. It fails when a
  * defect suspends the entity, and when an operation's completion returns the same operation.
  *
- * Time stands still at `start.at`, and moves to a timer's time when it fires later: a message is handled at the
- * latest time the scenario reached.
+ * Time stands still at `start.at`. It moves to a timer's time when the timer fires later, and by a duration with
+ * `advance`, which fires the timers due within it: a message is handled at the latest time the scenario reached.
  */
 const rehearseOne = <T extends Types, E>(
   program: Program<T>,
@@ -542,6 +618,7 @@ const rehearseOne = <T extends Types, E>(
       scenario({
         ...acts,
         restart: world.restart,
+        advance: world.advance,
         deploy: (next) =>
           next.name === program.name
             ? world.deploy(next)

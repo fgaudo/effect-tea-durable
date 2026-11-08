@@ -34,6 +34,20 @@ describe('subscription', () => {
       }),
     )))
 
+  // Time passes by a duration, and the renewal fires at its time within it, not before (decision 0187).
+  test('the renewal comes due when its period has passed', () =>
+    Effect.runPromise(rehearse(
+      subscription,
+      start,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
+        yield* rehearsal.advance('27 days')
+        expect(yield* rehearsal.underWay('charge')).toBeNull()
+        yield* rehearsal.advance('1 day')
+        expect(yield* rehearsal.underWay('charge')).not.toBeNull()
+      }),
+    )))
+
   test('a period paid from the credit arms the next renewal', () =>
     Effect.runPromise(rehearse(
       subscription,

@@ -866,8 +866,8 @@ Most of a program is pure, so most tests need no runtime:
 
 `rehearse` runs a scenario on the program without storage, cluster or clock. It is the runtime's machine, which
 handles the mailbox to its end after each act of the test. Time stands at the start's, and moves to a timer's
-time when it fires. The test decides when each operation answers, when each timer fires, and when the process
-dies:
+time when it fires, and forward by a duration with `advance`. The test decides when each operation answers, when
+time passes, and when the process dies:
 
 - `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity;
 - `pending(key)` finds the work under way under one of the program's keys, with its idempotency key and its
@@ -878,6 +878,10 @@ dies:
   operation would run again at once, turn after turn, with no pause
   ([decision 0130](decisions/archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md));
 - `fire(pending)` fires a timer;
+- `advance(duration)` moves time forward, and fires each timer due within it at its time, in the order of the
+  times. A message after it is handled at the time reached. A key whose timer fires twice at one time fails the test:
+  it was armed again at a time already reached, and would fire at once, turn after turn. A world advances the one time of
+  all its entities ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md));
 - `answer`, `fire` and a member's `run` take a key in place of the pending, with its parameter for a key that takes
   one: `answer('charge', message)` acts on the work under way under the key, in its current incarnation. A test
   keeps a pending to act on an incarnation that has moved on, and sees its message dropped
