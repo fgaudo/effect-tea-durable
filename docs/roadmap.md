@@ -48,8 +48,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - Done: the page on the outbox, [`guide/outbox.md`](guide/outbox.md), on [`examples/order`](../examples/order).
   - Done: the page on schemas that change, [`guide/schemas.md`](guide/schemas.md), on the bike's version 2, which
     counts its rides, with the cases of its migration in [`bike.test.ts`](../examples/rental/bike.test.ts).
-  - Next: the pages by topic left, in `docs/guide/`, each replacing the link to its section of the design at the end
-    of the first page: Effect Cluster, then the operator's calls.
+  - Done: the page on Effect Cluster, [`guide/cluster.md`](guide/cluster.md), on the runner of
+    [`examples/order`](../examples/order/cluster.test.ts) and the server of [`examples/server`](../examples/server).
+  - Next: the page on the operator's calls, in `docs/guide/`, replacing the link to the design's section on defects
+    at the end of the first page.
   - Then: a second reader, a subagent given a loan of books with a due date, to check the pages by topic.
 
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the

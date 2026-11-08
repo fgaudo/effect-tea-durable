@@ -547,7 +547,7 @@ expect(yield* rides.read(rideOf(request))).toMatchObject({ status: 'Riding' })
 
 The pages of this guide by topic are read when a program needs them. [Children](children.md) holds items inside
 an entity, each with a life of its own. [The outbox](outbox.md) tells other systems what an entity did.
-[Schemas that change](schemas.md) changes a program whose entities are stored. The pages on Effect Cluster and the
-operator's calls are not written yet. Until then, each is a section of [`design.md`](../design.md):
-[on Effect Cluster](../design.md#on-effect-cluster), and [defects](../design.md#defects) for `suspended`, `resume`,
-`discard` and `inspect`.
+[Schemas that change](schemas.md) changes a program whose entities are stored. [Effect Cluster](cluster.md) runs a
+program on several processes at once. The page on the operator's calls is not written yet. Until then, it is the
+section [defects](../design.md#defects) of [`design.md`](../design.md), for `suspended`, `resume`, `discard` and
+`inspect`.
