@@ -53,6 +53,7 @@ import {
   type Consumer,
   type Counted,
   type CountedBy,
+  createTables,
   type Cursor,
   defaultPartitions,
   type Found,
@@ -233,6 +234,14 @@ export interface Options {
    * saved under the old name is delivered to the new program (decision 0176).
    */
   readonly renames?: Readonly<Record<string, string>>
+  /**
+   * What the launch does with the tables. `'create'`, the default, creates the tables where they are missing, and
+   * gives a database made before the columns it lacks, once the database is held. `'existing'` creates nothing, for a
+   * role of PostgreSQL that may only read and write rows. That role's launch dies where a table is missing, and an
+   * operator runs `createTables` under the tables' owner before each launch of a new release of the library. On
+   * Cluster `sharding` creates the tables whatever this says (decision 0191).
+   */
+  readonly tables?: 'create' | 'existing'
 }
 
 /**
@@ -912,6 +921,10 @@ const enlisted = <T extends Types, A, E = never, R = never>(
     return Effect.die(new InvariantDefect({ reason }))
   })
 
+/**
+ * The runtime of one process, on the database of the client it is given, which it holds until the scope closes. The
+ * launch creates the tables where they are missing, unless `tables` says they exist (decision 0191).
+ */
 export const launch = (options: Options = {}): Effect.Effect<Runtime, never, SqlClient.SqlClient | Scope.Scope> =>
   launchWith(options, null)
 
@@ -945,6 +958,11 @@ export const launchWith = (
       const reason = `the log has ${partitions} partitions, which is no positive integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
     }
+    if (options.tables !== undefined && options.tables !== 'create' && options.tables !== 'existing') {
+      const given = JSON.stringify(options.tables)
+      const reason = `the launch is given the tables ${given}, which is neither 'create' nor 'existing'`
+      return yield* Effect.die(new InvariantDefect({ reason }))
+    }
     if (cluster !== null && partitions !== cluster.shards) {
       const reason = `the log has ${partitions} partitions, and Cluster ${cluster.shards} shards per group`
       return yield* Effect.die(new InvariantDefect({ reason }))
@@ -953,6 +971,8 @@ export const launchWith = (
     // One runtime holds the database, before anything of this one runs, and lets it go after everything of it has
     // stopped: the scope ends what it was given last first (decision 0080).
     if (cluster === null) yield* Scope.provide(hold, scope)
+    // The tables are created once the database is held, so that a launch refused never writes it (decision 0191).
+    if (options.tables !== 'existing') yield* createTables
     yield* partitioned(partitions)
     // Nothing is deployed yet, so no entity is loaded while the rows move, and no reader reads (decision 0156).
     yield* renamed([...renames], cluster !== null)

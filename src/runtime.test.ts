@@ -4862,6 +4862,46 @@ describe('a database held by one runtime', () => {
     })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
   })
 
+  // A launch creates the tables once it holds the database, so a launch refused leaves a new file as it was
+  // (decision 0191). Created before the hold, the tables would be in the file the refused launch left.
+  test('a launch creates the tables of a new database, and a launch refused creates none', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-'))
+    const filename = join(directory, 'store.db')
+    const client = (scope: Scope.Scope) =>
+      Effect.map(
+        Scope.provide(Layer.build(SqliteClient.layer({ filename, busyTimeout: 0 })), scope),
+        (context) => Context.get(context, SqlClient.SqlClient),
+      )
+    const on = (sql: SqlClient.SqlClient) => <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      Effect.provideService(effect, SqlClient.SqlClient, sql)
+    return Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const first = yield* client(yield* Effect.scope)
+      const otherScope = yield* Scope.make()
+      const other = yield* client(otherScope)
+      expect(reasonOf(yield* Effect.exit(on(first)(process({}, () => Effect.void))))).toBe(held)
+      expect(yield* other`SELECT name FROM sqlite_master WHERE type = 'table'`).toEqual([])
+      yield* Scope.close(otherScope, Exit.void)
+      const at = DateTime.makeUnsafe(0)
+      yield* on(first)(process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          expect(yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } }))
+            .toEqual({ _tag: 'Created' })
+        })))
+    })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
+  })
+
+  // A launch told the tables exist creates none, for a role of PostgreSQL that may not (decision 0191).
+  test('a launch told the tables exist creates none, and dies where one is missing', () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      expect(Exit.isFailure(yield* Effect.exit(Effect.scoped(launch({ tables: 'existing' }))))).toBe(true)
+      expect(yield* sql`SELECT name FROM sqlite_master WHERE type = 'table'`).toEqual([])
+      const wrong = yield* Effect.exit(Effect.scoped(launch({ tables: 'created' as never })))
+      expect(reasonOf(wrong)).toBe(`the launch is given the tables "created", which is neither 'create' nor 'existing'`)
+    })).pipe(Effect.provide(SqliteClient.layer({ filename: ':memory:' })))))
+
   test('a second runtime on one client dies as it launches, however the launches interleave', () => {
     // Each schedule moves the points where one launch runs between two steps of the other (decisions 0068, 0104).
     explored(() =>

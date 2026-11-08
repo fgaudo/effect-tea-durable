@@ -1,14 +1,14 @@
 /**
  * The booking and its inventory on the runtime, in one database: two entities that talk through operations
  * (decision 0009), where the scenarios of `scenarios.test.ts` rehearse the booking alone and answer for the
- * inventory. It is also how a program is run: a client, the tables, a runtime, and a handle per program.
+ * inventory. It is also how a program is run: a client, a runtime that creates its tables, and a handle per program.
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import { SqlClient } from 'effect/sql'
-import { create, createTables, defect, launch, operation, send } from '../../src/index.ts'
+import { create, defect, launch, operation, send } from '../../src/index.ts'
 // What the runtime did is told to a probe, which is a test's and no part of the library's surface (decision 0073).
 import { Probe } from '../../src/runtime.ts'
 // Values frozen through, which only the library's own tests run on (decision 0052).
@@ -24,7 +24,7 @@ const ann = { _tag: 'Customer', id: 'ann' } as const
 
 const database = <A, E>(test: Effect.Effect<A, E, SqlClient.SqlClient>) =>
   Effect.runPromise(
-    Effect.scoped(Effect.flatMap(createTables, () => test)).pipe(
+    Effect.scoped(test).pipe(
       Effect.provide(SqliteClient.layer({ filename: ':memory:' })),
       Effect.orDie,
     ),

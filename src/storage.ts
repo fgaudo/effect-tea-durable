@@ -115,10 +115,31 @@ export const defaultPartitions = 300
 export const partitionOf = (id: string, partitions: number): number => Math.abs(Hash.string(id) % partitions) + 1
 
 /**
- * The tables, created once for the database. Every entity of every program sits in them: the name of the program
- * and the id are the entity's address (decision 0022).
+ * The key of the advisory lock that `createTables` takes on PostgreSQL for its transaction. It is not the key of
+ * `hold`, since a launch holds the database on one connection and creates the tables on another (decision 0191).
+ */
+const tablesKey = advisoryKey + 1
+
+/**
+ * The tables, created where they are missing, and given the columns a database made before lacks. Every entity of
+ * every program sits in them: the name of the program and the id are the entity's address (decision 0022). It runs
+ * as one transaction, so that two launches on one database do not both add a column, and a crash between adding a
+ * column and filling it leaves neither (decision 0191). On SQLite the transaction takes the file's write lock as it
+ * begins, which the driver does by default and this asks for by name; on PostgreSQL it takes an advisory lock.
  */
 export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.gen(function*() {
+  const sql = yield* SqlClient.SqlClient
+  const dialect = dialectOf(sql)
+  const created = Effect.gen(function*() {
+    if (dialect === 'pg') yield* sql`SELECT pg_advisory_xact_lock(${tablesKey})`
+    yield* tables
+  })
+  yield* sql.withTransaction(created).pipe(
+    dialect === 'sqlite' ? Effect.provideService(SqlClient.BeginTransaction, 'BEGIN IMMEDIATE') : (effect) => effect,
+  )
+}).pipe(Effect.orDie)
+
+const tables = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
   const dialect = dialectOf(sql)
   // An integer of SQLite holds 64 bits, and one of PostgreSQL 32: a time, a `seq` and a count are bigints there
@@ -426,7 +447,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     )
   `
   yield* sql`CREATE INDEX IF NOT EXISTS given_requests_until ON given_requests (name, id, until)`
-}).pipe(Effect.orDie)
+})
 
 /**
  * Cluster's tables of messages and replies, under the prefix `SqlMessageStorage` takes by default: the runtime on

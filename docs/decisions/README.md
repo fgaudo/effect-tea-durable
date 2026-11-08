@@ -48,7 +48,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | --- | --- | --- |
 | [0007](archive/0007-one-process-first.md) | One process with SQL first, Effect Cluster later | [0080](archive/0080-a-database-is-held-by-one-runtime.md), [0081](archive/0081-on-cluster-a-step-commits-with-its-reply.md), [0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) |
 | [0019](archive/0019-unstable-effect-modules.md) | The library depends on Effect's unstable modules | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) |
-| [0055](archive/0055-the-public-surface-is-what-its-users-use.md) | The public surface is what its users use |  |
+| [0055](archive/0055-the-public-surface-is-what-its-users-use.md) | The public surface is what its users use | [0191](0191-a-launch-creates-the-tables.md) |
 | [0080](archive/0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md), [0120](archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md) |
 | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) | A library on unstable modules is released as experimental |  |
 
@@ -182,7 +182,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0154](archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md) | A step's projection is stored once in the outbox, in a publication each topic's row names |  |
 | [0155](archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md) | A `forEach` of messages to children by id puts them back once, with the step one message after the other gives |  |
 | [0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both, of text every database holds | [0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md), [0179](0179-an-id-is-not-empty.md) |
-| [0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md) | A database of SQLite made before is given `request_id`, and a page keeps the level of a caller's transaction |  |
+| [0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md) | A database of SQLite made before is given `request_id`, and a page keeps the level of a caller's transaction | [0191](0191-a-launch-creates-the-tables.md) |
+| [0191](0191-a-launch-creates-the-tables.md) | A launch creates the tables, in one transaction, unless it is told they exist (proposed) |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for |  |
 | [0027](archive/0027-a-program-gives-the-schema-of-its-senders.md) | A program gives the schema of its senders |  |

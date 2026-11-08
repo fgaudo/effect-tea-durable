@@ -26,7 +26,7 @@ import {
   storage,
 } from './storage.ts'
 import { client, onEach } from './test-databases.ts'
-import { everySchedule } from './testing.ts'
+import { everySchedule, prioritizedSchedules } from './testing.ts'
 
 type T = {
   state: Readonly<{ last: string }>
@@ -768,6 +768,45 @@ test('a database made before holds its versions without renamed_to, which create
       expect(yield* Effect.provideService(standingOf('Toy'), SqlClient.SqlClient, sql))
         .toEqual({ version: 2, renamedTo: null })
     }).pipe(Effect.orDie)))
+
+// Two launches on a database made before each find a column missing. `createTables` is one transaction, so the
+// second looks only once the first has added the column, and adds it no more (decision 0191). Without the transaction,
+// seed 45 has the second look before the first adds it, and the second dies on a column added twice.
+test('two launches on a database made before add a missing column once', () => {
+  const race = Effect.gen(function*() {
+    yield* createTables
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`ALTER TABLE entities DROP COLUMN steps`
+    yield* Effect.all([createTables, createTables], { concurrency: 'unbounded' })
+    return yield* sql`SELECT COUNT(*) AS held FROM pragma_table_info('entities') WHERE name = 'steps'`
+  }).pipe(Effect.provide(SqliteClient.layer({ filename: ':memory:' })), Effect.orDie)
+  prioritizedSchedules(race, { runs: 100, depth: 2, pinned: [45] }, (exit) => {
+    expect(Exit.isSuccess(exit) && exit.value).toEqual([{ held: 1 }])
+  })
+})
+
+// A database made before decision 0157 is given `request_id` and has it filled by one transaction: a launch that
+// fails between the two leaves the column out, and the next launch adds it and fills it (decision 0191). Here a
+// trigger of the test fails the filling.
+test('a launch that fails while it fills a column it added leaves the column out', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      yield* sql`DROP INDEX replies_by_request_id`
+      yield* sql`ALTER TABLE replies DROP COLUMN request_id`
+      const caller = { _tag: 'Caller', sender: null, id: 'one' } as const
+      yield* sql`
+        INSERT INTO replies (name, id, request, tag, version)
+        VALUES ('Receiver', 'r', ${Machine.requestKey(receiver, caller)}, 'Accepted', 1)
+      `
+      yield* sql`CREATE TRIGGER refused BEFORE UPDATE ON replies BEGIN SELECT RAISE(ABORT, 'refused'); END`
+      const exit = yield* Effect.exit(Effect.provideService(createTables, SqlClient.SqlClient, sql))
+      expect(Exit.isFailure(exit)).toBe(true)
+      const column = sql`SELECT COUNT(*) AS held FROM pragma_table_info('replies') WHERE name = 'request_id'`
+      expect(yield* column).toEqual([{ held: 0 }])
+      yield* sql`DROP TRIGGER refused`
+      yield* Effect.provideService(createTables, SqlClient.SqlClient, sql)
+      expect(yield* sql`SELECT request_id FROM replies`).toEqual([{ request_id: 'one' }])
+    }).pipe(Effect.orDie), ['sqlite']))
 
 // PostgreSQL compares text by the collation of its column, and the database's own may order by language. Every text
 // column the storage makes is `C`, which compares bytes as SQLite's `BINARY` does. PGlite's database is `C` itself,

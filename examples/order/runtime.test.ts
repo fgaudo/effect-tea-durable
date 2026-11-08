@@ -11,7 +11,7 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import { SqlClient } from 'effect/sql'
-import { createTables, launch } from '../../src/index.ts'
+import { launch } from '../../src/index.ts'
 import { Mailer, order, Payments, Warehouse } from './order.ts'
 import { statusReport } from './report.ts'
 
@@ -33,7 +33,7 @@ const world = Layer.mergeAll(
 
 const database = <A, E>(test: Effect.Effect<A, E, SqlClient.SqlClient>) =>
   Effect.runPromise(
-    Effect.scoped(Effect.flatMap(createTables, () => test)).pipe(
+    Effect.scoped(test).pipe(
       Effect.provide(SqliteClient.layer({ filename: ':memory:' })),
       Effect.orDie,
     ),

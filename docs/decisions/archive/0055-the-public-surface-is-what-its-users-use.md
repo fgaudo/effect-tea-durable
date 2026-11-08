@@ -1,6 +1,7 @@
 # 0055. The public surface is what its users use
 
-**Status:** accepted, 2026-10-31.
+**Status:** accepted, 2026-10-31. A launch creates the tables, and an operator runs `createTables` only for a role
+that may not, since [decision 0191](../0191-a-launch-creates-the-tables.md).
 
 ## Context
 

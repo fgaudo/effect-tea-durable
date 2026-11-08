@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-06. Changes
 [decision 0157](0157-the-storage-speaks-sqlite-and-postgresql.md), which gives a reply the column `request_id` and
-begins a page's transaction at `REPEATABLE READ` on PostgreSQL.
+begins a page's transaction at `REPEATABLE READ` on PostgreSQL. The column is added and filled in one transaction, so
+that a crash between the two leaves neither, since [decision 0191](../0191-a-launch-creates-the-tables.md).
 
 ## Context
 

@@ -1002,7 +1002,13 @@ On one process, with SQLite or PostgreSQL: the mailbox, the states and the timer
 is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md), [0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). A runtime holds its
 database until it ends: a second runtime on it, or a launch while another connection has the file of SQLite open,
 dies as it launches ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). A database of
-PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. `launch` gives a runtime, `deploy(program)`
+PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. Once it holds the
+database, a launch creates the tables where they are missing, and gives a database made before the columns it lacks.
+It does so in one transaction, so that a crash never leaves a column added and empty, and two launches on one database
+do not both add a column. A launch given `tables: 'existing'` creates nothing, for a role of PostgreSQL that may
+only read and write rows, and an operator runs `createTables` under the tables' owner before each new release. On
+Cluster the runners share the database, and `sharding` creates the tables before any runner registers
+([decision 0191](decisions/0191-a-launch-creates-the-tables.md)). `launch` gives a runtime, `deploy(program)`
 a handle to one program's entities — `create`, `send`, `read`, and `suspended`, `inspect`, `resume` and `discard` for an
 operator — and
 the operations of a program are run with the services it was deployed with
@@ -1018,7 +1024,7 @@ is written once. A launch on a client of any other dialect is the launcher's def
   PostgreSQL is compared by its bytes, so ids are ordered alike too.
 - A column of JSON is text on both, and no statement of PostgreSQL parses JSON that holds the program's data, since
   PostgreSQL parses no JSON that escapes U+0000. A reply holds the id of a caller's request in a column of its own,
-  `request_id`. A database of SQLite made before the column is given it where `createTables` finds it missing, filled
+  `request_id`. A database of SQLite made before the column is given it where a launch finds it missing, filled
   with the id read out of each caller's request
   ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
 - A page of a query reads its ranges in one transaction, begun at `REPEATABLE READ` on PostgreSQL where the
