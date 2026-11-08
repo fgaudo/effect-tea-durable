@@ -266,7 +266,7 @@ const persisted = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
   const stored = yield* storage(program, sql).load(id)
   const replies = yield* sql<{ request: string; tag: string; reason: string | null }>`
-    SELECT request, tag, reason FROM replies WHERE name = ${program.name} AND id = ${id}
+    SELECT request, tag, reason FROM tea_replies WHERE name = ${program.name} AND id = ${id}
   `
   return shape(
     stored,
@@ -782,10 +782,10 @@ describe('the runtime on SQLite', () => {
             }
           }
           const sql = yield* SqlClient.SqlClient
-          expect(yield* sql`SELECT id FROM entities`).toEqual([])
+          expect(yield* sql`SELECT id FROM tea_entities`).toEqual([])
           // A pair of surrogates is one character, and an id.
           yield* toy.create('toy😀', { at }, { requestId: 'creation', sender })
-          expect(yield* sql`SELECT id FROM entities`).toEqual([{ id: 'toy😀' }])
+          expect(yield* sql`SELECT id FROM tea_entities`).toEqual([{ id: 'toy😀' }])
         }))
     })))
 
@@ -1501,7 +1501,7 @@ describe('two entities that talk', () => {
     database(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       const repliesToBookings = sql<{ count: number }>`
-        SELECT count(*) AS count FROM replies WHERE name = 'Inventory' AND sender_name = 'Booking'
+        SELECT count(*) AS count FROM tea_replies WHERE name = 'Inventory' AND sender_name = 'Booking'
       `.pipe(Effect.orDie)
       const seen: Array<number> = []
       yield* process({
@@ -2581,7 +2581,7 @@ describe('passivation', () => {
       // the first 500, more than a page of either reading.
       const ids = Array.from({ length: 600 }, (_, n) => `e-${String(n).padStart(3, '0')}`)
       for (const [n, entity] of ids.entries()) {
-        yield* sql`INSERT INTO entity_keys ${
+        yield* sql`INSERT INTO tea_entity_keys ${
           sql.insert({
             name: program.name,
             id: entity,
@@ -3265,11 +3265,11 @@ describe('the read model', () => {
       yield* process({}, (runtime) => Effect.asVoid(settled(runtime, at)))
       const sql = yield* SqlClient.SqlClient
       const plan = yield* sql.unsafe<{ detail: string }>(
-        `EXPLAIN QUERY PLAN SELECT id FROM projections
+        `EXPLAIN QUERY PLAN SELECT id FROM tea_projections
          WHERE name = 'Toy' AND json_extract(indexes, '$.wanted') <= 0`,
       )
       // The index is on the expression, so it is used only where a query writes the expression the same way.
-      expect(plan.map(({ detail }) => detail).join(' ')).toContain('INDEX projections Toy wanted by id (name=? AND <expr>')
+      expect(plan.map(({ detail }) => detail).join(' ')).toContain('INDEX tea_projections Toy wanted by id (name=? AND <expr>')
     })))
 
   test('reindex writes the rows again for an index a new version changed', () =>
@@ -3952,24 +3952,24 @@ describe('publishing what happened', () => {
           rows.map(({ detail }) => detail).join(' '))
       // The first row past a cursor is a seek into its topic and partition, by `seq`.
       expect(
-        yield* plan(`SELECT position FROM outbox
+        yield* plan(`SELECT position FROM tea_outbox
           WHERE name = 'Toy' AND topic = 'projection' AND partition = 3 AND seq > 7 ORDER BY seq LIMIT 1`),
-      ).toContain('USING COVERING INDEX outbox_partition (name=? AND topic=? AND partition=? AND seq>?)')
+      ).toContain('USING COVERING INDEX tea_outbox_partition (name=? AND topic=? AND partition=? AND seq>?)')
       // A page is a range over (name, topic, position), which is also the order read: the log grows until a
       // consumer prunes it, and a poll must not read again what it has read, nor the rows of other topics. Each row
-      // finds its publication by the key of `publications`, with no sort (decision 0154).
-      const page = yield* plan(`SELECT outbox.position, publications.projection FROM outbox
-          JOIN publications ON publications.name = outbox.name AND publications.partition = outbox.partition
-            AND publications.seq = outbox.seq
-          WHERE outbox.name = 'Toy' AND outbox.topic = 'projection' AND outbox.position >= 7
-          ORDER BY outbox.position LIMIT 256`)
-      expect(page).toMatch(/SEARCH outbox USING INDEX outbox_topic \(name=\? AND topic=\? AND (position|rowid)>\?\)/)
-      expect(page).toMatch(/SEARCH publications USING INDEX sqlite_autoindex_publications_1 \(name=\? AND partition=\? AND seq=\?\)/)
+      // finds its publication by the key of `tea_publications`, with no sort (decision 0154).
+      const page = yield* plan(`SELECT tea_outbox.position, tea_publications.projection FROM tea_outbox
+          JOIN tea_publications ON tea_publications.name = tea_outbox.name AND tea_publications.partition = tea_outbox.partition
+            AND tea_publications.seq = tea_outbox.seq
+          WHERE tea_outbox.name = 'Toy' AND tea_outbox.topic = 'projection' AND tea_outbox.position >= 7
+          ORDER BY tea_outbox.position LIMIT 256`)
+      expect(page).toMatch(/SEARCH tea_outbox USING INDEX tea_outbox_topic \(name=\? AND topic=\? AND (position|rowid)>\?\)/)
+      expect(page).toMatch(/SEARCH tea_publications USING INDEX sqlite_autoindex_tea_publications_1 \(name=\? AND partition=\? AND seq=\?\)/)
       expect(page).not.toContain('TEMP B-TREE')
       // A row dropped by a prune finds whether another row names its publication by the index of the publication.
       expect(
-        yield* plan(`SELECT 1 FROM outbox WHERE name = 'Toy' AND partition = 3 AND seq = 7`),
-      ).toContain('USING COVERING INDEX outbox_publication (name=? AND partition=? AND seq=?)')
+        yield* plan(`SELECT 1 FROM tea_outbox WHERE name = 'Toy' AND partition = 3 AND seq = 7`),
+      ).toContain('USING COVERING INDEX tea_outbox_publication (name=? AND partition=? AND seq=?)')
     })))
 
   test('a step whose transaction never commits publishes nothing', () =>
@@ -4050,8 +4050,8 @@ describe('publishing what happened', () => {
   test('a transaction keeps a consumer from registering between its statements, two statements apart do not', () =>
     database(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
-      const lowest = sql<{ through: number | null }>`SELECT min(seq) AS through FROM cursors WHERE name = 'Toy'`
-      const registers = sql`INSERT INTO cursors ${
+      const lowest = sql<{ through: number | null }>`SELECT min(seq) AS through FROM tea_cursors WHERE name = 'Toy'`
+      const registers = sql`INSERT INTO tea_cursors ${
         sql.insert({ name: 'Toy', topic: 'projection', consumer: 'late', partition: 1, seq: 0 })
       }`
       // The readings wait for the clock between them, so the insert is offered where the race would be, and
@@ -4073,7 +4073,7 @@ describe('publishing what happened', () => {
       // Two statements apart: the second sees a cursor the first did not, which is where rows would be dropped
       // behind a consumer that has read them.
       expect(yield* between(reads)).toEqual([null, 0])
-      yield* sql`DELETE FROM cursors WHERE name = 'Toy'`
+      yield* sql`DELETE FROM tea_cursors WHERE name = 'Toy'`
 
       // The insert waits for the permit the transaction holds, so the two readings agree and it lands after.
       expect(yield* between(sql.withTransaction(reads))).toEqual([null, null])
@@ -4109,7 +4109,7 @@ describe('publishing what happened', () => {
           // page's transaction. The writes and the table's rename roll back with the ack (decision 0184).
           const unacked = yield* Effect.exit(
             toy.consume('projection', 'queue', (page) =>
-              Effect.andThen(record(page), sql`ALTER TABLE cursors RENAME TO away`.pipe(Effect.orDie)), { limit: 3 }),
+              Effect.andThen(record(page), sql`ALTER TABLE tea_cursors RENAME TO away`.pipe(Effect.orDie)), { limit: 3 }),
           )
           expect(Exit.isFailure(unacked)).toBe(true)
           expect(yield* stored).toEqual([])
@@ -4891,7 +4891,7 @@ describe('what the runtime cannot finish', () => {
           expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy(unworded), layer))))
             .toBe("the program 'Toy' has an index 'wanted;' whose name is not a word")
           const made = yield* sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'index'`
-          expect(made.map(({ name }) => name).filter((name) => name.startsWith('projections '))).toEqual([])
+          expect(made.map(({ name }) => name).filter((name) => name.startsWith('tea_projections '))).toEqual([])
           expect(reasonOf(yield* Effect.exit(Effect.provide(runtime.deploy({ ...program, name: '' }), layer))))
             .toBe("the program '' has an empty name")
           // A fix is a deploy, checked as any (decision 0064): the entities go on with the program deployed.

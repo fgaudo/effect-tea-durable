@@ -3,7 +3,7 @@
 **Status:** accepted, 2026-11-05. Changes
 [decision 0143](0143-a-query-pages-after-the-last-row-it-gave.md), whose descending order ascends by the id among
 the rows that tie, and [decision 0144](0144-a-page-reads-the-rows-before-its-cursor.md), whose page reads the rows
-of its program before its cursor.
+of its program before its cursor. [Decision 0198](../0198-every-object-the-runtime-makes-is-named-with-tea.md) names the index `tea_projections`, and the index a database had without the id is no longer dropped.
 
 ## Context
 

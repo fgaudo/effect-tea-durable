@@ -121,10 +121,11 @@ export const partitionOf = (id: string, partitions: number): number => Math.abs(
 const tablesKey = advisoryKey + 1
 
 /**
- * The tables, created where they are missing, and given the columns a database made before lacks. Every entity of
- * every program sits in them: the name of the program and the id are the entity's address (decision 0022). It runs
- * as one transaction, so that two launches on one database do not both add a column, and a crash between adding a
- * column and filling it leaves neither (decision 0191). On SQLite the transaction takes the file's write lock as it
+ * The tables, created where they are missing. Every entity of every program sits in them: the name of the program and
+ * the id are the entity's address (decision 0022). Every table, index, trigger and function the runtime makes is
+ * named with `tea_`, so that the tables of an application in the same database are never taken for its own
+ * (decision 0198). It runs as one transaction, so that two launches on one database create each table once
+ * (decision 0191). On SQLite the transaction takes the file's write lock as it
  * begins, which the driver does by default and this asks for by name; on PostgreSQL it takes an advisory lock.
  */
 export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.gen(function*() {
@@ -154,7 +155,7 @@ const tables = Effect.gen(function*() {
   // the name the entity's idempotency keys are drawn from, written by its first rename and null before
   // (decision 0156).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS entities (
+    CREATE TABLE IF NOT EXISTS tea_entities (
       name ${text} NOT NULL,
       id ${text} NOT NULL,
       keyed_as ${text},
@@ -170,23 +171,13 @@ const tables = Effect.gen(function*() {
       PRIMARY KEY (name, id)
     )
   `
-  // `steps` counts the steps that wrote the row, raised by each, which a step on Cluster reads first to know which
-  // machine in memory is the one stored (decision 0161). A database made before is given the column.
-  if (dialect === 'sqlite') {
-    const [column] = yield* sql<{ held: number }>`
-      SELECT COUNT(*) AS held FROM pragma_table_info('entities') WHERE name = 'steps'
-    `
-    if (column?.held === 0) yield* sql`ALTER TABLE entities ADD COLUMN steps INTEGER NOT NULL DEFAULT 0`
-  } else {
-    yield* sql`ALTER TABLE entities ADD COLUMN IF NOT EXISTS steps BIGINT NOT NULL DEFAULT 0`
-  }
   // One row per key the state holds work under, with its incarnation. A key whose work is gone has no row, since
   // the entity's counter keeps its incarnations from going back (decision 0132). `due` is a timer's time, by which
   // an entity nothing else holds loaded is woken (decision 0029). `key` is the key's name and `parameter` the JSON
   // of its parameter, or '' for a key without one: no JSON is empty, and a NULL in a primary key would let two rows
   // of one key coexist (decision 0136).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS entity_keys (
+    CREATE TABLE IF NOT EXISTS tea_entity_keys (
       name ${text} NOT NULL,
       id ${text} NOT NULL,
       key ${text} NOT NULL,
@@ -199,12 +190,12 @@ const tables = Effect.gen(function*() {
       PRIMARY KEY (name, id, key, parameter)
     )
   `
-  yield* sql`CREATE INDEX IF NOT EXISTS entity_keys_due ON entity_keys (due)`
+  yield* sql`CREATE INDEX IF NOT EXISTS tea_entity_keys_due ON tea_entity_keys (due)`
   // The mailbox, in order: `seq` is given as a message is queued, and the first message is the lowest. `keep` is
   // how long a caller's reply is kept once its message is answered, null for ever (decision 0125). An internal
-  // message holds the key of its work as `entity_keys` does (decision 0136).
+  // message holds the key of its work as `tea_entity_keys` does (decision 0136).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS mailbox (
+    CREATE TABLE IF NOT EXISTS tea_mailbox (
       name ${text} NOT NULL,
       id ${text} NOT NULL,
       seq ${integer} NOT NULL,
@@ -222,7 +213,7 @@ const tables = Effect.gen(function*() {
   // What callers read of each entity, and the values of the program's indexes on it: the read model of a
   // query across entities, written in the step's transaction (decision 0032).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS projections (
+    CREATE TABLE IF NOT EXISTS tea_projections (
       name ${text} NOT NULL,
       id ${text} NOT NULL,
       projection ${text} NOT NULL,
@@ -234,7 +225,7 @@ const tables = Effect.gen(function*() {
   // How many partitions the log has: one row, written by the first launch and checked by every other, since a
   // change would move entities between partitions, and every consumer's cursors with them (decision 0137).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS log (
+    CREATE TABLE IF NOT EXISTS tea_log (
       one INTEGER PRIMARY KEY CHECK (one = 1),
       partitions INTEGER NOT NULL
     )
@@ -243,7 +234,7 @@ const tables = Effect.gen(function*() {
   // transaction, which holds the row until it commits, so the steps of one partition commit in the order of their
   // `seq`. A head is never deleted, so a `seq` is never given again (decision 0137).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS heads (
+    CREATE TABLE IF NOT EXISTS tea_heads (
       name ${text} NOT NULL,
       partition INTEGER NOT NULL,
       seq ${integer} NOT NULL,
@@ -253,7 +244,7 @@ const tables = Effect.gen(function*() {
   // What a step that publishes left: the message it handled and the projection, once however many topics the step
   // is written in, keyed by the program, the partition and the `seq` the step drew (decision 0154).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS publications (
+    CREATE TABLE IF NOT EXISTS tea_publications (
       name ${text} NOT NULL,
       partition INTEGER NOT NULL,
       seq ${integer} NOT NULL,
@@ -270,7 +261,7 @@ const tables = Effect.gen(function*() {
   // topic, its partition and its `seq`, which is what a consumer acks (decision 0137). `position` rises with each
   // row of the database, and is never reused: it is the order `fetch` reads the rows in, and no cursor.
   yield* sql`
-    CREATE TABLE IF NOT EXISTS outbox (
+    CREATE TABLE IF NOT EXISTS tea_outbox (
       position ${sql.literal(dialect === 'pg' ? 'BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT')},
       name ${text} NOT NULL,
       topic ${text} NOT NULL,
@@ -278,43 +269,43 @@ const tables = Effect.gen(function*() {
       seq ${integer} NOT NULL
     )
   `
-  yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS outbox_partition ON outbox (name, topic, partition, seq)`
-  yield* sql`CREATE INDEX IF NOT EXISTS outbox_topic ON outbox (name, topic, position)`
-  yield* sql`CREATE INDEX IF NOT EXISTS outbox_publication ON outbox (name, partition, seq)`
+  yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS tea_outbox_partition ON tea_outbox (name, topic, partition, seq)`
+  yield* sql`CREATE INDEX IF NOT EXISTS tea_outbox_topic ON tea_outbox (name, topic, position)`
+  yield* sql`CREATE INDEX IF NOT EXISTS tea_outbox_publication ON tea_outbox (name, partition, seq)`
   // A publication goes with the last row of the outbox that names it, in the statement that drops the row, so that
   // no statement that drops rows of the outbox leaves a publication no topic reads (decision 0154). A trigger of
   // PostgreSQL runs a function, and one for each row runs once the statement has dropped every row (decision 0157).
   if (dialect === 'pg') {
     yield* sql.unsafe(`
-      CREATE OR REPLACE FUNCTION outbox_drops_its_publication() RETURNS trigger LANGUAGE plpgsql AS $$
+      CREATE OR REPLACE FUNCTION tea_outbox_drops_its_publication() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         IF NOT EXISTS (
-          SELECT 1 FROM outbox WHERE name = OLD.name AND partition = OLD.partition AND seq = OLD.seq
+          SELECT 1 FROM tea_outbox WHERE name = OLD.name AND partition = OLD.partition AND seq = OLD.seq
         ) THEN
-          DELETE FROM publications WHERE name = OLD.name AND partition = OLD.partition AND seq = OLD.seq;
+          DELETE FROM tea_publications WHERE name = OLD.name AND partition = OLD.partition AND seq = OLD.seq;
         END IF;
         RETURN NULL;
       END $$
     `)
     yield* sql`
-      CREATE OR REPLACE TRIGGER outbox_drops_its_publication AFTER DELETE ON outbox
-      FOR EACH ROW EXECUTE FUNCTION outbox_drops_its_publication()
+      CREATE OR REPLACE TRIGGER tea_outbox_drops_its_publication AFTER DELETE ON tea_outbox
+      FOR EACH ROW EXECUTE FUNCTION tea_outbox_drops_its_publication()
     `
   } else {
     yield* sql`
-      CREATE TRIGGER IF NOT EXISTS outbox_drops_its_publication AFTER DELETE ON outbox
+      CREATE TRIGGER IF NOT EXISTS tea_outbox_drops_its_publication AFTER DELETE ON tea_outbox
       WHEN NOT EXISTS (
-        SELECT 1 FROM outbox WHERE name = old.name AND partition = old.partition AND seq = old.seq
+        SELECT 1 FROM tea_outbox WHERE name = old.name AND partition = old.partition AND seq = old.seq
       )
       BEGIN
-        DELETE FROM publications WHERE name = old.name AND partition = old.partition AND seq = old.seq;
+        DELETE FROM tea_publications WHERE name = old.name AND partition = old.partition AND seq = old.seq;
       END
     `
   }
   // The consumers of the outbox, by topic and name, stored by the first deploy that declares them. Each holds its
   // topic of the log from then on, until it is forgotten (decisions 0138, 0152).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS consumers (
+    CREATE TABLE IF NOT EXISTS tea_consumers (
       name ${text} NOT NULL,
       topic ${text} NOT NULL,
       consumer ${text} NOT NULL,
@@ -324,7 +315,7 @@ const tables = Effect.gen(function*() {
   // Where each consumer has read to in each partition of its topic. A partition a consumer has no row for is read
   // from `0` (decision 0137).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS cursors (
+    CREATE TABLE IF NOT EXISTS tea_cursors (
       name ${text} NOT NULL,
       topic ${text} NOT NULL,
       consumer ${text} NOT NULL,
@@ -337,12 +328,12 @@ const tables = Effect.gen(function*() {
   // keys it, read through its schema (decision 0059). A row is keyed by the version that wrote it too, since a
   // migration may give one caller's request the text another's had: two versions never share a row
   // (decision 0069). A reply to another entity's operation holds the work that asked, its program, id, key and
-  // incarnation, and is deleted once that work no longer holds (decision 0021). The key is held as `entity_keys`
+  // incarnation, and is deleted once that work no longer holds (decision 0021). The key is held as `tea_entity_keys`
   // holds it (decision 0136). A caller's reply with an `until` is read before that time only (decision 0125).
   // `request_id` is the id of a caller's request, null for another's, written by the process: PostgreSQL parses no
   // JSON that holds U+0000, which the program's data may (decision 0157).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS replies (
+    CREATE TABLE IF NOT EXISTS tea_replies (
       name ${text} NOT NULL,
       id ${text} NOT NULL,
       request ${text} NOT NULL,
@@ -359,48 +350,25 @@ const tables = Effect.gen(function*() {
       PRIMARY KEY (name, id, request, version)
     )
   `
-  yield* sql`CREATE INDEX IF NOT EXISTS replies_sender ON replies (sender_name, sender_id)`
-  yield* sql`CREATE INDEX IF NOT EXISTS replies_until ON replies (name, until) WHERE until IS NOT NULL`
+  yield* sql`CREATE INDEX IF NOT EXISTS tea_replies_sender ON tea_replies (sender_name, sender_id)`
+  yield* sql`CREATE INDEX IF NOT EXISTS tea_replies_until ON tea_replies (name, until) WHERE until IS NOT NULL`
   // A caller's request a version before stored is found by its request id: its sender may be migrated since
-  // (decision 0065). A database of SQLite made before holds the index of the id read out of the request, which goes
-  // (decision 0157), and its replies without `request_id`, which is added and filled as that index read it, before
-  // the index of the column is made (decision 0158).
-  if (dialect === 'sqlite') {
-    yield* sql`DROP INDEX IF EXISTS replies_request_id`
-    const [column] = yield* sql<{ held: number }>`
-      SELECT COUNT(*) AS held FROM pragma_table_info('replies') WHERE name = 'request_id'
-    `
-    if (column?.held === 0) {
-      yield* sql`ALTER TABLE replies ADD COLUMN request_id TEXT`
-      yield* sql`
-        UPDATE replies SET request_id = json_extract(request, '$.id') WHERE json_extract(request, '$._tag') = 'Caller'
-      `
-    }
-  }
+  // (decision 0065).
   yield* sql`
-    CREATE INDEX IF NOT EXISTS replies_by_request_id ON replies (name, id, request_id) WHERE request_id IS NOT NULL
+    CREATE INDEX IF NOT EXISTS tea_replies_by_request_id ON tea_replies (name, id, request_id) WHERE request_id IS NOT NULL
   `
   // On Cluster: the newest version each program was launched with, and the version of each program each runner
   // runs, by the runner's address (decision 0159). A runtime of one process writes neither. `renamed_to` is the name
-  // a launch renamed the program to, which the check of every step reads in the same row (decision 0176). A
-  // database made before is given the column.
+  // a launch renamed the program to, which the check of every step reads in the same row (decision 0176).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS versions (
+    CREATE TABLE IF NOT EXISTS tea_versions (
       name ${text} PRIMARY KEY,
       version ${integer} NOT NULL,
       renamed_to ${text}
     )
   `
-  if (dialect === 'sqlite') {
-    const [column] = yield* sql<{ held: number }>`
-      SELECT COUNT(*) AS held FROM pragma_table_info('versions') WHERE name = 'renamed_to'
-    `
-    if (column?.held === 0) yield* sql`ALTER TABLE versions ADD COLUMN renamed_to TEXT`
-  } else {
-    yield* sql`ALTER TABLE versions ADD COLUMN IF NOT EXISTS renamed_to TEXT COLLATE "C"`
-  }
   yield* sql`
-    CREATE TABLE IF NOT EXISTS runner_versions (
+    CREATE TABLE IF NOT EXISTS tea_runner_versions (
       address ${text} NOT NULL,
       name ${text} NOT NULL,
       version ${integer} NOT NULL,
@@ -410,7 +378,7 @@ const tables = Effect.gen(function*() {
   // On Cluster: the entities whose operations were answered `Suspended` by a suspended entity, one row for each
   // sender, which the step that takes the entity out of its suspension tells and deletes (decisions 0092, 0167).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS waiting (
+    CREATE TABLE IF NOT EXISTS tea_waiting (
       name ${text} NOT NULL,
       id ${text} NOT NULL,
       sender_name ${text} NOT NULL,
@@ -424,7 +392,7 @@ const tables = Effect.gen(function*() {
   // Cluster's rows under it (decision 0169). The id is an integer, as Cluster's column of it is, so that the
   // two compare as numbers.
   yield* sql`
-    CREATE TABLE IF NOT EXISTS sent_requests (
+    CREATE TABLE IF NOT EXISTS tea_sent_requests (
       request_id ${integer} PRIMARY KEY,
       sender_name ${text},
       sender_id ${text},
@@ -433,20 +401,20 @@ const tables = Effect.gen(function*() {
       sender_incarnation ${integer}
     )
   `
-  yield* sql`CREATE INDEX IF NOT EXISTS sent_requests_sender ON sent_requests (sender_name, sender_id)`
+  yield* sql`CREATE INDEX IF NOT EXISTS tea_sent_requests_sender ON tea_sent_requests (sender_name, sender_id)`
   // On Cluster: the Cluster request id of each caller's message sent with `keep`, under its entity, kept by the
   // caller's client once Cluster has given it its answer, with the time the client counts the reply kept until. A
   // step that deletes its entity's replies past their time deletes Cluster's rows under the ids past theirs, and so
   // does `Handle.expire` (decision 0171).
   yield* sql`
-    CREATE TABLE IF NOT EXISTS given_requests (
+    CREATE TABLE IF NOT EXISTS tea_given_requests (
       request_id ${integer} PRIMARY KEY,
       name ${text} NOT NULL,
       id ${text} NOT NULL,
       until ${integer} NOT NULL
     )
   `
-  yield* sql`CREATE INDEX IF NOT EXISTS given_requests_until ON given_requests (name, id, until)`
+  yield* sql`CREATE INDEX IF NOT EXISTS tea_given_requests_until ON tea_given_requests (name, id, until)`
 })
 
 /**
@@ -458,13 +426,13 @@ const clusterMessages = 'cluster_messages'
 const clusterReplies = 'cluster_replies'
 
 /**
- * Deletes Cluster's rows under the request ids of `table`, `sent_requests` or `given_requests`, that `where`
+ * Deletes Cluster's rows under the request ids of `table`, `tea_sent_requests` or `tea_given_requests`, that `where`
  * selects, then those ids. Every row under an id goes: the request, its replies and any envelope stored under it
  * (decisions 0169, 0171).
  */
 const forgetUnder = (
   sql: SqlClient.SqlClient,
-  table: 'sent_requests' | 'given_requests',
+  table: 'tea_sent_requests' | 'tea_given_requests',
   where: Statement.Fragment,
 ) =>
   Effect.gen(function*() {
@@ -474,7 +442,7 @@ const forgetUnder = (
     yield* sql`DELETE FROM ${sql(table)} WHERE ${where}`
   })
 
-const forgetSent = (sql: SqlClient.SqlClient, where: Statement.Fragment) => forgetUnder(sql, 'sent_requests', where)
+const forgetSent = (sql: SqlClient.SqlClient, where: Statement.Fragment) => forgetUnder(sql, 'tea_sent_requests', where)
 
 /** A program's name and the version it runs, as a launch on Cluster records them (decision 0159). */
 export type Versioned = Readonly<{ name: string; version: number }>
@@ -495,10 +463,10 @@ export const recordVersions = (
     const sql = yield* SqlClient.SqlClient
     const dialect = dialectOf(sql)
     const record = Effect.gen(function*() {
-      if (dialect === 'pg') yield* sql`LOCK TABLE versions IN SHARE ROW EXCLUSIVE MODE`
+      if (dialect === 'pg') yield* sql`LOCK TABLE tea_versions IN SHARE ROW EXCLUSIVE MODE`
       for (const { name, version } of programs) {
         const [held] = yield* Effect.flatMap(
-          sql`SELECT version, renamed_to FROM versions WHERE name = ${name}`,
+          sql`SELECT version, renamed_to FROM tea_versions WHERE name = ${name}`,
           Schema.decodeUnknownEffect(Schema.Array(Standing)),
         )
         if (held?.renamed_to != null) {
@@ -512,13 +480,13 @@ export const recordVersions = (
           }))
         }
         yield* sql`
-          INSERT INTO versions (name, version) VALUES (${name}, ${version})
+          INSERT INTO tea_versions (name, version) VALUES (${name}, ${version})
           ON CONFLICT (name) DO UPDATE SET version = excluded.version
         `
       }
-      yield* sql`DELETE FROM runner_versions WHERE address = ${address}`
+      yield* sql`DELETE FROM tea_runner_versions WHERE address = ${address}`
       for (const { name, version } of programs) {
-        yield* sql`INSERT INTO runner_versions (address, name, version) VALUES (${address}, ${name}, ${version})`
+        yield* sql`INSERT INTO tea_runner_versions (address, name, version) VALUES (${address}, ${name}, ${version})`
       }
     })
     yield* sql.withTransaction(record).pipe(
@@ -539,7 +507,7 @@ export const standingOf = (
     const sql = yield* SqlClient.SqlClient
     const share = sql.literal(dialectOf(sql) === 'pg' ? 'FOR SHARE' : '')
     const [held] = yield* Effect.flatMap(
-      sql`SELECT version, renamed_to FROM versions WHERE name = ${name} ${share}`,
+      sql`SELECT version, renamed_to FROM tea_versions WHERE name = ${name} ${share}`,
       Schema.decodeUnknownEffect(Schema.Array(Standing)),
     )
     return held === undefined ? undefined : { version: held.version, renamedTo: held.renamed_to }
@@ -585,7 +553,7 @@ export const outranked = (address: string): Effect.Effect<boolean | undefined, S
     const rows = yield* sql`
       SELECT COUNT(*) AS held,
         COUNT(CASE WHEN r.version < v.version OR v.renamed_to IS NOT NULL THEN 1 END) AS older
-      FROM runner_versions r JOIN versions v ON v.name = r.name
+      FROM tea_runner_versions r JOIN tea_versions v ON v.name = r.name
       WHERE r.address = ${address}
     `
     const [found] = yield* Effect.orDie(
@@ -602,9 +570,9 @@ export const outranked = (address: string): Effect.Effect<boolean | undefined, S
 export const partitioned = (partitions: number): Effect.Effect<void, never, SqlClient.SqlClient> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
-    yield* sql`INSERT INTO log (one, partitions) VALUES (1, ${partitions}) ON CONFLICT (one) DO NOTHING`
+    yield* sql`INSERT INTO tea_log (one, partitions) VALUES (1, ${partitions}) ON CONFLICT (one) DO NOTHING`
     const stored = yield* Effect.flatMap(
-      sql`SELECT partitions FROM log`,
+      sql`SELECT partitions FROM tea_log`,
       Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ partitions: Count }))),
     )
     const held = stored[0]?.partitions
@@ -617,17 +585,17 @@ export const partitioned = (partitions: number): Effect.Effect<void, never, SqlC
 
 /** The tables whose rows are keyed by a program's name, each with an index whose first column is the name. */
 const namedTables = [
-  'entities',
-  'entity_keys',
-  'mailbox',
-  'projections',
-  'heads',
-  'publications',
-  'outbox',
-  'consumers',
-  'cursors',
-  'replies',
-  'waiting',
+  'tea_entities',
+  'tea_entity_keys',
+  'tea_mailbox',
+  'tea_projections',
+  'tea_heads',
+  'tea_publications',
+  'tea_outbox',
+  'tea_consumers',
+  'tea_cursors',
+  'tea_replies',
+  'tea_waiting',
 ] as const
 
 /**
@@ -637,7 +605,7 @@ const namedTables = [
  * the name its idempotency keys are drawn from, and every request its entities sent names the new name
  * (decision 0156). The runtime checks `renames` first, and runs this before any deploy, while nothing is loaded.
  * `marked` is a launch's on Cluster, where other runners may still run the old name: the old name is then marked
- * renamed in `versions`, in the same transaction, and its newest version moves to the new name (decision 0176).
+ * renamed in `tea_versions`, in the same transaction, and its newest version moves to the new name (decision 0176).
  */
 export const renamed = (
   renames: ReadonlyArray<readonly [from: string, to: string]>,
@@ -654,22 +622,22 @@ export const renamed = (
     /** A condition as a count, since PostgreSQL gives a boolean where SQLite gives an integer. */
     const counted = (condition: Statement.Fragment) => sql`SELECT CASE WHEN ${condition} THEN 1 ELSE 0 END AS held`
     const die = (reason: string) => Effect.die(new InvariantDefect({ reason }))
-    // Each `EXISTS` is a search of an index whose first column is the name, or of `replies_sender`.
+    // Each `EXISTS` is a search of an index whose first column is the name, or of `tea_replies_sender`.
     const holds = (name: string) =>
       flag(counted(sql.or([
         ...namedTables.map((table) => sql`EXISTS (SELECT 1 FROM ${sql(table)} WHERE name = ${name})`),
-        sql`EXISTS (SELECT 1 FROM replies WHERE sender_name = ${name})`,
+        sql`EXISTS (SELECT 1 FROM tea_replies WHERE sender_name = ${name})`,
       ])))
     const occupied = (name: string) =>
-      flag(counted(sql.or(['entities', 'heads', 'consumers'].map((table) =>
+      flag(counted(sql.or(['tea_entities', 'tea_heads', 'tea_consumers'].map((table) =>
         sql`EXISTS (SELECT 1 FROM ${sql(table)} WHERE name = ${name})`
       ))))
     // The requests the old name's entities sent name it as their `entity`: the request that created an entity, a
     // message waiting in a mailbox, and a reply's request. Each table is given with the columns that key its rows.
     const requests = [
-      ['entities', 'creation', ['name', 'id']],
-      ['mailbox', 'request', ['name', 'id', 'seq']],
-      ['replies', 'request', ['name', 'id', 'request', 'version']],
+      ['tea_entities', 'creation', ['name', 'id']],
+      ['tea_mailbox', 'request', ['name', 'id', 'seq']],
+      ['tea_replies', 'request', ['name', 'id', 'request', 'version']],
     ] as const
     const sentBy = (column: string, from: string) =>
       sql`json_extract(${sql(column)}, '$._tag') = 'Operation' AND json_extract(${
@@ -749,17 +717,17 @@ export const renamed = (
           )
         }
         yield* dialect === 'pg' ? inProcess(from, to) : inPlace(from, to)
-        yield* sql`UPDATE replies SET sender_name = ${to} WHERE sender_name = ${from}`
-        yield* sql`UPDATE sent_requests SET sender_name = ${to} WHERE sender_name = ${from}`
-        yield* sql`UPDATE given_requests SET name = ${to} WHERE name = ${from}`
-        yield* sql`UPDATE waiting SET sender_name = ${to} WHERE sender_name = ${from}`
-        yield* sql`UPDATE entities SET keyed_as = COALESCE(keyed_as, ${from}) WHERE name = ${from}`
+        yield* sql`UPDATE tea_replies SET sender_name = ${to} WHERE sender_name = ${from}`
+        yield* sql`UPDATE tea_sent_requests SET sender_name = ${to} WHERE sender_name = ${from}`
+        yield* sql`UPDATE tea_given_requests SET name = ${to} WHERE name = ${from}`
+        yield* sql`UPDATE tea_waiting SET sender_name = ${to} WHERE sender_name = ${from}`
+        yield* sql`UPDATE tea_entities SET keyed_as = COALESCE(keyed_as, ${from}) WHERE name = ${from}`
         for (const table of namedTables) yield* sql`UPDATE ${sql(table)} SET name = ${to} WHERE name = ${from}`
       })
     const standing = (name: string) =>
       Effect.map(
         Effect.flatMap(
-          sql`SELECT version, renamed_to FROM versions WHERE name = ${name}`,
+          sql`SELECT version, renamed_to FROM tea_versions WHERE name = ${name}`,
           Schema.decodeUnknownEffect(Schema.Array(Standing)),
         ),
         (rows) => rows[0],
@@ -780,20 +748,20 @@ export const renamed = (
               `the launch renames '${from}' to '${to}', and a launch has run '${from}' at version ${old.version}, newer than ${held.version}`,
             )
           }
-          yield* sql`UPDATE versions SET version = ${old.version} WHERE name = ${to}`
+          yield* sql`UPDATE tea_versions SET version = ${old.version} WHERE name = ${to}`
         }
         if (old !== undefined && held === undefined) {
-          yield* sql`INSERT INTO versions (name, version) VALUES (${to}, ${old.version})`
+          yield* sql`INSERT INTO tea_versions (name, version) VALUES (${to}, ${old.version})`
           given.add(to)
         }
         yield* sql`
-          INSERT INTO versions (name, version, renamed_to) VALUES (${from}, ${old?.version ?? 0}, ${to})
+          INSERT INTO tea_versions (name, version, renamed_to) VALUES (${from}, ${old?.version ?? 0}, ${to})
           ON CONFLICT (name) DO UPDATE SET renamed_to = excluded.renamed_to
         `
       })
     const run = Effect.gen(function*() {
-      // As `recordVersions` takes `versions`, so that a launch that renames and one that records see each other.
-      if (marked && dialect === 'pg') yield* sql`LOCK TABLE versions IN SHARE ROW EXCLUSIVE MODE`
+      // As `recordVersions` takes `tea_versions`, so that a launch that renames and one that records see each other.
+      if (marked && dialect === 'pg') yield* sql`LOCK TABLE tea_versions IN SHARE ROW EXCLUSIVE MODE`
       for (const [from, to] of renames) {
         yield* rename(from, to)
         if (marked) yield* mark(from, to)
@@ -849,7 +817,7 @@ const Version = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1)))
 /** An incarnation, a `seq` or a count, as a driver gives an integer up to 2^53 (decision 0157). */
 const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
 
-/** A row of `versions`: the newest version of a program, and the name a launch renamed it to, if any. */
+/** A row of `tea_versions`: the newest version of a program, and the name a launch renamed it to, if any. */
 const Standing = Schema.Struct({ version: Count, renamed_to: Schema.NullOr(Schema.String) })
 
 /** How an operation is delivered, as its runner declared (decisions 0011, 0123). */
@@ -1517,7 +1485,7 @@ export const storage = <T extends Types>(
 
   /** The row a query reads, as the machine computed it from a state (decision 0032). */
   const row = (id: string, shown: Machine.Shown, projection: string = JSON.stringify(shown.projection)) =>
-    upsert('projections', ['name', 'id'], { name, id, projection, indexes: indexesText(shown.indexes), version })
+    upsert('tea_projections', ['name', 'id'], { name, id, projection, indexes: indexesText(shown.indexes), version })
 
   const readWork = (text: string, from: number): Piece<T['operation'], T['internal']> => {
     const held = work.read(text, upWork(from))
@@ -1527,18 +1495,18 @@ export const storage = <T extends Types>(
   /** The entity's rows, read through the migrations, and its cause and the time it suspended, if it is. */
   const entity = (id: string) =>
     Effect.gen(function*() {
-      const entities = yield* rows('entities', Rows.entity)(
+      const entities = yield* rows('tea_entities', Rows.entity)(
         sql`SELECT keyed_as, state, version, creation, incarnations, suspended_on, suspended_cause, suspended_at
-            FROM entities WHERE name = ${name} AND id = ${id}`,
+            FROM tea_entities WHERE name = ${name} AND id = ${id}`,
       )
       const row = entities[0]
       if (row === undefined) return null
-      const held = yield* rows('entity_keys', Rows.key)(
-        sql`SELECT key, parameter, incarnation, version, work, delivery FROM entity_keys
+      const held = yield* rows('tea_entity_keys', Rows.key)(
+        sql`SELECT key, parameter, incarnation, version, work, delivery FROM tea_entity_keys
             WHERE name = ${name} AND id = ${id}`,
       )
-      const queued = yield* rows('mailbox', Rows.envelope)(
-        sql`SELECT tag, version, message, request, keep, key, parameter, incarnation FROM mailbox
+      const queued = yield* rows('tea_mailbox', Rows.envelope)(
+        sql`SELECT tag, version, message, request, keep, key, parameter, incarnation FROM tea_mailbox
             WHERE name = ${name} AND id = ${id} ORDER BY seq`,
       )
       const keys: Record<string, Machine.Run<T>> = {}
@@ -1641,16 +1609,16 @@ export const storage = <T extends Types>(
     Effect.gen(function*() {
       const key = Machine.requestKey(program, asked)
       const exact = replyOf(
-        yield* rows('replies', Rows.reply)(sql`
-          SELECT request, tag, version, reason FROM replies
+        yield* rows('tea_replies', Rows.reply)(sql`
+          SELECT request, tag, version, reason FROM tea_replies
           WHERE name = ${name} AND id = ${id} AND request = ${key} AND (until IS NULL OR until > ${at})
         `),
         key,
       )
       if (exact !== null || asked._tag !== 'Caller') return exact
       return replyOf(
-        yield* rows('replies', Rows.reply)(sql`
-          SELECT request, tag, version, reason FROM replies
+        yield* rows('tea_replies', Rows.reply)(sql`
+          SELECT request, tag, version, reason FROM tea_replies
           WHERE name = ${name} AND id = ${id} AND request_id = ${asked.id} AND version <> ${version}
             AND (until IS NULL OR until > ${at})
         `),
@@ -1667,7 +1635,7 @@ export const storage = <T extends Types>(
       const cause = suspension === null ? null : suspension.cause
       if (written.created) {
         if (entity === null) throw new Error(`the entity '${name}' '${id}' is created with no state`)
-        yield* sql`INSERT INTO entities ${
+        yield* sql`INSERT INTO tea_entities ${
           sql.insert({
             name,
             id,
@@ -1687,7 +1655,7 @@ export const storage = <T extends Types>(
         // of the suspension is the first step's that suspended the entity, kept while it stays suspended (decision
         // 0114).
         yield* sql`
-          UPDATE entities
+          UPDATE tea_entities
           SET state = ${state}, version = ${version},
               creation = ${JSON.stringify(entity.creation)}, incarnations = ${written.incarnations},
               suspended_on = ${on}, suspended_cause = ${cause},
@@ -1697,7 +1665,7 @@ export const storage = <T extends Types>(
         `
       } else {
         yield* sql`
-          UPDATE entities
+          UPDATE tea_entities
           SET incarnations = ${written.incarnations}, suspended_on = ${on}, suspended_cause = ${cause},
               suspended_at = CASE WHEN CAST(${on} AS TEXT) IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END,
               steps = steps + 1
@@ -1710,7 +1678,7 @@ export const storage = <T extends Types>(
         yield* row(id, written.shown, projection)
       }
       for (const held of written.keys) {
-        yield* upsert('entity_keys', ['name', 'id', 'key', 'parameter'], {
+        yield* upsert('tea_entity_keys', ['name', 'id', 'key', 'parameter'], {
           name,
           id,
           ...keyRow(held.key),
@@ -1724,24 +1692,24 @@ export const storage = <T extends Types>(
       for (const key of written.gone) {
         const { key: held, parameter } = keyRow(key)
         yield* sql`
-          DELETE FROM entity_keys WHERE name = ${name} AND id = ${id} AND key = ${held} AND parameter = ${parameter}
+          DELETE FROM tea_entity_keys WHERE name = ${name} AND id = ${id} AND key = ${held} AND parameter = ${parameter}
         `
       }
       // The mailbox's rows are numbered as they are queued: its first message is the lowest.
       if (written.handled > 0) {
         yield* sql`
-          DELETE FROM mailbox WHERE name = ${name} AND id = ${id} AND seq IN (
-            SELECT seq FROM mailbox WHERE name = ${name} AND id = ${id} ORDER BY seq LIMIT ${written.handled}
+          DELETE FROM tea_mailbox WHERE name = ${name} AND id = ${id} AND seq IN (
+            SELECT seq FROM tea_mailbox WHERE name = ${name} AND id = ${id} ORDER BY seq LIMIT ${written.handled}
           )
         `
       }
       if (written.queued.length > 0) {
-        const last = yield* rows('mailbox', Rows.last)(
-          sql`SELECT max(seq) AS seq FROM mailbox WHERE name = ${name} AND id = ${id}`,
+        const last = yield* rows('tea_mailbox', Rows.last)(
+          sql`SELECT max(seq) AS seq FROM tea_mailbox WHERE name = ${name} AND id = ${id}`,
         )
         const first = (last[0]?.seq ?? -1) + 1
         for (const [at, envelope] of written.queued.entries()) {
-          yield* sql`INSERT INTO mailbox ${
+          yield* sql`INSERT INTO tea_mailbox ${
             sql.insert(
               envelope._tag === 'Inbound'
                 ? {
@@ -1781,7 +1749,7 @@ export const storage = <T extends Types>(
       for (const reply of written.replies) {
         const { asked } = reply
         const asking = asked === null ? null : keyRow(asked.key)
-        yield* upsert('replies', ['name', 'id', 'request', 'version'], {
+        yield* upsert('tea_replies', ['name', 'id', 'request', 'version'], {
           name,
           id,
           request: reply.request,
@@ -1798,10 +1766,10 @@ export const storage = <T extends Types>(
         })
         if (asked === null || asking === null) continue
         yield* sql`
-          DELETE FROM replies
+          DELETE FROM tea_replies
           WHERE name = ${name} AND id = ${id} AND request = ${reply.request} AND version = ${version}
             AND NOT EXISTS (
-              SELECT 1 FROM entity_keys AS asking
+              SELECT 1 FROM tea_entity_keys AS asking
               WHERE asking.name = ${asked.name} AND asking.id = ${asked.id} AND asking.key = ${asking.key}
                 AND asking.parameter = ${asking.parameter} AND asking.incarnation = ${asked.incarnation}
             )
@@ -1810,7 +1778,7 @@ export const storage = <T extends Types>(
       for (const { key, incarnation } of written.ended) {
         const ended = keyRow(key)
         yield* sql`
-          DELETE FROM replies
+          DELETE FROM tea_replies
           WHERE sender_name = ${name} AND sender_id = ${id} AND sender_key = ${ended.key}
             AND sender_parameter = ${ended.parameter} AND sender_incarnation = ${incarnation}
         `
@@ -1829,9 +1797,9 @@ export const storage = <T extends Types>(
       // Cluster it takes Cluster's rows of the requests whose clients were given their answers and whose time is past
       // too. The step's own request has no such row yet: its client keeps it once given the answer (decision 0171).
       if (written.replies.length > 0) {
-        yield* sql`DELETE FROM replies WHERE name = ${name} AND id = ${id} AND until IS NOT NULL AND until <= ${at}`
+        yield* sql`DELETE FROM tea_replies WHERE name = ${name} AND id = ${id} AND until IS NOT NULL AND until <= ${at}`
         if (onCluster) {
-          yield* forgetUnder(sql, 'given_requests', sql`name = ${name} AND id = ${id} AND until <= ${at}`)
+          yield* forgetUnder(sql, 'tea_given_requests', sql`name = ${name} AND id = ${id} AND until <= ${at}`)
         }
       }
       // The rows of the log are written last. Their `seq` is drawn once, by moving the head of the entity's
@@ -1842,16 +1810,16 @@ export const storage = <T extends Types>(
       if (written.published !== null) {
         const { kind, message } = written.published
         const projection = JSON.stringify(written.published.projection)
-        const drawn = yield* rows('heads', Rows.cursor)(sql`
-          INSERT INTO heads (name, partition, seq)
-          SELECT name, partition, 1 FROM entities WHERE name = ${name} AND id = ${id}
-          ON CONFLICT (name, partition) DO UPDATE SET seq = heads.seq + 1
+        const drawn = yield* rows('tea_heads', Rows.cursor)(sql`
+          INSERT INTO tea_heads (name, partition, seq)
+          SELECT name, partition, 1 FROM tea_entities WHERE name = ${name} AND id = ${id}
+          ON CONFLICT (name, partition) DO UPDATE SET seq = tea_heads.seq + 1
           RETURNING partition, seq
         `)
         const head = drawn[0]
         if (head === undefined) throw new Error(`the entity '${name}' '${id}' publishes with no row of its own`)
         characters += projection.length
-        yield* sql`INSERT INTO publications ${
+        yield* sql`INSERT INTO tea_publications ${
           sql.insert({
             name,
             partition: head.partition,
@@ -1864,7 +1832,7 @@ export const storage = <T extends Types>(
           })
         }`
         for (const topic of written.published.topics) {
-          yield* sql`INSERT INTO outbox ${sql.insert({ name, topic, partition: head.partition, seq: head.seq })}`
+          yield* sql`INSERT INTO tea_outbox ${sql.insert({ name, topic, partition: head.partition, seq: head.seq })}`
         }
       }
       return characters
@@ -1873,15 +1841,15 @@ export const storage = <T extends Types>(
   // One transaction, so that a crash leaves no request of Cluster's without its replies (decision 0171).
   const expire = (at: number) =>
     sql.withTransaction(Effect.gen(function*() {
-      const gone = yield* rows('replies', Rows.id)(sql`
-        DELETE FROM replies WHERE name = ${name} AND until IS NOT NULL AND until <= ${at} RETURNING id
+      const gone = yield* rows('tea_replies', Rows.id)(sql`
+        DELETE FROM tea_replies WHERE name = ${name} AND until IS NOT NULL AND until <= ${at} RETURNING id
       `)
-      if (onCluster) yield* forgetUnder(sql, 'given_requests', sql`name = ${name} AND until <= ${at}`)
+      if (onCluster) yield* forgetUnder(sql, 'tea_given_requests', sql`name = ${name} AND until <= ${at}`)
       return gone.length
     })).pipe(Effect.orDie)
 
   /** The entities of the program an operator has to resume: nothing of theirs is handled, and no timer of theirs fires. */
-  const onHold = sql`(SELECT id FROM entities WHERE name = ${name} AND suspended_on IS NOT NULL)`
+  const onHold = sql`(SELECT id FROM tea_entities WHERE name = ${name} AND suspended_on IS NOT NULL)`
 
   /**
    * The entities of the program whose stored partition is among `partitions`, or every entity where none are given.
@@ -1890,16 +1858,16 @@ export const storage = <T extends Types>(
   const within = (partitions: ReadonlyArray<number> | undefined) =>
     partitions === undefined
       ? sql``
-      : sql`AND id IN (SELECT id FROM entities WHERE name = ${name} AND partition IN ${sql.in(partitions)})`
+      : sql`AND id IN (SELECT id FROM tea_entities WHERE name = ${name} AND partition IN ${sql.in(partitions)})`
 
   // A key holding an operation has no `due`: the time of a timer is what that column is for.
   const interruptedWithin = (partitions: ReadonlyArray<number> | undefined) =>
     Effect.gen(function*() {
-      const found = yield* rows('entity_keys', Rows.id)(sql`
-        SELECT id FROM entity_keys
+      const found = yield* rows('tea_entity_keys', Rows.id)(sql`
+        SELECT id FROM tea_entity_keys
         WHERE name = ${name} AND due IS NULL AND id NOT IN ${onHold} ${within(partitions)}
         UNION
-        SELECT id FROM mailbox WHERE name = ${name} AND id NOT IN ${onHold} ${within(partitions)}
+        SELECT id FROM tea_mailbox WHERE name = ${name} AND id NOT IN ${onHold} ${within(partitions)}
         ORDER BY id
       `)
       return found.map((row) => row.id)
@@ -1917,8 +1885,8 @@ export const storage = <T extends Types>(
       const ready: Array<string> = []
       let after = ''
       while (ready.length < batch) {
-        const page = yield* rows('entity_keys', Rows.id)(sql`
-          SELECT DISTINCT id FROM entity_keys
+        const page = yield* rows('tea_entity_keys', Rows.id)(sql`
+          SELECT DISTINCT id FROM tea_entity_keys
           WHERE name = ${name} AND due IS NOT NULL AND due <= ${now}
             AND id > ${after} AND id NOT IN ${onHold} ${within(partitions)}
           ORDER BY id LIMIT ${batch}
@@ -1931,8 +1899,8 @@ export const storage = <T extends Types>(
       let next: number | null = null
       let from: Readonly<{ at: number; id: string }> | null = null
       while (next === null) {
-        const page: ReadonlyArray<{ id: string; at: number }> = yield* rows('entity_keys', Rows.due)(sql`
-          SELECT id, MIN(due) AS at FROM entity_keys
+        const page: ReadonlyArray<{ id: string; at: number }> = yield* rows('tea_entity_keys', Rows.due)(sql`
+          SELECT id, MIN(due) AS at FROM tea_entity_keys
           WHERE name = ${name} AND due > ${now} AND id NOT IN ${onHold} ${within(partitions)}
           GROUP BY id
           ${from === null ? sql`` : sql`HAVING MIN(due) > ${from.at} OR (MIN(due) = ${from.at} AND id > ${from.id})`}
@@ -1949,18 +1917,16 @@ export const storage = <T extends Types>(
   const indexed = Effect.gen(function*() {
     for (const index of Object.keys(program.indexes)) {
       // The id follows the value, so that the rows that tie are in the order of their id and a page reads them past
-      // its cursor as a range. A database of SQLite made before holds the index without the id under the old name,
-      // which goes (decision 0145). PostgreSQL takes an expression of an index in parentheses, and cuts a name past
+      // its cursor as a range (decision 0145). PostgreSQL takes an expression of an index in parentheses, and cuts a name past
       // 63 bytes, so the storage cuts a longer name itself, and ends it with a hash of the whole (decision 0157).
       if (dialect === 'pg') {
-        const on = `projections (name, ${expressionsOf(index).join(', ')}, id)`
-        const named = quoted(indexName(`projections ${name} ${index} by id`))
+        const on = `tea_projections (name, ${expressionsOf(index).join(', ')}, id)`
+        const named = quoted(indexName(`tea_projections ${name} ${index} by id`))
         yield* sql.unsafe(`CREATE INDEX IF NOT EXISTS ${named} ON ${on}`)
         continue
       }
-      yield* sql.unsafe(`DROP INDEX IF EXISTS ${quoted(`projections ${name} ${index}`)}`)
-      const on = `projections (name, ${expressionsOf(index)[0]}, id)`
-      yield* sql.unsafe(`CREATE INDEX IF NOT EXISTS ${quoted(`projections ${name} ${index} by id`)} ON ${on}`)
+      const on = `tea_projections (name, ${expressionsOf(index)[0]}, id)`
+      yield* sql.unsafe(`CREATE INDEX IF NOT EXISTS ${quoted(`tea_projections ${name} ${index} by id`)} ON ${on}`)
     }
   }).pipe(Effect.orDie)
 
@@ -2082,8 +2048,8 @@ export const storage = <T extends Types>(
       const clauses = criteria(where)
       const read = parts(after, order)
       const page = (clause: Statement.Fragment, by: Statement.Fragment, left: number) =>
-        rows('projections', Rows.projection)(sql`
-          SELECT id, projection, indexes, version FROM projections
+        rows('tea_projections', Rows.projection)(sql`
+          SELECT id, projection, indexes, version FROM tea_projections
           WHERE ${sql.and([...clauses, clause])} ORDER BY ${by} LIMIT ${left}
         `)
       // The parts are read from one snapshot, so that a step between two of them moves no row into the page twice
@@ -2106,8 +2072,8 @@ export const storage = <T extends Types>(
 
   const count = ({ where = [] }: Counted<T>) =>
     Effect.gen(function*() {
-      const [counted] = yield* rows('projections', Rows.count)(
-        sql`SELECT COUNT(*) AS count FROM projections WHERE ${sql.and(criteria(where))}`,
+      const [counted] = yield* rows('tea_projections', Rows.count)(
+        sql`SELECT COUNT(*) AS count FROM tea_projections WHERE ${sql.and(criteria(where))}`,
       )
       return counted?.count ?? 0
     }).pipe(Effect.orDie)
@@ -2129,18 +2095,18 @@ export const storage = <T extends Types>(
       // lacks the index. `TOTAL` gives a double and never fails on an overflow of SQLite's integers, where `SUM` does
       // (decision 0148). On PostgreSQL each number is added as a double, so the total is a double too
       // (decision 0157).
-      const [summed] = yield* rows('projections', Rows.total)(
+      const [summed] = yield* rows('tea_projections', Rows.total)(
         dialect === 'pg'
           ? sql`
             SELECT COALESCE(SUM(CASE WHEN ${typed(index)} = 'number' THEN CAST(${value(index)} AS DOUBLE PRECISION) END),
                      0) AS total,
                    MIN(CASE WHEN ${typed(index)} NOT IN ('number', 'null') THEN id END) AS refused
-            FROM projections WHERE ${sql.and(criteria(where))}
+            FROM tea_projections WHERE ${sql.and(criteria(where))}
           `
           : sql`
             SELECT TOTAL(CASE WHEN ${kind(index)} IN ('integer', 'real') THEN ${columnOf(index)} END) AS total,
                    MIN(CASE WHEN ${kind(index)} NOT IN ('integer', 'real', 'null') THEN id END) AS refused
-            FROM projections WHERE ${sql.and(criteria(where))}
+            FROM tea_projections WHERE ${sql.and(criteria(where))}
           `,
       )
       if (summed === undefined) return 0
@@ -2164,16 +2130,16 @@ export const storage = <T extends Types>(
       // PostgreSQL the expressions of the index order the values as on SQLite, and jsonb's type tells a boolean from
       // its number (decision 0157).
       const column = columnOf(index)
-      const tallies = yield* rows('projections', Rows.tally)(
+      const tallies = yield* rows('tea_projections', Rows.tally)(
         dialect === 'pg'
           ? sql`
             SELECT min(CAST(coalesce(${value(index)}, 'null'::jsonb) AS TEXT)) AS value, count(*) AS count
-            FROM projections WHERE ${sql.and(criteria(where))}
+            FROM tea_projections WHERE ${sql.and(criteria(where))}
             GROUP BY ${column}, ${boolean(index)}
             ORDER BY ${orderOf(index, 'ASC')}, ${boolean(index)} LIMIT ${limit}
           `
           : sql`
-            SELECT min(${text(index)}) AS value, count(*) AS count FROM projections WHERE ${sql.and(criteria(where))}
+            SELECT min(${text(index)}) AS value, count(*) AS count FROM tea_projections WHERE ${sql.and(criteria(where))}
             GROUP BY ${column}, ${grouped(index)}
             ORDER BY ${column}, ${grouped(index)} IN ('true', 'false') LIMIT ${limit}
           `,
@@ -2194,8 +2160,8 @@ export const storage = <T extends Types>(
 
   const projected = (id: string) =>
     Effect.gen(function*() {
-      const found = yield* rows('projections', Rows.projection)(
-        sql`SELECT id, projection, indexes, version FROM projections WHERE name = ${name} AND id = ${id}`,
+      const found = yield* rows('tea_projections', Rows.projection)(
+        sql`SELECT id, projection, indexes, version FROM tea_projections WHERE name = ${name} AND id = ${id}`,
       )
       const held = found[0]
       return held === undefined ? null : projection.read(held.projection, up('projection', held.version))
@@ -2206,8 +2172,8 @@ export const storage = <T extends Types>(
     let written = 0
     const failed: Array<Readonly<{ id: string; cause: string }>> = []
     while (true) {
-      const page = yield* rows('entities', Rows.state)(sql`
-        SELECT id, state, version FROM entities
+      const page = yield* rows('tea_entities', Rows.state)(sql`
+        SELECT id, state, version FROM tea_entities
         WHERE name = ${name} AND id > ${cursor} ORDER BY id LIMIT ${batch}
       `)
       if (page.length === 0) return { written, failed } satisfies Reindexed
@@ -2236,12 +2202,12 @@ export const storage = <T extends Types>(
         // The row is written only if the state it was computed from is still the one stored, in one statement
         // (decision 0070). A step that committed since wrote its own row, which this would replace with a
         // projection the entity has moved past.
-        const rewritten = yield* rows('projections', Rows.id)(sql`
-          INSERT INTO projections (name, id, projection, indexes, version)
+        const rewritten = yield* rows('tea_projections', Rows.id)(sql`
+          INSERT INTO tea_projections (name, id, projection, indexes, version)
           SELECT name, id, CAST(${JSON.stringify(shown.projection)} AS TEXT), CAST(${
           indexesText(shown.indexes)
         } AS TEXT), CAST(${version} AS INTEGER)
-          FROM entities WHERE name = ${name} AND id = ${held.id} AND state = ${held.state}
+          FROM tea_entities WHERE name = ${name} AND id = ${held.id} AND state = ${held.state}
             AND version = ${held.version}
           ON CONFLICT (name, id)
           DO UPDATE SET projection = excluded.projection, indexes = excluded.indexes, version = excluded.version
@@ -2261,7 +2227,7 @@ export const storage = <T extends Types>(
 
   /** The head of each partition the program has published in, by partition. */
   const heads = Effect.map(
-    rows('heads', Rows.cursor)(sql`SELECT partition, seq FROM heads WHERE name = ${name}`),
+    rows('tea_heads', Rows.cursor)(sql`SELECT partition, seq FROM tea_heads WHERE name = ${name}`),
     (held) => new Map(held.map(({ partition, seq }) => [partition, seq])),
   )
 
@@ -2301,9 +2267,9 @@ export const storage = <T extends Types>(
           SELECT json_extract(value, '$[0]') AS partition, json_extract(value, '$[1]') AS seq
           FROM json_each(${JSON.stringify(behind)})
         )`
-      const first = yield* rows('outbox', Rows.position)(sql`
+      const first = yield* rows('tea_outbox', Rows.position)(sql`
         SELECT min((
-          SELECT position FROM outbox
+          SELECT position FROM tea_outbox
           WHERE name = ${name} AND topic = ${topic} AND partition = behind.partition AND seq > behind.seq
           ORDER BY seq LIMIT 1
         )) AS position
@@ -2314,21 +2280,21 @@ export const storage = <T extends Types>(
       const within = read === undefined
         ? sql``
         : dialect === 'pg'
-        ? sql`AND outbox.partition IN (
+        ? sql`AND tea_outbox.partition IN (
           SELECT CAST(value AS INTEGER) FROM jsonb_array_elements_text(CAST(${JSON.stringify([...read])} AS JSONB))
         )`
-        : sql`AND outbox.partition IN (SELECT value FROM json_each(${JSON.stringify([...read])}))`
+        : sql`AND tea_outbox.partition IN (SELECT value FROM json_each(${JSON.stringify([...read])}))`
       while (from !== null && given.length < limit) {
-        // Each row finds its step's publication by the key of `publications` (decision 0154).
-        const page = yield* rows('outbox', Rows.published)(sql`
-          SELECT outbox.position AS position, outbox.partition AS partition, outbox.seq AS seq, publications.id AS id,
-            publications.tag AS tag, publications.version AS version, publications.message AS message,
-            publications.projection AS projection
-          FROM outbox
-          JOIN publications ON publications.name = outbox.name AND publications.partition = outbox.partition
-            AND publications.seq = outbox.seq
-          WHERE outbox.name = ${name} AND outbox.topic = ${topic} AND outbox.position >= ${from} ${within}
-          ORDER BY outbox.position LIMIT ${batch}
+        // Each row finds its step's publication by the key of `tea_publications` (decision 0154).
+        const page = yield* rows('tea_outbox', Rows.published)(sql`
+          SELECT tea_outbox.position AS position, tea_outbox.partition AS partition, tea_outbox.seq AS seq, tea_publications.id AS id,
+            tea_publications.tag AS tag, tea_publications.version AS version, tea_publications.message AS message,
+            tea_publications.projection AS projection
+          FROM tea_outbox
+          JOIN tea_publications ON tea_publications.name = tea_outbox.name AND tea_publications.partition = tea_outbox.partition
+            AND tea_publications.seq = tea_outbox.seq
+          WHERE tea_outbox.name = ${name} AND tea_outbox.topic = ${topic} AND tea_outbox.position >= ${from} ${within}
+          ORDER BY tea_outbox.position LIMIT ${batch}
         `)
         for (const row of page) {
           if (row.seq <= (cursors.get(row.partition) ?? 0)) continue
@@ -2359,7 +2325,7 @@ export const storage = <T extends Types>(
   const declare = (consumers: ReadonlyArray<Readonly<{ topic: string; consumer: string }>>) =>
     sql.withTransaction(Effect.forEach(consumers, ({ topic, consumer }) =>
       sql`
-        INSERT INTO consumers ${sql.insert({ name, topic, consumer })} ON CONFLICT (name, topic, consumer) DO NOTHING
+        INSERT INTO tea_consumers ${sql.insert({ name, topic, consumer })} ON CONFLICT (name, topic, consumer) DO NOTHING
       `, { discard: true })).pipe(Effect.orDie)
 
   const fetch = <Name extends Topic<T>>(
@@ -2369,8 +2335,8 @@ export const storage = <T extends Types>(
     partitions?: ReadonlyArray<number>,
   ) =>
     Effect.gen(function*() {
-      const cursors = yield* rows('cursors', Rows.cursor)(sql`
-        SELECT partition, seq FROM cursors WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}
+      const cursors = yield* rows('tea_cursors', Rows.cursor)(sql`
+        SELECT partition, seq FROM tea_cursors WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}
       `)
       return yield* published(topic, cursors, limit, partitions)
     }).pipe(Effect.orDie)
@@ -2385,9 +2351,9 @@ export const storage = <T extends Types>(
         const capped = Math.min(seq, held.get(partition) ?? 0)
         if (capped === 0) continue
         yield* sql`
-          INSERT INTO cursors ${sql.insert({ name, topic, consumer, partition, seq: capped })}
+          INSERT INTO tea_cursors ${sql.insert({ name, topic, consumer, partition, seq: capped })}
           ON CONFLICT (name, topic, consumer, partition)
-          DO UPDATE SET seq = CASE WHEN cursors.seq > excluded.seq THEN cursors.seq ELSE excluded.seq END
+          DO UPDATE SET seq = CASE WHEN tea_cursors.seq > excluded.seq THEN tea_cursors.seq ELSE excluded.seq END
         `
       }
     })).pipe(Effect.orDie)
@@ -2402,19 +2368,19 @@ export const storage = <T extends Types>(
   // is a guard: it commits the rows and the publications together even if a trigger ran outside the statement that
   // fired it (decision 0154).
   const prune = sql.withTransaction(Effect.gen(function*() {
-    const gone = yield* rows('outbox', Rows.seq)(sql`
+    const gone = yield* rows('tea_outbox', Rows.seq)(sql`
       WITH floors AS (
-        SELECT topic, partition, min(seq) AS through FROM cursors WHERE name = ${name}
+        SELECT topic, partition, min(seq) AS through FROM tea_cursors WHERE name = ${name}
         GROUP BY topic, partition
         HAVING count(*) = (
-          SELECT count(*) FROM consumers WHERE consumers.name = ${name} AND consumers.topic = cursors.topic
+          SELECT count(*) FROM tea_consumers WHERE tea_consumers.name = ${name} AND tea_consumers.topic = tea_cursors.topic
         )
       )
-      DELETE FROM outbox
+      DELETE FROM tea_outbox
       WHERE name = ${name} AND (
-        NOT EXISTS (SELECT 1 FROM consumers WHERE consumers.name = ${name} AND consumers.topic = outbox.topic)
+        NOT EXISTS (SELECT 1 FROM tea_consumers WHERE tea_consumers.name = ${name} AND tea_consumers.topic = tea_outbox.topic)
         OR seq <= (
-          SELECT through FROM floors WHERE floors.topic = outbox.topic AND floors.partition = outbox.partition
+          SELECT through FROM floors WHERE floors.topic = tea_outbox.topic AND floors.partition = tea_outbox.partition
         )
       )
       RETURNING seq
@@ -2423,19 +2389,19 @@ export const storage = <T extends Types>(
   })).pipe(Effect.orDie)
 
   const consumers = Effect.gen(function*() {
-    const stored = yield* rows('consumers', Rows.topical)(
-      sql`SELECT topic, consumer FROM consumers WHERE name = ${name} ORDER BY topic, consumer`,
+    const stored = yield* rows('tea_consumers', Rows.topical)(
+      sql`SELECT topic, consumer FROM tea_consumers WHERE name = ${name} ORDER BY topic, consumer`,
     )
-    const behind = yield* rows('cursors', Rows.behind)(sql`
-      SELECT consumers.topic AS topic, consumers.consumer AS consumer, outbox.partition AS partition,
-        coalesce(cursors.seq, 0) AS seq, count(*) AS behind
-      FROM consumers
-      JOIN outbox ON outbox.name = consumers.name AND outbox.topic = consumers.topic
-      LEFT JOIN cursors ON cursors.name = consumers.name AND cursors.topic = consumers.topic
-        AND cursors.consumer = consumers.consumer AND cursors.partition = outbox.partition
-      WHERE consumers.name = ${name} AND outbox.seq > coalesce(cursors.seq, 0)
-      GROUP BY consumers.topic, consumers.consumer, outbox.partition, cursors.seq
-      ORDER BY consumers.topic, consumers.consumer, outbox.partition
+    const behind = yield* rows('tea_cursors', Rows.behind)(sql`
+      SELECT tea_consumers.topic AS topic, tea_consumers.consumer AS consumer, tea_outbox.partition AS partition,
+        coalesce(tea_cursors.seq, 0) AS seq, count(*) AS behind
+      FROM tea_consumers
+      JOIN tea_outbox ON tea_outbox.name = tea_consumers.name AND tea_outbox.topic = tea_consumers.topic
+      LEFT JOIN tea_cursors ON tea_cursors.name = tea_consumers.name AND tea_cursors.topic = tea_consumers.topic
+        AND tea_cursors.consumer = tea_consumers.consumer AND tea_cursors.partition = tea_outbox.partition
+      WHERE tea_consumers.name = ${name} AND tea_outbox.seq > coalesce(tea_cursors.seq, 0)
+      GROUP BY tea_consumers.topic, tea_consumers.consumer, tea_outbox.partition, tea_cursors.seq
+      ORDER BY tea_consumers.topic, tea_consumers.consumer, tea_outbox.partition
     `)
     return stored.map(({ topic, consumer }): Omit<Consumer, 'declared'> => {
       const own = behind.filter((row) => row.topic === topic && row.consumer === consumer)
@@ -2450,8 +2416,8 @@ export const storage = <T extends Types>(
 
   const forget = (topic: Topic<T>, consumer: string) =>
     sql.withTransaction(Effect.andThen(
-      sql`DELETE FROM cursors WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}`,
-      sql`DELETE FROM consumers WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}`,
+      sql`DELETE FROM tea_cursors WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}`,
+      sql`DELETE FROM tea_consumers WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}`,
     )).pipe(Effect.asVoid, Effect.orDie)
 
   // The tag of the mailbox's first message says what a `Message` the entity died on is: an inbound one is
@@ -2473,11 +2439,11 @@ export const storage = <T extends Types>(
       })
 
   const suspensions = Effect.gen(function*() {
-    const held = yield* rows('entities', Rows.suspended)(sql`
+    const held = yield* rows('tea_entities', Rows.suspended)(sql`
       SELECT id, suspended_on, suspended_cause, suspended_at, (
-        SELECT tag FROM mailbox WHERE mailbox.name = entities.name AND mailbox.id = entities.id ORDER BY seq LIMIT 1
+        SELECT tag FROM tea_mailbox WHERE tea_mailbox.name = tea_entities.name AND tea_mailbox.id = tea_entities.id ORDER BY seq LIMIT 1
       ) AS head
-      FROM entities WHERE name = ${name} AND suspended_on IS NOT NULL ORDER BY suspended_at, id
+      FROM tea_entities WHERE name = ${name} AND suspended_on IS NOT NULL ORDER BY suspended_at, id
     `)
     const listed: Array<Suspension> = []
     for (const row of held) {
@@ -2507,13 +2473,13 @@ export const storage = <T extends Types>(
 
   const wait = (id: string, sender: Readonly<{ name: string; id: string }>) =>
     sql`
-      INSERT INTO waiting (name, id, sender_name, sender_id) VALUES (${name}, ${id}, ${sender.name}, ${sender.id})
+      INSERT INTO tea_waiting (name, id, sender_name, sender_id) VALUES (${name}, ${id}, ${sender.name}, ${sender.id})
       ON CONFLICT (name, id, sender_name, sender_id) DO NOTHING
     `.pipe(Effect.asVoid, Effect.orDie)
 
   const waiters = (id: string) =>
     Effect.flatMap(
-      sql`DELETE FROM waiting WHERE name = ${name} AND id = ${id} RETURNING sender_name, sender_id`,
+      sql`DELETE FROM tea_waiting WHERE name = ${name} AND id = ${id} RETURNING sender_name, sender_id`,
       Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ sender_name: Schema.String, sender_id: Schema.String }))),
     ).pipe(
       Effect.map((rows) => rows.map((row) => ({ name: row.sender_name, id: row.sender_id }))),
@@ -2529,13 +2495,13 @@ export const storage = <T extends Types>(
     Effect.gen(function*() {
       const asking = keyRow(asked.key)
       const [held] = yield* sql<{ held: number }>`
-        SELECT COUNT(*) AS held FROM entity_keys
+        SELECT COUNT(*) AS held FROM tea_entity_keys
         WHERE name = ${asked.entity.name} AND id = ${asked.entity.id} AND key = ${asking.key}
           AND parameter = ${asking.parameter} AND incarnation = ${asked.incarnation}
       `
       if (Number(held?.held ?? 0) === 0) return yield* Effect.as(pendSent(requestId), false)
       yield* sql`
-        INSERT INTO sent_requests ${
+        INSERT INTO tea_sent_requests ${
         sql.insert({
           request_id: requestId,
           sender_name: asked.entity.name,
@@ -2551,7 +2517,7 @@ export const storage = <T extends Types>(
     }).pipe(Effect.orDie)
 
   const pendSent = (requestId: string) =>
-    sql`INSERT INTO sent_requests ${sql.insert({ request_id: requestId })} ON CONFLICT (request_id) DO NOTHING`.pipe(
+    sql`INSERT INTO tea_sent_requests ${sql.insert({ request_id: requestId })} ON CONFLICT (request_id) DO NOTHING`.pipe(
       Effect.asVoid,
       Effect.orDie,
     )
@@ -2560,13 +2526,13 @@ export const storage = <T extends Types>(
 
   const keepGiven = (requestId: string, id: string, until: number) =>
     sql`
-      INSERT INTO given_requests ${sql.insert({ request_id: requestId, name, id, until })}
+      INSERT INTO tea_given_requests ${sql.insert({ request_id: requestId, name, id, until })}
       ON CONFLICT (request_id) DO NOTHING
     `.pipe(Effect.asVoid, Effect.orDie)
 
   const stepsOf = (id: string) =>
     Effect.flatMap(
-      sql`SELECT steps FROM entities WHERE name = ${name} AND id = ${id}`,
+      sql`SELECT steps FROM tea_entities WHERE name = ${name} AND id = ${id}`,
       Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ steps: Count }))),
     ).pipe(Effect.map((rows) => rows[0]?.steps ?? null), Effect.orDie)
 

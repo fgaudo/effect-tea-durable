@@ -6,7 +6,7 @@
 the step Effect Cluster, and refused two names renamed to one. Changes
 [decision 0159](0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md) and
 [decision 0175](0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md): a renamed name is
-outranked as an older version is, and the check of every step refuses it.
+outranked as an older version is, and the check of every step refuses it. [Decision 0198](../0198-every-object-the-runtime-makes-is-named-with-tea.md) names every table with `tea_`, and a database made before is no longer given `renamed_to`.
 
 ## Context
 

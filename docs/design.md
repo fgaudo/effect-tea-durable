@@ -390,10 +390,13 @@ once its parent would hold more than one step should write
 
 ### The tables
 
-The runtime writes all of it through the program's schemas, as JSON, in ten tables — the entity, the
+The runtime writes all of it through the program's schemas, as JSON, in tables of its own: the entity, the
 keys with their incarnations and work, the mailbox in order, the replies by request, the read model, the
-outbox, the number of its partitions and the head of each, its consumers and their cursors
-([`src/storage.ts`](../src/storage.ts)). Each row carries the version of the program that wrote it, and is read
+outbox with the publication of each step, the number of its partitions and the head of each, its consumers and
+their cursors, and on Cluster the versions and the requests it keeps ([`src/storage.ts`](../src/storage.ts)). Every
+table, index, trigger and function the runtime makes is named with `tea_`, as `tea_entities`, so that the tables of an
+application in the same database are never taken for its own. The prefix is fixed, and an application names no
+table of its own with it ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)). Each row carries the version of the program that wrote it, and is read
 by migrating its JSON to the program's version (see [schemas that change](#schemas-that-change)). The row around
 the JSON is read through its table's schema, which says what the storage writes: nothing is filled in or cast, and
 a row it refuses fails the call that meets it ([decision 0062](decisions/archive/0062-a-row-is-read-through-a-schema.md)). A schema whose
@@ -1008,9 +1011,9 @@ is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md
 database until it ends: a second runtime on it, or a launch while another connection has the file of SQLite open,
 dies as it launches ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). A database of
 PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. Once it holds the
-database, a launch creates the tables where they are missing, and gives a database made before the columns it lacks.
-It does so in one transaction, so that a crash never leaves a column added and empty, and two launches on one database
-do not both add a column. A launch given `tables: 'existing'` creates nothing, for a role of PostgreSQL that may
+database, a launch creates the tables where they are missing, and adds no column to a table it finds
+([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)). It does so in one
+transaction, so that two launches on one database create each table once. A launch given `tables: 'existing'` creates nothing, for a role of PostgreSQL that may
 only read and write rows, and an operator runs `createTables` under the tables' owner before each new release. On
 Cluster the runners share the database, and `sharding` creates the tables before any runner registers
 ([decision 0191](decisions/0191-a-launch-creates-the-tables.md)). `launch` gives a runtime, `deploy(program)`
@@ -1029,8 +1032,7 @@ is written once. A launch on a client of any other dialect is the launcher's def
   PostgreSQL is compared by its bytes, so ids are ordered alike too.
 - A column of JSON is text on both, and no statement of PostgreSQL parses JSON that holds the program's data, since
   PostgreSQL parses no JSON that escapes U+0000. A reply holds the id of a caller's request in a column of its own,
-  `request_id`. A database of SQLite made before the column is given it where a launch finds it missing, filled
-  with the id read out of each caller's request
+  `request_id`
   ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
 - A page of a query reads its ranges in one transaction, begun at `REPEATABLE READ` on PostgreSQL where the
   transaction is the page's own. Inside a transaction a caller left open, the page reads at the caller's level: on one

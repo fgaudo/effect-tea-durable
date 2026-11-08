@@ -4,13 +4,13 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Storage and reading
 
-- **The tables migrated by Effect's `Migrator`.** `createTables` checks each column a database made before lacks,
-  and adds it, in one transaction under a lock of its own
-  ([decision 0191](decisions/0191-a-launch-creates-the-tables.md)). `Migrator` of `effect/sql` runs numbered
-  migrations, records each in a table of its own, and runs those not recorded in one transaction under a lock. The
-  library has no release yet, so no database of a user holds an older schema. A first migration that is the schema
-  of the first release would let the checks of each column go, with their tests, and each later change of the
-  schema would be a migration. The indexes of each program, made at deploy, would stay outside it, and so would
+- **The tables migrated by Effect's `Migrator`.** `createTables` creates the tables where they are missing, in one
+  transaction under a lock of its own, and adds no column, since no database holds an older schema of the tables
+  named with `tea_` ([decisions 0191](decisions/0191-a-launch-creates-the-tables.md),
+  [0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)). A release that changes a table needs
+  a way to change it. `Migrator` of `effect/sql` runs numbered migrations, records each in a table of its own, and
+  runs those not recorded in one transaction under a lock. A first migration that is the schema of the first release
+  would make each later change of the schema a migration. The indexes of each program, made at deploy, would stay outside it, and so would
   `tables: 'existing'`, since `Migrator` creates its own table. Whether the library adopts it before its release is
   not decided. It would be decided by:
   - the maintainer's agreement, since the module is `@stability unstable` and `src/` does not import it yet;

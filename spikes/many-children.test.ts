@@ -107,7 +107,7 @@ const measure = (size: number) =>
     }
     yield* runtime.settled
     const elapsed = performance.now() - started
-    const [row] = yield* sql<{ state: string }>`SELECT state FROM entities WHERE id = 'p'`
+    const [row] = yield* sql<{ state: string }>`SELECT state FROM tea_entities WHERE id = 'p'`
     const state = JSON.parse(row?.state ?? '{}') as State
     expect(state.lines[`line-${size - 1}`]?.touched).toBe(steps)
     expect(state.lines['line-0']?.touched).toBe(size === 1 ? steps : 0)
@@ -141,7 +141,7 @@ const tellEvery = (size: number, by: 'forEach' | 'andThen') =>
     yield* entities.send('p', { _tag: 'TouchAll', by }, { requestId: 'touch-all', sender: null })
     yield* runtime.settled
     const elapsed = performance.now() - started
-    const [row] = yield* sql<{ state: string }>`SELECT state FROM entities WHERE id = 'p'`
+    const [row] = yield* sql<{ state: string }>`SELECT state FROM tea_entities WHERE id = 'p'`
     const state = JSON.parse(row?.state ?? '{}') as State
     expect(Object.values(state.lines).every(({ touched }) => touched === 1)).toBe(true)
     return { children: size, by, ms: Number(elapsed.toFixed(1)) }
