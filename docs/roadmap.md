@@ -44,8 +44,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     rehearsals. Its gaps went into the first page: the keys of the schemas, the form of `update` with its return
     type, `Origin`, an idempotent runner's key, the results of a rehearsal's acts, `runtime.settled`, and that a
     rehearsal's `send` draws a new request id, so that a retry is tested on the runtime.
-  - Next: the pages by topic, in `docs/guide/`, each replacing the link to its section of the design at the end of
-    the first page.
+  - Done: the page on children, [`guide/children.md`](guide/children.md), on [`examples/cart`](../examples/cart).
+  - Next: the pages by topic left, in `docs/guide/`, each replacing the link to its section of the design at the end
+    of the first page: the outbox, then schemas that change, Effect Cluster and the operator's calls.
   - Then: a second reader, a subagent given a loan of books with a due date, to check the pages by topic.
 
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the

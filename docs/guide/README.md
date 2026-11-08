@@ -61,8 +61,8 @@ written on the same `SqlClient` the runtime was launched with. Every table, inde
 starts with `tea_` is the runtime's, so an application names nothing of its own with `tea_`.
 
 An item is an entity when others address it, or when it has a life of its own: a timer, an operation, a rule
-that holds across its messages. Otherwise it is a row, or a field of an entity's state. Design.md's
-[where an item goes](../design.md#where-an-item-goes) says when an item is a **child** inside an entity instead.
+that holds across its messages. Otherwise it is a row, or a field of an entity's state. The guide's page on
+[children](children.md#where-an-item-goes) says when an item is a **child** inside an entity instead.
 
 ## The states of a ride
 
@@ -545,8 +545,9 @@ expect(yield* rides.read(rideOf(request))).toMatchObject({ status: 'Riding' })
    least once for a request to another entity, at most once for what must not happen twice, with the state saying
    when it is not known.
 
-The pages of this guide by topic, on children, the outbox, schemas that change, Effect Cluster and the operator's
-calls, are not written yet. Until then, each is a section of [`design.md`](../design.md):
-[children](../design.md#children), [publishing what happened](../design.md#publishing-what-happened),
+The pages of this guide by topic are read when a program needs them. [Children](children.md) holds items inside
+an entity, each with a life of its own. The pages on the outbox, schemas that change, Effect Cluster and the
+operator's calls are not written yet. Until then, each is a section of [`design.md`](../design.md):
+[publishing what happened](../design.md#publishing-what-happened),
 [schemas that change](../design.md#schemas-that-change), [on Effect Cluster](../design.md#on-effect-cluster), and
 [defects](../design.md#defects) for `suspended`, `resume`, `discard` and `inspect`.
