@@ -40,11 +40,10 @@ import {
   type Answer,
   type Creation,
   type Handle,
-  launchOnCluster,
   type Operated,
-  sharding,
   type TypesOf,
 } from '../../src/index.ts'
+import { launch, sharding } from '../../src/index.cluster.ts'
 import { Mailer, order, Payments, type Sender, Warehouse } from '../order/order.ts'
 
 /**
@@ -115,7 +114,7 @@ export class Orders extends Context.Service<Orders, Handle<OrderTypes>>()('examp
 const orders = (settings: Settings) =>
   Layer.effect(
     Orders,
-    Effect.flatMap(launchOnCluster(), (runtime) => runtime.deploy(order)),
+    Effect.flatMap(launch(), (runtime) => runtime.deploy(order)),
   ).pipe(
     Layer.provide(world(settings.world)),
     Layer.provideMerge(

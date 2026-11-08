@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import fc from 'fast-check'
-import { projectionViolations } from '../../src/index.ts'
+import { projectionViolations } from '../../src/index.testing.ts'
 import { order, type Sender, type State } from './order.ts'
 
 const at = DateTime.makeUnsafe('2026-10-30T10:00:00Z')

@@ -48,9 +48,10 @@ each read and found, are in [`reviews.md`](reviews.md).
 | --- | --- | --- |
 | [0007](archive/0007-one-process-first.md) | One process with SQL first, Effect Cluster later | [0080](archive/0080-a-database-is-held-by-one-runtime.md), [0081](archive/0081-on-cluster-a-step-commits-with-its-reply.md), [0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) |
 | [0019](archive/0019-unstable-effect-modules.md) | The library depends on Effect's unstable modules | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) |
-| [0055](archive/0055-the-public-surface-is-what-its-users-use.md) | The public surface is what its users use | [0191](0191-a-launch-creates-the-tables.md) |
+| [0055](archive/0055-the-public-surface-is-what-its-users-use.md) | The public surface is what its users use | [0191](0191-a-launch-creates-the-tables.md), [0193](0193-the-public-surface-is-four-entries.md) |
 | [0080](archive/0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md), [0120](archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md) |
 | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) | A library on unstable modules is released as experimental |  |
+| [0193](0193-the-public-surface-is-four-entries.md) | The public surface is four entries: the main one, a program's module, a test's and a launcher's on Cluster |  |
 
 ## The machine and the program
 
@@ -112,7 +113,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0046](archive/0046-a-receiver-that-crashes-is-sent-again.md) | A receiver that crashes is sent to again | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0147](archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md) |
 | [0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md) | Nothing waits for an operation under the permit | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md) |
 | [0123](archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) | An idempotent runner may be given the digest of its key, as its delivery | [0192](0192-the-digest-of-a-key-is-computed-by-the-machine.md) |
-| [0192](0192-the-digest-of-a-key-is-computed-by-the-machine.md) | The digest of an idempotency key is computed by the machine, and `src/program.ts` reaches no module of Node |  |
+| [0192](0192-the-digest-of-a-key-is-computed-by-the-machine.md) | The digest of an idempotency key is computed by the machine, and `src/program.ts` reaches no module of Node | [0193](0193-the-public-surface-is-four-entries.md) |
 | [0127](archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md) | A live stream is no work of a program: the boundary reads it, and sends each item |  |
 | [0128](archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md) | An operation that acts on nothing may be dropped or changed while it runs | [0129](archive/0129-a-droppable-runner-that-sends-does-not-compile.md) |
 | [0129](archive/0129-a-droppable-runner-that-sends-does-not-compile.md) | A droppable runner whose services hold `Entities` does not compile |  |

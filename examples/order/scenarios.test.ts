@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import { accepted, rehearse, rejected } from '../../src/index.ts'
+import { accepted, rehearse, rejected } from '../../src/index.testing.ts'
 import { order, type Sender } from './order.ts'
 
 const placedAt = DateTime.makeUnsafe('2026-10-30T10:00:00Z')

@@ -5,6 +5,12 @@
   "license": "MIT",
   "author": "Francesco Gaudenzi",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./program": "./src/index.program.ts",
+    "./testing": "./src/index.testing.ts",
+    "./cluster": "./src/index.cluster.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",

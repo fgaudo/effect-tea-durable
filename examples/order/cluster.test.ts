@@ -1,8 +1,9 @@
 /**
  * The orders on a runner of Effect Cluster: the launcher's side of the runtime on Cluster. The runner names the
  * programs it runs where its `Sharding` is built, by `sharding`, which records their versions before Cluster
- * registers it (decisions 0159, 0174), and its runtime is `launchOnCluster`'s. Every request goes through Cluster's
- * client of the program's door (decision 0165). On Cluster the runtime runs on SQLite alone (decision 0084).
+ * registers it (decisions 0159, 0174), and its runtime is the `launch` of `index.cluster.ts`. Every request goes
+ * through Cluster's client of the program's door (decision 0165). On Cluster the runtime runs on SQLite alone
+ * (decision 0084).
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
@@ -21,7 +22,7 @@ import * as Option from 'effect/Option'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { launchOnCluster, sharding } from '../../src/index.ts'
+import { launch, sharding } from '../../src/index.cluster.ts'
 import { Mailer, order, Payments, Warehouse } from './order.ts'
 
 const ada = { _tag: 'Customer', id: 'ada' } as const
@@ -64,7 +65,7 @@ test('a runner of Cluster creates, pays and reads the orders, each request throu
   try {
     await Effect.runPromise(
       Effect.scoped(Effect.gen(function*() {
-        const runtime = yield* launchOnCluster()
+        const runtime = yield* launch()
         const orders = yield* Effect.provide(runtime.deploy(order), world)
 
         for (const id of ['o-1', 'o-2']) {

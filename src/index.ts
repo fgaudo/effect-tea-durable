@@ -1,72 +1,10 @@
-export {
-  type Address,
-  andThen,
-  child,
-  create,
-  type Creation,
-  defect,
-  type Durable,
-  each,
-  type Each,
-  Entities,
-  forEach,
-  type IdempotencyKey,
-  type Indexes,
-  type Key,
-  InvariantDefect,
-  type Json,
-  type Keys,
-  type Meta,
-  type Migrated,
-  type Migration,
-  noWork,
-  type Runner,
-  type Runners,
-  type One,
-  operation,
-  type Origin,
-  type Part,
-  part,
-  type PartTypes,
-  type Program,
-  type Receiver,
-  type Reference,
-  reference,
-  program,
-  raise,
-  type Raised,
-  reject,
-  type Rejected,
-  type RejectedWith,
-  rejectWith,
-  type Reply,
-  type Request,
-  type Scalar,
-  type Schemas,
-  send,
-  type Step,
-  type Timer,
-  isTimer,
-  timer,
-  type Topic,
-  type Types,
-  type TypesOf,
-  type Update,
-  type Value,
-  versionOf,
-  type Work,
-} from './program.ts'
-export { digestOf } from './machine.ts'
-export {
-  accepted,
-  type Member,
-  type Outside,
-  type Pending,
-  type Rehearsal,
-  rehearse,
-  rejected,
-  type World,
-} from './rehearse.ts'
+/**
+ * The library's main entry: what a program, its boundary and an operator use on one process. A program's module
+ * alone is in `index.program.ts`, a test's helpers in `index.testing.ts`, and a launcher's on Effect Cluster in
+ * `index.cluster.ts`, so that a process imports neither Cluster nor the checks of a test unless it uses them
+ * (decision 0193).
+ */
+export * from './index.program.ts'
 export {
   type Answer,
   type ConsumerOf,
@@ -80,8 +18,8 @@ export {
   type Suspended,
   type Waiting,
 } from './runtime.ts'
-export { launch as launchOnCluster, sharding } from './cluster.ts'
 export {
+  type After,
   type Comparison,
   type Consumer,
   type Counted,
@@ -89,7 +27,6 @@ export {
   createTables,
   type Criterion,
   type Cursor,
-  type After,
   type Found,
   type Published,
   type Query,
@@ -98,12 +35,3 @@ export {
   type Suspension,
   type Tally,
 } from './storage.ts'
-export {
-  type Allows,
-  type Candidate,
-  type MigrationCase,
-  migrationViolations,
-  type MigrationViolation,
-  projectionViolations,
-  type ProjectionViolation,
-} from './testing.ts'

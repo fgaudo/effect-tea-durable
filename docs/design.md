@@ -973,7 +973,9 @@ process to settle, with nothing under way, an entity unloading included
 that what an event writes, applied to the rows before it, gives the rows after it, and
 [`src/storage.test.ts`](../src/storage.test.ts) that the storage writes those rows as given
 ([decision 0057](decisions/archive/0057-the-machine-gives-what-is-written.md)).
-[`examples/booking/runtime.test.ts`](../examples/booking/runtime.test.ts) runs two entities that talk on it.
+[`src/booking.test.ts`](../src/booking.test.ts) runs two entities that talk on it, with a probe and values frozen
+through, and [`examples/booking/runtime.test.ts`](../examples/booking/runtime.test.ts) runs them through the public
+surface alone.
 
 ## Where it departs from effect-tea
 
@@ -1108,7 +1110,7 @@ was launched in ([decision 0120](decisions/archive/0120-the-runtime-closes-a-seq
 ### On Effect Cluster
 
 On Effect Cluster, each runner runs the runtime beside Cluster's tables, in one SQLite file that every runner
-shares, on one machine. `sharding(programs)` builds a runner's `Sharding`, and `launchOnCluster` gives its runtime,
+shares, on one machine. `sharding(programs)` builds a runner's `Sharding`, and `launch` of the entry on Cluster gives its runtime,
 whose `deploy` serves each program through the program's door
 ([decisions 0081](decisions/archive/0081-on-cluster-a-step-commits-with-its-reply.md),
 [0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)). A step commits
@@ -1214,8 +1216,21 @@ it leaves to the runtime is in [`cluster.md`](cluster.md).
 The library exports
 what a program, a test and an operator use, and nothing the runtime alone uses: the machine, the storage and
 their helpers may change without a note, and a runtime on another store imports them from their modules, as the
-tests do ([decision 0055](decisions/archive/0055-the-public-surface-is-what-its-users-use.md)). A launcher on Effect
-Cluster uses `sharding` and `launchOnCluster`, which `src/cluster.ts` gives as `sharding` and `launch`.
+tests do ([decision 0055](decisions/archive/0055-the-public-surface-is-what-its-users-use.md)).
+
+The surface is four entries of the package
+([decision 0193](decisions/0193-the-public-surface-is-four-entries.md)):
+
+- `.`, [`src/index.ts`](../src/index.ts), gives what a program, its boundary and an operator use on one process;
+- `./program`, [`src/index.program.ts`](../src/index.program.ts), gives what declares a program and nothing that
+  runs it, so that a browser imports a program's module for its schemas, and `.` gives it too;
+- `./testing`, [`src/index.testing.ts`](../src/index.testing.ts), gives `rehearse`, `projectionViolations`,
+  `migrationViolations` and `digestOf`, for a user's tests;
+- `./cluster`, [`src/index.cluster.ts`](../src/index.cluster.ts), gives `sharding` and `launch`, for a launcher on
+  Effect Cluster, with `Recorded` as a type alone.
+
+A process on one machine imports neither Cluster nor the checks of a test, and a browser reaches no module of Node
+through `./program`. A test of the form of `src/` checks both.
 
 The library gives no map of an answer to a status of a protocol, since the status is the boundary's choice, and a
 boundary may not speak HTTP. A boundary matches on the `_tag` of `Creation`, `Answer` and `Operated`, with one

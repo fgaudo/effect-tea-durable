@@ -43,7 +43,10 @@ import {
   timer,
   versionOf,
 } from './program.ts'
+import * as ClusterEntry from './index.cluster.ts'
 import * as Library from './index.ts'
+import * as ProgramEntry from './index.program.ts'
+import * as TestingEntry from './index.testing.ts'
 import {
   type Answer,
   type Delivered,
@@ -4944,12 +4947,22 @@ describe('a database held by one runtime', () => {
 
 // What the runtime tells a probe is the tests' seam, and no part of the public surface (decisions 0055, 0073).
 test('a probe and its points are no part of what a user imports', () => {
-  expect(Object.keys(Library).filter((name) => ['Probe', 'Point', 'Said'].includes(name))).toEqual([])
+  for (const entry of [Library, ProgramEntry, TestingEntry, ClusterEntry]) {
+    expect(Object.keys(entry).filter((name) => ['Probe', 'Point', 'Said'].includes(name))).toEqual([])
+  }
   // @ts-expect-error `Point` is the runtime's, for its tests
   const point: Library.Point | null = null
   // @ts-expect-error `Said` too
   const said: Library.Said | null = null
   expect([point, said]).toEqual([null, null])
+})
+
+// `sharding` alone provides `Recorded`, so that a `Sharding` built without it does not launch (decision 0174): the
+// entry on Cluster names it as a type, and gives no value a launcher could build one with (decision 0193).
+test('a launcher names `Recorded` as a type, and builds none', () => {
+  expect(Object.keys(ClusterEntry)).not.toContain('Recorded')
+  const recorded: ClusterEntry.Recorded | null = null
+  expect(recorded).toBeNull()
 })
 
 test('the library reads the time and sleeps through Effect alone, which a test moves', () => {

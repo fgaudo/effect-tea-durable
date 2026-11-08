@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Changes
 [decision 0123](archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md), whose `digestOf` made
-`src/program.ts` the first module of `src/` to import from `node:`.
+`src/program.ts` the first module of `src/` to import from `node:`. `digestOf` is exported by the entry of a
+test, `./testing`, since [decision 0193](0193-the-public-surface-is-four-entries.md).
 
 ## Context
 

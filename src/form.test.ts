@@ -4,7 +4,10 @@
  * - every fork of Effect is given, as its effect, a call of `untransacted`, which takes out the transaction of the
  *   fiber that forks it (decision 0161);
  * - `src/program.ts`, which a browser imports for a program's schemas, reaches no module of Node or of Bun, through
- *   the modules of `src/` and of Effect that it imports (decision 0192);
+ *   the modules of `src/` and of Effect that it imports (decision 0192), nor does `src/index.program.ts`, the entry
+ *   a browser imports it through (decision 0193);
+ * - `src/index.ts`, the main entry, reaches through `src/` neither Effect's Cluster nor the modules of a test, which
+ *   the entries `index.cluster.ts` and `index.testing.ts` give (decision 0193);
  * - a count, a name the module both raises and lowers, is raised in the acquisition and lowered in the release of one
  *   `Effect.acquireUseRelease`, whose raise no interruption splits from its lowering (decision 0163).
  *
@@ -249,8 +252,11 @@ describe('the form of src', () => {
     expect(each(countsSplit)).toEqual([])
   })
 
-  test('src/program.ts reaches no module of Node or of Bun, through src and Effect', () => {
-    const entry = join(import.meta.dir, 'program.ts')
+  // `index.program.ts` is the entry a browser imports a program's module through (decision 0193).
+  test.each(['program.ts', 'index.program.ts'])('src/%s reaches no module of Node or of Bun, through src and Effect', (
+    module,
+  ) => {
+    const entry = join(import.meta.dir, module)
     const reached: Array<string> = []
     const found = platformModulesReached(entry, (file) => {
       reached.push(file)
@@ -259,6 +265,23 @@ describe('the form of src', () => {
     // The walk reads the modules of Effect as they are published, which is what a browser loads.
     expect(reached.some((file) => file.includes(join('node_modules', 'effect', 'dist')))).toBe(true)
     expect(found.map((line) => relative(import.meta.dir, line))).toEqual([])
+  })
+  test('src/index.ts reaches neither Cluster nor the modules of a test, through src', () => {
+    const apart = ['cluster.ts', 'rehearse.ts', 'testing.ts', 'index.cluster.ts', 'index.testing.ts']
+      .map((file) => join(import.meta.dir, file))
+    const found = platformModulesReached(
+      join(import.meta.dir, 'index.ts'),
+      // The walk reads the modules of `src/` alone: a module of Effect is named by its specifier.
+      (file) => (file.startsWith(import.meta.dir) ? readFileSync(file, 'utf8') : ''),
+      (specifier, from) => {
+        if (/^effect\/(cluster|rpc|workflow)/.test(specifier)) return specifier
+        const resolved = Bun.resolveSync(specifier, join(from, '..'))
+        return apart.includes(resolved) ? specifier : resolved
+      },
+    )
+    // `machine.ts` imports `node:crypto`, which a process on one machine has: only the modules set apart fail.
+    expect(found.filter((line) => !/: (node|bun)(:|$)/.test(line)).map((line) => relative(import.meta.dir, line)))
+      .toEqual([])
   })
 })
 
