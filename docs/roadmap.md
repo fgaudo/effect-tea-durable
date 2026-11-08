@@ -5,30 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **A README for whoever arrives from outside.** It comes before the guide, so that the guide follows the register
-  and the words the README sets, and so that the reader who checks the guide starts from a README written for them.
-  The README is now a map of the repository: its first paragraph uses incarnation, projection, topic and outbox
-  before any definition, its first diagram is the whole semantics, and the second is the modules with the storage's
-  tables, each named with `tea_` ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)).
-  The step writes it for a reader who knows TypeScript and nothing of the design: the problem before the solution,
-  an order that waits for its payment while the process restarts, the "Why" as it is, what the library is not for, a
-  comparison in one line each with Temporal, Restate, Akka Persistence and a cron over a table, and the quick start's
-  code. It says that the state is the only truth and nothing is replayed, as durable execution replays elsewhere, and
-  in what state the library is: experimental, one process on SQLite or PostgreSQL, Cluster on one machine
-  ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
-  - The section Quick start keeps both files of [`examples/quick-start`](../examples/quick-start) whole: the test
-    `the README's quick start is the code of examples/quick-start, each file whole` in
-    [`src/form.test.ts`](../src/form.test.ts) fails on a block that differs from its file
-    ([decision 0196](decisions/0196-the-quick-start-is-an-example-the-readme-shows-whole.md)).
-  - The documents, the modules and the tables move to `CONTRIBUTING.md`, with the diagram of the modules. The rule of
-    [`AGENTS.md`](../AGENTS.md) on the two diagrams moves with it, and says where each diagram now is. A change of
-    that rule is a commit to `AGENTS.md`, and no note.
-  - The README of effect-tea, `README.md` of `github.com/fgaudo/effect-tea`, is the model of its sections, since the
-    two libraries are read by the same readers. Its local copy is the working directory `effect-tea` beside this
-    repository.
-  - The guide does not exist yet. The README points to [`docs/design.md`](design.md) where it would point to the
-    guide, and the step of the guide replaces that link.
-
 - **A guide from requirements to a program.** An agent that built a backend from the documentation alone, a rental
   of bikes, learned five rules of modelling only from the examples' code. The design states each rule it rests on,
   but no document says what the rule asks of a program. A guide for whoever writes a program says each one, with
@@ -53,8 +29,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   documents alone, and what they get wrong is what the guide lacks. The reader is given a requirement no example
   holds, such as a gym membership with counted entries or a loan of books with a due date, may read the README and
   `docs/` but not `src/` nor `examples/`, and writes the program with its rehearsals. Whether the reader is a
-  subagent of the session that writes the guide is the maintainer's to say, asked before it starts. The README is
-  rewritten before the guide, by the step above.
+  subagent of the session that writes the guide is the maintainer's to say, asked before it starts. The guide
+  follows the words and the register of [`README.md`](../README.md), whose sections The problem and How a program is
+  made introduce state, `work`, operation, incarnation, projection, topic and outbox by an order. The README links
+  [`docs/design.md`](design.md) wherever it would link the guide, and the step replaces each of those links.
 
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point

@@ -40,6 +40,33 @@ tested by calling pure functions, crashes included.
 | `indexes`    | what a query across the program's entities filters and orders by, read off the projection |
 | `migrations` | how the versions before this one are read, in order                                       |
 
+An entity's loop runs every piece of the table, with its children and the bound of callers' messages:
+
+```mermaid
+flowchart LR
+  caller -->|create, with flags| init
+  init -->|Created or Rejected| caller
+  init --> state([state])
+  caller -->|inbound message, with a request id| bound{within the bound of callers' messages}
+  bound -->|yes| update
+  bound -->|no: Full| caller
+  update -->|Accepted, Rejected or Suspended| caller
+  update --> state
+  update -->|wrapped message| child[a child's update]
+  child -->|raised event| onEvent
+  onEvent --> state
+  child --> state
+  state --> work[work, by key, the children's included]
+  work -->|operations| runner[runners]
+  work -->|timers| timers
+  runner -->|completion, same incarnation| update
+  timers -->|firing, same incarnation| update
+  runner -->|send, create| other[another entity]
+  state --> project
+  project -->|projection| read[read, query, count, sum, countBy]
+  project -->|a row in each topic whose selection changes| outbox
+```
+
 A program is declared in one place, `program(schemas)(…)`: the schemas first, which give every type the program
 is written in, and then what it does. Everything else is inferred from the pieces — the keys `work` may use,
 the messages each kind of operation answers, the names a query may order by, and the services the operations run
