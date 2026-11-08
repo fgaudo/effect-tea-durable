@@ -16,11 +16,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   ([decision 0186](decisions/0186-a-rehearsal-names-the-work-by-its-key.md)), a rehearsal that moves time
   ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)), the types of a program, exported
   ([decision 0188](decisions/0188-typesof-gives-a-programs-types.md)), and a world's services, mocked
-  ([decision 0189](decisions/0189-a-world-asks-a-run-for-every-service-of-its-program.md)). Next: a caller's answer
-  over HTTP, which begins in [`examples/server/server.ts`](../examples/server/server.ts).
-  - **A caller's answer over HTTP.** A boundary maps each `Answer` and `Creation` to a status of HTTP, and each
-    application writes the map again from [`examples/server/server.ts`](../examples/server/server.ts). The step
-    decides whether the library gives the map, or whether the example stays the template.
+  ([decision 0189](decisions/0189-a-world-asks-a-run-for-every-service-of-its-program.md)), and a caller's answer
+  over HTTP ([decision 0190](decisions/0190-a-boundary-maps-each-answer-to-its-protocol.md)). Next: `createTables`
+  and `launch`, which begins in [`src/runtime.ts`](../src/runtime.ts) and [`src/storage.ts`](../src/storage.ts).
   - **`createTables` and `launch`.** Every example calls both. Either `launch` creates the tables, or the README says
     why it does not.
   - **`digestOf` out of the pure core.** [`src/program.ts`](../src/program.ts) imports `node:crypto` for the digest

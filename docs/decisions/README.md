@@ -95,6 +95,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0187](0187-a-rehearsal-moves-time-by-a-duration.md) | A rehearsal moves time by a duration with `advance`, and fires the timers due within it (proposed) |  |
 | [0188](0188-typesof-gives-a-programs-types.md) | `TypesOf` gives a program's types, of the program or of a reference to it (proposed) |  |
 | [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md) | A world asks a run for every service of its program, and a test mocks the ones it does not run (proposed) |  |
+| [0190](0190-a-boundary-maps-each-answer-to-its-protocol.md) | A boundary maps each answer to its protocol, with one entry for each tag (proposed) |  |
 
 ## Operations and timers
 

@@ -29,13 +29,22 @@ import {
   HttpServerRequest,
   HttpServerRespondable,
   HttpServerResponse,
+  HttpStatus,
 } from 'effect/http'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Schedule from 'effect/Schedule'
 import * as Schema from 'effect/Schema'
 import { RpcSerialization, RpcServer } from 'effect/rpc'
-import { type Handle, launchOnCluster, sharding, type TypesOf } from '../../src/index.ts'
+import {
+  type Answer,
+  type Creation,
+  type Handle,
+  launchOnCluster,
+  type Operated,
+  sharding,
+  type TypesOf,
+} from '../../src/index.ts'
 import { Mailer, order, Payments, type Sender, Warehouse } from '../order/order.ts'
 
 /**
@@ -181,23 +190,38 @@ const operator = Effect.flatMap(
 
 const id = Effect.map(HttpRouter.schemaPathParams(Schema.Struct({ id: Schema.NonEmptyString })), ({ id }) => id)
 
+/** Every answer the routes give: of a create, of a send, and of an operator's resume or discard. */
+type Answered = Creation<unknown> | Answer<unknown> | Operated
+
 /**
- * The status of each answer. A suspended order is answered `409` and not `503`: an HTTP client retries a `503` as
- * transient, and a suspended order waits for an operator.
+ * The status of each answer, one for each tag, so that a tag the library adds fails to compile here
+ * (decision 0190). A suspended order is answered `409` and not `503`, since an HTTP client retries a `503` as
+ * transient, and a suspended order waits for an operator. A full entity is answered `503`, since its caller retries
+ * later under the same request id.
  */
-const status: Readonly<Record<string, number>> = {
-  Created: 201,
-  Rejected: 409,
-  NotFound: 404,
-  Suspended: 409,
-  StillSuspended: 409,
-  NotSuspended: 409,
-  NotDiscarded: 409,
-}
+const status = {
+  Created: 'Created',
+  AlreadyExists: 'Conflict',
+  Accepted: 'OK',
+  Rejected: 'Conflict',
+  NotFound: 'NotFound',
+  Suspended: 'Conflict',
+  Full: 'ServiceUnavailable',
+  Resumed: 'OK',
+  Discarded: 'OK',
+  NotDiscarded: 'Conflict',
+  StillSuspended: 'Conflict',
+  NotSuspended: 'Conflict',
+} as const satisfies Readonly<Record<Answered['_tag'], HttpStatus.Literal>>
 
-const answer = (body: Readonly<{ _tag: string }>) => HttpServerResponse.json(body, { status: status[body._tag] ?? 200 })
+const answer = (body: Answered) =>
+  HttpServerResponse.json(body, {
+    status: HttpStatus.fromLiteral(status[body._tag]),
+    headers: body._tag === 'Full' ? { 'retry-after': '1' } : undefined,
+  })
 
-const Creation = Schema.Struct({ totalInCents: Schema.Int })
+/** The body of a create: the order's total. */
+const NewOrder = Schema.Struct({ totalInCents: Schema.Int })
 
 const routes = Layer.mergeAll(
   HttpRouter.add('GET', '/health', HttpServerResponse.text('ok')),
@@ -207,7 +231,7 @@ const routes = Layer.mergeAll(
     Effect.gen(function*() {
       const { sender, requestId } = yield* request
       if (sender._tag !== 'Customer') return yield* new Refused({ status: 403, reason: 'only a customer orders' })
-      const { totalInCents } = yield* HttpServerRequest.schemaBodyJson(Creation)
+      const { totalInCents } = yield* HttpServerRequest.schemaBodyJson(NewOrder)
       const orders = yield* Orders
       const flags = { order: { customer: sender.id, totalInCents } }
       return yield* answer(yield* orders.create(yield* id, flags, { sender, requestId }))

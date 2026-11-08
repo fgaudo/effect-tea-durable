@@ -1210,3 +1210,9 @@ what a program, a test and an operator use, and nothing the runtime alone uses: 
 their helpers may change without a note, and a runtime on another store imports them from their modules, as the
 tests do ([decision 0055](decisions/archive/0055-the-public-surface-is-what-its-users-use.md)). A launcher on Effect
 Cluster uses `sharding` and `launchOnCluster`, which `src/cluster.ts` gives as `sharding` and `launch`.
+
+The library gives no map of an answer to a status of a protocol, since the status is the boundary's choice, and a
+boundary may not speak HTTP. A boundary matches on the `_tag` of `Creation`, `Answer` and `Operated`, with one
+entry for each tag that the compiler checks, so that a tag the library adds fails to compile in the boundary.
+[`examples/server/server.ts`](../examples/server/server.ts) is the template over HTTP
+([decision 0190](decisions/0190-a-boundary-maps-each-answer-to-its-protocol.md)).
