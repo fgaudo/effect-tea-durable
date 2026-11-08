@@ -253,7 +253,7 @@ export const order = program({
   durable: (state) =>
     Match.valueTags(state, {
       AwaitingPayment: ({ deadline }) => ({
-        'payment-deadline': timer<Internal>(deadline, { _tag: 'PaymentDeadlinePassed' }),
+        'payment-deadline': timer(deadline, { _tag: 'PaymentDeadlinePassed' }),
       }),
       Charging: ({ order, payment }) => ({
         charge: Operation.cases.Charge.make({ payment, totalInCents: order.totalInCents }),

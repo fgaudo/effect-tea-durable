@@ -250,9 +250,9 @@ export const subscription = program({
 
   durable: (state) =>
     Match.valueTags(state, {
-      Active: ({ account }) => ({ renewal: timer<Internal>(paidUntil(account), { _tag: 'RenewalDue' }) }),
+      Active: ({ account }) => ({ renewal: timer(paidUntil(account), { _tag: 'RenewalDue' }) }),
       Charging: ({ charge }) => ({ charge: Operation.cases.Charge.make(charge) }),
-      PastDue: ({ retryAt }) => ({ retry: timer<Internal>(retryAt, { _tag: 'RetryDue' }) }),
+      PastDue: ({ retryAt }) => ({ retry: timer(retryAt, { _tag: 'RetryDue' }) }),
       Cancelled: () => noWork,
     }),
 

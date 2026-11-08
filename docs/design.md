@@ -243,7 +243,9 @@ Two kinds of work exist.
   services hold `Entities` does not compile, and the runtime's check is for one that escapes the type
   ([decision 0129](decisions/archive/0129-a-droppable-runner-that-sends-does-not-compile.md)).
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
-  nothing yet.
+  nothing yet. `timer(at, message)` takes no type parameter: the message keeps its literal tag, and `durable`
+  checks it against the program's internal messages
+  ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)).
 
 A stream from a socket or a feed is no work of a program, since it dies with the process. The boundary reads it,
 and sends each item as an inbound message, under a request id it derives from the item's offset or id, so that an

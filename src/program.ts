@@ -328,7 +328,12 @@ export interface Timer<Message> {
   readonly message: Message
 }
 
-export const timer = <Message>(at: DateTime.Utc, message: Message): Timer<Message> => ({
+/**
+ * A timer that sends `message` to its entity at `at`. `Message` is `const`, so that a message's tag stays its literal
+ * where nothing gives the call a type to infer from, as in a branch of `Match.valueTags`. `durable` checks it against
+ * the program's internal messages (decision 0181).
+ */
+export const timer = <const Message>(at: DateTime.Utc, message: Message): Timer<Message> => ({
   [TimerTypeId]: TimerTypeId,
   at,
   message,

@@ -7,11 +7,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 - **The API before the release.** Each point is a note, and the examples change with it. A point done is out of
   this list, and its note is `proposed` until the step is taken. Done: the defaults for what a program does not
-  have ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)). Next: a timer without its
-  type parameter, which begins in `timer` of [`src/program.ts`](../src/program.ts).
-  - **A timer without its type parameter.** Every example with a timer writes `timer<Internal>(…)`, and `update` writes
-    `Match.withReturnType<State | Rejected>()`. The internal messages are in the schemas already: a `timer` typed by
-    the program, or a `durable` that propagates the type, needs neither.
+  have ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)), and a timer without its type
+  parameter ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)). Next: `init` that rejects, which
+  begins in `Pieces` and `init` of [`src/program.ts`](../src/program.ts) and in the `Create` event of [`src/machine.ts`](../src/machine.ts).
   - **`init` that rejects.** A creation is `Created` or a defect, so a rule of the domain at creation lives in the
     schema of the flags or at the boundary ([decision 0124](decisions/archive/0124-the-boundary-authenticates-and-update-authorizes.md)).
     An `init` that returns `Rejected`, answered by `create` as `update`'s is by `send`, has the one form.

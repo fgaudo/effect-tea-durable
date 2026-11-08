@@ -6,9 +6,10 @@
  */
 import { expect, test } from 'bun:test'
 import * as Context from 'effect/Context'
-import type * as DateTime from 'effect/DateTime'
+import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
 import {
   checkProgram,
@@ -23,6 +24,7 @@ import {
   part,
   type Program,
   program,
+  timer,
   type Topic,
 } from './program.ts'
 import type { Rehearsal } from './rehearse.ts'
@@ -322,6 +324,49 @@ test('durable is left out only with no key, and operations only with no kind of 
   const runnerless = program(schemas)({ ...pieces, keys: { charge: null }, durable: () => ({ charge }) })
   const whole = program(schemas)({ ...pieces, keys: { charge: null }, durable: () => ({ charge }), operations: runners })
   expect([workless, runnerless, whole]).toHaveLength(3)
+})
+
+test('a timer needs no type parameter: its message keeps its tag, and durable checks it (decision 0181)', () => {
+  const Doors = Schema.Union([
+    Schema.TaggedStruct('Open', { closesAt: Schema.DateTimeUtcFromMillis }),
+    Schema.TaggedStruct('Closed', {}),
+  ])
+  const doors = program({
+    ...schemas,
+    state: Doors,
+    internal: Schema.TaggedStruct('Closing', { doors: Schema.Array(Schema.String) }),
+    operation: Schema.Never,
+  })
+  const pieces = {
+    name: 'Doors',
+    keys: { closing: null },
+    init: () => ({ _tag: 'Closed' }) as const,
+    update: () => () => ({ _tag: 'Closed' }) as const,
+    project: () => null,
+  } as const
+  // A branch of `Match.valueTags` gives the call no type, so a tag that widened would be any string.
+  const typed = doors({
+    ...pieces,
+    durable: (state) =>
+      Match.valueTags(state, {
+        Open: ({ closesAt }) => ({ closing: timer(closesAt, { _tag: 'Closing', doors: ['front'] }) }),
+        Closed: () => noWork,
+      }),
+  })
+  const misspelt = doors({
+    ...pieces,
+    durable: (state) =>
+      // @ts-expect-error `Closin` is no internal message of the program
+      Match.valueTags(state, {
+        Open: ({ closesAt }) => ({ closing: timer(closesAt, { _tag: 'Closin', doors: ['front'] }) }),
+        Closed: () => noWork,
+      }),
+  })
+  const at = DateTime.makeUnsafe(0)
+  expect(typed.durable({ _tag: 'Open', closesAt: at })).toEqual({
+    closing: timer(at, { _tag: 'Closing', doors: ['front'] }),
+  })
+  expect(misspelt).toBeDefined()
 })
 
 test('a rehearsal and a query name only the keys and the indexes the program declares (decisions 0032, 0033)', () => {

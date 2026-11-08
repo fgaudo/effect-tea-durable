@@ -197,7 +197,7 @@ export const booking = program({
   durable: (state) =>
     Match.valueTags(state, {
       Holding: ({ booking }) => ({ hold: Operation.cases.Hold.make({ event: booking.event, seats: booking.seats }) }),
-      Held: ({ booking }) => ({ deadline: timer<Internal>(booking.deadline, { _tag: 'DeadlinePassed' }) }),
+      Held: ({ booking }) => ({ deadline: timer(booking.deadline, { _tag: 'DeadlinePassed' }) }),
       Confirming: ({ booking }) => ({ confirm: Operation.cases.Confirm.make({ event: booking.event }) }),
       Releasing: ({ booking }) => ({ release: Operation.cases.Release.make({ event: booking.event }) }),
       Confirmed: () => noWork,
