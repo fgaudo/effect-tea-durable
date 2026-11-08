@@ -523,8 +523,8 @@ export interface Program<T extends Types, Name extends string = string> {
   readonly name: Name
   /**
    * Every key the program's work is held under, with the schema of its parameter, or null for a key without one:
-   * the record `program` makes of the declaration's list (decision 0197). The machine checks `work` against them (decisions 0037, 0132), and a deploy that renames one is a change of
-   * the type (decision 0033).
+   * the record `program` makes of the declaration's list (decision 0197). The machine checks `work` against them
+   * (decisions 0037, 0132), and a deploy that renames one is a change of the type (decision 0033).
    */
   readonly keys: Keys<T['key'], T['parameter']>
   readonly schemas: Schemas<
@@ -1493,13 +1493,14 @@ const isKeyWithParameter = (entry: unknown): entry is KeyWithParameter<string, u
  * twice is refused where it is declared, with or without a parameter (decision 0197).
  */
 const keysOf = (list: DeclaredKeys): UntypedDeclaration['keys'] => {
-  const keys: Record<string, Schema.Codec<unknown, Json> | null> = {}
+  const keys = new Map<string, Schema.Codec<unknown, Json> | null>()
   for (const entry of list) {
     const [name, schema] = isKeyWithParameter(entry) ? [entry.name, entry.parameter] : [entry, null]
-    if (Object.hasOwn(keys, name)) defect(`a declaration lists the key '${name}' twice`)
-    keys[name] = schema
+    if (keys.has(name)) defect(`a declaration lists the key '${name}' twice`)
+    keys.set(name, schema)
   }
-  return Object.freeze(keys)
+  // An assignment to `__proto__` sets the prototype, where `Object.fromEntries` defines a key of that name.
+  return Object.freeze(Object.fromEntries(keys))
 }
 
 /** The declaration with its keys a record, each record left out empty, and `work` left out holding no work. */

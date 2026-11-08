@@ -592,4 +592,7 @@ test('a name listed twice among the keys is refused where it is declared, with o
   expect(declare(['charge', key('charge', Schema.String)])).toThrow("a declaration lists the key 'charge' twice")
   expect(declare(['charge', key('fee', Schema.String)])).not.toThrow()
   expect(declare(['charge', key('fee', Schema.String)])().keys as unknown).toEqual({ charge: null, fee: Schema.String })
+  // An assignment to `__proto__` would set the record's prototype, and leave the key undeclared.
+  expect(Object.keys(declare(['__proto__'])().keys)).toEqual(['__proto__'])
+  expect(declare(['__proto__', '__proto__'])).toThrow("a declaration lists the key '__proto__' twice")
 })
