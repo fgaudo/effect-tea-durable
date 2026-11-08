@@ -3882,6 +3882,24 @@ describe('publishing what happened', () => {
           expect((yield* toy.feed('projection', 'queue', all)).length).toBe(1)
         }))
     })))
+
+  test('a reader of consume without a wait ends once the runtime stops, and leaves the rows it did not read', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const toy = yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          return toy
+        }))
+      // The runtime has stopped with a row unread: the reader reads no page, and the row stays for the next
+      // runtime's reader (decision 0184).
+      const handled: Array<number> = []
+      yield* toy.consume('projection', 'queue', (page) => Effect.sync(() => handled.push(page.length)), { limit: all })
+      expect(handled).toEqual([])
+      expect((yield* toy.feed('projection', 'queue', all)).length).toBe(1)
+    })))
 })
 
 describe('a schema that changes', () => {
@@ -5492,6 +5510,28 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
         yield* TestClock.adjust('200 millis')
         const rows = yield* Fiber.join(waiting)
         expect(rows.map(({ value }) => value)).toEqual([1])
+      }), 200, false))), 10_000)
+
+  test('a reader of consume that waits is given each row another runner commits, within the interval', () =>
+    database(Effect.scoped(twoRunners((reader, commit) =>
+      Effect.gen(function*() {
+        const handled: Array<number> = []
+        const consuming = yield* running(
+          reader.consume('projection', 'queue', (page) => Effect.sync(() => handled.push(...page.map(({ value }) => value))), {
+            limit: all,
+            wait: true,
+          }),
+        )
+        // The reader waits with no time limit, and the watcher wakes it at the next interval, page after page
+        // (decision 0184).
+        for (const [request, seen] of [['m1', [1]], ['m2', [1, 2]]] as const) {
+          yield* commit(request)
+          yield* TestClock.adjust('200 millis')
+          expect(handled).toEqual([...seen])
+        }
+        expect(consuming.pollUnsafe()).toBeUndefined()
+        expect(yield* reader.feed('projection', 'queue', all)).toEqual([])
+        yield* Fiber.interrupt(consuming)
       }), 200, false))), 10_000)
 
   test('a reading interrupted as it begins its wait leaves the watcher still, under every schedule of one deviation', () => {

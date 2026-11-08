@@ -183,7 +183,8 @@ trusts it, and never compares `meta.at` with the deadline. Another node's clock 
 behind.
 
 An entity is created by a request of its own, with its flags, answered `Created` once and `AlreadyExists`
-after, or `Rejected` where its program's `init` rejects the flags, as the paragraph after this one says. A message to an entity that does not exist is answered `NotFound`, and creates nothing
+after, or `Rejected` where its program's `init` rejects the flags, as the paragraph after this one says. A
+message to an entity that does not exist is answered `NotFound`, and creates nothing
 ([decision 0012](decisions/archive/0012-creation-is-a-request-of-its-own.md),
 [decision 0017](decisions/archive/0017-creation-in-the-machine.md)). A creation and a message may share a request id,
 and each is answered apart ([decision 0050](decisions/archive/0050-a-creation-is-answered-apart-from-a-message.md)). `init`
@@ -778,8 +779,8 @@ consumers and is not an archive: a program whose past must stay readable keeps i
 state or in entities of its own.
 `consume(topic, consumer, handler, { limit })` runs the loop of a consumer: it reads a page with `feed`, runs
 `handler` on it and acks it in one transaction of the client the runtime was launched with, and reads the next
-page only once that one is acked. Without `wait` it ends at the first page that is empty. Given `wait: true`, a
-reading that finds no row waits for a commit in the topic with no time limit, and the reader ends only when the
+page only once that one is acked. Without `wait` it ends at the first page that is empty, or once the runtime
+stops, and the rows it did not read stay for the next reader. Given `wait: true`, a reading that finds no row waits for a commit in the topic with no time limit, and the reader ends only when the
 runtime stops. A failure of `handler` or of the transaction rolls the page back and fails the reader, and the
 caller retries it. A reader within a transaction of the client is the caller's defect, since its wait would hold
 the connection the commit that ends it waits for

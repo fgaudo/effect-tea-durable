@@ -26,7 +26,9 @@ consumer of a deployment. Three of its rules are easy to miss:
   `feed`, gives it to `handler`, and acks it, `handler` and the ack in one transaction of the client the runtime was
   launched with. Then it reads the next page. A store that `handler` writes on that client commits with the
   cursors. `handler` is given no empty page.
-- **Without `wait`, the reader ends at the first page that is empty.** That is what a test or a batch runs.
+- **Without `wait`, the reader ends at the first page that is empty, or once the runtime stops.** That is what a
+  test or a batch runs. A reader that ends at the stop leaves the rows it did not read to the next reader, since
+  its cursors are where its last ack left them.
 - **Given `wait: true`, the reader ends only when the runtime stops.** A reading that finds no row waits for a
   commit in the topic, with no time limit, as `feed` waits within its time. That is what a deployment runs, forked in
   its scope. A wait with a time limit would only make the reader read again, since an empty page does not end a reader
@@ -49,6 +51,11 @@ consumer of a deployment. Three of its rules are easy to miss:
   [`src/runtime.test.ts`](../../src/runtime.test.ts), on SQLite and PGlite.
 - That a reader that waits is woken by a commit, waits past any time, and ends when the runtime stops: **tested** by
   `a reader of consume that waits is given the rows steps commit, and ends when the runtime stops` in
+  [`src/runtime.test.ts`](../../src/runtime.test.ts), on one process. On Cluster, that the watcher wakes it at the
+  next interval for a commit of another runner, page after page: **tested** by `a reader of consume that waits is
+  given each row another runner commits, within the interval` in the same file.
+- That a reader without a wait ends once the runtime stops, and reads no page then: **tested** by `a reader of
+  consume without a wait ends once the runtime stops, and leaves the rows it did not read` in
   [`src/runtime.test.ts`](../../src/runtime.test.ts).
 - That a reader within a transaction, a limit of 0 and a wait that is not `true` are refused before anything is
   read: **tested** by `a reader of consume within a transaction, of a limit of 0, or of a wait that is not true is
