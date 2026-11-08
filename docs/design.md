@@ -872,12 +872,16 @@ dies:
 - `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity;
 - `pending(key)` finds the work under way under one of the program's keys, with its idempotency key and its
   value, which a test asserts as it asserts a command in effect-tea. A key with a parameter takes it too:
-  `pending('charge', 'line-7')`;
+  `pending('charge', 'line-7')`. It fails the test when there is none, and `underWay(key)` gives null instead;
 - `answer(pending, message)` completes an operation, and says whether the message was delivered or dropped. It
   fails the test when the step that handles the message returns the same operation under its key, since that
   operation would run again at once, turn after turn, with no pause
   ([decision 0130](decisions/archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md));
 - `fire(pending)` fires a timer;
+- `answer`, `fire` and a member's `run` take a key in place of the pending, with its parameter for a key that takes
+  one: `answer('charge', message)` acts on the work under way under the key, in its current incarnation. A test
+  keeps a pending to act on an incarnation that has moved on, and sees its message dropped
+  ([decision 0186](decisions/0186-a-rehearsal-names-the-work-by-its-key.md));
 - `restart` drops everything that is not stored, and activates the entity again: an at-most-once operation
   under way delivers its `unknown` message. It rehearses a passivation too, which is the same thing — on an
   entity with only timers under way, where nothing delivers an `unknown`
@@ -911,8 +915,8 @@ machine, with one time and one process for all of them
   restart is given the stored reply. A receiver that does not exist answers `NotFound`, and `create` creates an
   entity in the world. A `create` through a reference fails the test where the world runs no program of its name,
   since a reference brings no code to run ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md));
-- `run(pending, { crash: true })` runs the runner to its end, drops its message, and restarts the world: the
-  process died between the replies and the completion;
+- `run(pending, { crash: true })`, or `run(key, { crash: true })`, runs the runner to its end, drops its message,
+  and restarts the world: the process died between the replies and the completion;
 - `world.restart` restarts every entity, and `world.deploy(program)` restarts them with a new version of one
   program.
 

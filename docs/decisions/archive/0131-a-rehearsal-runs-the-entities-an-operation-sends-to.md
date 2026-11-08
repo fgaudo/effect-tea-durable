@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-11-04. Decides the open question on rehearsing entities together, which
 [decision 0009](0009-entities-talk-through-operations.md) left open. [Decision 0183](../0183-a-receiver-is-named-by-a-reference.md)
 changes what a world runs. A runner's `create` that names a program by a reference fails the test where the world
-runs no program of that name, since a reference brings no code.
+runs no program of that name, since a reference brings no code. [Decision 0186](../0186-a-rehearsal-names-the-work-by-its-key.md)
+gives `run` a key in place of the pending.
 
 ## Context
 

@@ -12,12 +12,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   ([decision 0182](decisions/0182-init-may-reject-the-flags.md)), a receiver named by a reference
   ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md)), `consume`
   ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)), and `inspect`
-  ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)). Next: a rehearsal in fewer
-  words, which begins in `answer`, `fire` and `pending` of [`src/rehearse.ts`](../src/rehearse.ts).
-  - **A rehearsal in fewer words.** `answer(yield* pending('charge'), message)` recurs in every scenario: `answer`
-    and `fire` take a key too, and the pending stays for who asserts it. A test that asserts that a key holds no
-    work wraps `pending` in `Effect.exit`, since `pending` fails where there is none. A reading that gives the work
-    or nothing asserts it in one line.
+  ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)), and a rehearsal in fewer words
+  ([decision 0186](decisions/0186-a-rehearsal-names-the-work-by-its-key.md)). Next: a rehearsal that moves the
+  clock, which begins in `send` and `fire` of [`src/rehearse.ts`](../src/rehearse.ts).
   - **A rehearsal that moves the clock.** The time of a rehearsal moves only to the time of a timer that fires. So a
     rule that reads the time between two inbound messages, a price by the hours ridden, cannot be rehearsed. Its
     test calls `update` with a `meta` it builds. `send` that takes a time, or an act that moves the clock forward,

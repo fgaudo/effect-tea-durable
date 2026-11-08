@@ -89,7 +89,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) | A reply is keyed by the version that wrote it |  |
 | [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes | [0182](0182-init-may-reject-the-flags.md) |
 | [0125](archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) | A caller's reply is kept as long as its boundary says, from the step that answers | [0165](archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) |
-| [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md) |
+| [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md), [0186](0186-a-rehearsal-names-the-work-by-its-key.md) |
+| [0186](0186-a-rehearsal-names-the-work-by-its-key.md) | A rehearsal names the work by its key, and `underWay` gives it or null (proposed) |  |
 | [0183](0183-a-receiver-is-named-by-a-reference.md) | A receiver is named by a reference, which carries its program's name and types and none of its code (proposed) |  |
 
 ## Operations and timers

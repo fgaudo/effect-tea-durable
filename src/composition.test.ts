@@ -552,7 +552,7 @@ test('a child by id removed and added again does not get the answer of its earli
       yield* rehearsal.send({ _tag: 'LineAdded', id: 'a' }, null)
       yield* rehearsal.send({ _tag: 'Line', id: 'a', message: { _tag: 'ReminderSet', who: 'ann' } }, null)
       expect(yield* rehearsal.fire(earlier)).toBe('Dropped')
-      expect(yield* rehearsal.fire(yield* rehearsal.pending('Line.reminder', ['a', 'ann']))).toBe('Delivered')
+      expect(yield* rehearsal.fire('Line.reminder', ['a', 'ann'])).toBe('Delivered')
       expect((yield* rehearsal.state).lines['a']!.reminders).toEqual([])
     }),
   )))

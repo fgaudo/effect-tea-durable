@@ -26,10 +26,10 @@ describe('subscription', () => {
       subscription,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
+        yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
         expect((yield* rehearsal.projection).paidUntil).toBe(millis('2026-02-28T10:00:00Z'))
-        yield* rehearsal.fire(yield* rehearsal.pending('renewal'))
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
+        yield* rehearsal.fire('renewal')
+        yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
         expect((yield* rehearsal.projection).paidUntil).toBe(millis('2026-03-31T10:00:00Z'))
       }),
     )))
@@ -39,7 +39,7 @@ describe('subscription', () => {
       subscription,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
+        yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
         yield* rehearsal.send({ _tag: 'CreditGranted', amountInCents: 2_000 }, support)
         const first = yield* rehearsal.pending('renewal')
         expect(yield* rehearsal.fire(first)).toBe('Delivered')
@@ -56,10 +56,10 @@ describe('subscription', () => {
       subscription,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
+        yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
         yield* rehearsal.send({ _tag: 'PlanChangeRequested', plan: { name: 'Pro', priceInCents: 1_900 } }, ada)
         expect((yield* rehearsal.projection).plan.name).toBe('Basic')
-        yield* rehearsal.fire(yield* rehearsal.pending('renewal'))
+        yield* rehearsal.fire('renewal')
         expect(yield* rehearsal.projection).toMatchObject({ plan: { name: 'Pro' }, nextPlan: null })
       }),
     )))
@@ -69,11 +69,11 @@ describe('subscription', () => {
       subscription,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeDeclined' })
-        yield* rehearsal.fire(yield* rehearsal.pending('retry'))
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeDeclined' })
-        yield* rehearsal.fire(yield* rehearsal.pending('retry'))
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeDeclined' })
+        yield* rehearsal.answer('charge', { _tag: 'ChargeDeclined' })
+        yield* rehearsal.fire('retry')
+        yield* rehearsal.answer('charge', { _tag: 'ChargeDeclined' })
+        yield* rehearsal.fire('retry')
+        yield* rehearsal.answer('charge', { _tag: 'ChargeDeclined' })
         expect(yield* rehearsal.state).toMatchObject({ _tag: 'Cancelled', reason: 'Unpaid' })
       }),
     )))
@@ -83,11 +83,11 @@ describe('subscription', () => {
       subscription,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeDeclined' })
+        yield* rehearsal.answer('charge', { _tag: 'ChargeDeclined' })
         const retry = yield* rehearsal.pending('retry')
         expect(yield* rehearsal.send({ _tag: 'PaymentMethodUpdated', payment: 'card-2' }, ada)).toEqual(accepted)
         expect(yield* rehearsal.fire(retry)).toBe('Dropped')
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
+        yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
         expect((yield* rehearsal.state)._tag).toBe('Active')
       }),
     )))
@@ -113,10 +113,10 @@ describe('subscription', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toEqual(accepted)
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
+        yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
         // The period is paid: the subscription ends with it.
         expect(yield* rehearsal.projection).toMatchObject({ status: 'Active', canResume: true })
-        yield* rehearsal.fire(yield* rehearsal.pending('renewal'))
+        yield* rehearsal.fire('renewal')
         expect(yield* rehearsal.state).toMatchObject({ _tag: 'Cancelled', reason: 'ByCustomer' })
       }),
     )))
@@ -126,7 +126,7 @@ describe('subscription', () => {
       subscription,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded' })
+        yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
         const before = yield* rehearsal.pending('renewal')
         yield* rehearsal.restart
         const after = yield* rehearsal.pending('renewal')

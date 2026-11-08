@@ -64,14 +64,14 @@ describe('cart', () => {
         // A line reserving its stock cannot be removed: only the reservation's answer leaves that state.
         expect(yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }, null))
           .toMatchObject(rejected)
-        yield* rehearsal.answer(yield* rehearsal.pending('Line.reserve', 'mug'), {
+        yield* rehearsal.answer('Line.reserve', 'mug', {
           _tag: 'Line',
           id: 'mug',
           message: { _tag: 'StockReserved', reservation: 'r-1' },
         })
         yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }, null)
         expect((yield* rehearsal.state).lines['mug']?._tag).toBe('Releasing')
-        yield* rehearsal.answer(yield* rehearsal.pending('Line.release', 'mug'), {
+        yield* rehearsal.answer('Line.release', 'mug', {
           _tag: 'Line',
           id: 'mug',
           message: { _tag: 'StockReleased' },

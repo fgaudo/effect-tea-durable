@@ -44,6 +44,12 @@ export interface Pending<Work = unknown> {
   readonly work: Work
 }
 
+/** The parameter a key takes after its name, or nothing for a key without one (decision 0132). */
+type Parameter<T extends Types, K> = K extends keyof T['parameter'] ? [parameter: T['parameter'][K]] : []
+
+/** The work under way under a key of `T`, as `pending` gives it. */
+type PendingOf<T extends Types> = Pending<Durable<T['operation'], T['internal']>>
+
 /** What a rehearsal does to one entity, whether it runs alone or in a world. */
 interface Acts<T extends Types> {
   readonly state: Effect.Effect<T['state']>
@@ -59,17 +65,27 @@ interface Acts<T extends Types> {
    * The work under way under `key`, one of the program's own (decision 0033), with its parameter for a key that
    * takes one (decision 0132). Fails the test when there is none.
    */
-  readonly pending: <K extends T['key']>(
-    key: K,
-    ...parameter: K extends keyof T['parameter'] ? [parameter: T['parameter'][K]] : []
-  ) => Effect.Effect<Pending<Durable<T['operation'], T['internal']>>>
+  readonly pending: <K extends T['key']>(key: K, ...parameter: Parameter<T, K>) => Effect.Effect<PendingOf<T>>
+  /** The work under way under `key`, as `pending` gives it, or null when there is none (decision 0186). */
+  readonly underWay: <K extends T['key']>(key: K, ...parameter: Parameter<T, K>) => Effect.Effect<PendingOf<T> | null>
   /**
    * Completes an operation with `message`. It is dropped when the operation's incarnation has moved on. It fails the
    * test when the step that handles it returns the same operation under its key, which would run again at once.
+   * Given a key, it completes the work under way under the key, and fails the test when there is none
+   * (decision 0186).
    */
-  readonly answer: (pending: Pending, message: T['internal']) => Effect.Effect<'Delivered' | 'Dropped'>
-  /** The time of a timer comes. */
-  readonly fire: (pending: Pending) => Effect.Effect<'Delivered' | 'Dropped'>
+  readonly answer: {
+    <K extends T['key']>(
+      key: K,
+      ...rest: [...parameter: Parameter<T, K>, message: T['internal']]
+    ): Effect.Effect<'Delivered' | 'Dropped'>
+    (pending: Pending, message: T['internal']): Effect.Effect<'Delivered' | 'Dropped'>
+  }
+  /** The time of a timer comes. Given a key, it is the timer under way under the key's (decision 0186). */
+  readonly fire: {
+    <K extends T['key']>(key: K, ...parameter: Parameter<T, K>): Effect.Effect<'Delivered' | 'Dropped'>
+    (pending: Pending): Effect.Effect<'Delivered' | 'Dropped'>
+  }
 }
 
 export interface Rehearsal<T extends Types> extends Acts<T> {
@@ -104,6 +120,15 @@ export interface Member<T extends Types> extends Acts<T> {
      * the runner was given and the completion. The next run of the operation is given the stored replies.
      */
     (pending: Pending, options: Readonly<{ crash: true }>): Effect.Effect<void, never, Outside<T>>
+    /** Runs the operation under way under `key`, and fails the test when there is none (decision 0186). */
+    <K extends T['key']>(
+      key: K,
+      ...parameter: Parameter<T, K>
+    ): Effect.Effect<'Delivered' | 'Dropped', never, Outside<T>>
+    <K extends T['key']>(
+      key: K,
+      ...rest: [...parameter: Parameter<T, K>, options: Readonly<{ crash: true }>]
+    ): Effect.Effect<void, never, Outside<T>>
   }
 }
 
@@ -362,6 +387,44 @@ const makeWorld = (at: DateTime.Utc) => {
     })
 
   const memberOf = <T extends Types>(entity: Entity<T>): Member<T> => {
+    /** The work under way under the key `name`, with its parameter for a key that takes one, or null. */
+    const underWay = (name: T['key'], parameter: unknown) =>
+      Effect.sync((): PendingOf<T> | null => {
+        const key = Machine.keyOf(programOf(entity), name, parameter)
+        const running = entity.machine.running[Machine.keyText(key)]
+        const work = entity.machine.stored.keys[Machine.keyText(key)]?.work
+        return running === undefined || work === undefined ? null : {
+          key,
+          incarnation: running.incarnation,
+          idempotencyKey: Machine.idempotencyKeyOf(entity.machine, key, running.incarnation),
+          work,
+        }
+      })
+
+    const pending = (name: T['key'], parameter: unknown) =>
+      Effect.flatMap(underWay(name, parameter), (found) => {
+        if (found !== null) return Effect.succeed(found)
+        const key = Machine.keyOf(programOf(entity), name, parameter)
+        return Effect.die(`no work is under way under '${Machine.shownKey(key)}'`)
+      })
+
+    /**
+     * The pending an act is given, and the arguments after it. A key is followed by its parameter only where the
+     * program declares one for it, so the schema tells a parameter from the message or the options after it.
+     */
+    const given = (args: ReadonlyArray<unknown>): Effect.Effect<readonly [Pending, ReadonlyArray<unknown>]> =>
+      // The keys are read when the act runs, so an act built before a deploy reads the program deployed.
+      Effect.suspend(() => {
+        const [first, ...rest] = args
+        if (typeof first !== 'string') return Effect.succeed([first as Pending, rest] as const)
+        const keys = programOf(entity).keys as unknown as Readonly<Record<string, unknown>>
+        const takes = Object.hasOwn(keys, first) && (keys[first] ?? null) !== null
+        return Effect.map(
+          pending(first as T['key'], takes ? rest[0] : undefined),
+          (found) => [found, takes ? rest.slice(1) : rest] as const,
+        )
+      })
+
     const run = (pending: Pending, options?: Readonly<{ crash: true }>) =>
       Effect.suspend(() => {
         const { key, incarnation } = pending
@@ -372,9 +435,9 @@ const makeWorld = (at: DateTime.Utc) => {
         const operation = entity.machine.stored.keys[Machine.keyText(key)]?.work as T['operation']
         // The work was admitted when it was stored, so the program has a runner for it.
         const runner = runnerOf(program, operation)!
-        const given = Machine.idempotencyKeyOf(entity.machine, key, incarnation)
+        const idempotencyKey = Machine.idempotencyKeyOf(entity.machine, key, incarnation)
         const running = runner.delivery === 'Idempotent' || runner.delivery === 'IdempotentDigest'
-          ? runner.run(operation, given)
+          ? runner.run(operation, idempotencyKey)
           : runner.run(operation)
         const services = entitiesOf(entity.address, key, incarnation, runner.delivery === 'Droppable')
         return Effect.flatMap(
@@ -382,6 +445,23 @@ const makeWorld = (at: DateTime.Utc) => {
           (message): Effect.Effect<'Delivered' | 'Dropped' | void> =>
             options?.crash === true ? restart : complete(entity, pending, message),
         )
+      })
+    const answer = (pending: Pending, message: T['internal']) =>
+      Effect.suspend(() =>
+        kindOf(entity, pending) === 'Timer'
+          ? Effect.die(`the work under '${Machine.shownKey(pending.key)}' is a timer: it fires`)
+          : complete(entity, pending, message)
+      )
+    const fire = (pending: Pending) =>
+      Effect.suspend(() => {
+        const kind = kindOf(entity, pending)
+        if (kind === 'Operation') {
+          return Effect.die(`the work under '${Machine.shownKey(pending.key)}' is an operation: it is answered`)
+        }
+        const work = entity.machine.stored.keys[Machine.keyText(pending.key)]?.work
+        if (kind === 'Timer' && isTimer(work)) now = DateTime.max(now, work.at)
+        const { key, incarnation } = pending
+        return Effect.map(apply(entity, { _tag: 'Fire', key, incarnation }), outcome(pending))
       })
     return {
       state: Effect.sync(() => entity.machine.stored.state),
@@ -396,38 +476,17 @@ const makeWorld = (at: DateTime.Utc) => {
           incarnation: ++requests,
           name: 'request',
         }),
-      pending: (name, ...parameter) =>
-        Effect.suspend(() => {
-          const key = Machine.keyOf(programOf(entity), name, parameter[0])
-          const running = entity.machine.running[Machine.keyText(key)]
-          const work = entity.machine.stored.keys[Machine.keyText(key)]?.work
-          return running === undefined || work === undefined
-            ? Effect.die(`no work is under way under '${Machine.shownKey(key)}'`)
-            : Effect.succeed({
-              key,
-              incarnation: running.incarnation,
-              idempotencyKey: Machine.idempotencyKeyOf(entity.machine, key, running.incarnation),
-              work,
-            })
-        }),
-      answer: (pending, message) =>
-        Effect.suspend(() =>
-          kindOf(entity, pending) === 'Timer'
-            ? Effect.die(`the work under '${Machine.shownKey(pending.key)}' is a timer: it fires`)
-            : complete(entity, pending, message)
-        ),
-      fire: (pending) =>
-        Effect.suspend(() => {
-          const kind = kindOf(entity, pending)
-          if (kind === 'Operation') {
-            return Effect.die(`the work under '${Machine.shownKey(pending.key)}' is an operation: it is answered`)
-          }
-          const work = entity.machine.stored.keys[Machine.keyText(pending.key)]?.work
-          if (kind === 'Timer' && isTimer(work)) now = DateTime.max(now, work.at)
-          const { key, incarnation } = pending
-          return Effect.map(apply(entity, { _tag: 'Fire', key, incarnation }), outcome(pending))
-        }),
-      run: run as Member<T>['run'],
+      pending: (name, ...parameter) => pending(name, parameter[0]),
+      underWay: (name, ...parameter) => underWay(name, parameter[0]),
+      // Each act takes a pending or a key, and the overloads of its type say which arguments follow.
+      answer: ((...args: ReadonlyArray<unknown>) =>
+        Effect.flatMap(given(args), ([found, [message]]) =>
+          answer(found, message as T['internal']))) as Member<T>['answer'],
+      fire: ((...args: ReadonlyArray<unknown>) =>
+        Effect.flatMap(given(args), ([found]) => fire(found))) as Member<T>['fire'],
+      run: ((...args: ReadonlyArray<unknown>) =>
+        Effect.flatMap(given(args), ([found, [options]]) =>
+          run(found, options as Readonly<{ crash: true }> | undefined))) as Member<T>['run'],
     }
   }
 

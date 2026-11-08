@@ -130,7 +130,7 @@ describe('a deploy', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeSucceeded', charge: 'ch-1' })
+        yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded', charge: 'ch-1' })
         yield* rehearsal.deploy(greedy)
         expect((yield* rehearsal.projection).status).toBe('Paid')
       }),
@@ -295,7 +295,7 @@ describe('a rehearsal', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
-        yield* rehearsal.answer(yield* rehearsal.pending('charge'), { _tag: 'ChargeDeclined' })
+        yield* rehearsal.answer('charge', { _tag: 'ChargeDeclined' })
       }),
     ))
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause))
@@ -352,7 +352,7 @@ describe('a world', () => {
       Effect.fnUntraced(function*(world) {
         yield* world.create(inventory, 'concert-1', { capacity: 4 })
         const held = yield* world.create(twice, 'booking-1', flags)
-        yield* held.run(yield* held.pending('hold'))
+        yield* held.run('hold')
       }),
     ))
     expect(reasonOf(exit)).toBe("the operation sent 'hold' to Inventory 'concert-1' twice")
@@ -374,7 +374,7 @@ describe('a world', () => {
       Effect.fnUntraced(function*(world) {
         yield* world.create(inventory, 'concert-1', { capacity: 4 })
         const held = yield* world.create(dropping, 'booking-1', flags)
-        yield* held.run(yield* held.pending('hold'))
+        yield* held.run('hold')
       }),
     ))
     expect(reasonOf(exit)).toBe("the droppable operation under 'hold' sent to Inventory 'concert-1'")
@@ -395,7 +395,7 @@ describe('a world', () => {
       at,
       Effect.fnUntraced(function*(world) {
         const held = yield* world.create(sending, 'booking-1', flags)
-        yield* held.run(yield* held.pending('hold'))
+        yield* held.run('hold')
       }),
     ))
     expect(reasonOf(sent)).toBe(empty)
@@ -415,8 +415,8 @@ describe('a world', () => {
       at,
       Effect.fnUntraced(function*(world) {
         const held = yield* world.create(creating, 'booking-1', flags)
-        yield* held.run(yield* held.pending('hold'), { crash: true })
-        expect(yield* held.run(yield* held.pending('hold'))).toBe('Delivered')
+        yield* held.run('hold', { crash: true })
+        expect(yield* held.run('hold')).toBe('Delivered')
         expect((yield* held.state)._tag).toBe('Held')
         const exit = yield* Effect.exit(world.create(inventory, 'concert-1', { capacity: 4 }))
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe("Inventory 'concert-1' exists in the world already")
@@ -441,7 +441,7 @@ describe('a world', () => {
         // Another event's inventory makes the world run the program.
         yield* world.create(inventory, 'concert-0', { capacity: 1 })
         const held = yield* world.create(creating, 'booking-1', flags)
-        expect(yield* held.run(yield* held.pending('hold'))).toBe('Delivered')
+        expect(yield* held.run('hold')).toBe('Delivered')
         expect((yield* held.state)._tag).toBe('Held')
       }),
     ))
@@ -449,7 +449,7 @@ describe('a world', () => {
       at,
       Effect.fnUntraced(function*(world) {
         const held = yield* world.create(creating, 'booking-1', flags)
-        yield* held.run(yield* held.pending('hold'))
+        yield* held.run('hold')
       }),
     ))
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(
@@ -471,7 +471,7 @@ describe('a world', () => {
       at,
       Effect.fnUntraced(function*(world) {
         const held = yield* world.create(creating, 'booking-1', flags)
-        expect(yield* held.run(yield* held.pending('hold'))).toBe('Delivered')
+        expect(yield* held.run('hold')).toBe('Delivered')
         expect((yield* held.state)._tag).toBe('Cancelled')
         // Created, the inventory would be in the world already, and the test fail on that.
         yield* world.create(closed, 'concert-1', { capacity: 4 })
@@ -522,12 +522,12 @@ describe('a world', () => {
       Effect.fnUntraced(function*(world) {
         const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
         const held = yield* world.create(booking, 'booking-1', flags)
-        yield* held.run(yield* held.pending('hold'))
+        yield* held.run('hold')
         const deadline = yield* held.pending('deadline')
         const shipped = yield* world.create(order, 'order-1', start.flags)
         yield* shipped.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
-        yield* shipped.answer(yield* shipped.pending('charge'), { _tag: 'ChargeSucceeded', charge: 'ch-1' })
-        yield* shipped.answer(yield* shipped.pending('tell-warehouse'), { _tag: 'WarehouseTold' })
+        yield* shipped.answer('charge', { _tag: 'ChargeSucceeded', charge: 'ch-1' })
+        yield* shipped.answer('tell-warehouse', { _tag: 'WarehouseTold' })
         yield* shipped.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse)
         yield* world.deploy(tacit)
         // The order's at-most-once email delivers its `unknown` message: the order was restarted.
@@ -590,6 +590,85 @@ describe('a rehearsal of keys with a parameter', () => {
         expect(yield* rehearsal.answer(a, 'charged a')).toBe('Delivered')
         expect(yield* rehearsal.state).toEqual({ lines: ['b'] })
         expect((yield* rehearsal.pending('charge', 'b')).incarnation).toBe(2)
+      }),
+    )))
+})
+
+// A test names the work by its key where it does not keep the pending, and asserts that a key holds none in one line
+// (decision 0186).
+describe('a rehearsal by a key', () => {
+  const lines = declare({
+    state: Schema.Struct({ lines: Schema.Array(Schema.String) }),
+    flags: Schema.Null,
+    inbound: Schema.String,
+    internal: Schema.String,
+    operation: Schema.TaggedStruct('Charge', { line: Schema.String }),
+    rejection: Schema.Never,
+    sender: Schema.Null,
+    projection: Schema.Number,
+  })({
+    name: 'Lines',
+    keys: { charge: Schema.String },
+    init: () => ({ lines: [] }),
+    update: (message) => (state) =>
+      message.startsWith('+')
+        ? { lines: [...state.lines, message.slice(1)] }
+        : { lines: state.lines.filter((line) => `charged ${line}` !== message) },
+    durable: (state) => ({ charge: state.lines.map((line) => [line, { _tag: 'Charge', line }] as const) }),
+    operations: { Charge: operation(() => Effect.succeed('charged')) },
+    project: (state) => state.lines.length,
+    indexes: {},
+  })
+  const failure = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+
+  test('answers the work under a key and its parameter, and gives null under a key that holds none', () =>
+    Effect.runPromise(rehearse(
+      lines,
+      { flags: null, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send('+a', null)
+        yield* rehearsal.send('+b', null)
+        expect(yield* rehearsal.underWay('charge', 'a')).toEqual(yield* rehearsal.pending('charge', 'a'))
+        expect(yield* rehearsal.answer('charge', 'a', 'charged a')).toBe('Delivered')
+        expect(yield* rehearsal.underWay('charge', 'a')).toBeNull()
+        expect((yield* rehearsal.underWay('charge', 'b'))?.work).toEqual({ _tag: 'Charge', line: 'b' })
+        expect(yield* rehearsal.state).toEqual({ lines: ['b'] })
+        // @ts-expect-error a key that takes a parameter is answered with its parameter
+        const _bare = () => rehearsal.answer('charge', 'charged b')
+        expect(failure(yield* Effect.exit(rehearsal.answer('charge', 'a', 'charged a')))).toBe(
+          `no work is under way under '["charge","a"]'`,
+        )
+      }),
+    )))
+
+  test('fires a timer by its key, and refuses to answer it', () =>
+    Effect.runPromise(rehearse(
+      order,
+      { flags: { order: { customer: 'ada', totalInCents: 4_200 } }, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        expect(failure(yield* Effect.exit(rehearsal.answer('payment-deadline', { _tag: 'WarehouseTold' })))).toBe(
+          "the work under 'payment-deadline' is a timer: it fires",
+        )
+        expect(failure(yield* Effect.exit(rehearsal.fire('charge')))).toBe("no work is under way under 'charge'")
+        // @ts-expect-error a key without a parameter takes none
+        const _extra = () => rehearsal.fire('payment-deadline', 'x')
+        expect(yield* rehearsal.fire('payment-deadline')).toBe('Delivered')
+        expect(yield* rehearsal.state).toMatchObject({ _tag: 'Cancelled', reason: 'Unpaid' })
+        expect(yield* rehearsal.underWay('payment-deadline')).toBeNull()
+      }),
+    )))
+
+  test('runs an operation of a world by its key, with a crash and without', () =>
+    Effect.runPromise(rehearse.together(
+      placedAt,
+      Effect.fnUntraced(function*(world) {
+        yield* world.create(inventory, 'concert-1', { capacity: 4 })
+        const held = yield* world.create(booking, 'booking-1', { customer: 'ada', event: 'concert-1', seats: 2 })
+        const hold = yield* held.pending('hold')
+        yield* held.run('hold', { crash: true })
+        expect((yield* held.pending('hold')).idempotencyKey).toBe(hold.idempotencyKey)
+        expect(yield* held.run('hold')).toBe('Delivered')
+        expect((yield* held.state)._tag).toBe('Held')
       }),
     )))
 })

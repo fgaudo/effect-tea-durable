@@ -32,9 +32,9 @@ describe('booking', () => {
       booking,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsHeld' })
+        yield* rehearsal.answer('hold', { _tag: 'SeatsHeld' })
         expect(yield* rehearsal.send({ _tag: 'ConfirmRequested' }, ada)).toEqual(accepted)
-        yield* rehearsal.answer(yield* rehearsal.pending('confirm'), { _tag: 'SeatsConfirmed' })
+        yield* rehearsal.answer('confirm', { _tag: 'SeatsConfirmed' })
         expect((yield* rehearsal.state)._tag).toBe('Confirmed')
       }),
     )))
@@ -44,7 +44,7 @@ describe('booking', () => {
       booking,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsUnavailable', reason: 'SoldOut' })
+        yield* rehearsal.answer('hold', { _tag: 'SeatsUnavailable', reason: 'SoldOut' })
         expect(yield* rehearsal.projection).toMatchObject({ status: 'Cancelled', canConfirm: false })
         expect(yield* rehearsal.state).toMatchObject({ reason: 'SoldOut' })
       }),
@@ -57,8 +57,8 @@ describe('booking', () => {
       Effect.fnUntraced(function*(rehearsal) {
         expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toEqual(accepted)
         expect((yield* rehearsal.projection).canCancel).toBe(false)
-        yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsHeld' })
-        yield* rehearsal.answer(yield* rehearsal.pending('release'), { _tag: 'SeatsReleased' })
+        yield* rehearsal.answer('hold', { _tag: 'SeatsHeld' })
+        yield* rehearsal.answer('release', { _tag: 'SeatsReleased' })
         expect(yield* rehearsal.state).toMatchObject({ _tag: 'Cancelled', reason: 'ByCustomer' })
       }),
     )))
@@ -68,11 +68,11 @@ describe('booking', () => {
       booking,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsHeld' })
+        yield* rehearsal.answer('hold', { _tag: 'SeatsHeld' })
         // With no clock, firing the timer at once stands for a deadline already past when the seats were held.
-        yield* rehearsal.fire(yield* rehearsal.pending('deadline'))
+        yield* rehearsal.fire('deadline')
         expect(yield* rehearsal.send({ _tag: 'ConfirmRequested' }, ada)).toMatchObject(rejected)
-        yield* rehearsal.answer(yield* rehearsal.pending('release'), { _tag: 'SeatsReleased' })
+        yield* rehearsal.answer('release', { _tag: 'SeatsReleased' })
         expect(yield* rehearsal.state).toMatchObject({ _tag: 'Cancelled', reason: 'Expired' })
       }),
     )))
@@ -94,7 +94,7 @@ describe('booking', () => {
       booking,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.answer(yield* rehearsal.pending('hold'), { _tag: 'SeatsHeld' })
+        yield* rehearsal.answer('hold', { _tag: 'SeatsHeld' })
         expect(yield* rehearsal.send({ _tag: 'ConfirmRequested' }, { _tag: 'Customer', id: 'eve' }))
           .toMatchObject(rejected)
       }),
@@ -158,10 +158,10 @@ describe('booking and inventory together', () => {
       Effect.fnUntraced(function*(world) {
         const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
         const ada1 = yield* world.create(booking, 'booking-1', start.flags)
-        expect(yield* ada1.run(yield* ada1.pending('hold'))).toBe('Delivered')
+        expect(yield* ada1.run('hold')).toBe('Delivered')
         expect((yield* seats.projection).available).toBe(2)
         expect(yield* ada1.send({ _tag: 'ConfirmRequested' }, ada)).toEqual(accepted)
-        yield* ada1.run(yield* ada1.pending('confirm'))
+        yield* ada1.run('confirm')
         expect((yield* ada1.state)._tag).toBe('Confirmed')
         expect((yield* seats.state).sold).toEqual({ 'booking-1': 2 })
       }),
@@ -173,7 +173,7 @@ describe('booking and inventory together', () => {
       Effect.fnUntraced(function*(world) {
         const seats = yield* world.create(inventory, 'concert-1', { capacity: 1 })
         const ada1 = yield* world.create(booking, 'booking-1', start.flags)
-        yield* ada1.run(yield* ada1.pending('hold'))
+        yield* ada1.run('hold')
         expect(yield* ada1.state).toMatchObject({ _tag: 'Cancelled', reason: 'SoldOut' })
         expect((yield* seats.projection).available).toBe(1)
       }),
@@ -184,7 +184,7 @@ describe('booking and inventory together', () => {
       bookedAt,
       Effect.fnUntraced(function*(world) {
         const ada1 = yield* world.create(booking, 'booking-1', start.flags)
-        yield* ada1.run(yield* ada1.pending('hold'))
+        yield* ada1.run('hold')
         expect(yield* ada1.state).toMatchObject({ _tag: 'Cancelled', reason: 'NoSuchEvent' })
       }),
     )))
@@ -196,9 +196,9 @@ describe('booking and inventory together', () => {
         const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
         const ada1 = yield* world.create(booking, 'booking-1', start.flags)
         yield* ada1.send({ _tag: 'CancelRequested' }, ada)
-        yield* ada1.run(yield* ada1.pending('hold'))
+        yield* ada1.run('hold')
         expect((yield* seats.projection).available).toBe(2)
-        yield* ada1.run(yield* ada1.pending('release'))
+        yield* ada1.run('release')
         expect(yield* ada1.state).toMatchObject({ _tag: 'Cancelled', reason: 'ByCustomer' })
         expect((yield* seats.projection).available).toBe(4)
       }),
@@ -211,9 +211,9 @@ describe('booking and inventory together', () => {
       Effect.fnUntraced(function*(world) {
         const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
         const ada1 = yield* world.create(booking, 'booking-1', start.flags)
-        yield* ada1.run(yield* ada1.pending('hold'), { crash: true })
+        yield* ada1.run('hold', { crash: true })
         expect((yield* ada1.state)._tag).toBe('Holding')
-        expect(yield* ada1.run(yield* ada1.pending('hold'))).toBe('Delivered')
+        expect(yield* ada1.run('hold')).toBe('Delivered')
         expect((yield* ada1.state)._tag).toBe('Held')
         expect((yield* seats.projection).available).toBe(2)
       }),
@@ -233,8 +233,8 @@ describe('booking and inventory together', () => {
       Effect.fnUntraced(function*(world) {
         yield* world.create(inventory, 'concert-1', { capacity: 1 })
         const ada1 = yield* world.create(hopeful, 'booking-1', start.flags)
-        yield* ada1.run(yield* ada1.pending('hold'))
-        yield* ada1.run(yield* ada1.pending('confirm'))
+        yield* ada1.run('hold')
+        yield* ada1.run('confirm')
       }),
     ))
     expect(reasonOf(exit)).toBe('the inventory did not accept the confirmation of its own hold')
