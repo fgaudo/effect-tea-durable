@@ -25,7 +25,11 @@ export interface RejectedWith<Reason> {
   readonly reason: Reason
 }
 
-export const rejectWith = <Reason>(reason: Reason): RejectedWith<Reason> => ({
+/**
+ * Rejects with `reason`. Its type parameter is `const`, so a reason keeps its literal type where nothing around the
+ * call types it, as in a case of `Match.valueTags` (decision 0201).
+ */
+export const rejectWith = <const Reason>(reason: Reason): RejectedWith<Reason> => ({
   [RejectedWithTypeId]: RejectedWithTypeId,
   reason,
 })

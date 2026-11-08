@@ -1,7 +1,8 @@
 # 0010. A rejection may carry a reason, an acceptance never carries data
 
 **Status:** accepted, 2026-10-30. What it says a caller of a suspended entity is answered is replaced by
-[decision 0023](0023-suspended-means-no-reply-yet.md).
+[decision 0023](0023-suspended-means-no-reply-yet.md). [Decision 0201](../0201-rejectwith-keeps-the-literal-of-its-reason.md) types
+the reason of `rejectWith` with a `const` parameter, so that it keeps its literal.
 
 ## Context
 

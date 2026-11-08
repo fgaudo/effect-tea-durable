@@ -25,6 +25,7 @@ import {
   program,
   reference,
   reject,
+  type RejectedWith,
   rejectWith,
   send,
   create,
@@ -385,6 +386,34 @@ test("a program's init may reject with the program's reasons, and a part's may n
   const room = part(schemas)({ ...pieces, init: ({ seats }) => seats < 10 ? reject : { seats } })
   expect([misreasoned, room]).toHaveLength(2)
   expect(hall.init({ seats: 3 }, DateTime.makeUnsafe(0))).toEqual(rejectWith('TooFew'))
+})
+
+// A case of `Match.valueTags` has no return type around it, so a reason typed as its argument alone would widen to
+// `string`, and the program would refuse it (decision 0201).
+test('rejectWith keeps the literal of its reason where nothing around the call types it', () => {
+  const Inbound = Schema.Union([Schema.TaggedStruct('Go', {}), Schema.TaggedStruct('Stop', {})])
+  const gate = program({
+    state: Schema.Struct({ open: Schema.Boolean }),
+    flags: Schema.Null,
+    inbound: Inbound,
+    rejection: Schema.Literals(['Closed', 'Open']),
+    projection: Schema.Struct({}),
+  })({
+    name: 'Gate',
+    init: () => ({ open: false }),
+    update: (message) => (state) =>
+      Match.valueTags(message, {
+        Go: () => state.open ? rejectWith('Open') : rejectWith('Closed'),
+        Stop: () => rejectWith('Closed'),
+      }),
+    project: () => ({}),
+  })
+  const closed: RejectedWith<'Closed'> = rejectWith('Closed')
+  // @ts-expect-error the reason keeps its literal, which is no other
+  const other: RejectedWith<'Open'> = rejectWith('Closed')
+  expect([closed, other]).toHaveLength(2)
+  const meta = { at: DateTime.makeUnsafe(0), from: { _tag: 'Self' } } as const
+  expect(gate.update({ _tag: 'Stop' }, meta)({ open: false })).toEqual(rejectWith('Closed'))
 })
 
 test('a reference is the name of its program, which the compiler checks, and types send and create as the program does (decision 0183)', async () => {
