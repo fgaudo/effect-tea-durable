@@ -182,6 +182,13 @@ const request = Effect.gen(function*() {
   return { sender, requestId: headers['idempotency-key'] }
 })
 
+/**
+ * How long a reply to a send is kept: the day this server's clients retry a request for. A retry within it is
+ * answered from the stored reply, and the next step of the order or an operator's `expire` deletes the reply after
+ * it, so the replies do not add up for ever (decision 0125).
+ */
+const keep = { millis: 24 * 60 * 60 * 1_000 }
+
 const operator = Effect.flatMap(
   caller,
   (who) => who === 'Operator' ? Effect.void : Effect.fail(new Refused({ status: 403, reason: 'no operator' })),
@@ -244,7 +251,7 @@ const routes = Layer.mergeAll(
       const caller = yield* request
       const message = yield* HttpServerRequest.schemaBodyJson(order.schemas.inbound)
       const orders = yield* Orders
-      return yield* answer(yield* orders.send(yield* id, message, caller))
+      return yield* answer(yield* orders.send(yield* id, message, { ...caller, keep }))
     }),
   ),
   HttpRouter.add(

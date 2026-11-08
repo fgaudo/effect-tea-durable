@@ -69,7 +69,9 @@ process gives:
 const runtime = yield* launch()
 const orders = yield* Effect.provide(runtime.deploy(order), world)
 
-yield* orders.create('o-1', { order: { customer: 'ada', totalInCents: 1_000 } }, { requestId: 'c-o-1', sender: ada })
+for (const id of ['o-1', 'o-2']) {
+  yield* orders.create(id, { order: { customer: 'ada', totalInCents: 1_000 } }, { requestId: `c-${id}`, sender: ada })
+}
 const pay = { _tag: 'PayRequested', payment: 'card-1' } as const
 expect(yield* orders.send('o-2', pay, { requestId: 'p-o-2', sender: ada })).toEqual({ _tag: 'Accepted' })
 // A retry under the same request id is answered from what Cluster stored, and charges nothing again.
@@ -155,7 +157,9 @@ The handle is the same, and three things differ:
 - **A message sent without `keep` keeps Cluster's rows for ever.** The boundary gives `keep`, the time its protocol
   retries for. Once that time is past, the next step of the entity deletes the rows, or an operator's `expire`
   does. A boundary that runs on Cluster gives `keep` to every message, since the rows of each reply would
-  otherwise add up.
+  otherwise add up. The server gives a day, the time its clients retry a request for:
+  `orders.send(id, message, { ...caller, keep: { millis: 86_400_000 } })`. On one process a reply sent without
+  `keep` is kept for ever too, and the same `keep` frees it.
 
 ## The rules, in one list
 
