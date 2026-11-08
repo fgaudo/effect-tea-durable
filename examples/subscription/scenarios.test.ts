@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import { accepted, rehearse, rejected } from '../../src/index.testing.ts'
+import { accepted, rehearse, rejected } from 'effect-tea-durable/testing'
 import { type Sender, subscription } from './subscription.ts'
 
 const startedAt = DateTime.makeUnsafe('2026-01-31T10:00:00Z')

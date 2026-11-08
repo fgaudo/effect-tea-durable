@@ -17,7 +17,7 @@ import {
   type Rejected,
   send,
   timer,
-} from '../../src/index.ts'
+} from 'effect-tea-durable/program'
 import type { inventory } from './inventory.ts'
 
 // The inventory imports the booking's name too, so each imports only the other's types (decision 0183).

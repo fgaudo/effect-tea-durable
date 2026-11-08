@@ -58,6 +58,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   on Effect's unstable modules ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
   The release archives the notes the design has come to cover since the last archiving, as
   [`AGENTS.md`](../AGENTS.md) says. It passes `bun run test:release`, which runs every seed of the explored tests.
+  The examples import the library by the package's name, so a new name changes their imports, and the release
+  decides whether `exports` names the sources or built files.
 
 - **What the runtime tells a tracer**, after the release: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide.

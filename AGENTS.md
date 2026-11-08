@@ -95,8 +95,12 @@ This repository is a design and its pure core, not a library yet: read [`README.
 
 ## Code and tests
 
-- The examples import the library from `src/`. When the design changes, the code, its tests and the examples
-  change with it, and `bun run typecheck`, `bun test` and `bun run links` pass.
+- The examples import the library as a user does, by the package's name and its entries: `effect-tea-durable`,
+  `effect-tea-durable/program`, `effect-tea-durable/testing` and `effect-tea-durable/cluster`. The `exports` of
+  `package.json` resolve each to its file of `src/`, so the examples run on the sources with no build. A module that
+  declares a program imports from `effect-tea-durable/program`, so that it shows the import a browser can load. A
+  test of the form of `src/` fails on an example that imports a file of `src/`. When the design changes, the code,
+  its tests and the examples change with it, and `bun run typecheck`, `bun test` and `bun run links` pass.
 - Before code adds a helper, a data structure or a coordination of fibers, it looks in `node_modules/effect/src`
   for a module of the pinned version that does the same, among the modules marked `@stability unstable` too. A
   primitive of Effect is used where it does the same, since its contract is in its JSDoc and needs no test of its

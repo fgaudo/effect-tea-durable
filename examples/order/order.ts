@@ -19,7 +19,7 @@ import {
   reject,
   type Rejected,
   timer,
-} from '../../src/index.ts'
+} from 'effect-tea-durable/program'
 
 const Order = Schema.Struct({
   customer: Schema.String,

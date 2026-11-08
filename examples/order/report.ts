@@ -8,7 +8,7 @@
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
-import type { Published, TypesOf } from '../../src/index.ts'
+import type { Published, TypesOf } from 'effect-tea-durable'
 import type { order } from './order.ts'
 
 type Order = TypesOf<typeof order>

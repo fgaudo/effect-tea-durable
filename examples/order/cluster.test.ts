@@ -22,7 +22,7 @@ import * as Option from 'effect/Option'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { launch, sharding } from '../../src/index.cluster.ts'
+import { launch, sharding } from 'effect-tea-durable/cluster'
 import { Mailer, order, Payments, Warehouse } from './order.ts'
 
 const ada = { _tag: 'Customer', id: 'ada' } as const

@@ -42,8 +42,8 @@ import {
   type Handle,
   type Operated,
   type TypesOf,
-} from '../../src/index.ts'
-import { launch, sharding } from '../../src/index.cluster.ts'
+} from 'effect-tea-durable'
+import { launch, sharding } from 'effect-tea-durable/cluster'
 import { Mailer, order, Payments, type Sender, Warehouse } from '../order/order.ts'
 
 /**

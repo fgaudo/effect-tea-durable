@@ -285,6 +285,21 @@ describe('the form of src', () => {
   })
 })
 
+describe('the form of the examples', () => {
+  // An example is what a user copies, so it imports the library by the package's name, as a user does (AGENTS.md).
+  test("an example imports the library by the package's name, and no file of src", () => {
+    const examples = join(import.meta.dir, '..', 'examples')
+    const files = readdirSync(examples, { recursive: true, encoding: 'utf8' }).filter((file) => file.endsWith('.ts'))
+    expect(files.length).toBeGreaterThan(0)
+    const found = files.flatMap((file) =>
+      importsOf(readFileSync(join(examples, file), 'utf8'))
+        .filter((specifier) => specifier.includes('/src/') || specifier.startsWith('../src'))
+        .map((specifier) => `${file}: ${specifier}`)
+    )
+    expect(found).toEqual([])
+  })
+})
+
 describe('the check of the form', () => {
   test('a module of the platform is found through a module imported, and one named in a comment is not', () => {
     const files: Record<string, string> = {

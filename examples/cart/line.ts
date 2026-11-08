@@ -8,7 +8,7 @@ import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
-import { defect, type IdempotencyKey, noWork, operation, part, raise, reject } from '../../src/index.ts'
+import { defect, type IdempotencyKey, noWork, operation, part, raise, reject } from 'effect-tea-durable/program'
 
 const State = Schema.Union([
   // Only the reservation's answer leaves it: a removal meanwhile is rejected.

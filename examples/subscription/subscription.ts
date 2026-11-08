@@ -18,7 +18,7 @@ import {
   reject,
   type Rejected,
   timer,
-} from '../../src/index.ts'
+} from 'effect-tea-durable/program'
 
 const Plan = Schema.Struct({ name: Schema.String, priceInCents: Schema.Int })
 type Plan = typeof Plan.Type

@@ -11,7 +11,7 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import { SqlClient } from 'effect/sql'
-import { launch } from '../../src/index.ts'
+import { launch } from 'effect-tea-durable'
 import { Mailer, order, Payments, Warehouse } from './order.ts'
 import { statusReport } from './report.ts'
 
