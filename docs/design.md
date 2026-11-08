@@ -1049,7 +1049,9 @@ is written once. A launch on a client of any other dialect is the launcher's def
 
 An entity with nothing to do is unloaded, and the earliest of its stored timers wakes it
 ([decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)); how long it stays loaded is an option of the
-runtime. An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
+runtime. A timer is slept by `Effect.sleep` for the whole time left, months included. Effect sets a time past the
+host's limit of 2^31 − 1 milliseconds as timers of the host in turn
+([decision 0194](decisions/0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md)). An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
 process, its callers are given the defect, and the next one loads it from what is stored
 ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)); nothing else waits
 for its operations to stop ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)).

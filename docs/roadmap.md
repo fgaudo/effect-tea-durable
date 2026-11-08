@@ -5,11 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **A timer months away.** A sleep past 2^31 − 1 milliseconds, about 24.8 days, is beyond `setTimeout`, and Effect
-  splits it into sleeps of that length, read in `node_modules/effect/src/internal/effect.ts` at 4.1.2 and documented
-  nowhere. A subscription's renewal rests on it ([`examples/subscription`](../examples/subscription)). A spike sees
-  it, and a note lists it among what the timers rest on.
-
 - **A runtime in modules.** `src/runtime.ts` is one closure of 3 000 lines, with one process and Cluster
   interleaved. It is divided by responsibility, the loop of an entity, the callers, the waker, the steps on Cluster,
   with no change of semantics and no note. It moves no yield, so the pinned seeds stay, and it passes

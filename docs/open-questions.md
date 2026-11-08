@@ -91,6 +91,18 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - a test of `examples/server` that stops one of two runners with `SIGTERM`, under a lease longer than the test, and
     checks that the other runner finishes the orders;
   - where such a test runs: in CI on Linux, or skipped on Windows by the test itself.
+- **A timer and the wall clock.** A timer stores its time on the wall clock, and is slept as the milliseconds left
+  when it is armed, measured on the host's timers ([decision 0194](decisions/0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md)). A host suspended
+  during the sleep, a virtual machine paused, or a wall clock set back makes the sleep end late or early. A loaded
+  entity's timer then fires when its sleep ends, and nothing checks its time against the clock: it fires late by the
+  time the host was suspended, or early by a step of the clock back. The waker activates only the entities whose time
+  has come on the wall clock, so it fires no timer early. It reads the clock again only when its sleep ends or it is
+  poked, so it fires late by the time the host was suspended. It would be decided by:
+  - whether a host that runs the library is suspended or set back by more than a program can bear, which the
+    examples do not say;
+  - whether the waker sleeps at most a bound, such as an hour, and reads the clock again, and whether a loaded
+    entity's timer sleeps again when it ends before its time. Both add yields to `src/runtime.ts`, after which the
+    pinned seeds of the explored tests are found again.
 - **What the runtime tells a tracer.** The runtime opens no span and records no metric of its own: `src/` calls
   neither `Effect.withSpan` nor `Metric`. A deployment sees only the spans Effect opens beneath the runtime: a
   statement of `effect/sql`, a request of `effect/rpc`, and a message to an entity of Cluster. So a step, an
