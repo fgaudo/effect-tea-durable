@@ -884,8 +884,8 @@ time passes, and when the process dies:
 - `fire(pending)` fires a timer;
 - `advance(duration)` moves time forward, and fires each timer due within it at its time, in the order of the
   times. A message after it is handled at the time reached. A key whose timer fires twice at one time fails the test:
-  it was armed again at a time already reached, and would fire at once, turn after turn. A world advances the one time of
-  all its entities ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md));
+  it was armed again at a time already reached, and would fire at once, turn after turn. A world advances the one
+  time of all its entities ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md));
 - `answer`, `fire` and a member's `run` take a key in place of the pending, with its parameter for a key that takes
   one: `answer('charge', message)` acts on the work under way under the key, in its current incarnation. A test
   keeps a pending to act on an incarnation that has moved on, and sees its message dropped

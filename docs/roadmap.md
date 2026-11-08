@@ -11,9 +11,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   parameter ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)), an `init` that rejects the flags
   ([decision 0182](decisions/0182-init-may-reject-the-flags.md)), a receiver named by a reference
   ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md)), `consume`
-  ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)), and `inspect`
+  ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)), `inspect`
   ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)), a rehearsal in fewer words
-  ([decision 0186](decisions/0186-a-rehearsal-names-the-work-by-its-key.md)), and a rehearsal that moves time
+  ([decision 0186](decisions/0186-a-rehearsal-names-the-work-by-its-key.md)), a rehearsal that moves time
   ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)), and the types of a program, exported
   ([decision 0188](decisions/0188-typesof-gives-a-programs-types.md)). Next: a world's services, which begins in
   `together` of [`src/rehearse.ts`](../src/rehearse.ts).
