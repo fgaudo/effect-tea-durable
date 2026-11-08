@@ -10,7 +10,9 @@ at once what it reads is changed by [decision 0142](0142-a-consumer-waits-for-a-
 by [decision 0150](0150-a-count-per-value-of-an-index-is-read-in-one-statement.md): an ack joins a transaction
 the caller left open. Its consumer that declares itself by reading, and its topic with no consumer that keeps every
 row, are changed by [decision 0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md): consumers are declared at deploy,
-and a topic no consumer holds is pruned whole.
+and a topic no consumer holds is pruned whole. Its loop of a consumer, left to the caller, is changed by
+[decision 0184](../0184-consume-runs-a-reader-of-a-consumer.md): `consume` runs a reader, a page and its ack in one
+transaction.
 
 ## Context
 

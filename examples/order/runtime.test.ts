@@ -164,22 +164,17 @@ test('a report fed from the log counts the orders in each status, as the read mo
     yield* orders.send('o-4', { _tag: 'CancelRequested' }, { requestId: 'x-o-4', sender: ada })
     yield* runtime.settled
 
-    // The consumer: a page of its topic, written to the store and acked in one transaction, until a page is empty.
-    // A consumer that serves a dashboard reads with a wait instead, and never stops (decision 0142). The first page
-    // fails after its ack, as a crash before the commit leaves it: the store and the cursors stay as they were, so
-    // the consumer reads the page again (decision 0150).
-    const sql = yield* SqlClient.SqlClient
-    const consume = (page: Effect.Success<ReturnType<typeof orders.feed<'status'>>>) =>
-      Effect.andThen(report.record(page), orders.ack('status', 'dashboard', page))
+    // The consumer: `consume` writes each page of its topic to the store and acks it in one transaction, until a
+    // page is empty. A consumer that serves a dashboard passes `wait: true` instead, and stops with the runtime
+    // (decision 0184). The first reader crashes after its writes, as a crash before the commit leaves it: the store
+    // and the cursors stay as they were, so the next reader reads the page again (decision 0150).
     const first = yield* orders.feed('status', 'dashboard', 3)
-    yield* Effect.exit(sql.withTransaction(Effect.andThen(consume(first), Effect.fail('crash'))))
+    const crashed = (page: Parameters<typeof report.record>[0]) => Effect.andThen(report.record(page), Effect.fail('crash'))
+    expect(yield* Effect.exit(orders.consume('status', 'dashboard', crashed, { limit: 3 }))).toEqual(Exit.fail('crash'))
     expect(yield* report.counts).toEqual({})
     expect(yield* orders.feed('status', 'dashboard', 3)).toEqual(first)
-    while (true) {
-      const page = yield* orders.feed('status', 'dashboard', 3)
-      if (page.length === 0) break
-      yield* sql.withTransaction(consume(page))
-    }
+    yield* orders.consume('status', 'dashboard', report.record, { limit: 3 })
+    expect(yield* orders.feed('status', 'dashboard', 3)).toEqual([])
 
     // The store answers the question in one statement, and so does the read model, on one snapshot
     // (decisions 0149, 0150).

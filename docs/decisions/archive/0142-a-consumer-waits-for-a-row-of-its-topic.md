@@ -5,7 +5,8 @@
 Changed by [decision 0153](0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md), which moves `wait` into an
 object of `feed`'s options, beside the partitions a reader names. Changed by
 [decision 0163](0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md): on Cluster a reading that waits is woken by another runner's commit, which the runner
-learns from the file.
+learns from the file. Changed by [decision 0184](../0184-consume-runs-a-reader-of-a-consumer.md): a reader of
+`consume` that waits waits with no time limit, until the runtime stops.
 
 ## Context
 

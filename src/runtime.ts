@@ -20,11 +20,12 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Latch from 'effect/Latch'
 import * as MutableList from 'effect/MutableList'
+import * as Option from 'effect/Option'
 import * as Queue from 'effect/Queue'
 import * as Schedule from 'effect/Schedule'
 import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
-import { SqlClient } from 'effect/sql'
+import { SqlClient, type SqlError } from 'effect/sql'
 import * as Machine from './machine.ts'
 import {
   type Address,
@@ -382,6 +383,24 @@ export interface Handle<T extends Types, C = {}> {
     through: ReadonlyArray<Cursor>,
   ) => Effect.Effect<void>
   /**
+   * Runs a reader of the consumer `consumer` of `topic`: it reads a page of at most `limit` rows with `feed`, runs
+   * `handler` on it and acks it in one transaction of the client the runtime was launched with, and reads the next.
+   * So a store that `handler` writes on that client commits with the cursors, and a page whose transaction fails is
+   * read again. `handler` is given no empty page. Without `wait`, the reader ends at the first page that is empty:
+   * what a test or a batch runs. Given `wait: true`, a reading that finds no row waits for a commit in the topic,
+   * and the reader ends only when the runtime stops: what a deployment runs. Given `partitions`, it reads those
+   * only, as `feed` does. A failure of `handler` or of the transaction rolls the page back and fails the reader,
+   * whose retries are the caller's. The limit is a positive integer. A reader run within a transaction of the
+   * client would hold its connection while it waits, so it is the caller's defect, as is anything `feed` refuses
+   * (decision 0184).
+   */
+  readonly consume: <Name extends Topic<T>, E, R>(
+    topic: Name,
+    consumer: ConsumerOf<C, Name>,
+    handler: (page: ReadonlyArray<Published<T, Name>>) => Effect.Effect<void, E, R>,
+    options: Readonly<{ limit: number; wait?: true; partitions?: ReadonlyArray<number> }>,
+  ) => Effect.Effect<void, E | SqlError.SqlError, R>
+  /**
    * Drops what every consumer of a topic has read, in each partition through the lowest cursor there, and gives how
    * many rows went. A consumer that has acked nothing of a partition holds the whole partition of its topic. A
    * topic no consumer is stored for is dropped whole, since no reader that keeps cursors needs its rows: a reading
@@ -721,10 +740,10 @@ const faulted = <A>(effect: Effect.Effect<A, Faulted>): Effect.Effect<A> =>
  * the caller's defect, and nothing is read or stored for it. A count left out is refused with the rest, since the
  * types do not hold a cast or a call from JavaScript: a `keep` that is none is not passed (decisions 0053, 0141).
  */
-const counted = <A>(
+const counted = <A, E = never, R = never>(
   counts: Readonly<Record<string, number>>,
-  effect: Effect.Effect<A>,
-): Effect.Effect<A> =>
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
   Effect.suspend(() => {
     for (const [what, count] of Object.entries(counts)) {
       if (Number.isSafeInteger(count) && count >= 0) continue
@@ -773,11 +792,11 @@ const cursored = <A>(
  * an integer from 1 to `partitions`: anything else is the caller's defect, and nothing is read for it
  * (decisions 0053, 0153).
  */
-const named = <A>(
+const named = <A, E = never, R = never>(
   given: ReadonlyArray<number> | undefined,
   partitions: number,
-  effect: Effect.Effect<A>,
-): Effect.Effect<A> =>
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
   Effect.suspend(() => {
     if (given === undefined) return effect
     if (!Array.isArray(given) || given.length === 0) {
@@ -796,7 +815,11 @@ const named = <A>(
  * Runs `effect` once the topic a caller gave is one `program` publishes: anything else is the caller's defect, and
  * nothing is read or stored for it (decisions 0053, 0138).
  */
-const topical = <T extends Types, A>(program: Program<T>, topic: string, effect: Effect.Effect<A>): Effect.Effect<A> =>
+const topical = <T extends Types, A, E = never, R = never>(
+  program: Program<T>,
+  topic: string,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
   Effect.suspend(() =>
     topicsOf(program).some((held) => held.topic === topic)
       ? effect
@@ -840,13 +863,13 @@ const consumersOf = <T extends Types>(
  * Runs `effect` once `consumer` is one the deploy declares for `topic`, or, given `declared` false, once it is not:
  * anything else is the caller's defect, and nothing is read or stored for it (decisions 0053, 0152).
  */
-const enlisted = <T extends Types, A>(
+const enlisted = <T extends Types, A, E = never, R = never>(
   deployed: Deployment<T>,
   topic: string,
   consumer: string,
   declared: boolean,
-  effect: Effect.Effect<A>,
-): Effect.Effect<A> =>
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
   Effect.suspend(() => {
     if ((deployed.consumers.get(topic)?.has(consumer) === true) === declared) return effect
     const program = deployed.program.name
@@ -982,16 +1005,17 @@ export const launchWith = (
     }
     /**
      * Runs `read` until it gives a row, each wait ended by a commit in `topic`, for `millis` from the call at most,
-     * and gives the last page read: none once the time is over, or the runtime stops (decision 0142).
+     * and gives the last page read: none once the time is over, or the runtime stops (decision 0142). Given no
+     * `millis`, the time is never over, as a reader of `consume` waits (decision 0184).
      */
     const waited = <A>(
       name: string,
       topic: string,
-      millis: number,
+      millis: number | undefined,
       read: Effect.Effect<ReadonlyArray<A>>,
     ): Effect.Effect<ReadonlyArray<A>> =>
       Effect.gen(function*() {
-        const until = (yield* Clock.currentTimeMillis) + millis
+        const until = millis === undefined ? Infinity : (yield* Clock.currentTimeMillis) + millis
         while (!Deferred.isDoneUnsafe(closing)) {
           // Taken before the reading: a commit after it completes it, and the wait below ends at once. Taken after,
           // a commit between the reading and the wait would be missed, and the wait would run to its end.
@@ -1005,7 +1029,12 @@ export const launchWith = (
             Effect.sync(() => {
               if (++readings === 1) waiting.openUnsafe()
             }),
-            () => Effect.raceAll([Deferred.await(commit), Deferred.await(closing), Effect.sleep(`${until - now} millis`)]),
+            () =>
+              Effect.raceAll([
+                Deferred.await(commit),
+                Deferred.await(closing),
+                ...(until === Infinity ? [] : [Effect.sleep(`${until - now} millis`)]),
+              ]),
             () =>
               Effect.sync(() => {
                 if (--readings === 0) waiting.closeUnsafe()
@@ -2776,6 +2805,52 @@ export const launchWith = (
                 cursored(through, partitions, deployed.storage.ack(topic, consumer, through)),
               ),
             ),
+          consume: (topic, consumer, handler, options) => {
+            // Options left out, which the types do not hold, are refused as a limit left out is (decision 0141).
+            const { limit, wait, partitions: given } = (options ?? {}) as typeof options
+            const read = deployed.storage.feed(topic, consumer, limit, given)
+            const reading = wait === true ? waited(program.name, topic, undefined, read) : read
+            const reader = Effect.gen(function*() {
+              // A reader within a transaction of the client would wait for a row on the connection a step's commit
+              // waits for, and the commit that ends the wait would never come (decision 0184).
+              if (Option.isSome(yield* Effect.serviceOption(sql.transactionService))) {
+                const reason = 'a reader of consume runs within a transaction of the client of the runtime'
+                return yield* Effect.die(new InvariantDefect({ reason }))
+              }
+              // Each page is read after the last one is acked: the next reading starts from the stored cursors, so a
+              // page read before the ack would be the same rows again (decision 0184).
+              while (!Deferred.isDoneUnsafe(closing)) {
+                const page = yield* reading
+                if (page.length === 0) return
+                yield* sql.withTransaction(Effect.andThen(handler(page), deployed.storage.ack(topic, consumer, page)))
+              }
+            })
+            return topical(
+              program,
+              topic,
+              enlisted(
+                deployed,
+                topic,
+                consumer,
+                true,
+                counted(
+                  { limit },
+                  named(
+                    given,
+                    partitions,
+                    Effect.suspend(() => {
+                      const reason = limit === 0
+                        ? 'the limit of consume is 0, which is no positive integer'
+                        : wait !== undefined && wait !== true
+                        ? 'the wait of consume is neither true nor left out'
+                        : undefined
+                      return reason === undefined ? reader : Effect.die(new InvariantDefect({ reason }))
+                    }),
+                  ),
+                ),
+              ),
+            )
+          },
           prune: deployed.storage.prune,
           consumers: Effect.map(deployed.storage.consumers, (stored) =>
             stored.map((consumer): Consumer => ({

@@ -3742,6 +3742,146 @@ describe('publishing what happened', () => {
       // The insert waits for the permit the transaction holds, so the two readings agree and it lands after.
       expect(yield* between(sql.withTransaction(reads))).toEqual([null, null])
     })))
+
+  test('a reader of consume writes each page and its ack in one transaction, and reads a failed page again', () =>
+    onBoth(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE consumed (seq INTEGER NOT NULL, value INTEGER NOT NULL)`
+      const stored = Effect.map(
+        sql<{ seq: number; value: number }>`SELECT seq, value FROM consumed ORDER BY seq`,
+        (rows) => rows.map(({ seq, value }) => [Number(seq), Number(value)]),
+      )
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          for (const [nonce, on] of [['off', false], ['on', true], ['off-again', false]] as const) {
+            yield* toy.send(id, { _tag: 'Want', key: 't', on, nonce }, { requestId: nonce, sender: tester })
+          }
+          const rows = yield* toy.published('projection', [], all)
+          expect(rows.map(({ value }) => value)).toEqual([4, 3, 4, 3])
+          const pages: Array<number> = []
+          const record = (page: ReadonlyArray<Readonly<{ seq: number; value: number }>>) =>
+            Effect.gen(function*() {
+              pages.push(page.length)
+              for (const { seq, value } of page) yield* sql`INSERT INTO consumed (seq, value) VALUES (${seq}, ${value})`
+            }).pipe(Effect.orDie)
+
+          // The handler fails after its writes: the page's transaction rolls back, the store and the cursors stay
+          // as they were, and the reader fails with the handler's error (decision 0184).
+          const failed = yield* Effect.exit(
+            toy.consume('projection', 'queue', (page) => Effect.andThen(record(page), Effect.fail('crash')), {
+              limit: 3,
+            }),
+          )
+          expect(failed).toEqual(Exit.fail('crash'))
+          expect(yield* stored).toEqual([])
+          expect(yield* toy.feed('projection', 'queue', all)).toEqual(rows)
+
+          // A reader of a partition that holds no row of the entity reads nothing, and ends (decision 0153).
+          const partition = partitionOf(id, 300)
+          const other = partition === 1 ? 2 : 1
+          yield* toy.consume('projection', 'queue', record, { limit: 3, partitions: [other] })
+          expect(pages).toEqual([3])
+
+          // Without a wait, the reader takes page after page until one is empty, and the handler is given no empty
+          // page. Each page commits with its ack, so the store holds every row once, and the cursor is past them.
+          yield* toy.consume('projection', 'queue', record, { limit: 3 })
+          expect(pages).toEqual([3, 3, 1])
+          expect(yield* stored).toEqual(rows.map(({ seq, value }) => [seq, value]))
+          expect(yield* toy.feed('projection', 'queue', all)).toEqual([])
+          expect(yield* toy.consumers).toEqual([
+            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, cursors: [] },
+          ])
+        }))
+    })))
+
+  test('a reader of consume that waits is given the rows steps commit, and ends when the runtime stops', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const outside = yield* Scope.make()
+      const handled: Array<number> = []
+      // The reader outlives the runtime's scope: without its end at the stop, it would wait for ever, and the join
+      // below would never return (decision 0184).
+      const reader = yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
+          const reader = yield* Effect.forkIn(
+            Effect.delay(
+              toy.consume(
+                'projection',
+                'queue',
+                (page) => Effect.sync(() => handled.push(...page.map(({ value }) => value))),
+                { limit: all, wait: true },
+              ),
+              '1 millis',
+            ),
+            outside,
+          )
+          yield* TestClock.adjust('1 millis')
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* TestClock.adjust('1 millis')
+          expect(handled).toEqual([4])
+          yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
+          yield* TestClock.adjust('1 millis')
+          expect(handled).toEqual([4, 3])
+          // An hour without a row ends no reader that waits.
+          yield* TestClock.adjust('1 hour')
+          expect(reader.pollUnsafe()).toBeUndefined()
+          expect(yield* toy.feed('projection', 'queue', all)).toEqual([])
+          return reader
+        }))
+      expect(yield* Fiber.join(reader)).toBeUndefined()
+      yield* Scope.close(outside, Exit.void)
+    })))
+
+  test('a reader of consume within a transaction, of a limit of 0, or of a wait that is not true is refused', () =>
+    database(Effect.gen(function*() {
+      const reasonOf = (exit: Exit.Exit<unknown, unknown>) => {
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        return cause instanceof InvariantDefect ? cause.reason : null
+      }
+      const at = yield* DateTime.now
+      const sql = yield* SqlClient.SqlClient
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          const handled: Array<number> = []
+          const handler = (page: ReadonlyArray<unknown>) => Effect.sync(() => handled.push(page.length))
+          // Within a transaction the reader would wait for a commit on the connection the commit waits for
+          // (decision 0184). It is refused before it reads.
+          expect(
+            reasonOf(yield* Effect.exit(sql.withTransaction(toy.consume('projection', 'queue', handler, { limit: all })))),
+          ).toBe('a reader of consume runs within a transaction of the client of the runtime')
+          // A limit of 0 would give empty pages for ever to a reader that waits.
+          expect(
+            reasonOf(yield* Effect.exit(toy.consume('projection', 'queue', handler, { limit: 0, wait: true }))),
+          ).toBe('the limit of consume is 0, which is no positive integer')
+          for (const wait of [false, { millis: 10 }]) {
+            expect(
+              reasonOf(yield* Effect.exit(toy.consume('projection', 'queue', handler, { limit: all, wait } as never))),
+            ).toBe('the wait of consume is neither true nor left out')
+          }
+          // What `feed` refuses, `consume` refuses too (decisions 0141, 0152, 0153).
+          expect(reasonOf(yield* Effect.exit(toy.consume('projection', 'queue', handler, { limit: -1 }))))
+            .toBe('the limit is -1, which is no non-negative integer')
+          expect(reasonOf(yield* Effect.exit(toy.consume('projection', 'queue', handler, undefined as never))))
+            .toBe('the limit is undefined, which is no non-negative integer')
+          expect(
+            reasonOf(yield* Effect.exit(toy.consume('projection', 'qeueu' as 'queue', handler, { limit: all }))),
+          ).toBe("'qeueu' is no consumer the deploy of 'Toy' declares for 'projection'")
+          expect(
+            reasonOf(yield* Effect.exit(toy.consume('projection', 'queue', handler, { limit: all, partitions: [] }))),
+          ).toBe('the partitions a reader names are no list of at least one')
+          expect(handled).toEqual([])
+          expect((yield* toy.feed('projection', 'queue', all)).length).toBe(1)
+        }))
+    })))
 })
 
 describe('a schema that changes', () => {

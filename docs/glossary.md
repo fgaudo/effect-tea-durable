@@ -45,8 +45,8 @@ Cluster's says so.
   `callers.messages`, 4096 by default: the messages of `send` offered to it and not yet applied. Nothing of the
   message is offered or stored. An operation of another entity is never answered `Full`, and sends again after the
   retry. On Effect Cluster a caller is never answered `Full`, and its message waits in Cluster's table.
-- **Handle.** What `deploy` gives: `create`, `send`, `read`, `query`, `count`, `sum` and `countBy` for callers, `feed`, `ack` and the rest of the
-  outbox for its consumers, `reindex`, and `suspended`, `resume` and `discard` for an operator.
+- **Handle.** What `deploy` gives: `create`, `send`, `read`, `query`, `count`, `sum` and `countBy` for callers,
+  `consume`, `feed`, `ack` and the rest of the outbox for its consumers, `reindex`, and `suspended`, `resume` and `discard` for an operator.
 - **Hold, lock.** Each entity is found, loaded, unloaded and crashed under a lock of its own. A caller holds the entity
   while it waits for its activation, and nothing under one entity's lock waits for another's.
 - **Idempotency key.** The entity's program and id, the operation's key and its incarnation, given to an idempotent
@@ -111,9 +111,10 @@ Cluster's says so.
   entities is a *report*.
 - **Reference, `reference`.** A program's name with its types, and none of its code, which `send` and `create`
   name a receiver by. `reference<typeof p>(name)` makes one, and the compiler checks the name against `p`'s.
-- **Reader.** A caller of `feed` under a consumer's name, which may name the partitions it reads. The readers of
-  one consumer divide its partitions among them, and the division is the caller's: the runtime holds no reader,
-  and two readers that name one partition are given the same rows.
+- **Reader.** A caller of `feed` under a consumer's name, which may name the partitions it reads. `consume` runs
+  one, which reads a page, acts on it and acks it in one transaction, and reads the next. The readers of one
+  consumer divide its partitions among them, and the division is the caller's: the runtime holds no reader, and two
+  readers that name one partition are given the same rows.
 - **Raised event.** What a child's `update` tells its parent with `raise(event)(state)`, handled by the parent's
   `onEvent` in the same step, and never stored.
 - **Report.** A question over the entities the read model does not answer: a grouping other than a count per value

@@ -24,9 +24,9 @@ export const statusReport = Effect.gen(function*() {
 
   return {
     /**
-     * Writes a page of the topic `status` to the store. The consumer writes it and acks it in one transaction of the
-     * database the runtime was launched with, since an ack joins a transaction left open around it (decision 0150):
-     * the store and the cursors commit together, and a page read again after a crash was never written.
+     * Writes a page of the topic `status` to the store, as the handler of `consume`. A reader of `consume` writes it
+     * and acks it in one transaction of the database the runtime was launched with (decisions 0150, 0184): the store
+     * and the cursors commit together, and a page read again after a crash was never written.
      */
     record: (page: ReadonlyArray<Published<Order, 'status'>>) =>
       Effect.forEach(

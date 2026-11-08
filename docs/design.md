@@ -776,13 +776,22 @@ caller's defect, which stores nothing
 ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). The log is kept for its
 consumers and is not an archive: a program whose past must stay readable keeps it where callers read it, in the
 state or in entities of its own.
-The runtime writes the log and does not deliver it — the transport, the retries and the acknowledgements are
-the consumer's.
+`consume(topic, consumer, handler, { limit })` runs the loop of a consumer: it reads a page with `feed`, runs
+`handler` on it and acks it in one transaction of the client the runtime was launched with, and reads the next
+page only once that one is acked. Without `wait` it ends at the first page that is empty. Given `wait: true`, a
+reading that finds no row waits for a commit in the topic with no time limit, and the reader ends only when the
+runtime stops. A failure of `handler` or of the transaction rolls the page back and fails the reader, and the
+caller retries it. A reader within a transaction of the client is the caller's defect, since its wait would hold
+the connection the commit that ends it waits for
+([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)).
+The runtime writes the log and runs a reader, and does not deliver the log elsewhere: the transport and the
+retries are the consumer's.
 
 ### Readers of one consumer
 
 A consumer whose work on a row is slow is read by several readers, each of which names the partitions it reads:
-`feed(topic, consumer, limit, { partitions })` reads those partitions only, from the consumer's cursors there
+`feed(topic, consumer, limit, { partitions })` reads those partitions only, from the consumer's cursors there, and
+so does a reader of `consume` given `partitions`
 ([decision 0153](decisions/archive/0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md)). The cursors stay the
 consumer's, whichever reader acked them, so a prune reads them as one, and a reader added or removed moves no
 cursor. A slow row holds only its reader's partitions. The handle gives the number of partitions as `partitions`.
