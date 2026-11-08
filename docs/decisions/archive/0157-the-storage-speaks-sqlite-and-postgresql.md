@@ -7,6 +7,7 @@ request; and [decision 0156](0156-a-program-is-renamed-by-its-launch-and-keeps-i
 request in the database. A database of SQLite made before is given `request_id`, and a page begins at `REPEATABLE
 READ` only where the transaction is its own, by
 [decision 0158](0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md).
+An id is not empty either, by [decision 0179](../0179-an-id-is-not-empty.md).
 
 ## Context
 

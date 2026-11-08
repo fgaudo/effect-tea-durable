@@ -9,6 +9,7 @@ import {
   encode,
   Entities,
   type IdempotencyKey,
+  idFault,
   InvariantDefect,
   type Key,
   isTimer,
@@ -284,6 +285,10 @@ const makeWorld = (at: DateTime.Utc) => {
         if (droppable) {
           return invariant(`the droppable operation under '${Machine.shownKey(key)}' sent to ${program.name} '${id}'`)
         }
+        // A rehearsal refuses the ids the runtime refuses, so that a test passes only what a deployment runs
+        // (decision 0179).
+        const fault = idFault(id)
+        if (fault !== undefined) return invariant(fault)
         const to = JSON.stringify([program.name, id, name])
         if (used[kind].has(to)) {
           return invariant(`the operation ${kind === 'message' ? 'sent' : 'created'} '${name}' to ${program.name} '${id}' twice`)
@@ -408,6 +413,8 @@ const makeWorld = (at: DateTime.Utc) => {
         // another one under that name is the test's mistake, and is not run in silence.
         const deployed = deployedAs(program)
         if (deployed !== program) return Effect.die(`the world runs another program under the name '${program.name}'`)
+        const fault = idFault(id)
+        if (fault !== undefined) return invariant(fault)
         if (entities.has(addressKey({ name: program.name, id }))) {
           return Effect.die(`${program.name} '${id}' exists in the world already`)
         }

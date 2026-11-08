@@ -5,21 +5,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **An empty id is refused.** An entity whose id is `''` is created, and its timer stored, but the waker never wakes
-  it and `reindex` never writes its row: both page by `id > ''`, from `''`
-  ([`src/storage.ts`](../src/storage.ts)), and the check of an id asks only for text a database holds
-  ([`src/runtime.ts`](../src/runtime.ts), `texted`). Once unloaded, such an entity's deadline never fires. The step
-  refuses `''` as the caller's defect wherever an id enters: a handle's `create`, `send` and `read`, an operation's
-  `send` and `create`, and a rehearsal's `create`, as an empty name is refused already
-  ([decision 0054](decisions/archive/0054-a-program-is-checked-where-it-enters.md)). A note decides it, since a test
-  keeps it, and the glossary's *text a database holds* says that an id is not empty.
-
-## Later
-
 - **A CI on Linux.** The repository has no workflow. One runs `bun run typecheck`, `bun test` and `bun run links`
   on every push, and `bun run test:release` before a release. It is also where the test of a runner stopped with
   `SIGTERM` runs, which Windows cannot run ([open question](open-questions.md#running)). The tooling is a rule of
   work, so [`AGENTS.md`](../AGENTS.md) states it, and no note is taken.
+
+## Later
 
 - **PostgreSQL on a server with a pool.** The storage's tests and the runtime's tests of the log run against a
   server in a container, in CI, so that what is only reasoned of many connections is tested: the order of a
@@ -31,7 +22,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     `rejection` as `Schema.Never`, `sender` as `Schema.Null`, and `keys`, `operations` and `indexes` as `{}`, as
     [`examples/cart/cart.ts`](../examples/cart/cart.ts) does. A schema left out is `Never`, and a record left out is
     empty.
-  - **A timer without its type parameter.** Every example writes `timer<Internal>(…)`, and `update` writes
+  - **A timer without its type parameter.** Every example with a timer writes `timer<Internal>(…)`, and `update` writes
     `Match.withReturnType<State | Rejected>()`. The internal messages are in the schemas already: a `timer` typed by
     the program, or a `durable` that propagates the type, needs neither.
   - **`init` that rejects.** A creation is `Created` or a defect, so a rule of the domain at creation lives in the
@@ -55,7 +46,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     test calls `update` with a `meta` it builds. `send` that takes a time, or an act that moves the clock forward,
     rehearses it.
   - **The types of a program, exported.** A boundary or a test that names a program's `Handle`, `Rehearsal` or
-    inbound message writes `typeof p extends Program<infer T extends Types> ? T : never` by hand, as
+    inbound message writes `typeof p extends Program<infer T> ? T : never` by hand, as
     [`examples/server/server.ts`](../examples/server/server.ts) does. The library exports a type that gives them.
   - **A world's services.** `rehearse.together` asks for every service of a program's runners, even when the test
     runs only the runners that talk to other entities. Such a test provides stubs that die. Either a world asks

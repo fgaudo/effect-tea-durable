@@ -378,6 +378,27 @@ describe('a world', () => {
     expect(reasonOf(exit)).toBe("the droppable operation under 'hold' sent to Inventory 'concert-1'")
   })
 
+  // A rehearsal refuses the ids the runtime refuses (decision 0179).
+  test('fails a creation and a send under an id that is empty', async () => {
+    const empty = 'the id is empty, and an id is not'
+    const created = await Effect.runPromiseExit(rehearse.together(
+      at,
+      (world) => Effect.asVoid(world.create(inventory, '', { capacity: 4 })),
+    ))
+    expect(reasonOf(created)).toBe(empty)
+    const sending = holdingBy(operation.atLeastOnce(({ seats }) =>
+      Effect.as(send(inventory, '', { _tag: 'HoldRequested', seats }, 'hold'), { _tag: 'SeatsHeld' } as const)
+    ))
+    const sent = await Effect.runPromiseExit(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        const held = yield* world.create(sending, 'booking-1', flags)
+        yield* held.run(yield* held.pending('hold'))
+      }),
+    ))
+    expect(reasonOf(sent)).toBe(empty)
+  })
+
   // A creation is stored under its request, so a run after a crash is answered `Created` again (decision 0017).
   test('creates an entity from a run, and answers the run sent again after a crash as the first', () => {
     const creating = holdingBy(operation.atLeastOnce(({ event, seats }) =>

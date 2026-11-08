@@ -146,7 +146,7 @@ Cluster's says so.
   their completions wait behind the message. A caller meanwhile is answered `Suspended`, which is no reply.
 - **Text a database holds.** A string with no U+0000, which PostgreSQL holds in no text, and no lone surrogate,
   which no database gives back as written. An id, a name and a string an index holds are such text, or the defect of
-  whoever gave them.
+  whoever gave them. An id and a program's name are not empty either.
 - **Timer.** Work that delivers one internal message at its time, derived from the state. It may be dropped in any
   state, and one that changes is armed again as new work.
 - **Topic.** A part of the log, by name: a pure function, declared in `topics`, that selects of the projection what

@@ -33,6 +33,7 @@ import {
   type Creation,
   encode,
   Entities,
+  idFault,
   InvariantDefect,
   isText,
   isTimer,
@@ -727,16 +728,16 @@ const counted = <A>(
   })
 
 /**
- * Runs `effect` once the id a caller gave is text a database holds as it is: anything else is the caller's defect,
- * and nothing is read or stored for it. No database gives a lone surrogate back as written, so that two ids would be one
- * entity, and PostgreSQL holds U+0000 in no text (decisions 0053, 0157).
+ * Runs `effect` once the id a caller gave is an id, text a database holds as it is and not empty: anything else is
+ * the caller's defect, and nothing is read or stored for it. No database gives a lone surrogate back as written, so
+ * that two ids would be one entity, PostgreSQL holds U+0000 in no text, and the waker never wakes the empty id
+ * (decisions 0053, 0157, 0179).
  */
 const texted = <A>(id: string, effect: Effect.Effect<A>): Effect.Effect<A> =>
-  Effect.suspend(() =>
-    typeof id === 'string' && isText(id)
-      ? effect
-      : Effect.die(new InvariantDefect({ reason: `the id is ${JSON.stringify(id)}, which is no text a database holds` }))
-  )
+  Effect.suspend(() => {
+    const reason = idFault(id)
+    return reason === undefined ? effect : Effect.die(new InvariantDefect({ reason }))
+  })
 
 /**
  * Runs `effect` once each cursor a caller gave names a partition of the log, from 1 to `partitions`, and a `seq`
@@ -2364,12 +2365,9 @@ export const launchWith = (
               }),
             )
           }
-          // An id an operation gives is held as a caller's is (decision 0157).
-          if (typeof id !== 'string' || !isText(id)) {
-            return Effect.die(
-              new InvariantDefect({ reason: `the id is ${JSON.stringify(id)}, which is no text a database holds` }),
-            )
-          }
+          // An id an operation gives is held as a caller's is (decisions 0157, 0179).
+          const fault = idFault(id)
+          if (fault !== undefined) return Effect.die(new InvariantDefect({ reason: fault }))
           const to = JSON.stringify([program.name, id, name])
           if (used[kind].has(to)) {
             const verb = kind === 'message' ? 'sent' : 'created'

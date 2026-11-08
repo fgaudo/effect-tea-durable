@@ -970,6 +970,9 @@ is written once. A launch on a client of any other dialect is the launcher's def
 - An id, a name, a key's name, a topic's, a consumer's, and a string an index holds are text every database holds as
   it is: no U+0000, which PostgreSQL holds in no text, and no lone surrogate, which no database gives back as written, so
   that two ids would be one. Anything else is the defect of whoever gave it.
+- An id is not empty either. The waker and `reindex` page the entities from the empty id up, so an entity under it
+  would never be woken nor indexed. A handle, an operation and a rehearsal refuse it as the defect of whoever gave it
+  ([decision 0179](decisions/0179-an-id-is-not-empty.md)).
 - The tests of the storage run on both, PostgreSQL on PGlite, and the tests of the runtime whose steps write what the
   dialects write otherwise run on both too. What a server with many connections does is an
   [open question](open-questions.md#running).

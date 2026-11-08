@@ -9,6 +9,7 @@ import * as Opt from 'effect/Option'
 import * as Result from 'effect/Result'
 import { Base64Url } from 'effect/encoding'
 import * as Schema from 'effect/Schema'
+import * as Str from 'effect/String'
 import { createHash } from 'node:crypto'
 
 /** What `update` returns for an inbound message that does not apply in the state, with no reason given. */
@@ -532,6 +533,19 @@ export const topicsOf = <T extends Types>(program: Program<T>): ReadonlyArray<To
  * only (decision 0157).
  */
 export const isText = (text: string): boolean => !text.includes('\u0000') && !/\p{Cs}/u.test(text)
+
+/**
+ * Why a string a caller gave as an id is no id, or `undefined` when it is one. An id is text a database holds, and
+ * not empty: the waker and `reindex` page the entities from the empty string up, so an entity under the empty id
+ * would never be woken nor indexed (decision 0179). The types do not hold a cast or a call from JavaScript, so a
+ * value that is no string is refused too (decision 0053).
+ */
+export const idFault = (id: unknown): string | undefined =>
+  typeof id !== 'string' || !isText(id)
+    ? `the id is ${JSON.stringify(id)}, which is no text a database holds`
+    : Str.isEmpty(id)
+    ? 'the id is empty, and an id is not'
+    : undefined
 
 /** An index's name is a word, so that a store writes it as it is, in a query and in an index of its own. */
 const isWord = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)

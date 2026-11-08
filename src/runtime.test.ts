@@ -743,8 +743,8 @@ describe('the runtime on SQLite', () => {
     })))
 
   // No database gives a lone surrogate back as written, so that two ids would be one entity, and PostgreSQL holds U+0000
-  // in no text (decision 0157).
-  test('an id that is no text a database holds is the caller’s defect, and reaches no entity', () =>
+  // in no text (decision 0157). The waker pages from the empty id up, so it would never wake that one (decision 0179).
+  test('an id that is no text a database holds, or is empty, is the caller’s defect, and reaches no entity', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()
       const at = yield* DateTime.now
@@ -753,7 +753,12 @@ describe('the runtime on SQLite', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
-          for (const broken of ['toy\ud800', 'toy\udc00', 'toy\u0000']) {
+          const unheld = (id: string) => `the id is ${JSON.stringify(id)}, which is no text a database holds`
+          const cases = [
+            ...['toy\ud800', 'toy\udc00', 'toy\u0000'].map((id) => [id, unheld(id)] as const),
+            ['', 'the id is empty, and an id is not'] as const,
+          ]
+          for (const [broken, reason] of cases) {
             const calls: ReadonlyArray<Effect.Effect<unknown>> = [
               toy.create(broken, { at }, { requestId: 'creation', sender }),
               toy.send(broken, want, { requestId: 'r', sender }),
@@ -764,7 +769,7 @@ describe('the runtime on SQLite', () => {
             for (const call of calls) {
               const exit = yield* Effect.exit(call)
               const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
-              expect(cause instanceof InvariantDefect ? cause.reason : null).toBe(`the id is ${JSON.stringify(broken)}, which is no text a database holds`)
+              expect(cause instanceof InvariantDefect ? cause.reason : null).toBe(reason)
             }
           }
           const sql = yield* SqlClient.SqlClient
@@ -1082,31 +1087,38 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
-  // An id an operation gives is held as a caller's is (decision 0157).
-  test('an operation that sends to an id that is no text a database holds dies, and suspends its entity', () =>
-    database(Effect.gen(function*() {
-      const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
-        ...sending,
-        operations: {
-          ...sending.operations,
-          C: operation.atLeastOnce(({ key }) =>
-            Effect.as(send(program, 'toy\ud800', { _tag: 'Want', key: 'a', on: false, nonce: 'sent' }, 'want'), done(key))
-          ),
-        },
-      }
-      const { layer } = yield* hands()
-      const at = yield* DateTime.now
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          yield* Effect.provide(runtime.deploy(program), layer)
-          const from = yield* runtime.deploy(sender)
-          yield* ran(from.create('sender', { at }, { requestId: 'creation', sender: tester }))
-          yield* runtime.settled
-          const stored = yield* storage(sender, yield* SqlClient.SqlClient).load('sender')
-          expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: { name: 'c' }, incarnation: 1 })
-          expect(stored?.suspension?.cause).toContain('the id is "toy\\ud800", which is no text a database holds')
-        }))
-    })))
+  // An id an operation gives is held as a caller's is (decisions 0157, 0179).
+  for (
+    const [broken, reason] of [
+      ['toy\ud800', 'the id is "toy\\ud800", which is no text a database holds'],
+      ['', 'the id is empty, and an id is not'],
+    ] as const
+  ) {
+    test(`an operation that sends to the id ${JSON.stringify(broken)} dies, and suspends its entity`, () =>
+      database(Effect.gen(function*() {
+        const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
+          ...sending,
+          operations: {
+            ...sending.operations,
+            C: operation.atLeastOnce(({ key }) =>
+              Effect.as(send(program, broken, { _tag: 'Want', key: 'a', on: false, nonce: 'sent' }, 'want'), done(key))
+            ),
+          },
+        }
+        const { layer } = yield* hands()
+        const at = yield* DateTime.now
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            yield* Effect.provide(runtime.deploy(program), layer)
+            const from = yield* runtime.deploy(sender)
+            yield* ran(from.create('sender', { at }, { requestId: 'creation', sender: tester }))
+            yield* runtime.settled
+            const stored = yield* storage(sender, yield* SqlClient.SqlClient).load('sender')
+            expect(stored?.suspension?.on).toEqual({ _tag: 'Operation', key: { name: 'c' }, incarnation: 1 })
+            expect(stored?.suspension?.cause).toContain(reason)
+          }))
+      })))
+  }
 
   // A suspension stops the handling of messages and the timers, not the operations (decision 0113).
   test('an operation under way when its entity suspends runs to its end, and is not run again once resumed', () =>

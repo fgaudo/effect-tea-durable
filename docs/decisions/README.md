@@ -170,7 +170,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0153](archive/0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md) | A reader of a consumer names the partitions it reads, and the division is the caller's |  |
 | [0154](archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md) | A step's projection is stored once in the outbox, in a publication each topic's row names |  |
 | [0155](archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md) | A `forEach` of messages to children by id puts them back once, with the step one message after the other gives |  |
-| [0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both, of text every database holds | [0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md) |
+| [0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both, of text every database holds | [0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md), [0179](0179-an-id-is-not-empty.md) |
 | [0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md) | A database of SQLite made before is given `request_id`, and a page keeps the level of a caller's transaction |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for |  |
@@ -189,8 +189,9 @@ each read and found, are in [`reviews.md`](reviews.md).
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
+| [0179](0179-an-id-is-not-empty.md) | An id is not empty, and an empty id is the defect of whoever gave it |  |
 | [0052](archive/0052-what-crosses-the-library-is-never-mutated.md) | What crosses the library is never mutated |  |
-| [0053](archive/0053-what-a-handle-is-given-is-checked.md) | What a handle is given is checked | [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md) |
+| [0053](archive/0053-what-a-handle-is-given-is-checked.md) | What a handle is given is checked | [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0179](0179-an-id-is-not-empty.md) |
 | [0054](archive/0054-a-program-is-checked-where-it-enters.md) | A program is checked where it enters | [0064](archive/0064-the-program-is-not-the-machines-state.md), [0132](archive/0132-a-key-may-take-a-parameter.md), [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md) |
 
 ## The runtime
