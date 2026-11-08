@@ -10,21 +10,24 @@ import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
 import { defect, type IdempotencyKey, noWork, operation, part, raise, reject } from '@fgaudo/effect-tea-persistent/program'
 
+// How many units of the article: a line of none would reserve nothing, and a negative one would give stock back.
+export const Quantity = Schema.Int.check(Schema.isGreaterThan(0))
+
 const State = Schema.Union([
   // Only the reservation's answer leaves it: a removal meanwhile is rejected.
-  Schema.TaggedStruct('Reserving', { sku: Schema.String, quantity: Schema.Int }),
-  Schema.TaggedStruct('Reserved', { sku: Schema.String, quantity: Schema.Int, reservation: Schema.String }),
-  Schema.TaggedStruct('Unavailable', { sku: Schema.String, quantity: Schema.Int }),
-  Schema.TaggedStruct('Releasing', { sku: Schema.String, quantity: Schema.Int, reservation: Schema.String }),
+  Schema.TaggedStruct('Reserving', { sku: Schema.String, quantity: Quantity }),
+  Schema.TaggedStruct('Reserved', { sku: Schema.String, quantity: Quantity, reservation: Schema.String }),
+  Schema.TaggedStruct('Unavailable', { sku: Schema.String, quantity: Quantity }),
+  Schema.TaggedStruct('Releasing', { sku: Schema.String, quantity: Quantity, reservation: Schema.String }),
   // Checked out while its reservation was under way: the answer decides whether it is sold.
-  Schema.TaggedStruct('Selling', { sku: Schema.String, quantity: Schema.Int }),
-  Schema.TaggedStruct('Sold', { sku: Schema.String, quantity: Schema.Int, reservation: Schema.String }),
+  Schema.TaggedStruct('Selling', { sku: Schema.String, quantity: Quantity }),
+  Schema.TaggedStruct('Sold', { sku: Schema.String, quantity: Quantity, reservation: Schema.String }),
   // Gone, and waiting for the cart to drop it: the one state a line raises `Removed` from, and it holds no work.
-  Schema.TaggedStruct('Removed', { sku: Schema.String, quantity: Schema.Int }),
+  Schema.TaggedStruct('Removed', { sku: Schema.String, quantity: Quantity }),
 ])
 export type State = typeof State.Type
 
-const Flags = Schema.Struct({ sku: Schema.String, quantity: Schema.Int })
+const Flags = Schema.Struct({ sku: Schema.String, quantity: Quantity })
 
 const Inbound = Schema.TaggedStruct('RemoveRequested', {})
 
@@ -42,7 +45,7 @@ const Event = Schema.TaggedStruct('Removed', {})
 const External = Schema.TaggedStruct('CheckedOut', {})
 
 const Operation = Schema.TaggedUnion({
-  Reserve: { sku: Schema.String, quantity: Schema.Int },
+  Reserve: { sku: Schema.String, quantity: Quantity },
   Release: { reservation: Schema.String },
 })
 type Operation = typeof Operation.Type

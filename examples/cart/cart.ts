@@ -6,7 +6,7 @@
 import * as Optic from 'effect/Optic'
 import * as Schema from 'effect/Schema'
 import { each, forEach, program, reject } from '@fgaudo/effect-tea-persistent/program'
-import { line, Projection as LineProjection, type State as LineState } from './line.ts'
+import { line, Projection as LineProjection, Quantity, type State as LineState } from './line.ts'
 
 const Line = line.schemas.state
 
@@ -18,7 +18,8 @@ const State = Schema.Struct({
 type State = typeof State.Type
 
 const Inbound = Schema.Union([
-  Schema.TaggedStruct('ItemAdded', { sku: Schema.String, quantity: Schema.Int }),
+  // The line's own check: a quantity no line holds is refused with the message, before any step.
+  Schema.TaggedStruct('ItemAdded', { sku: Schema.String, quantity: Quantity }),
   Schema.TaggedStruct('CheckoutRequested', {}),
 ])
 

@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import { accepted, rehearse, rejected } from '@fgaudo/effect-tea-persistent/testing'
 import { cart } from './cart.ts'
 
@@ -91,4 +92,14 @@ describe('cart', () => {
         expect(yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 }, null)).toMatchObject(rejected)
       }),
     )))
+
+  // A line of no unit would reserve nothing: the message's schema refuses it, and the cart takes no step.
+  test('an article added with no unit is refused, and adds no line', async () => {
+    const exit = await Effect.runPromiseExit(rehearse(
+      cart,
+      start,
+      (rehearsal) => rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 0 }, null),
+    ))
+    expect(Exit.isFailure(exit)).toBe(true)
+  })
 })
