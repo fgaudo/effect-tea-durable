@@ -973,9 +973,9 @@ process to settle, with nothing under way, an entity unloading included
 that what an event writes, applied to the rows before it, gives the rows after it, and
 [`src/storage.test.ts`](../src/storage.test.ts) that the storage writes those rows as given
 ([decision 0057](decisions/archive/0057-the-machine-gives-what-is-written.md)).
-[`src/booking.test.ts`](../src/booking.test.ts) runs two entities that talk on it, with a probe and values frozen
-through, and [`examples/booking/runtime.test.ts`](../examples/booking/runtime.test.ts) runs them through the public
-surface alone.
+The tests of [`src/runtime.test.ts`](../src/runtime.test.ts) under `two entities that talk` run the booking and
+the inventory of `src/fixtures/` on it, on the test's clock, with a probe and values frozen through. [`examples/booking/runtime.test.ts`](../examples/booking/runtime.test.ts) runs the example's
+booking on real time, through the public surface alone.
 
 ## Where it departs from effect-tea
 

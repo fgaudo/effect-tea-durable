@@ -2,7 +2,8 @@
  * The booking and its inventory on the runtime, in one database: two entities that talk through operations
  * (decision 0009), where the scenarios of `scenarios.test.ts` rehearse the booking alone and answer for the
  * inventory. It is also how a program is run: a client, a runtime that creates its tables, and a handle per program.
- * What only a probe or values frozen through show is the library's, in `src/booking.test.ts`.
+ * What only a probe or values frozen through show is the library's, under `two entities that talk` in
+ * `src/runtime.test.ts`.
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'

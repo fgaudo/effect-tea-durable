@@ -45,7 +45,7 @@ A reading of the surface against the public signatures found four more defects.
 - **`Returned` is exported by `.`, and `isTimer` is not.** `versionOf` stays, since an operator reads which version
   a program writes, as decision 0055 says.
 - **The tests of the booking that need a probe, the rows of a table or values frozen through are the library's.**
-  They are in [`src/booking.test.ts`](../../src/booking.test.ts), on the example's programs. The example's
+  They are in [`src/runtime.test.ts`](../../src/runtime.test.ts), on the example's programs. The example's
   `runtime.test.ts` keeps the tests a user writes, on the surface alone.
 - **`src/index.ts` gives `./program` by `export *`.** A symbol of a program is listed once, in
   `src/index.program.ts`, so the two entries cannot give different symbols of it.
