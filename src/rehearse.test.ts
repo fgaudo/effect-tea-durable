@@ -853,13 +853,19 @@ describe('time that passes', () => {
       }),
     )))
 
-  test('fails on a duration below zero, and on a timer armed again at a time already reached', async () => {
+  test('fails on a duration below zero or infinite, and on a timer armed again at a time already reached', async () => {
     const backwards = await Effect.runPromiseExit(rehearse(
       meter('Meter'),
       { flags: {}, at: placedAt },
       (rehearsal) => rehearsal.advance('-1 second'),
     ))
     expect(failure(backwards)).toBe('time passes by a finite duration of zero or more, not -1s')
+    const endless = await Effect.runPromiseExit(rehearse(
+      meter('Meter'),
+      { flags: {}, at: placedAt },
+      (rehearsal) => rehearsal.advance(Duration.infinity),
+    ))
+    expect(failure(endless)).toStartWith('time passes by a finite duration of zero or more, not ')
     const looping = await Effect.runPromiseExit(rehearse(
       meter('Meter'),
       { flags: {}, at: placedAt },

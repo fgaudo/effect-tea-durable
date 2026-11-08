@@ -1234,6 +1234,7 @@ describe('the runtime on SQLite', () => {
             since: DateTime.toEpochMillis(at) + 7,
             waiting: [{ entity: { name: 'Sender', id: 's' }, key: { name: 'c' }, incarnation: 1, name: 'want' }],
           }])
+          expect((yield* toy.inspect(id))?.suspension).toEqual((yield* toy.suspended)[0])
           // Resumed by the program that died on the message, it is activated, and dies on it again. `settled` would
           // wait for the sender's operation, which waits for the resumption: the test lets the step run instead.
           expect(yield* toy.resume(id)).toEqual({ _tag: 'Resumed' })
@@ -1361,6 +1362,26 @@ describe('the runtime on SQLite', () => {
           // A resume activates it, and the new cause is what an inspection then reads.
           expect(yield* toy.resume(id)).toEqual({ _tag: 'StillSuspended', cause: expect.stringContaining('durable died') })
           expect((yield* toy.inspect(id))?.suspension?.cause).toContain('durable died')
+        }))
+    })))
+
+  test('an inspection gives the work in the order it started, not in the order of the names of its keys', () =>
+    onBoth(Effect.gen(function*() {
+      const { layer } = yield* hands({ holds: true })
+      const at = yield* DateTime.now
+      // The work starts in the order `durable` gives it, here the reverse of the keys' names, while the database
+      // may give the rows by the names of their keys (decision 0185).
+      const reversed: Program<T> = {
+        ...program,
+        durable: (state) => Object.fromEntries(Object.entries(program.durable(state)).reverse()),
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(reversed), layer)
+          // The hands never come back, so the work stays under way, and the test lets the operations start.
+          yield* ran(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          const work = (yield* toy.inspect(id))?.work.map(({ key, incarnation }) => [key.name, incarnation])
+          expect(work).toEqual([['t', 1], ['c', 2], ['b', 3], ['a', 4]])
         }))
     })))
 
@@ -4083,6 +4104,17 @@ describe('publishing what happened', () => {
               pages.push(page.length)
               for (const { seq, value } of page) yield* sql`INSERT INTO consumed (seq, value) VALUES (${seq}, ${value})`
             }).pipe(Effect.orDie)
+
+          // The ack fails after the handler's writes, since the handler takes the table of the cursors away in the
+          // page's transaction. The writes and the table's rename roll back with the ack (decision 0184).
+          const unacked = yield* Effect.exit(
+            toy.consume('projection', 'queue', (page) =>
+              Effect.andThen(record(page), sql`ALTER TABLE cursors RENAME TO away`.pipe(Effect.orDie)), { limit: 3 }),
+          )
+          expect(Exit.isFailure(unacked)).toBe(true)
+          expect(yield* stored).toEqual([])
+          expect(yield* toy.feed('projection', 'queue', all)).toEqual(rows)
+          pages.length = 0
 
           // The handler fails after its writes: the page's transaction rolls back, the store and the cursors stay
           // as they were, and the reader fails with the handler's error (decision 0184).

@@ -97,19 +97,26 @@ flowchart TB
   program["program.ts: program(schemas)(…), with init, update, durable,<br/>operations, project, indexes and migrations;<br/>part, child and each, which compose children"]
   machine["machine.ts: the pure machine, from an event<br/>to the next machine and the rows it writes"]
   rehearse["rehearse.ts: a scenario without storage or clock,<br/>of one entity or of a world"]
+  testing["testing.ts: the checks of a program's migrations and projections,<br/>and the scheduler that moves where the fibers of a test yield"]
   runtime["runtime.ts: launch and deploy, each entity under its own lock,<br/>its fibers, timers and passivation;<br/>on Cluster, the step of a door, settled by the count of steps,<br/>and a singleton per shard that activates and crashes its entities"]
   cluster["cluster.ts: on Effect Cluster, the Sharding of a runner,<br/>built once its versions are recorded, its RunnerHealth,<br/>the door of each program, which steps at the newest version,<br/>the client every request is sent through,<br/>and launch, the runtime of a runner"]
   storage["storage.ts: entities, entity_keys, mailbox, replies,<br/>projections, publications, outbox, log, heads, consumers and cursors;<br/>on Cluster, versions, runner_versions, waiting,<br/>sent_requests and given_requests"]
   db[(SQLite or PostgreSQL)]
+  entries["the package's four entries: index.ts, the main one;<br/>index.program.ts, what declares a program; index.testing.ts,<br/>rehearse and the checks; index.cluster.ts, the runtime on Cluster"]
 
   program --> machine
   machine --> rehearse
+  program --> testing
   machine --> runtime
   program --> cluster
   runtime --> storage
   cluster --> runtime
   cluster --> storage
   storage --> db
+  rehearse --> entries
+  testing --> entries
+  cluster --> entries
+  runtime --> entries
 ```
 
 ```sh

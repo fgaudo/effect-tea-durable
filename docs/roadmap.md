@@ -5,9 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **A review of notes 0178 to 0193.** Sixteen notes are taken since the last review, so a review reads them before
-  the next step starts, as [`AGENTS.md`](../AGENTS.md) says, in a session that did not write them.
-
 - **A timer months away.** A sleep past 2^31 − 1 milliseconds, about 24.8 days, is beyond `setTimeout`, and Effect
   splits it into sleeps of that length, read in `node_modules/effect/src/internal/effect.ts` at 4.1.2 and documented
   nowhere. A subscription's renewal rests on it ([`examples/subscription`](../examples/subscription)). A spike sees
@@ -31,6 +28,18 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   completed requests to Cluster, merged and in no release at 4.1.2: once a release holds it, a move of Effect's
   version weighs it against those statements, and a note says which rows the runtime still deletes itself.
 
+- **The name and the words.** The package is named for the public, and the words the guide will cement are
+  decided before the quick start and the guide are written. "durable" says durable execution elsewhere, in
+  `effect/workflow`, Temporal and Restate, which replay a history, and this library replays nothing: the package's
+  name and the field `durable` of a program drop it. The step takes a note that decides the package's name, under
+  `@fgaudo/` as effect-tea is, with `@fgaudo/effect-tea-server` and `@fgaudo/effect-tea-entities` weighed; the
+  field `durable`, with `work` weighed, since the glossary calls what it gives work and `noWork` exists; `deploy`
+  of a runtime, which reads as a deployment to production, with `serve` and `host` weighed against what a rename
+  costs the design and the notes; and `feed` of a consumer, with `pull` weighed. It keeps `rehearse`, and every
+  word shared with effect-tea: `program`, `init`, `update`, `flags`, `reject`, `defect`, `raise`, `child`, `each`
+  and `part`. The commit that takes the step renames the imports of the examples and the fixtures, the glossary
+  and the diagrams of the README with it.
+
 - **A quick start.** The README's first code is [`examples/order/order.ts`](../examples/order/order.ts), 312 lines.
   A quick start shows a program of a screen, its rehearsal and its `launch` in forty. It comes after the
   housekeeping, which may change what a program passes to `send` or to `launch`.
@@ -50,6 +59,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - A row with no life of its own, such as a customer, is a table of the application. The table may live in the
     runtime's database, written on the client the runtime was launched with, as a consumer's store already may.
 
+  The guide is written in another register than the design: the example first, the rule after it, and a word of
+  the glossary introduced by an example before it is used. Cluster, children, the outbox, schemas that change and
+  the operator's calls are pages of the guide by topic, read when needed, and not a second guide for an advanced
+  reader. The guide is checked as the bike rental was: a reader who has not seen the code builds a program from the
+  documents alone, and what they get wrong is what the guide lacks.
+
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point
   where fibers yield, after which the pinned seeds of the explored tests are found again. So the step comes after
@@ -68,12 +83,32 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   the order of a partition's commits, the advisory lock, a deadlock or a failure of serialization in a step
   ([open question](open-questions.md#running)). A library for most backends needs it before its release.
 
-- **The library's name and release**, once there is code to publish. It is released as experimental while it depends
+- **A README for whoever arrives from outside.** The README is a map of the repository: its first paragraph uses
+  incarnation, projection, topic and outbox before any definition, its first diagram is the whole semantics, and
+  the second is the modules with the storage's tables. The step writes it for a reader who knows TypeScript and
+  nothing of the design: the problem before the solution, an order that waits for its payment while the process
+  restarts, the "Why" as it is, what the library is not for, a comparison in one line each with Temporal, Restate,
+  Akka Persistence and a cron over a table, and the quick start's code. It says that the state is the only truth and
+  nothing is replayed, since "durable" names durable execution elsewhere, and in what state the library is:
+  experimental, one process on SQLite or PostgreSQL, Cluster on one machine. The documents, the modules and the
+  tables move to `CONTRIBUTING.md`, with the diagram of the modules, and the rule of [`AGENTS.md`](../AGENTS.md) on
+  the diagrams moves with it. The README of effect-tea is the model of its sections, since the two libraries are
+  read by the same readers. It comes after the quick start and the guide, which it links.
+
+- **A site with the guide and the API reference.** [`design.md`](design.md) is a specification, not a reference:
+  no document lists what each export takes and gives. The site is built as effect-tea's, with typedoc, and holds
+  the guide, the reference and the examples, each with a paragraph on what it shows. The two sites link each other,
+  since a program is written the same way in both. A test runs the code of the guide, so that a change of the API
+  fails a test before it fails a reader.
+
+- **The release**, once there is code to publish. It is released as experimental while it depends
   on Effect's unstable modules ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
   The release archives the notes the design has come to cover since the last archiving, as
   [`AGENTS.md`](../AGENTS.md) says. It passes `bun run test:release`, which runs every seed of the explored tests.
-  The examples import the library by the package's name, so a new name changes their imports, and the release
-  decides whether `exports` names the sources or built files.
+  The release decides whether `exports` names the sources or JavaScript with declarations, as effect-tea ships, and
+  writes the metadata of `package.json`: a `description` in the words of the README, `repository`, `homepage` to the
+  site, `sideEffects`, and `keywords` with the words people search this problem by, `saga` and `durable-execution`
+  among them, since the README says where the library differs.
 
 - **The runtime on Cluster across machines, on PostgreSQL**, once Cluster has a fence
   ([Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058)), or the runtime one of its own. Until

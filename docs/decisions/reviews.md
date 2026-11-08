@@ -484,3 +484,35 @@ written for the code the review reads, and are not kept.
   undoes both where the check dies.
 - Reasoned, and left so: 0177's that I/O in a `Tx` transaction would run again at each retry, which the JSDoc does
   not say.
+
+## 2026-11-08: 0178 to 0193
+
+- Documented at 4.1.2, as the notes say: `String.isEmpty` is true of `''` alone (0179); `SqlClient.BeginTransaction`
+  sets the statement a top-level transaction begins with (0185, 0191); `isTransientResponse` retries a `503` and
+  not a `409` (0178, 0190); `Layer.mock` gives a service whose members left out die (0189).
+- Read in the source at 4.1.2, as the notes say: `SqlRunnerStorage`'s `getRunners` reads only the runners whose
+  heartbeat is younger than the lease's expiration, and `RunnerServer.layer` builds no `Sharding.layer`, which
+  `HttpRunner.layerHttp` does (0178). The message of a member a mock leaves out names the service and the member
+  (0189).
+- Fixed: the status line of
+  [0114](archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) did not say that 0185 adds
+  `inspect` to it. The modules diagram of the [README](../../README.md) showed neither `testing.ts` nor the four
+  entries 0193 added.
+- Then every rule of these notes that the code keeps was taken out, one at a time, with `scripts/mutate.ts` under
+  `SCHEDULES=all`: of 73, 17 survived and none was uncertain.
+- Tested now, which no test was. An `advance` of an infinite duration fails (0187). An inspection gives the work in
+  the order it started, where the database gives the rows by the names of their keys, and gives the senders that
+  wait for a suspended entity, as `suspended` does (0185). The ack of a page that fails rolls back the handler's
+  writes (0184). The server's client tries a charge the world answers `503` again, and sends an email once, whose
+  failure suspends its order, which is then answered `409` (0178, 0190). The entry of a program gives `Returned`,
+  and not `isTimer` (0193). Each of the nine mutations those tests are for now fails a test.
+- Three change nothing a test can see. The `const` of the type parameter of a program's name (0183), since a
+  parameter constrained to `string` keeps the literal of `name` without it. The `BEGIN IMMEDIATE` of `createTables`
+  on SQLite (0191), which the client begins with by default. The reset of a creation's saved answer only where it is
+  `Rejected` (0182): a creation answered `Created` and reset is delivered again, and the runtime answers it from the
+  reply it stored with the state, as the first time.
+- Five are left, as rules no test reaches. The `503` of `Full` and its `Retry-After` in the server's map (0190),
+  since a caller on Cluster is never answered `Full`. The `REPEATABLE READ` of an inspection on PostgreSQL (0185),
+  and the advisory lock of `createTables` and its key apart from the hold's (0191), which hold only between two
+  sessions of PostgreSQL, and PGlite runs one; the [open question](../open-questions.md#running) of many
+  connections asks for that server.

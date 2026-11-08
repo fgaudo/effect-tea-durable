@@ -613,6 +613,7 @@ describe('the runtime on Cluster', () => {
       const sender = { user: 'u' }
       expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
       expect(yield* handle!.create('one', { start: 5 }, { requestId: 'c2', sender })).toEqual({ _tag: 'AlreadyExists' })
+      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
       const add = { _tag: 'Add', n: 2 } as const
       expect(yield* handle!.send('one', add, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })
       expect(yield* handle!.send('one', add, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })

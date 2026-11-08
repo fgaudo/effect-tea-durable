@@ -45,12 +45,18 @@ const freePort = Effect.scoped(Effect.flatMap(Effect.scope, (scope) => portOf(Bu
 /**
  * The world. `charges` holds the charge of each idempotency key, and `asked` the runners that asked for it, in
  * order. A charge is taken as it arrives, so a charge whose answer the process never got is still taken. The first
- * charge of each key waits for `release`.
+ * charge of each key waits for `release`. A world `failing` answers `503` to the first charge, before it takes or
+ * records it, and to the first email. `mails` counts the emails asked for.
  */
-const world = Effect.gen(function*() {
+const world = (failing: boolean) => Effect.gen(function*() {
   const charges = yield* Ref.make(new Map<string, string>())
   const asked = yield* Ref.make(new Map<string, ReadonlyArray<string>>())
   const released = yield* Deferred.make<void>()
+  const failed = yield* Ref.make(new Set<string>())
+  const mails = yield* Ref.make(0)
+  /** Whether the world answers `503` to the call of `path`: only the first, and only of a world `failing`. */
+  const fails = (path: string) => Ref.modify(failed, (paths) => [failing && !paths.has(path), new Set(paths).add(path)])
+  const unavailable = HttpServerResponse.empty({ status: 503 })
   const Charge = Schema.Struct({ idempotencyKey: Schema.String })
   const Runner = Schema.Struct({ 'x-runner': Schema.String })
   const routes = Layer.mergeAll(
@@ -58,6 +64,7 @@ const world = Effect.gen(function*() {
       'POST',
       '/charge',
       Effect.gen(function*() {
+        if (yield* fails('/charge')) return unavailable
         const { idempotencyKey } = yield* HttpServerRequest.schemaBodyJson(Charge)
         const { 'x-runner': runner } = yield* HttpServerRequest.schemaHeaders(Runner)
         const before = yield* Ref.getAndUpdate(asked, (all) =>
@@ -69,6 +76,12 @@ const world = Effect.gen(function*() {
         if (!before.has(idempotencyKey)) yield* Deferred.await(released)
         return yield* HttpServerResponse.json({ charge })
       }),
+    ),
+    HttpRouter.add(
+      'POST',
+      '/mail',
+      Effect.flatMap(Ref.updateAndGet(mails, (count) => count + 1), () =>
+        Effect.map(fails('/mail'), (fail) => fail ? unavailable : HttpServerResponse.empty({ status: 204 }))),
     ),
     HttpRouter.add('POST', '/*', HttpServerResponse.empty({ status: 204 })),
   )
@@ -82,6 +95,7 @@ const world = Effect.gen(function*() {
     url: `http://localhost:${port}`,
     charges: Ref.get(charges),
     asked: Ref.get(asked),
+    mails: Ref.get(mails),
     /** Waits until the world holds the first charge of `count` keys. */
     holding: (count: number) =>
       Ref.get(asked).pipe(
@@ -170,13 +184,16 @@ const holdingShards = (settings: Settings, addresses: ReadonlyArray<string>) =>
     )
   }).pipe(Effect.provide(SqliteClient.layer({ filename: settings.filename })))
 
-/** Runs `body` with a world and a file of SQLite in a directory removed afterwards. */
-const run = <A, E>(body: (settings: Settings, theWorld: Effect.Success<typeof world>) => Effect.Effect<A, E, any>) =>
+/** Runs `body` with a world, `failing` or not, and a file of SQLite in a directory removed afterwards. */
+const run = <A, E>(
+  body: (settings: Settings, theWorld: Effect.Success<ReturnType<typeof world>>) => Effect.Effect<A, E, any>,
+  failing = false,
+) =>
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'effect-tea-durable-server-' })
-    const theWorld = yield* world
+    const theWorld = yield* world(failing)
     return yield* body({ filename: path.join(directory, 'orders.db'), world: theWorld.url }, theWorld)
   })).pipe(Effect.provide([BunServices.layer, FetchHttpClient.layer])) as Effect.Effect<A, unknown>)
 
@@ -231,3 +248,39 @@ test('the orders of a runner killed during their charges are paid once by the ot
     })
   )
 }, 90_000)
+
+// A charge carries an idempotency key, so its client tries it again. An email carries none and runs at most once,
+// so the failure of its call suspends the order, which is then answered `409` and not `503` (decisions 0178, 0190).
+test('a charge the world fails is tried again, and an email it fails suspends its order, answered 409', async () => {
+  await run((settings, theWorld) =>
+    Effect.gen(function*() {
+      yield* theWorld.release
+      const { client } = yield* start(settings, yield* freePort)
+      yield* order(client, 'o-1')
+      yield* paid(client, 'o-1')
+      expect([...(yield* theWorld.charges).values()]).toEqual(['ch_1'])
+      // A retry under the same request id is answered as the first time, so each try is a request of its own. The
+      // warehouse reports the shipment once it was told, and an earlier report is rejected and sent again.
+      let tries = 0
+      yield* Effect.suspend(() => client.post('/orders/o-1/events', {
+        headers: as('warehouse', `s-${tries++}`),
+        body: HttpBody.jsonUnsafe({ _tag: 'ShipmentReported', tracking: 'tr-1' }),
+      })).pipe(
+        Effect.flatMap(HttpClientResponse.schemaBodyJson(Tagged)),
+        Effect.filterOrFail(({ _tag }) => _tag === 'Accepted'),
+        Effect.retry({ schedule: Schedule.spaced('100 millis'), times: 200 }),
+      )
+      const suspended = yield* Effect.suspend(() => client.post('/orders/o-1/events', {
+        headers: as('customer:ada', `x-${tries++}`),
+        body: HttpBody.jsonUnsafe({ _tag: 'CancelRequested' }),
+      })).pipe(
+        Effect.flatMap((response) =>
+          Effect.map(HttpClientResponse.schemaBodyJson(Tagged)(response), (body) => ({ status: response.status, body }))
+        ),
+        Effect.filterOrFail(({ body }) => body._tag === 'Suspended'),
+        Effect.retry({ schedule: Schedule.spaced('100 millis'), times: 200 }),
+      )
+      expect(suspended).toEqual({ status: 409, body: { _tag: 'Suspended' } })
+      expect(yield* theWorld.mails).toBe(1)
+    }), true)
+}, 60_000)

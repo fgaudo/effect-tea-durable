@@ -19,6 +19,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, relative } from 'node:path'
+import type { Returned } from './index.program.ts'
 
 /** `text` with what is not code as spaces: comments, strings, regular expressions, and the text of templates. */
 export const codeOf = (text: string): string => {
@@ -282,6 +283,13 @@ describe('the form of src', () => {
     // `machine.ts` imports `node:crypto`, which a process on one machine has: only the modules set apart fail.
     expect(found.filter((line) => !/: (node|bun)(:|$)/.test(line)).map((line) => relative(import.meta.dir, line)))
       .toEqual([])
+  })
+  // A program writes its `durable` with `Returned`, and only the runtime calls `isTimer` (decision 0193).
+  test('the entry of a program gives the type Returned, and not isTimer', async () => {
+    const empty: Returned<never, never> = []
+    const entry: Readonly<Record<string, unknown>> = await import('./index.program.ts')
+    expect(Object.hasOwn(entry, 'timer') && !Object.hasOwn(entry, 'isTimer')).toBe(true)
+    expect(empty).toEqual([])
   })
   // The library's tests run on its own programs, in `src/fixtures/`, so that a change of an example breaks none.
   test('no file of src imports an example', () => {
