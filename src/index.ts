@@ -5,7 +5,6 @@ export {
   create,
   type Creation,
   defect,
-  digestOf,
   type Durable,
   each,
   type Each,
@@ -57,6 +56,7 @@ export {
   versionOf,
   type Work,
 } from './program.ts'
+export { digestOf } from './machine.ts'
 export {
   accepted,
   type Member,

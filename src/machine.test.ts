@@ -11,7 +11,6 @@ import fc from 'fast-check'
 import * as Machine from './machine.ts'
 import {
   defect,
-  digestOf,
   type IdempotencyKey,
   idempotencyKey,
   InvariantDefect,
@@ -1835,7 +1834,7 @@ describe('a new program', () => {
     const program = { ...plain.program, operations: { Work: operation.digest(() => Effect.succeed('done')) } }
     const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
     if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
-    const digest = digestOf(idempotencyKey({ name: 'Tiny', id: 'tiny' }, { name: 'charge' }, 1))
+    const digest = Machine.digestOf(idempotencyKey({ name: 'Tiny', id: 'tiny' }, { name: 'charge' }, 1))
     const keysOf = (outputs: ReadonlyArray<Machine.Output<Tiny>>) =>
       outputs.flatMap((output) => (output._tag === 'Started' ? [output.idempotencyKey] : []))
     expect(keysOf(created.outputs)).toEqual([digest])
@@ -2436,4 +2435,16 @@ describe('keys with a parameter', () => {
       expect(cause instanceof InvariantDefect ? cause.reason : String(cause)).toContain(reason)
     }
   })
+})
+
+// The digests were computed apart from this code, with Python's `hashlib` and `base64.urlsafe_b64encode`: a
+// digest that changed would run an operation under way again under a new key (decision 0123).
+test('the digest of an idempotency key is the SHA-256 of its JSON, in unpadded base64url (decision 0123)', () => {
+  const of = (id: string): string => Machine.digestOf(idempotencyKey({ name: 'Order', id }, { name: 'charge' }, 1))
+  expect(of('42')).toBe('HCSqboASEfxZ9VbqnZMHHhT3RAKlBw43wTMZfFDyotw')
+  expect(of('caf\u00e9 \u2713')).toBe('3Hq7WV5mz3BQ1-DHpJ_MmRiZTcPfyVJqXEzyGfsxlhE')
+  // JSON escapes a lone surrogate, which UTF-8 would turn into U+FFFD: two such ids keep two digests.
+  expect(of('\ud800')).toBe('UShS5of2cuLYI16He18FfxZFLveZ8HXnS11ev3539r0')
+  expect(of('\udbff')).not.toBe(of('\ud800'))
+  expect(of('x'.repeat(1000))).toMatch(/^[A-Za-z0-9_-]{43}$/)
 })

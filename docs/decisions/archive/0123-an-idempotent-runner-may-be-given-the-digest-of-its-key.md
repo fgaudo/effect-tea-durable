@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-11-04. Decides the open question on idempotency keys that services cap. Adds a fourth
 delivery to the three of [decision 0011](0011-an-operation-declares-what-a-crash-does.md), and a second form
-to the idempotency key of [decision 0015](0015-a-request-belongs-to-its-sender.md).
+to the idempotency key of [decision 0015](0015-a-request-belongs-to-its-sender.md). `digestOf` is a function of
+`src/machine.ts`, and `src/program.ts` imports no module of Node, since
+[decision 0192](../0192-the-digest-of-a-key-is-computed-by-the-machine.md).
 
 ## Context
 

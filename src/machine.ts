@@ -5,11 +5,12 @@
  * reply to send).
  */
 import * as DateTime from 'effect/DateTime'
+import { Base64Url } from 'effect/encoding'
 import * as Records from 'effect/Record'
 import * as Schema from 'effect/Schema'
+import { createHash } from 'node:crypto'
 import {
   type Creation,
-  digestOf,
   type Durable,
   encode,
   type IdempotencyKey,
@@ -593,6 +594,17 @@ type Moved<T extends Types> =
  */
 export const holds = <T extends Types>(stored: Stored<T>, key: Key, incarnation: number) =>
   stored.keys[keyText(key)]?.incarnation === incarnation
+
+/**
+ * The digest of an idempotency key, for a service that caps a key's length: the SHA-256 of its UTF-8 bytes, in
+ * unpadded base64url, 43 characters of `[A-Za-z0-9_-]`. It never changes: a digest that did would run an
+ * operation under way again under a new key (decision 0123).
+ */
+export const digestOf = (key: IdempotencyKey): IdempotencyKey =>
+  // Effect's `Digest` runs SHA-256 only on `crypto.subtle`, which answers with a promise, and the key a runner is
+  // given is a pure function of what is stored, so its digest is synchronous. It is computed here, and not in
+  // `src/program.ts`, since a browser that imports a program's schemas has no `node:crypto` (decision 0192).
+  Base64Url.encode(createHash('sha256').update(key, 'utf8').digest()) as IdempotencyKey
 
 /**
  * The idempotency key a runner of `delivery` is given for the work under `key` in `incarnation`: the readable one,

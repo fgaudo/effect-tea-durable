@@ -111,7 +111,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0045](archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md) | An operation waits for a program not deployed yet | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) |
 | [0046](archive/0046-a-receiver-that-crashes-is-sent-again.md) | A receiver that crashes is sent to again | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0147](archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md) |
 | [0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md) | Nothing waits for an operation under the permit | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md) |
-| [0123](archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) | An idempotent runner may be given the digest of its key, as its delivery |  |
+| [0123](archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) | An idempotent runner may be given the digest of its key, as its delivery | [0192](0192-the-digest-of-a-key-is-computed-by-the-machine.md) |
+| [0192](0192-the-digest-of-a-key-is-computed-by-the-machine.md) | The digest of an idempotency key is computed by the machine, and `src/program.ts` reaches no module of Node (proposed) |  |
 | [0127](archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md) | A live stream is no work of a program: the boundary reads it, and sends each item |  |
 | [0128](archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md) | An operation that acts on nothing may be dropped or changed while it runs | [0129](archive/0129-a-droppable-runner-that-sends-does-not-compile.md) |
 | [0129](archive/0129-a-droppable-runner-that-sends-does-not-compile.md) | A droppable runner whose services hold `Entities` does not compile |  |

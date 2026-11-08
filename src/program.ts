@@ -7,11 +7,9 @@ import { dual } from 'effect/Function'
 import type * as Optic from 'effect/Optic'
 import * as Opt from 'effect/Option'
 import * as Result from 'effect/Result'
-import { Base64Url } from 'effect/encoding'
 import * as Schema from 'effect/Schema'
 import * as Str from 'effect/String'
 import type * as EffectTypes from 'effect/Types'
-import { createHash } from 'node:crypto'
 
 /**
  * What `update` returns for an inbound message that does not apply in the state, and what a program's `init` returns
@@ -224,17 +222,6 @@ export const idempotencyKey = (entity: Address, key: Key, incarnation: number): 
     key.parameter === undefined ? key.name : [key.name, key.parameter],
     incarnation,
   ]) as IdempotencyKey
-
-/**
- * The digest of an idempotency key, for a service that caps a key's length: the SHA-256 of its UTF-8 bytes, in
- * unpadded base64url, 43 characters of `[A-Za-z0-9_-]`. It never changes: a digest that did would run an
- * operation under way again under a new key (decision 0123).
- */
-export const digestOf = (key: IdempotencyKey): IdempotencyKey =>
-  // Effect's `Digest` runs SHA-256 only on `crypto.subtle`, which answers with a promise. The key a runner is
-  // given is a pure function of what is stored, computed by the machine, so its digest is synchronous
-  // (decision 0123).
-  Base64Url.encode(createHash('sha256').update(key, 'utf8').digest()) as IdempotencyKey
 
 /**
  * How an operation runs, and what a crash does to it, declared for each kind of operation (decision 0011). It sees

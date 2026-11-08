@@ -1,8 +1,10 @@
 /**
- * The check of two rules that the form of the code keeps (decision 0164). It reads the text of every module of `src/`
+ * The check of three rules that the form of the code keeps (decisions 0164, 0192). It reads the text of every module of `src/`
  * that is not a test, with its comments, strings, regular expressions and the text of its templates taken out:
  * - every fork of Effect is given, as its effect, a call of `untransacted`, which takes out the transaction of the
  *   fiber that forks it (decision 0161);
+ * - `src/program.ts`, which a browser imports for a program's schemas, reaches no module of Node or of Bun, through
+ *   the modules of `src/` and of Effect that it imports (decision 0192);
  * - a count, a name the module both raises and lowers, is raised in the acquisition and lowered in the release of one
  *   `Effect.acquireUseRelease`, whose raise no interruption splits from its lowering (decision 0163).
  *
@@ -13,7 +15,7 @@
  */
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 
 /** `text` with what is not code as spaces: comments, strings, regular expressions, and the text of templates. */
 export const codeOf = (text: string): string => {
@@ -198,6 +200,41 @@ export const countsSplit = (text: string): ReadonlyArray<string> => {
   return found
 }
 
+/**
+ * The specifiers `text` imports or exports from, statically or by an `import()` of a string. A `from` or an `import`
+ * inside a comment or a string is not code, as `codeOf` reads it, and names no module.
+ */
+export const importsOf = (text: string): ReadonlyArray<string> => {
+  const code = codeOf(text)
+  return [...text.matchAll(/\bfrom\s*(['"])([^'"\n]+)\1|\bimport\s*\(?\s*(['"])([^'"\n]+)\3/g)]
+    .filter((match) => code[match.index] !== ' ')
+    .map((match) => match[2] ?? match[4]!)
+}
+
+/**
+ * Each module of Node or of Bun that `entry` reaches through what it imports, as `file: specifier`. A specifier
+ * that `resolve` does not turn into the path of a file is a module built into the platform, such as `crypto`.
+ */
+export const platformModulesReached = (
+  entry: string,
+  read: (file: string) => string,
+  resolve: (specifier: string, from: string) => string,
+): ReadonlyArray<string> => {
+  const found: Array<string> = []
+  const seen = new Set<string>()
+  const visit = (file: string) => {
+    if (seen.has(file)) return
+    seen.add(file)
+    for (const specifier of importsOf(read(file))) {
+      const resolved = /^(node|bun)(:|$)/.test(specifier) ? specifier : resolve(specifier, file)
+      if (isAbsolute(resolved)) visit(resolved)
+      else found.push(`${file}: ${specifier}`)
+    }
+  }
+  visit(entry)
+  return found
+}
+
 const modules = readdirSync(import.meta.dir).filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
 const each = (check: (text: string) => ReadonlyArray<string>) =>
   modules.flatMap((file) => check(readFileSync(join(import.meta.dir, file), 'utf8')).map((line) => `${file}:${line}`))
@@ -211,9 +248,40 @@ describe('the form of src', () => {
   test('every count of src is raised and lowered by one Effect.acquireUseRelease', () => {
     expect(each(countsSplit)).toEqual([])
   })
+
+  test('src/program.ts reaches no module of Node or of Bun, through src and Effect', () => {
+    const entry = join(import.meta.dir, 'program.ts')
+    const reached: Array<string> = []
+    const found = platformModulesReached(entry, (file) => {
+      reached.push(file)
+      return readFileSync(file, 'utf8')
+    }, (specifier, from) => Bun.resolveSync(specifier, join(from, '..')))
+    // The walk reads the modules of Effect as they are published, which is what a browser loads.
+    expect(reached.some((file) => file.includes(join('node_modules', 'effect', 'dist')))).toBe(true)
+    expect(found.map((line) => relative(import.meta.dir, line))).toEqual([])
+  })
 })
 
 describe('the check of the form', () => {
+  test('a module of the platform is found through a module imported, and one named in a comment is not', () => {
+    const files: Record<string, string> = {
+      '/a.ts': [
+        "import { b } from './b.ts'",
+        "// import { createHash } from 'node:crypto'",
+        "const text = \"from 'node:fs'\"",
+        "export * from './c.ts'",
+      ].join('\n'),
+      '/b.ts': "import type * as Fs from 'node:fs'\nexport const b = Array.from('b')",
+      '/c.ts': "const crypto = await import('crypto')\nimport 'bun:test'\nimport './a.ts'",
+    }
+    const resolve = (specifier: string) => (specifier.startsWith('./') ? specifier.slice(1) : specifier)
+    expect(platformModulesReached('/a.ts', (file) => files[file]!, resolve)).toEqual([
+      '/b.ts: node:fs',
+      '/c.ts: crypto',
+      '/c.ts: bun:test',
+    ])
+  })
+
   test('a fork not given untransacted is found, in each of its forms', () => {
     const text = [
       'const a = Effect.forkIn(loop, scope)',
