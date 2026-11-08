@@ -110,10 +110,11 @@ Cluster's says so.
   entities is a *report*.
 - **Reference, `reference`.** A program's name with its types, and none of its code, which `send` and `create`
   name a receiver by. `reference<typeof p>(name)` makes one, and the compiler checks the name against `p`'s.
-- **Reader.** A caller of `fetch` under a consumer's name, which may name the partitions it reads. The notes before
-  decision 0195 call the method `feed`. `consume` runs one, which reads a page, acts on it and acks it in one transaction, and reads the next. The readers of one
+- **Reader.** A caller of `fetch` under a consumer's name, which may name the partitions it reads. `consume` runs
+  one, which reads a page, acts on it and acks it in one transaction, and reads the next. The readers of one
   consumer divide its partitions among them, and the division is the caller's: the runtime holds no reader, and two
-  readers that name one partition are given the same rows.
+  readers that name one partition are given the same rows. The notes before
+  [decision 0195](decisions/0195-the-package-is-effect-tea-persistent.md) call the method `feed`.
 - **Raised event.** What a child's `update` tells its parent with `raise(event)(state)`, handled by the parent's
   `onEvent` in the same step, and never stored.
 - **Report.** A question over the entities the read model does not answer: a grouping other than a count per value

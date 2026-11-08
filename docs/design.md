@@ -1228,8 +1228,8 @@ The surface is four entries of the package `@fgaudo/effect-tea-persistent`
 - `.`, [`src/index.ts`](../src/index.ts), gives what a program, its boundary and an operator use on one process;
 - `./program`, [`src/index.program.ts`](../src/index.program.ts), gives what declares a program and nothing that
   runs it, so that a browser imports a program's module for its schemas, and `.` gives it too;
-- `./testing`, [`src/index.testing.ts`](../src/index.testing.ts), gives `rehearse`, `projectionViolations`,
-  `migrationViolations` and `digestOf`, for a user's tests;
+- `./testing`, [`src/index.testing.ts`](../src/index.testing.ts), gives `rehearse` with the replies
+  `accepted` and `rejected`, `projectionViolations`, `migrationViolations` and `digestOf`, for a user's tests;
 - `./cluster`, [`src/index.cluster.ts`](../src/index.cluster.ts), gives `sharding` and `launch`, for a launcher on
   Effect Cluster, with `Recorded` as a type alone.
 
