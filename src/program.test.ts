@@ -310,6 +310,8 @@ test('a program without work leaves out what it does not have, and each piece le
   const latch = part(bare)(pieces)
   expect([latch.keys, latch.operations, latch.durable({ open: true })]).toEqual([{}, {}, {}])
   expect(latch.schemas.operation).toBe(Schema.Never)
+  // A part that leaves out its sender reads none, and holds no schema of one.
+  expect('sender' in latch.schemas).toBe(false)
 })
 
 test('durable is left out only with no key, and operations only with no kind of operation (decision 0180)', () => {

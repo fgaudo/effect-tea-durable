@@ -183,7 +183,7 @@ trusts it, and never compares `meta.at` with the deadline. Another node's clock 
 behind.
 
 An entity is created by a request of its own, with its flags, answered `Created` once and `AlreadyExists`
-after. A message to an entity that does not exist is answered `NotFound`, and creates nothing
+after, or `Rejected` where its program's `init` rejects the flags, as the paragraph after this one says. A message to an entity that does not exist is answered `NotFound`, and creates nothing
 ([decision 0012](decisions/archive/0012-creation-is-a-request-of-its-own.md),
 [decision 0017](decisions/archive/0017-creation-in-the-machine.md)). A creation and a message may share a request id,
 and each is answered apart ([decision 0050](decisions/archive/0050-a-creation-is-answered-apart-from-a-message.md)). `init`

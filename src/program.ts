@@ -1386,8 +1386,8 @@ type DeclaredSchemas = Readonly<Record<'state' | 'flags' | 'inbound' | 'projecti
 
 /**
  * The schemas with each one left out in its place: `Schema.Never` for the internal messages, the operations and the
- * reasons, since a program without them has none to store, and `Schema.Null` for the sender, as for a program that
- * reads none (decision 0180). `??` and not `Struct.assign`: a schema given as `undefined` from JavaScript would
+ * reasons, since a program without them has none to store (decision 0180). A part's sender left out stays out, since
+ * a part then reads no sender. `??` and not `Struct.assign`: a schema given as `undefined` from JavaScript would
  * replace the default under `assign`.
  */
 const filledSchemas = <S extends DeclaredSchemas>(schemas: S) => ({
@@ -1395,6 +1395,11 @@ const filledSchemas = <S extends DeclaredSchemas>(schemas: S) => ({
   internal: schemas.internal ?? Schema.Never,
   operation: schemas.operation ?? Schema.Never,
   rejection: schemas.rejection ?? Schema.Never,
+})
+
+/** A program's schemas filled in, with `Schema.Null` for a sender left out, as for a program that reads none. */
+const filledProgramSchemas = <S extends DeclaredSchemas>(schemas: S) => ({
+  ...filledSchemas(schemas),
   sender: schemas.sender ?? Schema.Null,
 })
 
@@ -1486,7 +1491,7 @@ export const program = <
   type Of =
     & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
     & Readonly<{ index: IndexNames<Indexes>; topics: TopicValues<Topics> }>
-  const filled = filledSchemas(schemas as unknown as DeclaredSchemas)
+  const filled = filledProgramSchemas(schemas as unknown as DeclaredSchemas)
   const pieces = assemble(filled, filledDeclaration(declaration as unknown as LeftOut))
   return {
     name: declaration.name,
