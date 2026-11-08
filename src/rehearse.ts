@@ -109,7 +109,10 @@ export interface Rehearsal<T extends Types> extends Acts<T> {
   readonly advance: (duration: Duration.Input) => Effect.Effect<void>
 }
 
-/** The services a runner of `T` needs from the scenario: all of them but `Entities`, which the world provides. */
+/**
+ * The services a run of `T` needs from the scenario: those of all its runners but `Entities`, which the world
+ * provides. A key may hold any operation of `T`, so no type tells which runner a run reaches (decision 0189).
+ */
 export type Outside<T extends Types> = Exclude<T['services'], Entities>
 
 /** An entity of a world: what a rehearsal does to one entity, and the runs of its operations (decision 0131). */

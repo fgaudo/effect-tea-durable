@@ -89,11 +89,12 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) | A reply is keyed by the version that wrote it |  |
 | [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes | [0182](0182-init-may-reject-the-flags.md) |
 | [0125](archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) | A caller's reply is kept as long as its boundary says, from the step that answers | [0165](archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) |
-| [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md), [0186](0186-a-rehearsal-names-the-work-by-its-key.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md) |
+| [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md), [0186](0186-a-rehearsal-names-the-work-by-its-key.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md), [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md) |
 | [0183](0183-a-receiver-is-named-by-a-reference.md) | A receiver is named by a reference, which carries its program's name and types and none of its code (proposed) |  |
 | [0186](0186-a-rehearsal-names-the-work-by-its-key.md) | A rehearsal names the work by its key, and `underWay` gives it or null (proposed) |  |
 | [0187](0187-a-rehearsal-moves-time-by-a-duration.md) | A rehearsal moves time by a duration with `advance`, and fires the timers due within it (proposed) |  |
 | [0188](0188-typesof-gives-a-programs-types.md) | `TypesOf` gives a program's types, of the program or of a reference to it (proposed) |  |
+| [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md) | A world asks a run for every service of its program, and a test mocks the ones it does not run (proposed) |  |
 
 ## Operations and timers
 

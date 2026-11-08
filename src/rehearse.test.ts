@@ -3,10 +3,12 @@
  */
 import { describe, expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
+import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
 import { booking } from '../examples/booking/booking.ts'
 import { inventory } from '../examples/booking/inventory.ts'
@@ -24,8 +26,9 @@ import {
   type Runner,
   send,
   timer,
+  type TypesOf,
 } from './program.ts'
-import { rehearse } from './rehearse.ts'
+import { rehearse, type World } from './rehearse.ts'
 
 const placedAt = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
 
@@ -336,6 +339,58 @@ describe('a world', () => {
   const tacit: typeof booking = { ...booking, project: (state) => ({ ...booking.project(state), canCancel: false }) }
   const holdingBy = (hold: Runner<{ _tag: 'Hold'; event: string; seats: number }, unknown, Entities>) =>
     ({ ...booking, operations: { ...booking.operations, Hold: hold } }) as unknown as typeof booking
+
+  // A booking whose confirmation mails a receipt: its runners need a service besides `Entities`.
+  class Receipts extends Context.Service<Receipts, {
+    readonly mail: (event: string) => Effect.Effect<void>
+  }>()('Receipts') {}
+  const mailing = {
+    ...booking,
+    operations: {
+      ...booking.operations,
+      Confirm: operation.atLeastOnce(({ event }: { _tag: 'Confirm'; event: string }) =>
+        Effect.gen(function*() {
+          const receipts = yield* Receipts
+          yield* receipts.mail(event)
+          const reply = yield* send(inventory, event, { _tag: 'ConfirmRequested' }, 'confirm')
+          return reply._tag === 'Accepted' ? { _tag: 'SeatsConfirmed' } as const : yield* Effect.die('not confirmed')
+        })
+      ),
+    },
+  } as unknown as Program<Omit<TypesOf<typeof booking>, 'services'> & { services: Entities | Receipts }>
+
+  // A program's types hold its runners' services as one union, and a key holds any of its operations, so a run asks
+  // for them all: a test provides a service it does not run with `Layer.mock` (decision 0189).
+  test('asks a run for every service of its program, and takes a mock of the ones it does not run', async () => {
+    const scenario = Effect.fnUntraced(function*(world: World) {
+      const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
+      const held = yield* world.create(mailing, 'booking-1', flags)
+      expect(yield* held.run('hold')).toBe('Delivered')
+      yield* held.send({ _tag: 'ConfirmRequested' }, { _tag: 'Customer', id: 'ada' })
+      expect(yield* held.answer('confirm', { _tag: 'SeatsConfirmed' })).toBe('Delivered')
+      expect((yield* held.state)._tag).toBe('Confirmed')
+      expect((yield* seats.projection).available).toBe(2)
+    })
+    // @ts-expect-error the run of the hold asks for `Receipts`, which only the confirmation uses
+    void (() => Effect.runPromise(rehearse.together(at, scenario)))
+    await Effect.runPromise(rehearse.together(at, scenario).pipe(Effect.provide(Layer.mock(Receipts, {}))))
+  })
+
+  // A mock's member that is called dies, so a runner the test meant to answer, and ran, fails the test.
+  test('fails a run that calls a member a mock does not give', async () => {
+    const exit = await Effect.runPromiseExit(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        yield* world.create(inventory, 'concert-1', { capacity: 4 })
+        const held = yield* world.create(mailing, 'booking-1', flags)
+        yield* held.run('hold')
+        yield* held.send({ _tag: 'ConfirmRequested' }, { _tag: 'Customer', id: 'ada' })
+        yield* held.run('confirm')
+      }),
+    ).pipe(Effect.provide(Layer.mock(Receipts, {}))))
+    const reason = reasonOf(exit)
+    expect(reason instanceof Error ? reason.message : reason).toBe('Receipts: Unimplemented method "mail"')
+  })
 
   // The runtime answers a second request under one name with the first one's reply, so it is a defect (decision 0047).
   test('fails a run that sends twice under one name to one entity', async () => {

@@ -14,12 +14,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)), `inspect`
   ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)), a rehearsal in fewer words
   ([decision 0186](decisions/0186-a-rehearsal-names-the-work-by-its-key.md)), a rehearsal that moves time
-  ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)), and the types of a program, exported
-  ([decision 0188](decisions/0188-typesof-gives-a-programs-types.md)). Next: a world's services, which begins in
-  `together` of [`src/rehearse.ts`](../src/rehearse.ts).
-  - **A world's services.** `rehearse.together` asks for every service of a program's runners, even when the test
-    runs only the runners that talk to other entities. Such a test provides stubs that die. Either a world asks
-    only for the services of the runners it runs, or the design says why it cannot.
+  ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)), the types of a program, exported
+  ([decision 0188](decisions/0188-typesof-gives-a-programs-types.md)), and a world's services, mocked
+  ([decision 0189](decisions/0189-a-world-asks-a-run-for-every-service-of-its-program.md)). Next: a caller's answer
+  over HTTP, which begins in [`examples/server/server.ts`](../examples/server/server.ts).
   - **A caller's answer over HTTP.** A boundary maps each `Answer` and `Creation` to a status of HTTP, and each
     application writes the map again from [`examples/server/server.ts`](../examples/server/server.ts). The step
     decides whether the library gives the map, or whether the example stays the template.

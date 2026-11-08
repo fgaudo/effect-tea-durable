@@ -917,7 +917,10 @@ machine, with one time and one process for all of them
   without `restart` and `deploy`, and with `run`. A world runs one program under each name, as a process does, so a
   creation by another program under a name the world runs fails the test;
 - `run(pending)` runs the operation's runner, with `Entities` provided by the world and the other services by the
-  scenario, and completes the operation with its message, as `answer` does;
+  scenario, and completes the operation with its message, as `answer` does. A run asks for every service of its
+  program's runners, since a key may hold any of the program's operations. A test provides a service it does not
+  run with `Layer.mock(Service, {})`, whose members die when used, so a runner the test meant to answer fails the
+  test if it runs ([decision 0189](decisions/0189-a-world-asks-a-run-for-every-service-of-its-program.md));
 - what the runner sends reaches the receiver's machine, which handles its mailbox to its end before `send`
   returns. The world keeps the reply under the run's request while the work that asked is stored, so a run after a
   restart is given the stored reply. A receiver that does not exist answers `NotFound`, and `create` creates an
