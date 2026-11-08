@@ -4,6 +4,20 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Storage and reading
 
+- **The tables migrated by Effect's `Migrator`.** `createTables` checks each column a database made before lacks,
+  and adds it, in one transaction under a lock of its own
+  ([decision 0191](decisions/0191-a-launch-creates-the-tables.md)). `Migrator` of `effect/sql` runs numbered
+  migrations, records each in a table of its own, and runs those not recorded in one transaction under a lock. The
+  library has no release yet, so no database of a user holds an older schema. A first migration that is the schema
+  of the first release would let the checks of each column go, with their tests, and each later change of the
+  schema would be a migration. The indexes of each program, made at deploy, would stay outside it, and so would
+  `tables: 'existing'`, since `Migrator` creates its own table. Whether the library adopts it before its release is
+  not decided. It would be decided by:
+  - the maintainer's agreement, since the module is `@stability unstable` and `src/` does not import it yet;
+  - a spike of two runs at once on SQLite and on PostgreSQL, which sees whether the run that meets `Locked` goes on
+    before the other has committed;
+  - a name of its table that no `Migrator` of the application uses in the same database.
+
 - **A disk that is really full.** A step that cannot commit dies, and a forget and a prune free the room steps need
   ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). The spike `spikes/full-database.test.ts` sees it
   under `PRAGMA max_page_count`, with the rollback journal, which caps the database file and not its journal. On a
