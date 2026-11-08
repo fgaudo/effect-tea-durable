@@ -45,6 +45,7 @@ import {
   noWork,
   operation,
   type Program,
+  reject,
   rejectWith,
   send as sendFrom,
   timer,
@@ -479,6 +480,8 @@ describe('the runtime on Cluster', () => {
    * operation's context; deferred, where one is; died, where one has ended already.
    */
   let afterCommit: 'at once' | 'deferred' | 'died' | null = null
+  /** Whether `init` rejects every creation in the test under way. */
+  let refusing = false
   const tally: Program<Tally> = {
     name: 'Tally',
     keys: { ask: null },
@@ -497,7 +500,12 @@ describe('the runtime on Cluster', () => {
       sender: Schema.Struct({ user: Schema.String }),
       projection: Schema.Int,
     },
-    init: ({ start }) => start < 0 ? defect('a tally starts at zero or more') : { n: start, asking: false },
+    init: ({ start }) =>
+      refusing
+        ? rejectWith({ why: 'closed' })
+        : start < 0
+        ? defect('a tally starts at zero or more')
+        : { n: start, asking: false },
     update: (message) => (state) => {
       switch (message._tag) {
         case 'Add':
@@ -578,6 +586,7 @@ describe('the runtime on Cluster', () => {
     })
     asked = 0
     afterCommit = null
+    refusing = false
     try {
       await Effect.runPromise(Effect.scoped(launched).pipe(Effect.provide(Layer.orDie(runner))) as Effect.Effect<void>)
     } finally {
@@ -745,6 +754,37 @@ describe('the runtime on Cluster', () => {
       expect(yield* send({ _tag: 'Add', n: 1 }, 'm2')).toBe('{"_tag":"Suspended"}')
     })), 30_000)
 
+  // Cluster saves the door's `Rejected`, and the creator's client resets it, so that a retry under the same request
+  // id runs `init` again, as on one process (decision 0182).
+  test('a creation init rejects stores nothing, and a retry under its request id runs init again', () =>
+    onRunner(Effect.gen(function*() {
+      const sender = { user: 'u' }
+      refusing = true
+      const rejected = { _tag: 'Rejected', reason: { why: 'closed' } } as const
+      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual(rejected)
+      expect(yield* stateOf).toBeUndefined()
+      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual(rejected)
+      refusing = false
+      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+      expect(yield* stateOf).toEqual({ n: 1, asking: false })
+    })), 30_000)
+
+  // A `Rejected` that Cluster saved and no client reset, as after a process died before the reset, is reset before
+  // the creation is sent, so that a retry runs `init` again (decision 0182).
+  test('a creation init rejected, whose saved answer was never reset, runs init again at the retry', () =>
+    onRunner(Effect.gen(function*() {
+      refusing = true
+      // The request's canonical text, as the runtime keys a caller's request, so that both share a primary key.
+      const request = JSON.stringify({ _tag: 'Caller', id: 'c1', sender: { user: 'u' } })
+      const answered = yield* Effect.flatMap(doorOf('Tally').client, (clientOf) =>
+        clientOf('one').Create({ version: 1, request, message: JSON.stringify({ start: 1 }) }))
+      expect(answered).toBe('{"_tag":"Rejected","reason":{"why":"closed"}}')
+      refusing = false
+      const sender = { user: 'u' }
+      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+      expect(yield* stateOf).toEqual({ n: 1, asking: false })
+    })), 30_000)
+
   test('a creation the program dies on stores nothing, saves no reply, and is delivered again', () =>
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
@@ -888,7 +928,11 @@ describe('the shards of a runner on Cluster', () => {
       sender: Schema.Struct({ user: Schema.String }),
       projection: Schema.Int,
     },
-    init: ({ who }) => ({ who, asking: false, ring: null, rung: false, n: 0, relay: null, relayed: null, haunt: null }),
+    // An id that starts with `closed` is rejected, so that an operation's creation can be answered `Rejected`.
+    init: ({ who }) =>
+      who.startsWith('closed')
+        ? reject
+        : { who, asking: false, ring: null, rung: false, n: 0, relay: null, relayed: null, haunt: null },
     update: (message) => (state) => {
       switch (message._tag) {
         case 'Ask':
@@ -1359,6 +1403,29 @@ describe('the shards of a runner on Cluster', () => {
           SELECT COUNT(*) AS held FROM cluster_replies
           WHERE request_id NOT IN (SELECT request_id FROM cluster_messages)
         `)).toBe(0)
+      })), 30_000)
+
+  // The door's step keeps the operation's request id before `init` rejects, and the client resets the saved
+  // `Rejected`: the work's end still takes Cluster's rows of the request (decisions 0169, 0182).
+  test("an operation's creation init rejects is answered Rejected, and its work takes Cluster's rows as it ends", () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const runner = yield* start(1)
+        yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
+        yield* create(runner, 'one')
+        yield* send(runner, 'one', { _tag: 'Relay', to: 'closed' }, 'm-relay')
+        expect(yield* until(stateOf('one'), (state) => state?.relayed !== null)).toMatchObject({
+          relay: null,
+          relayed: 'Rejected/NotFound',
+        })
+        expect(yield* stateOf('closed')).toBeUndefined()
+        const sql = yield* SqlClient.SqlClient
+        const count = (rows: Effect.Effect<ReadonlyArray<{ held: number }>, unknown>) =>
+          Effect.map(rows, ([row]) => Number(row?.held ?? 0))
+        expect(yield* count(sql<{ held: number }>`
+          SELECT COUNT(*) AS held FROM cluster_messages WHERE payload LIKE '%Operation%'
+        `)).toBe(0)
+        expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM sent_requests`)).toBe(0)
       })), 30_000)
 
   test('a request Cluster failed, its type registered by no runner in time, is reset, and handled once it is', () =>

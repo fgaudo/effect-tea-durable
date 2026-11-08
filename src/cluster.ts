@@ -234,11 +234,22 @@ export const operatedCodec = Schema.fromJsonString(Schema.Union([
   Schema.TaggedStruct('NotFound', {}),
 ]))
 
-/** The text of what a step answers a creation. */
-export const creationCodec = Schema.fromJsonString(Schema.Union([
-  Schema.TaggedStruct('Created', {}),
-  Schema.TaggedStruct('AlreadyExists', {}),
-]))
+/**
+ * The text of what a step answers a creation: `Created`, `AlreadyExists`, or `Rejected` where the program's `init`
+ * rejects the flags (decision 0182).
+ */
+export const creationCodec = <T extends Types>(program: Program<T>) =>
+  Schema.fromJsonString(Schema.Union([
+    Schema.TaggedStruct('Created', {}),
+    Schema.TaggedStruct('AlreadyExists', {}),
+    Schema.TaggedStruct('Rejected', { reason: Schema.NullOr(program.schemas.rejection) }),
+  ]))
+
+/**
+ * The text of a step's answer to a creation that is not stored: Cluster saves it, and a creator's client resets it, as
+ * a message's `NotFound` (decision 0182).
+ */
+const creationRejected = Schema.fromJsonString(Schema.TaggedStruct('Rejected', { reason: Schema.Unknown }))
 
 /**
  * The shard group of every door: a door annotates none, so Cluster puts each in its default group, and the runtime's
@@ -307,6 +318,10 @@ export const onCluster: Effect.Effect<
     const noReplySaved = (latest: Reply.Encoded) =>
       latest._tag === 'WithExit' && latest.exit._tag === 'Success' &&
       Option.isSome(Schema.decodeUnknownOption(noReply)(latest.exit.value))
+    /** A creation's answer that is not stored, `Rejected`, as Cluster saved it (decision 0182). */
+    const rejectedSaved = (latest: Reply.Encoded) =>
+      latest._tag === 'WithExit' && latest.exit._tag === 'Success' &&
+      Option.isSome(Schema.decodeUnknownOption(creationRejected)(latest.exit.value))
     /**
      * A failure Cluster saved of its own: a door's handler fails with nothing, and a defect of it is not saved. The
      * one the runtime meets is an entity type no runner registered in time (decisions 0092, 0168).
@@ -373,7 +388,7 @@ export const onCluster: Effect.Effect<
       },
       register: (program, step, idle, resumed, formerly) => {
         const answer = Schema.encodeSync(answerCodec(program))
-        const created = Schema.encodeSync(creationCodec)
+        const created = Schema.encodeSync(creationCodec(program))
         const operated = Schema.encodeSync(operatedCodec)
         const handlers = handlersOf((delivered, requestId) =>
           Effect.map(step(delivered, requestId), (stepped) =>
@@ -396,18 +411,24 @@ export const onCluster: Effect.Effect<
       },
       // A failure of Cluster's client or storage is no answer of the program's, and is a defect, as a failure of the
       // runtime's own storage is.
-      create: (program, sent, kept) =>
-        resettingSavedFailure(
+      create: (program, sent, kept) => {
+        const once = resettingSavedFailure(
           program.name,
           'Create',
           sent,
           Effect.flatMap(sharding.makeClient(doorOf(program.name)), (clientOf) =>
             Effect.flatMap(
               clientOf(sent.id).Create({ version: sent.version, request: sent.request, message: sent.message }),
-              Schema.decodeEffect(creationCodec),
+              Schema.decodeEffect(creationCodec(program)),
             )),
           kept,
-        ).pipe(Effect.orDie),
+        )
+        // A rejection is not stored, and Cluster's client gives a saved answer as it gives a new one. So a `Rejected`
+        // Cluster saved under the request is reset before the creation is sent, and a retry under the same request id
+        // runs `init` again, as on one process. Before the send, and not after the answer: a process that dies
+        // between the answer and a reset would leave a saved `Rejected` for the retry (decision 0182).
+        return Effect.andThen(reset(program.name, 'Create', sent, rejectedSaved), once).pipe(Effect.orDie)
+      },
       send: (program, sent, kept, given) => {
         const answered = Schema.decodeEffect(answerCodec(program))
         const once = resettingSavedFailure(

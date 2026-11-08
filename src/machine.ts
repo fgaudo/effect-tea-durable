@@ -781,12 +781,20 @@ const activate = <T extends Types>(
 export type Start<T extends Types> =
   | Readonly<{ _tag: 'Created'; machine: Machine<T>; outputs: ReadonlyArray<Output<T>>; written: Written }>
   /**
+   * `init` rejected the flags: nothing is stored, and the creator is answered with the reply, which is not stored
+   * either (decision 0182).
+   */
+  | Readonly<{ _tag: 'Rejected'; reply: Readonly<{ _tag: 'Rejected'; reason: T['rejection'] | null }> }>
+  /**
    * The flags or the request do not encode, or `init`, `durable`, `project` or an index died on the first state:
    * nothing is stored.
    */
   | Readonly<{ _tag: 'Defect'; cause: unknown }>
 
-/** Creates the entity `id` from its flags, answers the request `Created`, and activates it. */
+/**
+ * Creates the entity `id` from its flags, answers the request `Created`, and activates it. An `init` that rejects the
+ * flags creates nothing (decision 0182).
+ */
 export const start = <T extends Types>(
   program: Program<T>,
   id: string,
@@ -801,7 +809,15 @@ export const start = <T extends Types>(
     // nothing is stored (decision 0049). The request is stored with the entity, and encodes too.
     encodeBy(program.schemas.flags, flags, 'value of the flags')
     encodeOnce(requestCodec(program), request, 'request')
-    state = byProgram(() => program.init(flags, at))
+    const first = byProgram(() => program.init(flags, at))
+    if (isRejected(first)) {
+      // The reason reaches the creator as a message's does, and on Cluster as text: one that does not encode is a
+      // defect, as it is for `update` (decision 0182).
+      const reply = { _tag: 'Rejected', reason: reasonOf(first) } as const
+      if (reply.reason !== null) encodeBy(program.schemas.rejection, reply.reason, 'reason of the rejection')
+      return { _tag: 'Rejected', reply }
+    }
+    state = first
     work = admitted(program, state)
   } catch (thrown) {
     return { _tag: 'Defect', cause: defectOf(thrown) }

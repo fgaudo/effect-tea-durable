@@ -110,6 +110,8 @@ export interface World {
   /**
    * Creates an entity of `program`, which the world runs under its name from then on. It fails the test when the
    * world runs another program under that name, as a second deploy of a name fails in the runtime (decision 0075).
+   * It fails the test too when the program's `init` rejects the flags: a test of a rejection calls `init` itself,
+   * which is pure, or creates from a runner, whose `create` is answered `Rejected` (decision 0182).
    */
   readonly create: <T extends Types>(program: Program<T>, id: string, flags: T['flags']) => Effect.Effect<Member<T>>
   /** The process dies after the last commit, and every entity is activated again from what was stored. */
@@ -130,6 +132,11 @@ type Entity<T extends Types> = {
   machine: Machine.Machine<T>
   readonly replies: Map<string, Kept>
 }
+
+/** What a creation in the world gives: the entity, or the rejection of its flags by `init` (decision 0182). */
+type Born<T extends Types> =
+  | Readonly<{ _tag: 'Born'; entity: Entity<T> }>
+  | Readonly<{ _tag: 'Rejected'; reason: T['rejection'] | null }>
 
 const addressKey = ({ name, id }: Address) => JSON.stringify([name, id])
 
@@ -307,11 +314,15 @@ const makeWorld = (at: DateTime.Utc) => {
         }),
       create: <R extends Types>(program: Program<R>, id: string, flags: R['flags'], name: string) =>
         Effect.flatMap(named('creation', program as unknown as Program<Types>, id, name), (request) =>
-          Effect.suspend((): Effect.Effect<Creation> => {
+          Effect.suspend((): Effect.Effect<Creation<R['rejection']>> => {
             const existing = entities.get(addressKey({ name: program.name, id })) as Entity<R> | undefined
             if (existing === undefined) {
-              // A creation that cannot be stored is the creator's defect, as in the runtime (decision 0049).
-              return Effect.as(born(deployedAs(program), id, flags, request), { _tag: 'Created' })
+              // A creation that cannot be stored is the creator's defect, as in the runtime (decision 0049). One
+              // `init` rejects creates nothing, and its reply is not stored (decision 0182).
+              return Effect.map(
+                born(deployedAs(program), id, flags, request),
+                (born): Creation<R['rejection']> => born._tag === 'Rejected' ? born : { _tag: 'Created' },
+              )
             }
             return Effect.flatMap(apply(existing, { _tag: 'Create', request }), (outputs) => {
               for (const output of outputs) if (output._tag === 'CreationReplied') return Effect.succeed(output.reply)
@@ -321,19 +332,23 @@ const makeWorld = (at: DateTime.Utc) => {
     })
   }
 
-  /** Creates an entity in the world, from what `Machine.start` gives. A defect at creation fails the test. */
+  /**
+   * Creates an entity in the world, from what `Machine.start` gives. A defect at creation fails the test. Flags `init`
+   * rejects create nothing, and give the rejection (decision 0182).
+   */
   const born = <T extends Types>(
     program: Program<T>,
     id: string,
     flags: T['flags'],
     request: Request<T['sender']>,
-  ): Effect.Effect<Entity<T>> =>
-    Effect.suspend(() => {
+  ): Effect.Effect<Born<T>> =>
+    Effect.suspend((): Effect.Effect<Born<T>> => {
       const created = Machine.start(program, id, flags, now, request)
       if (created._tag === 'Defect') return Effect.die(created.cause)
+      if (created._tag === 'Rejected') return Effect.succeed(created.reply)
       const entity: Entity<T> = { address: { name: program.name, id }, machine: created.machine, replies: new Map() }
       entities.set(addressKey(entity.address), entity as unknown as Entity<Types>)
-      return Effect.succeed(entity)
+      return Effect.succeed({ _tag: 'Born', entity } as const)
     })
 
   const memberOf = <T extends Types>(entity: Entity<T>): Member<T> => {
@@ -419,7 +434,10 @@ const makeWorld = (at: DateTime.Utc) => {
           return Effect.die(`${program.name} '${id}' exists in the world already`)
         }
         // No one retries the test's creation, so it is the entity's own request: no sender is needed.
-        return Effect.map(born(deployed, id, flags, { _tag: 'Self', id: 'creation' }), memberOf)
+        return Effect.flatMap(born(deployed, id, flags, { _tag: 'Self', id: 'creation' }), (entity) =>
+          entity._tag === 'Rejected'
+            ? Effect.die(`the init of ${program.name} rejected the flags of '${id}'`)
+            : Effect.succeed(memberOf(entity.entity)))
       }),
     restart,
     deploy: (program) =>

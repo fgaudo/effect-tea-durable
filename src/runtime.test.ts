@@ -458,7 +458,7 @@ const replayed = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) => 
   const [first, ...rest] = events
   if (first === undefined || first._tag !== 'Create') return null
   const created = Machine.start(program, id, { at }, at, first.request)
-  if (created._tag === 'Defect') throw created.cause
+  if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
   let machine = created.machine
   // The toy is sent nothing by another entity's work, so no reply of its is deleted (decision 0021).
   const replies: Array<Answered> = [...created.written.replies]
@@ -480,7 +480,7 @@ const publishedOf = (at: DateTime.Utc, events: ReadonlyArray<Machine.Event<T>>) 
   // A log without a creation is one that never committed: nothing of the entity was published either.
   if (first === undefined || first._tag !== 'Create') return []
   const created = Machine.start(program, id, { at }, at, first.request)
-  if (created._tag === 'Defect') throw created.cause
+  if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
   let machine = created.machine
   let shown = program.project(machine.stored.state)
   type Row = Readonly<{
@@ -4093,6 +4093,31 @@ describe('what the runtime cannot finish', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           expect(yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })).toEqual({ _tag: 'Created' })
+          yield* runtime.settled
+        }))
+    })))
+
+  // A rejection at creation is not stored, as a defect is not: a retry under the same request id runs `init` again
+  // (decision 0182).
+  test('a creation init rejects stores nothing, and a retry under its request id runs init again', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { layer } = yield* hands()
+      const refusing: Program<T> = { ...program, init: () => rejectWith('Refused') }
+      const creation = { requestId: 'creation', sender: tester }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(refusing), layer)
+          for (let attempt = 0; attempt < 2; attempt++) {
+            expect(yield* toy.create(id, { at }, creation)).toEqual({ _tag: 'Rejected', reason: 'Refused' })
+          }
+          expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester })).toEqual({ _tag: 'NotFound' })
+          yield* runtime.settled
+        }))
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          expect(yield* toy.create(id, { at }, creation)).toEqual({ _tag: 'Created' })
           yield* runtime.settled
         }))
     })))

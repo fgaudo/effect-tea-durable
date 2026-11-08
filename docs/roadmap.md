@@ -8,11 +8,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 - **The API before the release.** Each point is a note, and the examples change with it. A point done is out of
   this list, and its note is `proposed` until the step is taken. Done: the defaults for what a program does not
   have ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)), and a timer without its type
-  parameter ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)). Next: `init` that rejects, which
-  begins in `Pieces` and `init` of [`src/program.ts`](../src/program.ts) and in the `Create` event of [`src/machine.ts`](../src/machine.ts).
-  - **`init` that rejects.** A creation is `Created` or a defect, so a rule of the domain at creation lives in the
-    schema of the flags or at the boundary ([decision 0124](decisions/archive/0124-the-boundary-authenticates-and-update-authorizes.md)).
-    An `init` that returns `Rejected`, answered by `create` as `update`'s is by `send`, has the one form.
+  parameter ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)), and an `init` that rejects the flags
+  ([decision 0182](decisions/0182-init-may-reject-the-flags.md)). Next: a receiver named without its import, which
+  begins in `send` and `create` of [`src/program.ts`](../src/program.ts) and in
+  [`examples/booking/inventory.ts`](../examples/booking/inventory.ts).
   - **A receiver named without its import.** `send(inventory, id, …)` imports the receiver's program, and the
     inventory writes `'Booking'` as a string to know its sender
     ([`examples/booking/inventory.ts`](../examples/booking/inventory.ts)). Two programs that talk both ways import

@@ -39,7 +39,8 @@ Cluster's says so.
   process dying, an operator resuming or discarding. What a child tells its parent is a raised event, not an event.
 - **External message.** What a parent sends a child through `children.<child>.update`, of a type the child's schema
   `external` gives. It is no inbound message: no caller can send it, and a child takes it in every state.
-- **Flags.** What an entity is created with, which `init` reads and nothing else keeps.
+- **Flags.** What an entity is created with, which `init` reads and nothing else keeps. A program's `init` may
+  reject them, and the entity is then not created.
 - **Full.** What `send` answers for an entity that holds as many callers' messages as the runtime's option
   `callers.messages`, 4096 by default: the messages of `send` offered to it and not yet applied. Nothing of the
   message is offered or stored. An operation of another entity is never answered `Full`, and sends again after the

@@ -248,12 +248,16 @@ export interface Handle<T extends Types, C = {}> {
    * divide among them (decisions 0137, 0153).
    */
   readonly partitions: number
-  /** Creates the entity `id`. A retry of the request that created it is answered `Created` (decision 0017). */
+  /**
+   * Creates the entity `id`. A retry of the request that created it is answered `Created` (decision 0017). Flags the
+   * program's `init` rejects are answered `Rejected`, and nothing is stored: a retry runs `init` again
+   * (decision 0182).
+   */
   readonly create: (
     id: string,
     flags: T['flags'],
     request: Readonly<{ requestId: string; sender: T['sender'] }>,
-  ) => Effect.Effect<Creation>
+  ) => Effect.Effect<Creation<T['rejection']>>
   /**
    * Sends an inbound message, and waits for the reply. A retry under the same request id gets the reply stored for
    * it. The boundary gives `keep`, the time its protocol retries for. The reply is then kept for `keep.millis` from
@@ -519,7 +523,7 @@ export type Operating = Readonly<{ _tag: 'Resume' | 'Discard'; id: string }>
 /** What a door's step answers: a message's answer, a creation's, or what an operator's event did. */
 export type DoorAnswer<Reason> =
   | Readonly<{ _tag: 'Message'; answer: Reply<Reason> | Readonly<{ _tag: 'Suspended' }> }>
-  | Readonly<{ _tag: 'Create'; answer: Creation }>
+  | Readonly<{ _tag: 'Create'; answer: Creation<Reason> }>
   | Readonly<{ _tag: 'Operated'; answer: Operated }>
 
 /**
@@ -576,16 +580,17 @@ export interface OnCluster {
   readonly others: Readonly<{ version: Effect.Effect<number, unknown>; millis: number }>
   /**
    * A creation, sent through the program's door by Cluster's client, from whatever runner the sender is on: what the
-   * door's step answered it (decision 0165). A failure Cluster saved as its reply is reset before it is given
-   * (decision 0168). `kept` is an operation's: the client calls it with the request's Cluster id before that reset,
-   * and it gives whether the asker's work still holds. Where the work has ended, the client neither resets nor gives
-   * the failure, and waits until it is interrupted (decisions 0092, 0170).
+   * door's step answered it (decision 0165). An answer `Rejected` is not stored: one Cluster saved under the request is
+   * reset before the creation is sent, so that a retry runs `init` again (decision 0182). A failure Cluster saved as its reply is reset
+   * before it is given (decision 0168). `kept` is an operation's: the client calls it with the request's Cluster id
+   * before that reset, and it gives whether the asker's work still holds. Where the work has ended, the client neither
+   * resets nor gives the failure, and waits until it is interrupted (decisions 0092, 0170).
    */
   readonly create: <T extends Types>(
     program: Program<T>,
     sent: Omit<Delivered, '_tag' | 'keep'>,
     kept?: (requestId: string) => Effect.Effect<boolean>,
-  ) => Effect.Effect<Creation>
+  ) => Effect.Effect<Creation<T['rejection']>>
   /**
    * A message, sent through the program's door by Cluster's client. An answer `Suspended` or `NotFound` is no reply:
    * Cluster's row of it is reset, and the message sent again, whose answer is given (decisions 0085, 0165). A failure
@@ -1762,6 +1767,9 @@ export const launchWith = (
             const started = Machine.start(program, id, flags, now, request)
             // A creation the program dies on stores nothing, and dies: Cluster delivers it again (decision 0160).
             if (started._tag === 'Defect') return yield* Effect.die(started.cause)
+            // A creation `init` rejects stores nothing of the runtime's. Cluster saves the answer, and the creator's
+            // client resets it, as it resets `NotFound` (decision 0182).
+            if (started._tag === 'Rejected') return { _tag: 'Create', answer: started.reply }
             yield* stored.write(id, started.written, DateTime.toEpochMillis(now))
             stepped.loaded = yield* fresh<T>(started.machine, 0)
             stepped.steps = 1
@@ -2199,7 +2207,7 @@ export const launchWith = (
       id: string,
       flags: T['flags'],
       request: Request<T['sender']>,
-    ): Effect.Effect<Creation, Faulted> =>
+    ): Effect.Effect<Creation<T['rejection']>, Faulted> =>
       Effect.gen(function*() {
         const entity: Address = { name: deployed.program.name, id }
         // A caller's creation is stored under its sender, which a sender that does not encode cannot be: the
@@ -2222,18 +2230,24 @@ export const launchWith = (
         // Detached from the caller: a creation committed is always started, and its entity loaded (decision 0079).
         const asked = yield* detached(deployed, holding(entity)(Effect.gen(function*() {
           const held = deployed.loaded.get(id) ?? null
+          const creating: Machine.Offered<T> = { _tag: 'Create', request }
           // The entity was already there: the machine answers the request from what is stored (decision 0017).
-          if (held !== null) return yield* ask(creations, held, entity, requested, { _tag: 'Create', request })
+          if (held !== null) {
+            return { _tag: 'Asked', asked: yield* ask(creations, held, entity, requested, creating) } as const
+          }
           const stored = yield* deployed.storage.load(id)
           if (stored !== null) {
             const loaded = yield* activate(deployed, stored)
-            return yield* ask(creations, loaded, entity, requested, { _tag: 'Create', request })
+            return { _tag: 'Asked', asked: yield* ask(creations, loaded, entity, requested, creating) } as const
           }
           const now = yield* DateTime.now
           const started = Machine.start(deployed.program, id, flags, now, request)
           // A defect at creation stores nothing (decision 0014): its creator is given the defect itself, and a
           // retry after a fix creates the entity (decision 0124).
           if (started._tag === 'Defect') return yield* Effect.fail(new Faulted({ defect: started.cause }))
+          // A creation `init` rejects stores nothing, and its reply is not stored either: a retry runs `init` again
+          // (decision 0182).
+          if (started._tag === 'Rejected') return started.reply
           const loaded = yield* fresh<T>(started.machine, 0)
           const creation: Machine.Event<T> = { _tag: 'Create', request }
           yield* at('BeforeCommit', entity, creation)
@@ -2251,9 +2265,10 @@ export const launchWith = (
             Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(deployed, loaded, cause)),
           )
           yield* Effect.forkIn(untransacted(loop(deployed, loaded)), deployed.scope)
-          return null
+          return { _tag: 'Created' } as const
         })))
-        return asked === null ? { _tag: 'Created' } : yield* answered(asked)
+        // An entity already there answers through the machine, and its caller waits for that answer.
+        return asked._tag === 'Asked' ? yield* answered(asked.asked) : asked
       })
 
     const send = <T extends Types>(

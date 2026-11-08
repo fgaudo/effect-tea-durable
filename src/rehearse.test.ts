@@ -18,6 +18,7 @@ import {
   operation,
   type Program,
   program as declare,
+  rejectWith,
   type Runner,
   send,
   timer,
@@ -420,6 +421,29 @@ describe('a world', () => {
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe("Inventory 'concert-1' exists in the world already")
       }),
     ))
+  })
+
+  // A rejection at creation creates nothing, and a run's `create` is answered it (decision 0182).
+  test("answers a run's creation init rejects, creates nothing, and fails the test's own", async () => {
+    const closed = { ...inventory, init: () => rejectWith('SalesClosed' as const) }
+    const creating = holdingBy(operation.atLeastOnce(({ event }) =>
+      Effect.gen(function*() {
+        const created = yield* create(closed, event, { capacity: 4 }, 'inventory')
+        expect(created).toEqual({ _tag: 'Rejected', reason: 'SalesClosed' })
+        return { _tag: 'SeatsUnavailable', reason: 'SalesClosed' } as const
+      })
+    ))
+    const exit = await Effect.runPromiseExit(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        const held = yield* world.create(creating, 'booking-1', flags)
+        expect(yield* held.run(yield* held.pending('hold'))).toBe('Delivered')
+        expect((yield* held.state)._tag).toBe('Cancelled')
+        // Created, the inventory would be in the world already, and the test fail on that.
+        yield* world.create(closed, 'concert-1', { capacity: 4 })
+      }),
+    ))
+    expect(reasonOf(exit)).toBe("the init of Inventory rejected the flags of 'concert-1'")
   })
 
   test('fails a run of an operation no longer under way', async () => {

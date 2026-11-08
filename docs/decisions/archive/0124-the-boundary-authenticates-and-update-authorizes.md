@@ -4,7 +4,8 @@
 [decision 0012](0012-creation-is-a-request-of-its-own.md) left open of who may create an entity, and what
 [decision 0014](0014-rules-the-machine-settled.md) left open of what a creator is answered for a defect at
 creation. Says who a sender is, which [decision 0048](0048-a-callers-request-belongs-to-its-sender.md) left to
-the boundary.
+the boundary. A program's `init` may reject the flags, answered `Rejected` and not stored, by
+[decision 0182](../0182-init-may-reject-the-flags.md): a creation then has three replies.
 
 ## Context
 

@@ -14,6 +14,7 @@ changes, and read as that part.
 ```mermaid
 flowchart LR
   caller -->|create, with flags| init
+  init -->|Created or Rejected| caller
   init --> state([state])
   caller -->|inbound message, with a request id| bound{within the bound of callers' messages}
   bound -->|yes| update

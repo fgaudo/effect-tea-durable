@@ -24,6 +24,8 @@ import {
   part,
   type Program,
   program,
+  reject,
+  rejectWith,
   timer,
   type Topic,
 } from './program.ts'
@@ -324,6 +326,31 @@ test('durable is left out only with no key, and operations only with no kind of 
   const runnerless = program(schemas)({ ...pieces, keys: { charge: null }, durable: () => ({ charge }) })
   const whole = program(schemas)({ ...pieces, keys: { charge: null }, durable: () => ({ charge }), operations: runners })
   expect([workless, runnerless, whole]).toHaveLength(3)
+})
+
+test("a program's init may reject with the program's reasons, and a part's may not (decision 0182)", () => {
+  const schemas = {
+    state: Schema.Struct({ seats: Schema.Int }),
+    flags: Schema.Struct({ seats: Schema.Int }),
+    inbound: Schema.Literal('Sell'),
+    rejection: Schema.Literal('TooFew'),
+    projection: Schema.Int,
+  }
+  const pieces = {
+    update: () => () => ({ seats: 0 }),
+    project: ({ seats }: { seats: number }) => seats,
+  }
+  const hall = program(schemas)({
+    ...pieces,
+    name: 'Hall',
+    init: ({ seats }) => seats < 10 ? rejectWith('TooFew') : { seats },
+  })
+  // @ts-expect-error a program's init rejects with the reasons of its schema, and no other
+  const misreasoned = program(schemas)({ ...pieces, name: 'Hall', init: () => rejectWith('Closed') })
+  // @ts-expect-error a part's init never rejects: its parent decides whether the child starts
+  const room = part(schemas)({ ...pieces, init: ({ seats }) => seats < 10 ? reject : { seats } })
+  expect([misreasoned, room]).toHaveLength(2)
+  expect(hall.init({ seats: 3 }, DateTime.makeUnsafe(0))).toEqual(rejectWith('TooFew'))
 })
 
 test('a timer needs no type parameter: its message keeps its tag, and durable checks it (decision 0181)', () => {

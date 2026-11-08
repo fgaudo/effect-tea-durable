@@ -423,7 +423,7 @@ const handledBy = (event: Machine.Event<T>, before: Toy): Machine.Envelope<T> | 
 const run = (commands: ReadonlyArray<Command>, freeze = false) => {
   const as = (version: Program<T>) => (freeze ? freezing(version) : version)
   const created = Machine.start(as(program), 'toy', null, epoch, freeze ? frozen({ ...creation }) : creation)
-  if (created._tag === 'Defect') throw created.cause
+  if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
   let machine = created.machine
   // The program deployed, which steps every event until another is (decision 0064).
   let deployed = as(program)
@@ -937,7 +937,7 @@ type Entity = Machine.Machine<Tiny> & Readonly<{ program: Program<Tiny>; replies
 const checked = (...args: Parameters<typeof tiny>): Entity => {
   const program = tiny(...args)
   const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
-  if (created._tag === 'Defect') throw created.cause
+  if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
   return { ...created.machine, program, replies: new Map() }
 }
 
@@ -971,7 +971,7 @@ const droppable = (...args: Parameters<typeof tiny>): Entity => {
   const base = tiny(...args)
   const program: Program<Tiny> = { ...base, operations: { Work: operation.droppable(() => Effect.succeed('done')) } }
   const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
-  if (created._tag === 'Defect') throw created.cause
+  if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
   return { ...created.machine, program, replies: new Map() }
 }
 
@@ -1098,7 +1098,7 @@ describe('the checks of a step', () => {
       }),
     } as unknown as Program<Tiny>
     const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
-    if (created._tag === 'Defect') throw created.cause
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     const transition = handled({ ...created.machine, program, replies: new Map() }, inbound)
     expect(transition.machine.stored.suspension).toBeNull()
     expect(transition.outputs.filter((output) => output._tag === 'Started')).toEqual([])
@@ -1242,6 +1242,32 @@ describe('what the program throws', () => {
     }
     expect(Machine.start(program, 'tiny', null, epoch, by('creation'))).toEqual({ _tag: 'Defect', cause: broken })
   })
+
+  test('flags init rejects create nothing, and the creator is given the reason (decision 0182)', () => {
+    const base = tiny((message) => message, () => ({}))
+    const refusing = (init: Program<Tiny>['init'], rejection: Schema.Codec<never, Json> = Schema.String as never) => ({
+      ...base,
+      schemas: { ...base.schemas, rejection },
+      init,
+    })
+    expect(Machine.start(refusing(() => rejectWith('closed' as never)), 'tiny', null, epoch, by('creation')))
+      .toEqual({ _tag: 'Rejected', reply: { _tag: 'Rejected', reason: 'closed' as never } })
+    expect(Machine.start(refusing(() => reject), 'tiny', null, epoch, by('creation')))
+      .toEqual({ _tag: 'Rejected', reply: { _tag: 'Rejected', reason: null } })
+    // A reason its schema refuses is a defect, as `update`'s is.
+    const unencoded = Machine.start(
+      refusing(() => rejectWith('closed' as never), Schema.Never),
+      'tiny',
+      null,
+      epoch,
+      by('creation'),
+    )
+    expect(unencoded._tag === 'Defect' && unencoded.cause instanceof InvariantDefect && unencoded.cause.reason)
+      .toStartWith('the reason of the rejection does not encode')
+    // Flags that do not encode are a defect before `init` runs (decision 0049).
+    const flagged = Machine.start(refusing(() => reject), 'tiny', 1 as never, epoch, by('creation'))
+    expect(flagged._tag).toBe('Defect')
+  })
 })
 
 describe('what a runtime writes', () => {
@@ -1354,7 +1380,7 @@ describe('what a runtime writes', () => {
       operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => 1 as never) },
     }
     const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
-    if (created._tag === 'Defect') throw created.cause
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     const transition = stepped({ ...created.machine, program, replies: new Map() }, { _tag: 'Restart' })
     expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
     expect(reasonOfSuspension(transition)).toStartWith("the unknown of the operation under 'charge' does not encode")
@@ -1372,7 +1398,7 @@ describe('what a runtime writes', () => {
       },
     }
     const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
-    if (created._tag === 'Defect') throw created.cause
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     const transition = stepped({ ...created.machine, program, replies: new Map() }, { _tag: 'Restart' })
     expect(transition.machine.stored.suspension?.on).toEqual({ _tag: 'Activation' })
     expect(transition.machine.stored.mailbox).toEqual([])
@@ -1807,7 +1833,7 @@ describe('a new program', () => {
     const plain = checked((message) => message, () => ({ charge: 'operation' }))
     const program = { ...plain.program, operations: { Work: operation.digest(() => Effect.succeed('done')) } }
     const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
-    if (created._tag === 'Defect') throw created.cause
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     const digest = digestOf(idempotencyKey({ name: 'Tiny', id: 'tiny' }, { name: 'charge' }, 1))
     const keysOf = (outputs: ReadonlyArray<Machine.Output<Tiny>>) =>
       outputs.flatMap((output) => (output._tag === 'Started' ? [output.idempotencyKey] : []))
@@ -1821,7 +1847,7 @@ describe('a new program', () => {
   test("a renamed entity's work keeps the idempotency keys of the name its keys are drawn from (decision 0156)", () => {
     const plain = checked((message) => message, () => ({ charge: 'operation' }))
     const created = Machine.start(plain.program, 'tiny', null, epoch, by('creation'))
-    if (created._tag === 'Defect') throw created.cause
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     const first = idempotencyKey({ name: 'Tiny', id: 'tiny' }, { name: 'charge' }, 1)
     const keysOf = (outputs: ReadonlyArray<Machine.Output<Tiny>>) =>
       outputs.flatMap((output) => (output._tag === 'Started' ? [output.idempotencyKey] : []))
@@ -1914,7 +1940,7 @@ describe('who a request belongs to', () => {
     const caller = (sender: Readonly<Record<string, string>>, id: string) =>
       ({ _tag: 'Caller', sender, id }) as unknown as Request<null>
     const created = Machine.start(program, 'tiny', null, epoch, caller({ team: 'ops' }, 'creation'))
-    if (created._tag === 'Defect') throw created.cause
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     const machine: Entity = { ...created.machine, program, replies: new Map() }
     const first = handled(machine, {
       _tag: 'Receive',
@@ -2085,7 +2111,7 @@ describe('what an event writes', () => {
       },
     }
     const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
-    if (created._tag === 'Defect') throw created.cause
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     const machine: Entity = { ...created.machine, program, replies: new Map() }
     count.projected = count.state = count.projection = 0
     const transition = handled(machine, { _tag: 'Receive', request: by('r'), message: 'go' })
@@ -2206,7 +2232,7 @@ describe('topics of the log (decision 0138)', () => {
   })
   const started = (program: Program<Topical>) => {
     const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
-    if (created._tag === 'Defect') throw created.cause
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     return created
   }
   const step = (program: Program<Topical>, machine: Machine.Machine<Topical>, message: string) =>
@@ -2305,7 +2331,7 @@ describe('keys with a parameter', () => {
   /** The events, stepped in order, from the creation of the entity. */
   const run = (events: ReadonlyArray<Machine.Event<L>>) => {
     const created = Machine.start(lines, 'l', null, epoch, by('creation'))
-    if (created._tag === 'Defect') throw created.cause
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     let machine = created.machine
     const transitions: Array<Machine.Transition<L>> = []
     for (const event of events) {
@@ -2348,7 +2374,7 @@ describe('keys with a parameter', () => {
     const durable = (state: L['state']) => ({ ...lines.durable(state), '["charge","a"]': timer(at, 'odd') })
     const program = { ...bracketed, durable } as Program<L>
     const created = Machine.start(program, 'l', null, epoch, by('creation'))
-    if (created._tag === 'Defect') throw created.cause
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     const added = Machine.step(program, created.machine, send('+a'))
     expect(Object.values(added.machine.stored.keys).map((held) => held.key)).toEqual([
       charge,

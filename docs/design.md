@@ -29,7 +29,7 @@ tested by calling pure functions, crashes included.
 | `schemas`    | how the state, flags, messages, operations, reasons and projection leave the process      |
 | `name`       | what the runtime stores the entity under, and what other entities see it as               |
 | `keys`       | every key the work under way is held under, with the schema of its parameter or `null`    |
-| `init`       | the first state, from the flags the entity is created with and the time of its creation   |
+| `init`       | the first state, from the flags and the time of the creation, or a rejection of the flags |
 | `update`     | `(message, meta, children) => (state) =>` the next state, a rejection, or a defect        |
 | `durable`    | the work under way in each state, by key: operations, as data, and timers                 |
 | `operations` | how each kind of operation runs, what it answers, and what a crash does to it             |
@@ -114,7 +114,9 @@ A part may hold children of its own, so a tree is as deep as a program needs.
 - **`onEvent`** has a handler for each child that raises events, and is required exactly when one does. A handler of
   children by id takes the id first.
 - **`project`** takes `children`, with each child's projection: `children.Line(state, id)`.
-- **`init`** makes the whole state, and starts a child with the child's own `init`.
+- **`init`** makes the whole state, and starts a child with the child's own `init`. A part's `init` never rejects:
+  the parent calls it, and decides in its own `init` or `update` whether the child starts
+  ([decision 0182](decisions/0182-init-may-reject-the-flags.md)).
 
 ### What the library derives
 
@@ -189,6 +191,14 @@ sees no sender, so the program does not decide who may create an entity. The bou
 does: the entity's `update` rejects the request, or keeps work whose operation calls `create`. A defect at creation
 is given to its creator, and nothing is stored, so a retry after a fix creates the entity
 ([decision 0124](decisions/archive/0124-the-boundary-authenticates-and-update-authorizes.md)).
+
+A program's `init` may reject the flags, with `reject` or `rejectWith` and the program's reasons, as `update`
+rejects a message. A rule of the domain at creation that the flags' schema cannot hold, such as one that reads the
+time of the creation, lives there. The creator is answered `Rejected`, with the reason. The runtime stores neither
+the entity nor the reply: a retry under the same request id runs `init` again, as a message answered `NotFound` is
+applied once its entity exists. On Cluster, Cluster saves the door's answer, and the creator's client resets a saved
+`Rejected` before it sends the creation, so that a retry is delivered again
+([decision 0182](decisions/0182-init-may-reject-the-flags.md)).
 
 ## Durable work
 
@@ -937,6 +947,7 @@ that what an event writes, applied to the rows before it, gives the rows after i
 | a subscription listens to a service's connection | the boundary reads the stream, and sends each item as a message      | a listening dies with the process, and a sent item is stored             |
 | a model, with the messages the view sends        | a projection, JSON, with the actions it allows                       | a caller is remote: it receives data, never functions                    |
 | a defect ends the run                            | a defect suspends the entity                                         | one entity's bug must not stop the others                                |
+| `init` always starts the program                 | a program's `init` may reject the flags, and a part's may not        | a caller's flags may break a rule of the domain                          |
 | one program, a tree of children                  | many entities, by id, each a tree of parts in one state              | an entity is the unit of storage and of concurrency                      |
 | a child is any program                           | a child is a part: no name, indexes or migrations                    | the entity, its row and its versions are the parent's                    |
 | external messages are among a child's messages   | external messages are no inbound ones                                | a caller may send an inbound message, and only a parent an external one  |

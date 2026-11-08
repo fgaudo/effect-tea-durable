@@ -12,7 +12,10 @@ import * as Schema from 'effect/Schema'
 import * as Str from 'effect/String'
 import { createHash } from 'node:crypto'
 
-/** What `update` returns for an inbound message that does not apply in the state, with no reason given. */
+/**
+ * What `update` returns for an inbound message that does not apply in the state, and what a program's `init` returns
+ * for flags it does not create an entity from, with no reason given (decision 0182).
+ */
 export const reject: unique symbol = Symbol.for('effect-tea-durable/Rejected')
 
 const RejectedWithTypeId: unique symbol = Symbol.for('effect-tea-durable/RejectedWith')
@@ -466,7 +469,11 @@ export interface Program<T extends Types> {
     T['sender'],
     T['projection']
   >
-  readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state']
+  /**
+   * The first state, or a rejection of the flags: the entity is then not created, nothing is stored, and the creator
+   * is answered `Rejected` (decision 0182).
+   */
+  readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state'] | Rejected<T['rejection']>
   readonly update: Update<T['state'], T['inbound'] | T['internal'], T['sender'], T['rejection']>
   /** The work each state holds, which the machine reads by key, under the keys the program declares. */
   readonly durable: (
@@ -774,6 +781,10 @@ export interface Part<T extends PartTypes> {
     operation: Schema.Codec<T['operation'], Json>
     rejection: Schema.Codec<T['rejection'], Json>
   }>
+  /**
+   * The child's first state. A part's `init` never rejects: its parent calls it, in its own `init` or `update`, and
+   * the parent decides there whether the child starts (decision 0182).
+   */
   readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state']
   readonly update: (
     message: T['inbound'] | T['internal'] | T['external'],
@@ -949,10 +960,12 @@ type DurableOf<State, Internal, Operation, Keys> = [keyof Keys] extends [never]
 type OperationsOf<Operation, Operations> = [Operation] extends [never] ? Readonly<{ operations?: Operations }>
   : Readonly<{ operations: Operations }>
 
-/** What a program and a part declare alike: their keys, children, and what they do. */
+/**
+ * What a program and a part declare alike: their keys, children, and what they do. Each declares its own `init`,
+ * since only a program's may reject (decision 0182).
+ */
 type Pieces<
   State extends object,
-  Flags,
   Inbound,
   Internal,
   Operation extends Readonly<{ _tag: string }>,
@@ -973,7 +986,6 @@ type Pieces<
     keys?: Keys
     /** The children, each placed with `child` or `each`: their messages, work and keys are the library's to route. */
     children?: C
-    init: (flags: Flags, at: DateTime.Utc) => State
     /** The own messages, and the external ones for a part: a child's messages are routed to the child. */
     update: (
       message: Inbound | Internal | External,
@@ -1448,9 +1460,14 @@ export const program = <
   const C extends Children<State> = {},
 >(
   declaration:
-    & Pieces<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, never, never, Keys, Operations, C>
+    & Pieces<State, Inbound, Internal, Operation, Rejection, Sender, Projection, never, never, Keys, Operations, C>
     & Readonly<{
       name: string
+      /**
+       * The first state, from the flags and the time of the creation. It may reject the flags, as `update` rejects
+       * a message, with its own reasons: the entity is not created, and nothing is stored (decision 0182).
+       */
+      init: (flags: Flags, at: DateTime.Utc) => State | Rejected<Rejection>
       /** What a query filters and orders by: a program that leaves it out has no index (decision 0180). */
       indexes?: Indexes
       /** How the versions before this one are read, in order: none for a first version (decision 0036). */
@@ -1532,21 +1549,12 @@ export const part = <
   Operations extends Declared<Operation, Internal> = Declared<Operation, Internal>,
   const C extends Children<State> = {},
 >(
-  declaration: Pieces<
-    State,
-    Flags,
-    Inbound,
-    Internal,
-    Operation,
-    Rejection,
-    Sender,
-    Projection,
-    Event,
-    External,
-    Keys,
-    Operations,
-    C
-  >,
+  declaration:
+    & Pieces<State, Inbound, Internal, Operation, Rejection, Sender, Projection, Event, External, Keys, Operations, C>
+    & Readonly<{
+      /** The child's first state: its parent decides whether the child starts, and a part's `init` never rejects. */
+      init: (flags: Flags, at: DateTime.Utc) => State
+    }>,
 ): Part<
   & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
   & Readonly<{ index: never; event: Event; external: External }>
@@ -1560,8 +1568,16 @@ export const part = <
   >
 
 
-/** What creating an entity is answered. Only `Created` is stored, under its sender and the request id. */
-export type Creation = Readonly<{ _tag: 'Created' }> | Readonly<{ _tag: 'AlreadyExists' }>
+/**
+ * What creating an entity is answered. Only `Created` is stored, under its sender and the request id.
+ * `Rejected` is the program's `init`'s, and is not stored: the entity does not exist, and a retry runs `init` again,
+ * as a message's `NotFound` is not stored (decision 0182).
+ */
+export type Creation<Reason = never> =
+  | Readonly<{ _tag: 'Created' }>
+  | Readonly<{ _tag: 'AlreadyExists' }>
+  /** `reason` is null for a bare `reject`. */
+  | Readonly<{ _tag: 'Rejected'; reason: Reason | null }>
 
 /**
  * The service through which an operation sends messages to other entities, as its own entity. The runtime
@@ -1580,7 +1596,7 @@ export class Entities extends Context.Service<Entities, {
     id: string,
     flags: T['flags'],
     name: string,
-  ) => Effect.Effect<Creation>
+  ) => Effect.Effect<Creation<T['rejection']>>
 }>()('effect-tea-durable/Entities') {}
 
 /**
@@ -1609,5 +1625,5 @@ export const create = <T extends Types>(
   id: string,
   flags: T['flags'],
   name: string,
-): Effect.Effect<Creation, never, Entities> =>
+): Effect.Effect<Creation<T['rejection']>, never, Entities> =>
   Effect.flatMap(Effect.service(Entities), (entities) => entities.create(program, id, flags, name))

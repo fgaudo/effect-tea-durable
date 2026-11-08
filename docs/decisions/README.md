@@ -87,7 +87,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0060](archive/0060-send-and-create-take-no-key.md) | `send` and `create` take no key |  |
 | [0065](archive/0065-the-machine-holds-no-replies.md) | The machine holds no replies, and a receive is given the one it asks for | [0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) |
 | [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) | A reply is keyed by the version that wrote it |  |
-| [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes |  |
+| [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes | [0182](0182-init-may-reject-the-flags.md) |
 | [0125](archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) | A caller's reply is kept as long as its boundary says, from the step that answers | [0165](archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) |
 | [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to |  |
 
@@ -116,10 +116,11 @@ each read and found, are in [`reviews.md`](reviews.md).
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0012](archive/0012-creation-is-a-request-of-its-own.md) | Creating an entity is a request of its own | [0049](archive/0049-flags-are-checked-by-their-schema.md), [0060](archive/0060-send-and-create-take-no-key.md), [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) |
+| [0012](archive/0012-creation-is-a-request-of-its-own.md) | Creating an entity is a request of its own | [0049](archive/0049-flags-are-checked-by-their-schema.md), [0060](archive/0060-send-and-create-take-no-key.md), [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md), [0182](0182-init-may-reject-the-flags.md) |
 | [0017](archive/0017-creation-in-the-machine.md) | Creation is part of the machine | [0047](archive/0047-a-request-of-an-operation-has-a-name.md), [0060](archive/0060-send-and-create-take-no-key.md) |
 | [0049](archive/0049-flags-are-checked-by-their-schema.md) | Flags are checked by their schema |  |
 | [0050](archive/0050-a-creation-is-answered-apart-from-a-message.md) | A creation is answered apart from a message |  |
+| [0182](0182-init-may-reject-the-flags.md) | A program's `init` may reject the flags, and the rejection is not stored (proposed) |  |
 
 ## Defects
 
