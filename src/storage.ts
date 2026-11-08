@@ -879,6 +879,7 @@ const Rows = {
       incarnations: Count,
       suspended_on: Schema.Null,
       suspended_cause: Schema.Null,
+      suspended_at: Schema.Null,
     }),
     Schema.Struct({
       keyed_as: Schema.NullOr(Schema.String),
@@ -888,6 +889,7 @@ const Rows = {
       incarnations: Count,
       suspended_on: Schema.String,
       suspended_cause: Schema.String,
+      suspended_at: Count,
     }),
   ])),
   /** A suspended entity, with the tag of its mailbox's first message, if any (decision 0114). */
@@ -1120,6 +1122,9 @@ export type Suspension = Readonly<{
   since: DateTime.Utc
 }>
 
+/** What is stored of one entity, as an operator sees it: the suspension as `suspended` lists it (decision 0185). */
+export type Inspection<T extends Types> = Readonly<{ stored: Machine.Stored<T>; suspension: Suspension | null }>
+
 /**
  * A consumer of the outbox, as an operator sees it: its topic, whether the deploy declares it, what is waiting,
  * and where (decisions 0039, 0137, 0152).
@@ -1298,6 +1303,12 @@ export interface Storage<T extends Types> {
   readonly expire: (at: number) => Effect.Effect<number>
   /** The suspended entities of the program, the longest suspended first (decision 0114). */
   readonly suspended: Effect.Effect<ReadonlyArray<Suspension>>
+  /**
+   * What is stored for the entity `id`, read as `load` reads it, with its suspension as `suspended` lists it, or null
+   * when there is none. Every row is read from one snapshot, so a step that commits meanwhile is read whole or not
+   * at all (decision 0185).
+   */
+  readonly inspect: (id: string) => Effect.Effect<Inspection<T> | null>
   /**
    * On Cluster: records that an operation of the entity `sender` was answered `Suspended` by the entity `id`, once
    * for each sender however often it is answered so (decision 0167).
@@ -1492,10 +1503,11 @@ export const storage = <T extends Types>(
     return held._tag === 'Timer' ? timer(held.at, held.message) : held.operation
   }
 
-  const load = (id: string) =>
+  /** The entity's rows, read through the migrations, and its cause and the time it suspended, if it is. */
+  const entity = (id: string) =>
     Effect.gen(function*() {
       const entities = yield* rows('entities', Rows.entity)(
-        sql`SELECT keyed_as, state, version, creation, incarnations, suspended_on, suspended_cause
+        sql`SELECT keyed_as, state, version, creation, incarnations, suspended_on, suspended_cause, suspended_at
             FROM entities WHERE name = ${name} AND id = ${id}`,
       )
       const row = entities[0]
@@ -1533,7 +1545,7 @@ export const storage = <T extends Types>(
             message: internal.read(envelope.message, up('internal', envelope.version)),
           }
       )
-      return {
+      const stored = {
         name,
         ...(row.keyed_as === null ? {} : { keyedAs: row.keyed_as }),
         id,
@@ -1547,7 +1559,41 @@ export const storage = <T extends Types>(
           ? null
           : { cause: row.suspended_cause, on: suspended.read(row.suspended_on) },
       } satisfies Machine.Stored<T>
-    }).pipe(Effect.orDie)
+      return {
+        stored,
+        held: row.suspended_on === null ? null : { cause: row.suspended_cause, at: row.suspended_at },
+      }
+    })
+
+  const load = (id: string) => entity(id).pipe(Effect.map((found) => found?.stored ?? null), Effect.orDie)
+
+  /**
+   * Runs `effect` in one transaction, whose statements read one snapshot. At PostgreSQL's default level each
+   * statement reads a snapshot of its own, so the transaction begins at `REPEATABLE READ`, whose statements read its
+   * first (decision 0157). The level is read where the transaction is the outermost: inside a transaction the caller
+   * left open, the statements read at the caller's level (decision 0158).
+   */
+  const snapshot = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    sql.withTransaction(effect).pipe(
+      dialect === 'pg'
+        ? Effect.provideService(SqlClient.BeginTransaction, 'BEGIN ISOLATION LEVEL REPEATABLE READ')
+        : (self) => self,
+    )
+
+  // The rows are read from one snapshot, so that a step between two readings is not read in half (decision 0185).
+  const inspect = (id: string): Effect.Effect<Inspection<T> | null> =>
+    snapshot(entity(id)).pipe(
+      Effect.flatMap((found): Effect.Effect<Inspection<T> | null> => {
+        if (found === null) return Effect.succeed(null)
+        const { stored, held } = found
+        if (stored.suspension === null || held === null) return Effect.succeed({ stored, suspension: null })
+        return Effect.map(
+          listedAs(id, stored.suspension.on, stored.mailbox[0]?._tag ?? null, held.cause, held.at),
+          (suspension) => ({ stored, suspension }),
+        )
+      }),
+      Effect.orDie,
+    )
 
   /**
    * The reply among `found` stored under the request `key`, as this version keys it: a row is compared once read
@@ -2019,24 +2065,16 @@ export const storage = <T extends Types>(
           SELECT id, projection, indexes, version FROM projections
           WHERE ${sql.and([...clauses, clause])} ORDER BY ${by} LIMIT ${left}
         `)
-      // The parts are read in one transaction, so that a step between two of them moves no row into the page twice
+      // The parts are read from one snapshot, so that a step between two of them moves no row into the page twice
       // (decision 0145).
-      // At PostgreSQL's default level each statement reads a snapshot of its own, so the transaction begins at
-      // `REPEATABLE READ`, whose statements read its first (decision 0157). The level is read where the transaction
-      // is the outermost: inside a transaction the caller left open, the page reads at the caller's level
-      // (decision 0158).
-      const found = yield* sql.withTransaction(Effect.gen(function*() {
+      const found = yield* snapshot(Effect.gen(function*() {
         const found: Array<Effect.Success<ReturnType<typeof page>>[number]> = []
         for (const { clause, by } of read) {
           if (found.length >= limit) break
           found.push(...yield* page(clause, by, limit - found.length))
         }
         return found
-      })).pipe(
-        dialect === 'pg'
-          ? Effect.provideService(SqlClient.BeginTransaction, 'BEGIN ISOLATION LEVEL REPEATABLE READ')
-          : (self) => self,
-      )
+      }))
       // A row the version before wrote is read through its migrations; `reindex` is what writes it again.
       return found.map((held): Found<T> => ({
         id: held.id,
@@ -2397,6 +2435,22 @@ export const storage = <T extends Types>(
 
   // The tag of the mailbox's first message says what a `Message` the entity died on is: an inbound one is
   // discarded, an internal one is not (decisions 0041, 0044, 0114).
+  const listedAs = (
+    id: string,
+    on: Machine.Suspension['on'],
+    head: 'Inbound' | 'Internal' | null,
+    cause: string,
+    at: number,
+  ): Effect.Effect<Suspension> =>
+    on._tag === 'Message' && head === null
+      ? Effect.die(new Error(`the entity '${name}' '${id}' is suspended on a message, and its mailbox is empty`))
+      : Effect.succeed({
+        id,
+        on: on._tag === 'Message' ? { _tag: 'Message', kind: head ?? 'Inbound' } : on,
+        cause,
+        since: DateTime.makeUnsafe(at),
+      })
+
   const suspensions = Effect.gen(function*() {
     const held = yield* rows('entities', Rows.suspended)(sql`
       SELECT id, suspended_on, suspended_cause, suspended_at, (
@@ -2406,18 +2460,9 @@ export const storage = <T extends Types>(
     `)
     const listed: Array<Suspension> = []
     for (const row of held) {
-      const on = suspended.read(row.suspended_on)
-      if (on._tag === 'Message' && row.head === null) {
-        return yield* Effect.die(
-          new Error(`the entity '${name}' '${row.id}' is suspended on a message, and its mailbox is empty`),
-        )
-      }
-      listed.push({
-        id: row.id,
-        on: on._tag === 'Message' ? { _tag: 'Message', kind: row.head ?? 'Inbound' } : on,
-        cause: row.suspended_cause,
-        since: DateTime.makeUnsafe(row.suspended_at),
-      })
+      listed.push(
+        yield* listedAs(row.id, suspended.read(row.suspended_on), row.head, row.suspended_cause, row.suspended_at),
+      )
     }
     return listed
   }).pipe(Effect.orDie)
@@ -2530,6 +2575,7 @@ export const storage = <T extends Types>(
     forget,
     expire,
     suspended: suspensions,
+    inspect,
     wait,
     waiters,
     keepSent,

@@ -43,6 +43,7 @@ import {
   type Reply,
   type Request,
   runnerOf,
+  type Durable,
   type Topic,
   topicsOf,
   type Types,
@@ -88,6 +89,30 @@ export type Waiting = Readonly<{ entity: Address; key: Key; incarnation: number;
  * waiting for its resumption in this process (decision 0114).
  */
 export type Suspended = Suspension & Readonly<{ waiting: ReadonlyArray<Waiting> }>
+
+/**
+ * An entity, as `Handle.inspect` gives it: what is stored of it, read through the migrations as an activation reads
+ * it, from one snapshot (decision 0185).
+ */
+export type Inspected<T extends Types> = Readonly<{
+  id: string
+  state: T['state']
+  /**
+   * The messages queued for the entity, the next one first: an inbound one with the request it came with, an internal
+   * one with the run of the work that sent it.
+   */
+  mailbox: ReadonlyArray<
+    | Readonly<{ _tag: 'Inbound'; request: Request<T['sender']>; message: T['inbound'] }>
+    | Readonly<{ _tag: 'Internal'; key: Key; incarnation: number; message: T['internal'] }>
+  >
+  /**
+   * The work under way, the oldest first: each key the state holds work under, its incarnation, and the operation or
+   * the timer.
+   */
+  work: ReadonlyArray<Readonly<{ key: Key; incarnation: number; work: Durable<T['operation'], T['internal']> }>>
+  /** The suspension, as `suspended` lists it, or null for an entity that is not suspended. */
+  suspension: Suspended | null
+}>
 
 /** What an operator's `resume` or `discard` did (decision 0114). */
 export type Operated =
@@ -430,6 +455,14 @@ export interface Handle<T extends Types, C = {}> {
    * process does not hold is listed too (decision 0114).
    */
   readonly suspended: Effect.Effect<ReadonlyArray<Suspended>>
+  /**
+   * What is stored of the entity `id`, or null when there is none: its state, its mailbox, its work under way and its
+   * suspension, as `suspended` lists it. An operator reads it to decide between `resume` and `discard`. It is read from
+   * what is stored, so an entity this process does not hold is inspected too, and nothing is activated. The rows are
+   * read from one snapshot, so a step that commits meanwhile is read whole or not at all. A row that no migration
+   * reads is a defect here, as it is at the entity's activation (decision 0185).
+   */
+  readonly inspect: (id: string) => Effect.Effect<Inspected<T> | null>
   /**
    * An operator resumes a suspended entity (decision 0006), with the program deployed: a fixed program is a deploy
    * of it, which the resume follows (decision 0064). It gives `Resumed`, `StillSuspended`, `NotSuspended` or
@@ -2865,6 +2898,26 @@ export const launchWith = (
               ...suspension,
               waiting: waitingFor({ name: program.name, id: suspension.id }),
             }))),
+          inspect: (id) =>
+            texted(
+              id,
+              Effect.map(deployed.storage.inspect(id), (found): Inspected<T> | null =>
+                found === null ? null : {
+                  id,
+                  state: found.stored.state,
+                  mailbox: found.stored.mailbox.map((envelope) =>
+                    envelope._tag === 'Inbound'
+                      ? { _tag: 'Inbound', request: envelope.request, message: envelope.message }
+                      : envelope
+                  ),
+                  work: Object.values(found.stored.keys)
+                    .map(({ key, incarnation, work }) => ({ key, incarnation, work }))
+                    .sort((one, other) => one.incarnation - other.incarnation),
+                  suspension: found.suspension === null
+                    ? null
+                    : { ...found.suspension, waiting: waitingFor({ name: program.name, id }) },
+                }),
+            ),
           resume: (id) => texted(id, admitted(operate(deployed, id, { _tag: 'Resume' }))),
           discard: (id) => texted(id, admitted(operate(deployed, id, { _tag: 'Discard' }))),
         }

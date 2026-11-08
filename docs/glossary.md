@@ -46,7 +46,7 @@ Cluster's says so.
   message is offered or stored. An operation of another entity is never answered `Full`, and sends again after the
   retry. On Effect Cluster a caller is never answered `Full`, and its message waits in Cluster's table.
 - **Handle.** What `deploy` gives: `create`, `send`, `read`, `query`, `count`, `sum` and `countBy` for callers,
-  `consume`, `feed`, `ack` and the rest of the outbox for its consumers, `reindex`, and `suspended`, `resume` and `discard` for an operator.
+  `consume`, `feed`, `ack` and the rest of the outbox for its consumers, `reindex`, and `suspended`, `inspect`, `resume` and `discard` for an operator.
 - **Hold, lock.** Each entity is found, loaded, unloaded and crashed under a lock of its own. A caller holds the entity
   while it waits for its activation, and nothing under one entity's lock waits for another's.
 - **Idempotency key.** The entity's program and id, the operation's key and its incarnation, given to an idempotent

@@ -131,7 +131,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0042](archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md) | An event the runtime cannot finish crashes its entity | [0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md), [0067](archive/0067-each-entity-is-held-by-its-own-lock.md), [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) |
 | [0061](archive/0061-only-what-the-program-does-is-its-defect.md) | Only what the program does is its defect |  |
 | [0113](archive/0113-a-suspended-entitys-operations-run-to-their-end.md) | A suspended entity's operations run to their end |  |
-| [0114](archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) | An operator sees the suspended entities, and what a resume or a discard did |  |
+| [0114](archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) | An operator sees the suspended entities, and what a resume or a discard did | [0185](0185-inspect-gives-what-is-stored-of-one-entity.md) |
+| [0185](0185-inspect-gives-what-is-stored-of-one-entity.md) | `inspect` gives what is stored of one entity, read from one snapshot (proposed) |  |
 
 ## Versions and deploys
 

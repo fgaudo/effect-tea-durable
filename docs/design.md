@@ -594,6 +594,12 @@ operation or on its activation; `StillSuspended`, with the new cause, when the p
 state, and a discard then keeps its message; `NotSuspended`; or `NotFound`. Each operator is told what the
 operator's own event did, even when two operate on one entity at once ([decision 0114](decisions/archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)).
 
+An operator decides between `resume` and `discard` with `inspect(id)`. It gives what is stored of one entity: the
+state, the mailbox with the next message first, the work under way with the oldest first, and the suspension as
+`suspended` lists it. It reads what is stored and activates nothing, so an entity this process does not hold is
+inspected too. Its rows are read through the migrations from one snapshot, so a step that commits meanwhile is read
+whole or not at all ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)).
+
 ## Reading
 
 `project(state)` is what callers read of an entity: its status, and the actions it allows. It is the
@@ -981,7 +987,7 @@ is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md
 database until it ends: a second runtime on it, or a launch while another connection has the file of SQLite open,
 dies as it launches ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). A database of
 PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. `launch` gives a runtime, `deploy(program)`
-a handle to one program's entities — `create`, `send`, `read`, and `suspended`, `resume` and `discard` for an
+a handle to one program's entities — `create`, `send`, `read`, and `suspended`, `inspect`, `resume` and `discard` for an
 operator — and
 the operations of a program are run with the services it was deployed with
 ([`src/runtime.ts`](../src/runtime.ts), [decision 0028](decisions/archive/0028-rules-the-runtime-settled.md)).

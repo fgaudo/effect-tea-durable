@@ -10,12 +10,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   have ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)), a timer without its type
   parameter ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)), an `init` that rejects the flags
   ([decision 0182](decisions/0182-init-may-reject-the-flags.md)), a receiver named by a reference
-  ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md)), and `consume`
-  ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). Next: `inspect`, which begins in
-  `suspended` of the `Handle` in [`src/runtime.ts`](../src/runtime.ts), and in `suspended` and `load` of
-  [`src/storage.ts`](../src/storage.ts).
-  - **`inspect`.** An operator sees of a suspended entity its cause and since when, and not its state or its mailbox.
-    A handle gives what is stored of one entity, read as `load` reads it.
+  ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md)), `consume`
+  ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)), and `inspect`
+  ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)). Next: a rehearsal in fewer
+  words, which begins in `answer`, `fire` and `pending` of [`src/rehearse.ts`](../src/rehearse.ts).
   - **A rehearsal in fewer words.** `answer(yield* pending('charge'), message)` recurs in every scenario: `answer`
     and `fire` take a key too, and the pending stays for who asserts it. A test that asserts that a key holds no
     work wraps `pending` in `Effect.exit`, since `pending` fails where there is none. A reading that gives the work

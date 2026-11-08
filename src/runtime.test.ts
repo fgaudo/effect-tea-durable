@@ -763,6 +763,7 @@ describe('the runtime on SQLite', () => {
               toy.create(broken, { at }, { requestId: 'creation', sender }),
               toy.send(broken, want, { requestId: 'r', sender }),
               toy.read(broken),
+              toy.inspect(broken),
               toy.resume(broken),
               toy.discard(broken),
             ]
@@ -1302,6 +1303,79 @@ describe('the runtime on SQLite', () => {
           expect(yield* Fiber.join(second)).toEqual({ _tag: 'NotSuspended' })
         }))
     })))
+
+  test('an operator inspects an entity: its state, its mailbox, its work and its suspension, as stored', () =>
+    onBoth(Effect.gen(function*() {
+      const { layer } = yield* hands({ holds: true })
+      const at = yield* DateTime.now
+      const workOf = (inspected: Library.Inspected<T> | null) =>
+        inspected?.work.map(({ key, incarnation }) => [key.name, incarnation])
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          expect(yield* toy.inspect(id)).toBeNull()
+          // The hands never come back, so the work stays under way: `settled` would wait for it, and the test lets
+          // the operations start instead.
+          yield* ran(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          const created = yield* toy.inspect(id)
+          expect(created?.state.want).toEqual(keys)
+          expect(created?.state.applied).toEqual([])
+          expect(created?.mailbox).toEqual([])
+          expect(created?.suspension).toBeNull()
+          expect(workOf(created)).toEqual([['a', 1], ['b', 2], ['c', 3], ['t', 4]])
+          expect(created?.work.find(({ key }) => key.name === 't')?.work)
+            .toEqual(timer<Internal>(created?.state.rings ?? at, { _tag: 'Rang', key: 't' }))
+          yield* TestClock.adjust('7 millis')
+          const breaks = yield* DateTime.now
+          expect(yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester }))
+            .toEqual({ _tag: 'Suspended' })
+          // The suspension is the one `suspended` lists, and the message it died on is first in the mailbox.
+          const suspended = yield* toy.inspect(id)
+          expect(suspended?.suspension).toEqual((yield* toy.suspended)[0])
+          expect(suspended?.suspension?.since).toEqual(breaks)
+          expect(suspended?.mailbox).toEqual([{
+            _tag: 'Inbound',
+            request: { _tag: 'Caller', sender: tester, id: 'break' },
+            message: { _tag: 'Break', nonce: 'b' },
+          }])
+          expect(workOf(suspended)).toEqual(workOf(created))
+        }))
+      // An entity this process does not hold is inspected from what is stored, and is not activated: activated by
+      // a program whose `durable` dies, it would be suspended anew, with that cause.
+      const dying: Program<T> = { ...program, durable: () => defect('durable died') }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(dying), layer)
+          const inspected = yield* toy.inspect(id)
+          expect(inspected?.suspension?.cause).toContain('broken')
+          expect(inspected?.suspension?.waiting).toEqual([])
+          expect((yield* toy.suspended).map(({ cause }) => cause)).toEqual([expect.stringContaining('broken')])
+          // A resume activates it, and the new cause is what an inspection then reads.
+          expect(yield* toy.resume(id)).toEqual({ _tag: 'StillSuspended', cause: expect.stringContaining('durable died') })
+          expect((yield* toy.inspect(id))?.suspension?.cause).toContain('durable died')
+        }))
+    })))
+
+  test('an inspection reads one snapshot, so a step that commits meanwhile is read whole, under prioritized schedules', () => {
+    // The stored keys are the work the stored state holds, and the inspection reads the state and the keys in two
+    // statements. A step between the two would give a state that holds a key and no work under it (decision 0185).
+    explored(() =>
+      Effect.gen(function*() {
+        const { layer } = yield* hands()
+        const at = yield* DateTime.now
+        return yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+            const inspections = yield* together([0, 1, 2, 3].map(() => toy.inspect(id)))
+            yield* runtime.settled
+            return inspections.map((inspected) =>
+              inspected === null || [...inspected.state.want].sort().join() ===
+                inspected.work.map(({ key }) => key.name).sort().join()
+            )
+          }))
+      }), [true, true, true, true])
+  }, 60_000)
 
   test('an at-most-once operation delivers unknown after a crash, and an idempotent one runs again', () =>
     database(Effect.gen(function*() {
