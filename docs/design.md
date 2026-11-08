@@ -77,6 +77,10 @@ once, since a program is never mutated
 ([decision 0054](decisions/archive/0054-a-program-is-checked-where-it-enters.md),
 [decision 0136](decisions/archive/0136-a-key-is-a-name-and-a-parameter-as-data.md)).
 
+A program's types are what `Handle`, `Rehearsal` and `Published` take. `TypesOf<typeof p>` gives them, of the program
+or of a reference to it, so a boundary names the handle it launched as `Handle<TypesOf<typeof order>>`
+([decision 0188](decisions/0188-typesof-gives-a-programs-types.md)).
+
 [`examples/order/order.ts`](../examples/order/order.ts) is a whole program.
 
 ## Children

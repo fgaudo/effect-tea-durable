@@ -157,6 +157,9 @@ Cluster's says so.
   the topic watches. A step writes a row in a topic only when that changed, and the row gives it, selected of the
   stored projection by the program deployed. A program that declares no topics publishes its projection as the one
   topic `projection`.
+- **Types, `TypesOf`.** Of a program: the type of its state, flags, messages, operations, keys, reasons, sender,
+  projection, indexes, services and topics, which `Program`, `Handle`, `Rehearsal` and `Published` take.
+  `TypesOf<typeof p>` gives them, of a program or of a reference to it.
 - **Uncommitted machine.** On Cluster: the machine a door's step computed in Cluster's transaction, held beside the
   entity's until a later step reads the count of the steps that wrote the entity's row, and finds whether that
   transaction committed ([0161](decisions/archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).

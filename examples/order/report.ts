@@ -8,10 +8,10 @@
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
-import type { Program, Published } from '../../src/index.ts'
+import type { Published, TypesOf } from '../../src/index.ts'
 import type { order } from './order.ts'
 
-type Order = typeof order extends Program<infer T> ? T : never
+type Order = TypesOf<typeof order>
 
 const Counts = Schema.Array(Schema.Struct({ status: Schema.String, count: Schema.Number }))
 

@@ -481,12 +481,18 @@ export type Receiver<T extends Types> = Program<T> | Reference<T>
  */
 export const reference = <P extends Program<any, string>>(
   name: LiteralName<P['name']>,
-): Reference<ProgramTypes<P>, P['name']> =>
+): Reference<TypesOf<P>, P['name']> =>
   // The types are all the reference carries, and nothing reads them at run time.
-  Object.freeze({ name }) as unknown as Reference<ProgramTypes<P>, P['name']>
+  Object.freeze({ name }) as unknown as Reference<TypesOf<P>, P['name']>
 
-/** The types of a program. */
-type ProgramTypes<P> = P extends Program<infer T, string> ? T : never
+/**
+ * The types of `P`, a program or a reference to one, which `Handle`, `Rehearsal` and `Published` take:
+ * `Handle<TypesOf<typeof p>>`, and `TypesOf<typeof p>['inbound']` for its inbound messages (decision 0188). Any
+ * other type gives `never`.
+ */
+export type TypesOf<P> = P extends Program<infer T, string> ? T
+  : P extends Reference<infer T, string> ? T
+  : never
 
 /** A program's name where its type is a literal, and `never`, which no name is, where it is any `string`. */
 type LiteralName<Name extends string> = string extends Name ? never : Name
@@ -848,10 +854,10 @@ export interface Part<T extends PartTypes> {
 type AnyPart = Part<any>
 
 /** The types a part says of itself. */
-type TypesOf<P> = P extends { readonly [PartTypeId]?: infer T } ? Exclude<T, undefined> : never
+type PartTypesOf<P> = P extends { readonly [PartTypeId]?: infer T } ? Exclude<T, undefined> : never
 
 /** The state of a part. */
-type StateOf<P> = TypesOf<P> extends Readonly<{ state: infer State }> ? State : never
+type StateOf<P> = PartTypesOf<P> extends Readonly<{ state: infer State }> ? State : never
 
 /** One child, where an optic finds it in the parent's state: where the optic focuses nothing, it is not there. */
 export interface One<State, P> {
@@ -893,7 +899,7 @@ export const each = <State, Id, P extends AnyPart>(
 type Children<State> = Readonly<Record<string, One<State, AnyPart> | Each<State, any, AnyPart>>>
 
 type Names<C> = keyof C & string
-type PartIn<C> = C extends { readonly part: infer P } ? TypesOf<P> : never
+type PartIn<C> = C extends { readonly part: infer P } ? PartTypesOf<P> : never
 type IdIn<C> = C extends { readonly kind: 'each'; readonly id: Schema.Codec<infer Id, Json> } ? Id : never
 /** Where a child's messages, operations and rejections carry its id: only for children by id. */
 type AtIn<C> = C extends { readonly kind: 'each' } ? Readonly<{ id: IdIn<C> }> : unknown

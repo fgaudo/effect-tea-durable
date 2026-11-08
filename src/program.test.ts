@@ -32,6 +32,7 @@ import {
   create,
   timer,
   type Topic,
+  type TypesOf,
 } from './program.ts'
 import type { Rehearsal } from './rehearse.ts'
 import type { Query } from './storage.ts'
@@ -160,9 +161,8 @@ test('a droppable runner whose services hold `Entities` does not compile (decisi
     operations: { Charge: operation.droppable(() => Effect.as(Effect.service(Rates), 'Charged' as const)) },
   })
   // The services a droppable runner needs are still inferred, and are the program's: `Rates`, not `never` or `unknown`.
-  const services: typeof reads extends Program<infer T>
-    ? [T['services']] extends [Rates] ? [Rates] extends [T['services']] ? true : false : false
-    : false = true
+  type Services = TypesOf<typeof reads>['services']
+  const services: [Services] extends [Rates] ? [Rates] extends [Services] ? true : false : false = true
   const sends = program(schemas)({
     ...pieces,
     operations: {
@@ -223,12 +223,12 @@ test('a topic selects JSON of the projection, and the topics a program declares 
     projection: Schema.Struct({ charging: Schema.Boolean, since: Schema.Number }),
   }
   const charges = program(shown)({ ...pieces, topics: { charging: ({ charging }) => charging } })
-  type Of = typeof charges extends Program<infer T> ? T : never
+  type Of = TypesOf<typeof charges>
   const named: Topic<Of> = 'charging'
   // @ts-expect-error a program that declares topics publishes them alone, and its projection is no topic
   const projection: Topic<Of> = 'projection'
   const untopical = program(shown)(pieces)
-  const only: Topic<typeof untopical extends Program<infer T> ? T : never> = 'projection'
+  const only: Topic<TypesOf<typeof untopical>> = 'projection'
   // @ts-expect-error a topic selects of the projection, which has no such field
   const misnamed = program(shown)({ ...pieces, topics: { charging: ({ charged }) => charged } })
   // @ts-expect-error a topic selects what JSON holds, which a Date is not
@@ -296,7 +296,7 @@ test('a program without work leaves out what it does not have, and each piece le
     project: ({ open }: { open: boolean }) => open,
   }
   const doors = program(bare)(pieces)
-  type Of = typeof doors extends Program<infer T> ? T : never
+  type Of = TypesOf<typeof doors>
   const left: [Of['internal'], Of['operation'], Of['rejection'], Of['key'], Of['index']] extends
     [never, never, never, never, never] ? true : false = true
   const sender: [Of['sender']] extends [null] ? [null] extends [Of['sender']] ? true : false : false = true
@@ -376,7 +376,7 @@ test('a reference is the name of its program, which the compiler checks, and typ
   // @ts-expect-error a reference names the program by its name, and `Hal` is not the name of `hall`
   const misnamed = reference<typeof hall>('Hal')
   // A program typed by hand has a name typed `string`, against which no name could be checked.
-  const byHand: Program<typeof hall extends Program<infer T> ? T : never> = hall
+  const byHand: Program<TypesOf<typeof hall>> = hall
   // @ts-expect-error a program whose name is any string has no reference, and is passed to `send` itself
   const unchecked = reference<typeof byHand>('Hall')
   // What a sender gives reaches the runtime as the name alone.
@@ -404,6 +404,33 @@ test('a reference is the name of its program, which the compiler checks, and typ
   expect(await Effect.runPromise(Effect.provideService(sending, Entities, entities))).toEqual(['TooFew', 'Created'])
   expect(received).toEqual([['Hall', false], ['Hall', false], ['Hall', false], ['Hall', false], ['Hall', true]])
   expect([misnamed, unchecked]).toHaveLength(2)
+})
+
+test('TypesOf gives the types of a program, and of a reference to it, and never of anything else (decision 0188)', () => {
+  const hall = program({
+    state: Schema.Struct({ seats: Schema.Int }),
+    flags: Schema.Struct({ seats: Schema.Int }),
+    inbound: Schema.Literal('Sell'),
+    rejection: Schema.Literal('TooFew'),
+    projection: Schema.Int,
+  })({
+    name: 'Hall',
+    init: ({ seats }) => ({ seats }),
+    update: () => (state) => state,
+    project: ({ seats }) => seats,
+  })
+  const Hall = reference<typeof hall>('Hall')
+  type Of = TypesOf<typeof hall>
+  type Referred = TypesOf<typeof Hall>
+  const same: [Of] extends [Referred] ? [Referred] extends [Of] ? true : false : false = true
+  const inbound: Of['inbound'] = 'Sell'
+  // @ts-expect-error `Buy` is not an inbound message of `hall`
+  const unknown: Referred['inbound'] = 'Buy'
+  const reason: Referred['rejection'] = 'TooFew'
+  // A receiver of either kind gives the same types, so a function over `Receiver<T>` reads them too.
+  const either: [TypesOf<typeof hall | typeof Hall>] extends [Of] ? true : false = true
+  const none: [TypesOf<{ name: 'Hall' }>] extends [never] ? true : false = true
+  expect([same, inbound, unknown, reason, either, none]).toHaveLength(6)
 })
 
 test('a timer needs no type parameter: its message keeps its tag, and durable checks it (decision 0181)', () => {
@@ -477,7 +504,7 @@ test('a rehearsal and a query name only the keys and the indexes the program dec
     project: () => null,
   } as const
   const charges = program(schemas)({ ...pieces, indexes: { charging: () => true } })
-  type Of = typeof charges extends Program<infer T> ? T : never
+  type Of = TypesOf<typeof charges>
   const pending = (rehearsal: Rehearsal<Of>) => [
     rehearsal.pending('charge'),
     // @ts-expect-error `charg` is no key the program declares
@@ -536,7 +563,7 @@ test('the work under a key with a parameter is a list of pairs typed by its sche
     keys: { fee: null, charge: Schema.DateTimeUtc },
     durable: () => noWork,
   })
-  type Of = typeof lines extends Program<infer T> ? T : never
+  type Of = TypesOf<typeof lines>
   const pending = (rehearsal: Rehearsal<Of>) => [
     rehearsal.pending('charge', 'a'),
     rehearsal.pending('fee'),

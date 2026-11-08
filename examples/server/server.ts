@@ -35,7 +35,7 @@ import * as Option from 'effect/Option'
 import * as Schedule from 'effect/Schedule'
 import * as Schema from 'effect/Schema'
 import { RpcSerialization, RpcServer } from 'effect/rpc'
-import { type Handle, launchOnCluster, type Program, sharding } from '../../src/index.ts'
+import { type Handle, launchOnCluster, sharding, type TypesOf } from '../../src/index.ts'
 import { Mailer, order, Payments, type Sender, Warehouse } from '../order/order.ts'
 
 /**
@@ -88,7 +88,7 @@ const world = (base: string) =>
   })).pipe(Layer.provide(FetchHttpClient.layer))
 
 /** The deployment of the orders, which the routes call. */
-type OrderTypes = typeof order extends Program<infer T> ? T : never
+type OrderTypes = TypesOf<typeof order>
 
 export class Orders extends Context.Service<Orders, Handle<OrderTypes>>()('examples/server/Orders') {}
 

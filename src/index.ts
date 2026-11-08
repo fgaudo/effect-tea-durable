@@ -51,6 +51,7 @@ export {
   timer,
   type Topic,
   type Types,
+  type TypesOf,
   type Update,
   type Value,
   versionOf,

@@ -93,6 +93,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0186](0186-a-rehearsal-names-the-work-by-its-key.md) | A rehearsal names the work by its key, and `underWay` gives it or null (proposed) |  |
 | [0187](0187-a-rehearsal-moves-time-by-a-duration.md) | A rehearsal moves time by a duration with `advance`, and fires the timers due within it (proposed) |  |
 | [0183](0183-a-receiver-is-named-by-a-reference.md) | A receiver is named by a reference, which carries its program's name and types and none of its code (proposed) |  |
+| [0188](0188-typesof-gives-a-programs-types.md) | `TypesOf` gives a program's types, of the program or of a reference to it (proposed) |  |
 
 ## Operations and timers
 

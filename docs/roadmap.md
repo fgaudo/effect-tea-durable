@@ -14,11 +14,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)), and `inspect`
   ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)), a rehearsal in fewer words
   ([decision 0186](decisions/0186-a-rehearsal-names-the-work-by-its-key.md)), and a rehearsal that moves time
-  ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)). Next: the types of a program,
-  exported, which begins in the type `Program` of [`src/program.ts`](../src/program.ts).
-  - **The types of a program, exported.** A boundary or a test that names a program's `Handle`, `Rehearsal` or
-    inbound message writes `typeof p extends Program<infer T> ? T : never` by hand, as
-    [`examples/server/server.ts`](../examples/server/server.ts) does. The library exports a type that gives them.
+  ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)), and the types of a program, exported
+  ([decision 0188](decisions/0188-typesof-gives-a-programs-types.md)). Next: a world's services, which begins in
+  `together` of [`src/rehearse.ts`](../src/rehearse.ts).
   - **A world's services.** `rehearse.together` asks for every service of a program's runners, even when the test
     runs only the runners that talk to other entities. Such a test provides stubs that die. Either a world asks
     only for the services of the runners it runs, or the design says why it cannot.

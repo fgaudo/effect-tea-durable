@@ -27,6 +27,7 @@ import {
   runnerOf,
   timer,
   type Types,
+  type TypesOf,
 } from './program.ts'
 import { freezing, frozen } from './testing.ts'
 
@@ -2322,7 +2323,7 @@ describe('keys with a parameter', () => {
     project: (state) => state.lines.length,
     indexes: {},
   })
-  type L = typeof lines extends Program<infer T> ? T : never
+  type L = TypesOf<typeof lines>
 
   let requests = 0
   /** A message from a caller, handled as it arrives. */
