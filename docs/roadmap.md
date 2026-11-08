@@ -45,8 +45,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     type, `Origin`, an idempotent runner's key, the results of a rehearsal's acts, `runtime.settled`, and that a
     rehearsal's `send` draws a new request id, so that a retry is tested on the runtime.
   - Done: the page on children, [`guide/children.md`](guide/children.md), on [`examples/cart`](../examples/cart).
+  - Done: the page on the outbox, [`guide/outbox.md`](guide/outbox.md), on [`examples/order`](../examples/order).
   - Next: the pages by topic left, in `docs/guide/`, each replacing the link to its section of the design at the end
-    of the first page: the outbox, then schemas that change, Effect Cluster and the operator's calls.
+    of the first page: schemas that change, then Effect Cluster and the operator's calls.
   - Then: a second reader, a subagent given a loan of books with a due date, to check the pages by topic.
 
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
