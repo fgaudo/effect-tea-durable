@@ -63,7 +63,7 @@ const room = <P extends Json>(name: string, projection: Schema.Codec<P, Json>, p
     projection,
   })({
     name,
-    keys: {},
+    keys: [],
     init: ({ size }) => ({
       items: Array.from({ length: size }, (_, id) => ({ id, label: `item number ${id} of the room` })),
     }),
@@ -91,6 +91,7 @@ const topical = program({
   projection: State,
 })({
   ...whole,
+  keys: [],
   name: 'Topical',
   topics: {
     count: (projection) => projection.items.length,

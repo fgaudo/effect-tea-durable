@@ -30,7 +30,7 @@ const notes = program({
   projection: Schema.Struct({ count: Schema.Int, last: Schema.String }),
 })({
   name: 'Notes',
-  keys: {},
+  keys: [],
   init: () => ({ count: 0 }),
   update: () => (state) => ({ count: state.count + 1 }),
   work: () => noWork,

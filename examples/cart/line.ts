@@ -89,7 +89,7 @@ export const line = part({
   event: Event,
   external: External,
 })({
-  keys: { reserve: null, release: null },
+  keys: ['reserve', 'release'],
 
   init: ({ sku, quantity }) => ({ _tag: 'Reserving', sku, quantity }),
 

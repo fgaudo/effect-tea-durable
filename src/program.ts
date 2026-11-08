@@ -356,11 +356,38 @@ export type Returned<Operation, Message> =
   | ReadonlyArray<readonly [unknown, Piece<Operation, Message>]>
 
 /**
- * How a program declares its keys: for each name, the schema of its parameter, or null for a key without one
- * (decision 0132).
+ * How a program holds its keys: for each name, the schema of its parameter, or null for a key without one. A
+ * declaration lists them, and `program` and `part` make this record of the list (decisions 0132, 0197).
  */
 export type Keys<Key extends string, Parameter> = {
   readonly [K in Key]: K extends keyof Parameter ? Schema.Codec<Parameter[K], Json> : null
+}
+
+const KeyWithParameterTypeId: unique symbol = Symbol.for('@fgaudo/effect-tea-persistent/KeyWithParameter')
+
+/** A key that takes a parameter, as a declaration lists it: its name, and the schema of its parameter. */
+export interface KeyWithParameter<Name extends string, Parameter> {
+  readonly [KeyWithParameterTypeId]: typeof KeyWithParameterTypeId
+  readonly name: Name
+  readonly parameter: Schema.Codec<Parameter, Json>
+}
+
+/**
+ * A key that takes a parameter, for the list of a declaration's keys: `keys: ['fee', key('charge', Schema.String)]`.
+ * A key without one is its name alone (decision 0197).
+ */
+export const key = <const Name extends string, Parameter>(
+  name: Name,
+  parameter: Schema.Codec<Parameter, Json>,
+): KeyWithParameter<Name, Parameter> => ({ [KeyWithParameterTypeId]: KeyWithParameterTypeId, name, parameter })
+
+/** What a declaration lists as its keys: a name for a key without a parameter, or a `key` for one with. */
+export type DeclaredKeys = ReadonlyArray<string | KeyWithParameter<string, unknown>>
+
+/** The record of keys a declaration's list makes, as `Keys` holds them. */
+type KeysOf<List extends DeclaredKeys> = {
+  readonly [Entry in List[number] as Entry extends KeyWithParameter<infer Name, unknown> ? Name : Entry & string]:
+    Entry extends KeyWithParameter<string, infer Parameter> ? Schema.Codec<Parameter, Json> : null
 }
 
 export const noWork: Readonly<Record<string, never>> = Object.freeze({})
@@ -495,8 +522,8 @@ export interface Program<T extends Types, Name extends string = string> {
   /** What other entities read in `Address.name`, and the runtime stores the entity under. */
   readonly name: Name
   /**
-   * Every key the program's work is held under, with the schema of its parameter, or null for a key without one.
-   * The machine checks `work` against them (decisions 0037, 0132), and a deploy that renames one is a change of
+   * Every key the program's work is held under, with the schema of its parameter, or null for a key without one:
+   * the record `program` makes of the declaration's list (decision 0197). The machine checks `work` against them (decisions 0037, 0132), and a deploy that renames one is a change of
    * the type (decision 0033).
    */
   readonly keys: Keys<T['key'], T['parameter']>
@@ -1015,16 +1042,17 @@ type Pieces<
   Projection,
   Event,
   External,
-  Keys,
+  List extends DeclaredKeys,
   Operations,
   C,
 > =
   & Readonly<{
     /**
-     * Every key `work` may return a piece under, with the schema of its parameter or null: work under any other key is a
-     * type error (decisions 0033, 0132). A declaration that leaves it out declares no key (decision 0180).
+     * Every key `work` may return a piece under: its name, or `key` with the schema of its parameter. Work under any
+     * other key is a type error (decisions 0033, 0197). A name listed twice is a defect where the program is
+     * declared. A declaration that leaves the list out declares no key (decision 0180).
      */
-    keys?: Keys
+    keys?: List
     /** The children, each placed with `child` or `each`: their messages, work and keys are the library's to route. */
     children?: C
     /** The own messages, and the external ones for a part: a child's messages are routed to the child. */
@@ -1035,7 +1063,7 @@ type Pieces<
     ) => (state: State) => Step<State, Event> | Rejected<Rejection>
     project: (state: State, children: Projections<State, C>) => Projection
   }>
-  & WorkOf<State, Internal, Operation, Keys>
+  & WorkOf<State, Internal, Operation, KeysOf<List>>
   & OperationsOf<Operation, Operations>
   & OnEventOf<State, Event, C>
   & Checks<Inbound | Internal | External, Sender, C>
@@ -1444,18 +1472,40 @@ const filledProgramSchemas = <S extends DeclaredSchemas>(schemas: S) => ({
   sender: schemas.sender ?? Schema.Null,
 })
 
-/** A declaration as it may be written: with no keys, no runners and no work, where it has none (decision 0180). */
-type LeftOut = Omit<UntypedDeclaration, 'keys' | 'operations' | 'work'> & Partial<UntypedDeclaration>
+/**
+ * A declaration as it may be written: its keys a list, and with no keys, no runners and no work, where it has none
+ * (decisions 0180, 0197).
+ */
+type LeftOut =
+  & Omit<UntypedDeclaration, 'keys' | 'operations' | 'work'>
+  & Partial<Omit<UntypedDeclaration, 'keys'>>
+  & Readonly<{ keys?: DeclaredKeys }>
 
-const noKeys: Readonly<Record<string, never>> = Object.freeze({})
 const noRunners: Readonly<Record<string, never>> = Object.freeze({})
 const noIndexes: Readonly<Record<string, never>> = Object.freeze({})
 const noOwnWork = () => noWork
 
-/** The declaration with each record left out empty, and `work` left out holding no work (decision 0180). */
+const isKeyWithParameter = (entry: unknown): entry is KeyWithParameter<string, unknown> =>
+  typeof entry === 'object' && entry !== null && KeyWithParameterTypeId in entry
+
+/**
+ * The record of a declaration's list of keys. A list may hold a name twice, which a record cannot, so a name listed
+ * twice is refused where it is declared, with or without a parameter (decision 0197).
+ */
+const keysOf = (list: DeclaredKeys): UntypedDeclaration['keys'] => {
+  const keys: Record<string, Schema.Codec<unknown, Json> | null> = {}
+  for (const entry of list) {
+    const [name, schema] = isKeyWithParameter(entry) ? [entry.name, entry.parameter] : [entry, null]
+    if (Object.hasOwn(keys, name)) defect(`a declaration lists the key '${name}' twice`)
+    keys[name] = schema
+  }
+  return Object.freeze(keys)
+}
+
+/** The declaration with its keys a record, each record left out empty, and `work` left out holding no work. */
 const filledDeclaration = (declaration: LeftOut): UntypedDeclaration => ({
   ...declaration,
-  keys: declaration.keys ?? noKeys,
+  keys: keysOf(declaration.keys ?? []),
   operations: declaration.operations ?? noRunners,
   work: declaration.work ?? noOwnWork,
 })
@@ -1503,12 +1553,12 @@ export const program = <
   Topics extends Readonly<Record<string, (projection: Projection) => Json>>,
   // The name is a type too, so that a reference made without the program's code is checked against it (decision 0183).
   const Name extends string,
-  const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>> = {},
+  const List extends DeclaredKeys = [],
   Operations extends Declared<Operation, Internal> = Declared<Operation, Internal>,
   const C extends Children<State> = {},
 >(
   declaration:
-    & Pieces<State, Inbound, Internal, Operation, Rejection, Sender, Projection, never, never, Keys, Operations, C>
+    & Pieces<State, Inbound, Internal, Operation, Rejection, Sender, Projection, never, never, List, Operations, C>
     & Readonly<{
       name: Name
       /**
@@ -1528,12 +1578,12 @@ export const program = <
       topics?: Topics
     }>,
 ): Program<
-  & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
+  & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, KeysOf<List>, Operations, C>
   & Readonly<{ index: IndexNames<Indexes>; topics: TopicValues<Topics> }>,
   Name
 > => {
   type Of =
-    & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
+    & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, KeysOf<List>, Operations, C>
     & Readonly<{ index: IndexNames<Indexes>; topics: TopicValues<Topics> }>
   const filled = filledProgramSchemas(schemas as unknown as DeclaredSchemas)
   const pieces = assemble(filled, filledDeclaration(declaration as unknown as LeftOut))
@@ -1594,25 +1644,25 @@ export const part = <
   }>,
 ) =>
 <
-  const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>> = {},
+  const List extends DeclaredKeys = [],
   Operations extends Declared<Operation, Internal> = Declared<Operation, Internal>,
   const C extends Children<State> = {},
 >(
   declaration:
-    & Pieces<State, Inbound, Internal, Operation, Rejection, Sender, Projection, Event, External, Keys, Operations, C>
+    & Pieces<State, Inbound, Internal, Operation, Rejection, Sender, Projection, Event, External, List, Operations, C>
     & Readonly<{
       /** The child's first state: its parent decides whether the child starts, and a part's `init` never rejects. */
       init: (flags: Flags, at: DateTime.Utc) => State
     }>,
 ): Part<
-  & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
+  & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, KeysOf<List>, Operations, C>
   & Readonly<{ index: never; event: Event; external: External }>
 > =>
   assemble(
     filledSchemas(schemas as unknown as DeclaredSchemas),
     filledDeclaration(declaration as unknown as LeftOut),
   ) as unknown as Part<
-    & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
+    & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, KeysOf<List>, Operations, C>
     & Readonly<{ index: never; event: Event; external: External }>
   >
 

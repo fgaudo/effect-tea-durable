@@ -179,7 +179,7 @@ export const order = program({
 })({
   name: 'Order',
 
-  keys: { 'payment-deadline': null, charge: null, 'tell-warehouse': null, 'email-shipment': null, refund: null },
+  keys: ['payment-deadline', 'charge', 'tell-warehouse', 'email-shipment', 'refund'],
 
   init: ({ order }, at) => ({
     _tag: 'AwaitingPayment',

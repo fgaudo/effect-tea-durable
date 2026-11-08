@@ -28,7 +28,7 @@ tested by calling pure functions, crashes included.
 | ------------ | ----------------------------------------------------------------------------------------- |
 | `schemas`    | how the state, flags, messages, operations, reasons and projection leave the process      |
 | `name`       | what the runtime stores the entity under, and what other entities see it as               |
-| `keys`       | every key the work under way is held under, with the schema of its parameter or `null`    |
+| `keys`       | every key the work under way is held under: a name, or `key` with its parameter's schema |
 | `init`       | the first state, from the flags and the time of the creation, or a rejection of the flags |
 | `update`     | `(message, meta, children) => (state) =>` the next state, a rejection, or a defect        |
 | `work`       | the work under way in each state, by key: operations, as data, and timers                 |
@@ -47,8 +47,8 @@ in ([decision 0035](decisions/archive/0035-one-place-where-a-program-is-declared
 
 A program leaves out what it does not have, and each piece left out is empty
 ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)). The schemas of the internal
-messages, the operations and the reasons left out are `Schema.Never`, and the sender's is `Schema.Null`. `keys`,
-`operations` and `indexes` left out are `{}`. `work` may be left out only where no key is declared, and
+messages, the operations and the reasons left out are `Schema.Never`, and the sender's is `Schema.Null`. `keys`
+left out is `[]`, and `operations` and `indexes` left out are `{}`. `work` may be left out only where no key is declared, and
 `operations` only where there is no kind of operation, so a program that holds work says what work it holds.
 
 There are no commands. Every piece of work that must survive a crash is derived from the state by `work`
@@ -288,10 +288,12 @@ changes or drops an operation under way, delivers it otherwise, or bears another
 
 ### Keys with a parameter
 
-A program declares its keys as a record: each name maps to the schema of its parameter, or to `null` for a key
-without one, as in `keys: { fee: null, charge: Schema.String }`. Under a key with a parameter, `work` returns a
-list of pairs, each a parameter and the piece of work under it. An order holds a charge for each of its lines so,
-in the step that changes the order ([decision 0132](decisions/archive/0132-a-key-may-take-a-parameter.md)).
+A program lists its keys. A key without a parameter is its name, and a key with one is `key(name, schema)`, as in
+`keys: ['fee', key('charge', Schema.String)]`. A name listed twice is a defect where the program is declared
+([decision 0197](decisions/0197-a-program-lists-its-keys-and-key-gives-one-a-parameter.md)). Under a key with a
+parameter, `work` returns a list of pairs, each a parameter and the piece of work under it. An order holds a charge
+for each of its lines so, in the step that changes the order
+([decision 0132](decisions/archive/0132-a-key-may-take-a-parameter.md)).
 
 A key is a name and a parameter, as data: the declared name, and the parameter as its schema encodes it, with the
 fields of each object in order. A key without a parameter has none. So two parameters that encode alike are one

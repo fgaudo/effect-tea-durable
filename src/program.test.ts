@@ -31,6 +31,7 @@ import {
   timer,
   type Topic,
   type TypesOf,
+  key,
 } from './program.ts'
 import type { Rehearsal } from './rehearse.ts'
 import type { Query } from './storage.ts'
@@ -94,7 +95,7 @@ test('a state is an object: a program whose state is a string does not compile',
 test('work under a key the program does not declare does not compile where the state holds that key alone', () => {
   const pieces = {
     name: 'Charges',
-    keys: { charge: null },
+    keys: ['charge'],
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
     operations: { Charge: operation(() => Effect.succeed('Charged' as const)) },
@@ -117,7 +118,7 @@ test('work under a key the program does not declare does not compile where the s
 test('a runner that answers a message the program does not have does not compile', () => {
   const pieces = {
     name: 'Charges',
-    keys: { charge: null },
+    keys: ['charge'],
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
     work: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
@@ -147,7 +148,7 @@ test('a droppable runner whose services hold `Entities` does not compile (decisi
   )
   const pieces = {
     name: 'Charges',
-    keys: { charge: null },
+    keys: ['charge'],
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
     work: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
@@ -184,7 +185,7 @@ test('the schemas applied first type the pieces, where one call would widen a ta
   const State = Schema.Union([Schema.TaggedStruct('Open', {}), Schema.TaggedStruct('Closed', {})])
   const pieces = {
     name: 'Doors',
-    keys: {},
+    keys: [],
     update: () => (state: typeof State.Type) => state,
     work: () => noWork,
     operations: {},
@@ -207,7 +208,7 @@ test('the schemas applied first type the pieces, where one call would widen a ta
 test('a topic selects JSON of the projection, and the topics a program declares are its only ones (decision 0138)', () => {
   const pieces = {
     name: 'Charges',
-    keys: {},
+    keys: [],
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
     work: () => noWork,
@@ -265,7 +266,7 @@ test('a program whose name or key is no text a database holds is refused, naming
     projection: Schema.Null,
   })({
     name: 'Charges',
-    keys: { ask: null },
+    keys: ['ask'],
     init: () => ({}),
     update: () => (state) => state,
     work: () => noWork,
@@ -325,10 +326,10 @@ test('work is left out only with no key, and operations only with no kind of ope
   } as const
   const runners = { Charge: operation(() => Effect.succeed('Charged' as const)) }
   // @ts-expect-error a program that declares a key says what work its states hold under it
-  const workless = program(schemas)({ ...pieces, keys: { charge: null }, operations: runners })
+  const workless = program(schemas)({ ...pieces, keys: ['charge'], operations: runners })
   // @ts-expect-error a program that has operations gives a runner for each kind
-  const runnerless = program(schemas)({ ...pieces, keys: { charge: null }, work: () => ({ charge }) })
-  const whole = program(schemas)({ ...pieces, keys: { charge: null }, work: () => ({ charge }), operations: runners })
+  const runnerless = program(schemas)({ ...pieces, keys: ['charge'], work: () => ({ charge }) })
+  const whole = program(schemas)({ ...pieces, keys: ['charge'], work: () => ({ charge }), operations: runners })
   expect([workless, runnerless, whole]).toHaveLength(3)
 })
 
@@ -444,7 +445,7 @@ test('a timer needs no type parameter: its message keeps its tag, and work check
   })
   const pieces = {
     name: 'Doors',
-    keys: { closing: null },
+    keys: ['closing'],
     init: () => ({ _tag: 'Closed' }) as const,
     update: () => () => ({ _tag: 'Closed' }) as const,
     project: () => null,
@@ -494,7 +495,7 @@ test('a timer needs no type parameter: its message keeps its tag, and work check
 test('a rehearsal and a query name only the keys and the indexes the program declares (decisions 0032, 0033)', () => {
   const pieces = {
     name: 'Charges',
-    keys: { charge: null },
+    keys: ['charge'],
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
     work: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
@@ -528,7 +529,7 @@ test('a rehearsal and a query name only the keys and the indexes the program dec
 test('the work under a key with a parameter is a list of pairs typed by its schema, and pending takes the parameter', () => {
   const pieces = {
     name: 'Lines',
-    keys: { fee: null, charge: Schema.String },
+    keys: ['fee', key('charge', Schema.String)],
     init: () => ({ lines: ['a'] }),
     update: () => () => ({ lines: [] }),
     operations: { Charge: operation(() => Effect.succeed('Charged' as const)) },
@@ -558,7 +559,7 @@ test('the work under a key with a parameter is a list of pairs typed by its sche
   const undeclared = declare({
     ...pieces,
     // @ts-expect-error a parameter's schema encodes to what JSON holds, as every schema of a program does
-    keys: { fee: null, charge: Schema.DateTimeUtc },
+    keys: ['fee', key('charge', Schema.DateTimeUtc)],
     work: () => noWork,
   })
   type Of = TypesOf<typeof lines>
@@ -573,4 +574,22 @@ test('the work under a key with a parameter is a list of pairs typed by its sche
     rehearsal.pending('charge', 7),
   ]
   expect([lines, piece, list, mistyped, undeclared, pending]).toHaveLength(6)
+})
+
+// A list may hold a name twice, which the record a program holds cannot (decision 0197).
+test('a name listed twice among the keys is refused where it is declared, with or without a parameter', () => {
+  const declare = (keys: ReadonlyArray<string | ReturnType<typeof key<string, string>>>) => () =>
+    program(schemas)({
+      name: 'Charges',
+      keys,
+      init: () => ({ charging: true }),
+      update: () => () => ({ charging: false }),
+      work: () => noWork,
+      operations: { Charge: operation(() => Effect.succeed('Charged' as const)) },
+      project: () => null,
+    })
+  expect(declare(['charge', 'charge'])).toThrow("a declaration lists the key 'charge' twice")
+  expect(declare(['charge', key('charge', Schema.String)])).toThrow("a declaration lists the key 'charge' twice")
+  expect(declare(['charge', key('fee', Schema.String)])).not.toThrow()
+  expect(declare(['charge', key('fee', Schema.String)])().keys as unknown).toEqual({ charge: null, fee: Schema.String })
 })

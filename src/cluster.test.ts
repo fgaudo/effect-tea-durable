@@ -1032,7 +1032,7 @@ describe('the shards of a runner on Cluster', () => {
   /** A program a test deploys on one runner and not the other, so that Cluster finds its type unregistered. */
   const ghost: Program<Ghost> = {
     name: 'Ghost',
-    keys: {},
+    keys: [],
     schemas: {
       state: Schema.Struct({ n: Schema.Int }),
       flags: Schema.Struct({}),

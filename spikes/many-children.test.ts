@@ -45,7 +45,7 @@ const line = part({
   projection: Schema.Int,
   external: Schema.TaggedStruct('Touch', {}),
 })({
-  keys: {},
+  keys: [],
   init: (label) => ({ label, touched: 0 }),
   update: () => (state) => ({ ...state, touched: state.touched + 1 }),
   work: () => noWork,
@@ -68,7 +68,7 @@ const parent = program({
   projection: Schema.Int,
 })({
   name: 'Parent',
-  keys: {},
+  keys: [],
   children: { Line: each(line, { id: Schema.String, at: Optic.id<State>().key('lines').compose(Optic.entries()) }) },
   init: ({ size }, at) => ({
     lines: Object.fromEntries(

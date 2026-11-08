@@ -27,6 +27,7 @@ import {
   timer,
   type Types,
   type TypesOf,
+  key as keyWithParameter,
 } from './program.ts'
 import { freezing, frozen } from './testing.ts'
 
@@ -2301,7 +2302,11 @@ describe('keys with a parameter', () => {
     projection: Schema.Number,
   })({
     name: 'Lines',
-    keys: { fee: null, charge: Schema.String, ship: Schema.Record(Schema.String, Schema.String) },
+    keys: [
+      'fee',
+      keyWithParameter('charge', Schema.String),
+      keyWithParameter('ship', Schema.Record(Schema.String, Schema.String)),
+    ],
     init: () => ({ lines: [], fee: false, flipped: false }),
     update: (message) => (state) =>
       message === 'fee'

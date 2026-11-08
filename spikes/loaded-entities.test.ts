@@ -28,7 +28,7 @@ const rooms = program({
   projection: Schema.Struct({ count: Schema.Int }),
 })({
   name: 'Rooms',
-  keys: {},
+  keys: [],
   init: ({ size }) => ({ items: Array.from({ length: size }, (_, id) => `item number ${id} of the room`) }),
   update: (message) => (state) => ({ items: [...state.items, message.label] }),
   work: () => noWork,

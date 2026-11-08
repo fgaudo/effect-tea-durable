@@ -61,7 +61,7 @@ export const hold = program({
   projection: Schema.Struct({ status: Schema.Literals(['Held', 'Confirmed', 'Released']) }),
 })({
   name: 'Hold',
-  keys: { expiry: null },
+  keys: ['expiry'],
   init: (_, at) => ({ _tag: 'Held', until: DateTime.add(at, { minutes: 15 }) }),
   // `Expired` arrives only while the state holds its timer, so only while the seat is held.
   update: (message) => (state) =>

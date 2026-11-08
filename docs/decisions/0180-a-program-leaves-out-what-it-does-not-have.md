@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Changes
 [decision 0035](archive/0035-one-place-where-a-program-is-declared.md), whose `program(schemas)(…)` takes every
-piece.
+piece. `keys` is a list, and `keys` left out is the empty list, since
+[decision 0197](0197-a-program-lists-its-keys-and-key-gives-one-a-parameter.md).
 
 ## Context
 

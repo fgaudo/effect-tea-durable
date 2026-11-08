@@ -30,6 +30,7 @@ import {
   rejectWith,
   type Step,
   timer,
+  key,
 } from './program.ts'
 
 const at = DateTime.makeUnsafe(0)
@@ -72,7 +73,7 @@ const line = part({
   event: LineCharged,
   external: Emptied,
 })({
-  keys: { charge: null, reminder: Schema.String },
+  keys: ['charge', key('reminder', Schema.String)],
   init: () => ({ quantity: 0, charging: false, charged: null, reminders: [] }),
   update: (message) => (state) => {
     switch (message._tag) {
@@ -228,7 +229,7 @@ const single = part({
   projection: LineProjection,
   event: LineCharged,
 })({
-  keys: {},
+  keys: [],
   children: { Line: child(line, { at: Optic.id<typeof Single.Type>().key('line') }) },
   init: (flags, at) => ({ line: line.init(flags, at) }),
   update: () => () => defect('a parent with no messages of its own'),
@@ -254,7 +255,7 @@ const nested = part({
   projection: LineProjection,
   event: LineCharged,
 })({
-  keys: {},
+  keys: [],
   children: { Single: child(single, { at: Optic.id<typeof Nested.Type>().key('single') }) },
   init: (flags, at) => ({ single: single.init(flags, at) }),
   update: () => () => defect('a parent with no messages of its own'),
@@ -304,7 +305,7 @@ const order = program({
   projection: OrderProjection,
 })({
   name: 'Order',
-  keys: {},
+  keys: [],
   children: {
     Line: each(line, { id: Schema.String, at: Optic.id<Order>().key('lines').compose(Optic.entries()) }),
   },
@@ -415,7 +416,7 @@ test('an external message to a child that is not there is a defect', () => {
     rejection: Schema.Never,
     projection: Schema.Null,
   })({
-    keys: {},
+    keys: [],
     children: {
       Line: each(line, { id: Schema.String, at: Optic.id<Order>().key('lines').compose(Optic.entries()) }),
     },
@@ -442,7 +443,7 @@ test('andThen keeps the events of both steps, in order', () => {
 const lines = Optic.id<Order>().key('lines').compose(Optic.entries())
 
 test("a parent's name with a '.' is refused where it is declared, since a child's names hold one (decision 0133)", () => {
-  const declare = (keys: Readonly<Record<string, null>>, name: string) => () =>
+  const declare = (keys: ReadonlyArray<string>, name: string) => () =>
     part({
       state: Order,
       flags: Schema.Null,
@@ -461,9 +462,9 @@ test("a parent's name with a '.' is refused where it is declared, since a child'
       project: () => null,
       onEvent: { [name]: () => (state: Order) => state } as never,
     })
-  expect(declare({}, 'Li.ne')).toThrow("a parent has a child 'Li.ne', and a name of a parent's is a word with no '.'")
-  expect(declare({ 'Line.charge': null }, 'Line')).toThrow("a parent has a key 'Line.charge'")
-  expect(declare({}, 'Line')).not.toThrow()
+  expect(declare([], 'Li.ne')).toThrow("a parent has a child 'Li.ne', and a name of a parent's is a word with no '.'")
+  expect(declare(['Line.charge'], 'Line')).toThrow("a parent has a key 'Line.charge'")
+  expect(declare([], 'Line')).not.toThrow()
 })
 
 test("an own message that takes a child's name does not compile", () => {
@@ -481,7 +482,7 @@ test("an own message that takes a child's name does not compile", () => {
       // @ts-expect-error an own message takes the name of a child
       {
         name: 'Clash',
-        keys: {},
+        keys: [],
         children: { Line: each(line, { id: Schema.String, at: lines }) },
         init: () => ({ lines: {}, charged: 0 }),
         update: () => () => reject,
@@ -510,7 +511,7 @@ test('a program whose child raises events and that handles none does not compile
       // @ts-expect-error `onEvent` is required where a child raises events
       {
         name: 'Deaf',
-        keys: {},
+        keys: [],
         children: { Line: each(line, { id: Schema.String, at: lines }) },
         init: () => ({ lines: {}, charged: 0 }),
         update: () => () => reject,
@@ -571,7 +572,7 @@ const counter = part({
   event: Schema.Literals(['first', 'second']),
   external: Schema.TaggedStruct('Refuse', {}),
 })({
-  keys: {},
+  keys: [],
   init: () => ({ n: 0 }),
   update: (message) => (state) =>
     message._tag === 'Bump'
@@ -600,7 +601,7 @@ const counters = part({
   rejection: Schema.Never,
   projection: Schema.NullOr(Schema.Int),
 })({
-  keys: {},
+  keys: [],
   children: {
     Counter: each(counter, { id: Schema.String, at: Optic.id<Counters>().key('counters').compose(Optic.entries()) }),
   },
@@ -644,7 +645,7 @@ test("a parent's operation with a '.' is refused where it is declared (decision 
       rejection: Schema.Never,
       projection: Schema.Null,
     })({
-      keys: {},
+      keys: [],
       children: { Line: each(line, { id: Schema.String, at: lines }) },
       init: () => ({ lines: {}, charged: 0 }),
       update: () => () => reject,
@@ -675,7 +676,7 @@ const tally = part({
     Schema.TaggedStruct('Refuse', {}),
   ]),
 })({
-  keys: {},
+  keys: [],
   init: () => ({ n: 0 }),
   update: (message) => (state) => {
     switch (message._tag) {
@@ -743,7 +744,7 @@ const talliesOf = (telling: 'forEach' | 'andThen') =>
     projection: Schema.Null,
     event: Schema.String,
   })({
-    keys: {},
+    keys: [],
     children: { Tally: each(tally, { id: Schema.String, at: tallies }) },
     init: () => ({ tallies: {}, own: 0, heard: [] }),
     update: (message, _, children) => (state) => {

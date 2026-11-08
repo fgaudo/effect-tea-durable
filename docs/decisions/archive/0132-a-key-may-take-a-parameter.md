@@ -6,7 +6,9 @@
 [decision 0054](0054-a-program-is-checked-where-it-enters.md), and the counter of
 [decision 0004](0004-incarnations-guard-internal-messages.md). A key is a name and a parameter as data, not
 the text `["charge","line-7"]`, and a name may start with `[`, since
-[decision 0136](0136-a-key-is-a-name-and-a-parameter-as-data.md).
+[decision 0136](0136-a-key-is-a-name-and-a-parameter-as-data.md). A declaration lists its keys, a name for a key
+without a parameter and `key(name, schema)` for one with, since
+[decision 0197](../0197-a-program-lists-its-keys-and-key-gives-one-a-parameter.md).
 
 ## Context
 

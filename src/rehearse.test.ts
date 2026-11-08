@@ -27,6 +27,7 @@ import {
   send,
   timer,
   type TypesOf,
+  key,
 } from './program.ts'
 import { rehearse, type World } from './rehearse.ts'
 
@@ -620,7 +621,7 @@ describe('a rehearsal of keys with a parameter', () => {
     projection: Schema.Number,
   })({
     name: 'Lines',
-    keys: { charge: Schema.String },
+    keys: [key('charge', Schema.String)],
     init: () => ({ lines: [] }),
     update: (message) => (state) =>
       message.startsWith('+')
@@ -664,7 +665,7 @@ describe('a rehearsal by a key', () => {
     projection: Schema.Number,
   })({
     name: 'Lines',
-    keys: { charge: Schema.String },
+    keys: [key('charge', Schema.String)],
     init: () => ({ lines: [] }),
     update: (message) => (state) =>
       message.startsWith('+')
