@@ -31,7 +31,7 @@ const newer = version(Schema.String)
 const older = version(Schema.Number)
 
 test('an older runner answers with a defect a request a newer one persisted, and the newer never runs it again', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-spike-'))
+  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-spike-'))
   const filename = join(directory, 'store.db')
   const runs = { newer: 0, older: 0 }
   const store = SqliteClient.layer({ filename })

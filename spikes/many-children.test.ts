@@ -14,7 +14,7 @@
  * children (1 KB), 3.5 ms at 1 000 (63 KB) and 10 ms at 10 000 (652 KB). The parent projects a count. The spike on
  * large states, run the same day, saw 2.9 ms for a flat state of 48 KB and 6.7 ms for one of 497 KB with a count as
  * projection. So at 10 000 children the listing takes about half as long as the write: the step encodes each id
- * once, and `durable` asks each child for its work. The default threshold of decision 0135 warned at 10 000
+ * once, and `work` asks each child for its work. The default threshold of decision 0135 warned at 10 000
  * children, where the step wrote 667 801 characters.
  *
  * Seen on 2026-11-06, the same machine, three runs of the second test. A step told every child by `forEach` in 5 ms
@@ -48,7 +48,7 @@ const line = part({
   keys: {},
   init: (label) => ({ label, touched: 0 }),
   update: () => (state) => ({ ...state, touched: state.touched + 1 }),
-  durable: () => noWork,
+  work: () => noWork,
   operations: {},
   project: (state) => state.touched,
 })
@@ -82,7 +82,7 @@ const parent = program({
       ? forEach(state, ids, touch)
       : ids.reduce((step, id) => andThen(step, touch(id)), state)
   },
-  durable: () => noWork,
+  work: () => noWork,
   operations: {},
   project: (state) => Object.keys(state.lines).length,
   indexes: {},

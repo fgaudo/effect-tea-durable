@@ -199,7 +199,7 @@ if (oldVersion === undefined || newVersion === undefined) {
   process.exit(2)
 }
 
-const folder = mkdtempSync(join(tmpdir(), 'effect-tea-durable-docs-'))
+const folder = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-docs-'))
 /** The declarations and the files the lists name wrong. */
 let wrong = 0
 try {

@@ -14,7 +14,7 @@ import type * as Scope from 'effect/Scope'
 import { SqlClient, type SqlError, type Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
 import {
-  type Durable,
+  type Piece,
   InvariantDefect,
   type Json,
   type Key,
@@ -268,7 +268,7 @@ const tables = Effect.gen(function*() {
   // What other systems learn of the entities: one row per topic that changed in a step, written in the step's own
   // transaction, which names the step's publication (decisions 0038, 0138, 0154). A row is keyed by its program, its
   // topic, its partition and its `seq`, which is what a consumer acks (decision 0137). `position` rises with each
-  // row of the database, and is never reused: it is the order `feed` reads the rows in, and no cursor.
+  // row of the database, and is never reused: it is the order `fetch` reads the rows in, and no cursor.
   yield* sql`
     CREATE TABLE IF NOT EXISTS outbox (
       position ${sql.literal(dialect === 'pg' ? 'BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT')},
@@ -1297,10 +1297,10 @@ export interface Storage<T extends Types> {
    */
   readonly declare: (consumers: ReadonlyArray<Readonly<{ topic: string; consumer: string }>>) => Effect.Effect<void>
   /**
-   * `Handle.feed`, as the storage keeps it: it reads the consumer's cursors, and writes nothing (decision 0152).
+   * `Handle.fetch`, as the storage keeps it: it reads the consumer's cursors, and writes nothing (decision 0152).
    * Given `partitions`, it reads those partitions only (decision 0153). The partitions are the caller's to check.
    */
-  readonly feed: <Name extends Topic<T>>(
+  readonly fetch: <Name extends Topic<T>>(
     topic: Name,
     consumer: string,
     limit: number,
@@ -1519,7 +1519,7 @@ export const storage = <T extends Types>(
   const row = (id: string, shown: Machine.Shown, projection: string = JSON.stringify(shown.projection)) =>
     upsert('projections', ['name', 'id'], { name, id, projection, indexes: indexesText(shown.indexes), version })
 
-  const readWork = (text: string, from: number): Durable<T['operation'], T['internal']> => {
+  const readWork = (text: string, from: number): Piece<T['operation'], T['internal']> => {
     const held = work.read(text, upWork(from))
     return held._tag === 'Timer' ? timer(held.at, held.message) : held.operation
   }
@@ -2362,7 +2362,7 @@ export const storage = <T extends Types>(
         INSERT INTO consumers ${sql.insert({ name, topic, consumer })} ON CONFLICT (name, topic, consumer) DO NOTHING
       `, { discard: true })).pipe(Effect.orDie)
 
-  const feed = <Name extends Topic<T>>(
+  const fetch = <Name extends Topic<T>>(
     topic: Name,
     consumer: string,
     limit: number,
@@ -2589,7 +2589,7 @@ export const storage = <T extends Types>(
     reindex,
     published,
     declare,
-    feed,
+    fetch,
     ack,
     prune,
     consumers,

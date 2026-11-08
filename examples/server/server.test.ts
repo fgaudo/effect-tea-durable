@@ -192,7 +192,7 @@ const run = <A, E>(
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'effect-tea-durable-server-' })
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'effect-tea-persistent-server-' })
     const theWorld = yield* world(failing)
     return yield* body({ filename: path.join(directory, 'orders.db'), world: theWorld.url }, theWorld)
   })).pipe(Effect.provide([BunServices.layer, FetchHttpClient.layer])) as Effect.Effect<A, unknown>)

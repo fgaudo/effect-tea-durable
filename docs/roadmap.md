@@ -5,18 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **The name and the words.** The package is named for the public, and the words the guide will cement are
-  decided before the quick start and the guide are written. "durable" says durable execution elsewhere, in
-  `effect/workflow`, Temporal and Restate, which replay a history, and this library replays nothing: the package's
-  name and the field `durable` of a program drop it. The step takes a note that decides the package's name, under
-  `@fgaudo/` as effect-tea is, with `@fgaudo/effect-tea-server` and `@fgaudo/effect-tea-entities` weighed; the
-  field `durable`, with `work` weighed, since the glossary calls what it gives work and `noWork` exists; `deploy`
-  of a runtime, which reads as a deployment to production, with `serve` and `host` weighed against what a rename
-  costs the design and the notes; and `feed` of a consumer, with `pull` weighed. It keeps `rehearse`, and every
-  word shared with effect-tea: `program`, `init`, `update`, `flags`, `reject`, `defect`, `raise`, `child`, `each`
-  and `part`. The commit that takes the step renames the imports of the examples and the fixtures, the glossary
-  and the diagrams of the README with it.
-
 - **A quick start.** The README's first code is [`examples/order/order.ts`](../examples/order/order.ts), 312 lines.
   A quick start shows a program of a screen, its rehearsal and its `launch` in forty. The runtime's
   housekeeping, a step of later, may change what a program passes to `send` or to `launch`, and changes the quick
@@ -81,7 +69,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   nothing of the design: the problem before the solution, an order that waits for its payment while the process
   restarts, the "Why" as it is, what the library is not for, a comparison in one line each with Temporal, Restate,
   Akka Persistence and a cron over a table, and the quick start's code. It says that the state is the only truth and
-  nothing is replayed, since "durable" names durable execution elsewhere, and in what state the library is:
+  nothing is replayed, as durable execution replays elsewhere, and in what state the library is:
   experimental, one process on SQLite or PostgreSQL, Cluster on one machine. The documents, the modules and the
   tables move to `CONTRIBUTING.md`, with the diagram of the modules, and the rule of [`AGENTS.md`](../AGENTS.md) on
   the diagrams moves with it. The README of effect-tea is the model of its sections, since the two libraries are

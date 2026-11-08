@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 test('data_version moves at a commit of another process, and not at the connection’s own', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-spike-'))
+  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-spike-'))
   const filename = join(directory, 'store.db')
   try {
     await Effect.runPromise(Effect.gen(function*() {

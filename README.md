@@ -1,12 +1,12 @@
-# effect-tea-durable
+# effect-tea-persistent
 
 The Elm architecture for long-lived entities on a server: an order, a booking, a job, each addressed by its id,
-whose state survives crashes, restarts and deploys. A program is written as in
+whose state is stored in SQL, on SQLite or PostgreSQL, and survives crashes, restarts and deploys. A program is written as in
 [effect-tea](https://github.com/fgaudo/effect-tea), with a pure `update`, and tested without a database, a
 cluster or a clock.
 
 An entity keeps one **state**. A pure **`update`** changes it in response to messages. There are no commands:
-the work under way — operations, as data, and timers — is derived from the state by **`durable`**, by key, and
+the work under way — operations, as data, and timers — is derived from the state by **`work`**, by key, and
 answers with messages of the same incarnation. Callers read a **projection**, made from the state, which is
 also the row a query reads and what the outbox publishes, by **topic**: a part of the projection, written when it
 changes, and read as that part.
@@ -25,9 +25,9 @@ flowchart LR
   child -->|raised event| onEvent
   onEvent --> state
   child --> state
-  state --> durable[durable, by key, the children's included]
-  durable -->|operations| runner[runners]
-  durable -->|timers| timers
+  state --> work[work, by key, the children's included]
+  work -->|operations| runner[runners]
+  work -->|timers| timers
   runner -->|completion, same incarnation| update
   timers -->|firing, same incarnation| update
   runner -->|send, create| other[another entity]
@@ -46,11 +46,11 @@ what the one before stored. This library writes it once, so that a program holds
 no life of its own, a profile or a product, does not need it.
 
 - **The state is the only truth.** There are no commands and no history to replay: the work under way is derived
-  from the state, by `durable`, and a state that holds no timer has no timer. A cancellation is a state change,
+  from the state, by `work`, and a state that holds no timer has no timer. A cancellation is a state change,
   and the timer follows.
 - **Time is a value.** A timer is data, derived from the state, and a test fires it instead of waiting for it: a
   deadline a month away is tested as fast as one a second away.
-- **A program is read in one place.** `update`, `durable` and `project` are pure functions over data, with
+- **A program is read in one place.** `update`, `work` and `project` are pure functions over data, with
   nothing of storage, locks, retries or timers in them, and the scenarios read as the use case does, crashes
   included. Whoever writes a program can get only the use case wrong, and a type error or a failed scenario says
   so without a database or a clock. What holds where the process may die is checked once, in the library.
@@ -78,7 +78,7 @@ no life of its own, a profile or a product, does not need it.
 - [`docs/roadmap.md`](docs/roadmap.md): the steps from this design to a library, in order;
 - [`examples/order`](examples/order): an order's lifecycle, with its scenarios as tests, the question a
   query across entities answers — which orders nobody paid, how many, and what they owe — what each of its steps publishes for other
-  systems, and a report fed from the log, how many orders are in each status
+  systems, and a report built from the log, how many orders are in each status
   ([`examples/order/runtime.test.ts`](examples/order/runtime.test.ts)), and the orders on a runner of Effect Cluster
   ([`examples/order/cluster.test.ts`](examples/order/cluster.test.ts)). If an example reads badly, the
   API is wrong;
@@ -95,7 +95,7 @@ The modules of `src/`, each built on the one above it:
 
 ```mermaid
 flowchart TB
-  program["program.ts: program(schemas)(…), with init, update, durable,<br/>operations, project, indexes and migrations;<br/>part, child and each, which compose children"]
+  program["program.ts: program(schemas)(…), with init, update, work,<br/>operations, project, indexes and migrations;<br/>part, child and each, which compose children"]
   machine["machine.ts: the pure machine, from an event<br/>to the next machine and the rows it writes"]
   rehearse["rehearse.ts: a scenario without storage or clock,<br/>of one entity or of a world"]
   testing["testing.ts: the checks of a program's migrations and projections,<br/>and the scheduler that moves where the fibers of a test yield"]

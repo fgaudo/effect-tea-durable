@@ -8,7 +8,7 @@ import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
-import { defect, type IdempotencyKey, noWork, operation, part, raise, reject } from 'effect-tea-durable/program'
+import { defect, type IdempotencyKey, noWork, operation, part, raise, reject } from '@fgaudo/effect-tea-persistent/program'
 
 const State = Schema.Union([
   // Only the reservation's answer leaves it: a removal meanwhile is rejected.
@@ -130,7 +130,7 @@ export const line = part({
       }),
     ),
 
-  durable: (state) =>
+  work: (state) =>
     Match.valueTags(state, {
       Reserving: ({ sku, quantity }) => ({ reserve: Operation.cases.Reserve.make({ sku, quantity }) }),
       Selling: ({ sku, quantity }) => ({ reserve: Operation.cases.Reserve.make({ sku, quantity }) }),

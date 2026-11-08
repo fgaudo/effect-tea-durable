@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import fc from 'fast-check'
-import { projectionViolations } from 'effect-tea-durable/testing'
+import { projectionViolations } from '@fgaudo/effect-tea-persistent/testing'
 import { booking, type Sender, type State } from './booking.ts'
 
 const at = DateTime.makeUnsafe('2026-10-30T10:00:00Z')

@@ -140,7 +140,7 @@ export const frozen = <A>(value: A): A => {
 const freezings = new WeakMap<object, object>()
 
 /**
- * `program`, whose every value crosses the library frozen: what `init`, `update`, `durable` and `project` give,
+ * `program`, whose every value crosses the library frozen: what `init`, `update`, `work` and `project` give,
  * and what its runners deliver. The same program gives the same one, which a runtime may compare by identity.
  */
 export const freezing = <T extends Types>(program: Program<T>): Program<T> => {
@@ -162,7 +162,7 @@ export const freezing = <T extends Types>(program: Program<T>): Program<T> => {
     ...program,
     init: (flags, at) => frozen(program.init(flags, at)),
     update: (message, meta) => (state) => frozen(program.update(message, meta)(state)),
-    durable: (state) => frozen(program.durable(state)),
+    work: (state) => frozen(program.work(state)),
     project: (state) => frozen(program.project(state)),
     operations,
   }

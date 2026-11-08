@@ -4,7 +4,7 @@
  */
 import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
-import { type Origin, program, reference, reject, type Rejected, rejectWith } from 'effect-tea-durable/program'
+import { type Origin, program, reference, reject, type Rejected, rejectWith } from '@fgaudo/effect-tea-persistent/program'
 import type { booking } from './booking.ts'
 
 // The booking sends to the inventory, so each imports only the other's types (decision 0183).

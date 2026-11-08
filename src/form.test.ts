@@ -284,7 +284,7 @@ describe('the form of src', () => {
     expect(found.filter((line) => !/: (node|bun)(:|$)/.test(line)).map((line) => relative(import.meta.dir, line)))
       .toEqual([])
   })
-  // A program writes its `durable` with `Returned`, and only the runtime calls `isTimer` (decision 0193).
+  // A program writes its `work` with `Returned`, and only the runtime calls `isTimer` (decision 0193).
   test('the entry of a program gives the type Returned, and not isTimer', async () => {
     const empty: Returned<never, never> = []
     const entry: Readonly<Record<string, unknown>> = await import('./index.program.ts')

@@ -70,7 +70,7 @@ const room = <P extends Json>(name: string, projection: Schema.Codec<P, Json>, p
     update: (message) => (state) => ({
       items: [...state.items, { id: state.items.length, label: message.label }],
     }),
-    durable: () => noWork,
+    work: () => noWork,
     operations: {},
     project,
     indexes: {},

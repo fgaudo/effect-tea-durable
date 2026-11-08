@@ -12,7 +12,7 @@ the caller left open. Its consumer that declares itself by reading, and its topi
 row, are changed by [decision 0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md): consumers are declared at deploy,
 and a topic no consumer holds is pruned whole. Its loop of a consumer, left to the caller, is changed by
 [decision 0184](../0184-consume-runs-a-reader-of-a-consumer.md): `consume` runs a reader, a page and its ack in one
-transaction.
+transaction. Its `feed` is renamed `fetch` by [decision 0195](../0195-the-package-is-effect-tea-persistent.md).
 
 ## Context
 

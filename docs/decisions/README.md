@@ -52,13 +52,14 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0080](archive/0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md), [0120](archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md) |
 | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) | A library on unstable modules is released as experimental |  |
 | [0193](0193-the-public-surface-is-four-entries.md) | The public surface is four entries: the main one, a program's module, a test's and a launcher's on Cluster |  |
+| [0195](0195-the-package-is-effect-tea-persistent.md) | The package is `@fgaudo/effect-tea-persistent`, a program's work is `work`, a reader fetches, and `deploy` stays |  |
 
 ## The machine and the program
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
 | [0002](archive/0002-store-the-state-not-the-messages.md) | Store the state after each message, never replay messages |  |
-| [0003](archive/0003-durable-work-derived-from-state.md) | All durable work is derived from the state |  |
+| [0003](archive/0003-durable-work-derived-from-state.md) | All durable work is derived from the state | [0195](0195-the-package-is-effect-tea-persistent.md) |
 | [0013](archive/0013-the-runtime-is-a-pure-machine.md) | The runtime's semantics are a pure machine | [0065](archive/0065-the-machine-holds-no-replies.md) |
 | [0014](archive/0014-rules-the-machine-settled.md) | The rules the pure machine settled | [0023](archive/0023-suspended-means-no-reply-yet.md), [0041](archive/0041-a-completion-is-not-discarded.md), [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md) |
 | [0031](archive/0031-a-state-is-an-object.md) | A state is an object |  |
@@ -192,7 +193,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0030](archive/0030-a-schema-encodes-to-json.md) | A schema encodes to what JSON holds | [0098](archive/0098-json-is-effect-s.md) |
 | [0032](archive/0032-a-projection-is-a-row.md) | A projection is a row, and a program declares the indexes a query uses | [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md), [0139](archive/0139-the-projection-is-json.md), [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0143](archive/0143-a-query-pages-after-the-last-row-it-gave.md), [0148](archive/0148-a-count-and-a-sum-are-read-in-one-statement.md) |
 | [0038](archive/0038-what-happened-is-published-through-an-outbox.md) | What happened is published through an outbox | [0057](archive/0057-the-machine-gives-what-is-written.md), [0072](archive/0072-the-log-shows-what-a-step-changed.md), [0137](archive/0137-the-log-is-ordered-within-a-partition.md), [0138](archive/0138-the-log-publishes-topics.md) |
-| [0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md) | A consumer of the outbox keeps its cursor | [0137](archive/0137-the-log-is-ordered-within-a-partition.md), [0138](archive/0138-the-log-publishes-topics.md), [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0142](archive/0142-a-consumer-waits-for-a-row-of-its-topic.md), [0150](archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md), [0152](archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md), [0184](0184-consume-runs-a-reader-of-a-consumer.md) |
+| [0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md) | A consumer of the outbox keeps its cursor | [0137](archive/0137-the-log-is-ordered-within-a-partition.md), [0138](archive/0138-the-log-publishes-topics.md), [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0142](archive/0142-a-consumer-waits-for-a-row-of-its-topic.md), [0150](archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md), [0152](archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md), [0184](0184-consume-runs-a-reader-of-a-consumer.md), [0195](0195-the-package-is-effect-tea-persistent.md) |
 | [0040](archive/0040-what-is-stored-encodes-to-json-as-it-is.md) | What is stored encodes to JSON as it is | [0057](archive/0057-the-machine-gives-what-is-written.md) |
 | [0062](archive/0062-a-row-is-read-through-a-schema.md) | A row is read through a schema, or not at all | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) |
 | [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md) | `reindex` writes a row only over the state it was computed from |  |

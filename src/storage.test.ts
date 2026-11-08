@@ -58,7 +58,7 @@ const named = (name: string): Program<T> => ({
   },
   init: () => ({ last: 'start' }),
   update: (message) => () => ({ last: message }),
-  durable: () => noWork,
+  work: () => noWork,
   operations: { Ask: operation(() => Effect.succeed('asked')) },
   project: ({ last }) => last,
   indexes: {},
@@ -589,7 +589,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           sql`UPDATE mailbox SET seq = -5 WHERE name = 'Receiver' AND id = 'r'`,
           store.write('r', written({ queued: [inbound('two')] }), 0),
         ],
-        [behind, store.feed('projection', 'c', all)],
+        [behind, store.fetch('projection', 'c', all)],
         [behind, store.consumers],
         [sql`UPDATE heads SET seq = -1 WHERE name = 'Receiver'`, store.published('projection', [], all)],
         // A timer's time is a whole number of milliseconds, read by the waker.
@@ -1012,12 +1012,12 @@ describe('topics of the log (decision 0138)', () => {
         )
         expect(yield* stored).toEqual([[1, 2], [2, 2]])
         // `upper` is read past both steps, and `size` past the first: the second step's publication stays for `size`.
-        yield* store.ack('upper', 'c', yield* store.feed('upper', 'c', all))
-        yield* store.ack('size', 'c', (yield* store.feed('size', 'c', all)).slice(0, 1))
+        yield* store.ack('upper', 'c', yield* store.fetch('upper', 'c', all))
+        yield* store.ack('size', 'c', (yield* store.fetch('size', 'c', all)).slice(0, 1))
         expect(yield* store.prune).toBe(3)
         expect(yield* stored).toEqual([[2, 1]])
-        expect((yield* store.feed('size', 'c', all)).map(({ seq, value }) => [seq, value])).toEqual([[2, 2]])
-        yield* store.ack('size', 'c', yield* store.feed('size', 'c', all))
+        expect((yield* store.fetch('size', 'c', all)).map(({ seq, value }) => [seq, value])).toEqual([[2, 2]])
+        yield* store.ack('size', 'c', yield* store.fetch('size', 'c', all))
         expect(yield* store.prune).toBe(1)
         expect(yield* stored).toEqual([])
       }).pipe(Effect.orDie)))
@@ -1032,12 +1032,12 @@ describe('topics of the log (decision 0138)', () => {
         yield* store.write('r', publishing('ho', { upper: 'HO', size: 5 }, ['upper']), 0)
         const partition = partitionOf('r', 300)
         // One name in two topics is two consumers, each with its own cursors.
-        const upper = yield* store.feed('upper', 'c', all)
+        const upper = yield* store.fetch('upper', 'c', all)
         expect(upper).toHaveLength(2)
-        expect(yield* store.feed('size', 'c', all)).toHaveLength(1)
+        expect(yield* store.fetch('size', 'c', all)).toHaveLength(1)
         yield* store.ack('upper', 'c', upper)
-        expect(yield* store.feed('upper', 'c', all)).toEqual([])
-        expect(yield* store.feed('size', 'c', all)).toHaveLength(1)
+        expect(yield* store.fetch('upper', 'c', all)).toEqual([])
+        expect(yield* store.fetch('size', 'c', all)).toHaveLength(1)
         expect(yield* store.consumers).toEqual([
           { topic: 'size', consumer: 'c', behind: 1, cursors: [{ partition, seq: 0 }] },
           { topic: 'upper', consumer: 'c', behind: 0, cursors: [] },
@@ -1555,12 +1555,12 @@ test('a row that commits after one a consumer has read is read then, from its pa
       const seen = (read: ReadonlyArray<{ id: string; seq: number }>) => read.map(({ id, seq }) => `${id}${seq}`)
       yield* store.declare([{ topic: 'projection', consumer: 'c' }])
       yield* logged(sql, 'a', 1, 10)
-      const first = yield* store.feed('projection', 'c', all)
+      const first = yield* store.fetch('projection', 'c', all)
       expect(seen(first)).toEqual(['a1'])
       yield* store.ack('projection', 'c', first)
       // The row of `b` was given its place before the one of `a`, and is committed only now.
       yield* logged(sql, 'b', 1, 5)
-      expect(seen(yield* store.feed('projection', 'c', all))).toEqual(['b1'])
+      expect(seen(yield* store.fetch('projection', 'c', all))).toEqual(['b1'])
       expect(yield* store.prune).toBe(1)
       expect(seen(yield* store.published('projection', [], all))).toEqual(['b1'])
     }).pipe(Effect.orDie)))
@@ -1811,12 +1811,12 @@ describe('renaming a program (decision 0156)', () => {
         yield* store.declare([{ topic: 'upper', consumer: 'c' }])
         yield* store.write('r', publishing(null, { upper: 'START', size: 5 }, ['upper', 'size']), 0)
         yield* store.write('r', publishing('hi', { upper: 'HI', size: 2 }, ['upper', 'size']), 0)
-        yield* store.ack('upper', 'c', (yield* store.feed('upper', 'c', all)).slice(0, 1))
+        yield* store.ack('upper', 'c', (yield* store.fetch('upper', 'c', all)).slice(0, 1))
         yield* rename(sql, [['Receiver', 'Buyer']])
         const moved = storage({ ...topical, name: 'Buyer' }, sql)
         const rows = (read: ReadonlyArray<{ seq: number; value: unknown }>) => read.map(({ seq, value }) => [seq, value])
         // The consumer, its cursor, and the rows of both topics are under the new name.
-        expect(rows(yield* moved.feed('upper', 'c', all))).toEqual([[2, 'HI']])
+        expect(rows(yield* moved.fetch('upper', 'c', all))).toEqual([[2, 'HI']])
         expect(yield* moved.consumers).toEqual([
           { topic: 'upper', consumer: 'c', behind: 1, cursors: [{ partition: partitionOf('r', 300), seq: 1 }] },
         ])

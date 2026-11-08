@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 test('a workflow stored by one process replays its body in the next, past a signal that takes one value', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-spike-'))
+  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-spike-'))
   const filename = join(directory, 'store.db')
   let runs = 0
   let acts = 0

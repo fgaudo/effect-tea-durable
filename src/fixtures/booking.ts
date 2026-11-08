@@ -201,7 +201,7 @@ export const booking = program({
       }),
     ),
 
-  durable: (state) =>
+  work: (state) =>
     Match.valueTags(state, {
       Holding: ({ booking }) => ({ hold: Operation.cases.Hold.make({ event: booking.event, seats: booking.seats }) }),
       Held: ({ booking }) => ({ deadline: timer(booking.deadline, { _tag: 'DeadlinePassed' }) }),

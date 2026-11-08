@@ -42,8 +42,8 @@ import {
   type Handle,
   type Operated,
   type TypesOf,
-} from 'effect-tea-durable'
-import { launch, sharding } from 'effect-tea-durable/cluster'
+} from '@fgaudo/effect-tea-persistent'
+import { launch, sharding } from '@fgaudo/effect-tea-persistent/cluster'
 import { Mailer, order, Payments, type Sender, Warehouse } from '../order/order.ts'
 
 /**

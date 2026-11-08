@@ -31,7 +31,7 @@ export interface Process {
    */
   readonly running: Scope.Closeable
   /**
-   * Completed once the runtime stops, after the drain and before `running` closes: a `feed` that waits is then
+   * Completed once the runtime stops, after the drain and before `running` closes: a `fetch` that waits is then
    * given no row, and reads nothing from a database about to be let go (decision 0142).
    */
   readonly closing: Deferred.Deferred<void>

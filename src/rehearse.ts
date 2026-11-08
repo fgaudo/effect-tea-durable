@@ -6,7 +6,7 @@ import {
   type Address,
   checkProgram,
   type Creation,
-  type Durable,
+  type Piece,
   encode,
   Entities,
   type IdempotencyKey,
@@ -49,7 +49,7 @@ export interface Pending<Work = unknown> {
 type Parameter<T extends Types, K> = K extends keyof T['parameter'] ? [parameter: T['parameter'][K]] : []
 
 /** The work under way under a key of `T`, as `pending` gives it. */
-type PendingOf<T extends Types> = Pending<Durable<T['operation'], T['internal']>>
+type PendingOf<T extends Types> = Pending<Piece<T['operation'], T['internal']>>
 
 /** What a rehearsal does to one entity, whether it runs alone or in a world. */
 interface Acts<T extends Types> {

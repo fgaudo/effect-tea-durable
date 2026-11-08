@@ -17,7 +17,7 @@ import {
   type Rejected,
   send,
   timer,
-} from 'effect-tea-durable/program'
+} from '@fgaudo/effect-tea-persistent/program'
 import type { inventory } from './inventory.ts'
 
 // The inventory imports the booking's name too, so each imports only the other's types (decision 0183).
@@ -198,7 +198,7 @@ export const booking = program({
       }),
     ),
 
-  durable: (state) =>
+  work: (state) =>
     Match.valueTags(state, {
       Holding: ({ booking }) => ({ hold: Operation.cases.Hold.make({ event: booking.event, seats: booking.seats }) }),
       Held: ({ booking }) => ({ deadline: timer(booking.deadline, { _tag: 'DeadlinePassed' }) }),

@@ -1,5 +1,5 @@
 /**
- * The readings of the log that wait: a `feed` or a `consume` given a wait waits for a commit in its topic, which the
+ * The readings of the log that wait: a `fetch` or a `consume` given a wait waits for a commit in its topic, which the
  * step that commits tells it of (decision 0142). On Cluster the watcher tells them of another runner's commit
  * (decision 0163).
  */
@@ -10,10 +10,10 @@ import type * as Latch from 'effect/Latch'
 import type * as Machine from './machine.ts'
 import type { Process } from './process.ts'
 
-/** The readings of `feed` that wait, of every program of the runtime (decision 0142). */
+/** The readings of `fetch` that wait, of every program of the runtime (decision 0142). */
 export interface Readings {
   /**
-   * What a `feed` that waits waits for, by program and topic: completed and dropped by the first commit of a row in
+   * What a `fetch` that waits waits for, by program and topic: completed and dropped by the first commit of a row in
    * the topic. Only a reading that waits makes one, and one stays until that commit though its wait is over, so the
    * map holds at most one per topic declared, and a step in a topic no reading has waited for finds none. Completing
    * one adds no yield. A `PubSub` per topic would tell the same, at a subscription per reading (decision 0142).

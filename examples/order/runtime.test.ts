@@ -11,7 +11,7 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import { SqlClient } from 'effect/sql'
-import { launch } from 'effect-tea-durable'
+import { launch } from '@fgaudo/effect-tea-persistent'
 import { Mailer, order, Payments, Warehouse } from './order.ts'
 import { statusReport } from './report.ts'
 
@@ -118,10 +118,10 @@ test('what an order published is what another system learns of it, each consumer
     // A consumer is a name within its topic, and its cursors are stored: it reads from where it acked, and a prune
     // drops, in each topic, what every consumer of the topic has read (decisions 0039, 0138, 0152). The rows of one order
     // are in its partition, in the order of their `seq`, and an ack is given the rows acted on (decision 0137).
-    expect(yield* orders.feed('billing', 'invoices', all)).toEqual(billing)
-    expect(yield* orders.feed('status', 'dashboard', all)).toEqual(statuses)
+    expect(yield* orders.fetch('billing', 'invoices', all)).toEqual(billing)
+    expect(yield* orders.fetch('status', 'dashboard', all)).toEqual(statuses)
     yield* orders.ack('status', 'dashboard', statuses.slice(0, 2))
-    expect(yield* orders.feed('status', 'dashboard', all)).toEqual(statuses.slice(2))
+    expect(yield* orders.fetch('status', 'dashboard', all)).toEqual(statuses.slice(2))
     expect(yield* orders.prune).toBe(2)
     expect(yield* orders.published('status', [], all)).toEqual(statuses.slice(2))
     expect(yield* orders.published('billing', [], all)).toEqual(billing)
@@ -141,12 +141,12 @@ test('what an order published is what another system learns of it, each consumer
     // A consumer that has read everything waits for the next row of its topic instead of polling: the creation of
     // another order ends its wait, and a wait with no row would give none after ten seconds (decision 0142).
     yield* orders.ack('status', 'dashboard', statuses)
-    const next = yield* Effect.forkChild(orders.feed('status', 'dashboard', all, { wait: { millis: 10_000 } }))
+    const next = yield* Effect.forkChild(orders.fetch('status', 'dashboard', all, { wait: { millis: 10_000 } }))
     yield* orders.create('o-2', { order: { customer: 'ada', totalInCents: 500 } }, { requestId: 'c-o-2', sender: ada })
     expect((yield* Fiber.join(next)).map(({ id, value }) => [id, value])).toEqual([['o-2', 'AwaitingPayment']])
   }))))
 
-test('a report fed from the log counts the orders in each status, as the read model counts them', () =>
+test('a report built from the log counts the orders in each status, as the read model counts them', () =>
   database(Effect.scoped(Effect.gen(function*() {
     const runtime = yield* launch()
     const orders = yield* Effect.provide(runtime.deploy(order, consumers), world)
@@ -168,13 +168,13 @@ test('a report fed from the log counts the orders in each status, as the read mo
     // page is empty. A consumer that serves a dashboard passes `wait: true` instead, and stops with the runtime
     // (decision 0184). The first reader crashes after its writes, as a crash before the commit leaves it: the store
     // and the cursors stay as they were, so the next reader reads the page again (decision 0150).
-    const first = yield* orders.feed('status', 'dashboard', 3)
+    const first = yield* orders.fetch('status', 'dashboard', 3)
     const crashed = (page: Parameters<typeof report.record>[0]) => Effect.andThen(report.record(page), Effect.fail('crash'))
     expect(yield* Effect.exit(orders.consume('status', 'dashboard', crashed, { limit: 3 }))).toEqual(Exit.fail('crash'))
     expect(yield* report.counts).toEqual({})
-    expect(yield* orders.feed('status', 'dashboard', 3)).toEqual(first)
+    expect(yield* orders.fetch('status', 'dashboard', 3)).toEqual(first)
     yield* orders.consume('status', 'dashboard', report.record, { limit: 3 })
-    expect(yield* orders.feed('status', 'dashboard', 3)).toEqual([])
+    expect(yield* orders.fetch('status', 'dashboard', 3)).toEqual([])
 
     // The store answers the question in one statement, and so does the read model, on one snapshot
     // (decisions 0149, 0150).

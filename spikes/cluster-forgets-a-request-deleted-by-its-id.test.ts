@@ -39,7 +39,7 @@ const Counter = Entity.make('Counter', [
 ])
 
 test('a request whose rows are deleted by its id, in another request\'s transaction, is new when sent again', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-spike-'))
+  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-spike-'))
   const filename = join(directory, 'store.db')
   const runs = new Map<string, number>()
   let own: string | undefined

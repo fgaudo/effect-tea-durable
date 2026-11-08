@@ -73,7 +73,7 @@ export const byVersion = (
  */
 export class Recorded extends Context.Service<Recorded, {
   readonly versions: ReadonlyMap<string, number> | null
-}>()('effect-tea-durable/Recorded') {}
+}>()('@fgaudo/effect-tea-persistent/Recorded') {}
 
 /**
  * Cluster's `Sharding` for a runner that runs `programs`. It records the version of each program under the

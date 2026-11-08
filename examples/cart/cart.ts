@@ -5,7 +5,7 @@
  */
 import * as Optic from 'effect/Optic'
 import * as Schema from 'effect/Schema'
-import { each, forEach, program, reject } from 'effect-tea-durable/program'
+import { each, forEach, program, reject } from '@fgaudo/effect-tea-persistent/program'
 import { line, Projection as LineProjection, type State as LineState } from './line.ts'
 
 const Line = line.schemas.state

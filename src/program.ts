@@ -15,9 +15,9 @@ import type * as EffectTypes from 'effect/Types'
  * What `update` returns for an inbound message that does not apply in the state, and what a program's `init` returns
  * for flags it does not create an entity from, with no reason given (decision 0182).
  */
-export const reject: unique symbol = Symbol.for('effect-tea-durable/Rejected')
+export const reject: unique symbol = Symbol.for('@fgaudo/effect-tea-persistent/Rejected')
 
-const RejectedWithTypeId: unique symbol = Symbol.for('effect-tea-durable/RejectedWith')
+const RejectedWithTypeId: unique symbol = Symbol.for('@fgaudo/effect-tea-persistent/RejectedWith')
 
 /** A rejection with a reason the caller can act on, stored with the reply. No state can be taken for it. */
 export interface RejectedWith<Reason> {
@@ -152,7 +152,7 @@ export const KeyCodec = Schema.Struct({
   parameter: Schema.optionalKey(Schema.Json),
 }) as unknown as Schema.Codec<Key, Json>
 
-/** Who sent a message: a caller, another entity, or the entity's own durable work. */
+/** Who sent a message: a caller, another entity, or the entity's own work. */
 export type Origin<Sender> =
   | Readonly<{ _tag: 'Self' }>
   | Readonly<{ _tag: 'Caller'; sender: Sender }>
@@ -311,7 +311,7 @@ export const operation: {
   },
 )
 
-const TimerTypeId: unique symbol = Symbol.for('effect-tea-durable/Timer')
+const TimerTypeId: unique symbol = Symbol.for('@fgaudo/effect-tea-persistent/Timer')
 
 export interface Timer<Message> {
   readonly [TimerTypeId]: typeof TimerTypeId
@@ -321,7 +321,7 @@ export interface Timer<Message> {
 
 /**
  * A timer that sends `message` to its entity at `at`. `Message` is `const`, so that a message's tag stays its literal
- * where nothing gives the call a type to infer from, as in a branch of `Match.valueTags`. `durable` checks it against
+ * where nothing gives the call a type to infer from, as in a branch of `Match.valueTags`. `work` checks it against
  * the program's internal messages. `const` also makes an array a readonly tuple, which a mutable array of
  * `Schema.mutable` does not take, so a program with one writes `timer<Internal>(…)` (decision 0181).
  */
@@ -335,7 +335,7 @@ export const isTimer = (work: unknown): work is Timer<unknown> =>
   typeof work === 'object' && work !== null && TimerTypeId in work
 
 /** The work under a key: an operation, which is the program's own data, or a timer. */
-export type Durable<Operation, Message> = Operation | Timer<Message>
+export type Piece<Operation, Message> = Operation | Timer<Message>
 
 /**
  * The work a state holds, by key. A program's keys are declared, so a state holds work under those and no
@@ -345,15 +345,15 @@ export type Durable<Operation, Message> = Operation | Timer<Message>
  */
 export type Work<Key extends string, Parameter, Operation, Message> = {
   readonly [K in Key]?:
-    | (K extends keyof Parameter ? ReadonlyArray<readonly [Parameter[K], Durable<Operation, Message>]>
-      : Durable<Operation, Message>)
+    | (K extends keyof Parameter ? ReadonlyArray<readonly [Parameter[K], Piece<Operation, Message>]>
+      : Piece<Operation, Message>)
     | undefined
 }
 
-/** The work under a key as `durable` may return it: one piece, or a piece for each parameter. */
+/** The work under a key as `work` may return it: one piece, or a piece for each parameter. */
 export type Returned<Operation, Message> =
-  | Durable<Operation, Message>
-  | ReadonlyArray<readonly [unknown, Durable<Operation, Message>]>
+  | Piece<Operation, Message>
+  | ReadonlyArray<readonly [unknown, Piece<Operation, Message>]>
 
 /**
  * How a program declares its keys: for each name, the schema of its parameter, or null for a key without one
@@ -496,7 +496,7 @@ export interface Program<T extends Types, Name extends string = string> {
   readonly name: Name
   /**
    * Every key the program's work is held under, with the schema of its parameter, or null for a key without one.
-   * The machine checks `durable` against them (decisions 0037, 0132), and a deploy that renames one is a change of
+   * The machine checks `work` against them (decisions 0037, 0132), and a deploy that renames one is a change of
    * the type (decision 0033).
    */
   readonly keys: Keys<T['key'], T['parameter']>
@@ -517,7 +517,7 @@ export interface Program<T extends Types, Name extends string = string> {
   readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state'] | Rejected<T['rejection']>
   readonly update: Update<T['state'], T['inbound'] | T['internal'], T['sender'], T['rejection']>
   /** The work each state holds, which the machine reads by key, under the keys the program declares. */
-  readonly durable: (
+  readonly work: (
     state: T['state'],
   ) => Readonly<Record<string, Returned<T['operation'], T['internal']> | undefined>>
   readonly operations: Runners<T>
@@ -683,7 +683,7 @@ type ParametersOf<Keys> = {
     : never
 }
 
-const RaisedTypeId: unique symbol = Symbol.for('effect-tea-durable/Raised')
+const RaisedTypeId: unique symbol = Symbol.for('@fgaudo/effect-tea-persistent/Raised')
 
 /**
  * A state with the events a child raised for its parent in the same step. An event is handled by the parent's
@@ -831,7 +831,7 @@ export interface Part<T extends PartTypes> {
     message: T['inbound'] | T['internal'] | T['external'],
     meta: Meta<T['sender']>,
   ) => (state: T['state']) => Step<T['state'], T['event']> | Rejected<T['rejection']>
-  readonly durable: (
+  readonly work: (
     state: T['state'],
   ) => Readonly<Record<string, Returned<T['operation'], T['internal']> | undefined>>
   readonly operations: Runners<T>
@@ -990,12 +990,12 @@ type Checks<Own, Sender, C> =
     }>)
 
 /**
- * `durable`, the own work: a child's is held while the child is there, under its keys. It may be left out exactly
+ * `work`, the own work: a child's is held while the child is there, under its keys. It may be left out exactly
  * where no key is declared, since a state then holds no work of its own (decision 0180).
  */
-type DurableOf<State, Internal, Operation, Keys> = [keyof Keys] extends [never]
-  ? Readonly<{ durable?: (state: State) => Work<never, unknown, Operation, Internal> }>
-  : Readonly<{ durable: (state: State) => Work<Extract<keyof Keys, string>, ParametersOf<Keys>, Operation, Internal> }>
+type WorkOf<State, Internal, Operation, Keys> = [keyof Keys] extends [never]
+  ? Readonly<{ work?: (state: State) => Work<never, unknown, Operation, Internal> }>
+  : Readonly<{ work: (state: State) => Work<Extract<keyof Keys, string>, ParametersOf<Keys>, Operation, Internal> }>
 
 /** `operations`, a runner for each kind of operation: left out exactly where there is no kind (decision 0180). */
 type OperationsOf<Operation, Operations> = [Operation] extends [never] ? Readonly<{ operations?: Operations }>
@@ -1021,7 +1021,7 @@ type Pieces<
 > =
   & Readonly<{
     /**
-     * Every key `durable` holds work under, with the schema of its parameter or null: work under any other key is a
+     * Every key `work` may return a piece under, with the schema of its parameter or null: work under any other key is a
      * type error (decisions 0033, 0132). A declaration that leaves it out declares no key (decision 0180).
      */
     keys?: Keys
@@ -1035,7 +1035,7 @@ type Pieces<
     ) => (state: State) => Step<State, Event> | Rejected<Rejection>
     project: (state: State, children: Projections<State, C>) => Projection
   }>
-  & DurableOf<State, Internal, Operation, Keys>
+  & WorkOf<State, Internal, Operation, Keys>
   & OperationsOf<Operation, Operations>
   & OnEventOf<State, Event, C>
   & Checks<Inbound | Internal | External, Sender, C>
@@ -1082,7 +1082,7 @@ type UntypedPart = Readonly<{
   schemas: Readonly<Record<'state' | 'inbound' | 'internal' | 'operation' | 'rejection', Schema.Codec<unknown, Json>>>
   init: (flags: unknown, at: DateTime.Utc) => unknown
   update: (message: unknown, meta: Meta<unknown>) => (state: unknown) => unknown
-  durable: (state: unknown) => Readonly<Record<string, unknown>>
+  work: (state: unknown) => Readonly<Record<string, unknown>>
   operations: Readonly<Record<string, UntypedRunner>>
   project: (state: unknown) => unknown
 }>
@@ -1092,7 +1092,7 @@ type UntypedDeclaration = Readonly<{
   children?: Readonly<Record<string, UntypedChild>>
   init: (flags: unknown, at: DateTime.Utc) => unknown
   update: (message: unknown, meta: Meta<unknown>, children: unknown) => (state: unknown) => unknown
-  durable: (state: unknown) => Readonly<Record<string, unknown>>
+  work: (state: unknown) => Readonly<Record<string, unknown>>
   operations: Readonly<Record<string, UntypedRunner>>
   project: (state: unknown, children: unknown) => unknown
   onEvent?: Readonly<Record<string, (...args: ReadonlyArray<unknown>) => (state: unknown) => unknown>>
@@ -1136,7 +1136,7 @@ const assemble = (
       schemas,
       init: declaration.init,
       update: (message, meta) => declaration.update(message, meta, noChildren),
-      durable: declaration.durable,
+      work: declaration.work,
       operations: declaration.operations,
       project: (state) => declaration.project(state, noChildren),
     }
@@ -1306,13 +1306,13 @@ const assemble = (
       : { _tag: `${place.name}.${String(fieldOf(work, '_tag'))}`, ...at(place), operation: work }
   // A child's work is held while the child is there: a child that leaves the state with an operation under way
   // drops its key, which the machine finds a defect (decision 0005).
-  const durable = (state: unknown): Readonly<Record<string, unknown>> => {
-    const work: Record<string, unknown> = { ...declaration.durable(state) }
+  const work = (state: unknown): Readonly<Record<string, unknown>> => {
+    const all: Record<string, unknown> = { ...declaration.work(state) }
     for (const name of names) {
       const { part } = childOf(name)
       for (const [id, held] of presentIn(name, state)) {
         const place = { name, id }
-        for (const [key, piece] of Object.entries(part.durable(held))) {
+        for (const [key, piece] of Object.entries(part.work(held))) {
           if (piece === undefined) continue
           const composed = `${name}.${key}`
           const takes = (part.keys[key] ?? null) !== null
@@ -1322,12 +1322,12 @@ const assemble = (
               lift(place, one),
             ])
             : [[id, lift(place, piece)]]
-          if (!isEach(name)) work[composed] = takes ? pieces : pieces[0]![1]
-          else work[composed] = [...((work[composed] as ReadonlyArray<unknown> | undefined) ?? []), ...pieces]
+          if (!isEach(name)) all[composed] = takes ? pieces : pieces[0]![1]
+          else all[composed] = [...((all[composed] as ReadonlyArray<unknown> | undefined) ?? []), ...pieces]
         }
       }
     }
-    return work
+    return all
   }
   const liftRunner = (name: string, runner: UntypedRunner): UntypedRunner => {
     const wrapOf = (operation: unknown, message: unknown) => wrap({ name, id: fieldOf(operation, 'id') }, message)
@@ -1401,7 +1401,7 @@ const assemble = (
     },
     init: declaration.init,
     update,
-    durable,
+    work,
     operations,
     project: (state) => declaration.project(state, projections),
   }
@@ -1445,25 +1445,25 @@ const filledProgramSchemas = <S extends DeclaredSchemas>(schemas: S) => ({
 })
 
 /** A declaration as it may be written: with no keys, no runners and no work, where it has none (decision 0180). */
-type LeftOut = Omit<UntypedDeclaration, 'keys' | 'operations' | 'durable'> & Partial<UntypedDeclaration>
+type LeftOut = Omit<UntypedDeclaration, 'keys' | 'operations' | 'work'> & Partial<UntypedDeclaration>
 
 const noKeys: Readonly<Record<string, never>> = Object.freeze({})
 const noRunners: Readonly<Record<string, never>> = Object.freeze({})
 const noIndexes: Readonly<Record<string, never>> = Object.freeze({})
 const noOwnWork = () => noWork
 
-/** The declaration with each record left out empty, and `durable` left out holding no work (decision 0180). */
+/** The declaration with each record left out empty, and `work` left out holding no work (decision 0180). */
 const filledDeclaration = (declaration: LeftOut): UntypedDeclaration => ({
   ...declaration,
   keys: declaration.keys ?? noKeys,
   operations: declaration.operations ?? noRunners,
-  durable: declaration.durable ?? noOwnWork,
+  work: declaration.work ?? noOwnWork,
 })
 
 /**
  * The one place a program is declared: its schemas, which give every type the program is written in, and then
  * what it does (decision 0035). An object literal typed `Program<T>` names each type twice, and holds neither
- * the keys `durable` may use nor the messages an operation answers. Here each piece says its own type. The
+ * the keys `work` may use nor the messages an operation answers. Here each piece says its own type. The
  * schemas say what the state, the flags, the messages, the operations, the rejections, the senders and the
  * projection are. `keys` says the space of keys the work is held under (decision 0033). Each runner says which
  * messages its kind of operation answers, and which services it needs (decision 0034). `indexes` says what a
@@ -1551,7 +1551,7 @@ export const program = <
       if (isRaised(step)) return defect('a program raised an event, and an entity has no parent to handle it')
       return step as Of['state'] | Rejected<Of['rejection']>
     },
-    durable: pieces.durable as Program<Of>['durable'],
+    work: pieces.work as Program<Of>['work'],
     operations: pieces.operations as unknown as Runners<Of>,
     project: pieces.project as Program<Of>['project'],
     ...(declaration.topics === undefined
@@ -1646,7 +1646,7 @@ export class Entities extends Context.Service<Entities, {
     flags: T['flags'],
     name: string,
   ) => Effect.Effect<Creation<T['rejection']>>
-}>()('effect-tea-durable/Entities') {}
+}>()('@fgaudo/effect-tea-persistent/Entities') {}
 
 /**
  * Sends an inbound message to another entity from an operation, and waits for the reply. The request is the run of

@@ -89,7 +89,7 @@ const at = (name: string, version: number): Program<T> => ({
   },
   init: () => ({ last: 'start' }),
   update: (message) => () => ({ last: message }),
-  durable: ({ last }) => last === 'wait' ? { ask: { _tag: 'Ask' } } : noWork,
+  work: ({ last }) => last === 'wait' ? { ask: { _tag: 'Ask' } } : noWork,
   operations: { Ask: operation(() => Effect.never) },
   project: ({ last }) => last,
   indexes: {},
@@ -249,7 +249,7 @@ describe('two runners on one file', () => {
       ) => Effect.Effect<(() => number) & { context: Context.Context<Sharding.Sharding> }, never, Scope.Scope>,
     ) => Effect.Effect<void, unknown, Scope.Scope | SqlClient.SqlClient>,
   ) => {
-    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
     const start = (port: number, programs: ReadonlyArray<Program<T>>, deployed = programs, options?: Options) =>
       Effect.gen(function*() {
@@ -520,7 +520,7 @@ describe('the runtime on Cluster', () => {
           return { n: state.n + 100, asking: false }
       }
     },
-    durable: (state) => state.asking ? { ask: { _tag: 'Ask' } } : noWork,
+    work: (state) => state.asking ? { ask: { _tag: 'Ask' } } : noWork,
     operations: {
       Ask: operation(() =>
         Effect.gen(function*() {
@@ -558,7 +558,7 @@ describe('the runtime on Cluster', () => {
     run: Effect.Effect<void, unknown, Sharding.Sharding | SqlClient.SqlClient | Scope.Scope>,
     probe?: (sql: SqlClient.SqlClient) => (said: Said) => Effect.Effect<void>,
   ) => {
-    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
     const runner = sharding([tally]).pipe(
       Layer.provideMerge(Runners.layerNoop),
@@ -958,7 +958,7 @@ describe('the shards of a runner on Cluster', () => {
           return { ...state, relay: null, relayed: message.what }
       }
     },
-    durable: (state) => ({
+    work: (state) => ({
       ...(state.asking ? { ask: { _tag: 'Ask', who: state.who } as const } : {}),
       ...(state.ring !== null ? { ring: timer(DateTime.makeUnsafe(state.ring), { _tag: 'Rang' } as const) } : {}),
       ...(state.relay !== null ? { relay: { _tag: 'Relay', to: state.relay } as const } : {}),
@@ -1045,7 +1045,7 @@ describe('the shards of a runner on Cluster', () => {
     },
     init: () => ({ n: 0 }),
     update: () => (state) => ({ n: state.n + 1 }),
-    durable: () => noWork,
+    work: () => noWork,
     operations: {},
     project: ({ n }) => n,
     indexes: {},
@@ -1071,7 +1071,7 @@ describe('the shards of a runner on Cluster', () => {
       expiration: Duration.seconds(3),
     },
   ) => {
-    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-test-'))
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
     const start = (port: number, said?: (said: Said) => void, withheld?: (reply: Reply.Reply<any>) => boolean) =>
       Effect.gen(function*() {
@@ -1506,10 +1506,10 @@ describe('the shards of a runner on Cluster', () => {
           ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
         )
         const who = Array.from({ length: 64 }, (_, i) => `w${i}`).find((id) => second.holds(id))!
-        yield* first.bell.ack('projection', 'queue', yield* first.bell.feed('projection', 'queue', 100))
+        yield* first.bell.ack('projection', 'queue', yield* first.bell.fetch('projection', 'queue', 100))
         const started = Date.now()
         const waiting = yield* Effect.forkChild(
-          first.bell.feed('projection', 'queue', 100, { wait: { millis: 10_000 } }),
+          first.bell.fetch('projection', 'queue', 100, { wait: { millis: 10_000 } }),
         )
         yield* Effect.sleep('100 millis')
         // The second runner commits the creation, and tells its own readings only.

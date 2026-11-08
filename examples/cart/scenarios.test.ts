@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import { accepted, rehearse, rejected } from 'effect-tea-durable/testing'
+import { accepted, rehearse, rejected } from '@fgaudo/effect-tea-persistent/testing'
 import { cart } from './cart.ts'
 
 const start = { flags: null, at: DateTime.makeUnsafe('2026-11-05T10:00:00Z') }

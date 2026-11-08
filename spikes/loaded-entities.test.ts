@@ -31,7 +31,7 @@ const rooms = program({
   keys: {},
   init: ({ size }) => ({ items: Array.from({ length: size }, (_, id) => `item number ${id} of the room`) }),
   update: (message) => (state) => ({ items: [...state.items, message.label] }),
-  durable: () => noWork,
+  work: () => noWork,
   operations: {},
   project: (state) => ({ count: state.items.length }),
   indexes: {},

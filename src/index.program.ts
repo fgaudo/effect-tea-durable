@@ -10,7 +10,7 @@ export {
   create,
   type Creation,
   defect,
-  type Durable,
+  type Piece,
   each,
   type Each,
   Entities,

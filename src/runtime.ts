@@ -43,7 +43,7 @@ import {
   type Receiver,
   type Reply,
   type Request,
-  type Durable,
+  type Piece,
   type Topic,
   topicsOf,
   type Types,
@@ -111,7 +111,7 @@ export type Inspected<T extends Types> = Readonly<{
    * The work under way, the oldest first: each key the state holds work under, its incarnation, and the operation or
    * the timer.
    */
-  work: ReadonlyArray<Readonly<{ key: Key; incarnation: number; work: Durable<T['operation'], T['internal']> }>>
+  work: ReadonlyArray<Readonly<{ key: Key; incarnation: number; work: Piece<T['operation'], T['internal']> }>>
   /** The suspension, as `suspended` lists it, or null for an entity that is not suspended. */
   suspension: Suspended | null
 }>
@@ -157,7 +157,7 @@ export type Said =
  * nothing, as Effect's tracer does. A test provides another around `launch`, which reads it once. It is no
  * option, and no part of what a user imports (decisions 0055, 0073).
  */
-export const Probe = Context.Reference<(said: Said) => Effect.Effect<void>>('effect-tea-durable/Probe', {
+export const Probe = Context.Reference<(said: Said) => Effect.Effect<void>>('@fgaudo/effect-tea-persistent/Probe', {
   defaultValue: () => () => Effect.void,
 })
 
@@ -358,7 +358,7 @@ export interface Handle<T extends Types, C = {}> {
    * written before a row of another may come after it (decision 0137). A partition with no cursor in `after` is
    * read from `0`, so `[]` is the whole topic. The cursors are the caller's, and nothing of them is stored: a
    * reading here, by a test or an operator looking, has no say in a prune. A consumer that keeps its cursors reads
-   * with `feed` instead (decision 0039).
+   * with `fetch` instead (decision 0039).
    */
   readonly published: <Name extends Topic<T>>(
     topic: Name,
@@ -380,19 +380,19 @@ export interface Handle<T extends Types, C = {}> {
    * partition are given the same rows. A list that is empty, or holds what is no partition of the log, is the
    * caller's defect (decision 0153).
    */
-  readonly feed: <Name extends Topic<T>>(
+  readonly fetch: <Name extends Topic<T>>(
     topic: Name,
     consumer: ConsumerOf<C, Name>,
     limit: number,
     options?: Readonly<{ wait?: Readonly<{ millis: number }>; partitions?: ReadonlyArray<number> }>,
   ) => Effect.Effect<ReadonlyArray<Published<T, Name>>>
   /**
-   * Moves a consumer's cursor in each partition `through` names, and no other. The rows `feed` gave are such a
+   * Moves a consumer's cursor in each partition `through` names, and no other. The rows `fetch` gave are such a
    * list. A cursor never moves back, since what is behind it may be gone, and never past the last `seq` written in
    * its partition, so that no row written later is behind it (decisions 0039, 0137). The consumer is one the deploy
    * declares for the topic (decision 0152). A topic is one the program publishes, and a partition is an integer from 1
    * to the number of partitions of the log. A `seq` and a limit are non-negative integers, here and in `query`,
-   * `published` and `feed`, and a limit left out is no limit at all but the caller's defect, as is anything else
+   * `published` and `fetch`, and a limit left out is no limit at all but the caller's defect, as is anything else
    * (decisions 0053, 0138, 0141). An ack joins a transaction the caller left open on the client the runtime was
    * launched with, so a store the caller writes in it commits with the cursors. Within it the caller waits for
    * nothing a step does, since a step's commit waits for the transaction's connection (decision 0150).
@@ -403,16 +403,16 @@ export interface Handle<T extends Types, C = {}> {
     through: ReadonlyArray<Cursor>,
   ) => Effect.Effect<void>
   /**
-   * Runs a reader of the consumer `consumer` of `topic`: it reads a page of at most `limit` rows with `feed`, runs
+   * Runs a reader of the consumer `consumer` of `topic`: it reads a page of at most `limit` rows with `fetch`, runs
    * `handler` on it and acks it in one transaction of the client the runtime was launched with, and reads the next.
    * So a store that `handler` writes on that client commits with the cursors, and a page whose transaction fails is
    * read again. `handler` is given no empty page. Without `wait`, the reader ends at the first page that is empty,
    * or once the runtime stops, with the rows it did not read left for the next reader: what a test or a batch runs.
    * Given `wait: true`, a reading that finds no row waits for a commit in the topic, and the reader ends only when
-   * the runtime stops: what a deployment runs. Given `partitions`, it reads those only, as `feed` does. A failure
+   * the runtime stops: what a deployment runs. Given `partitions`, it reads those only, as `fetch` does. A failure
    * of `handler` or of the transaction rolls the page back and fails the reader, whose retries are the caller's. The
    * limit is a positive integer. A reader run within a transaction of the client would hold its connection while it
-   * waits, so it is the caller's defect, as is anything `feed` refuses (decision 0184).
+   * waits, so it is the caller's defect, as is anything `fetch` refuses (decision 0184).
    */
   readonly consume: <Name extends Topic<T>, E, R>(
     topic: Name,
@@ -1032,9 +1032,9 @@ export const launchWith = (
               topic,
               cursored(after, partitions, counted({ limit }, deployed.storage.published(topic, after, limit))),
             ),
-          feed: (topic, consumer, limit, options) => {
+          fetch: (topic, consumer, limit, options) => {
             const wait = options?.wait
-            const read = deployed.storage.feed(topic, consumer, limit, options?.partitions)
+            const read = deployed.storage.fetch(topic, consumer, limit, options?.partitions)
             return topical(
               program,
               topic,
@@ -1063,7 +1063,7 @@ export const launchWith = (
           consume: (topic, consumer, handler, options) => {
             // Options left out, which the types do not hold, are refused as a limit left out is (decision 0141).
             const { limit, wait, partitions: given } = (options ?? {}) as typeof options
-            const read = deployed.storage.feed(topic, consumer, limit, given)
+            const read = deployed.storage.fetch(topic, consumer, limit, given)
             const reading = wait === true ? waited(p, program.name, topic, undefined, read) : read
             const reader = Effect.gen(function*() {
               // A reader within a transaction of the client would wait for a row on the connection a step's commit

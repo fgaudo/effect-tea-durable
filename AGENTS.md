@@ -1,4 +1,4 @@
-# effect-tea-durable — guide for coding agents
+# effect-tea-persistent — guide for coding agents
 
 This repository is a design and its pure core, not a library yet: read [`README.md`](README.md), then
 [`docs/design.md`](docs/design.md), with [`docs/glossary.md`](docs/glossary.md) at hand. What to do next is the first step of [`docs/roadmap.md`](docs/roadmap.md).
@@ -95,11 +95,12 @@ This repository is a design and its pure core, not a library yet: read [`README.
 
 ## Code and tests
 
-- The examples import the library as a user does, by the package's name and its entries: `effect-tea-durable`,
-  `effect-tea-durable/program`, `effect-tea-durable/testing` and `effect-tea-durable/cluster`. The `exports` of
-  `package.json` resolve each to its file of `src/`, so the examples run on the sources with no build. A module that
-  declares a program imports from `effect-tea-durable/program`, so that it shows the import a browser can load. A
-  test of the form of `src/` fails on an example that imports a file of `src/`. When the design changes, the code,
+- The examples import the library as a user does, by the package's name and its entries:
+  `@fgaudo/effect-tea-persistent`, `@fgaudo/effect-tea-persistent/program`, `@fgaudo/effect-tea-persistent/testing`
+  and `@fgaudo/effect-tea-persistent/cluster`. The `exports` of `package.json` resolve each to its file of `src/`, so
+  the examples run on the sources with no build. A module that declares a program imports from
+  `@fgaudo/effect-tea-persistent/program`, so that it shows the import a browser can load. A test of the form of
+  `src/` fails on an example that imports a file of `src/`. When the design changes, the code,
   its tests and the examples change with it, and `bun run typecheck`, `bun test` and `bun run links` pass.
 - The library's tests run on programs of [`src/fixtures/`](src/fixtures), copied from the examples once, and import
   no example, so that a change of an example breaks no test of the library. A test of the form of `src/` checks it.

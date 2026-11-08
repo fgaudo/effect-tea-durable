@@ -9,7 +9,7 @@ import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import type { SqlClient } from 'effect/sql'
-import { create, launch, operation, send } from 'effect-tea-durable'
+import { create, launch, operation, send } from '@fgaudo/effect-tea-persistent'
 import { booking } from './booking.ts'
 import { inventory } from './inventory.ts'
 

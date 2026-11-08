@@ -22,7 +22,7 @@ import * as Option from 'effect/Option'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { launch, sharding } from 'effect-tea-durable/cluster'
+import { launch, sharding } from '@fgaudo/effect-tea-persistent/cluster'
 import { Mailer, order, Payments, Warehouse } from './order.ts'
 
 const ada = { _tag: 'Customer', id: 'ada' } as const
@@ -61,7 +61,7 @@ const runner = (filename: string) =>
   )
 
 test('a runner of Cluster creates, pays and reads the orders, each request through the door of the orders', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-example-'))
+  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-example-'))
   try {
     await Effect.runPromise(
       Effect.scoped(Effect.gen(function*() {

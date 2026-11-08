@@ -19,7 +19,7 @@ import {
   reject,
   type Rejected,
   timer,
-} from 'effect-tea-durable/program'
+} from '@fgaudo/effect-tea-persistent/program'
 
 const Order = Schema.Struct({
   customer: Schema.String,
@@ -188,7 +188,7 @@ export const order = program({
   }),
 
   // Inbound messages may arrive in any state, and are rejected where they do not apply. An internal message
-  // arrives only while its key is in `durable`, so elsewhere it is a defect.
+  // arrives only while its key is in `work`, so elsewhere it is a defect.
   update: (message, { from }) => (state) =>
     Match.value(message).pipe(
       Match.withReturnType<State | Rejected>(),
@@ -250,7 +250,7 @@ export const order = program({
       }),
     ),
 
-  durable: (state) =>
+  work: (state) =>
     Match.valueTags(state, {
       AwaitingPayment: ({ deadline }) => ({
         'payment-deadline': timer(deadline, { _tag: 'PaymentDeadlinePassed' }),
@@ -302,7 +302,7 @@ export const order = program({
   // holds it, and nothing for an order that is being charged, paid or over (decisions 0032, 0139). "What they
   // owe": the total of such an order, which a sum adds up and leaves out where it is null (decision 0148). "How
   // many orders are in a status": its status, which a count takes one status at a time; how many are in each is
-  // a report, fed from the log in `report.ts` (decision 0149).
+  // a report, built from the log in `report.ts` (decision 0149).
   indexes: {
     unpaidUntil: ({ deadline, status }) => (status === 'AwaitingPayment' ? deadline : null),
     owedInCents: ({ status, totalInCents }) => (status === 'AwaitingPayment' ? totalInCents : null),

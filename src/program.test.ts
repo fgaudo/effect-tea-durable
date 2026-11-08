@@ -104,12 +104,12 @@ test('work under a key the program does not declare does not compile where the s
   const alone = program(schemas)({
     ...pieces,
     // @ts-expect-error `charg` shares no key with the declared ones
-    durable: ({ charging }) => (charging ? { charg: charge } : noWork),
+    work: ({ charging }) => (charging ? { charg: charge } : noWork),
   })
   // Beside a declared key, a misspelt one is accepted by the types: the machine is what refuses it (decision 0037).
   const beside = program(schemas)({
     ...pieces,
-    durable: ({ charging }) => (charging ? { charge, charg: charge } : noWork),
+    work: ({ charging }) => (charging ? { charge, charg: charge } : noWork),
   })
   expect([alone, beside]).toHaveLength(2)
 })
@@ -120,7 +120,7 @@ test('a runner that answers a message the program does not have does not compile
     keys: { charge: null },
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
-    durable: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
+    work: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
     project: () => null,
     indexes: {},
   } as const
@@ -150,7 +150,7 @@ test('a droppable runner whose services hold `Entities` does not compile (decisi
     keys: { charge: null },
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
-    durable: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
+    work: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
     project: () => null,
     indexes: {},
   } as const
@@ -186,7 +186,7 @@ test('the schemas applied first type the pieces, where one call would widen a ta
     name: 'Doors',
     keys: {},
     update: () => (state: typeof State.Type) => state,
-    durable: () => noWork,
+    work: () => noWork,
     operations: {},
     project: () => null,
     indexes: {},
@@ -210,7 +210,7 @@ test('a topic selects JSON of the projection, and the topics a program declares 
     keys: {},
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
-    durable: () => noWork,
+    work: () => noWork,
     operations: {},
     project: ({ charging }: { charging: boolean }) => ({ charging, since: 0 }),
     indexes: {},
@@ -268,7 +268,7 @@ test('a program whose name or key is no text a database holds is refused, naming
     keys: { ask: null },
     init: () => ({}),
     update: () => (state) => state,
-    durable: () => noWork,
+    work: () => noWork,
     operations: {},
     project: () => null,
     indexes: {},
@@ -306,17 +306,17 @@ test('a program without work leaves out what it does not have, and each piece le
   expect(doors.schemas.operation).toBe(Schema.Never)
   expect(doors.schemas.rejection).toBe(Schema.Never)
   expect(doors.schemas.sender).toBe(Schema.Null)
-  expect([doors.keys, doors.operations, doors.indexes, doors.durable({ open: true })]).toEqual([{}, {}, {}, {}])
+  expect([doors.keys, doors.operations, doors.indexes, doors.work({ open: true })]).toEqual([{}, {}, {}, {}])
   expect(() => checkProgram(doors)).not.toThrow()
   // A part leaves out what a program does.
   const latch = part(bare)(pieces)
-  expect([latch.keys, latch.operations, latch.durable({ open: true })]).toEqual([{}, {}, {}])
+  expect([latch.keys, latch.operations, latch.work({ open: true })]).toEqual([{}, {}, {}])
   expect(latch.schemas.operation).toBe(Schema.Never)
   // A part that leaves out its sender reads none, and holds no schema of one.
   expect('sender' in latch.schemas).toBe(false)
 })
 
-test('durable is left out only with no key, and operations only with no kind of operation (decision 0180)', () => {
+test('work is left out only with no key, and operations only with no kind of operation (decision 0180)', () => {
   const pieces = {
     name: 'Charges',
     init: () => ({ charging: true }),
@@ -327,8 +327,8 @@ test('durable is left out only with no key, and operations only with no kind of 
   // @ts-expect-error a program that declares a key says what work its states hold under it
   const workless = program(schemas)({ ...pieces, keys: { charge: null }, operations: runners })
   // @ts-expect-error a program that has operations gives a runner for each kind
-  const runnerless = program(schemas)({ ...pieces, keys: { charge: null }, durable: () => ({ charge }) })
-  const whole = program(schemas)({ ...pieces, keys: { charge: null }, durable: () => ({ charge }), operations: runners })
+  const runnerless = program(schemas)({ ...pieces, keys: { charge: null }, work: () => ({ charge }) })
+  const whole = program(schemas)({ ...pieces, keys: { charge: null }, work: () => ({ charge }), operations: runners })
   expect([workless, runnerless, whole]).toHaveLength(3)
 })
 
@@ -431,7 +431,7 @@ test('TypesOf gives the types of a program, and of a reference to it, and never 
   expect([same, inbound, unknown, reason, either, none]).toHaveLength(6)
 })
 
-test('a timer needs no type parameter: its message keeps its tag, and durable checks it (decision 0181)', () => {
+test('a timer needs no type parameter: its message keeps its tag, and work checks it (decision 0181)', () => {
   const Doors = Schema.Union([
     Schema.TaggedStruct('Open', { closesAt: Schema.DateTimeUtcFromMillis }),
     Schema.TaggedStruct('Closed', {}),
@@ -452,7 +452,7 @@ test('a timer needs no type parameter: its message keeps its tag, and durable ch
   // A branch of `Match.valueTags` gives the call no type, so a tag that widened would be any string.
   const typed = doors({
     ...pieces,
-    durable: (state) =>
+    work: (state) =>
       Match.valueTags(state, {
         Open: ({ closesAt }) => ({ closing: timer(closesAt, { _tag: 'Closing', doors: ['front'] }) }),
         Closed: () => noWork,
@@ -460,7 +460,7 @@ test('a timer needs no type parameter: its message keeps its tag, and durable ch
   })
   const misspelt = doors({
     ...pieces,
-    durable: (state) =>
+    work: (state) =>
       // @ts-expect-error `Closin` is no internal message of the program
       Match.valueTags(state, {
         Open: ({ closesAt }) => ({ closing: timer(closesAt, { _tag: 'Closin', doors: ['front'] }) }),
@@ -468,14 +468,14 @@ test('a timer needs no type parameter: its message keeps its tag, and durable ch
       }),
   })
   const at = DateTime.makeUnsafe(0)
-  expect(typed.durable({ _tag: 'Open', closesAt: at })).toEqual({
+  expect(typed.work({ _tag: 'Open', closesAt: at })).toEqual({
     closing: timer(at, { _tag: 'Closing', doors: ['front'] }),
   })
   expect(misspelt).toBeDefined()
   // `const` makes an array a readonly tuple, which a mutable array of `Schema.mutable` does not take: such a program
   // gives the type parameter.
   type Mutable = { readonly _tag: 'Closing'; doors: Array<string> }
-  const opened = { ...pieces, durable: () => ({ closing: timer<Mutable>(at, { _tag: 'Closing', doors: ['front'] }) }) }
+  const opened = { ...pieces, work: () => ({ closing: timer<Mutable>(at, { _tag: 'Closing', doors: ['front'] }) }) }
   const mutable = program({
     ...schemas,
     state: Doors,
@@ -486,7 +486,7 @@ test('a timer needs no type parameter: its message keeps its tag, and durable ch
   const inferred = mutable({
     ...pieces,
     // @ts-expect-error the inferred `readonly ['front']` is not the schema's mutable `Array<string>`
-    durable: () => ({ closing: timer(at, { _tag: 'Closing', doors: ['front'] }) }),
+    work: () => ({ closing: timer(at, { _tag: 'Closing', doors: ['front'] }) }),
   })
   expect([given, inferred]).toHaveLength(2)
 })
@@ -497,7 +497,7 @@ test('a rehearsal and a query name only the keys and the indexes the program dec
     keys: { charge: null },
     init: () => ({ charging: true }),
     update: () => () => ({ charging: false }),
-    durable: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
+    work: ({ charging }: { charging: boolean }) => (charging ? { charge } : noWork),
     operations: { Charge: operation(() => Effect.succeed('Charged' as const)) },
     project: () => null,
   } as const
@@ -523,7 +523,7 @@ test('a rehearsal and a query name only the keys and the indexes the program dec
   expect([pending, found, misnamed, unstored]).toHaveLength(4)
 })
 
-// A key with a parameter: `durable` returns a list of pairs under it and one piece under a key without, the
+// A key with a parameter: `work` returns a list of pairs under it and one piece under a key without, the
 // parameter is the schema's type, and `pending` takes it for such a key alone (decision 0132).
 test('the work under a key with a parameter is a list of pairs typed by its schema, and pending takes the parameter', () => {
   const pieces = {
@@ -538,28 +538,28 @@ test('the work under a key with a parameter is a list of pairs typed by its sche
   const declare = program({ ...schemas, state: Schema.Struct({ lines: Schema.Array(Schema.String) }) })
   const lines = declare({
     ...pieces,
-    durable: ({ lines }) => ({ fee: charge, charge: lines.map((line) => [line, charge] as const) }),
+    work: ({ lines }) => ({ fee: charge, charge: lines.map((line) => [line, charge] as const) }),
   })
   const piece = declare({
     ...pieces,
     // @ts-expect-error one piece under a key that takes a parameter
-    durable: () => ({ charge }),
+    work: () => ({ charge }),
   })
   const list = declare({
     ...pieces,
     // @ts-expect-error a list under a key that takes no parameter
-    durable: () => ({ fee: [['a', charge]] }),
+    work: () => ({ fee: [['a', charge]] }),
   })
   const mistyped = declare({
     ...pieces,
     // @ts-expect-error a parameter of the key's schema, a string, not a number
-    durable: () => ({ charge: [[7, charge]] }),
+    work: () => ({ charge: [[7, charge]] }),
   })
   const undeclared = declare({
     ...pieces,
     // @ts-expect-error a parameter's schema encodes to what JSON holds, as every schema of a program does
     keys: { fee: null, charge: Schema.DateTimeUtc },
-    durable: () => noWork,
+    work: () => noWork,
   })
   type Of = TypesOf<typeof lines>
   const pending = (rehearsal: Rehearsal<Of>) => [

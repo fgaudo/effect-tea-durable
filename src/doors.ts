@@ -391,17 +391,19 @@ export const activateOnCluster = <T extends Types>(
 }
 
 /**
- * The name of a singleton of the program `name` for each shard: the first of `effect-tea-durable/<name>/<n>`, for
- * `n` from 0, that Cluster routes to the shard (decision 0162). Each name found is checked against the partition
- * the storage gives it, so that a hash of Cluster's that came to differ from the storage's is a defect at deploy,
- * and not an entity whose timers no runner reads.
+ * The name of a singleton of the program `name` for each shard: the first of
+ * `@fgaudo/effect-tea-persistent/<name>/<n>`, for `n` from 0, that Cluster routes to the shard (decision 0162). The
+ * prefix stays as it is from the first release on, since a runner of an older release would otherwise run other
+ * singletons for the same shards (decision 0195). Each name found is checked against the partition the storage gives
+ * it, so that a hash of Cluster's that came to differ from the storage's is a defect at deploy, and not an entity
+ * whose timers no runner reads.
  */
 export const singletonsOf = (on: OnCluster, name: string): ReadonlyMap<number, string> => {
   const found = new Map<number, string>()
   // Every shard is found within a few times `shards` names, by the coupon collector's bound: `shards * 64` names
   // leave one out with a chance of about `shards * e^-64`.
   for (let n = 0; found.size < on.shards; n++) {
-    const candidate = `effect-tea-durable/${name}/${n}`
+    const candidate = `@fgaudo/effect-tea-persistent/${name}/${n}`
     if (n >= on.shards * 64) {
       throw new InvariantDefect({ reason: `no singleton of ${name} is found for some of the ${on.shards} shards` })
     }

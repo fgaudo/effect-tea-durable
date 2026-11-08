@@ -1,6 +1,7 @@
 # 0003. All durable work is derived from the state
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. The function `durable` is renamed `work`, and the type `Durable` `Piece`, by
+[decision 0195](../0195-the-package-is-effect-tea-persistent.md).
 
 ## Context
 

@@ -43,7 +43,7 @@ type Start = (port: number, version: number) => Effect.Effect<() => number, neve
 // Two runners on one SQLite file, each a `Sharding` of its own, as two processes would be. The lease is 3 s, since
 // SQLite's `CURRENT_TIMESTAMP` counts whole seconds, and a lease of 1 s drops a runner that has just beaten.
 const cluster = async (healthCheck: Duration.Input, run: (start: Start) => Effect.Effect<void, unknown, Scope.Scope>) => {
-  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-spike-'))
+  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-spike-'))
   const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
   // The version each runner runs, by its port, as the runtime would record it at launch.
   const versions = new Map<number, number>()

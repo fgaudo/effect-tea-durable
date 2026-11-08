@@ -125,7 +125,7 @@ const program: Program<T> = {
           : { ...state, want: state.want.filter((key) => key !== message.key) }
     }
   },
-  durable: (state) =>
+  work: (state) =>
     state.want.length === 0 ? noWork : Object.fromEntries(state.want.map((key) => [
       key,
       key === 'a'
@@ -148,8 +148,8 @@ const program: Program<T> = {
 // A new version of the program that tunes `a` differently: a deploy that changes `a` while it runs is a defect.
 const retuned: Program<T> = {
   ...program,
-  durable: (state) => {
-    const work = program.durable(state)
+  work: (state) => {
+    const work = program.work(state)
     return work['a'] === undefined ? work : { ...work, a: { _tag: 'A', tune: state.tune + 10 } }
   },
 }
@@ -164,8 +164,8 @@ const redelivered: Program<T> = {
 // key is new work, which never ran, so it starts instead of delivering `unknown`.
 const retimed: Program<T> = {
   ...program,
-  durable: (state) => {
-    const work = program.durable(state)
+  work: (state) => {
+    const work = program.work(state)
     return work['t'] === undefined ? work : { ...work, t: { _tag: 'B', key: 't' } as const }
   },
 }
@@ -574,10 +574,10 @@ describe('the machine', () => {
           }
           continue
         }
-        for (const [key, durable] of Object.entries(work)) {
+        for (const [key, piece] of Object.entries(work)) {
           const incarnation = after.stored.keys[key]?.incarnation ?? -1
           if (!queued(after, key, incarnation)) {
-            expect(after.running[key]).toEqual({ kind: kindOf(durable), incarnation })
+            expect(after.running[key]).toEqual({ kind: kindOf(piece), incarnation })
           }
         }
         for (const [key, running] of Object.entries(after.running)) {
@@ -888,13 +888,13 @@ type TinyWork = Readonly<
 
 const tiny = (
   update: (message: string) => string | typeof reject,
-  durable: (state: string) => TinyWork,
+  work: (state: string) => TinyWork,
   project: (state: string) => string = (state) => state,
   name = 'Tiny',
   index: (projection: string) => string = (projection) => projection,
 ): Program<Tiny> => ({
   name,
-  // Every key these tests hold work under: the machine checks what `durable` returns against them
+  // Every key these tests hold work under: the machine checks what `work` returns against them
   // (decision 0037).
   keys: { charge: null, deadline: null, work: null, reminder: null, mail: null },
   schemas: {
@@ -912,8 +912,8 @@ const tiny = (
     const next = update(message)
     return next === reject ? reject : { last: next }
   },
-  durable: ({ last }) =>
-    Object.fromEntries(Object.entries(durable(last)).map(([key, kind]) => [
+  work: ({ last }) =>
+    Object.fromEntries(Object.entries(work(last)).map(([key, kind]) => [
       key,
       // An annotated operation carries a property its schema does not declare, which the types let through a
       // spread: it is not stored (decision 0058).
@@ -1093,7 +1093,7 @@ describe('the checks of a step', () => {
           weights: Schema.Record(Schema.String, Schema.Number),
         }),
       },
-      durable: ({ last }: Tiny['state']) => ({
+      work: ({ last }: Tiny['state']) => ({
         charge: { _tag: 'Work', size: 1, weights: last === 'start' ? { a: 1, b: 2 } : { b: 2, a: 1 } },
       }),
     } as unknown as Program<Tiny>
@@ -1121,7 +1121,7 @@ describe('the checks of a step', () => {
     expect(reasonOfSuspension(transition)).toBe("update rejected the message of the work under 'charge'")
   })
 
-  test('a state that durable, project or an index dies on is a defect, and is not stored', () => {
+  test('a state that work, project or an index dies on is a defect, and is not stored', () => {
     const broken = new Error('broken')
     for (
       const machine of [
@@ -1213,22 +1213,22 @@ describe('what the program throws', () => {
 
   test('what a cast lets through as work that is none is a defect', () => {
     const base = checked((message) => message, () => ({}))
-    const machine = { ...base, program: { ...base.program, durable: () => ({ charge: 5 as never }) } }
+    const machine = { ...base, program: { ...base.program, work: () => ({ charge: 5 as never }) } }
     expect(reasonOfSuspension(handled(machine, inbound))).toBe("the state holds what is no work under 'charge'")
   })
 
   test('what a cast lets through as a record of work that is none is a defect', () => {
     const base = checked((message) => message, () => ({}))
     for (const work of [null, 'charge']) {
-      const machine = { ...base, program: { ...base.program, durable: () => work as never } }
-      expect(reasonOfSuspension(handled(machine, inbound))).toBe('durable gave no record of work')
+      const machine = { ...base, program: { ...base.program, work: () => work as never } }
+      expect(reasonOfSuspension(handled(machine, inbound))).toBe('work gave no record')
     }
   })
 
   test('a timer a cast lets through with no time is a defect', () => {
     const base = checked((message) => message, () => ({}))
-    const durable = () => ({ deadline: timer(null as never, 'rang') })
-    const machine = { ...base, program: { ...base.program, durable } }
+    const work = () => ({ deadline: timer(null as never, 'rang') })
+    const machine = { ...base, program: { ...base.program, work } }
     expect(handled(machine, inbound).machine.stored.suspension?.cause).toBeInstanceOf(TypeError)
   })
 
@@ -1699,7 +1699,7 @@ describe('a suspended entity', () => {
     const broken = new Error('broken')
     const resumed = resumedBy(machine, {
       ...machine.program,
-      durable: () => {
+      work: () => {
         throw broken
       },
     })
@@ -1723,9 +1723,9 @@ describe('passivation', () => {
 })
 
 describe('a new program', () => {
-  /** Restarts the entity with a program whose work on each state is `durable`: a deploy. */
-  const deployed = (machine: Entity, durable: (state: string) => TinyWork) =>
-    stepped(machine, { _tag: 'Restart' }, tiny((message) => message, durable))
+  /** Restarts the entity with a program whose work on each state is `work`: a deploy. */
+  const deployed = (machine: Entity, work: (state: string) => TinyWork) =>
+    stepped(machine, { _tag: 'Restart' }, tiny((message) => message, work))
 
   test('restarts an operation it keeps equal under the same key', () => {
     const machine = checked((message) => message, () => ({ charge: 'operation' }))
@@ -1774,8 +1774,8 @@ describe('a new program', () => {
 
   test('a droppable operation under way may be changed or dropped by a new program', () => {
     const machine = droppable((message) => message, () => ({ charge: 'operation' }))
-    const by = (durable: (state: string) => TinyWork) => {
-      const base = tiny((message) => message, durable)
+    const by = (work: (state: string) => TinyWork) => {
+      const base = tiny((message) => message, work)
       return stepped(machine, { _tag: 'Restart' }, {
         ...base,
         operations: { Work: operation.droppable(() => Effect.succeed('done')) },
@@ -1809,7 +1809,7 @@ describe('a new program', () => {
     const program = machine.program
     const transition = stepped(machine, { _tag: 'Restart' }, {
       ...program,
-      durable: (state) => ({ ...program.durable(state), mail: { _tag: 'Work', size: 1 } as const }),
+      work: (state) => ({ ...program.work(state), mail: { _tag: 'Work', size: 1 } as const }),
       operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => '?') },
     })
     expect(transition.outputs).toContainEqual(expect.objectContaining({ _tag: 'Started', key: { name: 'mail' }, incarnation: 2 }))
@@ -2313,7 +2313,7 @@ describe('keys with a parameter', () => {
         : message.startsWith('charged ')
         ? { ...state, lines: state.lines.filter((line) => line !== message.slice('charged '.length)) }
         : state,
-    durable: (state) => ({
+    work: (state) => ({
       fee: state.fee ? timer(at, 'due') : undefined,
       charge: state.lines.map((line) => [line, { _tag: 'Charge', line }] as const),
       ship: state.lines.map((line) => [state.flipped ? { box: 'one', line } : { line, box: 'one' }, timer(at, 'ship')]),
@@ -2371,8 +2371,8 @@ describe('keys with a parameter', () => {
   // Nothing tells a key with a parameter from a name by its text, so a name may read as one (decision 0136).
   test('a name that reads as the JSON of a key with a parameter is a key of its own', () => {
     const bracketed = { ...lines, keys: { ...lines.keys, '["charge","a"]': null } } as unknown as Program<L>
-    const durable = (state: L['state']) => ({ ...lines.durable(state), '["charge","a"]': timer(at, 'odd') })
-    const program = { ...bracketed, durable } as Program<L>
+    const work = (state: L['state']) => ({ ...lines.work(state), '["charge","a"]': timer(at, 'odd') })
+    const program = { ...bracketed, work } as Program<L>
     const created = Machine.start(program, 'l', null, epoch, by('creation'))
     if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
     const added = Machine.step(program, created.machine, send('+a'))
@@ -2428,8 +2428,8 @@ describe('keys with a parameter', () => {
       [() => ({ charge: [['a']] }), "the state holds what is no pair of a parameter and its work under 'charge'"],
       [() => ({ charge: [['a', work, work]] }), "the state holds what is no pair of a parameter and its work under 'charge'"],
     ]
-    for (const [durable, reason] of broken) {
-      const program = { ...lines, durable: durable as Program<L>['durable'] }
+    for (const [given, reason] of broken) {
+      const program = { ...lines, work: given as Program<L>['work'] }
       const created = Machine.start(program, 'l', null, epoch, by('creation'))
       const cause = created._tag === 'Defect' ? created.cause : null
       expect(cause instanceof InvariantDefect ? cause.reason : String(cause)).toContain(reason)

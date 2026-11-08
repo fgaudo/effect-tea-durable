@@ -22,7 +22,7 @@ const names = (filename: string) =>
   }).pipe(Effect.provide(SqliteClient.layer({ filename }))))
 
 const inDirectory = async (body: (filename: string) => Promise<void>) => {
-  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-spike-'))
+  const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-spike-'))
   try {
     await body(join(directory, 'store.db'))
   } finally {

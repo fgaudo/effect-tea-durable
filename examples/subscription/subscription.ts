@@ -18,7 +18,7 @@ import {
   reject,
   type Rejected,
   timer,
-} from 'effect-tea-durable/program'
+} from '@fgaudo/effect-tea-persistent/program'
 
 const Plan = Schema.Struct({ name: Schema.String, priceInCents: Schema.Int })
 type Plan = typeof Plan.Type
@@ -248,7 +248,7 @@ export const subscription = program({
       }),
     ),
 
-  durable: (state) =>
+  work: (state) =>
     Match.valueTags(state, {
       Active: ({ account }) => ({ renewal: timer(paidUntil(account), { _tag: 'RenewalDue' }) }),
       Charging: ({ charge }) => ({ charge: Operation.cases.Charge.make(charge) }),

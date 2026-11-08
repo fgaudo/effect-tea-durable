@@ -41,8 +41,8 @@ const warehouse: Sender = { _tag: 'Warehouse' }
 // A new version that gives an hour more to pay.
 const patient: typeof order = {
   ...order,
-  durable: (state) => {
-    const work = order.durable(state)
+  work: (state) => {
+    const work = order.work(state)
     const deadline = work['payment-deadline']
     return deadline === undefined || !isTimer(deadline)
       ? work
@@ -53,8 +53,8 @@ const patient: typeof order = {
 // A new version that charges a cent more.
 const greedy: typeof order = {
   ...order,
-  durable: (state) => {
-    const work = order.durable(state)
+  work: (state) => {
+    const work = order.work(state)
     const charge = work['charge']
     return charge === undefined || isTimer(charge) || !('_tag' in charge) || charge._tag !== 'Charge'
       ? work
@@ -266,7 +266,7 @@ describe('a rehearsal', () => {
         pending: message._tag === 'Rang' ? state.pending.filter((key) => key !== message.key) : state.pending,
         seen: [...state.seen, at],
       }),
-      durable: (state) =>
+      work: (state) =>
         Object.fromEntries(state.pending.map((key) => [key, timer(dueOf[key], { _tag: 'Rang', key } as const)])),
       operations: {},
       project: (state) => state.seen.length,
@@ -626,7 +626,7 @@ describe('a rehearsal of keys with a parameter', () => {
       message.startsWith('+')
         ? { lines: [...state.lines, message.slice(1)] }
         : { lines: state.lines.filter((line) => `charged ${line}` !== message) },
-    durable: (state) => ({ charge: state.lines.map((line) => [line, { _tag: 'Charge', line }] as const) }),
+    work: (state) => ({ charge: state.lines.map((line) => [line, { _tag: 'Charge', line }] as const) }),
     operations: { Charge: operation(() => Effect.succeed('charged')) },
     project: (state) => state.lines.length,
     indexes: {},
@@ -670,7 +670,7 @@ describe('a rehearsal by a key', () => {
       message.startsWith('+')
         ? { lines: [...state.lines, message.slice(1)] }
         : { lines: state.lines.filter((line) => `charged ${line}` !== message) },
-    durable: (state) => ({ charge: state.lines.map((line) => [line, { _tag: 'Charge', line }] as const) }),
+    work: (state) => ({ charge: state.lines.map((line) => [line, { _tag: 'Charge', line }] as const) }),
     operations: { Charge: operation(() => Effect.succeed('charged')) },
     project: (state) => state.lines.length,
     indexes: {},
@@ -791,7 +791,7 @@ describe('time that passes', () => {
       }
       return { armed: [...others.filter(({ key }) => key !== again.key), again], seen }
     },
-    durable: (state) =>
+    work: (state) =>
       Object.fromEntries(state.armed.map(({ key, at }) => [key, timer(at, { _tag: 'Rang', key } as const)])),
     operations: {},
     project: (state) => state.seen.length,

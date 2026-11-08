@@ -31,7 +31,7 @@ tested by calling pure functions, crashes included.
 | `keys`       | every key the work under way is held under, with the schema of its parameter or `null`    |
 | `init`       | the first state, from the flags and the time of the creation, or a rejection of the flags |
 | `update`     | `(message, meta, children) => (state) =>` the next state, a rejection, or a defect        |
-| `durable`    | the work under way in each state, by key: operations, as data, and timers                 |
+| `work`       | the work under way in each state, by key: operations, as data, and timers                 |
 | `operations` | how each kind of operation runs, what it answers, and what a crash does to it             |
 | `project`    | what callers read of the state, with the actions it allows, from the children's too       |
 | `topics`     | the parts of the projection the log publishes, by name, each selected from it as JSON    |
@@ -41,17 +41,17 @@ tested by calling pure functions, crashes included.
 | `migrations` | how the versions before this one are read, in order                                       |
 
 A program is declared in one place, `program(schemas)(…)`: the schemas first, which give every type the program
-is written in, and then what it does. Everything else is inferred from the pieces — the keys `durable` may use,
+is written in, and then what it does. Everything else is inferred from the pieces — the keys `work` may use,
 the messages each kind of operation answers, the names a query may order by, and the services the operations run
 in ([decision 0035](decisions/archive/0035-one-place-where-a-program-is-declared.md)).
 
 A program leaves out what it does not have, and each piece left out is empty
 ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)). The schemas of the internal
 messages, the operations and the reasons left out are `Schema.Never`, and the sender's is `Schema.Null`. `keys`,
-`operations` and `indexes` left out are `{}`. `durable` may be left out only where no key is declared, and
+`operations` and `indexes` left out are `{}`. `work` may be left out only where no key is declared, and
 `operations` only where there is no kind of operation, so a program that holds work says what work it holds.
 
-There are no commands. Every piece of work that must survive a crash is derived from the state by `durable`
+There are no commands. Every piece of work that must survive a crash is derived from the state by `work`
 ([decision 0003](decisions/archive/0003-durable-work-derived-from-state.md)). An operation is data, as effect-tea's
 commands are, and its runner sees it, never the state
 ([decision 0018](decisions/archive/0018-operations-are-data.md)). Everything that leaves the process has a schema: what
@@ -63,7 +63,7 @@ it ([decision 0027](decisions/archive/0027-a-program-gives-the-schema-of-its-sen
 
 A state is an object, as in the Guide ([decision 0031](decisions/archive/0031-a-state-is-an-object.md)). A tag is no rule
 of the types, and the Guide's one state machine per concern is how the examples are written: it is also what
-gives `durable` and `project` a case to match on.
+gives `work` and `project` a case to match on.
 
 Nothing that crosses the library is mutated: the program and its schemas, its states, flags, messages,
 operations, timers and projections, and what the library gives back. A new value is a new object, as the Guide
@@ -176,8 +176,8 @@ A message is one of two kinds, and the rule for a message that does not apply fo
   ([decision 0124](decisions/archive/0124-the-boundary-authenticates-and-update-authorizes.md)).
   A caller may be another entity's operation: `meta.from` is then `Entity`, with the sender's name and id,
   filled in by the runtime (see [entities that talk](#entities-that-talk)).
-- **Internal** messages come from the entity's own durable work: an operation's completion, a timer's firing.
-  The runtime delivers one only while its key is in `durable(state)`, in the same incarnation that sent it
+- **Internal** messages come from the entity's own work: an operation's completion, a timer's firing.
+  The runtime delivers one only while its key is in `work(state)`, in the same incarnation that sent it
   ([decision 0004](decisions/archive/0004-incarnations-guard-internal-messages.md)). So an internal message in a state
   where its key is absent cannot arrive. `update` answers it with a defect.
 
@@ -205,13 +205,13 @@ applied once its entity exists. On Cluster, Cluster saves the door's answer, and
 `Rejected` before it sends the creation, so that a retry is delivered again
 ([decision 0182](decisions/0182-init-may-reject-the-flags.md)).
 
-## Durable work
+## Work
 
-`durable(state)` returns the work of the state, under the keys the program declares and no others: the names of
+`work(state)` returns the work of the state, under the keys the program declares and no others: the names of
 the keys are finite, and a name a program computes is not one of them
 ([decision 0033](decisions/archive/0033-a-program-declares-its-keys.md)). A key may take a parameter, which is data,
 as the subsections below say. The types catch a key never declared; a
-declared key beside a misspelt one they accept, so the machine checks what `durable` returns against `keys`
+declared key beside a misspelt one they accept, so the machine checks what `work` returns against `keys`
 wherever it reads it, and a key the program does not declare is a defect
 ([decision 0037](decisions/archive/0037-the-machine-checks-the-declared-keys.md)). So is an operation the program gives
 no runner for, which a cast lets through
@@ -258,7 +258,7 @@ Two kinds of work exist.
   services hold `Entities` does not compile, and the runtime's check is for one that escapes the type
   ([decision 0129](decisions/archive/0129-a-droppable-runner-that-sends-does-not-compile.md)).
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
-  nothing yet. `timer(at, message)` takes no type parameter: the message keeps its literal tag, and `durable`
+  nothing yet. `timer(at, message)` takes no type parameter: the message keeps its literal tag, and `work`
   checks it against the program's internal messages
   ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)).
 
@@ -280,7 +280,7 @@ is recorded. A key whose kind changes, from a timer to an operation, is new work
 [decision 0018](decisions/archive/0018-operations-are-data.md)).
 
 What runs is always what the state says. After a crash the runtime does not look for what was running: it
-computes `durable(state)` again. It compares that with the work stored with the state, so that a new program,
+computes `work(state)` again. It compares that with the work stored with the state, so that a new program,
 after a deploy, keeps the incarnations of the same work and starts anything else as new work. A new program that
 changes or drops an operation under way, delivers it otherwise, or bears another name is a defect
 ([decision 0020](decisions/archive/0020-a-new-program-is-checked-against-the-stored-work.md),
@@ -289,7 +289,7 @@ changes or drops an operation under way, delivers it otherwise, or bears another
 ### Keys with a parameter
 
 A program declares its keys as a record: each name maps to the schema of its parameter, or to `null` for a key
-without one, as in `keys: { fee: null, charge: Schema.String }`. Under a key with a parameter, `durable` returns a
+without one, as in `keys: { fee: null, charge: Schema.String }`. Under a key with a parameter, `work` returns a
 list of pairs, each a parameter and the piece of work under it. An order holds a charge for each of its lines so,
 in the step that changes the order ([decision 0132](decisions/archive/0132-a-key-may-take-a-parameter.md)).
 
@@ -453,7 +453,7 @@ message in the mailbox, a reply and the row a query reads are migrated at every 
 changed an index does.
 
 This is what lets a deploy change the shape of an operation under way: the stored operation, migrated, must be
-the one the new `durable` computes from the migrated state, and a migration that gives anything else suspends the
+the one the new `work` computes from the migrated state, and a migration that gives anything else suspends the
 entity at its activation, as a program that changes an operation does
 ([decision 0020](decisions/archive/0020-a-new-program-is-checked-against-the-stored-work.md)). A row written by a version
 the program does not have is not read at all: the call that meets it fails, and the process serves the entities
@@ -502,9 +502,9 @@ reply the rename wrote again, and not applied twice ([decision 0176](decisions/a
 
 ## Execution
 
-- **Activation.** The runtime loads the state, the incarnations and the stored work, computes `durable(state)`,
+- **Activation.** The runtime loads the state, the incarnations and the stored work, computes `work(state)`,
   compares it with the stored work, starts its operations and arms its timers.
-- **A message.** It reads `meta.at`, calls `update`, checks the step (defects included, and `durable`,
+- **A message.** It reads `meta.at`, calls `update`, checks the step (defects included, and `work`,
   `project` and the indexes on the next state), stores it, answers the caller, and starts or ends the work
   whose keys changed.
   An internal message `update` rejects is a defect, since it cannot be late
@@ -549,7 +549,7 @@ is a `Restart` stepped by another one, so the machine and the runtime never see 
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | before a step's transaction commits                                    | nothing of the step was seen: the message is handled again, a caller's on retry   |
 | after the commit, before the reply reaches the caller                  | the caller retries with the same request id, and gets the stored reply            |
-| after the commit, before the work it started                           | activation computes `durable(state)` and starts it                                |
+| after the commit, before the work it started                           | activation computes `work(state)` and starts it                                |
 | while an operation runs, its effect done in the world but not recorded | it runs again, with the same idempotency key, or delivers `unknown` if at most once |
 | after an operation's completion is recorded, before it is handled      | it is handled as any message in the mailbox                                       |
 | after a timer fired, before its message is handled                     | its message is still in the mailbox, or the timer fires again from the state      |
@@ -570,7 +570,7 @@ operations under way run to their end: each completion is recorded behind the me
 handled once the entity is resumed, so a charge under way when an unrelated message dies is neither run again nor
 left `unknown`. An operation still running at the resumption is kept. One that dies meanwhile leaves the suspension
 as it is, and runs again at the resumption ([decision 0113](decisions/archive/0113-a-suspended-entitys-operations-run-to-their-end.md)). A defect in an
-operation, in `durable` or `project` on a step's next state, or in a new program activating the stored state,
+operation, in `work` or `project` on a step's next state, or in a new program activating the stored state,
 suspends it too. A defect is what the program does: what one of its functions or schemas throws, each caught on
 its own, or a rule of the design it breaks. Anything else thrown while an event is applied — a bug of the machine,
 a row the runtime corrupted — is the runtime's, and crashes the entity instead
@@ -670,7 +670,7 @@ transaction, so its answers are consistent with the states. Its questions are de
 question filters, orders or adds by, and a question added is a deploy and a `reindex`. It answers in four forms,
 the entities whose indexes match, their count, the sum of one index over them, and their count per value of one
 index. Any other question over the entities is a **report**: how many per day, the total per customer, the
-entities whose status is one of several, a word in a text, an entity with what another program holds of it. A report is fed from the log: a consumer of a
+entities whose status is one of several, a word in a text, an entity with what another program holds of it. A report is built from the log: a consumer of a
 topic writes a store made for the question, a table of a relational database, a search index or a warehouse, and
 the question is asked of that store. What such a consumer needs is in the projection, which is the entity's one
 contract. A form the read model gains is one statement over the indexes, under the criteria a query takes, which
@@ -748,8 +748,8 @@ cause in another entity waits for the cause, or reads the cause's projection, wh
 ### Consumers
 
 A consumer is a name within one topic, and it keeps a cursor per partition, stored: one name in two topics is two
-consumers, each declared at deploy. `feed(topic, consumer, limit)` gives at most `limit` rows of the topic past its
-cursors, the oldest first. `ack(topic, consumer, through)` takes a list of partitions and `seq`s, which the rows `feed` gave are, and
+consumers, each declared at deploy. `fetch(topic, consumer, limit)` gives at most `limit` rows of the topic past its
+cursors, the oldest first. `ack(topic, consumer, through)` takes a list of partitions and `seq`s, which the rows `fetch` gave are, and
 moves each of those cursors once the rows are acted on. A cursor never moves back, and
 never past the head of its partition, so a crash before the ack delivers the rows again: at least once,
 deduplicated by the topic, the partition and the `seq`. A consumer that must act on a row once keeps cursors of
@@ -769,7 +769,7 @@ and in which partitions.
 `published(topic, after, limit)` reads past cursors the caller holds, and registers nothing; `[]` is the whole
 topic
 ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)).
-`feed(topic, consumer, limit, { wait: { millis } })` waits where it finds no row: until a step commits a row in the topic,
+`fetch(topic, consumer, limit, { wait: { millis } })` waits where it finds no row: until a step commits a row in the topic,
 and then reads again, for at most `millis` from the call. It gives the first page with a row, or none once the
 time is over or the runtime stops. A step tells each topic it wrote in once its transaction has committed, and a
 consumer of another topic is not woken. The reading takes its topic's signal before it reads, so that a commit
@@ -780,14 +780,14 @@ another runner's commit from the file: while a reading waits, it reads SQLite's 
 interval of replies, and wakes every reading that waits where the version moved
 ([decision 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)). A partition a handle is
 given is an integer from 1 to the number of partitions, a topic is one the program publishes, and a `seq`, a limit
-and a wait are non-negative integers. The limit is required, of `feed` and `published` as of `query`, so that no
+and a wait are non-negative integers. The limit is required, of `fetch` and `published` as of `query`, so that no
 reading holds a whole topic in one array; a caller that wants more reads again, past the last row it was given
 ([decision 0141](decisions/archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)). Anything else is its
 caller's defect, which stores nothing
 ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). The log is kept for its
 consumers and is not an archive: a program whose past must stay readable keeps it where callers read it, in the
 state or in entities of its own.
-`consume(topic, consumer, handler, { limit })` runs the loop of a consumer: it reads a page with `feed`, runs
+`consume(topic, consumer, handler, { limit })` runs the loop of a consumer: it reads a page with `fetch`, runs
 `handler` on it and acks it in one transaction of the client the runtime was launched with, and reads the next
 page only once that one is acked. Without `wait` it ends at the first page that is empty, or once the runtime
 stops, and the rows it did not read stay for the next reader. Given `wait: true`, a reading that finds no row waits for a commit in the topic with no time limit, and the reader ends only when the
@@ -801,7 +801,7 @@ retries are the consumer's.
 ### Readers of one consumer
 
 A consumer whose work on a row is slow is read by several readers, each of which names the partitions it reads:
-`feed(topic, consumer, limit, { partitions })` reads those partitions only, from the consumer's cursors there, and
+`fetch(topic, consumer, limit, { partitions })` reads those partitions only, from the consumer's cursors there, and
 so does a reader of `consume` given `partitions`
 ([decision 0153](decisions/archive/0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md)). The cursors stay the
 consumer's, whichever reader acked them, so a prune reads them as one, and a reader added or removed moves no
@@ -1221,8 +1221,9 @@ what a program, a test and an operator use, and nothing the runtime alone uses: 
 their helpers may change without a note, and a runtime on another store imports them from their modules, as the
 tests do ([decision 0055](decisions/archive/0055-the-public-surface-is-what-its-users-use.md)).
 
-The surface is four entries of the package
-([decision 0193](decisions/0193-the-public-surface-is-four-entries.md)):
+The surface is four entries of the package `@fgaudo/effect-tea-persistent`
+([decisions 0193](decisions/0193-the-public-surface-is-four-entries.md),
+[0195](decisions/0195-the-package-is-effect-tea-persistent.md)):
 
 - `.`, [`src/index.ts`](../src/index.ts), gives what a program, its boundary and an operator use on one process;
 - `./program`, [`src/index.program.ts`](../src/index.program.ts), gives what declares a program and nothing that

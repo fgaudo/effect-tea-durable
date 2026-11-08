@@ -11,7 +11,7 @@ import * as Schema from 'effect/Schema'
 import { createHash } from 'node:crypto'
 import {
   type Creation,
-  type Durable,
+  type Piece,
   encode,
   type IdempotencyKey,
   idempotencyKey,
@@ -130,10 +130,10 @@ const checkWork = <T extends Types>(program: Program<T>, key: string, work: unkn
  * is a defect, and so are two pieces of work whose parameters encode alike (decision 0132).
  */
 const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Held<T> => {
-  const work: unknown = byProgram(() => program.durable(state))
-  if (typeof work !== 'object' || work === null) return broken('durable gave no record of work')
+  const work: unknown = byProgram(() => program.work(state))
+  if (typeof work !== 'object' || work === null) return broken('work gave no record')
   const keys = declaredKeys(program)
-  const held: Record<string, Piece<T>> = {}
+  const held: Record<string, Keyed<T>> = {}
   for (const [name, returned] of Object.entries(work)) {
     if (!Object.hasOwn(keys, name)) {
       broken(`the state holds work under '${name}', which the program does not declare`)
@@ -143,7 +143,7 @@ const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Hel
     if (schema === null) {
       checkWork(program, name, returned)
       const key = { name }
-      held[keyText(key)] = { key, work: returned as Durable<T['operation'], T['internal']> }
+      held[keyText(key)] = { key, work: returned as Piece<T['operation'], T['internal']> }
       continue
     }
     if (!Array.isArray(returned)) broken(`the state holds no list of work under '${name}', which takes a parameter`)
@@ -156,7 +156,7 @@ const workUnder = <T extends Types>(program: Program<T>, state: T['state']): Hel
       const text = keyText(key)
       if (Object.hasOwn(held, text)) broken(`the state holds two pieces of work under '${shownKey(key)}'`)
       checkWork(program, shownKey(key), piece)
-      held[text] = { key, work: piece as Durable<T['operation'], T['internal']> }
+      held[text] = { key, work: piece as Piece<T['operation'], T['internal']> }
     }
   }
   return held
@@ -201,7 +201,7 @@ const works = new WeakMap<object, WeakMap<object, Encoded>>()
 const encodeWork = <T extends Types>(
   program: Program<T>,
   under: Key,
-  work: Durable<T['operation'], T['internal']>,
+  work: Piece<T['operation'], T['internal']>,
 ): Encoded => {
   let held = works.get(program)
   if (held === undefined) {
@@ -281,7 +281,7 @@ export const shownOf = <T extends Types>(
 
 /**
  * The work of a state the machine may store, with everything a runtime writes of it checked. The checks are
- * `durable`, what callers read with the indexes a query reads it by, and the encoding of the state, its work and
+ * `work`, what callers read with the indexes a query reads it by, and the encoding of the state, its work and
  * its projection to what JSON holds. Any of them may die, and one that does suspends the entity. What is encoded
  * here is kept, and is what the step writes (decisions 0014, 0032, 0040, 0057).
  */
@@ -376,7 +376,7 @@ export type Run<T extends Types> = Readonly<{
    * The work the state holds under the key, as the program that stored it computed it: what an activation compares
    * a new program's work with (decision 0020).
    */
-  work: Durable<T['operation'], T['internal']>
+  work: Piece<T['operation'], T['internal']>
   /**
    * How the operation under the key is delivered, as the program that started it declared: what an activation
    * compares a new program's runners with (decision 0022).
@@ -621,17 +621,17 @@ export const idempotencyKeyOf = <T extends Types>(machine: Machine<T>, key: Key,
   givenKey(machine.stored, key, incarnation, machine.stored.keys[keyText(key)]?.delivery)
 
 /** A piece of work a state holds, with the key it is held under. */
-export type Piece<T extends Types> = Readonly<{ key: Key; work: Durable<T['operation'], T['internal']> }>
+export type Keyed<T extends Types> = Readonly<{ key: Key; work: Piece<T['operation'], T['internal']> }>
 
 /**
  * The work a state holds, by the `keyText` of each key, as the machine reads it: any key, which `workUnder` checks
  * against the declared ones. A program writes its own as `Work`, typed by its keys.
  */
-export type Held<T extends Types> = Readonly<Record<string, Piece<T>>>
+export type Held<T extends Types> = Readonly<Record<string, Keyed<T>>>
 
 /** The work the stored state holds, by key. */
 export const workOf = <T extends Types>(stored: Stored<T>): Held<T> => {
-  const work: Record<string, Piece<T>> = {}
+  const work: Record<string, Keyed<T>> = {}
   for (const [text, { key, work: held }] of Object.entries(stored.keys)) work[text] = { key, work: held }
   return work
 }
@@ -639,7 +639,7 @@ export const workOf = <T extends Types>(stored: Stored<T>): Held<T> => {
 export type Delivery = Runner<unknown, unknown, unknown>['delivery']
 
 /** How `program` delivers an operation, or `undefined` for a timer. The work was admitted, so it has a runner. */
-const deliveryOf = <T extends Types>(program: Program<T>, work: Durable<T['operation'], T['internal']>) =>
+const deliveryOf = <T extends Types>(program: Program<T>, work: Piece<T['operation'], T['internal']>) =>
   isTimer(work) ? undefined : runnerOf(program, work)?.delivery
 
 /**
@@ -682,8 +682,8 @@ const kindOf = (work: unknown): Running['kind'] => (isTimer(work) ? 'Timer' : 'O
 export const isSame = <T extends Types>(
   program: Program<T>,
   key: Key,
-  previous: Durable<T['operation'], T['internal']>,
-  next: Durable<T['operation'], T['internal']> | undefined,
+  previous: Piece<T['operation'], T['internal']>,
+  next: Piece<T['operation'], T['internal']> | undefined,
 ) => next !== undefined && encodeWork(program, key, previous).text === encodeWork(program, key, next).text
 
 const isQueued = <T extends Types>(stored: Stored<T>, key: Key, incarnation: number) =>
@@ -696,7 +696,7 @@ const startWork = <T extends Types>(
   stored: Stored<T>,
   key: Key,
   incarnation: number,
-  work: Durable<T['operation'], T['internal']>,
+  work: Piece<T['operation'], T['internal']>,
 ): Output<T> =>
   isTimer(work)
     ? { _tag: 'Armed', key, incarnation, timer: work }
@@ -798,7 +798,7 @@ export type Start<T extends Types> =
    */
   | Readonly<{ _tag: 'Rejected'; reply: Readonly<{ _tag: 'Rejected'; reason: T['rejection'] | null }> }>
   /**
-   * The flags or the request do not encode, or `init`, `durable`, `project` or an index died on the first state:
+   * The flags or the request do not encode, or `init`, `work`, `project` or an index died on the first state:
    * nothing is stored.
    */
   | Readonly<{ _tag: 'Defect'; cause: unknown }>
@@ -910,7 +910,7 @@ const record = <T extends Types>(
   kind: Running['kind'],
   key: Key,
   incarnation: number,
-  message: (work: Durable<T['operation'], T['internal']>) => T['internal'],
+  message: (work: Piece<T['operation'], T['internal']>) => T['internal'],
 ): Moved<T> => {
   const text = keyText(key)
   const running = machine.running[text]
@@ -974,7 +974,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
     const after = admitted(program, state)
 
     // The work whose message is handled is done: its key counts as gone (decision 0008).
-    const previous: Record<string, Piece<T>> = { ...workOf(stored) }
+    const previous: Record<string, Keyed<T>> = { ...workOf(stored) }
     if (head._tag === 'Internal') delete previous[keyText(head.key)]
 
     const { keys, incarnations } = renew(program, stored, previous, after)
@@ -1024,7 +1024,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
 
 /**
  * Activates a suspended entity again, as after a crash, by the program that runs it, which a fix deployed
- * (decision 0064), keeping the operations still running (decision 0113). A program whose `durable`, `project` or
+ * (decision 0064), keeping the operations still running (decision 0113). A program whose `work`, `project` or
  * index dies on the stored state, or that changes an operation under way, leaves it suspended, with that cause.
  */
 const resume = <T extends Types>(program: Program<T>, machine: Machine<T>): Moved<T> => {

@@ -1,14 +1,14 @@
 /**
- * The first report fed from the log: how many orders are in each status, which a dashboard shows at every view.
+ * The first report built from the log: how many orders are in each status, which a dashboard shows at every view.
  * The read model answers it too, with `countBy` (decision 0150). A report answers it from a store made for the
- * question, which a consumer of the topic `status` feeds, page by page (decision 0149): a store of its own is what
+ * question, which a consumer of the topic `status` fills, page by page (decision 0149): a store of its own is what
  * a question the read model does not answer needs. The store is a plain table of the test's database, beside the
  * library's.
  */
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
-import type { Published, TypesOf } from 'effect-tea-durable'
+import type { Published, TypesOf } from '@fgaudo/effect-tea-persistent'
 import type { order } from './order.ts'
 
 type Order = TypesOf<typeof order>

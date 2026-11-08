@@ -20,7 +20,7 @@ test('a fixture of Cluster\'s rows is kept', () => {
 
 for (const name of written) {
   test(`the rows ${name} holds are read by the release installed`, async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-durable-spike-'))
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-spike-'))
     // A copy: the migrations and the handler write into the file.
     const filename = join(directory, 'store.db')
     copyFileSync(join(fixtures, name), filename)

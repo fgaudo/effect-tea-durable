@@ -4,7 +4,7 @@ The words of [`design.md`](design.md) and of the notes, each defined once. A wor
 Cluster's says so.
 
 - **Activation.** The runtime loads an entity: it reads the state, the incarnations and the stored work, computes
-  `durable(state)`, starts its operations and arms its timers. A restart, a passivation and a deploy each end in one.
+  `work(state)`, starts its operations and arms its timers. A restart, a passivation and a deploy each end in one.
 - **Boundary.** The code that calls a deployment's `create`, `send` and `read` for a caller: it authenticates the
   caller, and writes the sender. The runtime trusts the sender the boundary gives, and `read` takes none.
 - **Capacity.** How many entities a process keeps loaded, an option of the runtime, 10 000 by default. Over it, the
@@ -25,14 +25,13 @@ Cluster's says so.
   interrupted when a step drops it or changes it.
 - **Deploy, deployment.** `deploy(program, options)` gives a handle to one program's entities, under the program's
   name, in a scope of its own; the options declare the consumers of its topics. A new version, a fix included, is
-  deployed by a new process.
+  deployed by a new process. So the deploy of a program in a runtime and the deployment of its version to production
+  are one act, and the word names both.
 - **Dialect.** The SQL a database speaks: SQLite or PostgreSQL, the two the storage speaks, in the same tables. A
   query finds and orders the same rows in both.
 - **Door.** Cluster's entity of a program, with one RPC for a creation and one for a message: the handler that
   finds the runtime's entity and steps it in Cluster's transaction, only at the newest version of the program any
   launch recorded ([0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
-- **Durable work, work.** What the state holds under its keys, operations and timers, computed by `durable(state)` and
-  compared with the previous state's after each step: a new key starts its work, a missing one ends it.
 - **Entity.** One long-lived thing with an id, an order or a booking, with one state, one mailbox and one message
   handled at a time.
 - **Event.** What moves the machine: a message arriving, an operation completing or dying, a timer firing, a step, the
@@ -46,7 +45,7 @@ Cluster's says so.
   message is offered or stored. An operation of another entity is never answered `Full`, and sends again after the
   retry. On Effect Cluster a caller is never answered `Full`, and its message waits in Cluster's table.
 - **Handle.** What `deploy` gives: `create`, `send`, `read`, `query`, `count`, `sum` and `countBy` for callers,
-  `consume`, `feed`, `ack` and the rest of the outbox for its consumers, `reindex`, and `suspended`, `inspect`, `resume` and `discard` for an operator.
+  `consume`, `fetch`, `ack` and the rest of the outbox for its consumers, `reindex`, and `suspended`, `inspect`, `resume` and `discard` for an operator.
 - **Hold, lock.** Each entity is found, loaded, unloaded and crashed under a lock of its own. A caller holds the entity
   while it waits for its activation, and nothing under one entity's lock waits for another's.
 - **Idempotency key.** The entity's program and id, the operation's key and its incarnation, given to an idempotent
@@ -57,7 +56,7 @@ Cluster's says so.
   and is dropped once the key's has moved on.
 - **Index.** A pure function from the projection to a scalar, named by the program, which a query, a count and a sum filter
   by, a query orders by, and a count per value groups by. Its values are stored with the projection's row.
-- **Key.** A name the program declares, under which `durable` holds one piece of work, or one piece for each
+- **Key.** A name the program declares, under which `work` returns one piece of work, or one piece for each
   *parameter* of a key declared with a schema for it. Two parameters are one when they encode alike. The names are
   finite, and one the program does not declare is a defect.
 - **Machine.** The runtime's semantics as a pure state machine, in [`src/machine.ts`](../src/machine.ts): from an event
@@ -104,15 +103,15 @@ Cluster's says so.
 - **Probe.** A reference in the context that the runtime tells what it did, which a test provides and the library does
   not export.
 - **Program.** Everything declared in `program(schemas)(…)`: `name`, `keys`, `children`, `init`, `update`,
-  `onEvent`, `durable`, `operations`, `project`, `topics`, `indexes` and `migrations`.
+  `onEvent`, `work`, `operations`, `project`, `topics`, `indexes` and `migrations`.
 - **Projection, read model.** `project(state)`: what a caller reads of an entity, with the actions it allows, as
   JSON, a time as its milliseconds. Stored as a row with the value of each index, which `read`, a query, a count,
   a sum and a count per value read. The read model answers what the program's application reads to act; any other question over the
   entities is a *report*.
 - **Reference, `reference`.** A program's name with its types, and none of its code, which `send` and `create`
   name a receiver by. `reference<typeof p>(name)` makes one, and the compiler checks the name against `p`'s.
-- **Reader.** A caller of `feed` under a consumer's name, which may name the partitions it reads. `consume` runs
-  one, which reads a page, acts on it and acks it in one transaction, and reads the next. The readers of one
+- **Reader.** A caller of `fetch` under a consumer's name, which may name the partitions it reads. The notes before
+  decision 0195 call the method `feed`. `consume` runs one, which reads a page, acts on it and acks it in one transaction, and reads the next. The readers of one
   consumer divide its partitions among them, and the division is the caller's: the runtime holds no reader, and two
   readers that name one partition are given the same rows.
 - **Raised event.** What a child's `update` tells its parent with `raise(event)(state)`, handled by the parent's
@@ -120,7 +119,7 @@ Cluster's says so.
 - **Report.** A question over the entities the read model does not answer: a grouping other than a count per value
   of one index, a disjunction, a search in
   a text, a join across programs, a series over time. It is answered by a store made for it, which a consumer of
-  the log feeds.
+  the log fills.
 - **Rehearsal, `rehearse`.** A scenario run on the machine without storage, cluster or clock, where the test answers
   or runs the operations, fires the timers or lets time pass, kills the process and deploys new versions.
   `rehearse` runs one entity, and `rehearse.together` a world.
@@ -167,9 +166,13 @@ Cluster's says so.
   and is read by migrating its JSON to the program's.
 - **Waker.** The runtime's fiber that reads the stored timers due and activates their entities, and tries again after
   `retry` one it could not load. On Cluster it reads the timers of the shards held alone.
-- **Watcher.** On Cluster: the runtime's fiber that, while a reading of `feed` waits, reads the version of the other
+- **Watcher.** On Cluster: the runtime's fiber that, while a reading of `fetch` waits, reads the version of the other
   runners' commits at an interval, and wakes every reading that waits where the version moved
   ([0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)).
+- **Work.** What the state holds under its keys, operations and timers, computed by `work(state)` and compared with
+  the previous state's after each step: a new key starts its work, a missing one ends it. The notes before
+  [decision 0195](decisions/0195-the-package-is-effect-tea-persistent.md) call it durable work, and the function
+  `durable`.
 - **World, member.** In a rehearsal: entities on the machine together, with one time and one process for all of them,
   made by `rehearse.together`. A member is one entity of a world, whose `run` runs an operation's runner, and what
   the runner sends reaches the receiver's machine.

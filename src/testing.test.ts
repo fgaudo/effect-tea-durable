@@ -537,7 +537,7 @@ describe('migrationViolations (decision 0126)', () => {
     },
     init: () => ({ count: 0, label: 'none' }),
     update: () => (state) => state,
-    durable: () => noWork,
+    work: () => noWork,
     operations: { Ask: operation(() => Effect.succeed('asked')) },
     project: ({ label }) => label,
     indexes: {},

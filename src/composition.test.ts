@@ -102,7 +102,7 @@ const line = part({
         return state.charging ? state : { ...state, quantity: 0 }
     }
   },
-  durable: (state) => ({
+  work: (state) => ({
     charge: state.charging ? Charge.make({ quantity: state.quantity }) : undefined,
     reminder: state.reminders.map((who) => [who, timer(at, { _tag: 'Reminded' as const, who })] as const),
   }),
@@ -141,7 +141,7 @@ const outcome = (run: () => unknown) => {
 type AnyPart = Readonly<{
   init: (flags: null, at: DateTime.Utc) => unknown
   update: (message: unknown, meta: Meta<unknown>) => (state: unknown) => unknown
-  durable: (state: unknown) => Readonly<Record<string, unknown>>
+  work: (state: unknown) => Readonly<Record<string, unknown>>
   project: (state: unknown) => unknown
 }>
 
@@ -209,7 +209,7 @@ const behavesAs = (alone: AnyPart, composed: AnyPart, lens: Lens) =>
         } else {
           expect(seen).toEqual(own)
         }
-        expect(composed.durable(theirs)).toEqual(lifted(lens, alone.durable(mine)))
+        expect(composed.work(theirs)).toEqual(lifted(lens, alone.work(mine)))
         expect(composed.project(theirs)).toEqual(alone.project(mine))
       }
     }),
@@ -232,7 +232,7 @@ const single = part({
   children: { Line: child(line, { at: Optic.id<typeof Single.Type>().key('line') }) },
   init: (flags, at) => ({ line: line.init(flags, at) }),
   update: () => () => defect('a parent with no messages of its own'),
-  durable: () => noWork,
+  work: () => noWork,
   operations: {},
   project: (state, children) => children.Line(state),
   onEvent: { Line: (event) => raise(event) },
@@ -258,7 +258,7 @@ const nested = part({
   children: { Single: child(single, { at: Optic.id<typeof Nested.Type>().key('single') }) },
   init: (flags, at) => ({ single: single.init(flags, at) }),
   update: () => () => defect('a parent with no messages of its own'),
-  durable: () => noWork,
+  work: () => noWork,
   operations: {},
   project: (state, children) => children.Single(state),
   onEvent: { Single: (event) => raise(event) },
@@ -327,7 +327,7 @@ const order = program({
         )
     }
   },
-  durable: () => noWork,
+  work: () => noWork,
   operations: {},
   project: (state, children) => ({
     lines: Object.keys(state.lines).length,
@@ -373,7 +373,7 @@ test("a child by id's keys take its id, and its id beside the key's own paramete
     { _tag: 'Line', id: 'a', message: { _tag: 'ReminderSet', who: 'ann' } },
   )
   expect(Object.keys(order.keys).sort()).toEqual(['Line.charge', 'Line.reminder'])
-  expect(order.durable(state)).toEqual({
+  expect(order.work(state)).toEqual({
     'Line.charge': [['a', { _tag: 'Line.Charge', id: 'a', operation: { _tag: 'Charge', quantity: 1 } }]],
     'Line.reminder': [[['a', 'ann'], timer(at, { _tag: 'Line', id: 'a', message: { _tag: 'Reminded', who: 'ann' } })]],
   })
@@ -421,7 +421,7 @@ test('an external message to a child that is not there is a defect', () => {
     },
     init: () => ({ lines: {}, charged: 0 }),
     update: (_, __, children) => children.Line.update('ghost', { _tag: 'Emptied' }),
-    durable: () => noWork,
+    work: () => noWork,
     operations: {},
     project: () => null,
     onEvent: { Line: () => (state) => state },
@@ -456,7 +456,7 @@ test("a parent's name with a '.' is refused where it is declared, since a child'
       children: { [name]: each(line, { id: Schema.String, at: lines }) },
       init: () => ({ lines: {}, charged: 0 }),
       update: () => () => reject,
-      durable: () => noWork,
+      work: () => noWork,
       operations: {},
       project: () => null,
       onEvent: { [name]: () => (state: Order) => state } as never,
@@ -485,7 +485,7 @@ test("an own message that takes a child's name does not compile", () => {
         children: { Line: each(line, { id: Schema.String, at: lines }) },
         init: () => ({ lines: {}, charged: 0 }),
         update: () => () => reject,
-        durable: () => noWork,
+        work: () => noWork,
         operations: {},
         project: () => null,
         indexes: {},
@@ -514,7 +514,7 @@ test('a program whose child raises events and that handles none does not compile
         children: { Line: each(line, { id: Schema.String, at: lines }) },
         init: () => ({ lines: {}, charged: 0 }),
         update: () => () => reject,
-        durable: () => noWork,
+        work: () => noWork,
         operations: {},
         project: () => null,
         indexes: {},
@@ -579,7 +579,7 @@ const counter = part({
       : message._tag === 'Look'
       ? state
       : reject,
-  durable: () => noWork,
+  work: () => noWork,
   operations: {},
   project: (state) => state.n,
 })
@@ -606,7 +606,7 @@ const counters = part({
   },
   init: () => ({ counters: { a: { n: 0 } }, heard: [], peek: null }),
   update: (message, _, children) => children.Counter.update(message.id, { _tag: 'Refuse' }),
-  durable: () => noWork,
+  work: () => noWork,
   operations: {},
   project: (state, children) => (state.peek === null ? null : children.Counter(state, state.peek)),
   onEvent: { Counter: (id, event) => (state) => ({ ...state, heard: [...state.heard, `${id}:${event}`] }) },
@@ -648,7 +648,7 @@ test("a parent's operation with a '.' is refused where it is declared (decision 
       children: { Line: each(line, { id: Schema.String, at: lines }) },
       init: () => ({ lines: {}, charged: 0 }),
       update: () => () => reject,
-      durable: () => noWork,
+      work: () => noWork,
       operations: { 'Li.ne': operation(() => Effect.die('never run')) } as never,
       project: () => null,
       onEvent: { Line: () => (state: Order) => state },
@@ -689,7 +689,7 @@ const tally = part({
         return reject
     }
   },
-  durable: () => noWork,
+  work: () => noWork,
   operations: {},
   project: (state) => state.n,
 })
@@ -756,7 +756,7 @@ const talliesOf = (telling: 'forEach' | 'andThen') =>
         ? forEach(state, message.told, next)
         : message.told.reduce((step: Step<Tallies, string>, told) => andThen(step, next(told)), state)
     },
-    durable: () => noWork,
+    work: () => noWork,
     operations: {},
     project: () => null,
     onEvent: {

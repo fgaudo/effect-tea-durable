@@ -33,7 +33,7 @@ const notes = program({
   keys: {},
   init: () => ({ count: 0 }),
   update: () => (state) => ({ count: state.count + 1 }),
-  durable: () => noWork,
+  work: () => noWork,
   operations: {},
   // Each step changes the projection, so each writes a row of about 2 KB in the topic `projection`.
   project: (state) => ({ count: state.count, last: 'x'.repeat(2_000) }),
@@ -55,7 +55,7 @@ const filling = Effect.scoped(Effect.gen(function*() {
     )
   for (const id of ['n1', 'n2', 'n3']) yield* handle.create(id, {}, { requestId: `c-${id}`, sender })
   // `stalled` reads once and never acks, so it holds every row of its topic.
-  yield* handle.feed('projection', 'stalled', 1)
+  yield* handle.fetch('projection', 'stalled', 1)
   const [counted] = yield* sql<{ page_count: number }>`PRAGMA page_count`
   const pages = counted?.page_count ?? 0
   expect(pages).toBeGreaterThan(0)
@@ -81,7 +81,7 @@ const filling = Effect.scoped(Effect.gen(function*() {
   // `current` reads every row and acks it: its cursors are rows written in a full database.
   const current = yield* Effect.exit(Effect.gen(function*() {
     for (;;) {
-      const rows = yield* handle.feed('projection', 'current', 1_000)
+      const rows = yield* handle.fetch('projection', 'current', 1_000)
       if (rows.length === 0) return
       yield* handle.ack('projection', 'current', rows)
     }
