@@ -1,6 +1,7 @@
 # 0035. One place where a program is declared
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. [Decision 0180](../0180-a-program-leaves-out-what-it-does-not-have.md) lets a
+program leave out the schemas, records and `durable` it does not have.
 
 ## Context
 

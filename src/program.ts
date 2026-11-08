@@ -932,6 +932,18 @@ type Checks<Own, Sender, C> =
       }[Names<C>]
     }>)
 
+/**
+ * `durable`, the own work: a child's is held while the child is there, under its keys. It may be left out exactly
+ * where no key is declared, since a state then holds no work of its own (decision 0180).
+ */
+type DurableOf<State, Internal, Operation, Keys> = [keyof Keys] extends [never]
+  ? Readonly<{ durable?: (state: State) => Work<never, unknown, Operation, Internal> }>
+  : Readonly<{ durable: (state: State) => Work<Extract<keyof Keys, string>, ParametersOf<Keys>, Operation, Internal> }>
+
+/** `operations`, a runner for each kind of operation: left out exactly where there is no kind (decision 0180). */
+type OperationsOf<Operation, Operations> = [Operation] extends [never] ? Readonly<{ operations?: Operations }>
+  : Readonly<{ operations: Operations }>
+
 /** What a program and a part declare alike: their keys, children, and what they do. */
 type Pieces<
   State extends object,
@@ -951,9 +963,9 @@ type Pieces<
   & Readonly<{
     /**
      * Every key `durable` holds work under, with the schema of its parameter or null: work under any other key is a
-     * type error (decisions 0033, 0132).
+     * type error (decisions 0033, 0132). A declaration that leaves it out declares no key (decision 0180).
      */
-    keys: Keys
+    keys?: Keys
     /** The children, each placed with `child` or `each`: their messages, work and keys are the library's to route. */
     children?: C
     init: (flags: Flags, at: DateTime.Utc) => State
@@ -963,11 +975,10 @@ type Pieces<
       meta: Meta<Sender>,
       children: Handles<State, Event, C>,
     ) => (state: State) => Step<State, Event> | Rejected<Rejection>
-    /** The own work: a child's is held while the child is there, under its keys. */
-    durable: (state: State) => Work<Extract<keyof Keys, string>, ParametersOf<Keys>, Operation, Internal>
-    operations: Operations
     project: (state: State, children: Projections<State, C>) => Projection
   }>
+  & DurableOf<State, Internal, Operation, Keys>
+  & OperationsOf<Operation, Operations>
   & OnEventOf<State, Event, C>
   & Checks<Inbound | Internal | External, Sender, C>
 
@@ -1346,6 +1357,46 @@ const assemble = (
 type TopicValues<Topics> = string extends keyof Topics ? undefined
   : { readonly [Name in keyof Topics]: Topics[Name] extends (projection: never) => (infer V extends Json) ? V : never }
 
+/** The names of the indexes a program declares, or none where it leaves `indexes` out (decision 0180). */
+type IndexNames<Indexes> = string extends keyof Indexes ? never : Extract<keyof Indexes, string>
+
+/**
+ * The schemas as a program or a part declares them: the schema of the internal messages, the operations, the reasons
+ * or the sender may be left out (decision 0180).
+ */
+type DeclaredSchemas = Readonly<Record<'state' | 'flags' | 'inbound' | 'projection', Schema.Codec<unknown, Json>>>
+  & Partial<Readonly<Record<'internal' | 'operation' | 'rejection' | 'sender', Schema.Codec<unknown, Json>>>>
+
+/**
+ * The schemas with each one left out in its place: `Schema.Never` for the internal messages, the operations and the
+ * reasons, since a program without them has none to store, and `Schema.Null` for the sender, as for a program that
+ * reads none (decision 0180). `??` and not `Struct.assign`: a schema given as `undefined` from JavaScript would
+ * replace the default under `assign`.
+ */
+const filledSchemas = <S extends DeclaredSchemas>(schemas: S) => ({
+  ...schemas,
+  internal: schemas.internal ?? Schema.Never,
+  operation: schemas.operation ?? Schema.Never,
+  rejection: schemas.rejection ?? Schema.Never,
+  sender: schemas.sender ?? Schema.Null,
+})
+
+/** A declaration as it may be written: with no keys, no runners and no work, where it has none (decision 0180). */
+type LeftOut = Omit<UntypedDeclaration, 'keys' | 'operations' | 'durable'> & Partial<UntypedDeclaration>
+
+const noKeys: Readonly<Record<string, never>> = Object.freeze({})
+const noRunners: Readonly<Record<string, never>> = Object.freeze({})
+const noIndexes: Readonly<Record<string, never>> = Object.freeze({})
+const noOwnWork = () => noWork
+
+/** The declaration with each record left out empty, and `durable` left out holding no work (decision 0180). */
+const filledDeclaration = (declaration: LeftOut): UntypedDeclaration => ({
+  ...declaration,
+  keys: declaration.keys ?? noKeys,
+  operations: declaration.operations ?? noRunners,
+  durable: declaration.durable ?? noOwnWork,
+})
+
 /**
  * The one place a program is declared: its schemas, which give every type the program is written in, and then
  * what it does (decision 0035). An object literal typed `Program<T>` names each type twice, and holds neither
@@ -1360,28 +1411,43 @@ export const program = <
   State extends object,
   Flags,
   Inbound,
-  Internal,
-  Operation extends Readonly<{ _tag: string }>,
-  Rejection,
-  Sender,
   // The projection is JSON: what `read`, a query, an index and a topic read is one shape, and a schema that
   // decodes to what JSON does not hold, a `DateTime`, is refused here (decision 0139).
   Projection extends Json,
->(schemas: Schemas<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection>) =>
+  // A schema left out gives its type nothing to infer from, so the type is its default, the type of the schema
+  // `filledSchemas` puts in its place (decision 0180).
+  Internal = never,
+  Operation extends Readonly<{ _tag: string }> = never,
+  Rejection = never,
+  Sender = null,
+>(
+  schemas: Readonly<{
+    state: Schema.Codec<State, Json>
+    flags: Schema.Codec<Flags, Json>
+    inbound: Schema.Codec<Inbound, Json>
+    internal?: Schema.Codec<Internal, Json>
+    operation?: Schema.Codec<Operation, Json>
+    rejection?: Schema.Codec<Rejection, Json>
+    sender?: Schema.Codec<Sender, Json>
+    projection: Schema.Codec<Projection, Json>
+  }>,
+) =>
 <
-  const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>>,
-  Operations extends Declared<Operation, Internal>,
+  // No default for either: a type parameter is fixed to its default before a context-sensitive selector is typed,
+  // and the selectors' parameters would be the default's. With none, a record left out is inferred as its
+  // constraint, whose keys are any string, and `IndexNames` and `TopicValues` read that as none (decision 0180).
   Indexes extends Readonly<Record<string, (projection: Projection) => Scalar>>,
-  // No default of `never`: a type parameter is fixed to its default before a context-sensitive selector is typed,
-  // and the selectors' parameters would be `never`. With none, `Topics` left out is inferred as its constraint.
   Topics extends Readonly<Record<string, (projection: Projection) => Json>>,
+  const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>> = {},
+  Operations extends Declared<Operation, Internal> = Declared<Operation, Internal>,
   const C extends Children<State> = {},
 >(
   declaration:
     & Pieces<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, never, never, Keys, Operations, C>
     & Readonly<{
       name: string
-      indexes: Indexes
+      /** What a query filters and orders by: a program that leaves it out has no index (decision 0180). */
+      indexes?: Indexes
       /** How the versions before this one are read, in order: none for a first version (decision 0036). */
       migrations?: ReadonlyArray<Migration>
       /**
@@ -1393,22 +1459,20 @@ export const program = <
     }>,
 ): Program<
   & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
-  & Readonly<{ index: Extract<keyof Indexes, string>; topics: TopicValues<Topics> }>
+  & Readonly<{ index: IndexNames<Indexes>; topics: TopicValues<Topics> }>
 > => {
   type Of =
     & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
-    & Readonly<{ index: Extract<keyof Indexes, string>; topics: TopicValues<Topics> }>
-  const pieces = assemble(
-    schemas as unknown as UntypedPart['schemas'],
-    declaration as unknown as UntypedDeclaration,
-  )
+    & Readonly<{ index: IndexNames<Indexes>; topics: TopicValues<Topics> }>
+  const filled = filledSchemas(schemas as unknown as DeclaredSchemas)
+  const pieces = assemble(filled, filledDeclaration(declaration as unknown as LeftOut))
   return {
     name: declaration.name,
-    indexes: declaration.indexes,
+    indexes: (declaration.indexes ?? noIndexes) as Indexes,
     ...(declaration.migrations === undefined ? {} : { migrations: declaration.migrations }),
     // The pieces are made of the declaration's, with the types the composition derives, which `Of` writes out.
     keys: pieces.keys as unknown as Program<Of>['keys'],
-    schemas: { ...schemas, ...pieces.schemas } as unknown as Program<Of>['schemas'],
+    schemas: { ...filled, ...pieces.schemas } as unknown as Program<Of>['schemas'],
     init: pieces.init as Program<Of>['init'],
     update: (message, meta) => (state) => {
       const step = pieces.update(message, meta)(state)
@@ -1435,11 +1499,12 @@ export const part = <
   State extends object,
   Flags,
   Inbound,
-  Internal,
-  Operation extends Readonly<{ _tag: string }>,
-  Rejection,
   // A part's projection is JSON, as a program's is, since the parent's projection holds it (decision 0139).
   Projection extends Json,
+  // A schema left out is its default, as a program's is (decision 0180). A part reads no sender unless it says so.
+  Internal = never,
+  Operation extends Readonly<{ _tag: string }> = never,
+  Rejection = never,
   Sender = unknown,
   Event = never,
   External = never,
@@ -1448,9 +1513,9 @@ export const part = <
     state: Schema.Codec<State, Json>
     flags: Schema.Codec<Flags, Json>
     inbound: Schema.Codec<Inbound, Json>
-    internal: Schema.Codec<Internal, Json>
-    operation: Schema.Codec<Operation, Json>
-    rejection: Schema.Codec<Rejection, Json>
+    internal?: Schema.Codec<Internal, Json>
+    operation?: Schema.Codec<Operation, Json>
+    rejection?: Schema.Codec<Rejection, Json>
     projection: Schema.Codec<Projection, Json>
     sender?: Schema.Codec<Sender, Json>
     event?: Schema.Codec<Event, Json>
@@ -1458,8 +1523,8 @@ export const part = <
   }>,
 ) =>
 <
-  const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>>,
-  Operations extends Declared<Operation, Internal>,
+  const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>> = {},
+  Operations extends Declared<Operation, Internal> = Declared<Operation, Internal>,
   const C extends Children<State> = {},
 >(
   declaration: Pieces<
@@ -1482,8 +1547,8 @@ export const part = <
   & Readonly<{ index: never; event: Event; external: External }>
 > =>
   assemble(
-    schemas as unknown as UntypedPart['schemas'],
-    declaration as unknown as UntypedDeclaration,
+    filledSchemas(schemas as unknown as DeclaredSchemas),
+    filledDeclaration(declaration as unknown as LeftOut),
   ) as unknown as Part<
     & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
     & Readonly<{ index: never; event: Event; external: External }>

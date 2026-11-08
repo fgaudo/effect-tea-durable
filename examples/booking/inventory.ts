@@ -4,7 +4,7 @@
  */
 import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
-import { noWork, type Origin, program, reject, type Rejected, rejectWith } from '../../src/index.ts'
+import { type Origin, program, reject, type Rejected, rejectWith } from '../../src/index.ts'
 
 const State = Schema.Struct({
   open: Schema.Boolean,
@@ -31,10 +31,6 @@ type Inbound = typeof Inbound.Type
 const Rejection = Schema.Literals(['SoldOut', 'SalesClosed'])
 type Rejection = typeof Rejection.Type
 
-// The inventory has no work of its own.
-const Internal = Schema.Never
-type Internal = typeof Internal.Type
-
 /** Bookings are not senders: they arrive as entities, from their operations. */
 const Sender = Schema.TaggedStruct('Organizer', {})
 export type Sender = typeof Sender.Type
@@ -52,20 +48,16 @@ const bookingOf = (from: Origin<Sender>) =>
 
 const isOrganizer = (from: Origin<Sender>) => from._tag === 'Caller' && from.sender._tag === 'Organizer'
 
+// The inventory holds no work of its own: it declares no internal message, operation or key.
 export const inventory = program({
   state: State,
   flags: Flags,
   inbound: Inbound,
-  internal: Internal,
-  operation: Schema.Never,
   rejection: Rejection,
   sender: Sender,
   projection: Projection,
 })({
   name: 'Inventory',
-
-  // The inventory holds no work: it has no key.
-  keys: {},
 
   init: ({ capacity }) => ({ open: true, capacity, held: {}, sold: {} }),
 
@@ -101,16 +93,9 @@ export const inventory = program({
     )
   },
 
-  durable: () => noWork,
-
-  operations: {},
-
   project: (state) => ({
     open: state.open,
     available: available(state),
     canClose: state.open,
   }),
-
-  // Nothing is asked across these entities: no query, so no index (decision 0032).
-  indexes: {},
 })

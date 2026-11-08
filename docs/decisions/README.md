@@ -62,13 +62,14 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0014](archive/0014-rules-the-machine-settled.md) | The rules the pure machine settled | [0023](archive/0023-suspended-means-no-reply-yet.md), [0041](archive/0041-a-completion-is-not-discarded.md), [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) |
 | [0031](archive/0031-a-state-is-an-object.md) | A state is an object |  |
 | [0033](archive/0033-a-program-declares-its-keys.md) | A program declares its keys | [0132](archive/0132-a-key-may-take-a-parameter.md) |
-| [0035](archive/0035-one-place-where-a-program-is-declared.md) | One place where a program is declared |  |
+| [0035](archive/0035-one-place-where-a-program-is-declared.md) | One place where a program is declared | [0180](0180-a-program-leaves-out-what-it-does-not-have.md) |
 | [0037](archive/0037-the-machine-checks-the-declared-keys.md) | The machine checks the declared keys | [0132](archive/0132-a-key-may-take-a-parameter.md) |
 | [0057](archive/0057-the-machine-gives-what-is-written.md) | The machine gives what is written |  |
 | [0064](archive/0064-the-program-is-not-the-machines-state.md) | The program is not the machine's state, and a fix is a deploy | [0075](archive/0075-a-name-is-deployed-once-in-a-process.md) |
 | [0132](archive/0132-a-key-may-take-a-parameter.md) | A key may take a parameter, and an incarnation is drawn from one counter of the entity | [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md) |
 | [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md) | A key is a name and a parameter, as data, in every value and row that holds one |  |
 | [0133](archive/0133-an-entity-composes-children-as-effect-tea-does.md) | An entity composes children as effect-tea does: a part, placed with `child` or `each`, whose messages, keys, operations and reasons the library wraps | [0155](archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md) |
+| [0180](0180-a-program-leaves-out-what-it-does-not-have.md) | A program leaves out what it does not have, and each piece left out is empty (proposed) |  |
 
 ## Messages, requests and replies
 

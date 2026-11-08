@@ -174,7 +174,6 @@ export const order = program({
   inbound: Inbound,
   internal: Internal,
   operation: Operation,
-  rejection: Schema.Never,
   sender: Sender,
   projection: Projection,
 })({

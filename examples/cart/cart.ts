@@ -5,7 +5,7 @@
  */
 import * as Optic from 'effect/Optic'
 import * as Schema from 'effect/Schema'
-import { each, forEach, noWork, program, reject } from '../../src/index.ts'
+import { each, forEach, program, reject } from '../../src/index.ts'
 import { line, Projection as LineProjection, type State as LineState } from './line.ts'
 
 const Line = line.schemas.state
@@ -35,15 +35,9 @@ export const cart = program({
   state: State,
   flags: Schema.Null,
   inbound: Inbound,
-  internal: Schema.Never,
-  operation: Schema.Never,
-  rejection: Schema.Never,
-  sender: Schema.Null,
   projection: Projection,
 })({
   name: 'Cart',
-
-  keys: {},
 
   children: { Line: each(line, { id: Schema.String, at: lines }) },
 
@@ -68,17 +62,11 @@ export const cart = program({
     }
   },
 
-  durable: () => noWork,
-
-  operations: {},
-
   project: (state, children) => ({
     phase: state.phase,
     lines: Object.keys(state.lines).map((sku) => ({ sku, ...children.Line(state, sku) })),
     canCheckout: state.phase === 'Open',
   }),
-
-  indexes: {},
 
   onEvent: {
     Line: (sku) => (state) => {

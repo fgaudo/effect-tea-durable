@@ -157,7 +157,6 @@ export const subscription = program({
   inbound: Inbound,
   internal: Internal,
   operation: Operation,
-  rejection: Schema.Never,
   sender: Sender,
   projection: Projection,
 })({
@@ -274,7 +273,4 @@ export const subscription = program({
       canResume: renewing && state.account.cancelAtPeriodEnd,
     }
   },
-
-  // Nothing is asked across these entities: no query, so no index (decision 0032).
-  indexes: {},
 })

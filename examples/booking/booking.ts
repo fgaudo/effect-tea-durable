@@ -132,7 +132,6 @@ export const booking = program({
   inbound: Inbound,
   internal: Internal,
   operation: Operation,
-  rejection: Schema.Never,
   sender: Sender,
   projection: Projection,
 })({
@@ -218,7 +217,4 @@ export const booking = program({
     canConfirm: state._tag === 'Held',
     canCancel: (state._tag === 'Holding' && !state.cancelled) || state._tag === 'Held',
   }),
-
-  // Nothing is asked across these entities: no query, so no index (decision 0032).
-  indexes: {},
 })

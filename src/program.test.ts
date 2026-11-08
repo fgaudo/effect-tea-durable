@@ -274,6 +274,56 @@ test('a program whose name or key is no text a database holds is refused, naming
   expect(() => checkProgram(charges)).not.toThrow()
 })
 
+test('a program without work leaves out what it does not have, and each piece left out is empty (decision 0180)', () => {
+  const bare = {
+    state: Schema.Struct({ open: Schema.Boolean }),
+    flags: Schema.Null,
+    inbound: Schema.Literal('Close'),
+    projection: Schema.Boolean,
+  }
+  const pieces = {
+    name: 'Doors',
+    init: () => ({ open: true }),
+    update: () => () => ({ open: false }),
+    project: ({ open }: { open: boolean }) => open,
+  }
+  const doors = program(bare)(pieces)
+  type Of = typeof doors extends Program<infer T> ? T : never
+  const left: [Of['internal'], Of['operation'], Of['rejection'], Of['key'], Of['index']] extends
+    [never, never, never, never, never] ? true : false = true
+  const sender: [Of['sender']] extends [null] ? [null] extends [Of['sender']] ? true : false : false = true
+  // @ts-expect-error a program that leaves `indexes` out has none for a query to order by
+  const unindexed: Query<Of> = { order: { index: 'open' }, limit: 10 }
+  expect([left, sender, unindexed]).toHaveLength(3)
+  // The schemas left out are in the program, since the machine and the storage read them all.
+  expect(doors.schemas.internal).toBe(Schema.Never)
+  expect(doors.schemas.operation).toBe(Schema.Never)
+  expect(doors.schemas.rejection).toBe(Schema.Never)
+  expect(doors.schemas.sender).toBe(Schema.Null)
+  expect([doors.keys, doors.operations, doors.indexes, doors.durable({ open: true })]).toEqual([{}, {}, {}, {}])
+  expect(() => checkProgram(doors)).not.toThrow()
+  // A part leaves out what a program does.
+  const latch = part(bare)(pieces)
+  expect([latch.keys, latch.operations, latch.durable({ open: true })]).toEqual([{}, {}, {}])
+  expect(latch.schemas.operation).toBe(Schema.Never)
+})
+
+test('durable is left out only with no key, and operations only with no kind of operation (decision 0180)', () => {
+  const pieces = {
+    name: 'Charges',
+    init: () => ({ charging: true }),
+    update: () => () => ({ charging: false }),
+    project: () => null,
+  } as const
+  const runners = { Charge: operation(() => Effect.succeed('Charged' as const)) }
+  // @ts-expect-error a program that declares a key says what work its states hold under it
+  const workless = program(schemas)({ ...pieces, keys: { charge: null }, operations: runners })
+  // @ts-expect-error a program that has operations gives a runner for each kind
+  const runnerless = program(schemas)({ ...pieces, keys: { charge: null }, durable: () => ({ charge }) })
+  const whole = program(schemas)({ ...pieces, keys: { charge: null }, durable: () => ({ charge }), operations: runners })
+  expect([workless, runnerless, whole]).toHaveLength(3)
+})
+
 test('a rehearsal and a query name only the keys and the indexes the program declares (decisions 0032, 0033)', () => {
   const pieces = {
     name: 'Charges',

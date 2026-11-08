@@ -85,7 +85,6 @@ export const line = part({
   inbound: Inbound,
   internal: Internal,
   operation: Operation,
-  rejection: Schema.Never,
   projection: Projection,
   event: Event,
   external: External,

@@ -5,11 +5,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **The API before the release.** Each point is a note, and the examples change with it:
-  - **Defaults for what a program does not have.** A program without work declares `internal`, `operation` and
-    `rejection` as `Schema.Never`, `sender` as `Schema.Null`, and `keys`, `operations` and `indexes` as `{}`, as
-    [`examples/cart/cart.ts`](../examples/cart/cart.ts) does. A schema left out is `Never`, and a record left out is
-    empty.
+- **The API before the release.** Each point is a note, and the examples change with it. A point done is out of
+  this list, and its note is `proposed` until the step is taken. Done: the defaults for what a program does not
+  have ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)). Next: a timer without its
+  type parameter, which begins in `timer` of [`src/program.ts`](../src/program.ts).
   - **A timer without its type parameter.** Every example with a timer writes `timer<Internal>(…)`, and `update` writes
     `Match.withReturnType<State | Rejected>()`. The internal messages are in the schemas already: a `timer` typed by
     the program, or a `durable` that propagates the type, needs neither.

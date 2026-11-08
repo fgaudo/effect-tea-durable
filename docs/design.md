@@ -45,6 +45,12 @@ is written in, and then what it does. Everything else is inferred from the piece
 the messages each kind of operation answers, the names a query may order by, and the services the operations run
 in ([decision 0035](decisions/archive/0035-one-place-where-a-program-is-declared.md)).
 
+A program leaves out what it does not have, and each piece left out is empty
+([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)). The schemas of the internal
+messages, the operations and the reasons left out are `Schema.Never`, and the sender's is `Schema.Null`. `keys`,
+`operations` and `indexes` left out are `{}`. `durable` may be left out only where no key is declared, and
+`operations` only where there is no kind of operation, so a program that holds work says what work it holds.
+
 There are no commands. Every piece of work that must survive a crash is derived from the state by `durable`
 ([decision 0003](decisions/archive/0003-durable-work-derived-from-state.md)). An operation is data, as effect-tea's
 commands are, and its runner sees it, never the state
@@ -83,7 +89,7 @@ program the machine takes as any other. [`examples/cart`](../examples/cart) hold
 ### A part
 
 A child is a part, `part(schemas)(…)`: a program's pieces without a name, indexes or migrations, which are the
-parent's. Its schemas are a program's, and the sender it reads when it reads one. A part may also give two schemas
+parent's. Its schemas are a program's, and the sender it reads when it reads one. It leaves out what a program does. A part may also give two schemas
 that only type it, since nothing stores what they describe:
 
 - **`event`**, what it raises for its parent. Its `update` returns `raise(event)(state)`, and the parent's
