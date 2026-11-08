@@ -375,6 +375,10 @@ test('a reference is the name of its program, which the compiler checks, and typ
   const Hall = reference<typeof hall>('Hall')
   // @ts-expect-error a reference names the program by its name, and `Hal` is not the name of `hall`
   const misnamed = reference<typeof hall>('Hal')
+  // A program typed by hand has a name typed `string`, against which no name could be checked.
+  const byHand: Program<typeof hall extends Program<infer T> ? T : never> = hall
+  // @ts-expect-error a program whose name is any string has no reference, and is passed to `send` itself
+  const unchecked = reference<typeof byHand>('Hall')
   // What a sender gives reaches the runtime as the name alone.
   const received: Array<readonly [string, boolean]> = []
   const entities = Entities.of({
@@ -399,7 +403,7 @@ test('a reference is the name of its program, which the compiler checks, and typ
   })
   expect(await Effect.runPromise(Effect.provideService(sending, Entities, entities))).toEqual(['TooFew', 'Created'])
   expect(received).toEqual([['Hall', false], ['Hall', false], ['Hall', false], ['Hall', false], ['Hall', true]])
-  expect(misnamed).toBeDefined()
+  expect([misnamed, unchecked]).toHaveLength(2)
 })
 
 test('a timer needs no type parameter: its message keeps its tag, and durable checks it (decision 0181)', () => {
@@ -443,6 +447,23 @@ test('a timer needs no type parameter: its message keeps its tag, and durable ch
     closing: timer(at, { _tag: 'Closing', doors: ['front'] }),
   })
   expect(misspelt).toBeDefined()
+  // `const` makes an array a readonly tuple, which a mutable array of `Schema.mutable` does not take: such a program
+  // gives the type parameter.
+  type Mutable = { readonly _tag: 'Closing'; doors: Array<string> }
+  const opened = { ...pieces, durable: () => ({ closing: timer<Mutable>(at, { _tag: 'Closing', doors: ['front'] }) }) }
+  const mutable = program({
+    ...schemas,
+    state: Doors,
+    internal: Schema.TaggedStruct('Closing', { doors: Schema.mutable(Schema.Array(Schema.String)) }),
+    operation: Schema.Never,
+  })
+  const given = mutable(opened)
+  const inferred = mutable({
+    ...pieces,
+    // @ts-expect-error the inferred `readonly ['front']` is not the schema's mutable `Array<string>`
+    durable: () => ({ closing: timer(at, { _tag: 'Closing', doors: ['front'] }) }),
+  })
+  expect([given, inferred]).toHaveLength(2)
 })
 
 test('a rehearsal and a query name only the keys and the indexes the program declares (decisions 0032, 0033)', () => {

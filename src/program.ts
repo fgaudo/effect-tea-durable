@@ -335,7 +335,8 @@ export interface Timer<Message> {
 /**
  * A timer that sends `message` to its entity at `at`. `Message` is `const`, so that a message's tag stays its literal
  * where nothing gives the call a type to infer from, as in a branch of `Match.valueTags`. `durable` checks it against
- * the program's internal messages (decision 0181).
+ * the program's internal messages. `const` also makes an array a readonly tuple, which a mutable array of
+ * `Schema.mutable` does not take, so a program with one writes `timer<Internal>(…)` (decision 0181).
  */
 export const timer = <const Message>(at: DateTime.Utc, message: Message): Timer<Message> => ({
   [TimerTypeId]: TimerTypeId,
@@ -475,14 +476,20 @@ export type Receiver<T extends Types> = Program<T> | Reference<T>
 /**
  * A reference to the program `P` under its name, made without `P`'s code: `P` is `typeof p` of an `import type`. The
  * name is the type of `P`'s, so a name that is not the program's does not compile, where a send under it would
- * wait for ever for a deploy of that name (decision 0183).
+ * wait for ever for a deploy of that name. A program whose name is typed `string`, as one typed `Program<T>` by hand,
+ * has no reference: no name could be checked against it, and a sender passes the program itself (decision 0183).
  */
-export const reference = <P extends Program<any, string>>(name: P['name']): Reference<ProgramTypes<P>, P['name']> =>
+export const reference = <P extends Program<any, string>>(
+  name: LiteralName<P['name']>,
+): Reference<ProgramTypes<P>, P['name']> =>
   // The types are all the reference carries, and nothing reads them at run time.
   Object.freeze({ name }) as unknown as Reference<ProgramTypes<P>, P['name']>
 
 /** The types of a program. */
 type ProgramTypes<P> = P extends Program<infer T, string> ? T : never
+
+/** A program's name where its type is a literal, and `never`, which no name is, where it is any `string`. */
+type LiteralName<Name extends string> = string extends Name ? never : Name
 
 /**
  * Whether a receiver is a program, whose code a rehearsal can run, and not a reference, which brings only the name

@@ -23,6 +23,9 @@ inbound messages, the flags, and the reasons of a rejection.
   type, as Cluster's `Entity.make` keeps its `Type`. So `reference<typeof inventory>('Inventory')` compiles, and a
   name that is not the program's does not. A send under a misspelt name would otherwise wait for ever for the deploy
   of a program of that name ([decision 0045](archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md)).
+- **A program whose name is typed `string` has no reference.** A program typed `Program<T>` by hand has such a name,
+  and no name could be checked against it. `reference` takes `never` for it, so no reference to it compiles, and a
+  sender passes the program itself.
 - **`send` and `create` take a receiver, which is the program or a reference to it.** Both type the message, the
   flags and the reply the same way. The runtime reads only the name of either, and reaches the program deployed
   under it, as before.
@@ -41,7 +44,8 @@ inbound messages, the flags, and the reasons of a rejection.
 - That the name a reference gives is checked against the program's: **tested** by `a reference is the name of its
   program, which the compiler checks, and types send and create as the program does (decision 0183)` in
   [`src/program.test.ts`](../../src/program.test.ts). It also asserts that `send` and `create` type a reference's
-  message, flags and reply as the program's, and that the runtime is given the name alone.
+  message, flags and reply as the program's, that a program typed `Program<T>` by hand has no reference, and that
+  the runtime is given the name alone.
 - That a world creates through a reference only a program it runs: **tested** by `creates through a reference a
   program the world runs, and fails the run where it runs none` in
   [`src/rehearse.test.ts`](../../src/rehearse.test.ts).
@@ -82,7 +86,8 @@ Each structure of Effect that could name a receiver was weighed.
 
 ## Consequences
 
-- `Program<T, Name>` takes the type of its name, which is `string` where nothing gives a literal.
+- `Program<T, Name>` takes the type of its name, which is `string` where nothing gives a literal. Such a program has
+  no reference.
 - [`examples/booking`](../../examples/booking): the booking sends through `reference<typeof inventory>('Inventory')`,
   and the inventory reads the booking's name from `reference<typeof booking>('Booking')`. Neither imports the other's
   code.

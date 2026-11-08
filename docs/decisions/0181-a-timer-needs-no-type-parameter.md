@@ -29,9 +29,10 @@ The roadmap's point also named `Match.withReturnType<State | Rejected>()` in `up
   [`src/program.test.ts`](../../src/program.test.ts). The test fails against `timer` without `const`, and so do
   the examples.
 - That a message made `const` is assignable to the schema's type: **reasoned**. A `const` type parameter makes an
-  array a readonly tuple, and a readonly tuple is assignable to the `ReadonlyArray` a schema's type holds. A schema
-  made with `Schema.mutable` has a mutable array, which a readonly tuple is not assignable to. No example has one,
-  and such a program still writes `timer<Internal>(…)`.
+  array a readonly tuple, and a readonly tuple is assignable to the `ReadonlyArray` a schema's type holds.
+- That a schema made with `Schema.mutable` needs the type parameter: **tested**, by the same test. A mutable array
+  does not take a readonly tuple, so `timer(…)` does not compile there, and `timer<Internal>(…)` does. No example
+  has one. The JSDoc of `timer` says it.
 - That the branches of `Match.value(…).pipe(…)` are not typed by the return of `update`: **seen** when
   `withReturnType` was taken out of [`examples/subscription/subscription.ts`](../../examples/subscription/subscription.ts),
   and the compiler refused the widened tags. That `withReturnType` types every branch: **documented** in its JSDoc at

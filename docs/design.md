@@ -329,7 +329,9 @@ of the message, and the operation sends again after the same while: it is never 
 ([decision 0147](decisions/archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)). An operation creates an
 entity the same way, with `create` and a name. Both name the receiver by its program, or by a *reference*:
 `reference<typeof inventory>('Inventory')` is the program's name with its types, made where an `import type` brings
-none of its code. The compiler checks the name against the program's, and the runtime reads only the name. Two
+none of its code. The compiler checks the name against the program's, and the runtime reads only the name. A
+program whose name is typed `string`, as one typed `Program<T>` by hand, has no reference, since no name could be
+checked against it, and a sender passes the program itself. Two
 programs that talk both ways import only each other's types, and a program compares a sender's name with a
 reference's ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md)). An operation that talks only to
 entities may run at least once:

@@ -1,7 +1,9 @@
 # 0131. A rehearsal runs the entities an operation sends to
 
 **Status:** accepted, 2026-11-04. Decides the open question on rehearsing entities together, which
-[decision 0009](0009-entities-talk-through-operations.md) left open.
+[decision 0009](0009-entities-talk-through-operations.md) left open. [Decision 0183](../0183-a-receiver-is-named-by-a-reference.md)
+changes what a world runs. A runner's `create` that names a program by a reference fails the test where the world
+runs no program of that name, since a reference brings no code.
 
 ## Context
 
