@@ -18,6 +18,7 @@ import {
   operation,
   type Program,
   program as declare,
+  reference,
   rejectWith,
   type Runner,
   send,
@@ -154,7 +155,7 @@ describe('a program that cannot run as written', () => {
 
   test('is refused before its scenario runs, as the runtime refuses it (decision 0054)', async () => {
     const refused: ReadonlyArray<readonly [typeof order, string]> = [
-      [{ ...order, name: '' }, "the program '' has an empty name"],
+      [{ ...order, name: '' as typeof order.name }, "the program '' has an empty name"],
       [
         { ...order, indexes: { ...order.indexes, 'not a word': () => null } as typeof order.indexes },
         "the program 'Order' has an index 'not a word' whose name is not a word",
@@ -421,6 +422,39 @@ describe('a world', () => {
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe("Inventory 'concert-1' exists in the world already")
       }),
     ))
+  })
+
+  // A reference brings no code, so a world creates through one only a program it runs (decision 0183).
+  test('creates through a reference a program the world runs, and fails the run where it runs none', async () => {
+    const Inventory = reference<typeof inventory>('Inventory')
+    const creating = holdingBy(operation.atLeastOnce(({ event, seats }) =>
+      Effect.gen(function*() {
+        const created = yield* create(Inventory, event, { capacity: 4 }, 'inventory')
+        if (created._tag !== 'Created') return yield* Effect.die('the inventory was there already')
+        const reply = yield* send(Inventory, event, { _tag: 'HoldRequested', seats }, 'hold')
+        return reply._tag === 'Accepted' ? { _tag: 'SeatsHeld' } as const : yield* Effect.die('no hold')
+      })
+    ))
+    await Effect.runPromise(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        // Another event's inventory makes the world run the program.
+        yield* world.create(inventory, 'concert-0', { capacity: 1 })
+        const held = yield* world.create(creating, 'booking-1', flags)
+        expect(yield* held.run(yield* held.pending('hold'))).toBe('Delivered')
+        expect((yield* held.state)._tag).toBe('Held')
+      }),
+    ))
+    const exit = await Effect.runPromiseExit(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        const held = yield* world.create(creating, 'booking-1', flags)
+        yield* held.run(yield* held.pending('hold'))
+      }),
+    ))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(
+      "the world runs no program 'Inventory', and a reference to it brings no code to run",
+    )
   })
 
   // A rejection at creation creates nothing, and a run's `create` is answered it (decision 0182).

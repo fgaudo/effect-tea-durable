@@ -7,15 +7,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 - **The API before the release.** Each point is a note, and the examples change with it. A point done is out of
   this list, and its note is `proposed` until the step is taken. Done: the defaults for what a program does not
-  have ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)), and a timer without its type
-  parameter ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)), and an `init` that rejects the flags
-  ([decision 0182](decisions/0182-init-may-reject-the-flags.md)). Next: a receiver named without its import, which
-  begins in `send` and `create` of [`src/program.ts`](../src/program.ts) and in
-  [`examples/booking/inventory.ts`](../examples/booking/inventory.ts).
-  - **A receiver named without its import.** `send(inventory, id, …)` imports the receiver's program, and the
-    inventory writes `'Booking'` as a string to know its sender
-    ([`examples/booking/inventory.ts`](../examples/booking/inventory.ts)). Two programs that talk both ways import
-    each other. A reference of a program's name and its inbound schema names a receiver without its code.
+  have ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)), a timer without its type
+  parameter ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)), an `init` that rejects the flags
+  ([decision 0182](decisions/0182-init-may-reject-the-flags.md)), and a receiver named by a reference
+  ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md)). Next: `consume`, which begins in `feed`
+  and `ack` of the `Handle` in [`src/runtime.ts`](../src/runtime.ts), and in
+  [`examples/order/report.ts`](../examples/order/report.ts), which [`examples/order/runtime.test.ts`](../examples/order/runtime.test.ts) drives by hand.
   - **`consume`.** The loop of a consumer, a page of `feed`, the handler in a transaction, `ack`, is written by hand
     in [`examples/order/report.ts`](../examples/order/report.ts) and in the runtime's tests. A helper runs it, with
     `wait` and the partitions a reader names.

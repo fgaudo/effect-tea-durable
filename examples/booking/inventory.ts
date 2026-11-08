@@ -4,7 +4,11 @@
  */
 import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
-import { type Origin, program, reject, type Rejected, rejectWith } from '../../src/index.ts'
+import { type Origin, program, reference, reject, type Rejected, rejectWith } from '../../src/index.ts'
+import type { booking } from './booking.ts'
+
+// The booking sends to the inventory, so each imports only the other's types (decision 0183).
+const Booking = reference<typeof booking>('Booking')
 
 const State = Schema.Struct({
   open: Schema.Boolean,
@@ -42,9 +46,10 @@ const total = (seats: Readonly<Record<string, number>>) => Object.values(seats).
 
 const available = (state: State) => state.capacity - total(state.held) - total(state.sold)
 
-// The name is written out: the booking's program imports this one.
-const bookingOf = (from: Origin<Sender>) =>
-  from._tag === 'Entity' && from.entity.name === 'Booking' ? from.entity.id : null
+// The return type is written. The booking's types are inferred from the inventory's, so a type inferred here from
+// `Booking` would make the inventory's type depend on itself.
+const bookingOf = (from: Origin<Sender>): string | null =>
+  from._tag === 'Entity' && from.entity.name === Booking.name ? from.entity.id : null
 
 const isOrganizer = (from: Origin<Sender>) => from._tag === 'Caller' && from.sender._tag === 'Organizer'
 

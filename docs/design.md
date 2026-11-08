@@ -327,7 +327,12 @@ yet either, and the operation sends again after a while; only a defect of the se
 ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). A full receiver stored nothing
 of the message, and the operation sends again after the same while: it is never given `Full`
 ([decision 0147](decisions/archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)). An operation creates an
-entity the same way, with `create` and a name. So an operation that talks only to entities may run at least once:
+entity the same way, with `create` and a name. Both name the receiver by its program, or by a *reference*:
+`reference<typeof inventory>('Inventory')` is the program's name with its types, made where an `import type` brings
+none of its code. The compiler checks the name against the program's, and the runtime reads only the name. Two
+programs that talk both ways import only each other's types, and a program compares a sender's name with a
+reference's ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md)). An operation that talks only to
+entities may run at least once:
 run again, it sends the same requests, and acts once. `update` never sends: a step never waits on another entity
 ([decision 0009](decisions/archive/0009-entities-talk-through-operations.md)).
 
@@ -886,7 +891,8 @@ machine, with one time and one process for all of them
 - what the runner sends reaches the receiver's machine, which handles its mailbox to its end before `send`
   returns. The world keeps the reply under the run's request while the work that asked is stored, so a run after a
   restart is given the stored reply. A receiver that does not exist answers `NotFound`, and `create` creates an
-  entity in the world;
+  entity in the world. A `create` through a reference fails the test where the world runs no program of its name,
+  since a reference brings no code to run ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md));
 - `run(pending, { crash: true })` runs the runner to its end, drops its message, and restarts the world: the
   process died between the replies and the completion;
 - `world.restart` restarts every entity, and `world.deploy(program)` restarts them with a new version of one

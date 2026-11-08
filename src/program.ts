@@ -10,6 +10,7 @@ import * as Result from 'effect/Result'
 import { Base64Url } from 'effect/encoding'
 import * as Schema from 'effect/Schema'
 import * as Str from 'effect/String'
+import type * as EffectTypes from 'effect/Types'
 import { createHash } from 'node:crypto'
 
 /**
@@ -450,9 +451,49 @@ export type Schemas<State, Flags, Inbound, Internal, Operation, Rejection, Sende
   projection: Schema.Codec<Projection, Json>
 }>
 
-export interface Program<T extends Types> {
+/** Only a type: the key under which a reference carries its program's types. Nothing is stored under it. */
+declare const ReferenceTypes: unique symbol
+
+/**
+ * A program as a sender names it: its name, with its types, and none of its code (decision 0183). `send` and `create`
+ * take a reference or the program, and reach the program the runtime deployed under the name.
+ * `reference<typeof p>(name)` makes one where an `import type` of `p` brings only its types.
+ */
+export interface Reference<T extends Types, Name extends string = string> {
+  /** The name of the program, which the runtime deployed it under. */
+  readonly name: Name
+  /**
+   * Only a type, never set: it carries `T` to `send` and `create`, which infer it. A program has none, so that a
+   * program stays assignable to one of wider types, as tests of migrations write.
+   */
+  readonly [ReferenceTypes]: EffectTypes.Invariant<T>
+}
+
+/** What a sender names a receiver by: the receiver's program, or a reference to it (decision 0183). */
+export type Receiver<T extends Types> = Program<T> | Reference<T>
+
+/**
+ * A reference to the program `P` under its name, made without `P`'s code: `P` is `typeof p` of an `import type`. The
+ * name is the type of `P`'s, so a name that is not the program's does not compile, where a send under it would
+ * wait for ever for a deploy of that name (decision 0183).
+ */
+export const reference = <P extends Program<any, string>>(name: P['name']): Reference<ProgramTypes<P>, P['name']> =>
+  // The types are all the reference carries, and nothing reads them at run time.
+  Object.freeze({ name }) as unknown as Reference<ProgramTypes<P>, P['name']>
+
+/** The types of a program. */
+type ProgramTypes<P> = P extends Program<infer T, string> ? T : never
+
+/**
+ * Whether a receiver is a program, whose code a rehearsal can run, and not a reference, which brings only the name
+ * of the program deployed under it.
+ */
+export const isProgram = <T extends Types>(receiver: Receiver<T>): receiver is Program<T> =>
+  Object.hasOwn(receiver, 'init')
+
+export interface Program<T extends Types, Name extends string = string> {
   /** What other entities read in `Address.name`, and the runtime stores the entity under. */
-  readonly name: string
+  readonly name: Name
   /**
    * Every key the program's work is held under, with the schema of its parameter, or null for a key without one.
    * The machine checks `durable` against them (decisions 0037, 0132), and a deploy that renames one is a change of
@@ -1460,6 +1501,8 @@ export const program = <
   // constraint, whose keys are any string, and `IndexNames` and `TopicValues` read that as none (decision 0180).
   Indexes extends Readonly<Record<string, (projection: Projection) => Scalar>>,
   Topics extends Readonly<Record<string, (projection: Projection) => Json>>,
+  // The name is a type too, so that a reference made without the program's code is checked against it (decision 0183).
+  const Name extends string,
   const Keys extends Readonly<Record<string, Schema.Codec<unknown, Json> | null>> = {},
   Operations extends Declared<Operation, Internal> = Declared<Operation, Internal>,
   const C extends Children<State> = {},
@@ -1467,7 +1510,7 @@ export const program = <
   declaration:
     & Pieces<State, Inbound, Internal, Operation, Rejection, Sender, Projection, never, never, Keys, Operations, C>
     & Readonly<{
-      name: string
+      name: Name
       /**
        * The first state, from the flags and the time of the creation. It may reject the flags, as `update` rejects
        * a message, with its own reasons: the entity is not created, and nothing is stored (decision 0182).
@@ -1486,7 +1529,8 @@ export const program = <
     }>,
 ): Program<
   & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
-  & Readonly<{ index: IndexNames<Indexes>; topics: TopicValues<Topics> }>
+  & Readonly<{ index: IndexNames<Indexes>; topics: TopicValues<Topics> }>,
+  Name
 > => {
   type Of =
     & Composed<State, Flags, Inbound, Internal, Operation, Rejection, Sender, Projection, Keys, Operations, C>
@@ -1591,13 +1635,13 @@ export type Creation<Reason = never> =
  */
 export class Entities extends Context.Service<Entities, {
   readonly send: <T extends Types>(
-    program: Program<T>,
+    program: Receiver<T>,
     id: string,
     message: T['inbound'],
     name: string,
   ) => Effect.Effect<Reply<T['rejection']>>
   readonly create: <T extends Types>(
-    program: Program<T>,
+    program: Receiver<T>,
     id: string,
     flags: T['flags'],
     name: string,
@@ -1613,7 +1657,7 @@ export class Entities extends Context.Service<Entities, {
  * given `Full` (decision 0147).
  */
 export const send = <T extends Types>(
-  program: Program<T>,
+  program: Receiver<T>,
   id: string,
   message: T['inbound'],
   name: string,
@@ -1626,7 +1670,7 @@ export const send = <T extends Types>(
  * (decisions 0017, 0050, 0060).
  */
 export const create = <T extends Types>(
-  program: Program<T>,
+  program: Receiver<T>,
   id: string,
   flags: T['flags'],
   name: string,

@@ -38,6 +38,7 @@ import {
   isText,
   isTimer,
   type Program,
+  type Receiver,
   type Reply,
   type Request,
   runnerOf,
@@ -2333,7 +2334,7 @@ export const launchWith = (
      * The deployment of `program`, once there is one. An operation that reaches a program not deployed yet waits
      * for it, as for a suspended receiver: what runs does not depend on the order of the deploys (decision 0045).
      */
-    const deployedAs = <T extends Types>(program: Program<T>): Effect.Effect<Deployment<T>> =>
+    const deployedAs = <T extends Types>(program: Receiver<T>): Effect.Effect<Deployment<T>> =>
       Effect.suspend(() => {
         const deployed = deployment<T>(program.name)
         if (deployed !== undefined) return Effect.succeed(deployed)
@@ -2366,7 +2367,7 @@ export const launchWith = (
       /** The request named `name` to the entity `id` of `program`, or the run's defect if it made it already. */
       const named = <T extends Types>(
         kind: keyof typeof used,
-        program: Program<T>,
+        program: Receiver<T>,
         id: string,
         name: string,
       ): Effect.Effect<Readonly<{ deployed: Deployment<T>; request: Request<T['sender']> }>> =>
@@ -2397,7 +2398,7 @@ export const launchWith = (
           }))
         })
       return Entities.of({
-        send: <T extends Types>(program: Program<T>, id: string, message: T['inbound'], name: string) =>
+        send: <T extends Types>(program: Receiver<T>, id: string, message: T['inbound'], name: string) =>
           Effect.flatMap(named('message', program, id, name), ({ deployed, request }) => {
             // `null` is no reply yet: the receiver crashed, or is suspended and has been resumed since.
             const waiting: Waiting = { entity, key, incarnation, name }
@@ -2413,7 +2414,7 @@ export const launchWith = (
               ).pipe(Effect.ensuring(forget)))
             return faulted(Effect.repeat(attempt, { until: (reply) => reply !== null }))
           }),
-        create: <T extends Types>(program: Program<T>, id: string, flags: T['flags'], name: string) =>
+        create: <T extends Types>(program: Receiver<T>, id: string, flags: T['flags'], name: string) =>
           Effect.flatMap(named('creation', program, id, name), ({ deployed, request }) => {
             const attempt = Effect.tap(
               unlessCrashed(create(deployed, id, flags, request), null),

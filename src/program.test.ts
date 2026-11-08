@@ -18,14 +18,18 @@ import {
   Entities,
   idempotencyKey,
   InvariantDefect,
+  isProgram,
   type Json,
   noWork,
   operation,
   part,
   type Program,
   program,
+  reference,
   reject,
   rejectWith,
+  send,
+  create,
   timer,
   type Topic,
 } from './program.ts'
@@ -353,6 +357,49 @@ test("a program's init may reject with the program's reasons, and a part's may n
   const room = part(schemas)({ ...pieces, init: ({ seats }) => seats < 10 ? reject : { seats } })
   expect([misreasoned, room]).toHaveLength(2)
   expect(hall.init({ seats: 3 }, DateTime.makeUnsafe(0))).toEqual(rejectWith('TooFew'))
+})
+
+test('a reference is the name of its program, which the compiler checks, and types send and create as the program does (decision 0183)', async () => {
+  const hall = program({
+    state: Schema.Struct({ seats: Schema.Int }),
+    flags: Schema.Struct({ seats: Schema.Int }),
+    inbound: Schema.Literal('Sell'),
+    rejection: Schema.Literal('TooFew'),
+    projection: Schema.Int,
+  })({
+    name: 'Hall',
+    init: ({ seats }) => ({ seats }),
+    update: () => (state) => state,
+    project: ({ seats }) => seats,
+  })
+  const Hall = reference<typeof hall>('Hall')
+  // @ts-expect-error a reference names the program by its name, and `Hal` is not the name of `hall`
+  const misnamed = reference<typeof hall>('Hal')
+  // What a sender gives reaches the runtime as the name alone.
+  const received: Array<readonly [string, boolean]> = []
+  const entities = Entities.of({
+    send: (receiver) =>
+      Effect.sync(() => received.push([receiver.name, isProgram(receiver)])).pipe(
+        Effect.as({ _tag: 'Rejected', reason: 'TooFew' } as const),
+      ),
+    create: (receiver) =>
+      Effect.sync(() => received.push([receiver.name, isProgram(receiver)])).pipe(Effect.as({ _tag: 'Created' } as const)),
+  })
+  const sending = Effect.gen(function*() {
+    const reply = yield* send(Hall, 'hall-1', 'Sell', 'sell')
+    // The reasons are the program's, as `send(hall, …)` gives them.
+    const reason: 'TooFew' | null = reply._tag === 'Rejected' ? reply.reason : null
+    const created = yield* create(Hall, 'hall-2', { seats: 3 }, 'hall')
+    // @ts-expect-error the message is one of the program's inbound messages
+    yield* send(Hall, 'hall-1', 'Buy', 'buy')
+    // @ts-expect-error the flags are the program's
+    yield* create(Hall, 'hall-3', { rows: 3 }, 'hall')
+    yield* send(hall, 'hall-1', 'Sell', 'again')
+    return [reason, created._tag] as const
+  })
+  expect(await Effect.runPromise(Effect.provideService(sending, Entities, entities))).toEqual(['TooFew', 'Created'])
+  expect(received).toEqual([['Hall', false], ['Hall', false], ['Hall', false], ['Hall', false], ['Hall', true]])
+  expect(misnamed).toBeDefined()
 })
 
 test('a timer needs no type parameter: its message keeps its tag, and durable checks it (decision 0181)', () => {

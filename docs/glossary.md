@@ -109,6 +109,8 @@ Cluster's says so.
   JSON, a time as its milliseconds. Stored as a row with the value of each index, which `read`, a query, a count,
   a sum and a count per value read. The read model answers what the program's application reads to act; any other question over the
   entities is a *report*.
+- **Reference, `reference`.** A program's name with its types, and none of its code, which `send` and `create`
+  name a receiver by. `reference<typeof p>(name)` makes one, and the compiler checks the name against `p`'s.
 - **Reader.** A caller of `feed` under a consumer's name, which may name the partitions it reads. The readers of
   one consumer divide its partitions among them, and the division is the caller's: the runtime holds no reader,
   and two readers that name one partition are given the same rows.

@@ -12,12 +12,16 @@ import {
   type Origin,
   operation,
   program,
+  reference,
   reject,
   type Rejected,
   send,
   timer,
 } from '../../src/index.ts'
-import { inventory } from './inventory.ts'
+import type { inventory } from './inventory.ts'
+
+// The inventory imports the booking's name too, so each imports only the other's types (decision 0183).
+const Inventory = reference<typeof inventory>('Inventory')
 
 // Checked with the flags, before the booking exists: a booking holds some seats (decision 0049).
 const Seats = Schema.Int.check(Schema.isGreaterThan(0))
@@ -94,7 +98,7 @@ type Operation = typeof Operation.Type
 // request, is answered from the stored reply, and holds nothing twice. So it may run at least once.
 const hold = Effect.fn('Hold')(
   function*({ event, seats }: Extract<Operation, { _tag: 'Hold' }>) {
-    const reply = yield* send(inventory, event, { _tag: 'HoldRequested', seats }, 'hold')
+    const reply = yield* send(Inventory, event, { _tag: 'HoldRequested', seats }, 'hold')
     // A rejection with no reason means the two entities disagree: a booking holds once, and holds some seats.
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsHeld' } satisfies Internal
@@ -110,7 +114,7 @@ const hold = Effect.fn('Hold')(
 // two entities disagree, which no message of this program can repair: it is a defect, and suspends the booking.
 const confirm = Effect.fn('Confirm')(
   function*({ event }: Extract<Operation, { _tag: 'Confirm' }>) {
-    const reply = yield* send(inventory, event, { _tag: 'ConfirmRequested' }, 'confirm')
+    const reply = yield* send(Inventory, event, { _tag: 'ConfirmRequested' }, 'confirm')
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsConfirmed' } satisfies Internal
       : yield* Effect.die('the inventory did not accept the confirmation of its own hold')
@@ -119,7 +123,7 @@ const confirm = Effect.fn('Confirm')(
 
 const release = Effect.fn('Release')(
   function*({ event }: Extract<Operation, { _tag: 'Release' }>) {
-    const reply = yield* send(inventory, event, { _tag: 'ReleaseRequested' }, 'release')
+    const reply = yield* send(Inventory, event, { _tag: 'ReleaseRequested' }, 'release')
     return reply._tag === 'Accepted'
       ? { _tag: 'SeatsReleased' } satisfies Internal
       : yield* Effect.die('the inventory did not accept the release of its own hold')

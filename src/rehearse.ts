@@ -13,7 +13,9 @@ import {
   InvariantDefect,
   type Key,
   isTimer,
+  isProgram,
   type Program,
+  type Receiver,
   type Reply,
   type Request,
   runnerOf,
@@ -156,14 +158,22 @@ const makeWorld = (at: DateTime.Utc) => {
   // A world holds entities of many programs: each is stepped by the one deployed under its name (decision 0064).
   const programOf = <T extends Types>(entity: Entity<T>) => programs.get(entity.address.name) as unknown as Program<T>
 
-  /** The program the world runs under `program`'s name, which `program` becomes when it runs none. */
-  const deployedAs = <T extends Types>(program: Program<T>): Program<T> => {
-    const held = programs.get(program.name)
-    if (held !== undefined) return held as unknown as Program<T>
-    checkProgram(program)
-    programs.set(program.name, program as unknown as Program<Types>)
-    return program
-  }
+  /**
+   * The program the world runs under `program`'s name, which `program` becomes when it runs none. A reference
+   * brings no code, so a world that runs no program under its name has none to run: in the runtime the send waits
+   * for that deploy, which a test never makes, and here it fails the test (decision 0183).
+   */
+  const deployedAs = <T extends Types>(program: Receiver<T>): Effect.Effect<Program<T>> =>
+    Effect.suspend(() => {
+      const held = programs.get(program.name)
+      if (held !== undefined) return Effect.succeed(held as unknown as Program<T>)
+      if (!isProgram(program)) {
+        return Effect.die(`the world runs no program '${program.name}', and a reference to it brings no code to run`)
+      }
+      checkProgram(program)
+      programs.set(program.name, program as unknown as Program<Types>)
+      return Effect.succeed(program)
+    })
 
   /**
    * What the runtime stores of a step that only the world keeps: the replies to other entities' operations, and
@@ -287,7 +297,7 @@ const makeWorld = (at: DateTime.Utc) => {
    */
   const entitiesOf = (sender: Address, key: Key, incarnation: number, droppable: boolean) => {
     const used = { message: new Set<string>(), creation: new Set<string>() }
-    const named = (kind: keyof typeof used, program: Program<Types>, id: string, name: string) =>
+    const named = (kind: keyof typeof used, program: Receiver<Types>, id: string, name: string) =>
       Effect.suspend(() => {
         if (droppable) {
           return invariant(`the droppable operation under '${Machine.shownKey(key)}' sent to ${program.name} '${id}'`)
@@ -304,23 +314,23 @@ const makeWorld = (at: DateTime.Utc) => {
         return Effect.succeed<Request<never>>({ _tag: 'Operation', entity: sender, key, incarnation, name })
       })
     return Entities.of({
-      send: <R extends Types>(program: Program<R>, id: string, message: R['inbound'], name: string) =>
-        Effect.flatMap(named('message', program as unknown as Program<Types>, id, name), (request) => {
+      send: <R extends Types>(program: Receiver<R>, id: string, message: R['inbound'], name: string) =>
+        Effect.flatMap(named('message', program as unknown as Receiver<Types>, id, name), (request) => {
           const receiver = entities.get(addressKey({ name: program.name, id })) as Entity<R> | undefined
           // A receiver that does not exist answers `NotFound`, and stores nothing.
           return receiver === undefined
             ? Effect.succeed<Reply<R['rejection']>>({ _tag: 'NotFound' })
             : receive(receiver, message, request)
         }),
-      create: <R extends Types>(program: Program<R>, id: string, flags: R['flags'], name: string) =>
-        Effect.flatMap(named('creation', program as unknown as Program<Types>, id, name), (request) =>
+      create: <R extends Types>(program: Receiver<R>, id: string, flags: R['flags'], name: string) =>
+        Effect.flatMap(named('creation', program as unknown as Receiver<Types>, id, name), (request) =>
           Effect.suspend((): Effect.Effect<Creation<R['rejection']>> => {
             const existing = entities.get(addressKey({ name: program.name, id })) as Entity<R> | undefined
             if (existing === undefined) {
               // A creation that cannot be stored is the creator's defect, as in the runtime (decision 0049). One
               // `init` rejects creates nothing, and its reply is not stored (decision 0182).
               return Effect.map(
-                born(deployedAs(program), id, flags, request),
+                Effect.flatMap(deployedAs(program), (deployed) => born(deployed, id, flags, request)),
                 (born): Creation<R['rejection']> => born._tag === 'Rejected' ? born : { _tag: 'Created' },
               )
             }
@@ -426,18 +436,19 @@ const makeWorld = (at: DateTime.Utc) => {
       Effect.suspend(() => {
         // A runner's `create` reaches the program by name, as in the runtime. The test names the program itself, so
         // another one under that name is the test's mistake, and is not run in silence.
-        const deployed = deployedAs(program)
-        if (deployed !== program) return Effect.die(`the world runs another program under the name '${program.name}'`)
-        const fault = idFault(id)
-        if (fault !== undefined) return invariant(fault)
-        if (entities.has(addressKey({ name: program.name, id }))) {
-          return Effect.die(`${program.name} '${id}' exists in the world already`)
-        }
-        // No one retries the test's creation, so it is the entity's own request: no sender is needed.
-        return Effect.flatMap(born(deployed, id, flags, { _tag: 'Self', id: 'creation' }), (entity) =>
-          entity._tag === 'Rejected'
-            ? Effect.die(`the init of ${program.name} rejected the flags of '${id}'`)
-            : Effect.succeed(memberOf(entity.entity)))
+        return Effect.flatMap(deployedAs(program), (deployed) => {
+          if (deployed !== program) return Effect.die(`the world runs another program under the name '${program.name}'`)
+          const fault = idFault(id)
+          if (fault !== undefined) return invariant(fault)
+          if (entities.has(addressKey({ name: program.name, id }))) {
+            return Effect.die(`${program.name} '${id}' exists in the world already`)
+          }
+          // No one retries the test's creation, so it is the entity's own request: no sender is needed.
+          return Effect.flatMap(born(deployed, id, flags, { _tag: 'Self', id: 'creation' }), (entity) =>
+            entity._tag === 'Rejected'
+              ? Effect.die(`the init of ${program.name} rejected the flags of '${id}'`)
+              : Effect.succeed(memberOf(entity.entity)))
+        })
       }),
     restart,
     deploy: (program) =>
