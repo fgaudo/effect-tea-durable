@@ -53,6 +53,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) | A library on unstable modules is released as experimental |  |
 | [0193](0193-the-public-surface-is-four-entries.md) | The public surface is four entries: the main one, a program's module, a test's and a launcher's on Cluster |  |
 | [0195](0195-the-package-is-effect-tea-persistent.md) | The package is `@fgaudo/effect-tea-persistent`, a program's work is `work`, a reader fetches, and `deploy` stays |  |
+| [0196](0196-the-quick-start-is-an-example-the-readme-shows-whole.md) | The quick start is an example that the README shows whole, and a test keeps the two equal |  |
 
 ## The machine and the program
 

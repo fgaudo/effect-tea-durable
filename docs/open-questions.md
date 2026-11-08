@@ -116,6 +116,16 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - the modules of `effect/observability`, `OtlpTracer`, `OtlpMetrics` and `PrometheusMetrics`, which export what
     the runtime records and need only its names.
 
-## Naming
+## Programs
 
-- The name of the library, once there is code to publish.
+- **A request without a sender.** A program that leaves out `sender` has the sender `null`, and every `create` and
+  `send` of it, and every `send` of its rehearsal, still passes `sender: null`, as the quick start does
+  ([decision 0196](decisions/0196-the-quick-start-is-an-example-the-readme-shows-whole.md)). The same holds of
+  `flags` left as `Schema.Null` ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)).
+  Whether a request may leave out a sender that is `null`, and `create` flags that are `null`, is not decided. It
+  would be decided by:
+  - how many programs of the guide have no sender or no flags, once the guide is written;
+  - whether an optional field typed by a conditional type keeps the errors of the compiler readable where a
+    program does have a sender;
+  - what the runtime's housekeeping changes of what a program passes to `send`, since both change the same
+    signature.

@@ -318,6 +318,17 @@ describe('the form of the examples', () => {
     )
     expect(found).toEqual([])
   })
+  // The README shows the quick start's files whole, so a change of the API that `bun test` finds in them fails here
+  // until the README shows it too (decision 0196).
+  test("the README's quick start is the code of examples/quick-start, each file whole", () => {
+    const read = (file: string) => readFileSync(join(import.meta.dir, '..', file), 'utf8').replaceAll('\r\n', '\n')
+    const readme = read('README.md')
+    const start = readme.indexOf('## Quick start\n')
+    expect(start).toBeGreaterThan(-1)
+    const section = readme.slice(start, readme.indexOf('\n## ', start))
+    const blocks = [...section.matchAll(/```ts\n([\s\S]*?)```\n/g)].map(([, code]) => code)
+    expect(blocks).toEqual([read('examples/quick-start/hold.ts'), read('examples/quick-start/hold.test.ts')])
+  })
 })
 
 describe('the check of the form', () => {

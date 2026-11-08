@@ -36,6 +36,82 @@ flowchart LR
   project -->|a row in each topic whose selection changes| outbox
 ```
 
+## Quick start
+
+A seat held for a quarter of an hour, confirmed in time or released when the time runs out. The program is
+[`examples/quick-start/hold.ts`](examples/quick-start/hold.ts):
+
+```ts
+import * as DateTime from 'effect/DateTime'
+import * as Schema from 'effect/Schema'
+import { noWork, program, reject, timer } from '@fgaudo/effect-tea-persistent/program'
+
+// A seat held for a quarter of an hour: confirmed in time, or released when the time runs out.
+const State = Schema.Union([
+  Schema.TaggedStruct('Held', { until: Schema.DateTimeUtcFromMillis }),
+  Schema.TaggedStruct('Confirmed', {}),
+  Schema.TaggedStruct('Released', {}),
+])
+
+export const hold = program({
+  state: State,
+  flags: Schema.Null,
+  inbound: Schema.TaggedStruct('Confirm', {}),
+  internal: Schema.TaggedStruct('Expired', {}),
+  projection: Schema.Struct({ status: Schema.Literals(['Held', 'Confirmed', 'Released']) }),
+})({
+  name: 'Hold',
+  keys: { expiry: null },
+  init: (_, at) => ({ _tag: 'Held', until: DateTime.add(at, { minutes: 15 }) }),
+  // `Expired` arrives only while the state holds its timer, so only while the seat is held.
+  update: (message) => (state) =>
+    message._tag === 'Expired' ? { _tag: 'Released' } : state._tag === 'Held' ? { _tag: 'Confirmed' } : reject,
+  // The timer is data, derived from the state: a confirmed seat holds none, and nothing has to cancel it.
+  work: (state) => (state._tag === 'Held' ? { expiry: timer(state.until, { _tag: 'Expired' }) } : noWork),
+  project: (state) => ({ status: state._tag }),
+})
+```
+
+Its rehearsal fires the timer without waiting for it, and its launch stores the seat in SQLite, in
+[`examples/quick-start/hold.test.ts`](examples/quick-start/hold.test.ts), which `bun test` runs:
+
+```ts
+import { SqliteClient } from '@effect/sql-sqlite-bun'
+import { expect, test } from 'bun:test'
+import * as DateTime from 'effect/DateTime'
+import * as Effect from 'effect/Effect'
+import { launch } from '@fgaudo/effect-tea-persistent'
+import { rehearse, rejected } from '@fgaudo/effect-tea-persistent/testing'
+import { hold } from './hold.ts'
+
+// Rehearsed, without a database or a clock: the timer fires because the test fires it.
+test('a seat nobody confirms in time is released', () =>
+  Effect.runPromise(rehearse(
+    hold,
+    { flags: null, at: DateTime.makeUnsafe('2026-11-08T10:00:00Z') },
+    Effect.fnUntraced(function*(rehearsal) {
+      yield* rehearsal.fire('expiry')
+      expect(yield* rehearsal.send({ _tag: 'Confirm' }, null)).toMatchObject(rejected)
+      expect(yield* rehearsal.projection).toEqual({ status: 'Released' })
+    }),
+  )))
+
+// Launched on SQLite: the state is stored, and a retry of a request is answered as the first time.
+test('a seat confirmed in time is confirmed once', () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    const runtime = yield* launch()
+    const holds = yield* runtime.deploy(hold)
+    yield* holds.create('seat-12', null, { requestId: 'hold-1', sender: null })
+    const confirm = { requestId: 'confirm-1', sender: null }
+    expect(yield* holds.send('seat-12', { _tag: 'Confirm' }, confirm)).toEqual({ _tag: 'Accepted' })
+    expect(yield* holds.send('seat-12', { _tag: 'Confirm' }, confirm)).toEqual({ _tag: 'Accepted' })
+    expect(yield* holds.read('seat-12')).toEqual({ status: 'Confirmed' })
+  })).pipe(Effect.provide(SqliteClient.layer({ filename: ':memory:' })))))
+```
+
+An operation, the work a program asks of the world with an idempotency key, is shown by
+[`examples/order`](examples/order), and each piece of a program by [`docs/design.md`](docs/design.md).
+
 ## Why
 
 An entity that lives in time, an order waiting for its payment or a booking held until a deadline, has the
@@ -76,6 +152,7 @@ no life of its own, a profile or a product, does not need it.
 - [`docs/glossary.md`](docs/glossary.md): the words of the design, each defined once;
 - [`docs/open-questions.md`](docs/open-questions.md): what is not decided yet;
 - [`docs/roadmap.md`](docs/roadmap.md): the steps from this design to a library, in order;
+- [`examples/quick-start`](examples/quick-start): the quick start, a seat held until a deadline;
 - [`examples/order`](examples/order): an order's lifecycle, with its scenarios as tests, the question a
   query across entities answers — which orders nobody paid, how many, and what they owe — what each of its steps publishes for other
   systems, and a report built from the log, how many orders are in each status

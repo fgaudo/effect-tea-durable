@@ -5,11 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **A quick start.** The README's first code is [`examples/order/order.ts`](../examples/order/order.ts), 312 lines.
-  A quick start shows a program of a screen, its rehearsal and its `launch` in forty. The runtime's
-  housekeeping, a step of later, may change what a program passes to `send` or to `launch`, and changes the quick
-  start with it.
-
 - **A guide from requirements to a program.** An agent that built a backend from the documentation alone, a rental
   of bikes, learned five rules of modelling only from the examples' code. The design states each rule it rests on,
   but no document says what the rule asks of a program. A guide for whoever writes a program says each one, with
@@ -73,7 +68,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   experimental, one process on SQLite or PostgreSQL, Cluster on one machine. The documents, the modules and the
   tables move to `CONTRIBUTING.md`, with the diagram of the modules, and the rule of [`AGENTS.md`](../AGENTS.md) on
   the diagrams moves with it. The README of effect-tea is the model of its sections, since the two libraries are
-  read by the same readers. It comes after the quick start and the guide, which it links.
+  read by the same readers. It comes after the guide, which it links, as it links the quick start.
 
 - **A site with the guide and the API reference.** [`design.md`](design.md) is a specification, not a reference:
   no document lists what each export takes and gives. The site is built as effect-tea's, with typedoc, and holds
