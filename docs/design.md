@@ -26,7 +26,7 @@ tested by calling pure functions, crashes included.
 
 | Piece        | What it does                                                                              |
 | ------------ | ----------------------------------------------------------------------------------------- |
-| `schemas`    | how the state, flags, messages, operations, reasons and projection leave the process      |
+| `schemas`    | `state`, `flags`, `inbound`, `internal`, `operation`, `rejection`, `sender`, `projection` |
 | `name`       | what the runtime stores the entity under, and what other entities see it as               |
 | `keys`       | every key the work under way is held under: a name, or `key` with its parameter's schema |
 | `init`       | the first state, from the flags and the time of the creation, or a rejection of the flags |

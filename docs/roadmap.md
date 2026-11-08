@@ -34,6 +34,20 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   made introduce state, `work`, operation, incarnation, projection, topic and outbox by an order. The README links
   [`docs/design.md`](design.md) wherever it would link the guide, and the step replaces each of those links.
 
+  The parts done, and the part next:
+  - Done: the guide's running example, [`examples/rental`](../examples/rental), a bike and a ride whose rehearsals
+    and runtime tests show each of the five rules, and a ride whose end drops its email, which fails as a defect.
+  - Done: the guide's first page, [`guide/README.md`](guide/README.md), from the requirement of the rental to the
+    program, with the five rules among nine. The README and `CONTRIBUTING.md` link it, and the README's table lists
+    the rental.
+  - Done: the check by a reader, a subagent, on 2026-11-08. It wrote a gym membership that compiles and passes its
+    rehearsals. Its gaps went into the first page: the keys of the schemas, the form of `update` with its return
+    type, `Origin`, an idempotent runner's key, the results of a rehearsal's acts, `runtime.settled`, and that a
+    rehearsal's `send` draws a new request id, so that a retry is tested on the runtime.
+  - Next: the pages by topic, in `docs/guide/`, each replacing the link to its section of the design at the end of
+    the first page.
+  - Then: a second reader, a subagent given a loan of books with a due date, to check the pages by topic.
+
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point
   where fibers yield, after which the pinned seeds of the explored tests are found again. The runtime's

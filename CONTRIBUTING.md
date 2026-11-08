@@ -19,6 +19,7 @@ from random seeds until one fails. [`AGENTS.md`](AGENTS.md) says when each one i
 
 ## The documents
 
+- [`docs/guide/README.md`](docs/guide/README.md): the guide for whoever writes a program, on the rental of bikes.
 - [`docs/design.md`](docs/design.md): what the library is for, its model of execution, and what it guarantees at
   each point where the process may die.
 - [`docs/glossary.md`](docs/glossary.md): the words of the design, each defined once.
