@@ -197,12 +197,12 @@ handler for each child that raises events, and is required exactly when one does
 takes the id, then the event and `children`. It runs in the step that raised the event, and nothing stores the
 event.
 
-The line raises `Removed` only from the state `Removed`, which holds no work. **A child leaves its work before its
-parent drops it.** A reserved line that is removed first releases its stock in `Releasing`, and only the release's
-answer moves it to `Removed`. The cart drops it in that step. Had the line raised `Removed` while releasing, the
-cart would have dropped a key whose operation still runs, and that is a defect. Had the line raised `Removed` and
-stayed in `Releasing`, the release already done would still be its work, and a cart that kept the line would run it
-again. `Removed` holds no work, so the cart may keep a line or drop it, and nothing runs twice.
+The line raises `Removed` only in a step whose next state is `Removed`, which holds no work. **A child leaves its
+work before its parent drops it.** A reserved line that is removed first releases its stock in `Releasing`, and only
+the release's answer moves it to `Removed`. The cart drops it in that step. Had the line raised `Removed` while
+releasing, the cart would have dropped a key whose operation still runs, and that is a defect. Had the line raised
+`Removed` and stayed in `Releasing`, the release already done would still be its work, and a cart that kept the line
+would run it again. `Removed` holds no work, so the cart may keep a line or drop it, and nothing runs twice.
 
 A line removed and added again comes back under new **incarnations**, so an answer of its earlier run is dropped.
 
@@ -268,7 +268,7 @@ defect.
    its raised events and never reads to decide. Otherwise it is a field of the parent's state.
 3. **What a parent tells a child is an external message**, which no caller can send, and which the child takes in
    every state: a child that rejects one is a defect.
-4. **A child leaves its work before its parent drops it.** It raises the event that asks for its removal from a
-   state that holds no work.
+4. **A child leaves its work before its parent drops it.** It raises the event that asks for its removal in a
+   step whose next state holds no work.
 5. **A child's messages, keys, operations and reasons are the parent's**, under the child's name, with the id for
    a child by id.

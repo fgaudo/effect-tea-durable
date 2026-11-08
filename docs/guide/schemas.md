@@ -90,9 +90,9 @@ Every row carries the version that wrote it. The runtime reads a row by migratin
 program's, and decoding it with the program's schema. So the program sees values of its own version only, and
 `update`, `work` and `project` are written for version 2 alone.
 
-A row is written again at the program's version only when an event changes it. A bike that no ride touches keeps
-the state version 1 wrote, migrated at every read. The read model works the same way: a query reads each row
-through the projection's migrations. An index that version 2 adds or changes is computed only when a row is
+A row is written again at the program's version only when an event changes it. A bike that takes no step after the
+deploy keeps the state version 1 wrote, migrated at every read. The read model works the same way: a query reads
+each row through the projection's migrations. An index that version 2 adds or changes is computed only when a row is
 written, so an operator runs `reindex` after such a deploy, and every row of the read model is written again.
 
 ## Work under way

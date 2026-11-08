@@ -100,7 +100,18 @@ pieces are written in:
 
 ```ts
 import * as Schema from 'effect/Schema'
-import { noWork, operation, program, reject, timer } from '@fgaudo/effect-tea-persistent/program'
+import {
+  defect,
+  noWork,
+  type Origin,
+  operation,
+  program,
+  reference,
+  reject,
+  type Rejected,
+  send,
+  timer,
+} from '@fgaudo/effect-tea-persistent/program'
 
 export const ride = program({
   state: State,
@@ -211,8 +222,9 @@ entity's operation. The ride accepts an end only from its own customer, so `upda
 const isCustomer = (from: Origin<Sender>, ride: Ride) => from._tag === 'Caller' && from.sender.id === ride.customer
 ```
 
-`Origin` has a third case, `Self`, for the entity's own internal messages, which `update` never needs to check. `meta.at` is the time the runtime handles the
-message, and is how `update` reads time while it stays a pure function. The cost of a ride is computed from it.
+`Origin` has a third case, `Self`, for the entity's own internal messages, which `update` never needs to check.
+`meta.at` is the time the runtime handles the message, and is how `update` reads time while it stays a pure
+function. The cost of a ride is computed from it.
 
 ## The work a state holds
 
@@ -277,9 +289,10 @@ const charge = Effect.fn('Charge')(
 
 This one is the order's, of [`examples/order`](../../examples/order/order.ts). A failure the provider may recover
 from is retried inside the runner, with `Effect.retry` and a schedule that ends, under the same key. An expected
-failure, such as a declined card, becomes an internal message, and the state decides what follows. One declared `atMostOnce` is not run again, and delivers the message
-given beside it instead. The requirement says that a second email is worse than none, so the email is at most
-once, and the state records `Unsure` when a crash leaves it unknown.
+failure, such as a declined card, becomes an internal message, and the state decides what follows. One declared
+`atMostOnce` is not run again, and delivers the message given beside it instead. The requirement says that a second
+email is worse than none, so the email is at most once, and the state records `Unsure` when a crash leaves it
+unknown.
 
 ## An operation leaves the state only by its completion
 
