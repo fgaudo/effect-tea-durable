@@ -1,6 +1,6 @@
 # 0190. A boundary maps each answer to its protocol, with one entry for each tag
 
-**Status:** proposed, 2026-11-08, for the step The API before the release of the [roadmap](../roadmap.md).
+**Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md).
 
 ## Context
 

@@ -1,6 +1,6 @@
 # 0185. `inspect` gives what is stored of one entity, read from one snapshot
 
-**Status:** proposed, 2026-11-08, for the step The API before the release of the [roadmap](../roadmap.md). Adds to
+**Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Adds to
 [decision 0114](archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) the reading of one
 entity that an operator decides a `resume` or a `discard` by.
 

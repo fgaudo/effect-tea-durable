@@ -1,6 +1,6 @@
 # 0182. A program's `init` may reject the flags, and the rejection is not stored
 
-**Status:** proposed, 2026-11-08, for the step The API before the release of the [roadmap](../roadmap.md). Changes
+**Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Changes
 [decision 0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md), whose creation is answered only
 `Created` and `AlreadyExists`, and [decision 0012](archive/0012-creation-is-a-request-of-its-own.md), which puts a
 check of the flags in their schema alone.

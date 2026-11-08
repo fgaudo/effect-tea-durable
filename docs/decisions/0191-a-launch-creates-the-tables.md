@@ -1,6 +1,6 @@
 # 0191. A launch creates the tables, in one transaction, unless it is told they exist
 
-**Status:** proposed, 2026-11-08, for the step The API before the release of the [roadmap](../roadmap.md). Changes
+**Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Changes
 [decision 0055](archive/0055-the-public-surface-is-what-its-users-use.md), whose operator creates the tables, and
 [decision 0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md),
 whose column `request_id` is added and filled by two statements that commit apart.

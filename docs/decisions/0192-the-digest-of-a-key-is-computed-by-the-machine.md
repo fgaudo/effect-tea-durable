@@ -1,6 +1,6 @@
 # 0192. The digest of an idempotency key is computed by the machine, and `src/program.ts` reaches no module of Node
 
-**Status:** proposed, 2026-11-08, for the step The API before the release of the [roadmap](../roadmap.md). Changes
+**Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Changes
 [decision 0123](archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md), whose `digestOf` made
 `src/program.ts` the first module of `src/` to import from `node:`.
 

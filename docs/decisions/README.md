@@ -69,7 +69,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0132](archive/0132-a-key-may-take-a-parameter.md) | A key may take a parameter, and an incarnation is drawn from one counter of the entity | [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md) |
 | [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md) | A key is a name and a parameter, as data, in every value and row that holds one |  |
 | [0133](archive/0133-an-entity-composes-children-as-effect-tea-does.md) | An entity composes children as effect-tea does: a part, placed with `child` or `each`, whose messages, keys, operations and reasons the library wraps | [0155](archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md) |
-| [0180](0180-a-program-leaves-out-what-it-does-not-have.md) | A program leaves out what it does not have, and each piece left out is empty (proposed) |  |
+| [0180](0180-a-program-leaves-out-what-it-does-not-have.md) | A program leaves out what it does not have, and each piece left out is empty |  |
 
 ## Messages, requests and replies
 
@@ -90,12 +90,12 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes | [0182](0182-init-may-reject-the-flags.md) |
 | [0125](archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) | A caller's reply is kept as long as its boundary says, from the step that answers | [0165](archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) |
 | [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md), [0186](0186-a-rehearsal-names-the-work-by-its-key.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md), [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md) |
-| [0183](0183-a-receiver-is-named-by-a-reference.md) | A receiver is named by a reference, which carries its program's name and types and none of its code (proposed) |  |
-| [0186](0186-a-rehearsal-names-the-work-by-its-key.md) | A rehearsal names the work by its key, and `underWay` gives it or null (proposed) |  |
-| [0187](0187-a-rehearsal-moves-time-by-a-duration.md) | A rehearsal moves time by a duration with `advance`, and fires the timers due within it (proposed) |  |
-| [0188](0188-typesof-gives-a-programs-types.md) | `TypesOf` gives a program's types, of the program or of a reference to it (proposed) |  |
-| [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md) | A world asks a run for every service of its program, and a test mocks the ones it does not run (proposed) |  |
-| [0190](0190-a-boundary-maps-each-answer-to-its-protocol.md) | A boundary maps each answer to its protocol, with one entry for each tag (proposed) |  |
+| [0183](0183-a-receiver-is-named-by-a-reference.md) | A receiver is named by a reference, which carries its program's name and types and none of its code |  |
+| [0186](0186-a-rehearsal-names-the-work-by-its-key.md) | A rehearsal names the work by its key, and `underWay` gives it or null |  |
+| [0187](0187-a-rehearsal-moves-time-by-a-duration.md) | A rehearsal moves time by a duration with `advance`, and fires the timers due within it |  |
+| [0188](0188-typesof-gives-a-programs-types.md) | `TypesOf` gives a program's types, of the program or of a reference to it |  |
+| [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md) | A world asks a run for every service of its program, and a test mocks the ones it does not run |  |
+| [0190](0190-a-boundary-maps-each-answer-to-its-protocol.md) | A boundary maps each answer to its protocol, with one entry for each tag |  |
 
 ## Operations and timers
 
@@ -112,12 +112,12 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0046](archive/0046-a-receiver-that-crashes-is-sent-again.md) | A receiver that crashes is sent to again | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0147](archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md) |
 | [0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md) | Nothing waits for an operation under the permit | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md) |
 | [0123](archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) | An idempotent runner may be given the digest of its key, as its delivery | [0192](0192-the-digest-of-a-key-is-computed-by-the-machine.md) |
-| [0192](0192-the-digest-of-a-key-is-computed-by-the-machine.md) | The digest of an idempotency key is computed by the machine, and `src/program.ts` reaches no module of Node (proposed) |  |
+| [0192](0192-the-digest-of-a-key-is-computed-by-the-machine.md) | The digest of an idempotency key is computed by the machine, and `src/program.ts` reaches no module of Node |  |
 | [0127](archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md) | A live stream is no work of a program: the boundary reads it, and sends each item |  |
 | [0128](archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md) | An operation that acts on nothing may be dropped or changed while it runs | [0129](archive/0129-a-droppable-runner-that-sends-does-not-compile.md) |
 | [0129](archive/0129-a-droppable-runner-that-sends-does-not-compile.md) | A droppable runner whose services hold `Entities` does not compile |  |
 | [0130](archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md) | A runner retries, the state counts the attempts, and a rehearsal fails on an operation that loops |  |
-| [0181](0181-a-timer-needs-no-type-parameter.md) | A timer needs no type parameter, and `update` keeps `Match.withReturnType` (proposed) |  |
+| [0181](0181-a-timer-needs-no-type-parameter.md) | A timer needs no type parameter, and `update` keeps `Match.withReturnType` |  |
 
 ## Creation
 
@@ -127,7 +127,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0017](archive/0017-creation-in-the-machine.md) | Creation is part of the machine | [0047](archive/0047-a-request-of-an-operation-has-a-name.md), [0060](archive/0060-send-and-create-take-no-key.md) |
 | [0049](archive/0049-flags-are-checked-by-their-schema.md) | Flags are checked by their schema |  |
 | [0050](archive/0050-a-creation-is-answered-apart-from-a-message.md) | A creation is answered apart from a message |  |
-| [0182](0182-init-may-reject-the-flags.md) | A program's `init` may reject the flags, and the rejection is not stored (proposed) |  |
+| [0182](0182-init-may-reject-the-flags.md) | A program's `init` may reject the flags, and the rejection is not stored |  |
 
 ## Defects
 
@@ -138,7 +138,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0061](archive/0061-only-what-the-program-does-is-its-defect.md) | Only what the program does is its defect |  |
 | [0113](archive/0113-a-suspended-entitys-operations-run-to-their-end.md) | A suspended entity's operations run to their end |  |
 | [0114](archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) | An operator sees the suspended entities, and what a resume or a discard did | [0185](0185-inspect-gives-what-is-stored-of-one-entity.md) |
-| [0185](0185-inspect-gives-what-is-stored-of-one-entity.md) | `inspect` gives what is stored of one entity, read from one snapshot (proposed) |  |
+| [0185](0185-inspect-gives-what-is-stored-of-one-entity.md) | `inspect` gives what is stored of one entity, read from one snapshot |  |
 
 ## Versions and deploys
 
@@ -179,12 +179,12 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0151](archive/0151-a-process-holds-ten-thousand-entities-by-default.md) | A process holds ten thousand entities by default |  |
 | [0152](archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md) | The consumers of a topic are declared at deploy, and a topic no consumer holds is pruned whole |  |
 | [0153](archive/0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md) | A reader of a consumer names the partitions it reads, and the division is the caller's |  |
-| [0184](0184-consume-runs-a-reader-of-a-consumer.md) | `consume` runs a reader of a consumer, a page and its ack in one transaction (proposed) |  |
+| [0184](0184-consume-runs-a-reader-of-a-consumer.md) | `consume` runs a reader of a consumer, a page and its ack in one transaction |  |
 | [0154](archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md) | A step's projection is stored once in the outbox, in a publication each topic's row names |  |
 | [0155](archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md) | A `forEach` of messages to children by id puts them back once, with the step one message after the other gives |  |
 | [0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both, of text every database holds | [0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md), [0179](0179-an-id-is-not-empty.md) |
 | [0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md) | A database of SQLite made before is given `request_id`, and a page keeps the level of a caller's transaction | [0191](0191-a-launch-creates-the-tables.md) |
-| [0191](0191-a-launch-creates-the-tables.md) | A launch creates the tables, in one transaction, unless it is told they exist (proposed) |  |
+| [0191](0191-a-launch-creates-the-tables.md) | A launch creates the tables, in one transaction, unless it is told they exist |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for |  |
 | [0027](archive/0027-a-program-gives-the-schema-of-its-senders.md) | A program gives the schema of its senders |  |

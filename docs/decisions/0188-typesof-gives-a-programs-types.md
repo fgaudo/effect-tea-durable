@@ -1,6 +1,6 @@
 # 0188. `TypesOf` gives a program's types, of the program or of a reference to it
 
-**Status:** proposed, 2026-11-08, for the step The API before the release of the [roadmap](../roadmap.md).
+**Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md).
 
 ## Context
 

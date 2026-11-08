@@ -1,6 +1,6 @@
 # 0180. A program leaves out what it does not have, and each piece left out is empty
 
-**Status:** proposed, 2026-11-08, for the step The API before the release of the [roadmap](../roadmap.md). Changes
+**Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Changes
 [decision 0035](archive/0035-one-place-where-a-program-is-declared.md), whose `program(schemas)(…)` takes every
 piece.
 

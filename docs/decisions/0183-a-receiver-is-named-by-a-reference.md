@@ -1,6 +1,6 @@
 # 0183. A receiver is named by a reference, which carries its program's name and types and none of its code
 
-**Status:** proposed, 2026-11-08, for the step The API before the release of the [roadmap](../roadmap.md). Changes
+**Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Changes
 [decision 0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md), whose world runs any program
 a runner's `create` names.
 

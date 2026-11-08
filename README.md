@@ -55,7 +55,9 @@ no life of its own, a profile or a product, does not need it.
   included. Whoever writes a program can get only the use case wrong, and a type error or a failed scenario says
   so without a database or a clock. What holds where the process may die is checked once, in the library.
 - **One model, in the browser and on the server.** A program is written as in effect-tea: who writes the Elm
-  architecture for a screen writes it the same way for an order.
+  architecture for a screen writes it the same way for an order. [`src/program.ts`](src/program.ts) imports no
+  module of Node or of Bun, so a browser imports a program's schemas from it
+  ([decision 0192](docs/decisions/0192-the-digest-of-a-key-is-computed-by-the-machine.md)).
 
 **This repository holds a design, its pure core, and a runtime on SQLite or PostgreSQL that runs on one process.** It has:
 

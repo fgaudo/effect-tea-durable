@@ -1,6 +1,6 @@
 # 0186. A rehearsal names the work by its key, and `underWay` gives it or null
 
-**Status:** proposed, 2026-11-08, for the step The API before the release of the [roadmap](../roadmap.md). Adds to
+**Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Adds to
 [decision 0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) a `run` that takes a key.
 
 ## Context

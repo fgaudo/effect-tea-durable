@@ -5,29 +5,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **The API before the release.** Each point is a note, and the examples change with it. A point done is out of
-  this list, and its note is `proposed` until the step is taken. Done: the defaults for what a program does not
-  have ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)), a timer without its type
-  parameter ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)), an `init` that rejects the flags
-  ([decision 0182](decisions/0182-init-may-reject-the-flags.md)), a receiver named by a reference
-  ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md)), `consume`
-  ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)), `inspect`
-  ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)), a rehearsal in fewer words
-  ([decision 0186](decisions/0186-a-rehearsal-names-the-work-by-its-key.md)), a rehearsal that moves time
-  ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)), the types of a program, exported
-  ([decision 0188](decisions/0188-typesof-gives-a-programs-types.md)), a world's services, mocked
-  ([decision 0189](decisions/0189-a-world-asks-a-run-for-every-service-of-its-program.md)), a caller's answer
-  over HTTP ([decision 0190](decisions/0190-a-boundary-maps-each-answer-to-its-protocol.md)), the tables, created
-  by a launch ([decision 0191](decisions/0191-a-launch-creates-the-tables.md)), and the digest of a key, computed by
-  the machine ([decision 0192](decisions/0192-the-digest-of-a-key-is-computed-by-the-machine.md)). No point is left.
-  The step is taken once the maintainer names no other, by a commit that marks its notes `accepted`.
-
-## Later
-
 - **A CI on Linux.** The repository has no workflow. One runs `bun run typecheck`, `bun test` and `bun run links`
   on every push, and `bun run test:release` before a release. It is also where the test of a runner stopped with
   `SIGTERM` runs, which Windows cannot run ([open question](open-questions.md#running)). The tooling is a rule of
   work, so [`AGENTS.md`](../AGENTS.md) states it, and no note is taken.
+
+## Later
 
 - **PostgreSQL on a server with a pool.** The storage's tests and the runtime's tests of the log run against a
   server in a container, in the CI of the step above, so that what is only reasoned of many connections is tested:
