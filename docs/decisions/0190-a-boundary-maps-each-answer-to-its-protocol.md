@@ -7,8 +7,10 @@
 A boundary over HTTP answers a caller with a status for each `Creation`, `Answer` and `Operated`.
 [`examples/server/server.ts`](../../examples/server/server.ts) held the map as a `Record<string, number>` with a
 default of `200`. The map left out `AlreadyExists` and `Full`, so a create of an order that existed was answered
-`200`, and a full entity would have been answered `200` too. An application copies the map from the example, so
-each copy would have held the same two holes.
+`200`. The example runs on Cluster, where a caller is never answered `Full`
+([decision 0165](archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md)). A
+boundary on one process is answered `Full`, and its copy of the map would have answered it `200`. An application
+copies the map from the example, so each copy would have held the same two holes.
 
 ## Decision
 
@@ -22,7 +24,8 @@ each copy would have held the same two holes.
   fails to compile in every boundary that copied the map, and is not answered with a default.
 - **The example is the template, and answers a full entity `503`.** `Full` asks the caller to retry later under
   the same request id, and `503` is a status an HTTP client retries as transient. The answer carries
-  `Retry-After`. A suspended entity stays `409`, since it waits for an operator and a retry does not help it.
+  `Retry-After`. The example never gives that answer on Cluster, and keeps the entry for the boundaries that copy
+  it. A suspended entity stays `409`, since it waits for an operator and a retry does not help it.
   `AlreadyExists` is `409`.
 
 ## What it rests on

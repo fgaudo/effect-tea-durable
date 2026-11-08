@@ -197,7 +197,8 @@ type Answered = Creation<unknown> | Answer<unknown> | Operated
  * The status of each answer, one for each tag, so that a tag the library adds fails to compile here
  * (decision 0190). A suspended order is answered `409` and not `503`, since an HTTP client retries a `503` as
  * transient, and a suspended order waits for an operator. A full entity is answered `503`, since its caller retries
- * later under the same request id.
+ * later under the same request id. On Cluster a caller is never answered `Full` (decision 0165), and the entry
+ * serves a boundary on one process that copies the map.
  */
 const status = {
   Created: 'Created',
