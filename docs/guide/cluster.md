@@ -38,6 +38,18 @@ needs neither runs on one process, on SQLite or PostgreSQL, and this page is not
 A runner is a layer of Cluster's, with the library's `sharding` in place of Cluster's `Sharding.layer`:
 
 ```ts
+import { SqliteClient } from '@effect/sql-sqlite-bun'
+import {
+  RunnerAddress,
+  RunnerHealth,
+  Runners,
+  ShardingConfig,
+  SqlMessageStorage,
+  SqlRunnerStorage,
+} from 'effect/cluster'
+import { Digest } from 'effect/crypto'
+import * as Layer from 'effect/Layer'
+import * as Option from 'effect/Option'
 import { launch, sharding } from '@fgaudo/effect-tea-persistent/cluster'
 
 const runner = (filename: string) =>
@@ -159,7 +171,9 @@ The handle is the same, and three things differ:
   does. A boundary that runs on Cluster gives `keep` to every message, since the rows of each reply would
   otherwise add up. The server gives a day, the time its clients retry a request for:
   `orders.send(id, message, { ...caller, keep: { millis: 86_400_000 } })`. On one process a reply sent without
-  `keep` is kept for ever too, and the same `keep` frees it.
+  `keep` is kept for ever too, and the same `keep` frees it. `create` takes no `keep`: a creation is answered from
+  the entity's row, which is kept for ever, as every entity is. On Cluster the creation's request and reply stay
+  in Cluster's tables for ever too, one pair for each entity.
 
 ## The rules, in one list
 
@@ -171,5 +185,5 @@ The handle is the same, and three things differ:
 4. **Every step commits only while its runner holds the shard and runs the newest version.** Anything else dies
    and rolls back, and is tried again on a runner that does.
 5. **A new version rolls out runner by runner, and an older one never launches again.**
-6. **A caller is never answered `Full`, an interrupted caller leaves its request, and every message carries
+6. **A caller is never answered `Full`, an interrupted caller leaves its request, and every `send` carries
    `keep`.**

@@ -134,7 +134,9 @@ export const ride = program({
 
 The keys of the schemas are `state`, `flags`, `inbound`, `internal`, `operation`, `rejection`, `sender` and
 `projection`. A program leaves out what it does not have: the bike declares no `internal` and no `operation`, and
-the ride no `rejection`. The operations are one schema, usually a `Schema.TaggedUnion`, whose cases make the values
+the ride no `rejection`. `state`, `flags`, `inbound` and `projection` are always given, and so are `update` and
+`project`. A program with no inbound message of its own, such as a parent whose only messages are its children's,
+gives `inbound: Schema.Never` and an `update` that returns the state. The operations are one schema, usually a `Schema.TaggedUnion`, whose cases make the values
 `work` returns:
 
 ```ts
@@ -353,8 +355,11 @@ every query over it would be stale. So an action that becomes allowed, or stops 
 of the state, which a timer changes at that time.
 
 The projection shows the actions it allows, as `canEnd` and `canCancel`. It shows only actions `update` accepts,
-and every one it accepts. `projectionViolations` checks it for generated states, in
-[`ride.test.ts`](../../examples/rental/ride.test.ts). The projection is JSON, so a time is its milliseconds.
+and every one it accepts. `projectionViolations(program, allows)` checks it for generated states, in
+[`ride.test.ts`](../../examples/rental/ride.test.ts). `allows` gives, for each inbound message, whether the
+projection allows it, as `{ EndRequested: (projection) => projection.canEnd }`. The function it returns takes a
+state, the candidate messages with their senders, and a time, and gives every violation: `Rejected` for a message
+the projection allows and `update` rejects, `Missing` for the other way round. The projection is JSON, so a time is its milliseconds.
 
 `update` trusts the timer in the same way. `CancellationClosed` is the fact that the time has passed, and
 `CancelRequested` checks only `cancellableUntil !== null`. It never compares `meta.at` with the window's end.
@@ -495,7 +500,8 @@ the operation's incarnation has moved on. `advance` moves the rehearsal's time, 
 `pending('email')` gives the work under way under a key, with its `idempotencyKey`, and fails the test when there
 is none; `underWay('email')` gives null instead. `state` and `projection` are effects that read the entity, and
 `restart` is an effect that stands for the process dying: the email under way then delivers its
-`StartEmailUnsure`.
+`StartEmailUnsure`. A rehearsal starts from flags that `init` accepts, and dies on flags it rejects. A test of a
+rejection calls `init` itself, `ride.init(flags, at)`, or creates the entity on the runtime.
 
 A rehearsal's `send` gives each message a new request id, unless the test names one. A second send under the same
 sender and request id is a retry, answered from the stored reply and not applied again:
@@ -530,6 +536,9 @@ const rides = yield* Effect.provide(runtime.deploy(ride), mailer)
 entities, with `create`, `send`, `read` and the queries. A program's runners ask for services, the mailer here, and
 the deploy is where they are provided. `create` answers a `Creation`, `Created`, `AlreadyExists` or `Rejected`, and
 `read` gives the projection, or null for no such entity.
+
+The runtime reads time from Effect's `Clock`. A test of a timer days away provides `TestClock.layer()` of
+`effect/testing/TestClock` beside the database, and moves the time with `TestClock.adjust({ days: 21 })`.
 
 The work a step starts runs on its own, after `create` or `send` has answered. A test waits for it with
 `runtime.settled`, which ends once nothing is under way:

@@ -73,7 +73,9 @@ version 2, and there is no version number to declare or to forget.
 A migration is a record of pure functions, **from the JSON a version wrote to the JSON the next version reads**,
 one for each kind of stored value: `state`, `operation`, `inbound`, `internal`, `rejection`, `sender` and
 `projection`. A kind left out is unchanged, so the bike's messages and reasons are read as they were. A migration
-works on the JSON, which every schema encodes to, so the types and the schemas of version 1 do not live on in the
+works on the JSON, which every schema encodes to, as the schema encodes it: a `DateTimeUtcFromMillis` is a number,
+and the children of a parent are inside the parent's state, where its schema puts them. So the types and the
+schemas of version 1 do not live on in the
 code.
 
 A migration gives only what the old version knew. Version 1 never counted rides, and a migration cannot know how
@@ -131,8 +133,8 @@ test('the bike reads what each version before it wrote', () => {
 })
 ```
 
-A case fails as `Changed` when the migration now gives another value, and as `Failed` when the migration, a
-migration after it or the program's schema dies on what was written. A kind that a migration changes and no case
+A case fails as `Changed`, with what the migration now gives as `got`, and as `Failed`, with a `reason`, when the
+migration, a migration after it or the program's schema dies on what was written. A kind that a migration changes and no case
 records fails as `Unrecorded`, so a migration nobody recorded is not changed in silence. A later version adds
 cases of its own migration, and keeps the bike's cases: each one still has to be read at the newest version.
 

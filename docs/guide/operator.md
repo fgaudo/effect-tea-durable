@@ -96,7 +96,10 @@ the migrations, so a step that commits meanwhile is read whole or not at all.
 ## Resuming with a fix
 
 The cause names the rule the program broke, so the fix is the ride whose end carries its email. **A fix is a
-deploy**, by a new process on the same database, and the entity stays suspended through it:
+deploy**, by a new process on the same database, and the entity stays suspended through it. The test stands for
+the two processes by two runtimes, each launched in a scope of its own, one after the other, on one client of
+SQLite that outlives both. A test whose client does not outlive the first runtime uses a file, since a database in
+memory goes with its client:
 
 ```ts
 const runtime = yield* launch()

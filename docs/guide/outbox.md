@@ -46,7 +46,8 @@ expect(statuses.map(({ id, kind, message, value }) => [id, kind, message?._tag ?
 
 A row holds the entity's id, the message the step handled with its `kind`, and a `value` taken of the projection
 the step left. The message names the fact, and the projection is already the public contract. An entity's creation
-writes a row of `kind` `Creation`, with no message.
+writes a row of `kind` `Creation`, with no message. A step of a child is the parent's step, and its row holds the
+message as the parent received it, wrapped with the child's name: `{ _tag: 'Line', id: 'mug', message }`.
 
 A step that changes nothing callers read publishes nothing. Nor does a rejected message, an internal message
 dropped, or a step that suspends the entity. The order's step that tells the warehouse changes only `canCancel`,
@@ -98,7 +99,9 @@ const consumers = { consumers: { billing: ['invoices'], status: ['dashboard'] } 
 const orders = yield* Effect.provide(runtime.deploy(order, consumers), world)
 ```
 
-The handle is typed by the names declared, so `orders.fetch('status', 'dashbord', …)` does not compile. A test
+The handle is typed by the names declared, so `orders.fetch('status', 'dashbord', …)` does not compile. A handle
+whose type is written names them too, as `Handle<TypesOf<typeof order>, typeof consumers.consumers>`. Written
+`Handle<TypesOf<typeof order>>`, it knows no consumer, and every `fetch` refuses its topic. A test
 deploys the same program with other consumers, or none. A consumer holds its topic from the deploy that first
 declares it, so no row written after that deploy is dropped before the consumer has read it.
 

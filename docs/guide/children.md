@@ -192,10 +192,12 @@ onEvent: {
 },
 ```
 
-`raise(event)(state)` is a step of the line: its next state, with an event for the cart. The cart's `onEvent` has a
-handler for each child that raises events, and is required exactly when one does. A handler of children by id
-takes the id, then the event and `children`. It runs in the step that raised the event, and nothing stores the
-event.
+`raise(event)(state)` is a step of the line: its next state, with an event for the cart. Its type is
+`Step<State, Event>`, of `@fgaudo/effect-tea-persistent/program`, so an `update` that writes its return type, as
+`Match.withReturnType` does, writes `Step<State, Event> | Rejected<Reason>`. The cart's `onEvent` has a handler for
+each child that raises events, and is required exactly when one does. A handler of children by id takes the id, the
+event and `children`, as `(id, event, children) => (state) => step`, and the cart's reads only the id. It runs in
+the step that raised the event, and nothing stores the event.
 
 The line raises `Removed` only in a step whose next state is `Removed`, which holds no work. **A child leaves its
 work before its parent drops it.** A reserved line that is removed first releases its stock in `Releasing`, and only

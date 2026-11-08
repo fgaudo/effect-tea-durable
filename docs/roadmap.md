@@ -5,56 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **A guide from requirements to a program.** An agent that built a backend from the documentation alone, a rental
-  of bikes, learned five rules of modelling only from the examples' code. The design states each rule it rests on,
-  but no document says what the rule asks of a program. A guide for whoever writes a program says each one, with
-  its example:
-  - A reply carries no data, so a value one entity needs of another travels with the request. The receiver refuses
-    a value that changed since, as a rate read by the boundary and sent with the request.
-  - The id of an entity a caller creates is derived from the caller's request id. An id drawn anew at each try
-    creates a second entity on a retry.
-  - An operation under way leaves the state only by its completion, so a state that follows it carries it as a
-    field, with its key. An email sent at most once that is under way when a ride ends is carried into the end.
-  - A projection reads no clock. An action that becomes allowed at a time is a field of the state, which a timer
-    changes at that time.
-  - A row with no life of its own, such as a customer, is a table of the application. The table may live in the
-    runtime's database, written on the client the runtime was launched with, as a consumer's store already may. The
-    guide says that every name with `tea_` is the runtime's, and that an application names no table of its own with
-    it ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)).
-
-  The guide is written in another register than the design: the example first, the rule after it, and a word of
-  the glossary introduced by an example before it is used. Cluster, children, the outbox, schemas that change and
-  the operator's calls are pages of the guide by topic, read when needed, and not a second guide for an advanced
-  reader. The guide is checked as the bike rental was: a reader who has not seen the code builds a program from the
-  documents alone, and what they get wrong is what the guide lacks. The reader is given a requirement no example
-  holds, such as a gym membership with counted entries or a loan of books with a due date, may read the README and
-  `docs/` but not `src/` nor `examples/`, and writes the program with its rehearsals. Whether the reader is a
-  subagent of the session that writes the guide is the maintainer's to say, asked before it starts. The guide
-  follows the words and the register of [`README.md`](../README.md), whose sections The problem and How a program is
-  made introduce state, `work`, operation, incarnation, projection, topic and outbox by an order. The README links
-  [`docs/design.md`](design.md) wherever it would link the guide, and the step replaces each of those links.
-
-  The parts done, and the part next:
-  - Done: the guide's running example, [`examples/rental`](../examples/rental), a bike and a ride whose rehearsals
-    and runtime tests show each of the five rules, and a ride whose end drops its email, which fails as a defect.
-  - Done: the guide's first page, [`guide/README.md`](guide/README.md), from the requirement of the rental to the
-    program, with the five rules among nine. The README and `CONTRIBUTING.md` link it, and the README's table lists
-    the rental.
-  - Done: the check by a reader, a subagent, on 2026-11-08. It wrote a gym membership that compiles and passes its
-    rehearsals. Its gaps went into the first page: the keys of the schemas, the form of `update` with its return
-    type, `Origin`, an idempotent runner's key, the results of a rehearsal's acts, `runtime.settled`, and that a
-    rehearsal's `send` draws a new request id, so that a retry is tested on the runtime.
-  - Done: the page on children, [`guide/children.md`](guide/children.md), on [`examples/cart`](../examples/cart).
-  - Done: the page on the outbox, [`guide/outbox.md`](guide/outbox.md), on [`examples/order`](../examples/order).
-  - Done: the page on schemas that change, [`guide/schemas.md`](guide/schemas.md), on the bike's version 2, which
-    counts its rides, with the cases of its migration in [`bike.test.ts`](../examples/rental/bike.test.ts).
-  - Done: the page on Effect Cluster, [`guide/cluster.md`](guide/cluster.md), on the runner of
-    [`examples/order`](../examples/order/cluster.test.ts) and the server of [`examples/server`](../examples/server).
-  - Done: the page on the operator's calls, [`guide/operator.md`](guide/operator.md), on a ride the first version
-    suspends and the fix resumes, a test of [`examples/rental/runtime.test.ts`](../examples/rental/runtime.test.ts).
-  - Next: a second reader, a subagent given a loan of books with a due date, to check the pages by topic. Whether
-    the reader is a subagent is the maintainer's to say, asked before it starts.
-
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point
   where fibers yield, after which the pinned seeds of the explored tests are found again. The runtime's
@@ -74,7 +24,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   The pull request for [Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239) adds that
   retention, merged and in no release at 4.1.2. The step waits for the release that holds it, since what Cluster
   then forgets by itself decides which rows the runtime still deletes, and so what a sweep of the runtime has to do.
-  The move of Effect's version to that release weighs the retention against those statements first.
+  The move of Effect's version to that release weighs the retention against those statements first. The step
+  weighs too the rows of a creation on Cluster, one pair for each entity, which `create` keeps for ever since it
+  takes no `keep`.
 
 - **A CI on Linux.** The repository has no workflow. One runs `bun run typecheck`, `bun test` and `bun run links`
   on every push, and `bun run test:release` before a release. It is also where the test of a runner stopped with
