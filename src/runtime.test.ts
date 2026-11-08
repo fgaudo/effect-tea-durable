@@ -1414,10 +1414,6 @@ describe('the runtime on SQLite', () => {
 
 })
 
-/**
- * A planned stop: a process launched with `drain` waits, as its scope closes, for its at-most-once operations under
- * way, and stops the rest at once (decision 0119).
- */
 // Two entities that talk through operations, on the booking and its inventory of `src/fixtures/` (decision 0009).
 describe('two entities that talk', () => {
   const organizer = { _tag: 'Organizer' } as const
@@ -1651,6 +1647,10 @@ describe('two entities that talk', () => {
       }))))
 })
 
+/**
+ * A planned stop: a process launched with `drain` waits, as its scope closes, for its at-most-once operations under
+ * way, and stops the rest at once (decision 0119).
+ */
 describe('a planned stop', () => {
   /**
    * Hands that record each act, and come back once `open` is run. `interrupted` is done once `interrupts` acts are
