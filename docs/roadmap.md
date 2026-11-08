@@ -5,18 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **The runtime's housekeeping.** `expire`, `prune` and `forget` are an operator's calls, and a reply sent without
-  `keep` is kept for ever, so the replies of a deployment grow without bound by default
-  ([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). The step
-  decides whether the runtime runs `expire` and `prune` at an interval, as an option, or whether `send` has a default
-  `keep`, and says it in the design. On Cluster the runtime deletes Cluster's rows by its own statements, since
-  Cluster forgets no processed request ([decision 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md),
-  [0169](decisions/archive/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md),
-  [0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
-  The pull request for [Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239) adds a retention of
-  completed requests to Cluster, merged and in no release at 4.1.2: once a release holds it, a move of Effect's
-  version weighs it against those statements, and a note says which rows the runtime still deletes itself.
-
 - **The name and the words.** The package is named for the public, and the words the guide will cement are
   decided before the quick start and the guide are written. "durable" says durable execution elsewhere, in
   `effect/workflow`, Temporal and Restate, which replay a history, and this library replays nothing: the package's
@@ -30,8 +18,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   and the diagrams of the README with it.
 
 - **A quick start.** The README's first code is [`examples/order/order.ts`](../examples/order/order.ts), 312 lines.
-  A quick start shows a program of a screen, its rehearsal and its `launch` in forty. It comes after the
-  housekeeping, which may change what a program passes to `send` or to `launch`.
+  A quick start shows a program of a screen, its rehearsal and its `launch` in forty. The runtime's
+  housekeeping, a step of later, may change what a program passes to `send` or to `launch`, and changes the quick
+  start with it.
 
 - **A guide from requirements to a program.** An agent that built a backend from the documentation alone, a rental
   of bikes, learned five rules of modelling only from the examples' code. The design states each rule it rests on,
@@ -56,10 +45,24 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point
-  where fibers yield, after which the pinned seeds of the explored tests are found again. So the step comes after
-  the runtime has its housekeeping, and the seeds are found again once.
+  where fibers yield, after which the pinned seeds of the explored tests are found again. The runtime's
+  housekeeping, a step of later, finds them again too if it adds a fiber.
 
 ## Later
+
+- **The runtime's housekeeping**, once a release of Effect holds the retention of completed requests of Cluster.
+  `expire`, `prune` and `forget` are an operator's calls, and a reply sent without `keep` is kept for ever, so the
+  replies of a deployment grow without bound by default
+  ([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). The step
+  decides whether the runtime runs `expire` and `prune` at an interval, as an option, or whether `send` has a default
+  `keep`, and says it in the design. On Cluster the runtime deletes Cluster's rows by its own statements, since
+  Cluster forgets no processed request ([decision 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md),
+  [0169](decisions/archive/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md),
+  [0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
+  The pull request for [Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239) adds that
+  retention, merged and in no release at 4.1.2. The step waits for the release that holds it, since what Cluster
+  then forgets by itself decides which rows the runtime still deletes, and so what a sweep of the runtime has to do.
+  The move of Effect's version to that release weighs the retention against those statements first.
 
 - **A CI on Linux.** The repository has no workflow. One runs `bun run typecheck`, `bun test` and `bun run links`
   on every push, and `bun run test:release` before a release. It is also where the test of a runner stopped with
