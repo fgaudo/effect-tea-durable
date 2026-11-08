@@ -47,7 +47,7 @@ type Declaration = readonly [pkg: Package, file: string, name: string, why: Why]
 const declarations: ReadonlyArray<Declaration> = [
   // Releases its permits when the effect it wraps exits, whichever way: the lock of an entity (decision 0067).
   ['effect', 'Semaphore.ts', 'withPermits', 'stable'],
-  // Acquires uninterruptibly, and runs the release uninterruptibly once acquired: `holding` in `src/runtime.ts`.
+  // Acquires uninterruptibly, and runs the release uninterruptibly once acquired: `holding` in `src/process.ts`.
   ['effect', 'Effect.ts', 'acquireUseRelease', 'stable'],
   // Run when the effect succeeds, fails or is interrupted: the finalizers of the runtime's forks (decision 0068).
   ['effect', 'Effect.ts', 'ensuring', 'stable'],

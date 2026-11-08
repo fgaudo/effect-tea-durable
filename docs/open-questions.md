@@ -101,7 +101,7 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - whether a host that runs the library is suspended or set back by more than a program can bear, which the
     examples do not say;
   - whether the waker sleeps at most a bound, such as an hour, and reads the clock again, and whether a loaded
-    entity's timer sleeps again when it ends before its time. Both add yields to `src/runtime.ts`, after which the
+    entity's timer sleeps again when it ends before its time. Both add yields to the runtime, after which the
     pinned seeds of the explored tests are found again.
 - **What the runtime tells a tracer.** The runtime opens no span and records no metric of its own: `src/` calls
   neither `Effect.withSpan` nor `Metric`. A deployment sees only the spans Effect opens beneath the runtime: a
@@ -111,7 +111,7 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   whether a span follows a request into the operation it sets going, is not decided. It would be decided by:
   - the questions an operator asks of a stuck entity, such as why an order did not move, each answered by a span
     or a metric of the machine's events;
-  - whether a span opened in the loop of `src/runtime.ts` adds a point where fibers yield, after which the pinned
+  - whether a span opened in the loop of `src/loop.ts` adds a point where fibers yield, after which the pinned
     seeds of the explored tests are found again;
   - the modules of `effect/observability`, `OtlpTracer`, `OtlpMetrics` and `PrometheusMetrics`, which export what
     the runtime records and need only its names.

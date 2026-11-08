@@ -21,7 +21,7 @@
  * steps in a row: `bun:sqlite` writes synchronously, and the encoding is synchronous work too.
  *
  * Before decision 0134, the large entity kept the thread for several steps because its loop (`steps` in
- * `src/runtime.ts`) went from one event to the next without yielding. Effect yields a fiber after a count of
+ * `src/loop.ts`) went from one event to the next without yielding. Effect yields a fiber after a count of
  * operations, 2 048 by default (the JSDoc of `MaxOpsBeforeYield` in `effect/src/Scheduler.ts`), not after a time. A
  * large step is a few operations that each take long, so the loop runs many steps before its budget runs out. The
  * sender is resumed inline by the reply's `Deferred`, and puts the next message in the queue before the loop takes

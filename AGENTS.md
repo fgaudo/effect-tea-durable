@@ -111,12 +111,13 @@ This repository is a design and its pure core, not a library yet: read [`README.
   every unstable module the library depends on can change under it within the major.
 - [`src/machine.ts`](src/machine.ts) is the runtime's semantics. A rule it adds or changes is a decision, and
   [`src/machine.test.ts`](src/machine.test.ts) has a test that fails without it.
-- A change to [`src/runtime.ts`](src/runtime.ts) that adds or moves a wait, a lock, a fork, or state another
-  fiber reads has a test in [`src/runtime.test.ts`](src/runtime.test.ts) that fails or hangs without it, run
-  against the code before the change. The scheduler of the tests, in [`src/testing.ts`](src/testing.ts), is how a
+- The runtime is [`src/runtime.ts`](src/runtime.ts) and the modules it is divided into: `process.ts`, `loop.ts`,
+  `callers.ts`, `doors.ts`, `waker.ts` and `readings.ts` of `src/`. A change to the runtime that adds or moves a
+  wait, a lock, a fork, or state another fiber reads has a test in [`src/runtime.test.ts`](src/runtime.test.ts)
+  that fails or hangs without it, run against the code before the change. The scheduler of the tests, in [`src/testing.ts`](src/testing.ts), is how a
   test moves the points where fibers yield. Where the interleaving cannot be reached, the decision says why, and why
   the change holds. A test under `explored` runs one seed in twenty, from seed 0, so that the suite runs in seconds;
-  `bun run test:release` runs them all, and a release passes it. A step of the roadmap that changes `src/runtime.ts`
+  `bun run test:release` runs them all, and a release passes it. A step of the roadmap that changes the runtime
   or `src/testing.ts` passes `bun run test:release` before it is taken, since some rules of concurrency fail only
   past the first hundred seeds. A schedule under `bound` 1 runs whole in every run,
   since it is exhaustive within its bound. `bun test` and the release start from seed 0, so that each of their runs
@@ -124,7 +125,7 @@ This repository is a design and its pure core, not a library yet: read [`README.
   the explored tests from a random first seed, again and again, until a run fails or it is stopped. A failure names
   its seed, and `SEED=<seed> bun test` runs that seed first. Once the bug a seed found is fixed, the seed is listed
   under `pinned` in its test, so that every run of the tests runs it. A seed draws its schedule from the yields of
-  the code it runs, so a change that adds or moves a yield in `src/runtime.ts` or `src/testing.ts` finds the pinned
+  the code it runs, so a change that adds or moves a yield in the runtime or in `src/testing.ts` finds the pinned
   seeds again: for each, it takes out the fix the test's comment names, runs `bun run test:explore -t <test>` until
   a seed fails, and pins that seed, with the comment saying the form of the code it fails against.
 - A word the design gives a meaning of its own is defined once, in [`docs/glossary.md`](docs/glossary.md); a change

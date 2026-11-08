@@ -66,7 +66,8 @@ no life of its own, a profile or a product, does not need it.
 - [`src/`](src): the one place a program is declared, with its types and the migrations of its schemas
   ([`src/program.ts`](src/program.ts)), the runtime's semantics as a pure state machine
   ([`src/machine.ts`](src/machine.ts)), which `rehearse` runs and property tests check, and the runtime that
-  interprets it over `SqlClient` ([`src/runtime.ts`](src/runtime.ts), [`src/storage.ts`](src/storage.ts)),
+  interprets it over `SqlClient` ([`src/runtime.ts`](src/runtime.ts) and the modules it is divided into,
+  [`src/storage.ts`](src/storage.ts)),
   unloading an entity that has nothing to do and waking it from its stored timers, tested by dying at each point
   of the design's crash table and comparing where it ends with the machine
   ([`src/runtime.test.ts`](src/runtime.test.ts));
@@ -98,7 +99,15 @@ flowchart TB
   machine["machine.ts: the pure machine, from an event<br/>to the next machine and the rows it writes"]
   rehearse["rehearse.ts: a scenario without storage or clock,<br/>of one entity or of a world"]
   testing["testing.ts: the checks of a program's migrations and projections,<br/>and the scheduler that moves where the fibers of a test yield"]
-  runtime["runtime.ts: launch and deploy, each entity under its own lock,<br/>its fibers, timers and passivation;<br/>on Cluster, the step of a door, settled by the count of steps,<br/>and a singleton per shard that activates and crashes its entities"]
+  subgraph runtime["the runtime"]
+    launch["runtime.ts: launch and deploy, a deployment's handle,<br/>settled and the planned stop"]
+    callers["callers.ts: create, send, resume and discard,<br/>and the Entities an operation sends with"]
+    loop["loop.ts: an entity's loop, under its own lock:<br/>its steps, fibers, timers, passivation and crash"]
+    doors["doors.ts: on Cluster, the step of a door, settled by the count of steps,<br/>and a singleton per shard that activates and crashes its entities"]
+    waker["waker.ts: the waker of the stored timers"]
+    readings["readings.ts: the readings of the log that wait for a commit"]
+    process["process.ts: what the runtime of one process holds,<br/>which its modules share"]
+  end
   cluster["cluster.ts: on Effect Cluster, the Sharding of a runner,<br/>built once its versions are recorded, its RunnerHealth,<br/>the door of each program, which steps at the newest version,<br/>the client every request is sent through,<br/>and launch, the runtime of a runner"]
   storage["storage.ts: entities, entity_keys, mailbox, replies,<br/>projections, publications, outbox, log, heads, consumers and cursors;<br/>on Cluster, versions, runner_versions, waiting,<br/>sent_requests and given_requests"]
   db[(SQLite or PostgreSQL)]

@@ -5,12 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **A runtime in modules.** `src/runtime.ts` is one closure of 3 000 lines, with one process and Cluster
-  interleaved. It is divided by responsibility, the loop of an entity, the callers, the waker, the steps on Cluster,
-  with no change of semantics and no note. It moves no yield, so the pinned seeds stay, and it passes
-  `bun run test:release`. It comes before the steps below that add to the runtime, so that their code lands in its
-  module.
-
 - **The runtime's housekeeping.** `expire`, `prune` and `forget` are an operator's calls, and a reply sent without
   `keep` is kept for ever, so the replies of a deployment grow without bound by default
   ([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). The step
@@ -63,7 +57,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point
   where fibers yield, after which the pinned seeds of the explored tests are found again. So the step comes after
-  the runtime is in modules and has its housekeeping, and the seeds are found again once.
+  the runtime has its housekeeping, and the seeds are found again once.
 
 ## Later
 
