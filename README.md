@@ -230,7 +230,7 @@ Each example is a program with its scenarios as tests. If an example reads badly
 | [`subscription`](examples/subscription)      | a subscription billed every month           | a timer that repeats, a declined charge tried again behind a timer, with its attempts counted in the state                   |
 | [`cart`](examples/cart)                      | a cart whose lines reserve their stock      | children by id, each with work of its own                                                                                     |
 | [`booking`](examples/booking)                | a booking that holds seats of an event      | two entities that talk, rehearsed together and run on the runtime                                                             |
-| [`rental`](examples/rental)                  | bikes rented by the minute                  | the guide's running example: a value sent with the request and refused once changed, an id derived from the request id, an email carried into the end, a window a timer closes, a table of the application |
+| [`rental`](examples/rental)                  | bikes rented by the minute                  | the guide's running example: a value sent with the request and refused once changed, an id derived from the request id, an email carried into the end, a window a timer closes, a table of the application, a migration, a ride suspended and resumed by a fix |
 | [`server`](examples/server)                  | the orders served over HTTP                 | a runner of Effect Cluster as a process, killed during a charge and started again; two runners on one file                   |
 
 ## Status
@@ -242,13 +242,14 @@ An API that changes under it costs an update of the runtime, never of the pure c
 
 - **What runs:** a program and its rehearsals, the runtime on one process on SQLite or PostgreSQL, and the runtime on
   Effect Cluster with its runners on one machine.
-- **What does not yet:** the guide's pages by topic, a published package, a site with the API's reference, and the
-  runtime on Cluster across machines. [`docs/roadmap.md`](docs/roadmap.md) lists the steps in order.
+- **What does not yet:** a published package, a site with the API's reference, and the runtime on Cluster across
+  machines. [`docs/roadmap.md`](docs/roadmap.md) lists the steps in order.
 
 ## Documentation
 
 - [`docs/guide/README.md`](docs/guide/README.md): the guide, from a requirement to a program, on the rental of
-  bikes. Read it first.
+  bikes. Read it first. Its pages by topic, on children, the outbox, schemas that change, Effect Cluster and the
+  operator's calls, are read when a program needs them.
 - [`docs/design.md`](docs/design.md): the specification. It says what each piece of a program does, how the runtime
   runs it, and what holds at each point where the process may die.
 - [`docs/glossary.md`](docs/glossary.md): the words of the design, each defined once.

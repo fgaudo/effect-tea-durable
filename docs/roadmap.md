@@ -50,9 +50,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     counts its rides, with the cases of its migration in [`bike.test.ts`](../examples/rental/bike.test.ts).
   - Done: the page on Effect Cluster, [`guide/cluster.md`](guide/cluster.md), on the runner of
     [`examples/order`](../examples/order/cluster.test.ts) and the server of [`examples/server`](../examples/server).
-  - Next: the page on the operator's calls, in `docs/guide/`, replacing the link to the design's section on defects
-    at the end of the first page.
-  - Then: a second reader, a subagent given a loan of books with a due date, to check the pages by topic.
+  - Done: the page on the operator's calls, [`guide/operator.md`](guide/operator.md), on a ride the first version
+    suspends and the fix resumes, a test of [`examples/rental/runtime.test.ts`](../examples/rental/runtime.test.ts).
+  - Next: a second reader, a subagent given a loan of books with a due date, to check the pages by topic. Whether
+    the reader is a subagent is the maintainer's to say, asked before it starts.
 
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point
