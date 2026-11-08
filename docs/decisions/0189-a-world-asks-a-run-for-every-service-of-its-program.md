@@ -28,7 +28,9 @@ provided them as stubs that die, one written by hand for each member of each ser
   [`src/rehearse.test.ts`](../../src/rehearse.test.ts), whose `@ts-expect-error` fails to compile where a run asks
   for fewer.
 - That a member of a mock that a runner calls fails the test, with the service and the member named: **tested** by
-  `fails a run that calls a member a mock does not give` in the same file.
+  `fails a run that calls a member a mock does not give` in the same file. The message names them in
+  `node_modules/effect/src/Layer.ts` at 4.1.2, **read** in the source: the JSDoc promises an unimplemented defect,
+  and not its message. A message that changes fails that test, and loses nothing, since the run fails either way.
 - That `Layer.mock` gives a service whose members left out die when used, as an `Effect` or a function returning
   one: **documented** in its JSDoc in `node_modules/effect/src/Layer.ts` at 4.1.2, `@stability stable`. A member
   that is no `Effect` and no function returning one, such as a configuration, is written by the test, as the

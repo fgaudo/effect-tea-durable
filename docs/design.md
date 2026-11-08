@@ -929,7 +929,8 @@ machine, with one time and one process for all of them
 - `run(pending, { crash: true })`, or `run(key, { crash: true })`, runs the runner to its end, drops its message,
   and restarts the world: the process died between the replies and the completion;
 - `world.restart` restarts every entity, and `world.deploy(program)` restarts them with a new version of one
-  program.
+  program. `world.advance(duration)` moves the one time of the world, and a member has no `advance` of its own
+  ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)).
 
 What the runtime makes a defect fails the test: a run that sends twice under one name to one entity, a droppable
 operation that sends, and a defect of the sender or of the receiver. A suspended receiver is never reached, since
