@@ -5,18 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **A CI on Linux.** The repository has no workflow. One runs `bun run typecheck`, `bun test` and `bun run links`
-  on every push, and `bun run test:release` before a release. It is also where the test of a runner stopped with
-  `SIGTERM` runs, which Windows cannot run ([open question](open-questions.md#running)). The tooling is a rule of
-  work, so [`AGENTS.md`](../AGENTS.md) states it, and no note is taken.
-
-## Later
-
-- **PostgreSQL on a server with a pool.** The storage's tests and the runtime's tests of the log run against a
-  server in a container, in CI, so that what is only reasoned of many connections is tested: the order of a
-  partition's commits, the advisory lock, a deadlock or a failure of serialization in a step
-  ([open question](open-questions.md#running)). A library for most backends needs it before its release.
-
 - **The API before the release.** Each point is a note, and the examples change with it:
   - **Defaults for what a program does not have.** A program without work declares `internal`, `operation` and
     `rejection` as `Schema.Never`, `sender` as `Schema.Null`, and `keys`, `operations` and `indexes` as `{}`, as
@@ -59,6 +47,18 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - **`digestOf` out of the pure core.** [`src/program.ts`](../src/program.ts) imports `node:crypto` for the digest
     of an idempotency key, so a module that shares a program's schemas with a browser cannot import it. The digest
     is computed where an operation starts, and moves to the machine or the runtime.
+
+## Later
+
+- **A CI on Linux.** The repository has no workflow. One runs `bun run typecheck`, `bun test` and `bun run links`
+  on every push, and `bun run test:release` before a release. It is also where the test of a runner stopped with
+  `SIGTERM` runs, which Windows cannot run ([open question](open-questions.md#running)). The tooling is a rule of
+  work, so [`AGENTS.md`](../AGENTS.md) states it, and no note is taken.
+
+- **PostgreSQL on a server with a pool.** The storage's tests and the runtime's tests of the log run against a
+  server in a container, in the CI of the step above, so that what is only reasoned of many connections is tested:
+  the order of a partition's commits, the advisory lock, a deadlock or a failure of serialization in a step
+  ([open question](open-questions.md#running)). A library for most backends needs it before its release.
 
 - **The runtime's housekeeping.** `expire`, `prune` and `forget` are an operator's calls, and a reply sent without
   `keep` is kept for ever, so the replies of a deployment grow without bound by default
