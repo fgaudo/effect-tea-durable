@@ -568,6 +568,9 @@ const makeWorld = (at: DateTime.Utc) => {
       send: (message, sender, given) =>
         Effect.suspend(() => {
           const program = programOf(entity)
+          // The request's key encodes the sender, as the program's: a sender that does not encode is the caller's
+          // defect, so it is checked first (decision 0040).
+          encode(program.schemas.sender, sender, 'sender')
           if (given !== undefined) {
             const request: Request<T['sender']> = { _tag: 'Caller', sender, id: given.requestId }
             named.add(Machine.requestKey(program, request))

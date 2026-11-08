@@ -434,6 +434,21 @@ describe("a rehearsal's request ids", () => {
         expect(yield* member.projection).toEqual({ entries: 1 })
       }),
     )))
+
+  // The request's key encodes the sender too, so the sender is checked before it, as the caller's (decision 0040).
+  test('fails a send whose sender does not encode as the caller\'s defect, with a request id or without', async () => {
+    for (const request of [undefined, { requestId: 'entry-1' }]) {
+      const exit = await Effect.runPromiseExit(rehearse(
+        door,
+        opened,
+        Effect.fnUntraced(function*(rehearsal) {
+          yield* rehearsal.send(entered, { _tag: 'Turnstile', id: 7 } as unknown as typeof north, request)
+        }),
+      ))
+      const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+      expect(cause instanceof InvariantDefect && cause.reason).toStartWith('the sender does not encode')
+    }
+  })
 })
 
 describe('a world', () => {
