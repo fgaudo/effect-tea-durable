@@ -907,7 +907,11 @@ handles the mailbox to its end after each act of the test. Time stands at the st
 time when it fires, and forward by a duration with `advance`. The test decides when each operation answers, when
 time passes, and when the process dies:
 
-- `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity;
+- `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity. Given a
+  request id, `send(message, sender, { requestId })` is a request the test names: a second send under the same
+  sender and request id is a retry, given the stored reply and not applied again, and the reply is kept through a
+  restart and a deploy. Without one, each send is a new request
+  ([decision 0200](decisions/0200-a-rehearsal-sends-under-a-request-id-the-test-names.md));
 - `pending(key)` finds the work under way under one of the program's keys, with its idempotency key and its
   value, which a test asserts as it asserts a command in effect-tea. A key with a parameter takes it too:
   `pending('charge', 'line-7')`. It fails the test when there is none, and `underWay(key)` gives null instead;

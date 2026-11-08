@@ -328,6 +328,114 @@ describe('a rehearsal', () => {
     )))
 })
 
+describe("a rehearsal's request ids", () => {
+  // A tally of entries, which a closed door refuses: a message applied twice counts twice.
+  const Sender = Schema.TaggedStruct('Turnstile', { id: Schema.String })
+  const door = declare({
+    state: Schema.Struct({ open: Schema.Boolean, entries: Schema.Int }),
+    flags: Schema.Null,
+    inbound: Schema.Union([Schema.TaggedStruct('Entered', {}), Schema.TaggedStruct('Opened', {})]),
+    rejection: Schema.Literal('Closed'),
+    sender: Sender,
+    projection: Schema.Struct({ entries: Schema.Int }),
+  })({
+    name: 'Door',
+    init: () => ({ open: false, entries: 0 }),
+    update: (message) => (state) =>
+      message._tag === 'Opened'
+        ? { ...state, open: true }
+        : state.open
+        ? { ...state, entries: state.entries + 1 }
+        : rejectWith('Closed'),
+    project: ({ entries }) => ({ entries }),
+  })
+  const north = { _tag: 'Turnstile', id: 'north' } as const
+  const south = { _tag: 'Turnstile', id: 'south' } as const
+  const opened = { flags: null, at: placedAt }
+  const entered = { _tag: 'Entered' } as const
+
+  test('answers a retry under the same request id from the stored reply, and applies the message once', () =>
+    Effect.runPromise(rehearse(
+      door,
+      opened,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Opened' }, north)
+        expect(yield* rehearsal.send(entered, north, { requestId: 'entry-1' })).toEqual({ _tag: 'Accepted' })
+        expect(yield* rehearsal.send(entered, north, { requestId: 'entry-1' })).toEqual({ _tag: 'Accepted' })
+        expect(yield* rehearsal.projection).toEqual({ entries: 1 })
+        yield* rehearsal.send(entered, north, { requestId: 'entry-2' })
+        expect(yield* rehearsal.projection).toEqual({ entries: 2 })
+      }),
+    )))
+
+  test('answers a retry with the rejection stored, once the state would accept the message', () =>
+    Effect.runPromise(rehearse(
+      door,
+      opened,
+      Effect.fnUntraced(function*(rehearsal) {
+        expect(yield* rehearsal.send(entered, north, { requestId: 'entry-1' }))
+          .toEqual({ _tag: 'Rejected', reason: 'Closed' })
+        yield* rehearsal.send({ _tag: 'Opened' }, north)
+        expect(yield* rehearsal.send(entered, north, { requestId: 'entry-1' }))
+          .toEqual({ _tag: 'Rejected', reason: 'Closed' })
+        expect(yield* rehearsal.projection).toEqual({ entries: 0 })
+      }),
+    )))
+
+  test('keeps the reply across a restart and a deploy', () =>
+    Effect.runPromise(rehearse(
+      door,
+      opened,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Opened' }, north)
+        yield* rehearsal.send(entered, north, { requestId: 'entry-1' })
+        yield* rehearsal.restart
+        yield* rehearsal.send(entered, north, { requestId: 'entry-1' })
+        yield* rehearsal.deploy(door)
+        yield* rehearsal.send(entered, north, { requestId: 'entry-1' })
+        expect(yield* rehearsal.projection).toEqual({ entries: 1 })
+      }),
+    )))
+
+  // A request id is its sender's (decision 0048).
+  test('applies the same request id of two senders as two requests', () =>
+    Effect.runPromise(rehearse(
+      door,
+      opened,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Opened' }, north)
+        yield* rehearsal.send(entered, north, { requestId: 'entry-1' })
+        yield* rehearsal.send(entered, south, { requestId: 'entry-1' })
+        expect(yield* rehearsal.projection).toEqual({ entries: 2 })
+      }),
+    )))
+
+  test('gives a send without a request id no reply of a named request, whatever id it draws', () =>
+    Effect.runPromise(rehearse(
+      door,
+      opened,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Opened' }, north, { requestId: 'request-2' })
+        yield* rehearsal.send(entered, north, { requestId: 'request-3' })
+        yield* rehearsal.send(entered, north)
+        yield* rehearsal.send(entered, north)
+        expect(yield* rehearsal.projection).toEqual({ entries: 3 })
+      }),
+    )))
+
+  test('answers a retry of a member of a world as the rehearsal of one entity does', () =>
+    Effect.runPromise(rehearse.together(
+      placedAt,
+      Effect.fnUntraced(function*(world) {
+        const member = yield* world.create(door, 'door-1', null)
+        yield* member.send({ _tag: 'Opened' }, north)
+        yield* member.send(entered, north, { requestId: 'entry-1' })
+        yield* member.send(entered, north, { requestId: 'entry-1' })
+        expect(yield* member.projection).toEqual({ entries: 1 })
+      }),
+    )))
+})
+
 describe('a world', () => {
   const at = placedAt
   const flags = { customer: 'ada', event: 'concert-1', seats: 2 }

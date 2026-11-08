@@ -5,7 +5,8 @@
 changes what a world runs. A runner's `create` that names a program by a reference fails the test where the world
 runs no program of that name, since a reference brings no code. [Decision 0186](../0186-a-rehearsal-names-the-work-by-its-key.md)
 gives `run` a key in place of the pending. [Decision 0187](../0187-a-rehearsal-moves-time-by-a-duration.md) gives a
-world `advance`, which moves its one time and fires the timers of every entity due within it.
+world `advance`, which moves its one time and fires the timers of every entity due within it. [Decision 0200](../0200-a-rehearsal-sends-under-a-request-id-the-test-names.md) gives `send`
+a request id the test names, whose retry is answered from the stored reply.
 [Decision 0189](../0189-a-world-asks-a-run-for-every-service-of-its-program.md) says why a run asks for every
 service of its program, and how a test mocks the ones it does not run.
 

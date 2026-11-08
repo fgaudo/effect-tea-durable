@@ -55,8 +55,18 @@ type PendingOf<T extends Types> = Pending<Piece<T['operation'], T['internal']>>
 interface Acts<T extends Types> {
   readonly state: Effect.Effect<T['state']>
   readonly projection: Effect.Effect<T['projection']>
-  /** Delivers an inbound message, with a new request id. */
-  readonly send: (message: T['inbound'], sender: T['sender']) => Effect.Effect<Machine.StoredReply<T['rejection']>>
+  /**
+   * Delivers an inbound message from a caller. Given a request id, it is a request the test names: a second send
+   * under the same sender and request id is a retry, given the reply stored for the first and not applied again,
+   * as the runtime answers it. The reply is kept for the whole rehearsal, a restart and a deploy included, as the
+   * runtime keeps one sent without `keep`. Without a request id, each send is a new request, whose reply no named
+   * request finds (decision 0200).
+   */
+  readonly send: (
+    message: T['inbound'],
+    sender: T['sender'],
+    request?: Readonly<{ requestId: string }>,
+  ) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /**
    * Delivers an inbound message from another entity's operation, as a new run of it (decision 0059). The entity
    * need not exist: the test answers for it.
@@ -164,8 +174,11 @@ export interface World {
   readonly advance: (duration: Duration.Input) => Effect.Effect<void>
 }
 
-/** A reply stored under a request of another entity's operation, kept while that work holds (decision 0021). */
-type Kept = Readonly<{ reply: Machine.StoredReply<unknown>; asked: Machine.Asker }>
+/**
+ * A reply stored under a request: of another entity's operation, kept while that work holds (decision 0021), or of
+ * a caller's request the test named, kept for the whole rehearsal, with no asker (decision 0200).
+ */
+type Kept = Readonly<{ reply: Machine.StoredReply<unknown>; asked: Machine.Asker | null }>
 
 /** An entity of the world: what is stored of it, what its process does, and the replies stored under its requests. */
 type Entity<T extends Types> = {
@@ -193,6 +206,8 @@ const makeWorld = (at: DateTime.Utc) => {
   const entities = new Map<string, Entity<Types>>()
   let now = at
   let requests = 0
+  // The callers' requests the test named, by their request's key: only their replies are kept (decision 0200).
+  const named = new Set<string>()
 
   // A world holds entities of many programs: each is stepped by the one deployed under its name (decision 0064).
   const programOf = <T extends Types>(entity: Entity<T>) => programs.get(entity.address.name) as unknown as Program<T>
@@ -216,13 +231,19 @@ const makeWorld = (at: DateTime.Utc) => {
 
   /**
    * What the runtime stores of a step that only the world keeps: the replies to other entities' operations, and
-   * their deletion once the work that asked ends (decision 0021). A caller's request here is never sent twice, so
-   * its reply is not kept.
+   * their deletion once the work that asked ends (decision 0021), and the replies to the callers' requests the test
+   * named, which a retry of the test reads (decision 0200).
    */
   const keep = <T extends Types>(entity: Entity<T>, transition: Machine.Transition<T>) => {
     const program = programOf(entity)
     for (const output of transition.outputs) {
-      if (output._tag !== 'Replied' || output.request._tag !== 'Operation' || output.reply._tag === 'Suspended') continue
+      if (output._tag !== 'Replied' || output.reply._tag === 'Suspended') continue
+      if (output.request._tag === 'Caller') {
+        const request = Machine.requestKey(program, output.request)
+        if (named.has(request)) entity.replies.set(request, { reply: output.reply, asked: null })
+        continue
+      }
+      if (output.request._tag !== 'Operation') continue
       const { entity: asker, key, incarnation } = output.request
       entity.replies.set(Machine.requestKey(program, output.request), {
         reply: output.reply,
@@ -233,7 +254,7 @@ const makeWorld = (at: DateTime.Utc) => {
       for (const other of entities.values()) {
         for (const [request, { asked }] of other.replies) {
           if (
-            asked.name === entity.address.name && asked.id === entity.address.id &&
+            asked !== null && asked.name === entity.address.name && asked.id === entity.address.id &&
             Machine.keyText(asked.key) === Machine.keyText(ended.key) && asked.incarnation === ended.incarnation
           ) other.replies.delete(request)
         }
@@ -544,7 +565,20 @@ const makeWorld = (at: DateTime.Utc) => {
     return {
       state: Effect.sync(() => entity.machine.stored.state),
       projection: Effect.sync(() => programOf(entity).project(entity.machine.stored.state)),
-      send: (message, sender) => receive(entity, message, { _tag: 'Caller', sender, id: `request-${++requests}` }),
+      send: (message, sender, given) =>
+        Effect.suspend(() => {
+          const program = programOf(entity)
+          if (given !== undefined) {
+            const request: Request<T['sender']> = { _tag: 'Caller', sender, id: given.requestId }
+            named.add(Machine.requestKey(program, request))
+            return receive(entity, message, request)
+          }
+          // A drawn id is never one the test named, so a new request finds no reply of a named one.
+          let request: Request<T['sender']>
+          do request = { _tag: 'Caller', sender, id: `request-${++requests}` }
+          while (named.has(Machine.requestKey(program, request)))
+          return receive(entity, message, request)
+        }),
       // A request of another entity is a run of one of its operations: each one here is a run of its own.
       sendFrom: (message, from) =>
         receive(entity, message, {
