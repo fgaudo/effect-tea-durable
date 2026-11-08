@@ -412,12 +412,12 @@ export interface Handle<T extends Types, C = {}> {
    * `handler` on it and acks it in one transaction of the client the runtime was launched with, and reads the next.
    * So a store that `handler` writes on that client commits with the cursors, and a page whose transaction fails is
    * read again. `handler` is given no empty page. Without `wait`, the reader ends at the first page that is empty,
-   * or once the runtime stops, with the rows it did not read left for the next reader: what a test or a batch runs. Given `wait: true`, a reading that finds no row waits for a commit in the topic,
-   * and the reader ends only when the runtime stops: what a deployment runs. Given `partitions`, it reads those
-   * only, as `feed` does. A failure of `handler` or of the transaction rolls the page back and fails the reader,
-   * whose retries are the caller's. The limit is a positive integer. A reader run within a transaction of the
-   * client would hold its connection while it waits, so it is the caller's defect, as is anything `feed` refuses
-   * (decision 0184).
+   * or once the runtime stops, with the rows it did not read left for the next reader: what a test or a batch runs.
+   * Given `wait: true`, a reading that finds no row waits for a commit in the topic, and the reader ends only when
+   * the runtime stops: what a deployment runs. Given `partitions`, it reads those only, as `feed` does. A failure
+   * of `handler` or of the transaction rolls the page back and fails the reader, whose retries are the caller's. The
+   * limit is a positive integer. A reader run within a transaction of the client would hold its connection while it
+   * waits, so it is the caller's defect, as is anything `feed` refuses (decision 0184).
    */
   readonly consume: <Name extends Topic<T>, E, R>(
     topic: Name,
