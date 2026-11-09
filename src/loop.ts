@@ -36,6 +36,7 @@ import {
 } from './process.ts'
 import { type Address, Entities, isTimer, runnerOf, type Types } from './program.ts'
 import { tell } from './readings.ts'
+import { transaction } from './storage.ts'
 
 /**
  * Offers an event to a loaded entity, counted until its step is done (decision 0063), and the entity is the most
@@ -340,7 +341,8 @@ export const applyInProcess = <T extends Types>(
     if (written !== null) {
       yield* at(p, 'BeforeCommit', entity, event)
       // What the event writes is the machine's, encoded: the storage decides nothing (decision 0057).
-      const characters = yield* p.sql.withTransaction(
+      const characters = yield* transaction(
+        p.sql,
         deployed.storage.write(entity.id, written, DateTime.toEpochMillis(now)),
       ).pipe(Effect.orDie)
       tell(p.readings, entity.name, written)

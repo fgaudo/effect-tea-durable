@@ -5,7 +5,8 @@
 [decision 0039](0039-a-consumer-of-the-outbox-keeps-its-cursor.md), whose consumer declares itself by
 reading and whose topic with no consumer keeps every row, [decision 0137](0137-the-log-is-ordered-within-a-partition.md),
 whose consumer is stored on its first reading, and [decision 0138](0138-the-log-publishes-topics.md), whose prune
-drops nothing of a topic with no consumer.
+drops nothing of a topic with no consumer. On a disk that is really full, in WAL mode, the forget commits and the prune
+waits for room an operator frees, by [decision 0223](../0223-a-disk-that-is-really-full.md).
 
 ## Context
 

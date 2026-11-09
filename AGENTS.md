@@ -134,7 +134,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   a seed fails, and pins that seed, with the comment saying the form of the code it fails against.
 - The workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the checks on Linux on every push and
   pull request: `bun audit`, `bun run typecheck`, `bun test`, `bun run links`, and the audit and the build of the
-  site. Run by hand from the repository's Actions, the workflow also runs `bun run test:release`, and a release
+  site. A second job runs `bun run test:postgres` against a container of PostgreSQL, and
+  `spikes/full-volume.test.ts` on a volume of fixed size it mounts. A change of the storage, of a transaction of the
+  runtime or of a statement passes that job too, run on the branch, since PGlite runs one session and hides what a
+  pool does. Run by hand from the repository's Actions, the workflow also runs `bun run test:release`, and a release
   passes it there. The site's audit ignores one advisory of minimatch, since TypeDoc's range excludes the version
   with the fix. The workflow's comment says when the ignore goes.
 - Bun is pinned by `packageManager` in `package.json`, and the workflow installs that version, so that a run of the

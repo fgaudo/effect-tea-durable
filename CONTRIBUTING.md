@@ -17,6 +17,19 @@ bun run links
 seed, and a step of the roadmap that changes the runtime passes it. `bun run test:explore` runs the explored tests
 from random seeds until one fails. [`AGENTS.md`](AGENTS.md) says when each one is run.
 
+`bun test` runs PostgreSQL on PGlite, which runs one statement at a time on one session. `bun run test:postgres`
+runs the storage's tests and the runtime's on a server of PostgreSQL instead, with the tests of
+[`src/postgres.test.ts`](src/postgres.test.ts) that only a server with many connections runs. Its role makes and
+drops a database for each test, and is a superuser. The CI runs it on Linux, and so can a container:
+
+```sh
+docker run --rm -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:17
+POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres bun run test:postgres
+```
+
+The spike [`spikes/full-volume.test.ts`](spikes/full-volume.test.ts) fills a volume of fixed size, which
+`FULL_VOLUME` names, and is skipped without it. The CI mounts one of 32 MB on Linux.
+
 The site, with the guide, the examples and the API reference, is built into `site/dist/` by a package of its own:
 
 ```sh

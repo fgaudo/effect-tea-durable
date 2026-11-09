@@ -29,6 +29,40 @@ jobs:
       - run: bun run build
         working-directory: site
 
+  # The tests of the storage and of the runtime on a server of PostgreSQL with a pool, and a database of SQLite on a
+  # volume that fills up (decisions 0222, 0223).
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run test:postgres
+        env:
+          POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - name: Mount a volume of 32 MB
+        run: |
+          fallocate -l 32M "$RUNNER_TEMP/volume.img"
+          mkfs.ext4 -q -m 0 "$RUNNER_TEMP/volume.img"
+          sudo mkdir -p /mnt/full
+          sudo mount -o loop "$RUNNER_TEMP/volume.img" /mnt/full
+          sudo chown "$(id -u):$(id -g)" /mnt/full
+      - run: bun test spikes/full-volume.test.ts
+        env:
+          FULL_VOLUME: /mnt/full
+
   # Every seed of the explored tests, which a release passes. Run by hand from the repository's Actions.
   release:
     if: github.event_name == 'workflow_dispatch'
