@@ -8,15 +8,15 @@ import * as Effect from 'effect/Effect'
 import * as Queue from 'effect/Queue'
 import { activateOnCluster } from './doors.ts'
 import { loads } from './loop.ts'
-import { type Deployment, end, type Process } from './process.ts'
+import { type Deployment, end, type Process, reread } from './process.ts'
 import type { Types } from './program.ts'
 
 /**
  * The timers of the entities this process does not hold (decision 0029). It reads the earliest time one is
  * due, and activates the entities whose time has come: arming a timer already due fires it. Then it sleeps
- * until the next, or until an entity is unloaded and brings an earlier one. An activation that fails crashes
- * its entity alone, which is tried again after `retry`, as a receiver that crashed is sent to again
- * (decisions 0046, 0077).
+ * until the next, an hour at most (decision 0221), or until an entity is unloaded and brings an earlier one. An
+ * activation that fails crashes its entity alone, which is tried again after `retry`, as a receiver that crashed is
+ * sent to again (decisions 0046, 0077).
  */
 export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => {
   const { waker } = deployed
@@ -58,9 +58,11 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
       return true
     })
     if (!rests) return yield* Queue.take(waker.poke)
+    // A sleep of `reread` at most, after which the round reads the wall clock and the storage again: a host
+    // suspended during the sleep delays a timer by that much at most (decision 0221).
     yield* next === Infinity
       ? Queue.take(waker.poke)
-      : Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(`${Math.max(0, next - now)} millis`))
+      : Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(`${Math.min(Math.max(0, next - now), reread)} millis`))
     waker.busy = true
   }))
 }

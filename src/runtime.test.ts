@@ -17,6 +17,7 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
+import * as Metric from 'effect/Metric'
 import * as References from 'effect/References'
 import fc from 'fast-check'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
@@ -26,6 +27,7 @@ import * as Scope from 'effect/Scope'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
+import * as Tracer from 'effect/Tracer'
 import { booking } from './fixtures/booking.ts'
 import { inventory } from './fixtures/inventory.ts'
 import * as Machine from './machine.ts'
@@ -429,6 +431,52 @@ const explored = <A>(
     expect({ seed, ended: ends(run) }).toEqual({ seed, ended })
   }
 }
+
+/** A tracer that keeps every span the run opens, in the order they open, as Effect's own spans (decision 0220). */
+const tracing = () => {
+  const spans: Array<Tracer.NativeSpan> = []
+  const tracer = Tracer.make({
+    span: (options) => {
+      const span = new Tracer.NativeSpan(options)
+      spans.push(span)
+      return span
+    },
+  })
+  return { spans, tracer }
+}
+
+/**
+ * A wall clock `wall.skew` milliseconds off the test's clock, whose sleeps are the test clock's: a host suspended
+ * moves the wall clock on and leaves every sleep where it was, and a clock set back moves the wall clock back
+ * (decision 0221). The test moves its clock with `adjust`, since `TestClock.adjust` finds no test clock where this
+ * one is provided.
+ */
+const skewing = TestClock.testClockWith((test) =>
+  Effect.sync(() => {
+    const wall = { skew: 0 }
+    const millis = () => test.currentTimeMillisUnsafe() + wall.skew
+    const nanos = () => BigInt(millis()) * 1_000_000n
+    const clock: Clock.Clock = {
+      currentTimeMillisUnsafe: millis,
+      currentTimeMillis: Effect.sync(millis),
+      currentTimeNanosUnsafe: nanos,
+      currentTimeNanos: Effect.sync(nanos),
+      monotonicTimeNanosUnsafe: () => test.monotonicTimeNanosUnsafe(),
+      monotonicTimeNanos: test.monotonicTimeNanos,
+      sleep: (duration) => test.sleep(duration),
+    }
+    return { wall, clock, adjust: (duration: Duration.Input) => test.adjust(duration) }
+  })
+)
+
+/** The toy with its timer alone, at the time of its flags, as far off as a test sets it. */
+const distant: Program<T> = {
+  ...program,
+  name: 'Distant',
+  init: (flags, at) => ({ want: ['t'], applied: [], since: at, rings: flags.at }),
+}
+
+const hour = 60 * 60 * 1000
 
 /**
  * Runs `effects` at once, each forked as a task of its own, and gives what each gives. `Effect.all` starts its
@@ -5538,10 +5586,10 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
 test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {
   // Decision 0116: an entity's wait ends with an item of its queue, and nothing races its take. A take raced against a
   // timeout loses the event when the racing fiber is preempted at the third step after its resumption, and its caller
-  // waits for ever. Seed 818138843, pinned, reaches it against the wait written as `Effect.timeoutOption` of the take,
-  // mapped to a `Passivate` where it runs out, with the sleep and the pass-over left in place unused, under the loop
-  // forked without the step's transaction of decision 0161. A seed draws its schedule from the yields of the code it runs, so another form of the old
-  // wait needs a seed of its own, which `bun run test:explore` finds in a round or two.
+  // waits for ever. Seed 2009658187, pinned, reaches it against the wait written as `Effect.timeoutOption` of the take,
+  // mapped to a `Passivate` where it runs out, with the sleep and the pass-over left in place unused, under the spans
+  // and the timers' sleeps of decisions 0220 and 0221. A seed draws its schedule from the yields of the code it runs,
+  // so another form of the old wait needs a seed of its own, which `bun run test:explore` finds in a round or two.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -5562,7 +5610,7 @@ test('a message that arrives as the wait of its entity runs out is handled, unde
           yield* runtime.settled
           return reply
         }))
-    }), { _tag: 'Accepted' }, { open: false, pinned: [818138843] })
+    }), { _tag: 'Accepted' }, { open: false, pinned: [2009658187] })
 }, 60_000)
 
 test('settled never returns between a crash and the activation its due timer brings, under prioritized schedules', () => {
@@ -5571,7 +5619,7 @@ test('settled never returns between a crash and the activation its due timer bri
   // `settled` that looked between two steps would find the entity neither held nor known to the waker, with its timer
   // due. The message's commit waits at a gate while the timer comes due, then dies once the window is open. A leave
   // split in two steps, the entity taken out of the process in one and the waker poked in the next, returns early at
-  // seed 169, pinned, under every fork of the runtime given `untransacted` of decision 0164.
+  // seed 64213746, pinned, under the spans and the timers' sleeps of decisions 0220 and 0221.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -5609,7 +5657,7 @@ test('settled never returns between a crash and the activation its due timer bri
           yield* runtime.settled
           return { early, restarted }
         }))
-    }), { early: false, restarted: true }, { open: false, pinned: [169] })
+    }), { early: false, restarted: true }, { open: false, pinned: [64213746] })
 }, 60_000)
 
 test('settled never returns while the waker rests from a reading another entity left during, under bounded schedules', () => {
@@ -5932,6 +5980,63 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
       (said) => said._tag === 'Reached' && said.point === 'AfterReply' && said.event._tag === 'Handle',
       'waits',
     ), 10_000)
+
+  test('a door’s steps link the span of the request, and an operation links the step that started it', () => {
+    const { spans, tracer } = tracing()
+    return Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      asked = []
+      const sql = yield* SqlClient.SqlClient
+      yield* createTables
+      yield* clusterTables
+      let step: ((delivered: Delivered) => Effect.Effect<unknown>) | null = null
+      const cluster: OnCluster = {
+        shards: 1,
+        versions: null,
+        shardOf: () => 1,
+        guard: () => Effect.void,
+        holds: () => true,
+        singleton: (_name, run) => Effect.asVoid(Effect.forkScoped(Effect.scoped(Effect.andThen(run, Effect.never)))),
+        register: (_program, given) =>
+          Effect.sync(() => {
+            step = given as (delivered: Delivered) => Effect.Effect<unknown>
+          }),
+        others: { version: Effect.succeed(0), millis: 1_000 },
+        // These tests step the door directly, and send nothing through Cluster's client.
+        create: () => Effect.die('no creation is sent through the client here'),
+        send: () => Effect.die('no message is sent through the client here'),
+        operate: () => Effect.die('no operator’s event is sent through the client here'),
+        resume: () => Effect.die('no sender is told of a resumption here'),
+      }
+      const runtime = yield* launchWith({}, cluster)
+      yield* runtime.deploy(relay)
+      // Cluster runs a door's step under the span of the request it delivers: here, the span `request`.
+      const door = (delivered: Omit<Delivered, 'id' | 'version'>) =>
+        Effect.withSpan(sql.withTransaction(step!({ ...delivered, id: 'one', version: versionOf(relay) })), 'request')
+      yield* door({ _tag: 'Create', request: caller('c1'), message: '{}' })
+      yield* door({ _tag: 'Message', request: caller('m1'), message: JSON.stringify({ _tag: 'Go' }) })
+      // `First` completes, and its completion is handled by the loop, which starts `Ask`.
+      yield* Effect.sleep('200 millis')
+      const requests = spans.filter((span) => span.name === 'request')
+      const steps = spans.filter((span) => span.name === 'tea.step')
+      const event = (span: Tracer.NativeSpan) => span.attributes.get('tea.event')
+      const linked = (span: Tracer.NativeSpan) => span.links.map((link) => link.span)
+      // The span a step links, or the span it runs under, such as the transaction's, below `outer`.
+      const under = (span: Tracer.AnySpan, outer: Tracer.AnySpan): boolean =>
+        span === outer || (span._tag === 'Span' && span.parent._tag === 'Some' && under(span.parent.value, outer))
+      expect(steps.every((span) => span.parent._tag === 'None')).toBe(true)
+      // A message that arrives with an empty mailbox is handled by its `Receive`, in the door's step.
+      expect(steps.slice(0, 2).map(event)).toEqual(['Create', 'Receive'])
+      expect(steps.slice(0, 2).map((span, at) => span.links.length === 1 && under(span.links[0]!.span, requests[at]!)))
+        .toEqual([true, true])
+      // The door's step leaves its machine uncommitted, and the loop performs what it set going once it settles it.
+      const first = spans.find((span) =>
+        span.name === 'tea.operation' && span.attributes.get('tea.operation') === 'First'
+      )
+      expect(first?.parent._tag).toBe('None')
+      expect(first === undefined ? [] : linked(first)).toEqual([steps[1]!])
+      expect(steps.some((span) => event(span) === 'Complete' && span.links.length === 0)).toBe(true)
+    })).pipe(Effect.provide(client('sqlite')), Effect.provideService(Tracer.Tracer, tracer)))
+  }, 10_000)
 })
 
 describe('a consumer on Cluster, woken by another runner’s commit (decision 0163)', () => {
@@ -6117,3 +6222,196 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
   }, 60_000)
 })
 
+
+describe('what the runtime tells a tracer (decision 0220)', () => {
+  const event = (span: Tracer.NativeSpan) => span.attributes.get('tea.event')
+  const linked = (span: Tracer.NativeSpan) => span.links.map((link) => link.span)
+
+  test('each step is a root span of its entity and its event, and the step of a request links its caller’s span', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const { spans, tracer } = tracing()
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          const want = { _tag: 'Want', key: 'a', on: true, nonce: 'w' } as const
+          yield* Effect.withSpan(toy.send(id, want, { requestId: 'want', sender: tester }), 'caller')
+          yield* runtime.settled
+          // A message a suspended entity answers `Suspended` links its caller's span all the same.
+          yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester })
+          const again = { _tag: 'Want', key: 'a', on: false, nonce: 'v' } as const
+          const queued = { requestId: 'queued', sender: tester }
+          expect(yield* Effect.withSpan(toy.send(id, again, queued), 'queued')).toEqual({ _tag: 'Suspended' })
+        })).pipe(Effect.provideService(Tracer.Tracer, tracer))
+      const caller = spans.find((span) => span.name === 'caller')!
+      const queued = spans.find((span) => span.name === 'queued')!
+      const steps = spans.filter((span) => span.name === 'tea.step')
+      expect(steps.every((span) => span.parent._tag === 'None' && span.status._tag === 'Ended')).toBe(true)
+      expect(steps.every((span) => span.attributes.get('tea.entity.name') === 'Toy')).toBe(true)
+      expect(steps.every((span) => span.attributes.get('tea.entity.id') === id)).toBe(true)
+      expect(event(steps[0]!)).toBe('Create')
+      // Each message is received, and handled with an empty mailbox, in a step that links its caller's span. No
+      // other step links any.
+      const requested = steps.filter((span) => span.links.length > 0)
+      expect(requested.map(event)).toEqual(['Receive', 'Receive'])
+      expect(requested.map(linked)).toEqual([[caller], [queued]])
+      // A completion names the work it completes, by its key and its incarnation, as the operation's span does.
+      const completed = steps.find((span) => event(span) === 'Complete' && span.attributes.get('tea.key') === 'b')
+      const b = spans.find((span) => span.name === 'tea.operation' && span.attributes.get('tea.key') === 'b')
+      expect(completed?.attributes.get('tea.incarnation')).toBeNumber()
+      expect(completed?.attributes.get('tea.incarnation')).toBe(b?.attributes.get('tea.incarnation'))
+      // The caller's message starts the operation of `a` again, and its step says so.
+      expect(requested[0]?.attributes.get('tea.outputs')).toContain('Started')
+    })))
+
+  test('an operation is a root span of its work, linked to the step that started it', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const { spans, tracer } = tracing()
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+        })).pipe(Effect.provideService(Tracer.Tracer, tracer))
+      const creation = spans.find((span) => span.name === 'tea.step' && event(span) === 'Create')!
+      const operations = spans.filter((span) => span.name === 'tea.operation')
+      expect(operations.map((span) => span.attributes.get('tea.operation'))).toEqual(['A', 'B', 'C'])
+      expect(operations.map((span) => span.attributes.get('tea.delivery'))).toEqual([
+        'Idempotent',
+        'AtMostOnce',
+        'AtLeastOnce',
+      ])
+      expect(operations.every((span) => span.parent._tag === 'None' && span.status._tag === 'Ended')).toBe(true)
+      expect(operations.map(linked)).toEqual([[creation], [creation], [creation]])
+    })))
+
+  test('a step that suspends its entity says where and is counted, and the mailbox and operations are metrics', () =>
+    database(Effect.gen(function*() {
+      // The operations act once the test opens the gate, so that the test sees them running.
+      const gate = yield* Deferred.make<void>()
+      const acting = yield* Deferred.make<void>()
+      let acts = 0
+      const layer = Layer.succeed(Hands, Hands.of({
+        act: () =>
+          Effect.andThen(
+            Effect.sync(() => ++acts === 3 && Deferred.doneUnsafe(acting, Effect.void)),
+            Deferred.await(gate),
+          ),
+      }))
+      const { spans, tracer } = tracing()
+      const registry = new Map()
+      const at = yield* DateTime.now
+      const metrics = Effect.provideService(Metric.snapshot, Metric.MetricRegistry, registry)
+      const value = (snapshots: ReadonlyArray<Metric.Metric.Snapshot>, name: string) =>
+        snapshots.find((snapshot) => snapshot.id === name && snapshot.attributes?.['tea.entity.name'] === 'Toy')?.state
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* Deferred.await(acting)
+          expect(value(yield* metrics, 'tea.operations.running')).toEqual({ value: 3 })
+          const breaking = { requestId: 'break', sender: tester }
+          expect(yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, breaking)).toEqual({ _tag: 'Suspended' })
+          yield* Deferred.succeed(gate, undefined)
+          yield* runtime.settled
+          expect(value(yield* metrics, 'tea.operations.running')).toEqual({ value: 0 })
+        })).pipe(Effect.provideService(Tracer.Tracer, tracer), Effect.provideService(Metric.MetricRegistry, registry))
+      const suspending = spans.filter((span) => span.attributes.get('tea.suspended') === true)
+      expect(suspending.map(event)).toEqual(['Receive'])
+      expect(suspending[0]?.attributes.get('tea.suspension.on')).toBe('Message')
+      const snapshots = yield* metrics
+      expect(value(snapshots, 'tea.suspensions')).toMatchObject({ count: 1 })
+      // The creation wrote an empty mailbox, the message the entity died on a mailbox of one, and each of the three
+      // completions recorded behind it one more.
+      expect(value(snapshots, 'tea.mailbox.length')).toMatchObject({ count: 5, min: 0, max: 4, sum: 10 })
+    })))
+})
+
+describe('a timer and the wall clock (decision 0221)', () => {
+  const firings = () => {
+    const fired: Array<number> = []
+    const observe: Hooks['observe'] = (_entity, event) =>
+      Effect.map(DateTime.now, (now) => {
+        if (event._tag === 'Fire') fired.push(DateTime.toEpochMillis(now))
+      })
+    return { fired, observe }
+  }
+
+  test('a loaded entity’s timer fires within an hour of a suspended host’s return', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const host = yield* skewing
+      const { fired, observe } = firings()
+      const at = DateTime.toEpochMillis(yield* DateTime.now)
+      yield* process({ observe, passivate: { millis: 24 * hour } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(distant), layer)
+          const rings = DateTime.makeUnsafe(at + 3 * hour)
+          yield* toy.create(id, { at: rings }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          // The host sleeps for three hours: the wall clock moves on, and the timer's sleep does not.
+          host.wall.skew += 3 * hour
+          yield* host.adjust(`${hour - 1} millis`)
+          expect(fired).toEqual([])
+          // The timer's sleep ends after an hour, reads the wall clock, and finds its time past.
+          yield* host.adjust('1 millis')
+          expect(fired).toEqual([at + 4 * hour])
+        })).pipe(Effect.provideService(Clock.Clock, host.clock))
+    })))
+
+  test('the waker fires a stored timer within an hour of a suspended host’s return', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const host = yield* skewing
+      const { fired, observe } = firings()
+      const { entities, unloaded } = unloads()
+      const at = DateTime.toEpochMillis(yield* DateTime.now)
+      yield* process({ observe, unloaded, passivate: { millis: 5 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(distant), layer)
+          const rings = DateTime.makeUnsafe(at + 3 * hour)
+          yield* toy.create(id, { at: rings }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          yield* host.adjust('5 millis')
+          yield* runtime.settled
+          expect(entities).toEqual([id])
+          // The host sleeps for three hours: the wall clock moves on, and the waker's sleep does not.
+          host.wall.skew += 3 * hour
+          // Not settled: by the wall clock a stored timer is due, and the waker has not read it yet.
+          yield* host.adjust(`${hour - 1} millis`)
+          expect(fired).toEqual([])
+          // The waker's sleep ends an hour after it began, and its reading finds the timer due.
+          yield* host.adjust('1 millis')
+          yield* runtime.settled
+          expect(fired).toEqual([at + 4 * hour + 5])
+        })).pipe(Effect.provideService(Clock.Clock, host.clock))
+    })))
+
+  test('a loaded entity’s timer fires at its time when the clock is set back, never before', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const host = yield* skewing
+      const { fired, observe } = firings()
+      const at = DateTime.toEpochMillis(yield* DateTime.now)
+      yield* process({ observe, passivate: { millis: 24 * hour } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { at: DateTime.makeUnsafe(at) }, { requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          // The toy's timer rings 40 milliseconds after its creation, and the clock is set back an hour before.
+          host.wall.skew -= hour
+          yield* host.adjust('40 millis')
+          expect(fired).toEqual([])
+          // The sleep that ended early reads the wall clock, and sleeps the hour left.
+          yield* host.adjust(`${hour - 1} millis`)
+          expect(fired).toEqual([])
+          yield* host.adjust('1 millis')
+          expect(fired).toEqual([at + 40])
+        })).pipe(Effect.provideService(Clock.Clock, host.clock))
+    })))
+})

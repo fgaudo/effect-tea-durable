@@ -1,7 +1,9 @@
 # 0194. A timer months away sleeps on Effect's promise of a duration, which Effect keeps by timers of the host in turn
 
 **Status:** accepted, 2026-11-08, with the step A timer months away of the [roadmap](../roadmap.md). Adds to what the
-timers of [decision 0029](archive/0029-an-idle-entity-is-unloaded.md) rest on.
+timers of [decision 0029](archive/0029-an-idle-entity-is-unloaded.md) rest on. Changed by
+[decision 0221](0221-a-timer-sleeps-an-hour-at-most-and-reads-the-wall-clock-again.md): a timer sleeps an hour at most
+at a time, and reads the wall clock after each sleep, so no sleep of the runtime passes the host's limit.
 
 ## Context
 

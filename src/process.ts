@@ -7,11 +7,14 @@ import * as Context from 'effect/Context'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import type * as Fiber from 'effect/Fiber'
+import * as Metric from 'effect/Metric'
 import type * as MutableList from 'effect/MutableList'
+import * as Option from 'effect/Option'
 import type * as Queue from 'effect/Queue'
 import type * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import type { SqlClient } from 'effect/sql'
+import type * as Tracer from 'effect/Tracer'
 import * as Machine from './machine.ts'
 import type { Address, Creation, Entities, Key, Program, Types } from './program.ts'
 import type { Readings } from './readings.ts'
@@ -122,6 +125,91 @@ export const operated = <T extends Types>(
   return { _tag: 'StillSuspended', cause: Machine.render(after.stored.suspension.cause) }
 }
 
+/**
+ * The span of one step: `tea.step`, a root span named by its entity and its event, linked to the span its event came
+ * with where the runtime holds one (decision 0220). A root span, since an entity's loop is forked by the caller that
+ * loaded it, and a step under that caller's span would be a child of a request answered long before.
+ */
+export const traced = (
+  entity: Address,
+  event: Readonly<{ _tag: string }> & Partial<Readonly<{ key: Key; incarnation: number }>>,
+  link: Tracer.AnySpan | undefined,
+) =>
+<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.withSpan(effect, 'tea.step', {
+    root: true,
+    captureStackTrace: false,
+    links: link === undefined ? [] : [{ span: link, attributes: {} }],
+    attributes: {
+      'tea.entity.name': entity.name,
+      'tea.entity.id': entity.id,
+      'tea.event': event._tag,
+      ...(event.key === undefined
+        ? {}
+        : { 'tea.key': Machine.shownKey(event.key), 'tea.incarnation': event.incarnation }),
+    },
+  })
+
+/** The span the fiber runs in, if any: a step's, which an operation it starts links (decision 0220). */
+export const spanHere: Effect.Effect<Tracer.AnySpan | undefined> = Effect.map(
+  Effect.option(Effect.currentSpan),
+  Option.getOrUndefined,
+)
+
+const suspensions = Metric.counter('tea.suspensions', {
+  description: 'The steps that suspended an entity, by program',
+  incremental: true,
+})
+
+const mailboxes = Metric.histogram('tea.mailbox.length', {
+  description: 'The messages a step that writes left in its entity\'s mailbox, by program',
+  boundaries: [0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000],
+})
+
+const operationsRunning = Metric.gauge('tea.operations.running', {
+  description: 'The operations running in this process, by program',
+})
+
+/**
+ * What a step tells the tracer once the machine has stepped: on its span, the outputs it set going, and the
+ * suspension it made; as metrics, the length of the mailbox it wrote and the suspension (decision 0220).
+ */
+export const told = <T extends Types>(
+  entity: Address,
+  before: Machine.Machine<T>,
+  after: Machine.Machine<T>,
+  outputs: ReadonlyArray<Machine.Output<T>>,
+  written: boolean,
+) =>
+  Effect.gen(function*() {
+    const program = { 'tea.entity.name': entity.name }
+    yield* Effect.annotateCurrentSpan({ 'tea.written': written, 'tea.outputs': outputs.map((output) => output._tag) })
+    if (written) yield* Metric.update(Metric.withAttributes(mailboxes, program), after.stored.mailbox.length)
+    const { suspension } = after.stored
+    if (suspension === null || before.stored.suspension !== null) return
+    yield* Effect.annotateCurrentSpan({ 'tea.suspended': true, 'tea.suspension.on': suspension.on._tag })
+    yield* Metric.update(Metric.withAttributes(suspensions, program), 1)
+  })
+
+/**
+ * The longest a timer's sleep runs before the runtime reads the wall clock again: an hour, the waker's and a loaded
+ * entity's alike. A host suspended during a sleep delays a timer by this much at most (decision 0221).
+ */
+export const reread = 60 * 60 * 1000
+
+/** What `Loaded.links` keeps a caller's span under: creations and messages share request ids (decision 0050). */
+export const linkKey = (creation: boolean, request: string) => `${creation ? 'creation' : 'message'}:${request}`
+
+/** The count of operations running for `deployed` moves by `by`, and its gauge with it (decision 0220). */
+export const running = <T extends Types>(deployed: Deployment<T>, by: 1 | -1) =>
+  Effect.suspend(() => {
+    deployed.operating += by
+    return Metric.update(
+      Metric.withAttributes(operationsRunning, { 'tea.entity.name': deployed.program.name }),
+      deployed.operating,
+    )
+  })
+
 /** The callers waiting for a reply of one kind, by entity and then by request. */
 export type Callers<A> = Map<string, Map<string, Set<Deferred.Deferred<A>>>>
 
@@ -161,6 +249,8 @@ export type Stepped<T extends Types> = Readonly<{
   event: Machine.Event<T>
   written: Machine.Written | null
   outputs: ReadonlyArray<Machine.Output<T>>
+  /** The span of the step, which the operations it starts link once performed (decision 0220). */
+  span: Tracer.AnySpan | undefined
 }>
 
 /** An entity loaded in this process: its machine, the events waiting, and what is running for it. */
@@ -200,6 +290,11 @@ export interface Loaded<T extends Types> {
   readonly callers: Semaphore.Semaphore
   /** Whether this activation has warned that it is full, once per activation as of a large step (decision 0147). */
   refused: boolean
+  /**
+   * The span of each caller on one process, by its request, which the step of its request links: kept from its offer
+   * until a step replies to it (decision 0220).
+   */
+  readonly links: Map<string, Tracer.AnySpan>
 }
 
 /**
@@ -240,6 +335,8 @@ export interface Deployment<T extends Types> {
   readonly waker: Waker
   /** The waker's fiber, once it is forked: a planned stop interrupts it (decision 0119). */
   waking: Fiber.Fiber<void, never> | null
+  /** How many operations of the deployment run in this process: what `tea.operations.running` reads (decision 0220). */
+  operating: number
   /**
    * On Cluster, by shard: `held` while the shard's singleton runs, and `lost` once it is interrupted, until it starts
    * again (decision 0162). Off Cluster, empty.

@@ -50,8 +50,8 @@ the runtime.
   [rehearsing a world](#rehearsing-a-world)
 - [Where it departs from effect-tea](#where-it-departs-from-effect-tea)
 - [Where it runs](#where-it-runs): [databases](#databases), [entities in the process](#entities-in-the-process),
-  [deployments](#deployments), [a planned stop](#a-planned-stop), [on Effect Cluster](#on-effect-cluster) and
-  [the public surface](#the-public-surface)
+  [deployments](#deployments), [a planned stop](#a-planned-stop), [what a tracer sees](#what-a-tracer-sees),
+  [on Effect Cluster](#on-effect-cluster) and [the public surface](#the-public-surface)
 - [How the runtime keeps it](#how-the-runtime-keeps-it): [what the storage writes](#what-the-storage-writes),
   [fibers and locks](#fibers-and-locks), [Effect Cluster inside the runtime](#effect-cluster-inside-the-runtime) and
   [how the machine and the runtime are tested](#how-the-machine-and-the-runtime-are-tested)
@@ -1118,8 +1118,9 @@ An entity with nothing to do is unloaded, and the earliest of its stored timers 
 runtime. A launch checks each of its options, and one that is no number of the kind it names is the launcher's
 defect. `retry`, `passivate` and `warn` are non-negative integers, since a time becomes the text of a duration, and
 Effect reads no `Infinity millis` and no `NaN millis`
-([decision 0208](decisions/0208-a-launch-checks-every-option.md)). A timer months away fires at its time, as
-[fibers and locks](#fibers-and-locks) says. An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
+([decision 0208](decisions/0208-a-launch-checks-every-option.md)). A timer fires once its time has come on the
+wall clock, and never before. A host suspended while a timer sleeps delays it by an hour at most once the host runs
+again, as [fibers and locks](#fibers-and-locks) says. An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
 process, its callers are given the defect, and the next one loads it from what is stored
 ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)); nothing else waits
 for its operations to stop ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)).
@@ -1153,6 +1154,21 @@ holds whether that scope is closed by `Scope.close` or by the interruption of th
 `runMain` stops a process on a signal. On Cluster it ends before the runner lets its shards go, when the runtime is
 launched in a layer built over the runner's `Sharding`
 ([decision 0219](decisions/0219-a-drain-holds-when-an-interrupted-fiber-closes-its-scope.md)).
+
+### What a tracer sees
+
+The runtime records spans and metrics through Effect's `Tracer` and `Metric`, which an application exports with
+`OtlpTracer`, `OtlpMetrics` or `PrometheusMetrics` of `effect/observability`
+([decision 0220](decisions/0220-the-runtime-records-a-span-for-each-step-and-each-operation.md)). Each event the
+machine steps is a span `tea.step`, with the entity's `tea.entity.name` and `tea.entity.id`, the event's tag as
+`tea.event`, and the tags of what the step set going as `tea.outputs`. A completion, a firing and a defect of work
+name its `tea.key` and its `tea.incarnation`. A step that suspends its entity has `tea.suspended`, and says in
+`tea.suspension.on` what the entity died on. The run of an operation is a span `tea.operation`, with its tag and its
+delivery. Every span of the runtime is a root span. The step of a caller's request links the caller's span, and an
+operation links the step that started it, so a trace follows a request into the work it set going by links. Three
+metrics count by program: `tea.mailbox.length`, a histogram of the mailbox each step that writes leaves,
+`tea.suspensions`, the steps that suspend an entity, and `tea.operations.running`, the operations running in the
+process. No attribute holds a message, a state or a projection.
 
 ### On Effect Cluster
 
@@ -1295,8 +1311,11 @@ The two dialects hold the same rows in the same columns:
 
 ### Fibers and locks
 
-A timer is slept by `Effect.sleep` for the whole time left, months included. Effect sets a time past the host's
-limit of 2^31 − 1 milliseconds as timers of the host in turn
+A timer sleeps by `Effect.sleep` for an hour at most at a time, and reads the wall clock after each sleep. A loaded
+entity's timer sleeps again for the time left until the time it stores has come, and the waker reads the stored
+timers again. So a wall clock set back fires no timer early, and a host suspended delays one by an hour at most
+([decision 0221](decisions/0221-a-timer-sleeps-an-hour-at-most-and-reads-the-wall-clock-again.md)). An hour is shorter
+than the host's limit of 2^31 − 1 milliseconds, past which Effect sets a time as timers of the host in turn
 ([decision 0194](decisions/0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md)).
 
 Each entity is found, loaded, unloaded and crashed under a lock of its own, so the callers of one entity never
