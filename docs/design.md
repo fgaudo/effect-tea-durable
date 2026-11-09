@@ -486,7 +486,7 @@ table of its own with it ([decision 0198](decisions/0198-every-object-the-runtim
 statement of the storage names a schema of PostgreSQL, so the runtime makes every object in the schema that the
 client's `search_path` names first. A launcher that sets the `search_path` of the runtime's role, as Cluster asks for
 its own tables, puts them in a schema of their own. A database is still held by one runtime, whatever its schemas,
-since the advisory lock is the database's
+since the advisory lock that holds it is the database's
 ([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)). Each row carries the version of the program that wrote it, and is read
 by migrating its JSON to the program's version (see [schemas that change](#schemas-that-change)). The row around
 the JSON is read through its table's schema, which says what the storage writes: nothing is filled in or cast, and
@@ -1069,10 +1069,12 @@ is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md
 database until it ends: a second runtime on it, or a launch while another connection has the file of SQLite open,
 dies as it launches ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). A database of
 PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. Once it holds the
-database, a launch creates the tables where they are missing, and adds no column to a table it finds
-([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)). It does so in one
-transaction, so that two launches on one database create each table once. A launch given `tables: 'existing'` creates nothing, for a role of PostgreSQL that may
-only read and write rows, and an operator runs `createTables` under the tables' owner before each new release. On
+database, a launch runs the migrations of the tables not yet recorded in `tea_migrations`, with Effect's `Migrator`
+([decision 0216](decisions/0216-the-tables-are-made-by-effects-migrator.md)). The first migration is the schema of
+the first release, and a later change of a table is a migration after it. `Migrator` runs the pending migrations in
+one transaction, so that two launches on one database run each migration once. A launch given `tables: 'existing'`
+runs no migration, for a role of PostgreSQL that may only read and write rows, and an operator runs `createTables`
+under the tables' owner before each new release. On
 Cluster the runners share the database, and `sharding` creates the tables before any runner registers
 ([decision 0191](decisions/0191-a-launch-creates-the-tables.md)). `launch` gives a runtime, `deploy(program)`
 a handle to one program's entities — `create`, `send`, `read`, and `suspended`, `inspect`, `resume` and `discard` for an

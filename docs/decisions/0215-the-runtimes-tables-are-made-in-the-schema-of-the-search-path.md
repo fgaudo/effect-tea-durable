@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-09. Leaves [decision 0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) as
 it is: its alternative of a schema of the runtime's own refused that the runtime name one, and this note lets the
-launcher choose one.
+launcher choose one. [Decision 0216](0216-the-tables-are-made-by-effects-migrator.md) locks `tea_migrations` in
+place of the advisory lock of `createTables`, so that lock is the schema's.
 
 ## Context
 

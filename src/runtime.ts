@@ -226,11 +226,11 @@ export interface Options {
    */
   readonly renames?: Readonly<Record<string, string>>
   /**
-   * What the launch does with the tables. `'create'`, the default, creates the tables where they are missing, and
-   * gives a database made before the columns it lacks, once the database is held. `'existing'` creates nothing, for a
-   * role of PostgreSQL that may only read and write rows. That role's launch dies where a table is missing, and an
-   * operator runs `createTables` under the tables' owner before each launch of a new release of the library. On
-   * Cluster `sharding` creates the tables whatever this says (decision 0191).
+   * What the launch does with the tables. `'create'`, the default, runs the migrations of the tables not yet
+   * recorded, once the database is held (decision 0216). `'existing'` runs none, for a role of PostgreSQL that may
+   * only read and write rows. That role's launch dies where a table is missing, and an operator runs `createTables`
+   * under the tables' owner before each launch of a new release of the library. On Cluster `sharding` creates the
+   * tables whatever this says (decision 0191).
    */
   readonly tables?: 'create' | 'existing'
 }

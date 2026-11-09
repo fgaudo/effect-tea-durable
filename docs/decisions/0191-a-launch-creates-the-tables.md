@@ -4,6 +4,9 @@
 [decision 0055](archive/0055-the-public-surface-is-what-its-users-use.md), whose operator creates the tables, and
 [decision 0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md),
 whose column `request_id` is added and filled by two statements that commit apart. [Decision 0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) names every table with `tea_`, and a launch adds no column: a database made before keeps its tables under their old names.
+[Decision 0216](0216-the-tables-are-made-by-effects-migrator.md) runs the migrations with `Migrator`, in place of the
+transaction and the lock this note writes, and lets a role of rows run `createTables` where every migration is
+recorded.
 
 ## Context
 

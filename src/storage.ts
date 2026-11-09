@@ -11,7 +11,7 @@ import * as Effect from 'effect/Effect'
 import * as Hash from 'effect/Hash'
 import * as Schema from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
-import { SqlClient, type SqlError, type Statement } from 'effect/sql'
+import { Migrator, SqlClient, type SqlError, type Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
 import {
   type Piece,
@@ -128,31 +128,26 @@ export const defaultPartitions = 300
 export const partitionOf = (id: string, partitions: number): number => Math.abs(Hash.string(id) % partitions) + 1
 
 /**
- * The key of the advisory lock that `createTables` takes on PostgreSQL for its transaction. It is not the key of
- * `hold`, since a launch holds the database on one connection and creates the tables on another (decision 0191).
- */
-const tablesKey = advisoryKey + 1
-
-/**
- * The tables, created where they are missing. Every entity of every program sits in them: the name of the program and
- * the id are the entity's address (decision 0022). Every table, index, trigger and function the runtime makes is
- * named with `tea_`, so that the tables of an application in the same database are never taken for its own
- * (decision 0198). It runs as one transaction, so that two launches on one database create each table once
- * (decision 0191). On SQLite the transaction takes the file's write lock as it
- * begins, which the driver does by default and this asks for by name; on PostgreSQL it takes an advisory lock.
+ * The tables, made by the migrations not yet recorded in `tea_migrations`. Every entity of every program sits in
+ * them: the name of the program and the id are the entity's address (decision 0022). Every table, index, trigger and
+ * function the runtime makes is named with `tea_`, so that the tables of an application in the same database are
+ * never taken for its own (decision 0198). `Migrator` runs the pending migrations in one transaction, so that two
+ * launches on one database run each migration once (decision 0216). On SQLite the transaction takes the file's write
+ * lock as it begins, which the driver does by default and this asks for by name, since a transaction begun without
+ * it dies while another runs; on PostgreSQL `Migrator` locks its table.
  */
 export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
-  const dialect = dialectOf(sql)
-  const created = Effect.gen(function*() {
-    if (dialect === 'pg') yield* sql`SELECT pg_advisory_xact_lock(${tablesKey})`
-    yield* tables
+  const migrated = Migrator.make({})({
+    loader: Migrator.fromRecord({ '0001_tables': tables }),
+    table: 'tea_migrations',
   })
-  yield* sql.withTransaction(created).pipe(
-    dialect === 'sqlite' ? Effect.provideService(SqlClient.BeginTransaction, 'BEGIN IMMEDIATE') : (effect) => effect,
-  )
+  yield* dialectOf(sql) === 'sqlite'
+    ? Effect.provideService(migrated, SqlClient.BeginTransaction, 'BEGIN IMMEDIATE')
+    : migrated
 }).pipe(Effect.orDie)
 
+// The schema of the first release. A later change of a table is a migration of its own, after this one.
 const tables = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
   const dialect = dialectOf(sql)

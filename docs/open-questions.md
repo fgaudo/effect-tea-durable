@@ -4,20 +4,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
 
 ## Storage and reading
 
-- **The tables migrated by Effect's `Migrator`.** `createTables` creates the tables where they are missing, in one
-  transaction under a lock of its own, and adds no column, since no database holds an older schema of the tables
-  named with `tea_` ([decisions 0191](decisions/0191-a-launch-creates-the-tables.md),
-  [0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)). A release that changes a table needs
-  a way to change it. `Migrator` of `effect/sql` runs numbered migrations, records each in a table of its own, and
-  runs those not recorded in one transaction under a lock. A first migration that is the schema of the first release
-  would make each later change of the schema a migration. The indexes of each program, made at deploy, would stay outside it, and so would
-  `tables: 'existing'`, since `Migrator` creates its own table. Whether the library adopts it before its release is
-  not decided. It would be decided by:
-  - the maintainer's agreement, since the module is `@stability unstable` and `src/` does not import it yet;
-  - a spike of two runs at once on SQLite and on PostgreSQL, which sees whether the run that meets `Locked` goes on
-    before the other has committed;
-  - a name of its table that no `Migrator` of the application uses in the same database.
-
 - **A disk that is really full.** A step that cannot commit dies, and a forget and a prune free the room steps need
   ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). The spike `spikes/full-database.test.ts` sees it
   under `PRAGMA max_page_count`, with the rollback journal, which caps the database file and not its journal. On a
@@ -88,6 +74,9 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     and of Cluster in that schema on every connection of the pool, and two runtimes in two schemas of one database
     refusing each other
     ([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)).
+  - two launches at once that run the migrations of `createTables`, where the second waits on
+    `LOCK TABLE tea_migrations IN ACCESS EXCLUSIVE MODE` until the first commits, and runs none
+    ([decision 0216](decisions/0216-the-tables-are-made-by-effects-migrator.md)).
 - **A fiber that outlives its transaction.** A fiber forked inside a transaction keeps the transaction's connection
   in its context. At 4.1.2 its statements and savepoints then run on that connection after the commit, outside the
   client's semaphore, and nothing says so: on SQLite another fiber's transaction later fails to begin. The runtime

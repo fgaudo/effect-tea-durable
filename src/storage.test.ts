@@ -801,9 +801,10 @@ test('on PostgreSQL every text column the storage makes compares bytes', () =>
   database((sql) =>
     Effect.gen(function*() {
       yield* storage(ranked, sql).indexed
+      // `tea_migrations` is made by `Migrator`, and nothing of the runtime compares its text (decision 0216).
       const columns = yield* sql<{ table_name: string; column_name: string; collation_name: string | null }>`
         SELECT table_name, column_name, collation_name FROM information_schema.columns
-        WHERE table_schema = current_schema() AND data_type = 'text'
+        WHERE table_schema = current_schema() AND data_type = 'text' AND table_name <> 'tea_migrations'
       `
       expect(columns.length).toBeGreaterThan(0)
       expect(columns.filter((column) => column.collation_name !== 'C')).toEqual([])

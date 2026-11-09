@@ -198,8 +198,9 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0155](archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md) | A `forEach` of messages to children by id puts them back once, with the step one message after the other gives |  |
 | [0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both, of text every database holds | [0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md), [0179](0179-an-id-is-not-empty.md) |
 | [0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md) | A database of SQLite made before is given `request_id`, and a page keeps the level of a caller's transaction | [0191](0191-a-launch-creates-the-tables.md), [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) |
-| [0191](0191-a-launch-creates-the-tables.md) | A launch creates the tables, in one transaction, unless it is told they exist | [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) |
+| [0191](0191-a-launch-creates-the-tables.md) | A launch creates the tables, in one transaction, unless it is told they exist | [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md), [0216](0216-the-tables-are-made-by-effects-migrator.md) |
 | [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) | Every table, index, trigger and function the runtime makes is named with `tea_` |  |
+| [0216](0216-the-tables-are-made-by-effects-migrator.md) | The tables are made by Effect's `Migrator`, which records each migration in `tea_migrations` |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for | [0213](0213-a-projections-allows-is-given-the-sender.md) |
 | [0213](0213-a-projections-allows-is-given-the-sender.md) | A projection's `allows` is given the sender, and says whose each action is |  |
@@ -212,7 +213,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0040](archive/0040-what-is-stored-encodes-to-json-as-it-is.md) | What is stored encodes to JSON as it is | [0057](archive/0057-the-machine-gives-what-is-written.md), [0210](0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md) |
 | [0210](0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md) | A sparse array is no JSON, and `-0` is read back as `0` |  |
 | [0214](0214-a-rejections-reason-is-given-as-a-caller-reads-it.md) | A rejection's reason is given as a caller reads it, decoded from its JSON |  |
-| [0215](0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md) | The runtime's tables are made in the schema the client's `search_path` names, one runtime per database |  || [0062](archive/0062-a-row-is-read-through-a-schema.md) | A row is read through a schema, or not at all | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) |
+| [0215](0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md) | The runtime's tables are made in the schema the client's `search_path` names, one runtime per database | [0216](0216-the-tables-are-made-by-effects-migrator.md) |
+| [0062](archive/0062-a-row-is-read-through-a-schema.md) | A row is read through a schema, or not at all | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) |
 | [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md) | `reindex` writes a row only over the state it was computed from |  |
 | [0072](archive/0072-the-log-shows-what-a-step-changed.md) | The log shows what a step changed, as the program deployed computes it | [0138](archive/0138-the-log-publishes-topics.md) |
 | [0098](archive/0098-json-is-effect-s.md) | `Json` is Effect's |  |

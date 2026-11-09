@@ -1,8 +1,8 @@
 /**
  * What a role of PostgreSQL that may only read and write rows does with the storage's tables, at
- * `@effect/sql-pglite` 4.1.2 and the `@electric-sql/pglite` it pins (decision 0191). The owner creates the tables,
- * and the role is granted the rows of each. The role may not run `createTables`, though every table exists, and a
- * runtime launched with `tables: 'existing'` steps under it.
+ * `@effect/sql-pglite` 4.1.2 and the `@electric-sql/pglite` it pins (decisions 0191, 0216). The owner creates the
+ * tables, and the role is granted the rows of each. The role may not create a table, runs `createTables` where every
+ * migration is recorded, and steps a runtime launched with `tables: 'existing'`.
  */
 import { PgliteClient } from '@effect/sql-pglite'
 import { expect, test } from 'bun:test'
@@ -27,7 +27,7 @@ const counter = program({
   project: (state) => state.count,
 })
 
-test('a role that may only read and write rows creates no table, and steps a runtime given the tables', () =>
+test('a role that may only read and write rows creates no table, runs migrations recorded, and steps a runtime', () =>
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     yield* createTables
@@ -36,8 +36,9 @@ test('a role that may only read and write rows creates no table, and steps a run
     yield* sql`GRANT USAGE ON SCHEMA public TO app`
     yield* sql`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app`
     yield* sql`SET ROLE app`
-    const refused = yield* Effect.exit(createTables)
+    const refused = yield* Effect.exit(sql`CREATE TABLE tea_other (name TEXT)`)
     expect(Exit.isFailure(refused) ? String(refused.cause) : null).toContain('permission denied for schema public')
+    yield* createTables
     const runtime = yield* launch({ tables: 'existing' })
     const counters = yield* runtime.deploy(counter)
     const sender = null
