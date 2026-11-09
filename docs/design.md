@@ -77,6 +77,9 @@ A program leaves out what it does not have, and each piece left out is empty
 messages, the operations and the reasons left out are `Schema.Never`, and the sender's is `Schema.Null`. `keys`
 left out is `[]`, and `operations` and `indexes` left out are `{}`. `work` may be left out only where no key is declared, and
 `operations` only where there is no kind of operation, so a program that holds work says what work it holds.
+`update` may be left out only where there is no own message, inbound or internal, and leaves the state as it is
+then ([decision 0202](decisions/0202-update-is-left-out-where-there-is-no-own-message.md)). A parent whose only
+messages are its children's still gives `inbound: Schema.Never`.
 
 There are no commands. Every piece of work that must survive a crash is derived from the state by `work`
 ([decision 0003](decisions/archive/0003-durable-work-derived-from-state.md)). An operation is data, as effect-tea's

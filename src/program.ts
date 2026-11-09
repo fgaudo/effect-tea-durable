@@ -3,7 +3,7 @@ import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import type * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
-import { dual } from 'effect/Function'
+import { dual, identity } from 'effect/Function'
 import type * as Optic from 'effect/Optic'
 import * as Opt from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -1040,6 +1040,20 @@ type WorkOf<State, Internal, Operation, Keys> = [keyof Keys] extends [never]
   ? Readonly<{ work?: (state: State) => Work<never, unknown, Operation, Internal> }>
   : Readonly<{ work: (state: State) => Work<Extract<keyof Keys, string>, ParametersOf<Keys>, Operation, Internal> }>
 
+/**
+ * `update`, for the own messages, and the external ones for a part: a child's messages are routed to the child. It
+ * may be left out exactly where there is no own message, and leaves the state as it is then (decision 0202).
+ */
+type UpdateOf<State extends object, Message, Sender, Event, Rejection, C> = [Message] extends [never]
+  ? Readonly<{ update?: OwnUpdate<State, Message, Sender, Event, Rejection, C> }>
+  : Readonly<{ update: OwnUpdate<State, Message, Sender, Event, Rejection, C> }>
+
+type OwnUpdate<State extends object, Message, Sender, Event, Rejection, C> = (
+  message: Message,
+  meta: Meta<Sender>,
+  children: Handles<State, Event, C>,
+) => (state: State) => Step<State, Event> | Rejected<Rejection>
+
 /** `operations`, a runner for each kind of operation: left out exactly where there is no kind (decision 0180). */
 type OperationsOf<Operation, Operations> = [Operation] extends [never] ? Readonly<{ operations?: Operations }>
   : Readonly<{ operations: Operations }>
@@ -1072,14 +1086,9 @@ type Pieces<
     keys?: List & LiteralNames<List>
     /** The children, each placed with `child` or `each`: their messages, work and keys are the library's to route. */
     children?: C
-    /** The own messages, and the external ones for a part: a child's messages are routed to the child. */
-    update: (
-      message: Inbound | Internal | External,
-      meta: Meta<Sender>,
-      children: Handles<State, Event, C>,
-    ) => (state: State) => Step<State, Event> | Rejected<Rejection>
     project: (state: State, children: Projections<State, C>) => Projection
   }>
+  & UpdateOf<State, Inbound | Internal | External, Sender, Event, Rejection, C>
   & WorkOf<State, Internal, Operation, KeysOf<List>>
   & OperationsOf<Operation, Operations>
   & OnEventOf<State, Event, C>
@@ -1490,17 +1499,18 @@ const filledProgramSchemas = <S extends DeclaredSchemas>(schemas: S) => ({
 })
 
 /**
- * A declaration as it may be written: its keys a list, and with no keys, no runners and no work, where it has none
- * (decisions 0180, 0197).
+ * A declaration as it may be written: its keys a list, and with no keys, no runners, no work and no `update`, where
+ * it has none (decisions 0180, 0197, 0202).
  */
 type LeftOut =
-  & Omit<UntypedDeclaration, 'keys' | 'operations' | 'work'>
+  & Omit<UntypedDeclaration, 'keys' | 'operations' | 'work' | 'update'>
   & Partial<Omit<UntypedDeclaration, 'keys'>>
   & Readonly<{ keys?: DeclaredKeys }>
 
 const noRunners: Readonly<Record<string, never>> = Object.freeze({})
 const noIndexes: Readonly<Record<string, never>> = Object.freeze({})
 const noOwnWork = () => noWork
+const noOwnMessages = () => identity
 
 const isKeyWithParameter = (entry: unknown): entry is KeyWithParameter<string, unknown> =>
   typeof entry === 'object' && entry !== null && KeyWithParameterTypeId in entry
@@ -1520,12 +1530,16 @@ const keysOf = (list: DeclaredKeys): UntypedDeclaration['keys'] => {
   return Object.freeze(Object.fromEntries(keys))
 }
 
-/** The declaration with its keys a record, each record left out empty, and `work` left out holding no work. */
+/**
+ * The declaration with its keys a record, each record left out empty, `work` left out holding no work, and `update`
+ * left out leaving the state as it is.
+ */
 const filledDeclaration = (declaration: LeftOut): UntypedDeclaration => ({
   ...declaration,
   keys: keysOf(declaration.keys ?? []),
   operations: declaration.operations ?? noRunners,
   work: declaration.work ?? noOwnWork,
+  update: declaration.update ?? noOwnMessages,
 })
 
 /**

@@ -269,6 +269,49 @@ test('a child of a child does what it does as a child of the parent, wrapped twi
   behavesAs(line as unknown as AnyPart, nested as unknown as AnyPart, then(wrappedBy('Single'), wrappedBy('Line')))
 })
 
+test('a parent with no own message leaves out update, and its children and events keep their types (decision 0202)', () => {
+  const Shelf = Schema.Struct({ line: LineState, charges: Schema.Array(Schema.String) })
+  const own = { state: Shelf, flags: Schema.Null, inbound: Schema.Never, projection: LineProjection }
+  const pieces = {
+    children: { Line: child(line, { at: Optic.id<typeof Shelf.Type>().key('line') }) },
+    init: (flags: null, at: DateTime.Utc) => ({ line: line.init(flags, at), charges: [] }),
+    project: (state: typeof Shelf.Type, children: { Line: (state: typeof Shelf.Type) => typeof LineProjection.Type }) =>
+      children.Line(state),
+  }
+  const shelf = program(own)({
+    ...pieces,
+    name: 'Shelf',
+    keys: [],
+    onEvent: {
+      Line: (event) => (state) => {
+        // @ts-expect-error the child's event keeps its type, which has no such field
+        expect(event.missing).toBeUndefined()
+        return { ...state, charges: [...state.charges, event.charge] }
+      },
+    },
+  })
+  const self = { at, from: { _tag: 'Self' } } as const
+  const empty = { line: line.init(null, at), charges: [] }
+  const step = shelf.update({ _tag: 'Line', message: { _tag: 'Added', quantity: 2 } }, self)(empty)
+  expect(outcome(() => step)).toEqual({
+    _tag: 'Stepped',
+    state: { line: { quantity: 2, charging: false, charged: null, reminders: [] }, charges: [] },
+    events: [],
+  })
+  const charged = shelf.update({ _tag: 'Line', message: { _tag: 'Charged', charge: 'c-1' } }, self)({
+    line: { quantity: 2, charging: true, charged: null, reminders: [] },
+    charges: [],
+  })
+  expect(charged).toEqual({ line: { quantity: 2, charging: false, charged: 'c-1', reminders: [] }, charges: ['c-1'] })
+  const handled = { Line: () => (state: typeof Shelf.Type) => state }
+  const whole = program(own)({ ...pieces, name: 'Whole', onEvent: handled })
+  // @ts-expect-error a parent with a message of its own says how it handles it
+  const inbound = program({ ...own, inbound: Schema.TaggedStruct('Emptied', {}) })({ ...pieces, name: 'A', onEvent: handled })
+  // @ts-expect-error a parent with an internal message of its own says how it handles it
+  const internal = program({ ...own, internal: Schema.TaggedStruct('Emptied', {}) })({ ...pieces, name: 'B', onEvent: handled })
+  expect([whole, inbound, internal]).toHaveLength(3)
+})
+
 test("a child's runner answers its parent with the child's message, wrapped", async () => {
   const runner = single.operations['Line.Charge']
   expect(runner.delivery).toBe('Idempotent')

@@ -138,14 +138,3 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     program does have a sender;
   - what the runtime's housekeeping changes of what a program passes to `send`, since both change the same
     signature.
-
-- **A program with no inbound message of its own.** A parent whose only messages are its children's still gives
-  `inbound: Schema.Never` and an `update` that returns the state, since a program leaves out only the pieces
-  [decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md) lists. The guide's second reader,
-  on a loan of books whose books are its children, wrote both, and met a cascade of errors of the compiler before
-  it did. Whether `inbound` and `update` may be left out is not decided. It would be decided by:
-  - how many programs of the examples and the guide have no inbound message of their own;
-  - whether `children` and `onEvent` keep their types when `update` is left out, since `update` is where the
-    compiler infers the parent's step;
-  - whether a program that has no inbound message and no child is refused, since no caller could then reach it
-    but by `create`.

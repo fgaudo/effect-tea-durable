@@ -134,9 +134,9 @@ export const ride = program({
 
 The keys of the schemas are `state`, `flags`, `inbound`, `internal`, `operation`, `rejection`, `sender` and
 `projection`. A program leaves out what it does not have: the bike declares no `internal` and no `operation`, and
-the ride no `rejection`. `state`, `flags`, `inbound` and `projection` are always given, and so are `update` and
-`project`. A program with no inbound message of its own, such as a parent whose only messages are its children's,
-gives `inbound: Schema.Never` and an `update` that returns the state. The operations are one schema, usually a `Schema.TaggedUnion`, whose cases make the values
+the ride no `rejection`. `state`, `flags`, `inbound` and `projection` are always given, and so is `project`. A
+program with no message of its own, such as a parent whose only messages are its children's, gives
+`inbound: Schema.Never` and leaves out `update`. The operations are one schema, usually a `Schema.TaggedUnion`, whose cases make the values
 `work` returns:
 
 ```ts
