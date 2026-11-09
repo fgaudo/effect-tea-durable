@@ -71,6 +71,10 @@ holds on Cluster was the open question "A planned stop on Cluster", which this n
   closed, and `Sent` once the second had started, with one email asked for.
 - That `BunRuntime.runMain` interrupts the main fiber on `SIGTERM` and waits for it to end: **read in the
   dependency's source**, `NodeRuntime.ts` of `@effect/platform-node-shared`, which `BunRuntime` re-exports.
+- That the `kill` of a child process returns only once the process has ended, so that the test sends the signal in
+  a fiber of its own and looks at the process meanwhile: **documented** in the module's JSDoc of
+  `NodeChildProcessSpawner.ts` of `@effect/platform-node-shared`. A run of the test in CI that waited for `kill`
+  waited for the whole drain, since the emails were released only after it.
 
 ## Alternatives
 

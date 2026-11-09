@@ -10,6 +10,7 @@ import * as Context from 'effect/Context'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import {
   FetchHttpClient,
@@ -342,7 +343,8 @@ test.skipIf(process.platform === 'win32')(
 // With `DRAIN_MILLIS` the stop waits for the emails under way, and commits their completions before the runner lets
 // its shards go. The other runner handles each completion, and finds each email sent and not unsure (decisions 0119,
 // 0219). The world holds the emails, so the drain still holds the process two seconds after the signal. The emails are
-// released only then, so that each ends in the drain and not before the stop.
+// released only then, so that each ends in the drain and not before the stop. `kill` returns once the process has
+// ended, so it runs in a fiber of its own.
 test.skipIf(process.platform === 'win32')(
   'a runner stopped by SIGTERM with a drain sends its emails under way once, and the other runner finishes the orders',
   async () => {
@@ -368,10 +370,10 @@ test.skipIf(process.platform === 'win32')(
 
         const mailedByStopped = (yield* theWorld.mailed).filter(({ runner }) => runner === stopped.address)
         expect(mailedByStopped.length).toBeGreaterThan(0)
-        yield* stopped.process.kill({ killSignal: 'SIGTERM' })
+        const killing = yield* Effect.forkChild(stopped.process.kill({ killSignal: 'SIGTERM' }))
         expect(Option.isNone(yield* Effect.timeoutOption(stopped.process.exitCode, '2 seconds'))).toBe(true)
         yield* theWorld.releaseMails
-        yield* stopped.process.exitCode
+        yield* Fiber.join(killing)
         yield* Scope.close(doomed, Exit.void)
 
         for (const id of ids) {
