@@ -275,7 +275,7 @@ describe('the form of src', () => {
       // The walk reads the modules of `src/` alone: a module of Effect is named by its specifier.
       (file) => (file.startsWith(import.meta.dir) ? readFileSync(file, 'utf8') : ''),
       (specifier, from) => {
-        if (/^effect\/(cluster|rpc|workflow)/.test(specifier)) return specifier
+        if (/^effect\/(cluster|rpc|workflow)\b/.test(specifier)) return specifier
         const resolved = Bun.resolveSync(specifier, join(from, '..'))
         return apart.includes(resolved) ? specifier : resolved
       },
