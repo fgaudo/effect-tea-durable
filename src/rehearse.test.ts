@@ -368,6 +368,19 @@ describe("a rehearsal's request ids", () => {
       }),
     )))
 
+  // The runtime refuses such a request id, so that a test passes only what a deployment runs (decision 0204).
+  test('fails a send under a request id that is no text a database holds', () =>
+    Effect.runPromise(rehearse(
+      door,
+      opened,
+      Effect.fnUntraced(function*(rehearsal) {
+        const exit = yield* Effect.exit(rehearsal.send(entered, north, { requestId: 'entry\u0000' }))
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        expect(cause instanceof InvariantDefect && cause.reason)
+          .toBe('the request id is "entry\\u0000", which is no text a database holds')
+      }),
+    )))
+
   test('answers a retry with the rejection stored, once the state would accept the message', () =>
     Effect.runPromise(rehearse(
       door,

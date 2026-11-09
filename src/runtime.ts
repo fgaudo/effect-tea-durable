@@ -37,6 +37,7 @@ import {
   type Creation,
   Entities,
   idFault,
+  requestIdFault,
   InvariantDefect,
   isText,
   type Program,
@@ -274,7 +275,7 @@ export interface Handle<T extends Types, C = {}> {
   /**
    * Creates the entity `id`. A retry of the request that created it is answered `Created` (decision 0017). Flags the
    * program's `init` rejects are answered `Rejected`, and nothing is stored: a retry runs `init` again
-   * (decision 0182).
+   * (decision 0182). A request id that is no text a database holds is the caller's defect (decision 0204).
    */
   readonly create: (
     id: string,
@@ -285,7 +286,8 @@ export interface Handle<T extends Types, C = {}> {
    * Sends an inbound message, and waits for the reply. A retry under the same request id gets the reply stored for
    * it. The boundary gives `keep`, the time its protocol retries for. The reply is then kept for `keep.millis` from
    * the step that answers, and a retry after that is a new request, applied again. Without `keep` the reply is kept
-   * for ever. `keep.millis` is a non-negative integer, and anything else is the caller's defect (decision 0125). An
+   * for ever. `keep.millis` is a non-negative integer, and anything else is the caller's defect (decision 0125). A
+   * request id that is no text a database holds is the caller's defect too (decision 0204). An
    * entity that holds as many callers' messages as `callers.messages` answers `Full` at once, and nothing of the
    * message is offered or stored: the caller retries later, under the same request id or another (decision 0147).
    * On Cluster a caller is never answered `Full`, and its message waits for the entity. There, until a step of the
@@ -639,6 +641,17 @@ const counted = <A, E = never, R = never>(
 const texted = <A>(id: string, effect: Effect.Effect<A>): Effect.Effect<A> =>
   Effect.suspend(() => {
     const reason = idFault(id)
+    return reason === undefined ? effect : Effect.die(new InvariantDefect({ reason }))
+  })
+
+/**
+ * Runs `effect` once the request id a caller gave is text a database holds: anything else is the caller's defect,
+ * and nothing is read or stored for it. PostgreSQL holds U+0000 in no text, so the write of the reply would fail,
+ * and the entity would leave the process with its operations (decision 0204).
+ */
+const requested = <A>(requestId: string, effect: Effect.Effect<A>): Effect.Effect<A> =>
+  Effect.suspend(() => {
+    const reason = requestIdFault(requestId)
     return reason === undefined ? effect : Effect.die(new InvariantDefect({ reason }))
   })
 
@@ -1008,15 +1021,18 @@ export const launchWith = (
           create: (id, flags, request) =>
             texted(
               id,
-              admitted(faulted(
-                create(p, deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
-              )),
+              requested(
+                request.requestId,
+                admitted(faulted(
+                  create(p, deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
+                )),
+              ),
             ),
           send: (id, message, request) =>
-            texted(id, counted(
+            texted(id, requested(request.requestId, counted(
               request.keep === undefined ? {} : { keep: request.keep.millis },
               admitted(faulted(
-                send(p, 
+                send(p,
                   deployed,
                   id,
                   message,
@@ -1024,7 +1040,7 @@ export const launchWith = (
                   request.keep?.millis,
                 ),
               )),
-            )),
+            ))),
           read: (id) => texted(id, deployed.storage.projected(id)),
           query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
           count: deployed.storage.count,

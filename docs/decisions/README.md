@@ -213,8 +213,9 @@ each read and found, are in [`reviews.md`](reviews.md).
 | Note | Decides | Changed by |
 | --- | --- | --- |
 | [0179](0179-an-id-is-not-empty.md) | An id is not empty, and an empty id is the defect of whoever gave it |  |
+| [0204](0204-a-request-id-is-text-a-database-holds.md) | A request id is text a database holds, and one that is not is the caller's defect |  |
 | [0052](archive/0052-what-crosses-the-library-is-never-mutated.md) | What crosses the library is never mutated |  |
-| [0053](archive/0053-what-a-handle-is-given-is-checked.md) | What a handle is given is checked | [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0179](0179-an-id-is-not-empty.md) |
+| [0053](archive/0053-what-a-handle-is-given-is-checked.md) | What a handle is given is checked | [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0179](0179-an-id-is-not-empty.md), [0204](0204-a-request-id-is-text-a-database-holds.md) |
 | [0054](archive/0054-a-program-is-checked-where-it-enters.md) | A program is checked where it enters | [0064](archive/0064-the-program-is-not-the-machines-state.md), [0132](archive/0132-a-key-may-take-a-parameter.md), [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md) |
 
 ## The runtime

@@ -789,6 +789,38 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // The storage writes a request id as it is, and PostgreSQL holds U+0000 in no text: the write of the reply would
+  // fail, and the entity would leave the process with its operations (decision 0204).
+  test('a request id that is no text a database holds is the caller’s defect, and reaches no entity', () =>
+    onBoth(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const sender = { _tag: 'Tester' } as const
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+          yield* toy.create('toy', { at }, { requestId: 'creation', sender })
+          for (const broken of ['r\u0000', 'r\ud800']) {
+            const calls: ReadonlyArray<Effect.Effect<unknown>> = [
+              toy.create('other', { at }, { requestId: broken, sender }),
+              toy.send('toy', want, { requestId: broken, sender }),
+            ]
+            for (const call of calls) {
+              const exit = yield* Effect.exit(call)
+              const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+              expect(cause instanceof InvariantDefect ? cause.reason : null).toBe(
+                `the request id is ${JSON.stringify(broken)}, which is no text a database holds`,
+              )
+            }
+          }
+          const sql = yield* SqlClient.SqlClient
+          expect(yield* sql`SELECT id FROM tea_entities`).toEqual([{ id: 'toy' }])
+          // The entity is still in the process, and answers the next caller.
+          expect(yield* toy.send('toy', want, { requestId: 'r', sender })).toEqual({ _tag: 'Accepted' })
+        }))
+    })))
+
   // A message waits in the mailbox behind another while a creation under its request id is answered: the
   // creation's reply must not reach the message's caller (decision 0050).
   test('a creation and a message under one request id are answered each its own reply', () =>

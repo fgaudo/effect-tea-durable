@@ -701,6 +701,17 @@ export const idFault = (id: unknown): string | undefined =>
     ? 'the id is empty, and an id is not'
     : undefined
 
+/**
+ * Why a string a caller gave as a request id is no request id, or `undefined` when it is one. A request id is text a
+ * database holds, since the storage writes it as it is in the column `request_id` of `tea_replies`, and reads the
+ * reply by it. The empty string is a request id, since nothing pages by it. The types do not hold a cast or a call
+ * from JavaScript, so a value that is no string is refused too (decisions 0053, 0204).
+ */
+export const requestIdFault = (requestId: unknown): string | undefined =>
+  typeof requestId !== 'string' || !isText(requestId)
+    ? `the request id is ${JSON.stringify(requestId)}, which is no text a database holds`
+    : undefined
+
 /** An index's name is a word, so that a store writes it as it is, in a query and in an index of its own. */
 const isWord = (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name)
 

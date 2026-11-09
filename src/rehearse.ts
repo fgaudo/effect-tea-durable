@@ -11,6 +11,7 @@ import {
   Entities,
   type IdempotencyKey,
   idFault,
+  requestIdFault,
   InvariantDefect,
   type Key,
   isTimer,
@@ -577,6 +578,9 @@ const makeWorld = (at: DateTime.Utc) => {
           // defect, so it is checked first (decision 0040).
           encode(program.schemas.sender, sender, 'sender')
           if (given !== undefined) {
+            // A rehearsal refuses the request ids the runtime refuses (decision 0204).
+            const fault = requestIdFault(given.requestId)
+            if (fault !== undefined) return invariant(fault)
             const request: Request<T['sender']> = { _tag: 'Caller', sender, id: given.requestId }
             named.add(Machine.requestKey(program, request))
             return receive(entity, message, request)

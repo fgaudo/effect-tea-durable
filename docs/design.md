@@ -1075,12 +1075,15 @@ is written once. A launch on a client of any other dialect is the launcher's def
   connection nothing commits between its parts, and on a server at PostgreSQL's default level a step committed between
   two parts may move a row into the page twice
   ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
-- An id, a name, a key's name, a topic's, a consumer's, and a string an index holds are text every database holds as
-  it is: no U+0000, which PostgreSQL holds in no text, and no lone surrogate, which no database gives back as written, so
-  that two ids would be one. Anything else is the defect of whoever gave it.
+- An id, a request id, a name, a key's name, a topic's, a consumer's, and a string an index holds are text every
+  database holds as it is: no U+0000, which PostgreSQL holds in no text, and no lone surrogate, which no database
+  gives back as written, so that two ids would be one. Anything else is the defect of whoever gave it.
 - An id is not empty either. The waker and `reindex` page the entities from the empty id up, so an entity under it
   would never be woken nor indexed. A handle, an operation and a rehearsal refuse it as the defect of whoever gave it
   ([decision 0179](decisions/0179-an-id-is-not-empty.md)).
+- A request id may be empty, since nothing pages by it. A handle's `create` and `send`, and a rehearsal's `send`,
+  refuse one that is no text a database holds as the caller's defect, since the storage writes it as it is in
+  `request_id` ([decision 0204](decisions/0204-a-request-id-is-text-a-database-holds.md)).
 - The tests of the storage run on both, PostgreSQL on PGlite, and the tests of the runtime whose steps write what the
   dialects write otherwise run on both too. What a server with many connections does is an
   [open question](open-questions.md#running).
