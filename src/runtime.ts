@@ -963,6 +963,7 @@ export const launchWith = (
               // Nothing is known of the stored timers until the waker has read them once.
               waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1), failed: new Map() },
               waking: null,
+              operating: 0,
               shards: new Map(),
               run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
             }

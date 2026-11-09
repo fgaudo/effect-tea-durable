@@ -18,9 +18,13 @@ import {
   type Deployment,
   deployment,
   holding,
+  linkKey,
   type Loaded,
   observe,
   type Process,
+  spanHere,
+  told,
+  traced,
   untransacted,
 } from './process.ts'
 import {
@@ -101,6 +105,9 @@ export const ask = <T extends Types, A>(
       current.delete(request)
       if (current.size === 0) waiting.delete(address)
     })
+    // The caller's span, which the steps of its request link (decision 0220).
+    const span = yield* spanHere
+    if (span !== undefined) loaded.links.set(linkKey(event._tag === 'Create', request), span)
     yield* offer(p, loaded, event)
     return { caller, forget }
   })
@@ -223,33 +230,37 @@ export const create = <T extends Types>(
         const loaded = yield* activate(p, deployed, stored)
         return { _tag: 'Asked', asked: yield* ask(p, p.creations, loaded, entity, requested, creating) } as const
       }
-      const now = yield* DateTime.now
-      const started = Machine.start(deployed.program, id, flags, now, request)
-      // A defect at creation stores nothing (decision 0014): its creator is given the defect itself, and a
-      // retry after a fix creates the entity (decision 0124).
-      if (started._tag === 'Defect') return yield* Effect.fail(new Faulted({ defect: started.cause }))
-      // A creation `init` rejects stores nothing, and its reply is not stored either: a retry runs `init` again
-      // (decision 0182).
-      if (started._tag === 'Rejected') return started.reply
-      const loaded = yield* fresh<T>(p, started.machine, 0)
-      const creation: Machine.Event<T> = { _tag: 'Create', request }
-      yield* at(p, 'BeforeCommit', entity, creation)
-      const characters = yield* transaction(
-        p.sql,
-        deployed.storage.write(id, started.written, DateTime.toEpochMillis(now)),
-      ).pipe(Effect.orDie)
-      tell(p.readings, entity.name, started.written)
-      yield* warnOfSize(p, loaded, entity, characters)
-      // The entity exists from here: its creation is the first event committed for it.
-      yield* observe(p, entity, creation)
-      yield* at(p, 'AfterCommit', entity, creation)
-      yield* enter(p, deployed, loaded)
-      // Each point of the crash table is given the creation, its event: `AfterReply` too.
-      yield* perform(p, deployed, loaded, entity, creation, started.outputs).pipe(
-        Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(p, deployed, loaded, cause)),
-      )
-      yield* Effect.forkIn(untransacted(p.sql, loop(p, deployed, loaded)), deployed.scope)
-      return { _tag: 'Created' } as const
+      // The creation is a step of its own, linked to its caller's span (decision 0220).
+      return yield* traced(entity, { _tag: 'Create' }, yield* spanHere)(Effect.gen(function*() {
+        const now = yield* DateTime.now
+        const started = Machine.start(deployed.program, id, flags, now, request)
+        // A defect at creation stores nothing (decision 0014): its creator is given the defect itself, and a
+        // retry after a fix creates the entity (decision 0124).
+        if (started._tag === 'Defect') return yield* Effect.fail(new Faulted({ defect: started.cause }))
+        // A creation `init` rejects stores nothing, and its reply is not stored either: a retry runs `init` again
+        // (decision 0182).
+        if (started._tag === 'Rejected') return started.reply
+        const loaded = yield* fresh<T>(p, started.machine, 0)
+        yield* told(entity, started.machine, started.machine, started.outputs, true)
+        const creation: Machine.Event<T> = { _tag: 'Create', request }
+        yield* at(p, 'BeforeCommit', entity, creation)
+        const characters = yield* transaction(
+          p.sql,
+          deployed.storage.write(id, started.written, DateTime.toEpochMillis(now)),
+        ).pipe(Effect.orDie)
+        tell(p.readings, entity.name, started.written)
+        yield* warnOfSize(p, loaded, entity, characters)
+        // The entity exists from here: its creation is the first event committed for it.
+        yield* observe(p, entity, creation)
+        yield* at(p, 'AfterCommit', entity, creation)
+        yield* enter(p, deployed, loaded)
+        // Each point of the crash table is given the creation, its event: `AfterReply` too.
+        yield* perform(p, deployed, loaded, entity, creation, started.outputs, yield* spanHere).pipe(
+          Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(p, deployed, loaded, cause)),
+        )
+        yield* Effect.forkIn(untransacted(p.sql, loop(p, deployed, loaded)), deployed.scope)
+        return { _tag: 'Created' } as const
+      }))
     })))
     // An entity already there answers through the machine, and its caller waits for that answer.
     return asked._tag === 'Asked' ? yield* answered(asked.asked) : asked

@@ -12,6 +12,7 @@ import * as MutableList from 'effect/MutableList'
 import * as Queue from 'effect/Queue'
 import type * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
+import type * as Tracer from 'effect/Tracer'
 import { answer, entities, wake } from './callers.ts'
 import { applyOnCluster } from './doors.ts'
 import * as Machine from './machine.ts'
@@ -25,12 +26,18 @@ import {
   type Evict,
   forgetUse,
   holding,
+  linkKey,
   type Loaded,
   observe,
   operated,
   type Passivate,
   type Process,
+  reread,
+  running,
   type Settle,
+  spanHere,
+  told,
+  traced,
   under,
   untransacted,
 } from './process.ts'
@@ -162,13 +169,18 @@ export const forkHeld = (
     if (!done) held.set(id, fiber)
   })
 
-/** Starts an operation: its message is offered as a `Complete`, a defect of it as a `Die`. */
+/**
+ * Starts an operation: its message is offered as a `Complete`, a defect of it as a `Die`. Its run is the span
+ * `tea.operation`, a root span linked to `step`, the span of the step that started it, and is counted as running
+ * (decision 0220).
+ */
 export const start = <T extends Types>(
   p: Process,
   deployed: Deployment<T>,
   loaded: Loaded<T>,
   entity: Address,
   output: Extract<Machine.Output<T>, { _tag: 'Started' }>,
+  step: Tracer.AnySpan | undefined,
 ) =>
   Effect.gen(function*() {
     const { key, incarnation, idempotencyKey, operation } = output
@@ -182,10 +194,26 @@ export const start = <T extends Types>(
     }
     // Built in the operation's fiber: a runner that throws while it builds its effect dies as the operation,
     // and suspends the entity, instead of the event that started it (decision 0042).
-    const run = Effect.suspend(() =>
-      runner.delivery === 'Idempotent' || runner.delivery === 'IdempotentDigest'
-        ? runner.run(operation, idempotencyKey)
-        : runner.run(operation)
+    const run = Effect.withSpan(
+      Effect.suspend(() =>
+        runner.delivery === 'Idempotent' || runner.delivery === 'IdempotentDigest'
+          ? runner.run(operation, idempotencyKey)
+          : runner.run(operation)
+      ),
+      'tea.operation',
+      {
+        root: true,
+        captureStackTrace: false,
+        links: step === undefined ? [] : [{ span: step, attributes: {} }],
+        attributes: {
+          'tea.entity.name': entity.name,
+          'tea.entity.id': entity.id,
+          'tea.key': Machine.shownKey(key),
+          'tea.incarnation': incarnation,
+          'tea.operation': operation._tag,
+          'tea.delivery': runner.delivery,
+        },
+      },
     )
     const id = under(key, incarnation)
     // An operation that runs again at the next activation is not started during a planned stop: it is stored,
@@ -201,7 +229,13 @@ export const start = <T extends Types>(
       deployed.scope,
       deployed.run(
         Effect.gen(function*() {
-          const exit = yield* Effect.exit(Effect.ensuring(run, Effect.sync(() => loaded.rerun.delete(id))))
+          // Counted by an acquisition, which no interruption parts from its release: a fiber stopped before its
+          // first step runs neither (decision 0110).
+          const exit = yield* Effect.exit(Effect.acquireUseRelease(
+            running(deployed, 1),
+            () => Effect.ensuring(run, Effect.sync(() => loaded.rerun.delete(id))),
+            () => running(deployed, -1),
+          ))
           if (exit._tag === 'Success') {
             yield* offer(p, loaded, { _tag: 'Complete', key, incarnation, message: exit.value })
           } else if (!Cause.hasInterruptsOnly(exit.cause)) {
@@ -216,7 +250,11 @@ export const start = <T extends Types>(
     )
   })
 
-/** Arms a timer: its time comes, and `Fire` is offered. A passivated entity would be woken by `due` instead. */
+/**
+ * Arms a timer: its time comes on the wall clock, and `Fire` is offered. A passivated entity would be woken by `due`
+ * instead. The timer sleeps `reread` at most at a time, and reads the wall clock after each sleep: a host suspended
+ * fires it late by `reread` at most, and a clock set back fires it at its time, never before (decision 0221).
+ */
 export const arm = <T extends Types>(
   p: Process,
   deployed: Deployment<T>,
@@ -227,14 +265,17 @@ export const arm = <T extends Types>(
     const { key, incarnation, timer } = output
     // A planned stop arms no timer: the stored time wakes the entity in the next process (decision 0119).
     if (p.draining) return
-    const now = yield* DateTime.now
-    const millis = Math.max(0, DateTime.toEpochMillis(timer.at) - DateTime.toEpochMillis(now))
+    const until = DateTime.toEpochMillis(timer.at)
+    let left = Math.max(0, until - DateTime.toEpochMillis(yield* DateTime.now))
     yield* forkHeld(p, 
       loaded.timers,
       under(key, incarnation),
       deployed.scope,
       Effect.gen(function*() {
-        yield* Effect.sleep(`${millis} millis`)
+        do {
+          yield* Effect.sleep(`${Math.min(left, reread)} millis`)
+          left = until - DateTime.toEpochMillis(yield* DateTime.now)
+        } while (left > 0)
         yield* offer(p, loaded, { _tag: 'Fire', key, incarnation })
       }),
     )
@@ -247,12 +288,14 @@ export const perform = <T extends Types>(
   entity: Address,
   event: Machine.Event<T>,
   outputs: ReadonlyArray<Machine.Output<T>>,
+  step: Tracer.AnySpan | undefined,
 ) =>
   Effect.gen(function*() {
     // The callers first: a reply is what the event's commit made true (decision 0023).
     for (const output of outputs) {
       if (output._tag !== 'Replied' && output._tag !== 'CreationReplied') continue
       const request = Machine.requestKey(deployed.program, output.request)
+      loaded.links.delete(linkKey(output._tag === 'CreationReplied', request))
       yield* output._tag === 'Replied'
         ? answer(p, p.messages, entity, request, output.reply)
         : answer(p, p.creations, entity, request, output.reply)
@@ -261,7 +304,7 @@ export const perform = <T extends Types>(
     for (const output of outputs) {
       switch (output._tag) {
         case 'Started':
-          yield* start(p, deployed, loaded, entity, output)
+          yield* start(p, deployed, loaded, entity, output, step)
           break
         case 'Armed':
           yield* arm(p, deployed, loaded, output)
@@ -316,7 +359,19 @@ export const apply = <T extends Types>(
     ? applyOnCluster(p, deployed, loaded, offered)
     : offered._tag === 'Settle'
     ? Effect.void
-    : applyInProcess(p, deployed, loaded, offered)
+    : traced(loaded.machine.stored, offered, linkOf(deployed, loaded, offered))(
+      applyInProcess(p, deployed, loaded, offered),
+    )
+
+/**
+ * The span of the caller whose request the event brings, on one process: a `Receive`'s or a `Create`'s. No other
+ * step serves a caller's request here. A message that arrives with an empty mailbox is handled by its `Receive`, the
+ * loop empties the mailbox before it takes an event, and a suspended entity queues no message (decision 0220).
+ */
+export const linkOf = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>, offered: Machine.Offered<T>) =>
+  offered._tag === 'Receive' || offered._tag === 'Create'
+    ? loaded.links.get(linkKey(offered._tag === 'Create', Machine.requestKey(deployed.program, offered.request)))
+    : undefined
 
 export const applyInProcess = <T extends Types>(
   p: Process,
@@ -349,6 +404,7 @@ export const applyInProcess = <T extends Types>(
       yield* warnOfSize(p, loaded, entity, characters)
     }
     loaded.machine = transition.machine
+    yield* told(entity, before, transition.machine, transition.outputs, written !== null)
     if (before.stored.suspension !== null && transition.machine.stored.suspension === null) {
       wake(p, entity)
     }
@@ -364,7 +420,7 @@ export const applyInProcess = <T extends Types>(
     // observed at once. A crash before the commit leaves no event, and one after it an event that happened.
     yield* observe(p, entity, event)
     if (written !== null) yield* at(p, 'AfterCommit', entity, event)
-    yield* perform(p, deployed, loaded, entity, event, transition.outputs)
+    yield* perform(p, deployed, loaded, entity, event, transition.outputs, yield* spanHere)
   }).pipe(Effect.ensuring(Effect.sync(() => {
     loaded.applying = false
     end(p)
@@ -599,6 +655,7 @@ export const fresh = <T extends Types>(p: Process, machine: Machine.Machine<T>, 
     warned: false,
     callers: Semaphore.makeUnsafe(p.bound),
     refused: false,
+    links: new Map(),
     steps,
     uncommitted: null,
   }))

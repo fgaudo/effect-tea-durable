@@ -48,6 +48,17 @@ with a requirement that no example has yet.
   - what the record costs a step: a row more in each transaction, and the message stored for every step, next to
     what the outbox already stores once per publication.
 
+- **The age of a consumer's oldest unread row.** The runtime records no metric of how far a consumer is behind in
+  time ([decision 0220](decisions/0220-the-runtime-records-a-span-for-each-step-and-each-operation.md)). A row of the
+  outbox holds its position, its partition and its `seq`, and no time, so the age of the oldest row a consumer has
+  not read cannot be read. `consumers` gives how many rows each consumer is behind. A column of time in
+  `effecttea_outbox` is a change of the log's tables, which the roadmap's step on PostgreSQL also changes, so it
+  waits for that step. It would be decided by:
+  - whether each row stores the time of the step that wrote it, at the cost of a column in every row of the log;
+  - what reads the age: a gauge each reader sets as it reads a page, which says nothing of a consumer no reader
+    runs, or a reading of the storage at an interval, a fiber more in the runtime;
+  - whether an operator asks the age or the count, which `consumers` already gives.
+
 ## Running
 
 - **A runtime that loses its session on PostgreSQL.** A runtime holds a database of PostgreSQL with a session
@@ -75,33 +86,6 @@ with a requirement that no example has yet.
   statement fail with a `SqlError`. It waits for the release of Effect that holds the fix. It would be decided by:
   - a release of Effect with the fix, after which a fork that keeps the transaction fails where it runs;
   - the spikes and the tests of the runtime run at that release, which a fork the rule missed would then fail.
-- **A timer and the wall clock.** A timer stores its time on the wall clock, and is slept as the milliseconds left
-  when it is armed, measured on the host's timers ([decision 0194](decisions/0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md)). A host suspended
-  during the sleep, a virtual machine paused, or a wall clock set back makes the sleep end late or early. A loaded
-  entity's timer then fires when its sleep ends, and nothing checks its time against the clock: it fires late by the
-  time the host was suspended, or early by a step of the clock back. The waker activates only the entities whose time
-  has come on the wall clock, so it fires no timer early. It reads the clock again only when its sleep ends or it is
-  poked, so it fires late by the time the host was suspended. The roadmap's step on a tracer decides it, since both
-  add yields to the runtime. It would be decided by:
-  - whether a host that runs the library is suspended or set back by more than a program can bear, which the
-    examples do not say;
-  - whether the waker sleeps at most a bound, such as an hour, and reads the clock again, and whether a loaded
-    entity's timer sleeps again when it ends before its time. Both add yields to the runtime, after which the
-    pinned seeds of the explored tests are found again.
-- **What the runtime tells a tracer.** The runtime opens no span and records no metric of its own: `src/` calls
-  neither `Effect.withSpan` nor `Metric`. A deployment sees only the spans Effect opens beneath the runtime: a
-  statement of `effect/sql`, a request of `effect/rpc`, and a message to an entity of Cluster. So a step, an
-  operation, a timer's firing and a suspension are no span, and the length of a mailbox or the age of the oldest
-  row a consumer has not read is no metric. Which spans and metrics the runtime records, under which names, and
-  whether a span follows a request into the operation it sets going, is not decided. The roadmap's step on a tracer
-  decides it. It would be decided by:
-  - the questions an operator asks of a stuck entity, such as why an order did not move, each answered by a span
-    or a metric of the machine's events;
-  - whether a span opened in the loop of `src/loop.ts` adds a point where fibers yield, after which the pinned
-    seeds of the explored tests are found again;
-  - the modules of `effect/observability`, `OtlpTracer`, `OtlpMetrics` and `PrometheusMetrics`, which export what
-    the runtime records and need only its names.
-
 ## Programs
 
 - **A request without a sender.** A program that leaves out `sender` has the sender `null`, and every `create` and

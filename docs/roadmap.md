@@ -9,14 +9,6 @@ None: the next step is the first of Later, unless the maintainer picks another.
 
 ## Later
 
-- **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
-  [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point
-  where fibers yield, after which the pinned seeds of the explored tests are found again. The runtime's
-  housekeeping, the step after this one, finds them again too if it adds a fiber. The step also decides whether the
-  waker sleeps at most a bound and reads the clock again, and whether a loaded entity's timer sleeps again when its
-  sleep ends before its time ([open question](open-questions.md#running)). Both add yields too, so the seeds are
-  found again once for the spans and the timers together.
-
 - **The runtime's housekeeping**, once a release of Effect holds the retention of completed requests of Cluster.
   `expire`, `prune` and `forget` are an operator's calls, and a reply sent without `keep` is kept for ever, so the
   replies of a deployment grow without bound by default
@@ -35,7 +27,8 @@ None: the next step is the first of Later, unless the maintainer picks another.
   weighs too the rows of a creation on Cluster, one pair for each entity, which `create` keeps for ever since it
   takes no `keep`. Since a default `keep` changes the signature of `send`, the step also decides whether a request
   may leave out a sender that is `null`, and `create` flags that are `null`
-  ([open question](open-questions.md#programs)).
+  ([open question](open-questions.md#programs)). A sweep that adds a fiber or a yield to the runtime finds the
+  pinned seeds of the explored tests again, as [`AGENTS.md`](../AGENTS.md) says.
 
 - **The release**, once there is code to publish. It is released as experimental while it depends
   on Effect's unstable modules ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
