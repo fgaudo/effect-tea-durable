@@ -277,7 +277,9 @@ const tables = Effect.gen(function*() {
     )
   `
   // What a step that publishes left: the message it handled and the projection, once however many topics the step
-  // is written in, keyed by the program, the partition and the `seq` the step drew (decision 0154).
+  // is written in, keyed by the program, the partition and the `seq` the step drew (decision 0154). `written_at` is
+  // the step's time, which `consumers` gives for the row each consumer reads next (decision 0224). It stands before
+  // the text, which SQLite would walk past to reach it.
   yield* sql`
     CREATE TABLE effecttea_publications (
       name ${text} NOT NULL,
@@ -286,6 +288,7 @@ const tables = Effect.gen(function*() {
       id ${text} NOT NULL,
       tag ${text} NOT NULL,
       version ${integer} NOT NULL,
+      written_at ${integer} NOT NULL,
       message ${text},
       projection ${text} NOT NULL,
       PRIMARY KEY (name, partition, seq)
@@ -1041,6 +1044,7 @@ const Rows = {
     partition: Count,
     seq: Count,
     behind: Count,
+    since: Count,
   })),
 } as const
 
@@ -1182,6 +1186,13 @@ export type Consumer = Readonly<{
   declared: boolean
   /** How many rows are past its cursors, in every partition: what it costs the log to keep it. */
   behind: number
+  /**
+   * The time of the step that wrote the oldest of the rows it reads next, one in each partition it is behind in, or
+   * null where it has read every row. The age of what it has not read is the caller's clock less this time. The
+   * time is the clock of the process that wrote the step, so under clocks that disagree an age may come out a little
+   * below zero (decision 0224).
+   */
+  since: DateTime.Utc | null
   /**
    * The cursors of the partitions it has rows to read in, by partition: `seq` is `0` in a partition it has acked
    * nothing of.
@@ -1880,6 +1891,7 @@ export const storage = <T extends Types>(
             id,
             tag: kind,
             version,
+            written_at: at,
             message: message === null ? null : JSON.stringify(message),
             projection,
           })
@@ -2466,16 +2478,25 @@ export const storage = <T extends Types>(
     const stored = yield* rows('effecttea_consumers', Rows.topical)(
       sql`SELECT topic, consumer FROM effecttea_consumers WHERE name = ${name} ORDER BY topic, consumer`,
     )
+    // A partition's next row is its lowest `seq` past the cursor, which is the order its steps committed in. Its time
+    // is read by the publication's key, once for each partition, whatever the rows behind (decision 0224).
     const behind = yield* rows('effecttea_cursors', Rows.behind)(sql`
-      SELECT effecttea_consumers.topic AS topic, effecttea_consumers.consumer AS consumer, effecttea_outbox.partition AS partition,
-        coalesce(effecttea_cursors.seq, 0) AS seq, count(*) AS behind
-      FROM effecttea_consumers
-      JOIN effecttea_outbox ON effecttea_outbox.name = effecttea_consumers.name AND effecttea_outbox.topic = effecttea_consumers.topic
-      LEFT JOIN effecttea_cursors ON effecttea_cursors.name = effecttea_consumers.name AND effecttea_cursors.topic = effecttea_consumers.topic
-        AND effecttea_cursors.consumer = effecttea_consumers.consumer AND effecttea_cursors.partition = effecttea_outbox.partition
-      WHERE effecttea_consumers.name = ${name} AND effecttea_outbox.seq > coalesce(effecttea_cursors.seq, 0)
-      GROUP BY effecttea_consumers.topic, effecttea_consumers.consumer, effecttea_outbox.partition, effecttea_cursors.seq
-      ORDER BY effecttea_consumers.topic, effecttea_consumers.consumer, effecttea_outbox.partition
+      WITH behind AS (
+        SELECT effecttea_consumers.topic AS topic, effecttea_consumers.consumer AS consumer, effecttea_outbox.partition AS partition,
+          coalesce(effecttea_cursors.seq, 0) AS seq, count(*) AS behind, min(effecttea_outbox.seq) AS next
+        FROM effecttea_consumers
+        JOIN effecttea_outbox ON effecttea_outbox.name = effecttea_consumers.name AND effecttea_outbox.topic = effecttea_consumers.topic
+        LEFT JOIN effecttea_cursors ON effecttea_cursors.name = effecttea_consumers.name AND effecttea_cursors.topic = effecttea_consumers.topic
+          AND effecttea_cursors.consumer = effecttea_consumers.consumer AND effecttea_cursors.partition = effecttea_outbox.partition
+        WHERE effecttea_consumers.name = ${name} AND effecttea_outbox.seq > coalesce(effecttea_cursors.seq, 0)
+        GROUP BY effecttea_consumers.topic, effecttea_consumers.consumer, effecttea_outbox.partition, effecttea_cursors.seq
+      )
+      SELECT behind.topic AS topic, behind.consumer AS consumer, behind.partition AS partition, behind.seq AS seq,
+        behind.behind AS behind, effecttea_publications.written_at AS since
+      FROM behind
+      JOIN effecttea_publications ON effecttea_publications.name = ${name} AND effecttea_publications.partition = behind.partition
+        AND effecttea_publications.seq = behind.next
+      ORDER BY behind.topic, behind.consumer, behind.partition
     `)
     return stored.map(({ topic, consumer }): Omit<Consumer, 'declared'> => {
       const own = behind.filter((row) => row.topic === topic && row.consumer === consumer)
@@ -2483,6 +2504,7 @@ export const storage = <T extends Types>(
         topic,
         consumer,
         behind: own.reduce((sum, row) => sum + row.behind, 0),
+        since: own.length === 0 ? null : DateTime.makeUnsafe(Math.min(...own.map((row) => row.since))),
         cursors: own.map(({ partition, seq }) => ({ partition, seq })),
       }
     })

@@ -48,17 +48,6 @@ with a requirement that no example has yet.
   - what the record costs a step: a row more in each transaction, and the message stored for every step, next to
     what the outbox already stores once per publication.
 
-- **The age of a consumer's oldest unread row.** The runtime records no metric of how far a consumer is behind in
-  time ([decision 0220](decisions/0220-the-runtime-records-a-span-for-each-step-and-each-operation.md)). A row of the
-  outbox holds its position, its partition and its `seq`, and no time, so the age of the oldest row a consumer has
-  not read cannot be read. `consumers` gives how many rows each consumer is behind. A column of time in
-  `effecttea_outbox` is a change of the log's tables, which the roadmap's step on PostgreSQL also changes, so it
-  waits for that step. It would be decided by:
-  - whether each row stores the time of the step that wrote it, at the cost of a column in every row of the log;
-  - what reads the age: a gauge each reader sets as it reads a page, which says nothing of a consumer no reader
-    runs, or a reading of the storage at an interval, a fiber more in the runtime;
-  - whether an operator asks the age or the count, which `consumers` already gives.
-
 ## Running
 
 - **A runtime that loses its session on PostgreSQL.** A runtime holds a database of PostgreSQL with a session

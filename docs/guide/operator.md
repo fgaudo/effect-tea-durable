@@ -190,7 +190,7 @@ program:
 | --- | --- | --- |
 | `expire` | Deletes the callers' replies past the `keep` their boundary gave. A reply sent without `keep` is kept for ever. | [Cluster](cluster.md#what-changes-for-a-caller) |
 | `prune` | Drops, in each topic of the log, what every consumer of the topic has read. | [The outbox](outbox.md#pruning-and-a-consumer-that-holds-the-log) |
-| `consumers` | Shows each consumer of the log, and how many rows it has not read yet. | [The outbox](outbox.md#pruning-and-a-consumer-that-holds-the-log) |
+| `consumers` | Shows each consumer of the log, how many rows it has not read yet, and the time of the oldest it reads next. | [The outbox](outbox.md#pruning-and-a-consumer-that-holds-the-log) |
 | `forget` | Drops a consumer the deploy no longer declares, so that the next prune passes it. | [The outbox](outbox.md#pruning-and-a-consumer-that-holds-the-log) |
 | `reindex` | Writes the read model again, after a deploy that added or changed an index. | [Schemas that change](schemas.md#how-a-stored-row-is-read) |
 

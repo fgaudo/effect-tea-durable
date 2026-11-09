@@ -1,6 +1,9 @@
 # 0220. The runtime records a span for each step and each operation, linked to what each follows, and three metrics of its entities
 
 **Status:** accepted, 2026-11-09, with the step What the runtime tells a tracer of the [roadmap](../roadmap.md).
+Its open question of the age of a consumer's oldest unread row is decided by
+[decision 0224](0224-a-consumer-shows-the-time-of-the-step-it-reads-next.md): `consumers` gives the time of the step
+each consumer reads next, and the runtime records no metric of it.
 
 ## Context
 

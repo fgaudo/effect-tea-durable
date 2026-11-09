@@ -624,6 +624,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
                 id: 'r',
                 tag: 'Inbound',
                 version: 1,
+                written_at: 0,
                 message: null,
                 projection: '"one"',
               })
@@ -655,6 +656,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           id: 'r',
           tag: 'Creation',
           version: 1,
+          written_at: 0,
           message: '"one"',
           projection: '"one"',
         })
@@ -764,7 +766,15 @@ test('on PostgreSQL every object the runtime makes is in the schema its clientâ€
       // The trigger's function finds its tables through the same search_path.
       const row = { name: 'Receiver', partition: 1, seq: 2 }
       yield* sql`INSERT INTO effecttea_publications ${
-        sql.insert({ ...row, id: 'r', tag: 'Creation', version: 1, message: '"one"', projection: '"one"' })
+        sql.insert({
+          ...row,
+          id: 'r',
+          tag: 'Creation',
+          version: 1,
+          written_at: 0,
+          message: '"one"',
+          projection: '"one"',
+        })
       }`
       yield* sql`INSERT INTO effecttea_outbox ${sql.insert({ ...row, topic: 'projection' })}`
       yield* sql`DELETE FROM effecttea_outbox`
@@ -1085,8 +1095,14 @@ describe('topics of the log (decision 0138)', () => {
         expect(yield* store.fetch('upper', 'c', all)).toEqual([])
         expect(yield* store.fetch('size', 'c', all)).toHaveLength(1)
         expect(yield* store.consumers).toEqual([
-          { topic: 'size', consumer: 'c', behind: 1, cursors: [{ partition, seq: 0 }] },
-          { topic: 'upper', consumer: 'c', behind: 0, cursors: [] },
+          {
+            topic: 'size',
+            consumer: 'c',
+            behind: 1,
+            since: DateTime.makeUnsafe(0),
+            cursors: [{ partition, seq: 0 }],
+          },
+          { topic: 'upper', consumer: 'c', behind: 0, since: null, cursors: [] },
         ])
         // The consumer of `size` holds its topic, and not the other.
         expect(yield* store.prune).toBe(2)
@@ -1094,12 +1110,36 @@ describe('topics of the log (decision 0138)', () => {
         expect(yield* store.published('size', [], all)).toHaveLength(1)
         // A topic no consumer holds is pruned whole, since every consumer is stored at deploy (decision 0152).
         yield* store.forget('size', 'c')
-        expect(yield* store.consumers).toEqual([{ topic: 'upper', consumer: 'c', behind: 0, cursors: [] }])
+        expect(yield* store.consumers).toEqual([{ topic: 'upper', consumer: 'c', behind: 0, since: null, cursors: [] }])
         expect(yield* store.prune).toBe(1)
         expect(yield* store.published('size', [], all)).toEqual([])
         // A declare of a consumer stored already leaves its cursors where they are.
         yield* store.declare([{ topic: 'upper', consumer: 'c' }])
-        expect(yield* store.consumers).toEqual([{ topic: 'upper', consumer: 'c', behind: 0, cursors: [] }])
+        expect(yield* store.consumers).toEqual([{ topic: 'upper', consumer: 'c', behind: 0, since: null, cursors: [] }])
+      })))
+
+  test("a consumer's time is the step of its next row in each partition, the oldest of them, whatever the clock", () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(topical, sql)
+        yield* store.declare([{ topic: 'upper', consumer: 'c' }])
+        const since = Effect.map(store.consumers, (stored) => stored.map(({ since }) => since))
+        // The second step of `r` commits after the first with an earlier time, as two clocks or a clock set back give
+        // it: the consumer reads the first next, by its `seq` (decision 0224).
+        yield* store.write('r', publishing(null, { upper: 'START', size: 5 }, ['upper']), 200)
+        yield* store.write('r', publishing('hi', { upper: 'HI', size: 2 }, ['upper']), 100)
+        expect(yield* since).toEqual([DateTime.makeUnsafe(200)])
+        yield* store.ack('upper', 'c', (yield* store.fetch('upper', 'c', all)).slice(0, 1))
+        expect(yield* since).toEqual([DateTime.makeUnsafe(100)])
+        // Another partition behind with an older step gives its time, and a row read in it gives the other's back.
+        yield* store.write('b', publishing(null, { upper: 'B', size: 1 }, ['upper']), 50)
+        expect(partitionOf('b', 300)).not.toBe(partitionOf('r', 300))
+        expect(yield* since).toEqual([DateTime.makeUnsafe(50)])
+        yield* store.ack('upper', 'c', (yield* store.fetch('upper', 'c', all)).filter(({ id }) => id === 'b'))
+        expect(yield* since).toEqual([DateTime.makeUnsafe(100)])
+        // A consumer that has read every row has no time.
+        yield* store.ack('upper', 'c', yield* store.fetch('upper', 'c', all))
+        expect(yield* since).toEqual([null])
       })))
 })
 
@@ -1628,6 +1668,7 @@ const logged = (sql: SqlClient.SqlClient, id: string, seq: number, position: num
           id,
           tag: 'Creation',
           version: 1,
+          written_at: 0,
           message: null,
           projection: '"start"',
         })
@@ -1916,7 +1957,13 @@ describe('renaming a program (decision 0156)', () => {
         // The consumer, its cursor, and the rows of both topics are under the new name.
         expect(rows(yield* moved.fetch('upper', 'c', all))).toEqual([[2, 'HI']])
         expect(yield* moved.consumers).toEqual([
-          { topic: 'upper', consumer: 'c', behind: 1, cursors: [{ partition: partitionOf('r', 300), seq: 1 }] },
+          {
+            topic: 'upper',
+            consumer: 'c',
+            behind: 1,
+            since: DateTime.makeUnsafe(0),
+            cursors: [{ partition: partitionOf('r', 300), seq: 1 }],
+          },
         ])
         expect(rows(yield* moved.published('size', [], all))).toEqual([[1, 5], [2, 2]])
         // The head of the partition moved with its rows: the next step takes the `seq` after the last.

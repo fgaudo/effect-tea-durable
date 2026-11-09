@@ -3651,9 +3651,10 @@ describe('publishing what happened', () => {
               consumer: 'audit',
               declared: true,
               behind: rows.length,
+              since: DateTime.makeUnsafe(0),
               cursors: [{ partition: partitionOf(id, 300), seq: 0 }],
             },
-            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, cursors: [] },
+            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
           ])
           // The one that is behind holds every row, however far the other has read.
           expect(yield* toy.prune).toBe(0)
@@ -3847,7 +3848,7 @@ describe('publishing what happened', () => {
           // Nothing was written yet: no cursor is stored, and the consumer is, by the deploy (decision 0152).
           yield* toy.ack('projection', 'queue', [{ partition, seq: 1_000 }])
           expect(yield* toy.consumers).toEqual([
-            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, cursors: [] },
+            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
           ])
           yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
           // A cursor past the head of its partition never stood: the creation is past it.
@@ -3855,7 +3856,7 @@ describe('publishing what happened', () => {
           // A consumer that acks beyond what it read stops at the last row: the next one is past its cursor.
           yield* toy.ack('projection', 'queue', [{ partition, seq: 1_000 }])
           expect(yield* toy.consumers).toEqual([
-            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, cursors: [] },
+            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
           ])
           yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester })
           expect(yield* toy.prune).toBe(1)
@@ -3948,6 +3949,7 @@ describe('publishing what happened', () => {
               consumer: 'queue',
               declared: true,
               behind: 1,
+              since: DateTime.makeUnsafe(0),
               cursors: [{ partition, seq: 0 }],
             },
           ])
@@ -4045,6 +4047,7 @@ describe('publishing what happened', () => {
               consumer: 'queue',
               declared: true,
               behind: 1,
+              since: DateTime.makeUnsafe(0),
               cursors: [{ partition: partitionOf(other, 300), seq: 0 }],
             },
           ])
@@ -4230,11 +4233,12 @@ describe('publishing what happened', () => {
               consumer: 'queue',
               declared: true,
               behind: 1,
+              since: DateTime.makeUnsafe(0),
               cursors: [{ partition: partitionOf(id, 300), seq: 0 }],
             },
           ])
           expect(yield* twins.consumers).toEqual([
-            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, cursors: [] },
+            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
           ])
         }))
     })))
@@ -4335,7 +4339,7 @@ describe('publishing what happened', () => {
           expect(yield* stored).toEqual(rows.map(({ seq, value }) => [seq, value]))
           expect(yield* toy.fetch('projection', 'queue', all)).toEqual([])
           expect(yield* toy.consumers).toEqual([
-            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, cursors: [] },
+            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
           ])
         }))
     })))

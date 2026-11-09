@@ -251,14 +251,20 @@ expect(yield* orders.prune).toBe(2)
 
 The runtime caps nothing of the log, and drops nothing by time. A consumer that stops reading holds its topic, and
 the log grows. `orders.consumers` shows each consumer, its topic, whether the deploy declares it, and how many rows
-are past its cursors, ordered by topic and then by consumer:
+are past its cursors, ordered by topic and then by consumer. It shows too, as `since`, the time of the step that wrote
+the oldest of the rows the consumer reads next, which the test leaves out since it is the runtime's clock:
 
 ```ts
-expect(yield* orders.consumers).toEqual([
+const stored = yield* orders.consumers
+expect(stored.map(({ since: _, ...consumer }) => consumer)).toEqual([
   { topic: 'billing', consumer: 'invoices', declared: true, behind: 2, cursors: [{ partition, seq: 0 }] },
   // …, and the dashboard's
 ])
 ```
+
+How old the rows a consumer has not read are is the time now less `since`, which is `null` for a consumer that has
+read every row. The runtime records no metric of it. An application that alerts on a consumer left behind reads
+`consumers` at an interval it chooses, with `Effect.repeat`, and sets a gauge of its own to the age.
 
 A consumer no longer declared is kept, and the deploy logs a warning for it. An operator lets it go by deploying
 without it, calling `forget(topic, consumer)`, and pruning. A consumer the deploy still declares cannot be

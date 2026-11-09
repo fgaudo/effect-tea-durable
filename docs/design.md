@@ -858,7 +858,13 @@ consumer has no cursor for is read from `0`.
 cursor. A topic no consumer is stored for is dropped whole, since no reader that keeps cursors needs its rows
 ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
 `consumers` says the topic of each consumer, whether the deploy declares it, how many rows are past its cursors,
-and in which partitions.
+and in which partitions. It says too, as `since`, the time of the step that wrote the oldest of the rows the consumer
+reads next, or `null` where it has read every row. In each partition the row read next is the one of the lowest
+`seq` past the cursor, since a step's time may run against the order its partition committed in. The time is the
+clock of the process that wrote the step, so an age read against another clock may come out a little below zero.
+The runtime records no metric of the age and runs nothing at an interval for it: an application that wants a gauge
+reads `consumers` at an interval of its own
+([decision 0224](decisions/0224-a-consumer-shows-the-time-of-the-step-it-reads-next.md)).
 `published(topic, after, limit)` reads past cursors the caller holds, and registers nothing; `[]` is the whole
 topic
 ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)).

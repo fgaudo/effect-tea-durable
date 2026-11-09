@@ -438,7 +438,9 @@ export interface Handle<T extends Types, C = {}> {
   readonly prune: Effect.Effect<number>
   /**
    * Each consumer stored, with its topic, whether the deploy declares it, how many rows are past its cursors, and its
-   * cursors in the partitions it has rows to read in: what keeping it costs the log (decision 0152).
+   * cursors in the partitions it has rows to read in: what keeping it costs the log (decision 0152). `since` is the
+   * time of the step that wrote the oldest of the rows it reads next, from which a caller reads its age
+   * (decision 0224).
    */
   readonly consumers: Effect.Effect<ReadonlyArray<Consumer>>
   /**

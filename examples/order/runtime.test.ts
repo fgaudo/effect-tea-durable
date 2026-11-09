@@ -128,7 +128,8 @@ test('what an order published is what another system learns of it, each consumer
     expect(yield* orders.published('billing', [], all)).toEqual(billing)
     // What each consumer still has to act on, as an operator sees it.
     const partition = statuses[0]?.partition ?? 0
-    expect(yield* orders.consumers).toEqual([
+    const stored = yield* orders.consumers
+    expect(stored.map(({ since: _, ...consumer }) => consumer)).toEqual([
       { topic: 'billing', consumer: 'invoices', declared: true, behind: 2, cursors: [{ partition, seq: 0 }] },
       {
         topic: 'status',
@@ -138,6 +139,13 @@ test('what an order published is what another system learns of it, each consumer
         cursors: [{ partition, seq: statuses[1]?.seq ?? 0 }],
       },
     ])
+    // A consumer's next row is the oldest it has not read: the creation for `invoices`, the charge for `dashboard`,
+    // each at the time of its step on the runtime's clock (decision 0224).
+    const [invoices = Number.NaN, dashboard = Number.NaN] = stored.map(({ since }) =>
+      since === null ? Number.NaN : DateTime.toEpochMillis(since)
+    )
+    expect(invoices).toBeLessThanOrEqual(dashboard)
+    expect(dashboard).toBeLessThanOrEqual(DateTime.toEpochMillis(yield* DateTime.now))
 
     // A consumer that has read everything waits for the next row of its topic instead of polling: the creation of
     // another order ends its wait, and a wait with no row would give none after ten seconds (decision 0142).
