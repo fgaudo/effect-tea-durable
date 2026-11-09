@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun audit
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run links
+      - run: bun install --frozen-lockfile
+        working-directory: site
+      # TypeDoc 0.28.20 needs minimatch 10, and the fix of this advisory is in minimatch 11 alone. The site's globs
+      # are its own configuration. Remove the ignore once TypeDoc depends on a minimatch with the fix.
+      - run: bun audit --ignore=GHSA-g3hv-75wg-m249
+        working-directory: site
+      # The build fails on a warning of TypeDoc by itself.
+      - run: bun run build
+        working-directory: site
+
+  # Every seed of the explored tests, which a release passes. Run by hand from the repository's Actions.
+  release:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run test:release

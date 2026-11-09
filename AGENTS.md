@@ -132,6 +132,11 @@ This repository is a design and its pure core, not a library yet: read [`README.
   the code it runs, so a change that adds or moves a yield in the runtime or in `src/testing.ts` finds the pinned
   seeds again: for each, it takes out the fix the test's comment names, runs `bun run test:explore -t <test>` until
   a seed fails, and pins that seed, with the comment saying the form of the code it fails against.
+- The workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the checks on Linux on every push and
+  pull request: `bun audit`, `bun run typecheck`, `bun test`, `bun run links`, and the audit and the build of the
+  site. Run by hand from the repository's Actions, the workflow also runs `bun run test:release`, and a release
+  passes it there. The site's audit ignores one advisory of minimatch, since TypeDoc's range excludes the version
+  with the fix. The workflow's comment says when the ignore goes.
 - A word the design gives a meaning of its own is defined once, in [`docs/glossary.md`](docs/glossary.md); a change
   that adds, renames or drops one changes it in the same commit. A section of `docs/design.md` longer than a screen
   has subsections, so that a reader finds a rule by its heading.

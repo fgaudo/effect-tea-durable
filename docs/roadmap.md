@@ -5,6 +5,16 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
+- **A CI on Linux**, under way. It comes before the publication of the site, since the suite has never run on Linux,
+  and the site's workflow deploys only what the checks pass. The step is also where the test of a runner stopped with
+  `SIGTERM` runs, which Windows cannot run ([open question](open-questions.md#running)). The tooling is a rule of
+  work, so [`AGENTS.md`](../AGENTS.md) states it, and no note is taken.
+  - Done: the workflow [`ci.yml`](../.github/workflows/ci.yml), which runs the checks on every push and
+    `bun run test:release` by hand, and its rule in [`AGENTS.md`](../AGENTS.md). The checks pass on Windows.
+  - Next: the first run on Linux, on the branch `ci`, and a fix for each check it fails. Then the test of
+    `examples/server` that stops one of two runners with `SIGTERM` and checks that the other runner finishes the
+    orders, which takes the open question out.
+
 - **A site with the guide and the API reference**, under way. The site is built as effect-tea's, with TypeDoc, and
   holds the guide, the reference and the examples, each with a paragraph on what it shows. The two sites link each
   other, since a program is written the same way in both. A test runs the code of the guide, so that a change of
@@ -14,7 +24,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [`site/`](../site/build.ts), which fails on a warning of TypeDoc, a doc comment on every export of the four
     entries, and a `README.md` for each example. [`AGENTS.md`](../AGENTS.md) states the site's rules of work.
   - Next: the site is published, which the maintainer decides. A workflow of GitHub Pages deploys `site/dist/`, as
-    effect-tea's `docs.yml` does, from the repository `fgaudo/effect-tea-durable`. Then effect-tea's site links
+    effect-tea's `docs.yml` does, once the checks of `ci.yml` pass. The repository is now
+    `fgaudo/effect-tea-persistent`, while `site/build.ts` and `site/typedoc.json` still link `effect-tea-durable`. Then effect-tea's site links
     this one, in its `navigationLinks` and its README, and this README's Status no longer says the site is missing.
     The step is taken by the commit that publishes it, which accepts decision 0203.
 
@@ -43,14 +54,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   may leave out a sender that is `null`, and `create` flags that are `null`
   ([open question](open-questions.md#programs)).
 
-- **A CI on Linux.** The repository has no workflow. One runs `bun run typecheck`, `bun test` and `bun run links`
-  on every push, and `bun run test:release` before a release. It is also where the test of a runner stopped with
-  `SIGTERM` runs, which Windows cannot run ([open question](open-questions.md#running)). The tooling is a rule of
-  work, so [`AGENTS.md`](../AGENTS.md) states it, and no note is taken. Until then `bun run test:release` runs by
-  hand.
-
 - **PostgreSQL on a server with a pool.** The storage's tests and the runtime's tests of the log run against a
-  server in a container, in the CI of the step above, so that what is only reasoned of many connections is tested:
+  server in a container, in the CI on Linux, so that what is only reasoned of many connections is tested:
   the order of a partition's commits, the advisory lock, a deadlock or a failure of serialization in a step
   ([open question](open-questions.md#running)). A library for most backends needs it before its release.
 
