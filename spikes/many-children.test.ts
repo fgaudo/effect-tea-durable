@@ -23,8 +23,9 @@
  * first step of the file paying for the warm-up.
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
+import * as Logger from 'effect/Logger'
 import * as Optic from 'effect/Optic'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
@@ -114,11 +115,27 @@ const measure = (size: number) =>
     return { children: size, 'state KB': Math.round((row?.state.length ?? 0) / 1024), msPerStep: elapsed / steps }
   })
 
+/**
+ * The warnings the runtime logs, collected rather than printed. A step of the largest states passes the threshold of
+ * decision 0135, so the warning of a large state is the one each test may meet.
+ */
+const warnings: Array<string> = []
+
+const collected = Logger.layer([Logger.make(({ logLevel, message }) => {
+  if (logLevel === 'Warn') warnings.push(String(Array.isArray(message) ? message[0] : message))
+})])
+
+const largeState = 'a step wrote a large state; the program may split it into entities'
+
+afterEach(() => {
+  expect(warnings.splice(0).filter((warning) => warning !== largeState)).toEqual([])
+})
+
 const onFile = <A, E>(body: Effect.Effect<A, E, SqlClient.SqlClient>) => {
   const directory = mkdtempSync(join(tmpdir(), 'many-children-'))
   return Effect.runPromise(
     Effect.scoped(Effect.flatMap(createTables, () => body)).pipe(
-      Effect.provide(SqliteClient.layer({ filename: join(directory, 'db.sqlite') })),
+      Effect.provide([SqliteClient.layer({ filename: join(directory, 'db.sqlite') }), collected]),
       Effect.orDie,
     ),
   ).finally(() => rmSync(directory, { recursive: true, force: true }))
