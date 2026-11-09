@@ -733,6 +733,12 @@ SQLite would read the string as `0` and `true` as `1`, and the total would look 
 index and the least id of such a row. Both read the rows as they stand while `reindex` runs, as a query does
 ([decision 0148](decisions/archive/0148-a-count-and-a-sum-are-read-in-one-statement.md)).
 
+A sum is also the caller's defect when the numbers it adds, taken without their sign, add up past the largest
+double. Below that bound no partial total overflows, in whatever order the rows are added. PostgreSQL adds the
+numbers exactly and rounds the total once. SQLite adds doubles with a compensated sum. So the two dialects may give
+totals that differ in the last digits, by a few units of the last place of the total without signs
+([decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md)).
+
 A count per value of an index is read in one statement too. `countBy` takes an index, the criteria a query takes
 and a limit, and gives each value the index holds among the entities that match, with how many hold it, so every
 count is read on one snapshot. The values come in the order a query orders the index by, null first, at most

@@ -1370,6 +1370,20 @@ describe('a count and a sum over the entities that match (decision 0148)', () =>
         expect(yield* store.count({ where: [{ index: 'rank', is: '>=', value: 1 }] })).toBe(4)
       })))
 
+  // Without the total of magnitudes, SQLite gave `Infinity` and PostgreSQL failed the statement.
+  test('a sum whose magnitudes pass the largest double is its caller’s defect', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(ranked, sql)
+        yield* ranking(store, { a: Number.MAX_VALUE, b: Number.MAX_VALUE, c: -Number.MAX_VALUE, d: 1, e: 0.1, f: -1 })
+        const exit = yield* Effect.exit(store.sum({ index: 'rank' }))
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        expect(cause instanceof InvariantDefect && cause.reason).toBe("the total of the index 'rank' is past the largest double")
+        // Each partial total of these is a double, so the sum is given.
+        const small = [{ index: 'rank', is: '>', value: -2 }, { index: 'rank', is: '<', value: 2 }] as const
+        expect(yield* store.sum({ index: 'rank', where: small })).toBe(0.1)
+      })))
+
   test('a count or a sum by an index the program does not declare dies, naming it', () =>
     database((sql) =>
       Effect.gen(function*() {

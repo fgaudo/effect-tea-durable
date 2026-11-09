@@ -981,10 +981,14 @@ const Rows = {
   /** A count of the rows that match. */
   count: decoder(Schema.Struct({ count: Count })),
   /**
-   * A total of an index, a double, and the least id of a row whose index holds a value that is no number, or null
-   * for none (decision 0148).
+   * A total of an index and of its magnitudes, a double on SQLite and the text of a `NUMERIC` on PostgreSQL, and the
+   * least id of a row whose index holds a value that is no number, or null for none (decisions 0148, 0209).
    */
-  total: decoder(Schema.Struct({ total: Schema.Number, refused: Schema.NullOr(Schema.String) })),
+  total: decoder(Schema.Struct({
+    total: Schema.Union([Schema.Number, Schema.String]),
+    magnitude: Schema.Union([Schema.Number, Schema.String]),
+    refused: Schema.NullOr(Schema.String),
+  })),
   /**
    * A value of an index as the JSON text the row holds, `null` for a row that lacks it, and how many rows hold it
    * (decision 0150).
@@ -2118,18 +2122,21 @@ export const storage = <T extends Types>(
     Effect.gen(function*() {
       // On SQLite `json_type` tells `true` from `1`, which `json_extract` gives alike, and is NULL where the row
       // lacks the index. `TOTAL` gives a double and never fails on an overflow of SQLite's integers, where `SUM` does
-      // (decision 0148). On PostgreSQL each number is added as a double, so the total is a double too
-      // (decision 0157).
+      // (decision 0148). On PostgreSQL the numbers are added exactly as `NUMERIC`, and read as text, since a total
+      // of doubles there fails the statement on an overflow and depends on the order of the rows (decision 0209).
       const [summed] = yield* rows('tea_projections', Rows.total)(
         dialect === 'pg'
           ? sql`
-            SELECT COALESCE(SUM(CASE WHEN ${typed(index)} = 'number' THEN CAST(${value(index)} AS DOUBLE PRECISION) END),
-                     0) AS total,
+            SELECT CAST(COALESCE(SUM(CASE WHEN ${typed(index)} = 'number' THEN CAST(${value(index)} AS NUMERIC) END),
+                     0) AS TEXT) AS total,
+                   CAST(COALESCE(SUM(CASE WHEN ${typed(index)} = 'number' THEN ABS(CAST(${value(index)} AS NUMERIC)) END),
+                     0) AS TEXT) AS magnitude,
                    MIN(CASE WHEN ${typed(index)} NOT IN ('number', 'null') THEN id END) AS refused
             FROM tea_projections WHERE ${sql.and(criteria(where))}
           `
           : sql`
             SELECT TOTAL(CASE WHEN ${kind(index)} IN ('integer', 'real') THEN ${columnOf(index)} END) AS total,
+                   TOTAL(CASE WHEN ${kind(index)} IN ('integer', 'real') THEN ABS(${columnOf(index)}) END) AS magnitude,
                    MIN(CASE WHEN ${kind(index)} NOT IN ('integer', 'real', 'null') THEN id END) AS refused
             FROM tea_projections WHERE ${sql.and(criteria(where))}
           `,
@@ -2140,7 +2147,14 @@ export const storage = <T extends Types>(
           new InvariantDefect({ reason: `the index '${index}' of '${summed.refused}' holds no number, and is no sum's` }),
         )
       }
-      return summed.total
+      // A total of the magnitudes that is a double bounds every partial total, in whatever order SQLite adds the
+      // rows, so both dialects refuse the same sums (decision 0209).
+      if (!Number.isFinite(Number(summed.magnitude))) {
+        return yield* Effect.die(
+          new InvariantDefect({ reason: `the total of the index '${index}' is past the largest double` }),
+        )
+      }
+      return Number(summed.total)
     }).pipe(Effect.orDie)
 
   /** On SQLite, the kind of an index's value, `null` where the row lacks it, and the value as its JSON text. */
