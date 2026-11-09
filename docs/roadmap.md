@@ -10,10 +10,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   `SIGTERM` runs, which Windows cannot run ([open question](open-questions.md#running)). The tooling is a rule of
   work, so [`AGENTS.md`](../AGENTS.md) states it, and no note is taken.
   - Done: the workflow [`ci.yml`](../.github/workflows/ci.yml), which runs the checks on every push and
-    `bun run test:release` by hand, and its rule in [`AGENTS.md`](../AGENTS.md). The checks pass on Windows.
-  - Next: the first run on Linux, on the branch `ci`, and a fix for each check it fails. Then the test of
-    `examples/server` that stops one of two runners with `SIGTERM` and checks that the other runner finishes the
-    orders, which takes the open question out.
+    `bun run test:release` by hand, and its rule in [`AGENTS.md`](../AGENTS.md). The checks pass on Linux, with Bun
+    pinned in `package.json`.
+  - Next: the test of `examples/server` that stops one of two runners with `SIGTERM` and checks that the other runner
+    finishes the orders, which takes the open question out. The test runs only off Windows.
 
 - **A site with the guide and the API reference**, under way. The site is built as effect-tea's, with TypeDoc, and
   holds the guide, the reference and the examples, each with a paragraph on what it shows. The two sites link each
