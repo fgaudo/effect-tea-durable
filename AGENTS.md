@@ -20,6 +20,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   without following its links. A sentence a reader must read twice is the sentence's defect: a pronoun, `one` or
   `its` names something in the same sentence; a sentence held together by a colon and a dash is two sentences; a
   noun left out for the reader to supply is written.
+- A page of the guide is checked by a reader who has not seen the code, who builds a program for a requirement no
+  example holds from the README and `docs/` alone. The reader is a subagent only once the maintainer agrees, and
+  [`.claude/skills/guide-reader/SKILL.md`](.claude/skills/guide-reader/SKILL.md) is the procedure, with its brief.
 - A comment stands where the code alone does not say why: a wait, a lock, a fork, an order of statements that
   matters, a guard against a case a reader would not think of, a check that something else relies on. It says what
   the code keeps and why, in a sentence, and cites the note for the rest. A line a reader understands from its
