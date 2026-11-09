@@ -201,7 +201,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0191](0191-a-launch-creates-the-tables.md) | A launch creates the tables, in one transaction, unless it is told they exist | [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md), [0216](0216-the-tables-are-made-by-effects-migrator.md) |
 | [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) | Every table, index, trigger and function the runtime makes is named with `tea_` | [0218](0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md) |
 | [0222](0222-postgresql-with-many-connections.md) | On a server of PostgreSQL every transaction of the runtime states its level, an integer may come as a bigint, and a deadlock crashes the entity |  |
-| [0223](0223-a-disk-that-is-really-full.md) | What an operator does on a disk that is really full |  |
+| [0223](0223-a-disk-that-is-really-full.md) | On a disk that is really full an operator frees room first, and the runtime keeps none of its own |  |
 | [0216](0216-the-tables-are-made-by-effects-migrator.md) | The tables are made by Effect's `Migrator`, which records each migration in `tea_migrations` | [0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md), [0218](0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md) |
 | [0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md) | On PostgreSQL `tea_migrations` is named in the schema the tables are made in |  |
 | [0218](0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md) | The prefix is `effecttea_`, and a launch dies on a name the runtime's objects would take |  |

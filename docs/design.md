@@ -924,6 +924,12 @@ step, and each caller is given the defect, while the readings, the acks and `for
 finds in `consumers` the consumer that holds the log, deploys without it, forgets it and prunes, and the steps
 commit again ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
 
+On a disk that is really full, a file of SQLite in WAL mode still commits a forget, and not a prune of many rows,
+which writes a page of the WAL for each page it changes. The operator frees room on the volume first, about a
+twentieth of what the stalled consumer holds, then forgets and prunes. The runtime keeps no room of its own: it does
+not hold the volume, and a file of reserved room is the operator's to keep and drop
+([decision 0223](decisions/0223-a-disk-that-is-really-full.md)).
+
 ### What a step publishes
 
 A step that changes the state without changing what callers read publishes nothing, and neither does a

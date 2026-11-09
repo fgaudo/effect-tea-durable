@@ -7,7 +7,9 @@ request; and [decision 0156](0156-a-program-is-renamed-by-its-launch-and-keeps-i
 request in the database. A database of SQLite made before is given `request_id`, and a page begins at `REPEATABLE
 READ` only where the transaction is its own, by
 [decision 0158](0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md).
-An id is not empty either, by [decision 0179](../0179-an-id-is-not-empty.md).
+An id is not empty either, by [decision 0179](../0179-an-id-is-not-empty.md). An integer of a row may come as a bigint
+up to 2^53, and every transaction of the runtime on PostgreSQL states its level, by
+[decision 0222](../0222-postgresql-with-many-connections.md), which ran the tests on a server.
 
 ## Context
 

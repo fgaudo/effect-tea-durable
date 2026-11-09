@@ -22,7 +22,9 @@ None: the next step is the first of Later, unless the maintainer picks another.
   replies of a deployment grow without bound by default
   ([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). The step
   decides whether the runtime runs `expire` and `prune` at an interval, as an option, or whether `send` has a default
-  `keep`, and says it in the design. On Cluster the runtime deletes Cluster's rows by its own statements, since
+  `keep`, and says it in the design. It weighs a prune in batches too, which might free room on a disk that is really
+  full, where one prune of many rows needs room an operator frees first
+  ([decision 0223](decisions/0223-a-disk-that-is-really-full.md)). On Cluster the runtime deletes Cluster's rows by its own statements, since
   Cluster forgets no processed request ([decision 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md),
   [0169](decisions/archive/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md),
   [0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
@@ -34,15 +36,6 @@ None: the next step is the first of Later, unless the maintainer picks another.
   takes no `keep`. Since a default `keep` changes the signature of `send`, the step also decides whether a request
   may leave out a sender that is `null`, and `create` flags that are `null`
   ([open question](open-questions.md#programs)).
-
-- **PostgreSQL on a server with a pool.** The storage's tests and the runtime's tests of the log run against a
-  server in a container, in the CI on Linux, so that what is only reasoned of many connections is tested:
-  the order of a partition's commits under two writers, the advisory lock, a deadlock or a failure of serialization
-  in a step, a role whose `search_path` is set by `ALTER ROLE`, and two launches at once that run the migrations of
-  `createTables` ([open question](open-questions.md#running)). A library for most backends needs it before its
-  release. The same job on Linux fills a database of SQLite in WAL mode on a volume of fixed size, and runs the
-  forget and the prune on it, so that what an operator does on a disk that is really full is decided before the
-  release too ([open question](open-questions.md#storage-and-reading)).
 
 - **The release**, once there is code to publish. It is released as experimental while it depends
   on Effect's unstable modules ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
@@ -57,7 +50,10 @@ None: the next step is the first of Later, unless the maintainer picks another.
   ([Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058)), or the runtime one of its own. Until
   then a step commits only where the commit checks the shard, which on Cluster is SQLite
   ([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)). A fence of the runtime's
-  own waits for tests on a server of PostgreSQL with a pool, which the step on PostgreSQL runs.
+  own is tested on the server of PostgreSQL with a pool that the CI runs
+  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The step also decides whether the runtime
+  checks its advisory lock, which a server that ends its session gives back
+  ([open question](open-questions.md#running)).
 
 - **A model of the runtime's protocol on Cluster**, in TLA+ or a model checker like it, if the tests on Cluster
   keep finding interleavings between runners. The model checks every state the protocol reaches within its bounds:

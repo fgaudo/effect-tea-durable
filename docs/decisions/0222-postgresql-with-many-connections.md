@@ -1,6 +1,6 @@
 # 0222. On a server of PostgreSQL every transaction of the runtime states its level, and a deadlock crashes the entity
 
-**Status:** proposed, 2026-11-09, with the step PostgreSQL on a server with a pool of the roadmap. Decides the
+**Status:** accepted, 2026-11-09, with the step PostgreSQL on a server with a pool of the roadmap. Decides the
 open question of PostgreSQL with many connections, which
 [decision 0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) and
 [decision 0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)
@@ -99,8 +99,8 @@ count was read.
 ## Alternatives
 
 - **A step retried on `DeadlockError` or `SerializationError`**, as the JSDoc of `SqlClient.withTransaction` shows.
-  The write of a step dies, so a retry would read the defect's cause, and every point of the crash table would run
-  again. With every transaction at `READ COMMITTED` the failure of serialization does not arise, and a deadlock is
+  The write of a step dies, so a retry would read a `SqlError` out of a defect's cause, against the rule that a
+  defect is not caught. With every transaction at `READ COMMITTED` the failure of serialization does not arise, and a deadlock is
   rare enough that a crash and a caller's retry cost less than a second path through the step.
 - **A launch that refuses a role whose default level is above `READ COMMITTED`.** A launcher would need a role of its
   own for the runtime, for a rule the runtime can keep itself.

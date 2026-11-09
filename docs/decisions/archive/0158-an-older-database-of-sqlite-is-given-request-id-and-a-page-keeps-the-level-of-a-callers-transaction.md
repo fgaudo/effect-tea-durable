@@ -3,7 +3,7 @@
 **Status:** accepted, 2026-11-06. Changes
 [decision 0157](0157-the-storage-speaks-sqlite-and-postgresql.md), which gives a reply the column `request_id` and
 begins a page's transaction at `REPEATABLE READ` on PostgreSQL. The column is added and filled in one transaction, so
-that a crash between the two leaves neither, since [decision 0191](../0191-a-launch-creates-the-tables.md). [Decision 0198](../0198-every-object-the-runtime-makes-is-named-with-tea.md) names every table with `tea_`, and `tea_replies` is never given `request_id`: no database holds it without the column.
+that a crash between the two leaves neither, since [decision 0191](../0191-a-launch-creates-the-tables.md). [Decision 0198](../0198-every-object-the-runtime-makes-is-named-with-tea.md) names every table with `tea_`, and `tea_replies` is never given `request_id`: no database holds it without the column. On a server, a page in a caller's transaction at `READ COMMITTED` is seen to give a row twice, and the design tells such a caller to begin at `REPEATABLE READ`, by [decision 0222](../0222-postgresql-with-many-connections.md).
 
 ## Context
 

@@ -153,13 +153,18 @@ test.skipIf(volume === undefined)('a volume that is really full stops the steps,
     const onFull = await run(Effect.exit(freeing(filename)))
     console.log('the second process on the full volume:', Exit.isSuccess(onFull) ? 'launched' : shown(onFull))
     const after = await run(freed(filename, ballast))
-    // What decision 0223 rests on: a step that cannot commit dies, the readings still answer, and steps commit
-    // again once the stalled consumer is forgotten and the log pruned, with room freed on the volume where the prune
-    // needed it.
+    // What decision 0223 rests on: a step that cannot commit dies, and the readings and acks still answer. On the
+    // full volume a forget commits and a prune of the stalled consumer's rows does not. Once room is freed the prune
+    // commits, and the steps commit again.
     expect(full.sent).toBeGreaterThan(0)
     expect(full.failed !== undefined && Exit.isFailure(full.failed)).toBe(true)
-    expect(Exit.isSuccess(full.read) && Exit.isSuccess(full.consumers)).toBe(true)
-    expect(Exit.isSuccess(after.forgotten) && Exit.isSuccess(after.pruned)).toBe(true)
+    expect(Exit.isSuccess(full.read) && Exit.isSuccess(full.consumers) && Exit.isSuccess(full.current)).toBe(true)
+    expect(Exit.isSuccess(onFull)).toBe(true)
+    if (Exit.isSuccess(onFull)) {
+      expect(Exit.isSuccess(onFull.value.forgotten)).toBe(true)
+      expect(Exit.isFailure(onFull.value.pruned)).toBe(true)
+    }
+    expect(Exit.isSuccess(after.pruned) && after.pruned.value).toBeGreaterThan(0)
     expect(after.again).toBe(50)
   } finally {
     rmSync(directory, { recursive: true, force: true })

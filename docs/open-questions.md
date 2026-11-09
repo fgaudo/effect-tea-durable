@@ -6,16 +6,6 @@ with a requirement that no example has yet.
 
 ## Storage and reading
 
-- **A disk that is really full.** A step that cannot commit dies, and a forget and a prune free the room steps need
-  ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). The spike `spikes/full-database.test.ts` sees it
-  under `PRAGMA max_page_count`, with the rollback journal, which caps the database file and not its journal. On a
-  disk that is really full a delete needs room in the journal too, and in WAL mode, the client's default, the rows
-  go to the WAL, which `max_page_count` does not cap. Whether a prune can still run there, and what an operator does
-  where it cannot, is not decided. The roadmap's step on PostgreSQL decides it. It would be decided by:
-  - a database on a volume of fixed size, in WAL mode, filled under a consumer that stalled, and the forget and the
-    prune run on it;
-  - whether the runtime keeps room of its own, a file it drops once the disk is full, so that a prune always has
-    the room it needs.
 - **Generated cases of a migration.** A case of a migration is recorded by hand, with the JSON a version wrote and
   the JSON the next one reads
   ([decision 0126](decisions/archive/0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md)). A changed
