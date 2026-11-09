@@ -167,12 +167,14 @@ export interface Options {
   /**
    * How long a `send` or a `create` from another entity waits before sending again to a receiver that crashed on
    * it (decision 0046). A suspended receiver is waited for until it is resumed, and a program not deployed yet until
-   * it is: neither is looked at again on a clock (decision 0063).
+   * it is: neither is looked at again on a clock (decision 0063). A non-negative integer, 10 by default
+   * (decision 0208).
    */
   readonly retry?: Readonly<{ millis: number }>
   /**
    * How long an entity stays loaded with no event coming for it. The wait starts again at every event, and when
-   * it runs out the entity is unloaded, or waits again if it still has something to do (decision 0029).
+   * it runs out the entity is unloaded, or waits again if it still has something to do (decision 0029). A
+   * non-negative integer, 30 000 by default (decision 0208).
    */
   readonly passivate?: Readonly<{ millis: number }>
   /**
@@ -192,8 +194,9 @@ export interface Options {
   readonly drain?: Readonly<{ millis: number }>
   /**
    * How many characters a step may write of the state and of the projection, in the read model and in each topic
-   * of the outbox, before the runtime logs a warning, once per activation of the entity. 262 144 by default.
-   * Nothing is refused for its size: the program splits a large state (decisions 0135, 0138).
+   * of the outbox, before the runtime logs a warning, once per activation of the entity. A non-negative integer,
+   * 262 144 by default. Nothing is refused for its size: the program splits a large state (decisions 0135, 0138,
+   * 0208).
    */
   readonly warn?: Readonly<{ characters: number }>
   /**
@@ -858,6 +861,19 @@ export const launchWith = (
     }
     if (drain !== undefined && !(Number.isSafeInteger(drain) && drain >= 0)) {
       const reason = `the drain is ${drain} millis, which is no non-negative integer`
+      return yield* Effect.die(new InvariantDefect({ reason }))
+    }
+    // A time becomes the text of a duration, which Effect does not read as `Infinity millis` or `NaN millis`: the
+    // sleep of an entity's wait, or of an operation that sends again, would die (decision 0208).
+    for (
+      const [what, value, unit] of [
+        ['retry', retry, 'millis'],
+        ['passivation', passivate, 'millis'],
+        ['warning', threshold, 'characters'],
+      ] as const
+    ) {
+      if (Number.isSafeInteger(value) && value >= 0) continue
+      const reason = `the ${what} is ${value} ${unit}, which is no non-negative integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
     }
     if (capacity !== 'unbounded' && !(Number.isSafeInteger(capacity) && capacity > 0)) {

@@ -18,17 +18,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     this one, in its `navigationLinks` and its README, and this README's Status no longer says the site is missing.
     The step is taken by the commit that publishes it, which accepts decision 0203.
 
-The step after the site is a bug, found on 2026-11-09. It has no test yet, and the step says the test that fails
-today.
-
-- **A launch checks every option.** `launch` of [`src/runtime.ts`](../src/runtime.ts) checks `drain`, `capacity`,
-  `callers` and `log`, and takes `retry`, `passivate` and `warn` as they are given. Each of those times becomes
-  the text of a duration, and Effect reads no `Infinity millis` and no `NaN millis`. Under
-  `passivate: { millis: Infinity }` the sleep of an entity's wait dies, and no entity is ever unloaded by time.
-  Under `retry: { millis: NaN }` the sleep of an operation that sends again dies, and so does the operation. The
-  step refuses each of the three as the launcher's defect unless it is a non-negative integer, as it refuses the
-  others. The test launches with each such value, and the launch dies naming the option.
-
 ## Later
 
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the

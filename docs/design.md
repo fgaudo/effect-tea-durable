@@ -1103,7 +1103,10 @@ is written once. A launch on a client of any other dialect is the launcher's def
 
 An entity with nothing to do is unloaded, and the earliest of its stored timers wakes it
 ([decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)); how long it stays loaded is an option of the
-runtime. A timer is slept by `Effect.sleep` for the whole time left, months included. Effect sets a time past the
+runtime. A launch checks each of its options, and one that is no number of the kind it names is the launcher's
+defect. `retry`, `passivate` and `warn` are non-negative integers, since a time becomes the text of a duration, and
+Effect reads no `Infinity millis` and no `NaN millis`
+([decision 0208](decisions/0208-a-launch-checks-every-option.md)). A timer is slept by `Effect.sleep` for the whole time left, months included. Effect sets a time past the
 host's limit of 2^31 − 1 milliseconds as timers of the host in turn
 ([decision 0194](decisions/0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md)). An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
 process, its callers are given the defect, and the next one loads it from what is stored

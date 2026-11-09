@@ -4,7 +4,8 @@
 [decision 0064](0064-the-program-is-not-the-machines-state.md): a fix is a deploy, which the check holds for. A key
 cannot be declared twice once the keys are a record, and the check refuses instead a name that starts with `[`, since
 [decision 0132](0132-a-key-may-take-a-parameter.md). That check is gone too, and a name may start with `[`, since
-[decision 0136](0136-a-key-is-a-name-and-a-parameter-as-data.md).
+[decision 0136](0136-a-key-is-a-name-and-a-parameter-as-data.md). A launch checks `retry`, `passivate` and `warn`
+too, by [decision 0208](../0208-a-launch-checks-every-option.md).
 
 ## Context
 

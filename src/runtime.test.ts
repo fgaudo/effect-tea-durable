@@ -2253,6 +2253,26 @@ describe('passivation', () => {
       }
     })))
 
+  // Effect reads no `Infinity millis` and no `NaN millis`, so the sleep of an entity's wait, or of an operation that
+  // sends again, would die (decision 0208).
+  test('a retry, a passivation or a warning that is no non-negative integer is the launcher’s defect', () =>
+    database(Effect.gen(function*() {
+      for (const value of [-1, 1.5, Infinity, NaN]) {
+        const launches = [
+          [{ retry: { millis: value } }, `the retry is ${value} millis`],
+          [{ passivate: { millis: value } }, `the passivation is ${value} millis`],
+          [{ warn: { characters: value } }, `the warning is ${value} characters`],
+        ] as const
+        for (const [options, said] of launches) {
+          const exit = yield* Effect.exit(process(options, () => Effect.void))
+          const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+          expect(cause instanceof InvariantDefect && cause.reason).toBe(`${said}, which is no non-negative integer`)
+        }
+      }
+      // A retry and a passivation of no time at all are times.
+      yield* process({ retry: { millis: 0 }, passivate: { millis: 0 }, warn: { characters: 0 } }, () => Effect.void)
+    })))
+
   test('a process launched with no capacity holds ten thousand entities', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
