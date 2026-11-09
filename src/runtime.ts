@@ -69,6 +69,7 @@ import {
   type Summed,
   type Suspension,
   type Tally,
+  transaction,
 } from './storage.ts'
 import { type Readings, tellAll, waited } from './readings.ts'
 import { waking } from './waker.ts'
@@ -1116,7 +1117,7 @@ export const launchWith = (
               while (!Deferred.isDoneUnsafe(closing)) {
                 const page = yield* reading
                 if (page.length === 0) return
-                yield* sql.withTransaction(Effect.andThen(handler(page), deployed.storage.ack(topic, consumer, page)))
+                yield* transaction(sql, Effect.andThen(handler(page), deployed.storage.ack(topic, consumer, page)))
               }
             })
             return topical(

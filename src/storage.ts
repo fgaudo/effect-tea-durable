@@ -61,6 +61,23 @@ export const dialectOf = (sql: SqlClient.SqlClient): Dialect => {
   throw new InvariantDefect({ reason: `the storage speaks SQLite and PostgreSQL, and the client speaks ${dialect}` })
 }
 
+/**
+ * Runs `effect` in a transaction of the runtime's, begun by `onSqlite` on SQLite where it is given. On PostgreSQL the
+ * transaction begins at `READ COMMITTED` whatever level the role or the database sets by default: at a higher level
+ * two steps of one partition that draw their `seq` at once fail with `SerializationError`, where at this level the
+ * second waits for the head's row and draws the next (decision 0222). A reading of one snapshot begins its own
+ * transaction at `REPEATABLE READ` instead.
+ */
+export const transaction = <A, E, R>(
+  sql: SqlClient.SqlClient,
+  effect: Effect.Effect<A, E, R>,
+  onSqlite?: string,
+): Effect.Effect<A, E | SqlError.SqlError, R> => {
+  const begin = dialectOf(sql) === 'pg' ? 'BEGIN ISOLATION LEVEL READ COMMITTED' : onSqlite
+  const run = sql.withTransaction(effect)
+  return begin === undefined ? run : Effect.provideService(run, SqlClient.BeginTransaction, begin)
+}
+
 /** The clients a runtime of this process holds: another runtime on one of them is refused (decision 0080). */
 const held = new WeakSet<SqlClient.SqlClient>()
 
@@ -507,9 +524,7 @@ export const recordVersions = (
         yield* sql`INSERT INTO effecttea_runner_versions (address, name, version) VALUES (${address}, ${name}, ${version})`
       }
     })
-    yield* sql.withTransaction(record).pipe(
-      dialect === 'sqlite' ? Effect.provideService(SqlClient.BeginTransaction, 'BEGIN IMMEDIATE') : (effect) => effect,
-    )
+    yield* transaction(sql, record, 'BEGIN IMMEDIATE')
   }).pipe(Effect.orDie)
 
 /**
@@ -787,11 +802,7 @@ export const renamed = (
         if (marked) yield* mark(from, to)
       }
     })
-    yield* sql.withTransaction(run).pipe(
-      marked && dialect === 'sqlite'
-        ? Effect.provideService(SqlClient.BeginTransaction, 'BEGIN IMMEDIATE')
-        : (effect) => effect,
-    )
+    yield* transaction(sql, run, marked ? 'BEGIN IMMEDIATE' : undefined)
   }).pipe(Effect.orDie)
 
 /**
@@ -1866,7 +1877,7 @@ export const storage = <T extends Types>(
 
   // One transaction, so that a crash leaves no request of Cluster's without its replies (decision 0171).
   const expire = (at: number) =>
-    sql.withTransaction(Effect.gen(function*() {
+    transaction(sql, Effect.gen(function*() {
       const gone = yield* rows('effecttea_replies', Rows.id)(sql`
         DELETE FROM effecttea_replies WHERE name = ${name} AND until IS NOT NULL AND until <= ${at} RETURNING id
       `)
@@ -2370,7 +2381,7 @@ export const storage = <T extends Types>(
     }).pipe(Effect.orDie)
 
   const declare = (consumers: ReadonlyArray<Readonly<{ topic: string; consumer: string }>>) =>
-    sql.withTransaction(Effect.forEach(consumers, ({ topic, consumer }) =>
+    transaction(sql, Effect.forEach(consumers, ({ topic, consumer }) =>
       sql`
         INSERT INTO effecttea_consumers ${sql.insert({ name, topic, consumer })} ON CONFLICT (name, topic, consumer) DO NOTHING
       `, { discard: true })).pipe(Effect.orDie)
@@ -2392,7 +2403,7 @@ export const storage = <T extends Types>(
   // dropped by a prune before its consumer read them. A head is never deleted, so it holds the last `seq` given
   // though a prune dropped its row, and a partition with no head yet has nothing to ack (decision 0137).
   const ack = (topic: Topic<T>, consumer: string, through: ReadonlyArray<Cursor>) =>
-    sql.withTransaction(Effect.gen(function*() {
+    transaction(sql, Effect.gen(function*() {
       const held = yield* heads
       for (const [partition, seq] of cursorsOf(through)) {
         const capped = Math.min(seq, held.get(partition) ?? 0)
@@ -2414,7 +2425,7 @@ export const storage = <T extends Types>(
   // drops each publication with the last row that names it, in the statement that drops the row. The transaction
   // is a guard: it commits the rows and the publications together even if a trigger ran outside the statement that
   // fired it (decision 0154).
-  const prune = sql.withTransaction(Effect.gen(function*() {
+  const prune = transaction(sql, Effect.gen(function*() {
     const gone = yield* rows('effecttea_outbox', Rows.seq)(sql`
       WITH floors AS (
         SELECT topic, partition, min(seq) AS through FROM effecttea_cursors WHERE name = ${name}
@@ -2462,7 +2473,7 @@ export const storage = <T extends Types>(
   }).pipe(Effect.orDie)
 
   const forget = (topic: Topic<T>, consumer: string) =>
-    sql.withTransaction(Effect.andThen(
+    transaction(sql, Effect.andThen(
       sql`DELETE FROM effecttea_cursors WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}`,
       sql`DELETE FROM effecttea_consumers WHERE name = ${name} AND topic = ${topic} AND consumer = ${consumer}`,
     )).pipe(Effect.asVoid, Effect.orDie)

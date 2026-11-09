@@ -732,15 +732,21 @@ test('every table, index, trigger and function the runtime makes is named with e
       expect(names.map(({ name }) => name).filter((name) => !name.startsWith('effecttea_'))).toEqual([])
     }).pipe(Effect.orDie)))
 
+/**
+ * Runs `body` in one transaction, so that a setting made with `SET LOCAL` holds for each of its statements: a server
+ * runs each statement outside a transaction on any connection of its pool.
+ */
+const inOneTransaction = <A, E, R>(body: Effect.Effect<A, E, R>) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(body))
+
 // No statement of the storage names a schema but `current_schema()`, so a client whose search_path names one puts
 // every object there (decision 0217).
 test('on PostgreSQL every object the runtime makes is in the schema its client’s search_path names', () =>
   Effect.runPromise(
-    Effect.gen(function*() {
+    inOneTransaction(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       yield* sql`CREATE SCHEMA runtime`
-      // PGlite runs every statement on one session, so the setting holds for every statement after it.
-      yield* sql`SET search_path TO runtime`
+      yield* sql`SET LOCAL search_path TO runtime`
       yield* createTables
       yield* storage(ranked, sql).indexed
       yield* storage(receiver, sql).write('r', created(), 0)
@@ -762,18 +768,18 @@ test('on PostgreSQL every object the runtime makes is in the schema its client�
       yield* sql`INSERT INTO effecttea_outbox ${sql.insert({ ...row, topic: 'projection' })}`
       yield* sql`DELETE FROM effecttea_outbox`
       expect(yield* sql`SELECT seq FROM effecttea_publications`).toEqual([])
-    }).pipe(Effect.provide(client('pg')), Effect.orDie),
+    })).pipe(Effect.provide(client('pg')), Effect.orDie),
   ))
 
 // Unnamed, `effecttea_migrations` was found in `public`, and the schema the search_path names first was given no table
 // (decision 0217).
 test('on PostgreSQL the tables are made in the schema the search_path names first, though one further on has them', () =>
   Effect.runPromise(
-    Effect.gen(function*() {
+    inOneTransaction(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       yield* createTables
       yield* sql`CREATE SCHEMA runtime`
-      yield* sql`SET search_path TO runtime, public`
+      yield* sql`SET LOCAL search_path TO runtime, public`
       yield* createTables
       const tables = (schema: string) =>
         sql<{ name: string }>`
@@ -784,7 +790,7 @@ test('on PostgreSQL the tables are made in the schema the search_path names firs
       expect(made.length).toBeGreaterThan(16)
       expect(made).toEqual(yield* tables('public'))
       expect(yield* sql`SELECT migration_id FROM runtime.effecttea_migrations`).toEqual([{ migration_id: 1 }])
-    }).pipe(Effect.provide(client('pg')), Effect.orDie),
+    })).pipe(Effect.provide(client('pg')), Effect.orDie),
   ))
 
 // Without the prefix, a launch took an application's `versions` for its own and gave it a column, and a rename moved
@@ -898,14 +904,16 @@ test('on PostgreSQL a page, a count and a caller’s reply by its request id are
             })
           yield* Effect.provideService(reading, Statement.CurrentTransformer, record)
           const read: Array<string> = []
-          for (const [text, params] of ran) {
-            if (!text.trimStart().startsWith('SELECT')) continue
-            const plan = yield* sql.unsafe<{ 'QUERY PLAN': string }>(`EXPLAIN ${text}`, params)
-            read.push(plan.map((line) => line['QUERY PLAN']).join('\n'))
-          }
+          yield* sql.withTransaction(Effect.gen(function*() {
+            yield* sql`SET LOCAL enable_seqscan = off`
+            for (const [text, params] of ran) {
+              if (!text.trimStart().startsWith('SELECT')) continue
+              const plan = yield* sql.unsafe<{ 'QUERY PLAN': string }>(`EXPLAIN ${text}`, params)
+              read.push(plan.map((line) => line['QUERY PLAN']).join('\n'))
+            }
+          }))
           return read
         })
-      yield* sql`SET enable_seqscan = off`
       const page = /Index (Only )?Scan (Backward )?using "effecttea_projections Ranked rank by id"/
       const pages = [
         ...yield* plans(store.query({ limit: all, order: { index: 'rank' }, after: { id: 'a', indexes: { rank: 1 } } })),

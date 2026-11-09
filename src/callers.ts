@@ -38,6 +38,7 @@ import {
   versionOf,
 } from './program.ts'
 import { tell } from './readings.ts'
+import { transaction } from './storage.ts'
 import type { Answer, Operated, Waiting } from './runtime.ts'
 
 /**
@@ -180,7 +181,7 @@ export const operate = <T extends Types>(
  */
 export const keptFor = <T extends Types>(p: Process, deployed: Deployment<T>, request: Request<T['sender']>) =>
   request._tag === 'Operation'
-    ? (requestId: string) => p.sql.withTransaction(deployed.storage.keepSent(requestId, request)).pipe(Effect.orDie)
+    ? (requestId: string) => transaction(p.sql, deployed.storage.keepSent(requestId, request)).pipe(Effect.orDie)
     : undefined
 
 export const create = <T extends Types>(
@@ -233,7 +234,8 @@ export const create = <T extends Types>(
       const loaded = yield* fresh<T>(p, started.machine, 0)
       const creation: Machine.Event<T> = { _tag: 'Create', request }
       yield* at(p, 'BeforeCommit', entity, creation)
-      const characters = yield* p.sql.withTransaction(
+      const characters = yield* transaction(
+        p.sql,
         deployed.storage.write(id, started.written, DateTime.toEpochMillis(now)),
       ).pipe(Effect.orDie)
       tell(p.readings, entity.name, started.written)

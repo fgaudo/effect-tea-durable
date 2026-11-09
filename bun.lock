@@ -6,6 +6,7 @@
       "name": "@fgaudo/effect-tea-persistent",
       "devDependencies": {
         "@effect/platform-bun": "4.1.2",
+        "@effect/sql-pg": "4.1.2",
         "@effect/sql-pglite": "4.1.2",
         "@effect/sql-sqlite-bun": "4.1.2",
         "@electric-sql/pglite": "0.5.15",
@@ -20,6 +21,8 @@
     "@effect/platform-bun": ["@effect/platform-bun@4.1.2", "", { "dependencies": { "@effect/platform-node-shared": "4.1.2" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-waEAa84CITqjctgw9VdhlL9PyXRHICG3KAWTFRDPUE2XL/pfMPhO7V9oFdfx22dbAhhUzV+MHs0d9hnmy/DQ7w=="],
 
     "@effect/platform-node-shared": ["@effect/platform-node-shared@4.1.2", "", { "dependencies": { "@types/ws": "^8.18.2", "ws": "^8.22.1" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-wSwl9A/G1hcVvF8nLI+YfB3EyOIDvWS6+lsTZBkmgDnPBL7m8YWZF+1HD+mdEsb52SUGfukip46Q3gRwSdk3QA=="],
+
+    "@effect/sql-pg": ["@effect/sql-pg@4.1.2", "", { "peerDependencies": { "effect": "^4.1.2" } }, "sha512-0UehR7B5W8dC+dX6fDeWStLbVbBb2M4pk4HBATEeH0cmV4Odl2lckTg0jFmLuadekTLa4OyB+bZQo1yTG1y2Mw=="],
 
     "@effect/sql-pglite": ["@effect/sql-pglite@4.1.2", "", { "dependencies": { "@electric-sql/pglite": "^0.5.14" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-VlSvLP7+nO/dCPdwQ2fsq2WWitPnTdFEWWEQ2Vy9VI4YKMF1639MgRtiSO3CgST2TkHevaFYfiTWximxR55/0g=="],
 

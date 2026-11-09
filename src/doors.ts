@@ -29,7 +29,7 @@ import {
 import { type Address, InvariantDefect, type Request, type Types } from './program.ts'
 import { tell } from './readings.ts'
 import type { Delivered, DoorAnswer, OnCluster, Operating } from './runtime.ts'
-import { partitionOf } from './storage.ts'
+import { partitionOf, transaction } from './storage.ts'
 import { poke } from './waker.ts'
 
 /**
@@ -101,7 +101,7 @@ export const applyOnCluster = <T extends Types>(
     const now = yield* DateTime.now
     // The step holds the entity's lock inside its transaction, as a door's step does, so that a crash from a shard
     // let go waits for it, and stops what its settling starts (decision 0162).
-    const stepped = yield* p.sql.withTransaction(holding(p, entity)(Effect.gen(function*() {
+    const stepped = yield* transaction(p.sql, holding(p, entity)(Effect.gen(function*() {
       // Every step deletes Cluster's rows under the pending ids, as a door's step does (decision 0169).
       yield* deployed.storage.forgetPending
       // An event taken before its entity left the process is dropped, as the loop's end says (decision 0162).
@@ -378,7 +378,7 @@ export const activateOnCluster = <T extends Types>(
   id: string,
 ): Effect.Effect<void> => {
   const entity: Address = { name: deployed.program.name, id }
-  return Effect.uninterruptible(p.sql.withTransaction(holding(p, entity)(Effect.gen(function*() {
+  return Effect.uninterruptible(transaction(p.sql, holding(p, entity)(Effect.gen(function*() {
     if (deployed.loaded.has(id)) return
     const stepped = stepping<T>(null)
     yield* loadIn(p, deployed, stepped, entity, yield* DateTime.now)
