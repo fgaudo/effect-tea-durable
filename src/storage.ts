@@ -138,11 +138,18 @@ export const partitionOf = (id: string, partitions: number): number => Math.abs(
  */
 export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
+  const dialect = dialectOf(sql)
+  // `Migrator` looks for its table in every schema of the `search_path`, and would take the history of a schema
+  // further on it for this one's. Named in the schema the tables are made in, it finds only this one's
+  // (decision 0217). Without a schema to make them in, the creation fails as it would unnamed.
+  const schema = dialect === 'pg'
+    ? (yield* sql<{ schema: string | null }>`SELECT current_schema() AS schema`)[0]?.schema ?? null
+    : null
   const migrated = Migrator.make({})({
     loader: Migrator.fromRecord({ '0001_tables': tables }),
-    table: 'tea_migrations',
+    table: schema === null ? 'tea_migrations' : `${schema}.tea_migrations`,
   })
-  yield* dialectOf(sql) === 'sqlite'
+  yield* dialect === 'sqlite'
     ? Effect.provideService(migrated, SqlClient.BeginTransaction, 'BEGIN IMMEDIATE')
     : migrated
 }).pipe(Effect.orDie)

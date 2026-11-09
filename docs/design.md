@@ -482,9 +482,11 @@ outbox with the publication of each step, the number of its partitions and the h
 their cursors, and on Cluster the versions and the requests it keeps ([`src/storage.ts`](../src/storage.ts)). Every
 table, index, trigger and function the runtime makes is named with `tea_`, as `tea_entities`, so that the tables of an
 application in the same database are never taken for its own. The prefix is fixed, and an application names no
-table of its own with it ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)). No
-statement of the storage names a schema of PostgreSQL, so the runtime makes every object in the schema that the
-client's `search_path` names first. A launcher that sets the `search_path` of the runtime's role, as Cluster asks for
+table of its own with it ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)). On
+PostgreSQL the runtime makes every object in the schema that the client's `search_path` names first, even where a
+schema further on holds the tables already. Only `tea_migrations` is named with that schema, which
+`current_schema()` gives, since `Migrator` would otherwise find it in any schema of the `search_path`
+([decision 0217](decisions/0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md)). A launcher that sets the `search_path` of the runtime's role, as Cluster asks for
 its own tables, puts them in a schema of their own. A database is still held by one runtime, whatever its schemas,
 since the advisory lock that holds it is the database's
 ([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)). Each row carries the version of the program that wrote it, and is read

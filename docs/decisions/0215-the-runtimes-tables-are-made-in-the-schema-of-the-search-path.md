@@ -4,6 +4,8 @@
 it is: its alternative of a schema of the runtime's own refused that the runtime name one, and this note lets the
 launcher choose one. [Decision 0216](0216-the-tables-are-made-by-effects-migrator.md) locks `tea_migrations` in
 place of the advisory lock of `createTables`, so that lock is the schema's.
+[Decision 0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md) names `tea_migrations` in the
+schema `current_schema()` gives, the one statement of the storage that names a schema.
 
 ## Context
 

@@ -732,7 +732,8 @@ test('every table, index, trigger and function the runtime makes is named with t
       expect(names.map(({ name }) => name).filter((name) => !name.startsWith('tea_'))).toEqual([])
     }).pipe(Effect.orDie)))
 
-// No statement of the storage names a schema, so a client whose search_path names one puts every object there.
+// No statement of the storage names a schema but `current_schema()`, so a client whose search_path names one puts
+// every object there (decision 0217).
 test('on PostgreSQL every object the runtime makes is in the schema its clientâ€™s search_path names', () =>
   Effect.runPromise(
     Effect.gen(function*() {
@@ -761,6 +762,28 @@ test('on PostgreSQL every object the runtime makes is in the schema its clientâ€
       yield* sql`INSERT INTO tea_outbox ${sql.insert({ ...row, topic: 'projection' })}`
       yield* sql`DELETE FROM tea_outbox`
       expect(yield* sql`SELECT seq FROM tea_publications`).toEqual([])
+    }).pipe(Effect.provide(client('pg')), Effect.orDie),
+  ))
+
+// Unnamed, `tea_migrations` was found in `public`, and the schema the search_path names first was given no table
+// (decision 0217).
+test('on PostgreSQL the tables are made in the schema the search_path names first, though one further on has them', () =>
+  Effect.runPromise(
+    Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      yield* createTables
+      yield* sql`CREATE SCHEMA runtime`
+      yield* sql`SET search_path TO runtime, public`
+      yield* createTables
+      const tables = (schema: string) =>
+        sql<{ name: string }>`
+          SELECT relname AS name FROM pg_class JOIN pg_namespace ON pg_namespace.oid = relnamespace
+          WHERE nspname = ${schema} AND relkind = 'r' AND starts_with(relname, 'tea_') ORDER BY relname
+        `
+      const made = yield* tables('runtime')
+      expect(made.length).toBeGreaterThan(16)
+      expect(made).toEqual(yield* tables('public'))
+      expect(yield* sql`SELECT migration_id FROM runtime.tea_migrations`).toEqual([{ migration_id: 1 }])
     }).pipe(Effect.provide(client('pg')), Effect.orDie),
   ))
 

@@ -4,7 +4,9 @@
 and advisory lock `createTables` wrote by hand, and whose role of PostgreSQL that may only read and write rows could
 not run `createTables` where every table exists. Changes
 [decision 0215](0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md), whose lock of `createTables`
-was the database's.
+was the database's. [Decision 0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md) names
+`tea_migrations` on PostgreSQL in the schema the tables are made in, since `Migrator` found it in any schema of the
+`search_path`.
 
 ## Context
 
