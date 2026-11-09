@@ -4,7 +4,7 @@
  * doors (decisions 0160, 0161), and the shards a runner learns from its singletons (decision 0162).
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import {
   EntityId,
   MessageStorage,
@@ -28,6 +28,7 @@ import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
+import * as Logger from 'effect/Logger'
 import * as Option from 'effect/Option'
 import * as Schedule from 'effect/Schedule'
 import * as Schema from 'effect/Schema'
@@ -94,6 +95,37 @@ const at = (name: string, version: number): Program<T> => ({
   project: ({ last }) => last,
   indexes: {},
   migrations: Array.from({ length: version - 1 }, () => ({})),
+})
+
+/**
+ * The errors logged while the runners of a test run, collected rather than printed by each `onFile` and by
+ * `onRunner`, each as its message and the reason of its cause. Cluster logs a defect of an entity as an error, and
+ * restarts the entity. A test that provokes one takes it with `errorsLogged`. Every test ends with none left, so
+ * that a defect no test expects fails the test that met it.
+ */
+const logged: Array<string> = []
+
+const collected = Logger.layer([Logger.make(({ logLevel, message, cause }) => {
+  if (logLevel !== 'Error' && logLevel !== 'Fatal') return
+  const [text] = Array.isArray(message) ? message : [message]
+  if (cause.reasons.length === 0) return void logged.push(String(text))
+  const squashed = Cause.squash(cause)
+  const reason = squashed instanceof InvariantDefect
+    ? squashed.reason
+    : squashed instanceof Error
+    ? squashed.message
+    : String(squashed)
+  logged.push(`${String(text)}: ${reason}`)
+})])
+
+/** The errors logged since the last call, each once, sorted. */
+const errorsLogged = () => [...new Set(logged.splice(0))].sort()
+
+/** What Cluster logs as it restarts an entity that died with `reason`. */
+const restarted = (reason: string) => `Defect in entity, restarting: ${reason}`
+
+afterEach(() => {
+  expect(errorsLogged()).toEqual([])
 })
 
 const defectOf = <A, E>(exit: Exit.Exit<A, E>): unknown =>
@@ -280,7 +312,9 @@ describe('two runners on one file', () => {
         })
       })
     try {
-      await Effect.runPromise(Effect.scoped(run(start)).pipe(Effect.provide(store)) as Effect.Effect<void, unknown>)
+      await Effect.runPromise(
+        Effect.scoped(run(start)).pipe(Effect.provide([store, collected])) as Effect.Effect<void, unknown>,
+      )
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -387,7 +421,11 @@ describe('two runners on one file', () => {
           until: (rows) => rows.every(([, done]) => done === 1),
         }).pipe(Effect.timeout('15 seconds'))
         expect((yield* sql<{ id: number }>`SELECT id FROM cluster_replies`).length).toBe(4)
-      })), 30_000)
+      })).then(() =>
+        expect(errorsLogged()).toEqual([
+          restarted('the program Toy runs at version 1 here, and a launch has run it at version 2'),
+        ])
+      ), 30_000)
 
   test('a rename stops the runners of the old name, and its door delivers what Cluster saved under it (decision 0176)', () =>
     onFile((start) =>
@@ -447,7 +485,11 @@ describe('two runners on one file', () => {
         // A runner launched later with the same renames moves nothing, and starts.
         yield* start(4, [at('Plaything', 1)], undefined, { renames: { Toy: 'Plaything' } })
         expect(yield* entities).toEqual([{ name: 'Plaything', state: '{"last":"m"}', steps: 3 }])
-      })), 30_000)
+      })).then(() =>
+        expect(errorsLogged()).toEqual([
+          restarted('the program Toy runs here, and a launch has renamed it to Plaything'),
+        ])
+      ), 30_000)
 })
 
 describe('the runtime on Cluster', () => {
@@ -588,7 +630,9 @@ describe('the runtime on Cluster', () => {
     afterCommit = null
     refusing = false
     try {
-      await Effect.runPromise(Effect.scoped(launched).pipe(Effect.provide(Layer.orDie(runner))) as Effect.Effect<void>)
+      await Effect.runPromise(
+        Effect.scoped(launched).pipe(Effect.provide([Layer.orDie(runner), collected])) as Effect.Effect<void>,
+      )
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -798,7 +842,7 @@ describe('the runtime on Cluster', () => {
       expect(yield* sql`SELECT 1 FROM cluster_replies`).toEqual([])
       const messages = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Create'`
       expect(messages.map(({ processed }) => Number(processed))).toEqual([0])
-    })), 30_000)
+    })).then(() => expect(errorsLogged()).toEqual([restarted('a tally starts at zero or more')])), 30_000)
 
   test('what a door step sets going starts once it commits, and its completion is stepped by the loop', () =>
     onRunner(Effect.gen(function*() {
@@ -844,7 +888,7 @@ describe('the runtime on Cluster', () => {
             failed = true
             yield* sql`INSERT INTO child (parent) VALUES (1)`
           }).pipe(Effect.orDie),
-    )
+    ).then(() => expect(errorsLogged()).toEqual([restarted('Failed to execute statement')]))
   }, 30_000)
 })
 
@@ -1111,7 +1155,9 @@ describe('the shards of a runner on Cluster', () => {
     seen = []
     answers = false
     try {
-      await Effect.runPromise(Effect.scoped(run(start)).pipe(Effect.provide(store)) as Effect.Effect<void, unknown>)
+      await Effect.runPromise(
+        Effect.scoped(run(start)).pipe(Effect.provide([store, collected])) as Effect.Effect<void, unknown>,
+      )
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -1229,6 +1275,9 @@ describe('the shards of a runner on Cluster', () => {
         Duration.minutes(1),
         { refresh: Duration.seconds(30), expiration: Duration.seconds(60) },
       )
+      expect(errorsLogged()).toEqual([
+        restarted('the lease of the shard default:2 does not name the runner localhost:1, or has expired'),
+      ])
     }
   }, 60_000)
 
