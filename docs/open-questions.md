@@ -131,8 +131,8 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   `send` of it, and every `send` of its rehearsal, still passes `sender: null`, as the quick start does
   ([decision 0196](decisions/0196-the-quick-start-is-an-example-the-readme-shows-whole.md)). The same holds of
   `flags` left as `Schema.Null` ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)).
-  Whether a request may leave out a sender that is `null`, and `create` flags that are `null`, is not decided. It
-  would be decided by:
+  Whether a request may leave out a sender that is `null`, and `create` flags that are `null`, is not decided. The
+  step of the runtime's housekeeping in the [roadmap](roadmap.md) decides it. It would be decided by:
   - how many programs of the guide have no sender or no flags, once the guide is written;
   - whether an optional field typed by a conditional type keeps the errors of the compiler readable where a
     program does have a sender;

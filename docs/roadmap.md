@@ -26,7 +26,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   then forgets by itself decides which rows the runtime still deletes, and so what a sweep of the runtime has to do.
   The move of Effect's version to that release weighs the retention against those statements first. The step
   weighs too the rows of a creation on Cluster, one pair for each entity, which `create` keeps for ever since it
-  takes no `keep`.
+  takes no `keep`. Since a default `keep` changes the signature of `send`, the step also decides whether a request
+  may leave out a sender that is `null`, and `create` flags that are `null`
+  ([open question](open-questions.md#programs)).
 
 - **A CI on Linux.** The repository has no workflow. One runs `bun run typecheck`, `bun test` and `bun run links`
   on every push, and `bun run test:release` before a release. It is also where the test of a runner stopped with
