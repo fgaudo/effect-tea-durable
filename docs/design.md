@@ -1148,7 +1148,7 @@ not run on Cluster across machines yet
 [`examples/order/cluster.test.ts`](../examples/order/cluster.test.ts) shows a runner inside a test's process.
 [`examples/server`](../examples/server) runs the orders as a deployment does: a process that serves them over HTTP,
 killed during a charge and started again on the same file, and two runners on one file, of which the one that survives
-finishes the orders of the one killed
+finishes the orders of the one killed, or of the one stopped by `SIGTERM`
 ([decision 0178](decisions/archive/0178-a-server-of-the-orders-on-cluster-is-run-as-a-process.md)). What Cluster gives and what
 it leaves to the runtime is in [`cluster.md`](cluster.md).
 

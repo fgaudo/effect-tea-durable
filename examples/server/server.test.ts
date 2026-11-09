@@ -250,9 +250,10 @@ test('the orders of a runner killed during their charges are paid once by the ot
   )
 }, 90_000)
 
-// A planned stop interrupts the operations that may run again, as a charge may (decision 0119), and Cluster lets the
-// runner's shards go as the runner unregisters. Under a lease and a health check longer than the test, only that
-// frees the shards. On Windows a child process is ended at once by any signal, so the stop cannot be tested there.
+// The process stops on the signal as its layer's scope closes, and Cluster lets the runner's shards go as the runner
+// unregisters. The server launches its runtime without `drain`, so its charges stop as in a crash (decision 0119).
+// Under a lease and a health check longer than the test, only the unregistration frees the shards. On Windows a
+// child process is ended at once by any signal, so the stop cannot be tested there.
 test.skipIf(process.platform === 'win32')(
   'the orders of a runner stopped by SIGTERM in their charges are paid once by the other runner, within its lease',
   async () => {

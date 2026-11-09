@@ -104,17 +104,14 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   statement fail with a `SqlError`. It would be decided by:
   - a release of Effect with the fix, after which a fork that keeps the transaction fails where it runs;
   - the spikes and the tests of the runtime run at that release, which a fork the rule missed would then fail.
-- **A runner that stops on a signal.** A rolling deploy stops each runner with `SIGTERM`. `BunRuntime.runMain`
-  interrupts the main fiber on `SIGINT` and `SIGTERM`, so the layer's scope closes. Cluster then unregisters the
-  runner and lets its shards go before its lease expires. The tests of `examples/server` kill each runner with
-  `SIGKILL` alone ([decision 0178](decisions/archive/0178-a-server-of-the-orders-on-cluster-is-run-as-a-process.md)), so that
-  the orders of a runner that stops are taken by another one before its lease expires is only reasoned. So is what
-  the runtime's planned stop does there, which drains the at-most-once operations and stops the rest at once
-  ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). On Windows a child process
-  is ended at once by any signal, so a test of the stop runs only elsewhere. It would be decided by:
-  - a test of `examples/server` that stops one of two runners with `SIGTERM`, under a lease longer than the test, and
-    checks that the other runner finishes the orders;
-  - where such a test runs: in CI on Linux, or skipped on Windows by the test itself.
+- **A planned stop on Cluster.** A rolling deploy stops each runner with `SIGTERM`, and a test of
+  `examples/server` stops one of two runners so, off Windows: the other runner finishes the orders before any lease
+  expires. The server launches its runtime without `drain`, so that test stops every operation as a crash does. What
+  the planned stop does on Cluster, which drains the at-most-once operations and stops the rest at once
+  ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)), is only reasoned. It
+  would be decided by:
+  - a test of `examples/server` launched with `drain`, which stops a runner with `SIGTERM` during an email, and
+    checks that the email is sent once and that the other runner finishes the order.
 - **A timer and the wall clock.** A timer stores its time on the wall clock, and is slept as the milliseconds left
   when it is armed, measured on the host's timers ([decision 0194](decisions/0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md)). A host suspended
   during the sleep, a virtual machine paused, or a wall clock set back makes the sleep end late or early. A loaded
