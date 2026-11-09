@@ -595,7 +595,8 @@ test('a row the runtime never writes fails the call that meets it, and is read a
         [behind, store.fetch('projection', 'c', all)],
         [behind, store.consumers],
         [sql`UPDATE effecttea_heads SET seq = -1 WHERE name = 'Receiver'`, store.published('projection', [], all)],
-        // A timer's time is a whole number of milliseconds, read by the waker.
+        // A timer's time is a whole number of milliseconds, read by the waker. A server of PostgreSQL rounds a double
+        // given a column of integers, so the time is one no column of integers takes.
         [
           sql`INSERT INTO effecttea_entity_keys ${
             sql.insert({
@@ -607,7 +608,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               version: 1,
               work: '{"_tag":"Timer","at":1,"message":"rang"}',
               delivery: null,
-              due: 1.5,
+              due: 'soon',
             })
           }`,
           store.due(0, []),
@@ -637,10 +638,9 @@ test('a row the runtime never writes fails the call that meets it, and is read a
         const exit = yield* Effect.flip(sql.withTransaction(
           Effect.andThen(breaking, Effect.flatMap(Effect.exit<unknown, never, never>(reading), Effect.fail)),
         ))
-        // PostgreSQL refuses by the types of its columns some rows SQLite holds, such as a time that is no integer.
+        // PostgreSQL refuses by the types of its columns some rows SQLite holds, such as a time that is no number.
         if (!Exit.isExit(exit) && dialectOf(sql) === 'pg') continue
-        expect([index, Exit.isExit(exit) && exit._tag, Exit.isExit(exit) && Exit.isSuccess(exit) ? exit.value : null])
-          .toEqual([index, 'Failure', null])
+        expect([index, Exit.isExit(exit) && exit._tag]).toEqual([index, 'Failure'])
         if (Exit.isExit(exit) && exit._tag === 'Failure') {
           expect(String(Cause.squash(exit.cause))).toContain('no row the runtime writes')
         }
