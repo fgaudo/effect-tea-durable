@@ -41,22 +41,26 @@ const state: fc.Arbitrary<State> = fc.oneof(
 )
 
 describe('subscription', () => {
-  // The projection speaks to the customer: support's credits are not among its actions.
-  test('the projection allows what update accepts, all of it', () => {
+  // The projection shows the customer's actions and support's. Each message is sent by both, and only one may send it.
+  test('the projection allows what update accepts, all of it, to each sender', () => {
+    const customerMay = (sender: Sender, allowed: boolean) => sender._tag === 'Customer' && allowed
     const check = projectionViolations(subscription, {
-      PlanChangeRequested: (projection) => projection.canChangePlan,
-      PaymentMethodUpdated: (projection) => projection.canUpdatePayment,
-      CancelRequested: (projection) => projection.canCancel,
-      ResumeRequested: (projection) => projection.canResume,
+      PlanChangeRequested: (projection, _, sender) => customerMay(sender, projection.canChangePlan),
+      PaymentMethodUpdated: (projection, _, sender) => customerMay(sender, projection.canUpdatePayment),
+      CancelRequested: (projection, _, sender) => customerMay(sender, projection.canCancel),
+      ResumeRequested: (projection, _, sender) => customerMay(sender, projection.canResume),
+      CreditGranted: (projection, _, sender) => sender._tag === 'Support' && projection.canGrantCredit,
     })
+    const support: Sender = { _tag: 'Support' }
     fc.assert(fc.property(state, (state) => {
       const customer: Sender = { _tag: 'Customer', id: state.account.customer }
-      expect(check(state, [
-        { message: { _tag: 'PlanChangeRequested', plan: { name: 'Pro', priceInCents: 1_900 } }, sender: customer },
-        { message: { _tag: 'PaymentMethodUpdated', payment: 'card-3' }, sender: customer },
-        { message: { _tag: 'CancelRequested' }, sender: customer },
-        { message: { _tag: 'ResumeRequested' }, sender: customer },
-      ], at)).toEqual([])
+      expect(check(state, [customer, support].flatMap((sender) => [
+        { message: { _tag: 'PlanChangeRequested', plan: { name: 'Pro', priceInCents: 1_900 } }, sender },
+        { message: { _tag: 'PaymentMethodUpdated', payment: 'card-3' }, sender },
+        { message: { _tag: 'CancelRequested' }, sender },
+        { message: { _tag: 'ResumeRequested' }, sender },
+        { message: { _tag: 'CreditGranted', amountInCents: 2_000 }, sender },
+      ]), at)).toEqual([])
     }))
   })
 })

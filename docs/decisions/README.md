@@ -201,7 +201,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0191](0191-a-launch-creates-the-tables.md) | A launch creates the tables, in one transaction, unless it is told they exist | [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) |
 | [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) | Every table, index, trigger and function the runtime makes is named with `tea_` |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
-| [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for |  |
+| [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for | [0213](0213-a-projections-allows-is-given-the-sender.md) |
+| [0213](0213-a-projections-allows-is-given-the-sender.md) | A projection's `allows` is given the sender, and says whose each action is |  |
 | [0027](archive/0027-a-program-gives-the-schema-of-its-senders.md) | A program gives the schema of its senders |  |
 | [0030](archive/0030-a-schema-encodes-to-json.md) | A schema encodes to what JSON holds | [0098](archive/0098-json-is-effect-s.md) |
 | [0032](archive/0032-a-projection-is-a-row.md) | A projection is a row, and a program declares the indexes a query uses | [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md), [0139](archive/0139-the-projection-is-json.md), [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0143](archive/0143-a-query-pages-after-the-last-row-it-gave.md), [0148](archive/0148-a-count-and-a-sum-are-read-in-one-statement.md), [0206](0206-an-index-that-is-no-scalar-is-the-programs-defect.md) |

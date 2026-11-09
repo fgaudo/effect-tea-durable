@@ -383,13 +383,16 @@ of the state, which a timer changes at that time.
 The projection shows the actions it allows, as `canEnd` and `canCancel`. It shows only actions `update` accepts,
 and every one it accepts. `projectionViolations(program, allows)` checks it for generated states, in
 [`ride.test.ts`](../../examples/rental/ride.test.ts). `allows` gives, for each inbound message, whether the
-projection allows it, as `{ EndRequested: (projection) => projection.canEnd }`. Each function is given the
-projection and the message, `(projection, message) => boolean`, and never the sender. A parent's key for a child's
+projection allows it to its sender, as `{ EndRequested: (projection) => projection.canEnd }`. Each function is given
+the projection, the message and the sender, `(projection, message, sender) => boolean`. A parent's key for a child's
 messages is the child's name, and its message is the wrapped one, `{ _tag: 'Line', id, message }`. The function
 `projectionViolations` returns takes a state, the candidates as `{ message, sender }`, and a time, and gives every
 violation: `Rejected` for a message the projection allows and `update` rejects, `Missing` for the other way round.
-What one sender may do is checked by the candidates a test gives with that sender. The projection is JSON, so a
-time is its milliseconds.
+A projection that shows the actions of several senders says in `allows` whose each action is. In
+[`subscription.test.ts`](../../examples/subscription/subscription.test.ts), support's action is
+`CreditGranted: (projection, _, sender) => sender._tag === 'Support' && projection.canGrantCredit`. The test then
+sends every message from every sender, and a message from a sender who may not send it must be rejected. The
+projection is JSON, so a time is its milliseconds.
 
 `update` trusts the timer in the same way. `CancellationClosed` is the fact that the time has passed, and
 `CancelRequested` checks only `cancellableUntil !== null`. It never compares `meta.at` with the window's end.

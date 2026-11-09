@@ -10,14 +10,16 @@ import { isRejected, type Json, type Migrated, migrationOf, type Program, type T
 type TagOf<Message> = Message extends Readonly<{ _tag: infer Tag extends string }> ? Tag : never
 
 /**
- * For each kind of inbound message the projection speaks of, by its tag, whether the projection allows it. A
- * projection is plain data (a `canCancel`), so the test says which of its fields stands for which message. Kinds
- * it does not speak of (a report from the warehouse) are left out.
+ * For each kind of inbound message the projection speaks of, by its tag, whether the projection allows it to the
+ * sender. A projection is plain data (a `canCancel`), so the test says which of its fields stands for which message,
+ * and for which sender: a customer's `canCancel` does not allow support to cancel. Kinds it does not speak of (a
+ * report from the warehouse) are left out.
  */
 export type Allows<T extends Types> = {
   readonly [Tag in TagOf<T['inbound']>]?: (
     projection: T['projection'],
     message: Extract<T['inbound'], Readonly<{ _tag: Tag }>>,
+    sender: T['sender'],
   ) => boolean
 }
 
@@ -33,10 +35,10 @@ export type ProjectionViolation<T extends Types> = Readonly<{ _tag: 'Rejected' |
 
 /**
  * Checks `program.project(state)` against `update` in `state`, both ways, as effect-tea's `dispatchViolations`
- * checks a view. The `candidates` are the messages the projection's reader could send, from the senders it
- * speaks for: a customer, for the customer's own order. Each is sent as a caller at `at`. One the projection
- * allows must be accepted, and one it does not allow must be rejected. Candidates of a kind `allows` leaves out
- * are skipped. A retry is answered from the stored reply, so nothing here checks that a message acts once.
+ * checks a view. The `candidates` are the messages a test asks about, each with its sender: the messages of an
+ * order, sent by its customer and by the warehouse. Each is sent as a caller at `at`. A candidate
+ * the projection allows to its sender must be accepted, and one it does not allow must be rejected. Candidates of a
+ * kind `allows` leaves out are skipped. A retry is answered from the stored reply, so nothing here checks that a message acts once.
  * Returns every violation, so that a test can assert there are none, for generated states.
  */
 export const projectionViolations = <T extends Types>(program: Program<T>, allows: NoInfer<Allows<T>>) =>
@@ -49,11 +51,10 @@ export const projectionViolations = <T extends Types>(program: Program<T>, allow
   const violations: Array<ProjectionViolation<T>> = []
   for (const { message, sender } of candidates) {
     // `Allows` has a predicate for some tags of `T['inbound']`, which TypeScript cannot index by a tag it holds.
-    const allowed = (allows as Readonly<
-      Record<string, ((projection: T['projection'], message: T['inbound']) => boolean) | undefined>
-    >)[(message as Readonly<{ _tag: string }>)._tag]
+    type Allowed = (projection: T['projection'], message: T['inbound'], sender: T['sender']) => boolean
+    const allowed = (allows as Readonly<Record<string, Allowed | undefined>>)[(message as Readonly<{ _tag: string }>)._tag]
     if (allowed === undefined) continue
-    const shown = allowed(projection, message)
+    const shown = allowed(projection, message, sender)
     const accepted = !isRejected(program.update(message, { at, from: { _tag: 'Caller', sender } })(state))
     if (shown && !accepted) violations.push({ _tag: 'Rejected', message, sender })
     if (!shown && accepted) violations.push({ _tag: 'Missing', message, sender })

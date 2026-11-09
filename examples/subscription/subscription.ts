@@ -92,6 +92,8 @@ const Projection = Schema.Struct({
   canUpdatePayment: Schema.Boolean,
   canCancel: Schema.Boolean,
   canResume: Schema.Boolean,
+  // Support's action, beside the customer's: a support console reads the same projection.
+  canGrantCredit: Schema.Boolean,
 })
 export type Projection = typeof Projection.Type
 
@@ -271,6 +273,7 @@ export const subscription = program({
       canUpdatePayment: open,
       canCancel: state._tag === 'PastDue' || (renewing && !state.account.cancelAtPeriodEnd),
       canResume: renewing && state.account.cancelAtPeriodEnd,
+      canGrantCredit: open,
     }
   },
 })

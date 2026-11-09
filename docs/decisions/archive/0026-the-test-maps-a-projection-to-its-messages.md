@@ -1,6 +1,7 @@
 # 0026. The test says which messages a projection's actions stand for
 
-**Status:** accepted, 2026-10-30.
+**Status:** accepted, 2026-10-30. Changed by [decision 0213](../0213-a-projections-allows-is-given-the-sender.md),
+which gives each function of `allows` the sender.
 
 ## Context
 

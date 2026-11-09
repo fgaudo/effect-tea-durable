@@ -1,15 +1,18 @@
 /**
  * The scheduler the runtime's tests run under (decision 0104): its rules are its spike's,
  * `spikes/effect-scheduler-controlled.test.ts`, which tests them one by one; here, what the explorations add.
- * Then the check of a program's migrations against the cases a test recorded (decision 0126).
+ * Then the check of a program's migrations against the cases a test recorded (decision 0126), and of a projection
+ * against `update`, by sender (decision 0213).
  */
 import { describe, expect, test } from 'bun:test'
+import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Schema from 'effect/Schema'
 import { TestClock } from 'effect/testing'
+import { order, type Sender as OrderSender, type State as OrderState } from './fixtures/order.ts'
 import { type Json, type Migration, noWork, operation, type Program } from './program.ts'
 import {
   deviated,
@@ -19,6 +22,7 @@ import {
   migrationViolations,
   prioritized,
   prioritizedSchedules,
+  projectionViolations,
   replayed,
   type Run,
   scheduled,
@@ -577,6 +581,48 @@ describe('migrationViolations (decision 0126)', () => {
       { _tag: 'Unknown', example: unknown },
       { _tag: 'Unknown', example: none },
       { _tag: 'Unrecorded', from: 1, of: 'state' },
+    ])
+  })
+})
+
+describe('projectionViolations (decision 0213)', () => {
+  const at = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
+  const ada: OrderSender = { _tag: 'Customer', id: 'ada' }
+  const warehouse: OrderSender = { _tag: 'Warehouse' }
+  const told: OrderState = {
+    _tag: 'Paid',
+    order: { customer: 'ada', totalInCents: 1_000 },
+    charge: 'charge-1',
+    warehouse: 'Told',
+  }
+
+  test('gives allows the sender, so that a projection speaks to each sender of its own', () => {
+    const check = projectionViolations(order, {
+      CancelRequested: (projection, _, sender) => sender._tag === 'Customer' && projection.canCancel,
+      ShipmentReported: (projection, _, sender) => sender._tag === 'Warehouse' && projection.status === 'Paid',
+    })
+    expect(check(told, [
+      { message: { _tag: 'CancelRequested' }, sender: ada },
+      { message: { _tag: 'CancelRequested' }, sender: warehouse },
+      { message: { _tag: 'ShipmentReported', tracking: 'track-1' }, sender: ada },
+      { message: { _tag: 'ShipmentReported', tracking: 'track-1' }, sender: warehouse },
+    ], at)).toEqual([])
+  })
+
+  test('names the sender of a message allowed and rejected, and of one accepted and not allowed', () => {
+    const check = projectionViolations(order, {
+      CancelRequested: (projection) => projection.canCancel,
+      ShipmentReported: (_projection, _message, sender) => sender._tag === 'Customer',
+    })
+    expect(check(told, [
+      { message: { _tag: 'CancelRequested' }, sender: ada },
+      { message: { _tag: 'CancelRequested' }, sender: warehouse },
+      { message: { _tag: 'ShipmentReported', tracking: 'track-1' }, sender: ada },
+      { message: { _tag: 'ShipmentReported', tracking: 'track-1' }, sender: warehouse },
+    ], at)).toEqual([
+      { _tag: 'Rejected', message: { _tag: 'CancelRequested' }, sender: warehouse },
+      { _tag: 'Rejected', message: { _tag: 'ShipmentReported', tracking: 'track-1' }, sender: ada },
+      { _tag: 'Missing', message: { _tag: 'ShipmentReported', tracking: 'track-1' }, sender: warehouse },
     ])
   })
 })
