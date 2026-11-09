@@ -35,14 +35,17 @@ with a requirement that no example has yet.
   message the step handled and the projection it left
   ([decisions 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md),
   [0138](decisions/archive/0138-the-log-publishes-topics.md)). A message that is rejected writes no row, and neither
-  does a message that changes the state and leaves the projection as it was. So a consumer that copies every row of
-  the topic `projection` into a table of the application keeps an audit of the changes callers saw, and not of every
-  message an entity handled. A topic declared later has no rows for the steps before its deploy, so a new read model
-  cannot be built from the past. Event sourcing, as Akka Persistence does it, keeps both by construction. Whether the
-  runtime keeps a record of every step, and where, is not decided. It waits for a requirement that an audit of the
-  projection's changes does not meet. It would be decided by:
-  - a requirement that an audit of the projection's changes does not meet, such as a rejection a regulator asks to
-    see;
+  does a message that changes the state and leaves the projection as it was. A rejection is not lost to the
+  application: only an inbound message can be rejected, since `update` rejecting an internal one is a defect, and
+  its sender is answered `Rejected`, a caller by `send`, a creator by `create`, another entity's operation by the
+  `send` it made. An application that must keep its rejections writes them where it sends. A fact of the state that
+  must reach other systems is shown in the projection, where a topic selects it. What no application can make up
+  for later is the past: a topic declared later has no rows for the steps before its deploy, so a new read model
+  cannot be built from them. Event sourcing, as Akka Persistence does it, keeps every step by construction. Whether
+  the runtime keeps a record of every step, and where, is not decided. It waits for a program that needs a read
+  model of a past it did not publish. It would be decided by:
+  - a program whose new read model must hold steps from before its topic was deployed, which no projection of
+    those steps published;
   - whether such a record is a topic that every step writes, so that it keeps the log's order, cursors and prune, or
     a table of its own;
   - what the record costs a step: a row more in each transaction, and the message stored for every step, next to
