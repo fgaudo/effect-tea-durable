@@ -250,6 +250,8 @@ An API that changes under it costs an update of the runtime, never of the pure c
 - [`docs/guide/README.md`](docs/guide/README.md): the guide, from a requirement to a program, on the rental of
   bikes. Read it first. Its pages by topic, on children, the outbox, schemas that change, Effect Cluster and the
   operator's calls, are read when a program needs them.
+- [`docs/concepts.md`](docs/concepts.md): the pieces of a program, what each call answers, and the life of an
+  entity, on one page.
 - [`docs/design.md`](docs/design.md): the specification. It says what each piece of a program does, how the runtime
   runs it, and what holds at each point where the process may die.
 - [`docs/glossary.md`](docs/glossary.md): the words of the design, each defined once.

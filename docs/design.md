@@ -1,6 +1,60 @@
 # Design
 
-The words it uses are defined in [`glossary.md`](glossary.md).
+This is the specification of the library: what each piece of a program does, how the runtime runs it, and what
+holds at each point where the process may die. The words it uses are defined in [`glossary.md`](glossary.md), and
+[`concepts.md`](concepts.md) shows the pieces and the life of an entity on one page.
+
+## In brief
+
+- **An entity** is one long-lived thing with an id, such as an order. It holds one **state**, and handles one
+  message at a time.
+- **`update`** is a pure function from a message and the state to the next state. It rejects an inbound message
+  that does not apply, and answers an internal message that cannot arrive with a defect.
+- **Each step is one transaction.** The runtime stores the next state with the reply to the message, the row
+  callers read and the rows of the outbox.
+- **There are no commands.** `work(state)` derives the operations and the timers under way from the state, by key.
+  A key that leaves the state ends its work, and nothing has to cancel it.
+- **An operation is data.** Its runner turns it into an effect, and declares what a crash does to it. An idempotent
+  one is given the same idempotency key at every try.
+- **An incarnation** numbers each run of the work under a key. The runtime drops an answer of a run that is no
+  longer the current one.
+- **Callers read the projection**, JSON made from the state. A query across entities reads its indexes, and the
+  outbox publishes its topics.
+- **A defect suspends the entity**, with its state and its message kept, until an operator resumes it with a fix
+  or discards the message.
+- **Nothing is replayed.** After a crash the runtime reads the state back and starts the work `work` derives from
+  it. A new version of a schema reads the version before through a migration.
+- **A program is tested without a database or a clock.** A rehearsal runs the runtime's machine, and the test
+  decides when each operation answers and when time passes.
+
+## Contents
+
+The sections up to [Where it runs](#where-it-runs) are the contract: what a program, its boundary, its tests and an
+operator rely on. The last section, [How the runtime keeps it](#how-the-runtime-keeps-it), is for whoever changes
+the runtime.
+
+- [What it is for](#what-it-is-for)
+- [A program](#a-program), with its [children](#children)
+- [Messages](#messages)
+- [Work](#work): [keys with a parameter](#keys-with-a-parameter), [incarnations](#incarnations) and
+  [entities that talk](#entities-that-talk)
+- [Persistence](#persistence): [what a step costs](#what-a-step-costs) and [the tables](#the-tables)
+- [Schemas that change](#schemas-that-change), and [renaming a program](#renaming-a-program)
+- [Execution](#execution) and [what survives a crash](#what-survives-a-crash)
+- [Defects](#defects)
+- [Reading](#reading)
+- [Publishing what happened](#publishing-what-happened): [topics](#topics), [the order of the log](#the-order-of-the-log),
+  [consumers](#consumers), [readers of one consumer](#readers-of-one-consumer),
+  [declared consumers](#declared-consumers) and [what a step publishes](#what-a-step-publishes)
+- [Testing](#testing): [the tests of a program](#the-tests-of-a-program), [rehearsing](#rehearsing) and
+  [rehearsing a world](#rehearsing-a-world)
+- [Where it departs from effect-tea](#where-it-departs-from-effect-tea)
+- [Where it runs](#where-it-runs): [databases](#databases), [entities in the process](#entities-in-the-process),
+  [deployments](#deployments), [a planned stop](#a-planned-stop), [on Effect Cluster](#on-effect-cluster) and
+  [the public surface](#the-public-surface)
+- [How the runtime keeps it](#how-the-runtime-keeps-it): [what the storage writes](#what-the-storage-writes),
+  [fibers and locks](#fibers-and-locks), [Effect Cluster inside the runtime](#effect-cluster-inside-the-runtime) and
+  [how the machine and the runtime are tested](#how-the-machine-and-the-runtime-are-tested)
 
 ## What it is for
 
@@ -441,28 +495,8 @@ and reaches no entity ([decision 0040](decisions/archive/0040-what-is-stored-enc
 that do not encode: `init` sees only flags its schema takes
 ([decision 0049](decisions/archive/0049-flags-are-checked-by-their-schema.md)).
 
-### What the machine writes
-
-What an event writes is the machine's: besides the next machine, a transition gives the rows it writes, already
-encoded — the state when it changed, the keys that changed, the messages that leave the mailbox and the ones
-queued, the replies added, the work that ended, the read model's row and the outbox's rows — and the storage writes
-them and decides nothing. Each value is encoded once, and the projection of a state computed once
-([decision 0057](decisions/archive/0057-the-machine-gives-what-is-written.md)).
-
-### Replies
-
-A reply to another entity is deleted in the transaction that ends the work that asked for it, which the machine
-names, or in the one that stores it, if that work has already ended: only the storage sees another entity's keys
-([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
-
-The machine holds no reply. A message that arrives is given the reply stored under its request, which the runtime
-reads by the request just before the step, where no other event of the entity is applied; an activation reads
-none, and what a loaded entity holds grows with its mailbox and its keys only. A deletion changes no machine, so
-only a step changes one ([decision 0065](decisions/archive/0065-the-machine-holds-no-replies.md)).
-
-A reply's row is keyed by its request's text and by the version that wrote it: a migration of the sender may give
-one caller's request the text another's had, and its reply then replaces nothing that other caller's retry reads
-([decision 0069](decisions/archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md)).
+How the machine and the storage write these rows, and how a reply is kept and deleted, is under
+[what the storage writes](#what-the-storage-writes).
 
 ## Schemas that change
 
@@ -628,11 +662,8 @@ once, whichever retry finds it
 [decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)).
 
 An operator finds the suspended entities with `suspended`, the longest suspended first: each with what it died on,
-the cause, since when, and the senders waiting for its resumption in this process. The cause is stored as text, and
-holds the program's data wherever `defect` or an error of a schema cites it. So each U+0000 and each lone surrogate
-in it is written as the escape JSON gives it, such as `\u0000`, which every database holds
-([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)). Nobody is told on a
-clock: a sender waits as long as it takes, and a deployment that wants an alarm reads the list. `resume` and `discard` say
+the cause, since when, and the senders waiting for its resumption in this process. The cause is stored as text, as
+[what the storage writes](#what-the-storage-writes) says. Nobody is told on a clock: a sender waits as long as it takes, and a deployment that wants an alarm reads the list. `resume` and `discard` say
 what they did: `Resumed` or `Discarded`; `NotDiscarded`, for an entity that died on an internal message, in an
 operation or on its activation; `StillSuspended`, with the new cause, when the program deployed dies on the stored
 state, and a discard then keeps its message; `NotSuspended`; or `NotFound`. Each operator is told what the
@@ -692,10 +723,7 @@ stores it, which is what the query compared. A caller passes the last row of a p
 rows past it in the order of the query: past the value of that row for the index ordered by, and, among the rows that tie,
 past the id of that row, since the id breaks ties in either order. Nothing is held between two pages, so a row no step changes
 is given once, on one page, and a row whose index a step changes between two pages is given where it stands when
-the next is read ([decision 0143](decisions/archive/0143-a-query-pages-after-the-last-row-it-gave.md)). An index that is
-an integer beyond 2^53 is written with the exact digits of its double, so that the database reads the number the
-query compares: the digits `JSON.stringify` writes spell another integer to SQLite and to PostgreSQL
-([decision 0146](decisions/archive/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md)).
+the next is read ([decision 0143](decisions/archive/0143-a-query-pages-after-the-last-row-it-gave.md)).
 
 A number over the entities that match is read in one statement, which reads no projection. `count` takes the
 criteria a query takes, and gives how many entities match them. `sum` takes an index and the same criteria, and
@@ -726,10 +754,8 @@ reads no projection ([decision 0149](decisions/archive/0149-the-read-model-answe
 [decision 0150](decisions/archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)).
 
 A descending order is the ascending order reversed, the ids of the rows that tie included, so the rows that hold no
-value come last. A page reads only the rows it gives, however late in the order its cursor is. The storage indexes
-each index of the program by its value and then the id, and reads a page as at most three ranges of that index, in
-one transaction: the rows that tie with the cursor past its id, the rows past its value, and, in a descending
-order, the rows that hold no value ([decision 0145](decisions/archive/0145-a-page-is-read-as-ranges-of-its-index.md)).
+value come last. A page reads only the rows it gives, however late in the order its cursor is, as
+[what the storage writes](#what-the-storage-writes) says.
 
 `reindex` writes every row again from the stored states, which is what an index added or changed
 by a new version of the program needs. It runs while entities step, and writes a row only if the state it was
@@ -823,10 +849,9 @@ time is over or the runtime stops. A step tells each topic it wrote in once its 
 consumer of another topic is not woken. The reading takes its topic's signal before it reads, so that a commit
 between its reading and its wait is not missed. A consumer that waits polls nothing, and a consumer that stops
 calling costs the runtime nothing
-([decision 0142](decisions/archive/0142-a-consumer-waits-for-a-row-of-its-topic.md)). On Effect Cluster a runner learns of
-another runner's commit from the file: while a reading waits, it reads SQLite's `data_version` at Cluster's
-interval of replies, and wakes every reading that waits where the version moved
-([decision 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)). A partition a handle is
+([decision 0142](decisions/archive/0142-a-consumer-waits-for-a-row-of-its-topic.md)). On Effect Cluster a reading that
+waits is woken by another runner's commit too, as
+[Effect Cluster inside the runtime](#effect-cluster-inside-the-runtime) says. A partition a handle is
 given is an integer from 1 to the number of partitions, a topic is one the program publishes, and a `seq`, a limit
 and a wait are non-negative integers. The limit is required, of `fetch` and `published` as of `query`, so that no
 reading holds a whole topic in one array; a caller that wants more reads again, past the last row it was given
@@ -899,7 +924,7 @@ A projection whose schema changed is read through its migrations in the log too
 
 ## Testing
 
-### A program
+### The tests of a program
 
 Most of a program is pure, so most tests need no runtime:
 
@@ -991,44 +1016,8 @@ test runs to its end before the next, which is one order the runtime can take.
 [`examples/booking/scenarios.test.ts`](../examples/booking/scenarios.test.ts) rehearses the booking and the inventory
 together.
 
-### The machine and the runtime
-
-The machine is tested with properties, under random orders of messages, completions, timers, crashes and
-defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime is tested against it
-([`src/runtime.test.ts`](../src/runtime.test.ts)): a scenario, and then random sequences of events, are driven
-on the real runtime with the process dying at each point of the table above, and what the database holds
-afterwards is compared with where the machine ends on the events that committed. They run on Effect's
-`TestClock`, and move time instead of waiting for it
-([decision 0066](decisions/archive/0066-the-runtimes-tests-move-time.md)). A moved clock gives a fiber it did not wake
-one turn, so a test that moves the points where fibers yield asserts what holds once the clock has passed, not
-when ([decision 0101](decisions/archive/0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md)); a test may run
-the wall clock ahead of the sleeps, to stand for a clock that moved between two steps
-([decision 0103](decisions/archive/0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md)). The runtime's tests choose
-where fibers yield: a scheduler of the tests' answers Effect's `Scheduler` from a schedule it records, so a run
-that fails is replayed exactly, and explores by random priorities over many seeds, or by delay bounding around one
-point; none runs under budgets of steps
-([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)). The scheduler preempts a
-fiber from the third step of a run and never before, since Effect makes no fiber yield earlier under any budget
-([decision 0115](decisions/archive/0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md)). A fiber that began
-its run on another fiber's stack, started or resumed inline, is asked whether it yields even with no task ready, so
-that a run reaches the orders in which Effect's budgets give a parent back before its child's run goes on
-([decision 0117](decisions/archive/0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md)). PCT finds a bug of depth
-`d` with a probability of at least `1 / (n k^(d - 1))`, for `n` fibers and `k` steps; the explored tests have 3 to 48
-fibers and 79 to 3,584 steps in their window, so no number of seeds guarantees a bug of depth 2, but the bound is the
-worst case, and a bug most schedules reach is found in a few runs. A run of the tests runs one seed in twenty of each
-explored test, and a release every one, as [`AGENTS.md`](../AGENTS.md) says; a schedule is drawn from its seed alone,
-so a failure in either names a seed that replays it in both. What the runtime did is told
-to a probe, a reference in the context with a default that does nothing, which a test provides and the library
-does not export ([decision 0073](decisions/archive/0073-what-the-runtime-did-is-told-to-a-probe.md)). A test waits for the
-process to settle, with nothing under way, an entity unloading included
-([decision 0109](decisions/archive/0109-settled-waits-for-an-entity-unloading.md)). The machine's properties check
-that what an event writes, applied to the rows before it, gives the rows after it, and
-[`src/storage.test.ts`](../src/storage.test.ts) that the storage writes those rows as given
-([decision 0057](decisions/archive/0057-the-machine-gives-what-is-written.md)).
-The tests of [`src/runtime.test.ts`](../src/runtime.test.ts) under `two entities that talk` run the booking and
-the inventory of `src/fixtures/` on it, on the test's clock, with a probe and values frozen through.
-[`examples/booking/runtime.test.ts`](../examples/booking/runtime.test.ts) runs the example's booking on real time,
-through the public surface alone.
+How the library tests its own machine and runtime is under
+[how the machine and the runtime are tested](#how-the-machine-and-the-runtime-are-tested).
 
 ## Where it departs from effect-tea
 
@@ -1074,13 +1063,8 @@ the operations of a program are run with the services it was deployed with
 The storage speaks SQLite and PostgreSQL, in the same tables, with the same columns, and a statement both read alike
 is written once. A launch on a client of any other dialect is the launcher's defect ([decision 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)).
 
-- A query finds and orders the same rows on both. On PostgreSQL an index of the read model is three expressions,
-  which order a value as SQLite's `json_extract` does: its kind, its number, and its string, by its bytes. Text of
-  PostgreSQL is compared by its bytes, so ids are ordered alike too.
-- A column of JSON is text on both, and no statement of PostgreSQL parses JSON that holds the program's data, since
-  PostgreSQL parses no JSON that escapes U+0000. A reply holds the id of a caller's request in a column of its own,
-  `request_id`
-  ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
+- A query finds and orders the same rows on both, and ids are ordered alike too. How each dialect stores and orders
+  a value is under [what the storage writes](#what-the-storage-writes).
 - A page of a query reads its ranges in one transaction, begun at `REPEATABLE READ` on PostgreSQL where the
   transaction is the page's own. Inside a transaction a caller left open, the page reads at the caller's level: on one
   connection nothing commits between its parts, and on a server at PostgreSQL's default level a step committed between
@@ -1106,42 +1090,13 @@ An entity with nothing to do is unloaded, and the earliest of its stored timers 
 runtime. A launch checks each of its options, and one that is no number of the kind it names is the launcher's
 defect. `retry`, `passivate` and `warn` are non-negative integers, since a time becomes the text of a duration, and
 Effect reads no `Infinity millis` and no `NaN millis`
-([decision 0208](decisions/0208-a-launch-checks-every-option.md)). A timer is slept by `Effect.sleep` for the whole time left, months included. Effect sets a time past the
-host's limit of 2^31 − 1 milliseconds as timers of the host in turn
-([decision 0194](decisions/0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md)). An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
+([decision 0208](decisions/0208-a-launch-checks-every-option.md)). A timer months away fires at its time, as
+[fibers and locks](#fibers-and-locks) says. An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
 process, its callers are given the defect, and the next one loads it from what is stored
 ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)); nothing else waits
 for its operations to stop ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)).
 An activation the waker cannot finish crashes its entity alone too, and the waker tries it again after `retry`
 ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)).
-
-### Fibers and locks
-
-Each entity is found, loaded, unloaded and crashed under a lock of its own, so the callers of one entity never
-wait on another's activation ([decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md)). An
-activation and a creation run detached from their caller, which only waits for them: one that gives up leaves
-them to finish, and only a crash of the process stops them halfway
-([decision 0079](decisions/archive/0079-what-a-caller-sets-going-is-finished-without-it.md)). What runs detached is
-counted until it ends, however it ends, by a fiber forked with it
-([decision 0110](decisions/archive/0110-detached-work-is-counted-until-it-ends-however-it-ends.md)); a fiber forked from
-a region that cannot be interrupted says it is interruptible, whatever Effect's default
-([decision 0112](decisions/archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md)).
-Bookkeeping another fiber reads changes in one synchronous step, never across a yield: a fiber is held only while
-it has not ended, and an entity leaves the process in one step
-([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). That bookkeeping stays in
-plain values, changed in one `Effect.sync`, and in none of Effect's `Tx` modules: each wait of the runtime depends on
-I/O or on the time, which no transaction waits for, and an entity's lock stays a `Semaphore`, which serves its waiters
-in order ([decision 0177](decisions/archive/0177-the-runtimes-bookkeeping-stays-in-synchronous-steps.md)). An idle entity's wait
-ends with an item a sleep puts in the entity's queue, and nothing races its take, so an event offered as the wait
-runs out is not lost ([decision 0116](decisions/archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md)).
-Every fork of the runtime runs without the transaction of the fiber that forks it, and a count another fiber reads
-is raised and lowered by one `Effect.acquireUseRelease`, unless a comment says why two fibers raise and lower it. A
-test of the suite reads the code and fails on any other form
-([decision 0164](decisions/archive/0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md)).
-An entity's loop yields after a step that leaves it more to do, so that another entity waits for one step of a busy
-one at most. Effect yields a fiber after a count of operations, and a step whose encoding and write take long is few
-operations. A loop with nothing to do starts its wait at once
-([decision 0134](decisions/archive/0134-an-entitys-loop-yields-between-two-steps.md)).
 
 ### Deployments
 
@@ -1205,6 +1160,141 @@ it leaves to the runtime is in [`cluster.md`](cluster.md).
   `runnerAddress` is a client of the cluster alone: it holds no shard, and deploys any program
   ([decision 0174](decisions/archive/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md)).
 
+How a door steps an entity, how a runner holds its shards, and how the runtime deletes Cluster's rows is under
+[Effect Cluster inside the runtime](#effect-cluster-inside-the-runtime).
+
+#### Requests through the door's client
+
+- A caller's `create` and `send`, an operator's `resume` and `discard`, and an operation's requests go through
+  Cluster's client of the door, from whatever runner they are on. A message answered `Suspended` or `NotFound` is
+  reset once and sent again, and a caller is never answered `Full`
+  ([decisions 0165](decisions/archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
+  [0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
+- The door's RPCs are uninterruptible for the client. A caller that stops waiting, an operation's fiber stopped or a
+  caller's timeout, stops only its wait: the request is handled when its turn comes, its answer is stored as any
+  other, and a retry under the same key gets it
+  ([decision 0091](decisions/archive/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
+- An operation answered `Suspended` registers for the receiver's resumption before it sends. The step that resumes or
+  discards the receiver tells `Resumed` to the entities whose operations it answered `Suspended`
+  ([decisions 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md),
+  [0172](decisions/archive/0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md)).
+- A failure Cluster saved of its own, for an entity type no runner registered in time, is reset before the client
+  gives it, so that a retry is delivered again. An operation's client keeps the request's id first
+  ([decisions 0168](decisions/archive/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md),
+  [0170](decisions/archive/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md)).
+
+### The public surface
+
+The library exports
+what a program, a test and an operator use, and nothing the runtime alone uses: the machine, the storage and
+their helpers may change without a note, and a runtime on another store imports them from their modules, as the
+tests do ([decision 0055](decisions/archive/0055-the-public-surface-is-what-its-users-use.md)).
+
+The surface is four entries of the package `@fgaudo/effect-tea-persistent`
+([decisions 0193](decisions/0193-the-public-surface-is-four-entries.md),
+[0195](decisions/0195-the-package-is-effect-tea-persistent.md)):
+
+- `.`, [`src/index.ts`](../src/index.ts), gives what a program, its boundary and an operator use on one process;
+- `./program`, [`src/index.program.ts`](../src/index.program.ts), gives what declares a program and nothing that
+  runs it, so that a browser imports a program's module for its schemas, and `.` gives it too;
+- `./testing`, [`src/index.testing.ts`](../src/index.testing.ts), gives `rehearse` with the replies
+  `accepted` and `rejected`, `projectionViolations`, `migrationViolations` and `digestOf`, for a user's tests;
+- `./cluster`, [`src/index.cluster.ts`](../src/index.cluster.ts), gives `sharding` and `launch`, for a launcher on
+  Effect Cluster, with `Recorded` as a type alone.
+
+A process on one machine imports neither Cluster nor the checks of a test, and a browser reaches no module of Node
+through `./program`. A test of the form of `src/` checks both.
+
+The library gives no map of an answer to a status of a protocol, since the status is the boundary's choice, and a
+boundary may not speak HTTP. A boundary matches on the `_tag` of `Creation`, `Answer` and `Operated`, with one
+entry for each tag that the compiler checks, so that a tag the library adds fails to compile in the boundary.
+[`examples/server/server.ts`](../examples/server/server.ts) is the template over HTTP
+([decision 0190](decisions/0190-a-boundary-maps-each-answer-to-its-protocol.md)).
+
+## How the runtime keeps it
+
+This section says how the runtime keeps the contract of the sections before it. A program, its boundary and its
+tests rely on none of it. It is for whoever changes the runtime, the storage or the tests of the library.
+
+### What the storage writes
+
+What an event writes is the machine's: besides the next machine, a transition gives the rows it writes, already
+encoded — the state when it changed, the keys that changed, the messages that leave the mailbox and the ones
+queued, the replies added, the work that ended, the read model's row and the outbox's rows — and the storage writes
+them and decides nothing. Each value is encoded once, and the projection of a state computed once
+([decision 0057](decisions/archive/0057-the-machine-gives-what-is-written.md)).
+
+A reply to another entity is deleted in the transaction that ends the work that asked for it, which the machine
+names, or in the one that stores it, if that work has already ended: only the storage sees another entity's keys
+([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
+
+The machine holds no reply. A message that arrives is given the reply stored under its request, which the runtime
+reads by the request just before the step, where no other event of the entity is applied; an activation reads
+none, and what a loaded entity holds grows with its mailbox and its keys only. A deletion changes no machine, so
+only a step changes one ([decision 0065](decisions/archive/0065-the-machine-holds-no-replies.md)).
+
+A reply's row is keyed by its request's text and by the version that wrote it: a migration of the sender may give
+one caller's request the text another's had, and its reply then replaces nothing that other caller's retry reads
+([decision 0069](decisions/archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md)).
+
+The cause of a suspension is stored as text, and holds the program's data wherever `defect` or an error of a schema
+cites it. So each U+0000 and each lone surrogate in it is written as the escape JSON gives it, such as `\u0000`,
+which every database holds
+([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)).
+
+An index that is an integer beyond 2^53 is written with the exact digits of its double, so that the database reads
+the number the query compares: the digits `JSON.stringify` writes spell another integer to SQLite and to PostgreSQL
+([decision 0146](decisions/archive/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md)).
+
+The storage indexes each index of the program by its value and then the id, and reads a page as at most three ranges
+of that index, in one transaction: the rows that tie with the cursor past its id, the rows past its value, and, in a
+descending order, the rows that hold no value
+([decision 0145](decisions/archive/0145-a-page-is-read-as-ranges-of-its-index.md)).
+
+The two dialects hold the same rows in the same columns:
+
+- On PostgreSQL an index of the read model is three expressions, which order a value as SQLite's `json_extract`
+  does: its kind, its number, and its string, by its bytes. Text of PostgreSQL is compared by its bytes, so ids are
+  ordered alike too.
+- A column of JSON is text on both, and no statement of PostgreSQL parses JSON that holds the program's data, since
+  PostgreSQL parses no JSON that escapes U+0000. A reply holds the id of a caller's request in a column of its own,
+  `request_id`
+  ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
+
+### Fibers and locks
+
+A timer is slept by `Effect.sleep` for the whole time left, months included. Effect sets a time past the host's
+limit of 2^31 − 1 milliseconds as timers of the host in turn
+([decision 0194](decisions/0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md)).
+
+Each entity is found, loaded, unloaded and crashed under a lock of its own, so the callers of one entity never
+wait on another's activation ([decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md)). An
+activation and a creation run detached from their caller, which only waits for them: one that gives up leaves
+them to finish, and only a crash of the process stops them halfway
+([decision 0079](decisions/archive/0079-what-a-caller-sets-going-is-finished-without-it.md)). What runs detached is
+counted until it ends, however it ends, by a fiber forked with it
+([decision 0110](decisions/archive/0110-detached-work-is-counted-until-it-ends-however-it-ends.md)); a fiber forked from
+a region that cannot be interrupted says it is interruptible, whatever Effect's default
+([decision 0112](decisions/archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md)).
+Bookkeeping another fiber reads changes in one synchronous step, never across a yield: a fiber is held only while
+it has not ended, and an entity leaves the process in one step
+([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). That bookkeeping stays in
+plain values, changed in one `Effect.sync`, and in none of Effect's `Tx` modules: each wait of the runtime depends on
+I/O or on the time, which no transaction waits for, and an entity's lock stays a `Semaphore`, which serves its waiters
+in order ([decision 0177](decisions/archive/0177-the-runtimes-bookkeeping-stays-in-synchronous-steps.md)). An idle entity's wait
+ends with an item a sleep puts in the entity's queue, and nothing races its take, so an event offered as the wait
+runs out is not lost ([decision 0116](decisions/archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md)).
+Every fork of the runtime runs without the transaction of the fiber that forks it, and a count another fiber reads
+is raised and lowered by one `Effect.acquireUseRelease`, unless a comment says why two fibers raise and lower it. A
+test of the suite reads the code and fails on any other form
+([decision 0164](decisions/archive/0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md)).
+An entity's loop yields after a step that leaves it more to do, so that another entity waits for one step of a busy
+one at most. Effect yields a fiber after a count of operations, and a step whose encoding and write take long is few
+operations. A loop with nothing to do starts its wait at once
+([decision 0134](decisions/archive/0134-an-entitys-loop-yields-between-two-steps.md)).
+
+### Effect Cluster inside the runtime
+
 #### A door and its step
 
 - A program's door is Cluster's entity of the program's name, with the RPCs `Create`, `Message`, `Resume`,
@@ -1238,25 +1328,11 @@ it leaves to the runtime is in [`cluster.md`](cluster.md).
   and Cluster's `maxResidentEntities` is left unbounded
   ([decision 0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)).
 
-#### Requests through the door's client
+#### A reading that waits
 
-- A caller's `create` and `send`, an operator's `resume` and `discard`, and an operation's requests go through
-  Cluster's client of the door, from whatever runner they are on. A message answered `Suspended` or `NotFound` is
-  reset once and sent again, and a caller is never answered `Full`
-  ([decisions 0165](decisions/archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
-  [0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
-- The door's RPCs are uninterruptible for the client. A caller that stops waiting, an operation's fiber stopped or a
-  caller's timeout, stops only its wait: the request is handled when its turn comes, its answer is stored as any
-  other, and a retry under the same key gets it
-  ([decision 0091](decisions/archive/0091-on-cluster-an-interrupted-caller-leaves-its-request-alone.md)).
-- An operation answered `Suspended` registers for the receiver's resumption before it sends. The step that resumes or
-  discards the receiver tells `Resumed` to the entities whose operations it answered `Suspended`
-  ([decisions 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md),
-  [0172](decisions/archive/0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md)).
-- A failure Cluster saved of its own, for an entity type no runner registered in time, is reset before the client
-  gives it, so that a retry is delivered again. An operation's client keeps the request's id first
-  ([decisions 0168](decisions/archive/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md),
-  [0170](decisions/archive/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md)).
+A runner learns of another runner's commit from the file: while a reading of the log waits, it reads SQLite's
+`data_version` at Cluster's interval of replies, and wakes every reading that waits where the version moved
+([decision 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)).
 
 #### Cluster's rows
 
@@ -1271,30 +1347,43 @@ it leaves to the runtime is in [`cluster.md`](cluster.md).
 - A reply Cluster saves of its own after its request's rows are gone is left
   ([decision 0173](decisions/archive/0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md)).
 
-### The public surface
+### How the machine and the runtime are tested
 
-The library exports
-what a program, a test and an operator use, and nothing the runtime alone uses: the machine, the storage and
-their helpers may change without a note, and a runtime on another store imports them from their modules, as the
-tests do ([decision 0055](decisions/archive/0055-the-public-surface-is-what-its-users-use.md)).
+The machine is tested with properties, under random orders of messages, completions, timers, crashes and
+defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime is tested against it
+([`src/runtime.test.ts`](../src/runtime.test.ts)): a scenario, and then random sequences of events, are driven
+on the real runtime with the process dying at each point of the table of
+[what survives a crash](#what-survives-a-crash), and what the database holds
+afterwards is compared with where the machine ends on the events that committed. They run on Effect's
+`TestClock`, and move time instead of waiting for it
+([decision 0066](decisions/archive/0066-the-runtimes-tests-move-time.md)). A moved clock gives a fiber it did not wake
+one turn, so a test that moves the points where fibers yield asserts what holds once the clock has passed, not
+when ([decision 0101](decisions/archive/0101-a-moved-clock-gives-a-fiber-it-did-not-wake-one-turn.md)); a test may run
+the wall clock ahead of the sleeps, to stand for a clock that moved between two steps
+([decision 0103](decisions/archive/0103-a-test-moves-the-wall-clock-ahead-of-the-sleeps.md)). The runtime's tests choose
+where fibers yield: a scheduler of the tests' answers Effect's `Scheduler` from a schedule it records, so a run
+that fails is replayed exactly, and explores by random priorities over many seeds, or by delay bounding around one
+point; none runs under budgets of steps
+([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)). The scheduler preempts a
+fiber from the third step of a run and never before, since Effect makes no fiber yield earlier under any budget
+([decision 0115](decisions/archive/0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md)). A fiber that began
+its run on another fiber's stack, started or resumed inline, is asked whether it yields even with no task ready, so
+that a run reaches the orders in which Effect's budgets give a parent back before its child's run goes on
+([decision 0117](decisions/archive/0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md)). PCT finds a bug of depth
+`d` with a probability of at least `1 / (n k^(d - 1))`, for `n` fibers and `k` steps; the explored tests have 3 to 48
+fibers and 79 to 3,584 steps in their window, so no number of seeds guarantees a bug of depth 2, but the bound is the
+worst case, and a bug most schedules reach is found in a few runs. A run of the tests runs one seed in twenty of each
+explored test, and a release every one, as [`AGENTS.md`](../AGENTS.md) says; a schedule is drawn from its seed alone,
+so a failure in either names a seed that replays it in both. What the runtime did is told
+to a probe, a reference in the context with a default that does nothing, which a test provides and the library
+does not export ([decision 0073](decisions/archive/0073-what-the-runtime-did-is-told-to-a-probe.md)). A test waits for the
+process to settle, with nothing under way, an entity unloading included
+([decision 0109](decisions/archive/0109-settled-waits-for-an-entity-unloading.md)). The machine's properties check
+that what an event writes, applied to the rows before it, gives the rows after it, and
+[`src/storage.test.ts`](../src/storage.test.ts) that the storage writes those rows as given
+([decision 0057](decisions/archive/0057-the-machine-gives-what-is-written.md)).
+The tests of [`src/runtime.test.ts`](../src/runtime.test.ts) under `two entities that talk` run the booking and
+the inventory of `src/fixtures/` on it, on the test's clock, with a probe and values frozen through.
+[`examples/booking/runtime.test.ts`](../examples/booking/runtime.test.ts) runs the example's booking on real time,
+through the public surface alone.
 
-The surface is four entries of the package `@fgaudo/effect-tea-persistent`
-([decisions 0193](decisions/0193-the-public-surface-is-four-entries.md),
-[0195](decisions/0195-the-package-is-effect-tea-persistent.md)):
-
-- `.`, [`src/index.ts`](../src/index.ts), gives what a program, its boundary and an operator use on one process;
-- `./program`, [`src/index.program.ts`](../src/index.program.ts), gives what declares a program and nothing that
-  runs it, so that a browser imports a program's module for its schemas, and `.` gives it too;
-- `./testing`, [`src/index.testing.ts`](../src/index.testing.ts), gives `rehearse` with the replies
-  `accepted` and `rejected`, `projectionViolations`, `migrationViolations` and `digestOf`, for a user's tests;
-- `./cluster`, [`src/index.cluster.ts`](../src/index.cluster.ts), gives `sharding` and `launch`, for a launcher on
-  Effect Cluster, with `Recorded` as a type alone.
-
-A process on one machine imports neither Cluster nor the checks of a test, and a browser reaches no module of Node
-through `./program`. A test of the form of `src/` checks both.
-
-The library gives no map of an answer to a status of a protocol, since the status is the boundary's choice, and a
-boundary may not speak HTTP. A boundary matches on the `_tag` of `Creation`, `Answer` and `Operated`, with one
-entry for each tag that the compiler checks, so that a tag the library adds fails to compile in the boundary.
-[`examples/server/server.ts`](../examples/server/server.ts) is the template over HTTP
-([decision 0190](decisions/0190-a-boundary-maps-each-answer-to-its-protocol.md)).

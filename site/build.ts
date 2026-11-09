@@ -1,5 +1,5 @@
-// Builds the documentation site into `site/dist/`. The README is its home page. The guide, the design and the
-// glossary are TypeDoc documents, and each example is a page of its README followed by its files. The API reference
+// Builds the documentation site into `site/dist/`. The README is its home page. The guide, the concepts, the design
+// and the glossary are TypeDoc documents, and each example is a page of its README followed by its files. The API reference
 // is generated from the four entries of `src/`, and the diagrams are drawn by `mermaid.ts`. A warning of TypeDoc
 // fails the build, since it is a doc comment or a link to fix.
 import { $ } from 'bun'
@@ -23,6 +23,7 @@ const examples = readdirSync(join(root, 'examples')).filter((name) => existsSync
 // The pages of the site, by their path in the repository, with the group each is listed under.
 const pages = new Map<string, string>([
   ...guide.map((page) => [page, 'Guide'] as const),
+  ['docs/concepts.md', 'Specification'],
   ['docs/design.md', 'Specification'],
   ['docs/glossary.md', 'Specification'],
   ...examples.map((name) => [`examples/${name}/README.md`, 'Examples'] as const),

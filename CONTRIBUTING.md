@@ -28,8 +28,11 @@ bun run build
 ## The documents
 
 - [`docs/guide/README.md`](docs/guide/README.md): the guide for whoever writes a program, on the rental of bikes.
+- [`docs/concepts.md`](docs/concepts.md): the pieces of a program, what each call answers, and the life of an
+  entity, on one page, with a link to the rule of each in the design.
 - [`docs/design.md`](docs/design.md): what the library is for, its model of execution, and what it guarantees at
-  each point where the process may die.
+  each point where the process may die. Its last section, How the runtime keeps it, is for whoever changes the
+  runtime.
 - [`docs/glossary.md`](docs/glossary.md): the words of the design, each defined once.
 - [`docs/decisions/`](docs/decisions): one note per decision, with the alternatives it rejected, listed by what
   they decide in [its index](docs/decisions/README.md). The reviews of the notes are in
@@ -41,8 +44,8 @@ bun run build
 - [`spikes/`](spikes): tests of what a dependency does when it runs, at the version pinned.
 - [`scripts/`](scripts): the link checker, the exploration of seeds, the mutations a review runs, and the tools of a
   move of Effect's version.
-- [`site/`](site): the build of the site. The README is its home page, the guide, the design and the glossary are
-  its pages, each example is a page of its README and its files, and the reference is made of the doc comments of
+- [`site/`](site): the build of the site. The README is its home page, the guide, the concepts, the design and the
+  glossary are its pages, each example is a page of its README and its files, and the reference is made of the doc comments of
   the four entries of `src/`.
 
 ## The modules of `src/`

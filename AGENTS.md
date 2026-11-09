@@ -135,9 +135,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A word the design gives a meaning of its own is defined once, in [`docs/glossary.md`](docs/glossary.md); a change
   that adds, renames or drops one changes it in the same commit. A section of `docs/design.md` longer than a screen
   has subsections, so that a reader finds a rule by its heading.
-- Three diagrams show the design. The diagram of [`README.md`](README.md) is an entity's loop, for a reader who
+- Four diagrams show the design. The diagram of [`README.md`](README.md) is an entity's loop, for a reader who
   knows nothing of the design. The diagram under A program in [`docs/design.md`](docs/design.md) is the same loop
   whole, with children, the bound of callers' messages and every reply. The diagram of
+  [`docs/concepts.md`](docs/concepts.md) is the life of an entity: loaded, unloaded and suspended. The diagram of
   [`CONTRIBUTING.md`](CONTRIBUTING.md) is the modules of `src/`, with the storage's tables. A change that adds,
   removes or renames a piece of a program, a message, a flow, a module or a table a diagram shows changes that
   diagram in the same commit.
