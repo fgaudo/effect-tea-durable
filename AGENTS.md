@@ -137,10 +137,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   site. Run by hand from the repository's Actions, the workflow also runs `bun run test:release`, and a release
   passes it there. The site's audit ignores one advisory of minimatch, since TypeDoc's range excludes the version
   with the fix. The workflow's comment says when the ignore goes.
-- Bun is pinned by `packageManager` in `package.json`, and the workflow installs that version. The spikes see what
-  SQLite gives back through Bun, which a release of Bun changes: at 1.4.4 a lone surrogate is read back as one
-  U+FFFD, where 1.4.2 gives one for each of its bytes. A move of Bun's version runs the spikes on the new version
-  and updates each one that changed, with the notes that cite it.
+- Bun is pinned by `packageManager` in `package.json`, and the workflow installs that version, so that a run of the
+  workflow gives what a run on the maintainer's machine gives. A move of Bun's version runs the spikes on the new
+  version. A spike checks what a decision rests on, never a detail of the version it ran at, so that a move of Bun
+  or of Effect fails it only where a premise fell.
 - A word the design gives a meaning of its own is defined once, in [`docs/glossary.md`](docs/glossary.md); a change
   that adds, renames or drops one changes it in the same commit. A section of `docs/design.md` longer than a screen
   has subsections, so that a reader finds a rule by its heading.

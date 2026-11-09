@@ -45,13 +45,15 @@ test('a union gives each id once', () =>
     })))
 
 // What decision 0157 reads: a lone surrogate is written as the three bytes of its code point, which are no UTF-8, so
-// that a text read back is not the text written, and finds no row by it.
-test('a text with a lone surrogate is read back with U+FFFD for each of its bytes, and finds no row', () =>
+// that a text read back is not the text written, and finds no row by it. How many U+FFFD stand for the bytes depends
+// on Bun's decoder, one for each byte at 1.4.2 and one in all at 1.4.4, and no decision rests on it.
+test('a text with a lone surrogate is read back with U+FFFD in its place, and finds no row', () =>
   database((sql) =>
     Effect.gen(function*() {
       yield* sql`CREATE TABLE ids (id TEXT)`
       yield* sql`INSERT INTO ids (id) VALUES (${'a\ud800'}), (${'a\udc00'})`
       const read = yield* sql<{ id: string }>`SELECT id FROM ids ORDER BY id`
-      expect(read).toEqual([{ id: 'a���' }, { id: 'a���' }])
+      expect(read).toHaveLength(2)
+      for (const { id } of read) expect(id).toMatch(/^a�+$/)
       expect(yield* sql`SELECT id FROM ids WHERE id = ${read[0]!.id}`).toEqual([])
     })))
