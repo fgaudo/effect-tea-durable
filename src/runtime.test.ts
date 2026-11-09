@@ -6041,6 +6041,59 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
       expect(steps.some((span) => event(span) === 'Complete' && span.links.length === 0)).toBe(true)
     })).pipe(Effect.provide(client('sqlite')), Effect.provideService(Tracer.Tracer, tracer)))
   }, 10_000)
+
+  test('a door’s step that rolls back counts nothing, and its request delivered again counts once', () => {
+    const registry = new Map()
+    return Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      asked = []
+      const sql = yield* SqlClient.SqlClient
+      yield* createTables
+      yield* clusterTables
+      let step: ((delivered: Delivered) => Effect.Effect<unknown>) | null = null
+      const cluster: OnCluster = {
+        shards: 1,
+        versions: null,
+        shardOf: () => 1,
+        guard: () => Effect.void,
+        holds: () => true,
+        singleton: (_name, run) => Effect.asVoid(Effect.forkScoped(Effect.scoped(Effect.andThen(run, Effect.never)))),
+        register: (_program, given) =>
+          Effect.sync(() => {
+            step = given as (delivered: Delivered) => Effect.Effect<unknown>
+          }),
+        others: { version: Effect.succeed(0), millis: 1_000 },
+        // These tests step the door directly, and send nothing through Cluster's client.
+        create: () => Effect.die('no creation is sent through the client here'),
+        send: () => Effect.die('no message is sent through the client here'),
+        operate: () => Effect.die('no operator’s event is sent through the client here'),
+        resume: () => Effect.die('no sender is told of a resumption here'),
+      }
+      const runtime = yield* launchWith({}, cluster)
+      yield* runtime.deploy(relay)
+      const door = (delivered: Omit<Delivered, 'id' | 'version'>) =>
+        step!({ ...delivered, id: 'one', version: versionOf(relay) })
+      const counted = Effect.map(
+        Effect.provideService(Metric.snapshot, Metric.MetricRegistry, registry),
+        (snapshots) =>
+          snapshots.find((snapshot) =>
+            snapshot.id === 'tea.mailbox.length' && snapshot.attributes?.['tea.entity.name'] === 'Relay'
+          )?.state,
+      )
+      const go = { _tag: 'Message', request: caller('m1'), message: JSON.stringify({ _tag: 'Go' }) } as const
+      yield* sql.withTransaction(door({ _tag: 'Create', request: caller('c1'), message: '{}' }))
+      // Cluster's transaction fails after the door's step, and rolls the step back: only the creation is counted.
+      // The step of the next delivery settles the creation first.
+      const rolled = yield* Effect.exit(sql.withTransaction(Effect.andThen(door(go), Effect.fail('rolled back'))))
+      expect(Exit.isFailure(rolled)).toBe(true)
+      expect(yield* counted).toMatchObject({ count: 1 })
+      // Cluster delivers the request again, and it commits. The creation, the message, the completion of `First`
+      // and its handling are counted once each, and only the completion's mailbox holds a message.
+      yield* sql.withTransaction(door(go))
+      yield* Effect.sleep('200 millis')
+      expect(asked).toEqual(['started'])
+      expect(yield* counted).toMatchObject({ count: 4, sum: 1 })
+    })).pipe(Effect.provide(client('sqlite')), Effect.provideService(Metric.MetricRegistry, registry)))
+  }, 10_000)
 })
 
 describe('a consumer on Cluster, woken by another runner’s commit (decision 0163)', () => {
@@ -6292,6 +6345,27 @@ describe('what the runtime tells a tracer (decision 0220)', () => {
       ])
       expect(operations.every((span) => span.parent._tag === 'None' && span.status._tag === 'Ended')).toBe(true)
       expect(operations.map(linked)).toEqual([[creation], [creation], [creation]])
+    })))
+
+  test('the loop of an entity a caller created runs outside the span of its creation', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const { spans, tracer } = tracing()
+      const at = yield* DateTime.now
+      // The loop unloads the entity outside any step: the span it runs under there is the loop's own.
+      const under: Array<Tracer.AnySpan | null> = []
+      const unloaded = () =>
+        Effect.map(Effect.orElseSucceed(Effect.currentParentSpan, () => null), (span) => void under.push(span))
+      yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* Effect.withSpan(toy.create(id, { at }, { requestId: 'creation', sender: tester }), 'caller')
+          yield* runtime.settled
+          yield* TestClock.adjust('5 millis')
+        })).pipe(Effect.provideService(Tracer.Tracer, tracer))
+      const creation = spans.find((span) => span.name === 'tea.step' && event(span) === 'Create')!
+      expect(under).toHaveLength(1)
+      expect(under[0]).not.toBe(creation)
     })))
 
   test('a step that suspends its entity says where and is counted, and the mailbox and operations are metrics', () =>
