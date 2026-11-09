@@ -125,16 +125,16 @@ const measure = (rooms: typeof whole | typeof counted | typeof topical, label: s
     const sender = { id: 'ada' }
     yield* entities.create('r', { size }, { requestId: 'create', sender })
     yield* runtime.settled
-    const before = yield* sql<{ bytes: number }>`SELECT coalesce(sum(length(projection)), 0) AS bytes FROM tea_publications`
+    const before = yield* sql<{ bytes: number }>`SELECT coalesce(sum(length(projection)), 0) AS bytes FROM effecttea_publications`
     const started = performance.now()
     for (let step = 0; step < steps; step++) {
       yield* entities.send('r', { _tag: 'Add', label: `added ${step}` }, { requestId: `add-${step}`, sender })
     }
     yield* runtime.settled
     const elapsed = performance.now() - started
-    const after = yield* sql<{ bytes: number }>`SELECT coalesce(sum(length(projection)), 0) AS bytes FROM tea_publications`
-    const [state] = yield* sql<{ bytes: number }>`SELECT length(state) AS bytes FROM tea_entities WHERE id = 'r'`
-    const [rows] = yield* sql<{ rows: number }>`SELECT count(*) AS rows FROM tea_outbox`
+    const after = yield* sql<{ bytes: number }>`SELECT coalesce(sum(length(projection)), 0) AS bytes FROM effecttea_publications`
+    const [state] = yield* sql<{ bytes: number }>`SELECT length(state) AS bytes FROM effecttea_entities WHERE id = 'r'`
+    const [rows] = yield* sql<{ rows: number }>`SELECT count(*) AS rows FROM effecttea_outbox`
     // One row of the outbox per topic for the creation and for each step, since each step changes every topic.
     expect(rows?.rows).toBe((steps + 1) * topics)
     return {

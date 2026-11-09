@@ -7,6 +7,8 @@ lacks. Changes [decision 0145](archive/0145-a-page-is-read-as-ranges-of-its-inde
 [decision 0161](archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md) and
 [decision 0176](archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md), each of which gave a
 database made before an index or a column of its own.
+[Decision 0218](0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md) makes the prefix `effecttea_`,
+since `tea` is a common word, and makes a launch die on a name the runtime's objects would take.
 
 ## Context
 

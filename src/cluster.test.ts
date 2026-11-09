@@ -161,7 +161,7 @@ describe('the versions a launch records', () => {
         expect((defect as InvariantDefect).reason).toBe(
           'the program Toy is launched at version 1, and a launch has run it at version 2',
         )
-        const runners = yield* sql<{ address: string }>`SELECT address FROM tea_runner_versions ORDER BY address`
+        const runners = yield* sql<{ address: string }>`SELECT address FROM effecttea_runner_versions ORDER BY address`
         expect(runners.map(({ address }) => address)).toEqual(['a:1', 'a:1'])
       }).pipe(Effect.provide(client(dialect))))))
 
@@ -380,7 +380,7 @@ describe('two runners on one file', () => {
         const sql = yield* SqlClient.SqlClient
         const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: null, id })
         const entity = sql<{ state: string; version: number; steps: number }>`
-          SELECT state, version, steps FROM tea_entities WHERE id = 'one'
+          SELECT state, version, steps FROM effecttea_entities WHERE id = 'one'
         `.pipe(Effect.map((rows) => rows.map((row) => ({ ...row, version: Number(row.version), steps: Number(row.steps) }))))
         const older = yield* start(1, [at('Toy', 1)])
         yield* until(older, (n) => n === shardsPerGroup)
@@ -436,7 +436,7 @@ describe('two runners on one file', () => {
         const asked = (name: string) =>
           JSON.stringify({ _tag: 'Operation', entity: { name, id: 's' }, key: { name: 'ask' }, incarnation: 1, name: 'request' })
         const entities = sql<{ name: string; state: string; steps: number }>`
-          SELECT name, state, steps FROM tea_entities WHERE id = 'one'
+          SELECT name, state, steps FROM effecttea_entities WHERE id = 'one'
         `.pipe(Effect.map((rows) => rows.map((row) => ({ ...row, steps: Number(row.steps) }))))
         const older = yield* start(1, [at('Toy', 1)])
         yield* until(older, (n) => n === shardsPerGroup)
@@ -589,7 +589,7 @@ describe('the runtime on Cluster', () => {
   const stateOf = Effect.flatMap(
     Effect.service(SqlClient.SqlClient),
     (sql) =>
-      Effect.map(sql<{ state: string }>`SELECT state FROM tea_entities WHERE id = 'one'`, ([row]) =>
+      Effect.map(sql<{ state: string }>`SELECT state FROM effecttea_entities WHERE id = 'one'`, ([row]) =>
         row === undefined ? undefined : JSON.parse(row.state) as Tally['state']),
   )
 
@@ -729,7 +729,7 @@ describe('the runtime on Cluster', () => {
       yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep })
       yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })
       const rows = yield* sql<{ id: string; until: number | null }>`
-        SELECT request_id AS id, until FROM tea_replies WHERE name = 'Tally' ORDER BY request_id
+        SELECT request_id AS id, until FROM effecttea_replies WHERE name = 'Tally' ORDER BY request_id
       `
       expect(rows.map((row) => row.id)).toEqual(['m1', 'm2'])
       expect(Number(rows[0]?.until)).toBeGreaterThanOrEqual(before + keep.millis)
@@ -756,14 +756,14 @@ describe('the runtime on Cluster', () => {
       expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep: zero }))
         .toEqual({ _tag: 'Accepted' })
       expect(yield* rowsOf('m1')).toBe(2)
-      const [kept] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM tea_given_requests`
+      const [kept] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_given_requests`
       expect(Number(kept?.held)).toBe(1)
       yield* Effect.sleep('5 millis')
       // The next step that answers a caller takes the rows of m1, and keeps those of m2, whose client keeps its id.
       yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender, keep: { millis: 60_000 } })
       const gone = yield* sql`SELECT 1 FROM cluster_replies WHERE request_id NOT IN (SELECT request_id FROM cluster_messages)`
       expect(gone).toEqual([])
-      const left = yield* sql<{ id: string }>`SELECT request_id AS id FROM tea_given_requests`
+      const left = yield* sql<{ id: string }>`SELECT request_id AS id FROM effecttea_given_requests`
       expect(left.length).toBe(1)
       expect(yield* rowsOf('m1')).toBe(0)
       expect(yield* rowsOf('m2')).toBe(2)
@@ -774,7 +774,7 @@ describe('the runtime on Cluster', () => {
       yield* handle!.expire
       expect(yield* rowsOf('m3')).toBe(0)
       expect(yield* rowsOf('m2')).toBe(2)
-      const [held] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM tea_given_requests`
+      const [held] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_given_requests`
       expect(Number(held?.held)).toBe(1)
     })), 30_000)
 
@@ -795,7 +795,7 @@ describe('the runtime on Cluster', () => {
       const sql = yield* SqlClient.SqlClient
       yield* create(0, 'c1')
       expect(yield* send({ _tag: 'Break' }, 'm1')).toBe('{"_tag":"Suspended"}')
-      const [row] = yield* sql<{ cause: string | null }>`SELECT suspended_cause AS cause FROM tea_entities WHERE id = 'one'`
+      const [row] = yield* sql<{ cause: string | null }>`SELECT suspended_cause AS cause FROM effecttea_entities WHERE id = 'one'`
       expect(row?.cause).toContain('broken')
       expect(yield* send({ _tag: 'Add', n: 1 }, 'm2')).toBe('{"_tag":"Suspended"}')
     })), 30_000)
@@ -839,7 +839,7 @@ describe('the runtime on Cluster', () => {
         discard: true,
       })
       yield* Effect.sleep('1500 millis')
-      expect(yield* sql`SELECT 1 FROM tea_entities`).toEqual([])
+      expect(yield* sql`SELECT 1 FROM effecttea_entities`).toEqual([])
       expect(yield* sql`SELECT 1 FROM cluster_replies`).toEqual([])
       const messages = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Create'`
       expect(messages.map(({ processed }) => Number(processed))).toEqual([0])
@@ -1181,7 +1181,7 @@ describe('the shards of a runner on Cluster', () => {
     Effect.flatMap(
       Effect.service(SqlClient.SqlClient),
       (sql) =>
-        Effect.map(sql<{ state: string }>`SELECT state FROM tea_entities WHERE id = ${who}`, ([row]) =>
+        Effect.map(sql<{ state: string }>`SELECT state FROM effecttea_entities WHERE id = ${who}`, ([row]) =>
           row === undefined ? undefined : JSON.parse(row.state) as Bell['state']),
     )
 
@@ -1347,7 +1347,7 @@ describe('the shards of a runner on Cluster', () => {
         // The operation on the first runner is answered `Suspended`, and waits: nothing on its runner resumes the
         // receiver, so only `Resumed`, from the step on the second runner, wakes it.
         yield* until(Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) =>
-          sql<{ held: number }>`SELECT COUNT(*) AS held FROM tea_waiting`), ([row]) => row?.held === 1)
+          sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_waiting`), ([row]) => row?.held === 1)
         expect((yield* stateOf(sender))?.relayed).toBe(null)
         expect(yield* first.bell.discard(receiver)).toEqual({ _tag: 'Discarded' })
         expect(yield* until(stateOf(sender), (state) => state?.relayed !== null)).toMatchObject({
@@ -1356,7 +1356,7 @@ describe('the shards of a runner on Cluster', () => {
         })
         expect((yield* stateOf(receiver))?.n).toBe(1)
         const [left] = yield* Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) =>
-          sql<{ held: number }>`SELECT COUNT(*) AS held FROM tea_waiting`)
+          sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_waiting`)
         expect(left?.held).toBe(0)
       })), 30_000)
 
@@ -1438,8 +1438,8 @@ describe('the shards of a runner on Cluster', () => {
           SELECT COUNT(*) AS held FROM cluster_messages WHERE payload LIKE '%Operation%'
         `)
         const resumed = count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM cluster_messages WHERE tag = 'Resumed'`)
-        const kept = count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM tea_sent_requests`)
-        yield* until(count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM tea_waiting`), (held) => held === 1)
+        const kept = count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_sent_requests`)
+        yield* until(count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_waiting`), (held) => held === 1)
         // While the work holds, its requests' rows and their ids are kept.
         expect(yield* operations).toBe(2)
         expect(yield* kept).toBe(2)
@@ -1476,7 +1476,7 @@ describe('the shards of a runner on Cluster', () => {
         expect(yield* count(sql<{ held: number }>`
           SELECT COUNT(*) AS held FROM cluster_messages WHERE payload LIKE '%Operation%'
         `)).toBe(0)
-        expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM tea_sent_requests`)).toBe(0)
+        expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_sent_requests`)).toBe(0)
       })), 30_000)
 
   test('a request Cluster failed, its type registered by no runner in time, is reset, and handled once it is', () =>
@@ -1531,14 +1531,14 @@ describe('the shards of a runner on Cluster', () => {
           expect(yield* count(sql<{ held: number }>`
             SELECT COUNT(*) AS held FROM cluster_messages WHERE entity_type = 'Ghost'
           `)).toBe(0)
-          expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM tea_sent_requests`)).toBe(0)
+          expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_sent_requests`)).toBe(0)
           // Past Cluster's wait for the type, so that no delivery it read before the deletion is still waiting. A
           // delivery failed between the deletion and the save would leave a reply with no request, which this test
           // does not reach (decision 0170).
           yield* Effect.sleep('1 second')
           yield* second.deployGhost
           yield* Effect.sleep('1 second')
-          expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM tea_entities WHERE name = 'Ghost'`)).toBe(0)
+          expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_entities WHERE name = 'Ghost'`)).toBe(0)
           expect(yield* count(sql<{ held: number }>`
             SELECT COUNT(*) AS held FROM cluster_replies
             WHERE request_id NOT IN (SELECT request_id FROM cluster_messages)

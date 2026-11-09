@@ -29,18 +29,18 @@ const second = Migrator.make({})({
   loader: Migrator.fromRecord({
     '0001_tables': Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
-      yield* sql`CREATE TABLE tea_rows (name TEXT NOT NULL)`
-      yield* sql`INSERT INTO tea_rows (name) VALUES ('second')`
+      yield* sql`CREATE TABLE effecttea_rows (name TEXT NOT NULL)`
+      yield* sql`INSERT INTO effecttea_rows (name) VALUES ('second')`
     }),
   }),
-  table: 'tea_migrations',
+  table: 'effecttea_migrations',
 })
 
 const contents = (filename: string) =>
   Effect.runPromise(Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql<{ name: string }>`SELECT name FROM tea_rows ORDER BY rowid`
-    const recorded = yield* sql<{ migration_id: number }>`SELECT migration_id FROM tea_migrations`
+    const rows = yield* sql<{ name: string }>`SELECT name FROM effecttea_rows ORDER BY rowid`
+    const recorded = yield* sql<{ migration_id: number }>`SELECT migration_id FROM effecttea_migrations`
     return { rows: rows.map(({ name }) => name), migrations: recorded.map(({ migration_id }) => migration_id) }
   }).pipe(Effect.provide(SqliteClient.layer({ filename }))))
 
@@ -118,10 +118,10 @@ const migrations = (ids: ReadonlyArray<number>) =>
       `000${id}_table${id}`,
       Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
-        yield* sql`CREATE TABLE ${sql(`tea_table${id}`)} (name TEXT NOT NULL)`
+        yield* sql`CREATE TABLE ${sql(`effecttea_table${id}`)} (name TEXT NOT NULL)`
       }),
     ]))),
-    table: 'tea_migrations',
+    table: 'effecttea_migrations',
   })
 
 test('on PostgreSQL a role that may only read and write rows runs migrations up to date, and fails on a pending one', () =>
@@ -137,6 +137,6 @@ test('on PostgreSQL a role that may only read and write rows runs migrations up 
     const pending = yield* Effect.exit(migrations([1, 2]))
     expect(Exit.isFailure(pending) ? String(pending.cause) : null).toContain('Migration "2_table2" failed')
     yield* sql`RESET ROLE`
-    const recorded = yield* sql<{ migration_id: number }>`SELECT migration_id FROM tea_migrations`
+    const recorded = yield* sql<{ migration_id: number }>`SELECT migration_id FROM effecttea_migrations`
     expect(recorded.map(({ migration_id }) => migration_id)).toEqual([1])
   })).pipe(Effect.provide(PgliteClient.layer({})))))

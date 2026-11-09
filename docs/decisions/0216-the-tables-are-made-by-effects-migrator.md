@@ -6,7 +6,8 @@ not run `createTables` where every table exists. Changes
 [decision 0215](0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md), whose lock of `createTables`
 was the database's. [Decision 0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md) names
 `tea_migrations` on PostgreSQL in the schema the tables are made in, since `Migrator` found it in any schema of the
-`search_path`.
+`search_path`. [Decision 0218](0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md)
+makes the first migration without `IF NOT EXISTS`, and names its history `effecttea_migrations`.
 
 ## Context
 

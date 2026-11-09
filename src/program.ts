@@ -704,7 +704,7 @@ export const idFault = (id: unknown): string | undefined =>
 
 /**
  * Why a string a caller gave as a request id is no request id, or `undefined` when it is one. A request id is text a
- * database holds, since the storage writes it as it is in the column `request_id` of `tea_replies`, and reads the
+ * database holds, since the storage writes it as it is in the column `request_id` of `effecttea_replies`, and reads the
  * reply by it. The empty string is a request id, since nothing pages by it. The types do not hold a cast or a call
  * from JavaScript, so a value that is no string is refused too (decisions 0053, 0204).
  */

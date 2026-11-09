@@ -286,7 +286,7 @@ test('on Cluster, an id kept under work goes with it, and a pending one with the
       )
       expect(yield* ids('cluster_messages')).toEqual([])
       expect(yield* ids('cluster_replies')).toEqual([])
-      expect(yield* ids('tea_sent_requests')).toEqual([])
+      expect(yield* ids('effecttea_sent_requests')).toEqual([])
     }).pipe(Effect.orDie), ['sqlite']))
 
 // A request is found by its text, and a caller's by its sender as a version before stored it (decision 0065).
@@ -359,7 +359,7 @@ describe('how long a caller’s reply is kept (decision 0125)', () => {
         yield* store.write('s', created({ replies: [until('other', 500)] }), 0)
         // A step that stores no reply deletes nothing.
         yield* store.write('r', written({ shown: { projection: 'start', indexes: {} } }), 600)
-        const left = () => sql<{ id: string; request: string }>`SELECT id, request FROM tea_replies ORDER BY id, request`
+        const left = () => sql<{ id: string; request: string }>`SELECT id, request FROM effecttea_replies ORDER BY id, request`
         expect((yield* left()).length).toBe(3)
         yield* store.write('r', written({ replies: [until('new', 1_600)] }), 600)
         expect((yield* left()).map(({ id, request }) => [id, JSON.parse(request).id])).toEqual([
@@ -502,21 +502,21 @@ test('a row the runtime never writes fails the call that meets it, and is read a
       const caller = { _tag: 'Caller', sender: null, id: 'x' } as const
       /** A consumer that has read the log to a `seq` no cursor holds. */
       const behind = Effect.andThen(
-        sql`INSERT INTO tea_consumers ${sql.insert({ name: 'Receiver', topic: 'projection', consumer: 'c' })}`,
-        sql`INSERT INTO tea_cursors ${
+        sql`INSERT INTO effecttea_consumers ${sql.insert({ name: 'Receiver', topic: 'projection', consumer: 'c' })}`,
+        sql`INSERT INTO effecttea_cursors ${
           sql.insert({ name: 'Receiver', topic: 'projection', consumer: 'c', partition, seq: -1 })
         }`,
       )
       // Each row is broken by hand in one of the ways a reading used to fill in or cast, and read by what reads it.
       const broken = [
-        [sql`UPDATE tea_mailbox SET tag = 'Outbound' WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
-        [sql`UPDATE tea_mailbox SET request = NULL WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
+        [sql`UPDATE effecttea_mailbox SET tag = 'Outbound' WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
+        [sql`UPDATE effecttea_mailbox SET request = NULL WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
         [
-          sql`UPDATE tea_entities SET suspended_on = '{"_tag":"Message"}' WHERE name = 'Receiver' AND id = 'r'`,
+          sql`UPDATE effecttea_entities SET suspended_on = '{"_tag":"Message"}' WHERE name = 'Receiver' AND id = 'r'`,
           store.load('r'),
         ],
         [
-          sql`INSERT INTO tea_replies ${
+          sql`INSERT INTO effecttea_replies ${
             sql.insert({
               name: 'Receiver',
               id: 'r',
@@ -531,7 +531,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
         // The columns that go together: an inbound message has no key, an internal one no request, and only a
         // rejection a reason.
         [
-          sql`INSERT INTO tea_entity_keys ${
+          sql`INSERT INTO effecttea_entity_keys ${
             sql.insert({
               name: 'Receiver',
               id: 'r',
@@ -545,18 +545,18 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           }`,
           store.load('r'),
         ],
-        [sql`UPDATE tea_mailbox SET key = 'ask' WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
+        [sql`UPDATE effecttea_mailbox SET key = 'ask' WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
         [
-          sql`UPDATE tea_mailbox SET tag = 'Outbound', request = NULL, key = 'ask', incarnation = 1
+          sql`UPDATE effecttea_mailbox SET tag = 'Outbound', request = NULL, key = 'ask', incarnation = 1
               WHERE name = 'Receiver' AND id = 'r'`,
           store.load('r'),
         ],
         [
-          sql`UPDATE tea_mailbox SET tag = 'Internal', key = 'ask', incarnation = 1 WHERE name = 'Receiver' AND id = 'r'`,
+          sql`UPDATE effecttea_mailbox SET tag = 'Internal', key = 'ask', incarnation = 1 WHERE name = 'Receiver' AND id = 'r'`,
           store.load('r'),
         ],
         [
-          sql`INSERT INTO tea_replies ${
+          sql`INSERT INTO effecttea_replies ${
             sql.insert({
               name: 'Receiver',
               id: 'r',
@@ -569,11 +569,11 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           store.reply('r', caller, 0),
         ],
         // A version from 1, and a count from 0, wherever they are read.
-        [sql`UPDATE tea_entities SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
-        [sql`UPDATE tea_entities SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.reindex],
-        [sql`UPDATE tea_projections SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.query({ limit: all })],
+        [sql`UPDATE effecttea_entities SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
+        [sql`UPDATE effecttea_entities SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.reindex],
+        [sql`UPDATE effecttea_projections SET version = 0 WHERE name = 'Receiver' AND id = 'r'`, store.query({ limit: all })],
         [
-          sql`INSERT INTO tea_entity_keys ${
+          sql`INSERT INTO effecttea_entity_keys ${
             sql.insert({
               name: 'Receiver',
               id: 'r',
@@ -587,17 +587,17 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           }`,
           store.load('r'),
         ],
-        [sql`UPDATE tea_entities SET incarnations = -1 WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
+        [sql`UPDATE effecttea_entities SET incarnations = -1 WHERE name = 'Receiver' AND id = 'r'`, store.load('r')],
         [
-          sql`UPDATE tea_mailbox SET seq = -5 WHERE name = 'Receiver' AND id = 'r'`,
+          sql`UPDATE effecttea_mailbox SET seq = -5 WHERE name = 'Receiver' AND id = 'r'`,
           store.write('r', written({ queued: [inbound('two')] }), 0),
         ],
         [behind, store.fetch('projection', 'c', all)],
         [behind, store.consumers],
-        [sql`UPDATE tea_heads SET seq = -1 WHERE name = 'Receiver'`, store.published('projection', [], all)],
+        [sql`UPDATE effecttea_heads SET seq = -1 WHERE name = 'Receiver'`, store.published('projection', [], all)],
         // A timer's time is a whole number of milliseconds, read by the waker.
         [
-          sql`INSERT INTO tea_entity_keys ${
+          sql`INSERT INTO effecttea_entity_keys ${
             sql.insert({
               name: 'Receiver',
               id: 'r',
@@ -615,7 +615,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
         // A step's publication always handles a message.
         [
           Effect.andThen(
-            sql`INSERT INTO tea_publications ${
+            sql`INSERT INTO effecttea_publications ${
               sql.insert({
                 name: 'Receiver',
                 partition,
@@ -627,7 +627,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
                 projection: '"one"',
               })
             }`,
-            sql`INSERT INTO tea_outbox ${sql.insert({ name: 'Receiver', topic: 'projection', partition, seq: 2 })}`,
+            sql`INSERT INTO effecttea_outbox ${sql.insert({ name: 'Receiver', topic: 'projection', partition, seq: 2 })}`,
           ),
           store.published('projection', [], all),
         ],
@@ -646,7 +646,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
       }
       expect((yield* store.load('r'))?.mailbox.map((envelope) => envelope.message)).toEqual(['one'])
       // A creation's publication handles no message.
-      yield* sql`INSERT INTO tea_publications ${
+      yield* sql`INSERT INTO effecttea_publications ${
         sql.insert({
           name: 'Receiver',
           partition,
@@ -658,7 +658,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           projection: '"one"',
         })
       }`
-      yield* sql`INSERT INTO tea_outbox ${sql.insert({ name: 'Receiver', topic: 'projection', partition, seq: 2 })}`
+      yield* sql`INSERT INTO effecttea_outbox ${sql.insert({ name: 'Receiver', topic: 'projection', partition, seq: 2 })}`
       expect((yield* Effect.exit(store.published('projection', [], all)))._tag).toBe('Failure')
     }).pipe(Effect.orDie)))
 
@@ -703,25 +703,25 @@ test('a reply is read by the key of its table, and a caller’s again by an inde
         Effect.map(sql.unsafe<{ detail: string }>(`EXPLAIN QUERY PLAN ${query}`), (rows) =>
           rows.map(({ detail }) => detail).join(' '))
       expect(
-        yield* plan(`SELECT request, tag, version, reason FROM tea_replies
+        yield* plan(`SELECT request, tag, version, reason FROM effecttea_replies
                      WHERE name = 'Receiver' AND id = 'r' AND request = '{}'`),
-      ).toContain('USING INDEX sqlite_autoindex_tea_replies_1 (name=? AND id=? AND request=?)')
+      ).toContain('USING INDEX sqlite_autoindex_effecttea_replies_1 (name=? AND id=? AND request=?)')
       expect(
-        yield* plan(`SELECT request, tag, version, reason FROM tea_replies
+        yield* plan(`SELECT request, tag, version, reason FROM effecttea_replies
                      WHERE name = 'Receiver' AND id = 'r' AND request_id = 'x' AND version <> 2`),
-      ).toContain('USING INDEX tea_replies_by_request_id (name=? AND id=? AND request_id=?)')
+      ).toContain('USING INDEX effecttea_replies_by_request_id (name=? AND id=? AND request_id=?)')
     }).pipe(Effect.orDie), ['sqlite']))
 
 // The tables of an application may sit in the runtime's database, so every object the runtime makes is named with
-// `tea_`, SQLite's own excepted (decision 0198).
-test('every table, index, trigger and function the runtime makes is named with tea_', () =>
+// `effecttea_`, SQLite's own excepted (decision 0218).
+test('every table, index, trigger and function the runtime makes is named with effecttea_', () =>
   database((sql) =>
     Effect.gen(function*() {
       yield* storage(ranked, sql).indexed
       yield* storage(receiver, sql).write('r', created(), 0)
       const names = dialectOf(sql) === 'sqlite'
         ? yield* sql<{ name: string }>`
-          SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_autoindex_tea_%' AND name <> 'sqlite_sequence'
+          SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_autoindex_effecttea_%' AND name <> 'sqlite_sequence'
         `
         : yield* sql<{ name: string }>`
           SELECT relname AS name FROM pg_class WHERE relnamespace = current_schema()::regnamespace
@@ -729,7 +729,7 @@ test('every table, index, trigger and function the runtime makes is named with t
           UNION ALL SELECT tgname FROM pg_trigger WHERE NOT tgisinternal
         `
       expect(names.length).toBeGreaterThan(16)
-      expect(names.map(({ name }) => name).filter((name) => !name.startsWith('tea_'))).toEqual([])
+      expect(names.map(({ name }) => name).filter((name) => !name.startsWith('effecttea_'))).toEqual([])
     }).pipe(Effect.orDie)))
 
 // No statement of the storage names a schema but `current_schema()`, so a client whose search_path names one puts
@@ -746,9 +746,9 @@ test('on PostgreSQL every object the runtime makes is in the schema its client�
       yield* storage(receiver, sql).write('r', created(), 0)
       const placed = yield* sql<{ schema: string; name: string }>`
         SELECT nspname AS schema, relname AS name FROM pg_class JOIN pg_namespace ON pg_namespace.oid = relnamespace
-        WHERE starts_with(relname, 'tea_')
+        WHERE starts_with(relname, 'effecttea_')
         UNION ALL SELECT nspname, proname FROM pg_proc JOIN pg_namespace ON pg_namespace.oid = pronamespace
-        WHERE starts_with(proname, 'tea_')
+        WHERE starts_with(proname, 'effecttea_')
         UNION ALL SELECT nspname, tgname FROM pg_trigger JOIN pg_class ON pg_class.oid = tgrelid
         JOIN pg_namespace ON pg_namespace.oid = relnamespace WHERE NOT tgisinternal
       `
@@ -756,16 +756,16 @@ test('on PostgreSQL every object the runtime makes is in the schema its client�
       expect(placed.filter(({ schema }) => schema !== 'runtime')).toEqual([])
       // The trigger's function finds its tables through the same search_path.
       const row = { name: 'Receiver', partition: 1, seq: 2 }
-      yield* sql`INSERT INTO tea_publications ${
+      yield* sql`INSERT INTO effecttea_publications ${
         sql.insert({ ...row, id: 'r', tag: 'Creation', version: 1, message: '"one"', projection: '"one"' })
       }`
-      yield* sql`INSERT INTO tea_outbox ${sql.insert({ ...row, topic: 'projection' })}`
-      yield* sql`DELETE FROM tea_outbox`
-      expect(yield* sql`SELECT seq FROM tea_publications`).toEqual([])
+      yield* sql`INSERT INTO effecttea_outbox ${sql.insert({ ...row, topic: 'projection' })}`
+      yield* sql`DELETE FROM effecttea_outbox`
+      expect(yield* sql`SELECT seq FROM effecttea_publications`).toEqual([])
     }).pipe(Effect.provide(client('pg')), Effect.orDie),
   ))
 
-// Unnamed, `tea_migrations` was found in `public`, and the schema the search_path names first was given no table
+// Unnamed, `effecttea_migrations` was found in `public`, and the schema the search_path names first was given no table
 // (decision 0217).
 test('on PostgreSQL the tables are made in the schema the search_path names first, though one further on has them', () =>
   Effect.runPromise(
@@ -778,12 +778,12 @@ test('on PostgreSQL the tables are made in the schema the search_path names firs
       const tables = (schema: string) =>
         sql<{ name: string }>`
           SELECT relname AS name FROM pg_class JOIN pg_namespace ON pg_namespace.oid = relnamespace
-          WHERE nspname = ${schema} AND relkind = 'r' AND starts_with(relname, 'tea_') ORDER BY relname
+          WHERE nspname = ${schema} AND relkind = 'r' AND starts_with(relname, 'effecttea_') ORDER BY relname
         `
       const made = yield* tables('runtime')
       expect(made.length).toBeGreaterThan(16)
       expect(made).toEqual(yield* tables('public'))
-      expect(yield* sql`SELECT migration_id FROM runtime.tea_migrations`).toEqual([{ migration_id: 1 }])
+      expect(yield* sql`SELECT migration_id FROM runtime.effecttea_migrations`).toEqual([{ migration_id: 1 }])
     }).pipe(Effect.provide(client('pg')), Effect.orDie),
   ))
 
@@ -816,6 +816,33 @@ test('a launch and a rename leave alone the tables of an application named as th
       expect(yield* sql`SELECT level, message FROM log`).toEqual([{ level: 'info', message: 'started' }])
     }).pipe(Effect.orDie)))
 
+// With `IF NOT EXISTS`, a launch took a table of the application under one of the runtime's names for its own. The
+// migration runs in one transaction, so the objects it made before the clash go with it. `Migrator` makes its own
+// table before the transaction, and records nothing in it (decision 0218).
+test('a launch on a database that holds a table named as one of the runtime’s dies, and leaves no object of its own', () =>
+  onEach(['sqlite', 'pg'], (dialect) =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`CREATE TABLE effecttea_consumers (name TEXT NOT NULL)`
+        yield* sql`INSERT INTO effecttea_consumers VALUES ('Receiver')`
+        const launched = yield* Effect.exit(createTables)
+        expect(Exit.isFailure(launched) ? String(launched.cause) : null).toContain('effecttea_consumers')
+        const names = dialect === 'sqlite'
+          ? yield* sql<{ name: string }>`SELECT name FROM sqlite_master WHERE name <> 'sqlite_sequence' ORDER BY name`
+          : yield* sql<{ name: string }>`
+            SELECT relname AS name FROM pg_class WHERE relnamespace = current_schema()::regnamespace
+            UNION ALL SELECT proname FROM pg_proc WHERE pronamespace = current_schema()::regnamespace
+            UNION ALL SELECT tgname FROM pg_trigger WHERE NOT tgisinternal
+            ORDER BY name
+          `
+        expect(names.map(({ name }) => name).filter((name) => !name.endsWith('_pkey') && !name.endsWith('_seq')))
+          .toEqual(['effecttea_consumers', 'effecttea_migrations'])
+        expect(yield* sql`SELECT migration_id FROM effecttea_migrations`).toEqual([])
+        expect(yield* sql`SELECT name FROM effecttea_consumers`).toEqual([{ name: 'Receiver' }])
+      }).pipe(Effect.provide(client(dialect)), Effect.orDie),
+    )))
+
 // PostgreSQL compares text by the collation of its column, and the database's own may order by language. Every text
 // column the storage makes is `C`, which compares bytes as SQLite's `BINARY` does. PGlite's database is `C` itself,
 // so the order of the read model's ids is the same without the collation, and the test reads it off the columns
@@ -824,10 +851,10 @@ test('on PostgreSQL every text column the storage makes compares bytes', () =>
   database((sql) =>
     Effect.gen(function*() {
       yield* storage(ranked, sql).indexed
-      // `tea_migrations` is made by `Migrator`, and nothing of the runtime compares its text (decision 0216).
+      // `effecttea_migrations` is made by `Migrator`, and nothing of the runtime compares its text (decision 0216).
       const columns = yield* sql<{ table_name: string; column_name: string; collation_name: string | null }>`
         SELECT table_name, column_name, collation_name FROM information_schema.columns
-        WHERE table_schema = current_schema() AND data_type = 'text' AND table_name <> 'tea_migrations'
+        WHERE table_schema = current_schema() AND data_type = 'text' AND table_name <> 'effecttea_migrations'
       `
       expect(columns.length).toBeGreaterThan(0)
       expect(columns.filter((column) => column.collation_name !== 'C')).toEqual([])
@@ -845,7 +872,7 @@ test('on PostgreSQL two long names of indexes that share their first bytes name 
       } as unknown as Program<Ranked>
       yield* storage(program, sql).indexed
       const indexes = yield* sql<{ indexname: string }>`
-        SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname LIKE ${`tea_projections Ranked %`}
+        SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname LIKE ${`effecttea_projections Ranked %`}
       `
       expect(new Set(indexes.map(({ indexname }) => indexname)).size).toBe(2)
     }).pipe(Effect.orDie), ['pg']))
@@ -879,7 +906,7 @@ test('on PostgreSQL a page, a count and a caller’s reply by its request id are
           return read
         })
       yield* sql`SET enable_seqscan = off`
-      const page = /Index (Only )?Scan (Backward )?using "tea_projections Ranked rank by id"/
+      const page = /Index (Only )?Scan (Backward )?using "effecttea_projections Ranked rank by id"/
       const pages = [
         ...yield* plans(store.query({ limit: all, order: { index: 'rank' }, after: { id: 'a', indexes: { rank: 1 } } })),
         ...yield* plans(
@@ -893,7 +920,7 @@ test('on PostgreSQL a page, a count and a caller’s reply by its request id are
         expect(plan).not.toContain('Sort')
       }
       const replies = yield* plans(storage(receiver, sql).reply('r', { _tag: 'Caller', sender: null, id: 'x' }, 0))
-      expect(replies.at(-1)).toContain('tea_replies_by_request_id')
+      expect(replies.at(-1)).toContain('effecttea_replies_by_request_id')
     }).pipe(Effect.orDie), ['pg']))
 
 /**
@@ -1012,10 +1039,10 @@ describe('topics of the log (decision 0138)', () => {
         yield* store.write('r', publishing('hi', { upper: 'HI', size: 2 }, ['upper', 'size']), 0)
         const stored = Effect.map(
           sql<{ seq: number; rows: number }>`
-            SELECT tea_publications.seq AS seq, count(tea_outbox.position) AS rows FROM tea_publications
-            LEFT JOIN tea_outbox ON tea_outbox.name = tea_publications.name AND tea_outbox.partition = tea_publications.partition
-              AND tea_outbox.seq = tea_publications.seq
-            GROUP BY tea_publications.seq ORDER BY tea_publications.seq
+            SELECT effecttea_publications.seq AS seq, count(effecttea_outbox.position) AS rows FROM effecttea_publications
+            LEFT JOIN effecttea_outbox ON effecttea_outbox.name = effecttea_publications.name AND effecttea_outbox.partition = effecttea_publications.partition
+              AND effecttea_outbox.seq = effecttea_publications.seq
+            GROUP BY effecttea_publications.seq ORDER BY effecttea_publications.seq
           `,
           (held) => held.map(({ seq, rows }) => [seq, rows]),
         )
@@ -1077,8 +1104,8 @@ test('reindex skips an entity that a step wrote since, though its state has the 
       // As 'a''s row is written, version 2 steps 'b' to the state it writes as the same text, which it reads as
       // its own, with no migration: the step lands between the reading of 'b' and the writing of its row.
       const step = `
-        UPDATE tea_entities SET version = 2 WHERE name = 'Receiver' AND id = 'b';
-        UPDATE tea_projections SET projection = '"x"', version = 2 WHERE name = 'Receiver' AND id = 'b';
+        UPDATE effecttea_entities SET version = 2 WHERE name = 'Receiver' AND id = 'b';
+        UPDATE effecttea_projections SET projection = '"x"', version = 2 WHERE name = 'Receiver' AND id = 'b';
       `
       if (dialectOf(sql) === 'pg') {
         yield* sql.unsafe(`
@@ -1088,9 +1115,9 @@ test('reindex skips an entity that a step wrote since, though its state has the 
             RETURN NULL;
           END $$
         `)
-        yield* sql`CREATE TRIGGER step AFTER UPDATE ON tea_projections FOR EACH ROW EXECUTE FUNCTION step()`
+        yield* sql`CREATE TRIGGER step AFTER UPDATE ON effecttea_projections FOR EACH ROW EXECUTE FUNCTION step()`
       } else {
-        yield* sql.unsafe(`CREATE TEMP TRIGGER step AFTER UPDATE ON tea_projections WHEN NEW.id = 'a' BEGIN ${step} END`)
+        yield* sql.unsafe(`CREATE TEMP TRIGGER step AFTER UPDATE ON effecttea_projections WHEN NEW.id = 'a' BEGIN ${step} END`)
       }
       const after = storage(marked, sql)
       expect(yield* after.reindex).toEqual({ written: 1, failed: [] })
@@ -1128,7 +1155,7 @@ test('reindex passes over a state a migration or the schema dies on, and fails o
         { id: 'b', projection: 'start', indexes: {} },
         { id: 'c', projection: 'start', indexes: {} },
       ])
-      yield* sql`UPDATE tea_entities SET state = 'no json' WHERE name = 'Receiver' AND id = 'a'`
+      yield* sql`UPDATE effecttea_entities SET state = 'no json' WHERE name = 'Receiver' AND id = 'a'`
       const exit = yield* Effect.exit(after.reindex)
       expect(Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof SyntaxError).toBe(true)
     }).pipe(Effect.orDie)))
@@ -1204,11 +1231,11 @@ test('an index of the program holds the value and the id', () =>
       const column = `json_extract(indexes, '$.rank')`
       yield* storage(ranked, sql).indexed
       const made = yield* sql<{ name: string; sql: string }>`
-        SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name LIKE 'tea_projections %'
+        SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name LIKE 'effecttea_projections %'
       `
       expect(made).toEqual([{
-        name: 'tea_projections Ranked rank by id',
-        sql: `CREATE INDEX "tea_projections Ranked rank by id" ON tea_projections (name, ${column}, id)`,
+        name: 'effecttea_projections Ranked rank by id',
+        sql: `CREATE INDEX "effecttea_projections Ranked rank by id" ON effecttea_projections (name, ${column}, id)`,
       }])
     }).pipe(Effect.orDie), ['sqlite']))
 
@@ -1222,7 +1249,7 @@ test('a page gives a row once though a step moves it while the page is read', ()
     for (const id of ['a', 'b']) yield* store.write(id, created({ shown: { projection: '1', indexes: { rank: 1 } } }), 0)
     const [page] = yield* Effect.all([
       store.query({ limit: all, order: { index: 'rank' }, after: { id: 'a', indexes: { rank: 1 } } }),
-      sql`UPDATE tea_projections SET indexes = '{"rank":2}' WHERE id = 'b'`,
+      sql`UPDATE effecttea_projections SET indexes = '{"rank":2}' WHERE id = 'b'`,
     ], { concurrency: 'unbounded' })
     return page.map(({ id }) => id)
   }).pipe(Effect.provide(SqliteClient.layer({ filename: ':memory:' })), Effect.orDie)
@@ -1301,7 +1328,7 @@ test('a query pages past, and finds by its value, a row whose index is an intege
       for (const [id, rank] of Object.entries(ranks)) {
         yield* store.write(id, created({ shown: { projection: JSON.stringify(rank), indexes: { rank } } }), 0)
       }
-      const stored = yield* sql<{ id: string; indexes: string }>`SELECT id, indexes FROM tea_projections ORDER BY id`
+      const stored = yield* sql<{ id: string; indexes: string }>`SELECT id, indexes FROM effecttea_projections ORDER BY id`
       expect(stored.map(({ indexes }) => indexes)).toEqual([
         '{"rank":1762300123456788992}',
         '{"rank":1152921504606846976}',
@@ -1346,7 +1373,7 @@ test('reindex writes an index that is an integer beyond 2^53 with its exact digi
       const state = { last: JSON.stringify(2 ** 60) }
       yield* store.write('a', created({ entity: { state, creation }, shown: { projection: '0', indexes: { rank: 0 } } }), 0)
       expect(yield* store.reindex).toEqual({ written: 1, failed: [] })
-      const stored = yield* sql<{ indexes: string }>`SELECT indexes FROM tea_projections`
+      const stored = yield* sql<{ indexes: string }>`SELECT indexes FROM effecttea_projections`
       expect(stored).toEqual([{ indexes: '{"rank":1152921504606846976}' }])
     }).pipe(Effect.orDie)))
 
@@ -1583,7 +1610,7 @@ test('the partition of an id is Cluster’s formula on Hash.string, pinned for a
 const logged = (sql: SqlClient.SqlClient, id: string, seq: number, position: number) =>
   Effect.andThen(
     Effect.andThen(
-      sql`INSERT INTO tea_publications ${
+      sql`INSERT INTO effecttea_publications ${
         sql.insert({
           name: 'Receiver',
           partition: partitionOf(id, 300),
@@ -1596,14 +1623,14 @@ const logged = (sql: SqlClient.SqlClient, id: string, seq: number, position: num
         })
       }`,
       // A position of PostgreSQL is drawn by the database, and a row given one by hand says so.
-      sql`INSERT INTO tea_outbox (position, name, topic, partition, seq) ${
+      sql`INSERT INTO effecttea_outbox (position, name, topic, partition, seq) ${
         sql.literal(dialectOf(sql) === 'pg' ? 'OVERRIDING SYSTEM VALUE' : '')
       } VALUES (${position}, 'Receiver', 'projection', ${partitionOf(id, 300)}, ${seq})`,
     ),
     sql`
-      INSERT INTO tea_heads ${sql.insert({ name: 'Receiver', partition: partitionOf(id, 300), seq })}
+      INSERT INTO effecttea_heads ${sql.insert({ name: 'Receiver', partition: partitionOf(id, 300), seq })}
       ON CONFLICT (name, partition)
-      DO UPDATE SET seq = CASE WHEN tea_heads.seq > excluded.seq THEN tea_heads.seq ELSE excluded.seq END
+      DO UPDATE SET seq = CASE WHEN effecttea_heads.seq > excluded.seq THEN effecttea_heads.seq ELSE excluded.seq END
     `,
   )
 
@@ -1662,7 +1689,7 @@ describe('renaming a program (decision 0156)', () => {
     }) as const
   const stored = (sql: SqlClient.SqlClient) =>
     Effect.flatMap(
-      sql`SELECT name, id, keyed_as, creation FROM tea_entities ORDER BY name, id`,
+      sql`SELECT name, id, keyed_as, creation FROM effecttea_entities ORDER BY name, id`,
       Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({
         name: Schema.String,
         id: Schema.String,
@@ -1734,7 +1761,7 @@ describe('renaming a program (decision 0156)', () => {
         expect(yield* storage(receiver, sql, undefined, true).waiters('r')).toEqual([])
         expect(yield* storage(seller, sql, undefined, true).waiters('r')).toEqual([{ name: 'Buyer', id: 'a' }])
         const sent = yield* Effect.flatMap(
-          sql`SELECT sender_name FROM tea_sent_requests`,
+          sql`SELECT sender_name FROM effecttea_sent_requests`,
           Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ sender_name: Schema.String }))),
         )
         expect(sent).toEqual([{ sender_name: 'Buyer' }])
@@ -1762,7 +1789,7 @@ describe('renaming a program (decision 0156)', () => {
         yield* storage(receiver, sql).write('r', created({ replies: parameters.map(answered) }), 0)
         yield* rename(sql, [['Asker', 'Buyer \u0007 "é"']])
         const found = yield* Effect.flatMap(
-          sql`SELECT request FROM tea_replies WHERE name = 'Receiver' ORDER BY request`,
+          sql`SELECT request FROM effecttea_replies WHERE name = 'Receiver' ORDER BY request`,
           Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ request: Schema.String }))),
         )
         expect([...found.map(({ request }) => request)].sort()).toEqual(
@@ -1853,10 +1880,10 @@ describe('renaming a program (decision 0156)', () => {
         yield* storage(asker, sql).write('a', created(), 0)
         yield* storage(receiver, sql).write('r', created(), 0)
         const spaced = JSON.stringify(askedBy('Asker'), null, 1)
-        yield* sql`UPDATE tea_entities SET creation = ${spaced} WHERE name = 'Receiver'`
+        yield* sql`UPDATE effecttea_entities SET creation = ${spaced} WHERE name = 'Receiver'`
         expect(reasonOf(yield* Effect.exit(rename(sql, [['Asker', 'Buyer']])))).toBe(
           dialectOf(sql) === 'pg'
-            ? "the launch renames 'Asker' to 'Buyer', and a request of 'tea_entities' is no text the runtime writes"
+            ? "the launch renames 'Asker' to 'Buyer', and a request of 'effecttea_entities' is no text the runtime writes"
             : "the launch renames 'Asker' to 'Buyer', and SQLite writes a request's text otherwise than the runtime",
         )
         expect((yield* stored(sql)).map(({ name, creation }) => [name, creation])).toEqual([

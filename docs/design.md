@@ -480,11 +480,13 @@ The runtime writes all of it through the program's schemas, as JSON, in tables o
 keys with their incarnations and work, the mailbox in order, the replies by request, the read model, the
 outbox with the publication of each step, the number of its partitions and the head of each, its consumers and
 their cursors, and on Cluster the versions and the requests it keeps ([`src/storage.ts`](../src/storage.ts)). Every
-table, index, trigger and function the runtime makes is named with `tea_`, as `tea_entities`, so that the tables of an
-application in the same database are never taken for its own. The prefix is fixed, and an application names no
-table of its own with it ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)). On
+table, index, trigger and function the runtime makes is named with `effecttea_`, as `effecttea_entities`, so that
+the tables of an application in the same database are never taken for its own. The prefix is fixed, and an
+application names no table of its own with it. A launch on a database that already holds an object under one of the
+runtime's names dies, and leaves none of the runtime's objects behind
+([decision 0218](decisions/0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md)). On
 PostgreSQL the runtime makes every object in the schema that the client's `search_path` names first, even where a
-schema further on holds the tables already. Only `tea_migrations` is named with that schema, which
+schema further on holds the tables already. Only `effecttea_migrations` is named with that schema, which
 `current_schema()` gives, since `Migrator` would otherwise find it in any schema of the `search_path`
 ([decision 0217](decisions/0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md)). A launcher that sets the `search_path` of the runtime's role, as Cluster asks for
 its own tables, puts them in a schema of their own. A database is still held by one runtime, whatever its schemas,
@@ -1071,8 +1073,8 @@ is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md
 database until it ends: a second runtime on it, or a launch while another connection has the file of SQLite open,
 dies as it launches ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). A database of
 PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. Once it holds the
-database, a launch runs the migrations of the tables not yet recorded in `tea_migrations`, with Effect's `Migrator`
-([decision 0216](decisions/0216-the-tables-are-made-by-effects-migrator.md)). The first migration is the schema of
+database, a launch runs the migrations of the tables not yet recorded in `effecttea_migrations`, with Effect's
+`Migrator` ([decision 0216](decisions/0216-the-tables-are-made-by-effects-migrator.md)). The first migration is the schema of
 the first release, and a later change of a table is a migration after it. `Migrator` runs the pending migrations in
 one transaction, so that two launches on one database run each migration once. A launch given `tables: 'existing'`
 runs no migration, for a role of PostgreSQL that may only read and write rows, and an operator runs `createTables`

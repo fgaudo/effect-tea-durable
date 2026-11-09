@@ -193,7 +193,7 @@ what the one before stored. This library writes it once, so that a program holds
 
 - **A row with no life of its own**, such as a profile or a product. A request handler and a table already serve it,
   with Effect's HTTP and SQL modules. Such a table may live in the runtime's database, under a name that does not
-  start with `tea_`, which the runtime keeps for its own tables.
+  start with `effecttea_`, which the runtime keeps for its own tables.
 - **A reply that carries data.** A reply says whether a message applied, or why it did not. A caller reads the
   projection after, and an entity that needs a value of another one receives it in the message itself.
 - **Entities spread across machines.** On Effect Cluster every runner shares one file of SQLite, so the runners are

@@ -36,7 +36,7 @@ test('a role that may only read and write rows creates no table, runs migrations
     yield* sql`GRANT USAGE ON SCHEMA public TO app`
     yield* sql`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app`
     yield* sql`SET ROLE app`
-    const refused = yield* Effect.exit(sql`CREATE TABLE tea_other (name TEXT)`)
+    const refused = yield* Effect.exit(sql`CREATE TABLE effecttea_other (name TEXT)`)
     expect(Exit.isFailure(refused) ? String(refused.cause) : null).toContain('permission denied for schema public')
     yield* createTables
     const runtime = yield* launch({ tables: 'existing' })

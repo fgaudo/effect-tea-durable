@@ -75,7 +75,7 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     refusing each other
     ([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)).
   - two launches at once that run the migrations of `createTables`, where the second waits on
-    `LOCK TABLE tea_migrations IN ACCESS EXCLUSIVE MODE` until the first commits, and runs none
+    `LOCK TABLE effecttea_migrations IN ACCESS EXCLUSIVE MODE` until the first commits, and runs none
     ([decision 0216](decisions/0216-the-tables-are-made-by-effects-migrator.md)).
 - **A fiber that outlives its transaction.** A fiber forked inside a transaction keeps the transaction's connection
   in its context. At 4.1.2 its statements and savepoints then run on that connection after the commit, outside the

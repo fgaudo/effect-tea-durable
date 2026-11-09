@@ -64,7 +64,7 @@ const measure = (size: number, capacity?: number) =>
     yield* runtime.settled
     const elapsed = performance.now() - started
     const after = heap()
-    const [state] = yield* sql<{ bytes: number }>`SELECT length(state) AS bytes FROM tea_entities WHERE id = 'warm'`
+    const [state] = yield* sql<{ bytes: number }>`SELECT length(state) AS bytes FROM effecttea_entities WHERE id = 'warm'`
     const stateBytes = state?.bytes ?? 0
     return { size, capacity, stateBytes, bytesPerEntity: (after - before) / count, ms: elapsed / count }
   })

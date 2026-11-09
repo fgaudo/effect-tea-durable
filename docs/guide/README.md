@@ -50,8 +50,8 @@ table of the application, read and written by request handlers, as in any backen
 
 ```ts
 // A customer has no life of its own, so it is a row of the application's table, and no entity. The table lives in
-// the runtime's database, under a name that does not start with `tea_`, which the runtime keeps for its own
-// (decision 0198).
+// the runtime's database, under a name that does not start with `effecttea_`, which the runtime keeps for its own
+// (decision 0218).
 export const createCustomers = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
   yield* sql`CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, email TEXT NOT NULL)`
@@ -60,7 +60,7 @@ export const createCustomers = Effect.gen(function*() {
 
 **A row with no life of its own is a table of the application.** The table may live in the runtime's database,
 written on the same `SqlClient` the runtime was launched with. Every table, index, trigger and function whose name
-starts with `tea_` is the runtime's, so an application names nothing of its own with `tea_`.
+starts with `effecttea_` is the runtime's, so an application names nothing of its own with `effecttea_`.
 
 An item is an entity when others address it, or when it has a life of its own: a timer, an operation, a rule
 that holds across its messages. Otherwise it is a row, or a field of an entity's state. The guide's page on
@@ -595,7 +595,7 @@ expect(first._tag === 'Rented' ? yield* rides.read(first.ride) : null).toMatchOb
 ## The rules, in one list
 
 1. **A row with no life of its own is a table of the application**, in the runtime's database if it likes, under a
-   name that does not start with `tea_`.
+   name that does not start with `effecttea_`.
 2. **Each state is named for what is under way**, and holds what that case needs.
 3. **An inbound message that does not apply is rejected; an internal message that cannot arrive is a defect.**
 4. **Work is derived from the state.** A state that holds no timer has no timer, and nothing cancels anything.

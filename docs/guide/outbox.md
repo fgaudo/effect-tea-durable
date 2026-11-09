@@ -166,7 +166,7 @@ export const statusReport = Effect.gen(function*() {
 `Order` is `TypesOf<typeof order>`, the order's types as one record, which `Published` reads the topic's value from.
 The store holds the last status, and not a count per status. A row gives the status the step left and not the one
 before, so a count could not be moved from one status to another on a row alone. The count is a grouping over the
-store. The table's name does not start with `tea_`, which is the runtime's.
+store. The table's name does not start with `effecttea_`, which is the runtime's.
 
 `consume` runs the consumer's loop:
 

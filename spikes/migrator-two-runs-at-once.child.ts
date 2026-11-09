@@ -15,13 +15,13 @@ await Effect.runPromise(Effect.gen(function*() {
     loader: Migrator.fromRecord({
       '0001_tables': Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
-        yield* sql`CREATE TABLE tea_rows (name TEXT NOT NULL)`
-        yield* sql`INSERT INTO tea_rows (name) VALUES ('first')`
+        yield* sql`CREATE TABLE effecttea_rows (name TEXT NOT NULL)`
+        yield* sql`INSERT INTO effecttea_rows (name) VALUES ('first')`
         yield* Effect.sync(() => process.stdout.write('inside\n'))
         yield* Effect.sleep(held)
       }),
     }),
-    table: 'tea_migrations',
+    table: 'effecttea_migrations',
   })
   yield* Effect.sync(() => process.stdout.write(`completed ${JSON.stringify(completed)}\n`))
 }).pipe(Effect.provide(SqliteClient.layer({ filename }))))

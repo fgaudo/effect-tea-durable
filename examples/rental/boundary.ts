@@ -11,8 +11,8 @@ import type { Handle, TypesOf } from '@fgaudo/effect-tea-persistent'
 import type { ride } from './ride.ts'
 
 // A customer has no life of its own, so it is a row of the application's table, and no entity. The table lives in
-// the runtime's database, under a name that does not start with `tea_`, which the runtime keeps for its own
-// (decision 0198).
+// the runtime's database, under a name that does not start with `effecttea_`, which the runtime keeps for its own
+// (decision 0218).
 export const createCustomers = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
   yield* sql`CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, email TEXT NOT NULL)`
