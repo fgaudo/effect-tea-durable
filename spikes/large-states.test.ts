@@ -36,6 +36,7 @@ import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { afterEach, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Logger from 'effect/Logger'
+import * as LogLevel from 'effect/LogLevel'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -146,19 +147,20 @@ const measure = (rooms: typeof whole | typeof counted | typeof topical, label: s
   })
 
 /**
- * The warnings the runtime logs, collected rather than printed. A step of the largest states passes the threshold of
- * decision 0135, so the warning of a large state is the one each test may meet.
+ * The warnings and errors the runtime logs, collected rather than printed. A step of the largest states passes the
+ * threshold of decision 0135, so the warning of a large state is the one each test may meet.
  */
-const warnings: Array<string> = []
+const logged: Array<string> = []
 
 const collected = Logger.layer([Logger.make(({ logLevel, message }) => {
-  if (logLevel === 'Warn') warnings.push(String(Array.isArray(message) ? message[0] : message))
+  if (LogLevel.isLessThan(logLevel, 'Warn')) return
+  logged.push(String(Array.isArray(message) ? message[0] : message))
 })])
 
 const largeState = 'a step wrote a large state; the program may split it into entities'
 
 afterEach(() => {
-  expect(warnings.splice(0).filter((warning) => warning !== largeState)).toEqual([])
+  expect(logged.splice(0).filter((text) => text !== largeState)).toEqual([])
 })
 
 const onFile = <A, E>(body: Effect.Effect<A, E, SqlClient.SqlClient>) => {

@@ -29,6 +29,7 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
+import * as LogLevel from 'effect/LogLevel'
 import * as Option from 'effect/Option'
 import * as Schedule from 'effect/Schedule'
 import * as Schema from 'effect/Schema'
@@ -98,15 +99,15 @@ const at = (name: string, version: number): Program<T> => ({
 })
 
 /**
- * The errors logged while the runners of a test run, collected rather than printed by each `onFile` and by
- * `onRunner`, each as its message and the reason of its cause. Cluster logs a defect of an entity as an error, and
- * restarts the entity. A test that provokes one takes it with `errorsLogged`. Every test ends with none left, so
- * that a defect no test expects fails the test that met it.
+ * The warnings and errors logged while the runners of a test run, collected rather than printed by each `onFile`
+ * and by `onRunner`, each as its message and the reason of its cause. Cluster logs a defect of an entity as an error,
+ * and restarts the entity. A test that provokes one takes it with `warningsAndErrors`. Every test ends with none
+ * left, so that a defect or a warning no test expects fails the test that met it.
  */
 const logged: Array<string> = []
 
 const collected = Logger.layer([Logger.make(({ logLevel, message, cause }) => {
-  if (logLevel !== 'Error' && logLevel !== 'Fatal') return
+  if (LogLevel.isLessThan(logLevel, 'Warn')) return
   const [text] = Array.isArray(message) ? message : [message]
   if (cause.reasons.length === 0) return void logged.push(String(text))
   const squashed = Cause.squash(cause)
@@ -118,14 +119,14 @@ const collected = Logger.layer([Logger.make(({ logLevel, message, cause }) => {
   logged.push(`${String(text)}: ${reason}`)
 })])
 
-/** The errors logged since the last call, each once, sorted. */
-const errorsLogged = () => [...new Set(logged.splice(0))].sort()
+/** The warnings and errors logged since the last call, each once, sorted. */
+const warningsAndErrors = () => [...new Set(logged.splice(0))].sort()
 
 /** What Cluster logs as it restarts an entity that died with `reason`. */
 const restarted = (reason: string) => `Defect in entity, restarting: ${reason}`
 
 afterEach(() => {
-  expect(errorsLogged()).toEqual([])
+  expect(warningsAndErrors()).toEqual([])
 })
 
 const defectOf = <A, E>(exit: Exit.Exit<A, E>): unknown =>
@@ -422,7 +423,7 @@ describe('two runners on one file', () => {
         }).pipe(Effect.timeout('15 seconds'))
         expect((yield* sql<{ id: number }>`SELECT id FROM cluster_replies`).length).toBe(4)
       })).then(() =>
-        expect(errorsLogged()).toEqual([
+        expect(warningsAndErrors()).toEqual([
           restarted('the program Toy runs at version 1 here, and a launch has run it at version 2'),
         ])
       ), 30_000)
@@ -486,7 +487,7 @@ describe('two runners on one file', () => {
         yield* start(4, [at('Plaything', 1)], undefined, { renames: { Toy: 'Plaything' } })
         expect(yield* entities).toEqual([{ name: 'Plaything', state: '{"last":"m"}', steps: 3 }])
       })).then(() =>
-        expect(errorsLogged()).toEqual([
+        expect(warningsAndErrors()).toEqual([
           restarted('the program Toy runs here, and a launch has renamed it to Plaything'),
         ])
       ), 30_000)
@@ -842,7 +843,7 @@ describe('the runtime on Cluster', () => {
       expect(yield* sql`SELECT 1 FROM cluster_replies`).toEqual([])
       const messages = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Create'`
       expect(messages.map(({ processed }) => Number(processed))).toEqual([0])
-    })).then(() => expect(errorsLogged()).toEqual([restarted('a tally starts at zero or more')])), 30_000)
+    })).then(() => expect(warningsAndErrors()).toEqual([restarted('a tally starts at zero or more')])), 30_000)
 
   test('what a door step sets going starts once it commits, and its completion is stepped by the loop', () =>
     onRunner(Effect.gen(function*() {
@@ -888,7 +889,7 @@ describe('the runtime on Cluster', () => {
             failed = true
             yield* sql`INSERT INTO child (parent) VALUES (1)`
           }).pipe(Effect.orDie),
-    ).then(() => expect(errorsLogged()).toEqual([restarted('Failed to execute statement')]))
+    ).then(() => expect(warningsAndErrors()).toEqual([restarted('Failed to execute statement')]))
   }, 30_000)
 })
 
@@ -1275,7 +1276,7 @@ describe('the shards of a runner on Cluster', () => {
         Duration.minutes(1),
         { refresh: Duration.seconds(30), expiration: Duration.seconds(60) },
       )
-      expect(errorsLogged()).toEqual([
+      expect(warningsAndErrors()).toEqual([
         restarted('the lease of the shard default:2 does not name the runner localhost:1, or has expired'),
       ])
     }

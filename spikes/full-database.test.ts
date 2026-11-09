@@ -13,6 +13,7 @@ import { expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Logger from 'effect/Logger'
+import * as LogLevel from 'effect/LogLevel'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -43,11 +44,12 @@ const notes = program({
 
 const sender = { id: 'ada' }
 
-/** The warnings the runtime logs, collected rather than printed. */
-const warnings: Array<string> = []
+/** The warnings and errors the runtime logs, collected rather than printed. */
+const logged: Array<string> = []
 
 const collected = Logger.layer([Logger.make(({ logLevel, message }) => {
-  if (logLevel === 'Warn') warnings.push(String(Array.isArray(message) ? message[0] : message))
+  if (LogLevel.isLessThan(logLevel, 'Warn')) return
+  logged.push(String(Array.isArray(message) ? message[0] : message))
 })])
 const shown = (exit: Exit.Exit<unknown, unknown>) => Exit.isSuccess(exit) ? exit.value : String(exit.cause)
 
@@ -137,7 +139,7 @@ test('a full database stops the steps, and a forget and a prune free the room th
     expect(Exit.isSuccess(freed.pruned) && freed.pruned.value > 0).toBe(true)
     expect(Exit.isSuccess(freed.again) && Exit.isSuccess(freed.failedEntityAgain)).toBe(true)
     // The second process deploys without the consumer that stalled, which it then forgets.
-    expect(warnings).toEqual(['a consumer is stored and not declared; it holds its topic until it is forgotten'])
+    expect(logged).toEqual(['a consumer is stored and not declared; it holds its topic until it is forgotten'])
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
