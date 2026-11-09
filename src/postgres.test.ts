@@ -38,7 +38,10 @@ type T = {
   services: never
 }
 
-/** A receiver whose projection is its rank, as JSON, which its index reads. */
+/**
+ * A receiver whose index is its rank. The storage's tests give it by hand, and a step of the runtime ranks an entity by
+ * its projection.
+ */
 const ranked: Program<T> = {
   name: 'Ranked',
   keys: { ask: null },
@@ -57,7 +60,7 @@ const ranked: Program<T> = {
   work: () => noWork,
   operations: { Ask: operation(() => Effect.succeed('asked')) },
   project: ({ last }) => last,
-  indexes: { rank: (projection) => JSON.parse(projection) as Scalar },
+  indexes: { rank: (projection) => projection },
 }
 
 /** What an event that writes nothing but `rows` gives the storage. */

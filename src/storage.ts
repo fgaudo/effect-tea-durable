@@ -10,6 +10,7 @@ import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Hash from 'effect/Hash'
 import * as Schema from 'effect/Schema'
+import * as SchemaTransformation from 'effect/SchemaTransformation'
 import type * as Scope from 'effect/Scope'
 import { Migrator, SqlClient, type SqlError, type Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
@@ -842,11 +843,26 @@ const Suspended = Schema.Union([
   Schema.TaggedStruct('Activation', {}),
 ]) as unknown as Schema.Codec<Machine.Suspension['on'], Json>
 
+const safest = BigInt(Number.MAX_SAFE_INTEGER)
+
+/**
+ * An integer of a row, as a driver gives it: a number, or a bigint up to 2^53 read as a number. PGlite gives a
+ * `BIGINT` as a number up to 2^53, and `@effect/sql-pg` gives every one as a bigint (decision 0222). A value past 2^53
+ * is no row the runtime writes, and fails the call that meets it (decision 0157).
+ */
+const Integer = Schema.Union([
+  Schema.Int,
+  Schema.BigInt.pipe(
+    Schema.check(Schema.isBetweenBigInt({ minimum: -safest, maximum: safest })),
+    Schema.decodeTo(Schema.Int, SchemaTransformation.transform({ decode: Number, encode: BigInt })),
+  ),
+])
+
 /** The version of the program that wrote a row: the first is 1 (decision 0036). */
-const Version = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1)))
+const Version = Integer.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1)))
 
 /** An incarnation, a `seq` or a count, as a driver gives an integer up to 2^53 (decision 0157). */
-const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
+const Count = Integer.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
 
 /** A row of `effecttea_versions`: the newest version of a program, and the name a launch renamed it to, if any. */
 const Standing = Schema.Struct({ version: Count, renamed_to: Schema.NullOr(Schema.String) })
@@ -994,7 +1010,7 @@ const Rows = {
   ])),
   id: decoder(Schema.Struct({ id: Schema.String })),
   /** A timer's time, in milliseconds: one before 1970 is a time too. */
-  due: decoder(Schema.Struct({ id: Schema.String, at: Schema.Int })),
+  due: decoder(Schema.Struct({ id: Schema.String, at: Integer })),
   seq: decoder(Schema.Struct({ seq: Count })),
   /** A count of the rows that match. */
   count: decoder(Schema.Struct({ count: Count })),
