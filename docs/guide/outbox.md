@@ -48,7 +48,9 @@ expect(statuses.map(({ id, kind, message, value }) => [id, kind, message?._tag ?
 A row holds the entity's id, the message the step handled with its `kind`, and a `value` taken of the projection
 the step left. The message names the fact, and the projection is already the public contract. An entity's creation
 writes a row of `kind` `Creation`, with no message. A step of a child is the parent's step, and its row holds the
-message as the parent received it, wrapped with the child's name: `{ _tag: 'Line', id: 'mug', message }`.
+message as the parent received it, wrapped with the child's name: `{ _tag: 'Line', id: 'mug', message }`. A row
+holds no time: a reader that needs one, a time of occupancy to bill, finds it in the value, so the projection shows
+it.
 
 A step that changes nothing callers read publishes nothing. Nor does a rejected message, an internal message
 dropped, or a step that suspends the entity. The order's step that tells the warehouse changes only `canCancel`,
@@ -161,6 +163,7 @@ export const statusReport = Effect.gen(function*() {
 })
 ```
 
+`Order` is `TypesOf<typeof order>`, the order's types as one record, which `Published` reads the topic's value from.
 The store holds the last status, and not a count per status. A row gives the status the step left and not the one
 before, so a count could not be moved from one status to another on a row alone. The count is a grouping over the
 store. The table's name does not start with `tea_`, which is the runtime's.
@@ -248,7 +251,7 @@ expect(yield* orders.prune).toBe(2)
 
 The runtime caps nothing of the log, and drops nothing by time. A consumer that stops reading holds its topic, and
 the log grows. `orders.consumers` shows each consumer, its topic, whether the deploy declares it, and how many rows
-are past its cursors:
+are past its cursors, ordered by topic and then by consumer:
 
 ```ts
 expect(yield* orders.consumers).toEqual([

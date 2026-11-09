@@ -35,6 +35,11 @@ const forgetful: typeof ride = {
 }
 ```
 
+The pieces of a program, as values, are the ones the runtime calls, not those of the declaration. A program's
+`update` is `(message, meta) => (state) =>`, a parent's with its children's messages wrapped in `message`. The
+library gives the declaration's third argument, `children`, so a variant that changes a parent's `update` wraps
+this one.
+
 A customer ends a ride while its email is under way, and the step dies. On a phone a defect ends the app. On a
 server it must not end the process, and an entity that received its message again would die again, for ever. So
 **a defect suspends the entity**:
@@ -122,8 +127,10 @@ is sent at most once, so the fix's activation delivers its message for the case 
 `Unsure`. An operation still running at the resumption is kept, and one that died meanwhile runs again as its
 delivery says.
 
-A resume with no fix deployed handles the message with the same program, which dies on it again. It is right only
-where the cause was outside the program, such as a service an operation called that was down and is up again.
+A resume with no fix deployed handles the message with the same program, which dies on it again. The activation
+itself succeeds, so `resume` answers `Resumed`, and the entity suspends again once its message is handled, after
+the call: a test waits with `runtime.settled` and reads `suspended`. It is right only where the cause was outside
+the program, such as a service an operation called that was down and is up again.
 
 ## Discarding the message
 

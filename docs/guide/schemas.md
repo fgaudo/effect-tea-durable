@@ -74,9 +74,10 @@ A migration is a record of pure functions, **from the JSON a version wrote to th
 one for each kind of stored value: `state`, `operation`, `inbound`, `internal`, `rejection`, `sender` and
 `projection`. A kind left out is unchanged, so the bike's messages and reasons are read as they were. A migration
 works on the JSON, which every schema encodes to, as the schema encodes it: a `DateTimeUtcFromMillis` is a number,
-and the children of a parent are inside the parent's state, where its schema puts them. So the types and the
-schemas of version 1 do not live on in the
-code.
+and the children of a parent are inside the parent's state, where its schema puts them. A part has no migrations:
+the parent's read its children too, a child's messages wrapped in the parent's `inbound` and `internal`. So the
+types and the schemas of version 1 do not live on in the code. `Json` is the type of
+`@fgaudo/effect-tea-persistent/program`.
 
 A migration gives only what the old version knew. Version 1 never counted rides, and a migration cannot know how
 many a bike had. The business accepts that rides are counted from the deploy of version 2, so the migration gives

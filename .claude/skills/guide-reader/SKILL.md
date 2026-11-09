@@ -14,8 +14,8 @@ it, as [`AGENTS.md`](../../../AGENTS.md) says.
 1. Ask the maintainer whether the reader is a subagent, unless the maintainer has just asked for one. Write the
    answer and its date in the step of [`docs/roadmap.md`](../../../docs/roadmap.md) the check belongs to, if any.
 2. Choose a requirement that no example of `examples/` holds, and that needs every page the check is for. A
-   requirement used by an earlier check is not used again: the rental of bikes, the gym membership and the loan of
-   books are taken.
+   requirement used by an earlier check is not used again: the rental of bikes, the gym membership, the loan of
+   books and the bank of parcel lockers are taken.
 3. Make sure `scratch/` does not exist, since the reader writes there.
 
 ## The reader's brief

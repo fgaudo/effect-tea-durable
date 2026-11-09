@@ -121,7 +121,8 @@ export const cart = program({
 that focuses the entries of the record, each an id and a child's state. One optic says both where a line is and
 which lines are there. `child(part, { at })` declares one child instead, with an optic that focuses its state, and
 `.compose(Optic.some())` makes one that may not be there. An id has a schema, and two ids are one when they encode
-alike.
+alike. A part's `schemas` hold its `state`, `inbound`, `internal`, `operation` and `rejection`, and no projection: a
+parent that shows a child's projection declares its schema in its own.
 
 The child's state is part of the parent's, written in the same step. A line starts when the cart puts the line's
 first state in its own:
@@ -165,8 +166,10 @@ case 'CheckoutRequested':
 ```
 
 `children` is the third argument of the cart's `update`. `children.Line.update(id, message)` sends a line an
-external message, and returns the cart's step. `forEach` starts from a step and adds one more for each item, each
-made from the state the one before left. It puts the lines back in the cart's state once, and not once per line.
+external message, as a function from the cart's state to the cart's step: `children.Line.update(id, message)(state)`
+for one line. The line's `update` gets the cart's `meta`, with its `from` and its `at`. `forEach` starts from a
+step and adds one more for each item, each made from the state the one before left. It puts the lines back in the
+cart's state once, and not once per line.
 
 A line takes an external message in every state, since its parent decides when to send it:
 

@@ -158,3 +158,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   would be decided by:
   - a test of a program whose rejection holds a number, sent once and retried, on the runtime and in a rehearsal;
   - whether any reason a program gives holds a number a step computes, rather than a literal.
+- **A projection's `allows` without the sender.** `projectionViolations` gives each function of `allows` the
+  projection and the message, and never the sender. A projection that shows what each sender may do, a courier's
+  collection beside a recipient's pickup, is checked only by the candidates a test gives with each sender. A reader
+  of the guide found it awkward, building a bank of lockers that a courier, a recipient and an operator act on.
+  Whether `allows` is given the sender is not decided. It would be decided by:
+  - whether a projection shows actions by sender at all, or only what applies in the state, with the sender's right
+    checked by `update` alone;
+  - how many programs of the guide and the examples have more than one kind of sender.
