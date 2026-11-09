@@ -2,6 +2,7 @@
  * The cart's scenarios, rehearsed: each line is a child by id, addressed as `{ _tag: 'Line', id, message }`.
  */
 import { describe, expect, test } from 'bun:test'
+import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -94,12 +95,21 @@ describe('cart', () => {
     )))
 
   // A line of no unit would reserve nothing: the message's schema refuses it, and the cart takes no step.
-  test('an article added with no unit is refused, and adds no line', async () => {
-    const exit = await Effect.runPromiseExit(rehearse(
+  test('an article added with no unit, or a negative one, is refused, and adds no line', () =>
+    Effect.runPromise(rehearse(
       cart,
       start,
-      (rehearsal) => rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 0 }, null),
-    ))
-    expect(Exit.isFailure(exit)).toBe(true)
-  })
+      Effect.fnUntraced(function*(rehearsal) {
+        for (const quantity of [0, -1]) {
+          const exit = yield* Effect.exit(rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity }, null))
+          // Refused as the message is sent, and not later by the work of a line made of it.
+          const refusal = Exit.isFailure(exit) ? Cause.pretty(exit.cause) : 'accepted'
+          expect(refusal).toContain('the inbound message does not encode: Expected a value greater than 0')
+          expect((yield* rehearsal.state).lines).toEqual({})
+        }
+        // The refusal left the cart as it was: the same article with a unit is a line.
+        expect(yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 }, null)).toEqual(accepted)
+        expect((yield* rehearsal.state).lines['mug']?._tag).toBe('Reserving')
+      }),
+    )))
 })
