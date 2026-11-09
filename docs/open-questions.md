@@ -150,11 +150,3 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     program does have a sender;
   - what the runtime's housekeeping changes of what a program passes to `send`, since both change the same
     signature.
-- **A reply whose reason holds `-0`.** A rehearsal gives the projection decoded from its JSON, where `-0` is `0`
-  ([decision 0211](decisions/0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md)). A caller's reply is
-  given otherwise: the first send is answered by the step, and a retry by the reply its storage holds. So a
-  rejection whose reason holds `-0` may be given `-0`, then `0` on a retry. That is reasoned from
-  `src/callers.ts`, and no test reaches it. Whether a reply is given as its storage holds it is not decided. It
-  would be decided by:
-  - a test of a program whose rejection holds a number, sent once and retried, on the runtime and in a rehearsal;
-  - whether any reason a program gives holds a number a step computes, rather than a literal.

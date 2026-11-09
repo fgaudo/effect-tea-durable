@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-11-09. Changes the `projection` of a rehearsal, which
 [decision 0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) gives a member of a world and
 `rehearse` gives its entity. It holds of the projection what
-[decision 0210](0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md) decides of `-0`.
+[decision 0210](0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md) decides of `-0`. Its open
+question of a rejection's reason is decided by
+[decision 0214](0214-a-rejections-reason-is-given-as-a-caller-reads-it.md).
 
 ## Context
 

@@ -1279,6 +1279,24 @@ describe('what the program throws', () => {
     const flagged = Machine.start(refusing(() => reject), 'tiny', 1 as never, epoch, by('creation'))
     expect(flagged._tag).toBe('Defect')
   })
+
+  // A retry is given the reason its storage decodes from JSON, which writes `-0` as `0`.
+  test('a reason is given as a caller reads it from its JSON, -0 as 0 (decision 0214)', () => {
+    const base = tiny((message) => message, () => ({}))
+    const numbered: Program<Tiny> = {
+      ...base,
+      schemas: { ...base.schemas, rejection: Schema.Number as never },
+      update: () => () => rejectWith(-0 as never),
+    }
+    const refused = Machine.start({ ...numbered, init: () => rejectWith(-0 as never) }, 'tiny', null, epoch, by('c'))
+    expect(refused._tag === 'Rejected' && Object.is(refused.reply.reason, 0)).toBe(true)
+    const created = Machine.start(numbered, 'tiny', null, epoch, by('creation'))
+    if (created._tag !== 'Created') throw new Error(created._tag)
+    const entity: Entity = { ...created.machine, program: numbered, replies: new Map() }
+    const { outputs } = handled(entity, { _tag: 'Receive', request: by('r'), message: 'm' })
+    const reply = outputs.find((output) => output._tag === 'Replied')
+    expect(reply?._tag === 'Replied' && reply.reply._tag === 'Rejected' && Object.is(reply.reply.reason, 0)).toBe(true)
+  })
 })
 
 describe('what a runtime writes', () => {

@@ -689,6 +689,29 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  test('a reason holding -0 is given 0 by the first reply and by a retry alike (decision 0214)', () =>
+    onBoth(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const numbered: Program<T> = {
+        ...program,
+        name: 'Numbered',
+        schemas: { ...program.schemas, rejection: Schema.Number as never },
+        update: (message, meta) =>
+          message._tag === 'Refuse' ? () => rejectWith(-0 as never) : program.update(message, meta),
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(numbered), layer)
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+          const request = { requestId: 'r', sender: { _tag: 'Tester' as const } }
+          for (const _ of [1, 2]) {
+            const reply = yield* toy.send(id, { _tag: 'Refuse', nonce: 'n' }, request)
+            expect(reply._tag === 'Rejected' && Object.is(reply.reason, 0)).toBe(true)
+          }
+        }))
+    })))
+
   test('a retry within the keep its boundary gives is answered from storage, and one after it is applied again', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()

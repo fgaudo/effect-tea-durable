@@ -495,7 +495,9 @@ message that does not encode is its caller's defect,
 and reaches no entity ([decision 0040](decisions/archive/0040-what-is-stored-encodes-to-json-as-it-is.md)). So are flags
 that do not encode: `init` sees only flags its schema takes
 ([decision 0049](decisions/archive/0049-flags-are-checked-by-their-schema.md)). A `-0` is stored as `0`, which it
-equals ([decision 0210](decisions/0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md)).
+equals ([decision 0210](decisions/0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md)). A
+rejection's reason is given as a caller reads it from its JSON, so a first reply and a retry give the same reason,
+`-0` as `0` ([decision 0214](decisions/0214-a-rejections-reason-is-given-as-a-caller-reads-it.md)).
 
 How the machine and the storage write these rows, and how a reply is kept and deleted, is under
 [what the storage writes](#what-the-storage-writes).

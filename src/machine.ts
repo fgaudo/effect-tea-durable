@@ -74,6 +74,16 @@ const defectOf = (thrown: unknown): unknown => {
 const encodeBy = <A>(codec: Schema.Codec<A, Json>, value: A, what: string): Json =>
   byProgram(() => encode(codec, value, what))
 
+/**
+ * A rejection's reason as a caller reads it: encoded, written as JSON and decoded, so `-0` is `0`. A retry is given
+ * the reason its storage holds, and Cluster's client the one it sends as text, so a first reply gives the same
+ * (decision 0214). A reason its schema refuses is a defect.
+ */
+const replied = <Reason>(codec: Schema.Codec<Reason, Json>, reason: Reason | null): Reason | null =>
+  reason === null ? null : byProgram(() =>
+    Schema.decodeUnknownSync(codec)(JSON.parse(JSON.stringify(encode(codec, reason, 'reason of the rejection'))))
+  )
+
 /** The schema of each key's parameter, or null for a key without one, by its name. */
 const declaredKeys = <T extends Types>(program: Program<T>) =>
   program.keys as unknown as Readonly<Record<string, Schema.Codec<unknown, Json> | null>>
@@ -830,8 +840,7 @@ export const start = <T extends Types>(
     if (isRejected(first)) {
       // The reason reaches the creator as a message's does, and on Cluster as text: one that does not encode is a
       // defect, as it is for `update` (decision 0182).
-      const reply = { _tag: 'Rejected', reason: reasonOf(first) } as const
-      if (reply.reason !== null) encodeBy(program.schemas.rejection, reply.reason, 'reason of the rejection')
+      const reply = { _tag: 'Rejected', reason: replied(program.schemas.rejection, reasonOf(first)) } as const
       return { _tag: 'Rejected', reply }
     }
     state = first
@@ -965,8 +974,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
       if (head._tag === 'Internal') {
         return broken(`update rejected the message of the work under '${shownKey(head.key)}'`)
       }
-      const reply = { _tag: 'Rejected', reason: reasonOf(result) } as const
-      if (reply.reason !== null) encodeBy(program.schemas.rejection, reply.reason, 'reason of the rejection')
+      const reply = { _tag: 'Rejected', reason: replied(program.schemas.rejection, reasonOf(result)) } as const
       return {
         machine: { ...machine, stored: { ...stored, mailbox: rest } },
         outputs: [{ _tag: 'Replied', request: head.request, reply }],
