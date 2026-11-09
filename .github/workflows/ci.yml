@@ -33,7 +33,7 @@ jobs:
   # volume that fills up (decisions 0222, 0223).
   postgres:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:17
