@@ -628,8 +628,11 @@ once, whichever retry finds it
 [decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)).
 
 An operator finds the suspended entities with `suspended`, the longest suspended first: each with what it died on,
-the cause, since when, and the senders waiting for its resumption in this process. Nobody is told on a clock: a
-sender waits as long as it takes, and a deployment that wants an alarm reads the list. `resume` and `discard` say
+the cause, since when, and the senders waiting for its resumption in this process. The cause is stored as text, and
+holds the program's data wherever `defect` or an error of a schema cites it. So each U+0000 and each lone surrogate
+in it is written as the escape JSON gives it, such as `\u0000`, which every database holds
+([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)). Nobody is told on a
+clock: a sender waits as long as it takes, and a deployment that wants an alarm reads the list. `resume` and `discard` say
 what they did: `Resumed` or `Discarded`; `NotDiscarded`, for an entity that died on an internal message, in an
 operation or on its activation; `StillSuspended`, with the new cause, when the program deployed dies on the stored
 state, and a discard then keeps its message; `NotSuspended`; or `NotFound`. Each operator is told what the

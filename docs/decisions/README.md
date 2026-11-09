@@ -148,6 +148,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0113](archive/0113-a-suspended-entitys-operations-run-to-their-end.md) | A suspended entity's operations run to their end |  |
 | [0114](archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) | An operator sees the suspended entities, and what a resume or a discard did | [0185](0185-inspect-gives-what-is-stored-of-one-entity.md) |
 | [0185](0185-inspect-gives-what-is-stored-of-one-entity.md) | `inspect` gives what is stored of one entity, read from one snapshot |  |
+| [0205](0205-a-defects-cause-is-written-as-text-every-database-holds.md) | A defect's cause is written as text every database holds, with each character none holds escaped |  |
 
 ## Versions and deploys
 
@@ -222,7 +223,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 
 | Note | Decides | Changed by |
 | --- | --- | --- |
-| [0028](archive/0028-rules-the-runtime-settled.md) | Rules the runtime settled | [0029](archive/0029-an-idle-entity-is-unloaded.md), [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md), [0134](archive/0134-an-entitys-loop-yields-between-two-steps.md) |
+| [0028](archive/0028-rules-the-runtime-settled.md) | Rules the runtime settled | [0029](archive/0029-an-idle-entity-is-unloaded.md), [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md), [0134](archive/0134-an-entitys-loop-yields-between-two-steps.md), [0205](0205-a-defects-cause-is-written-as-text-every-database-holds.md) |
 | [0029](archive/0029-an-idle-entity-is-unloaded.md) | An idle entity is unloaded, and what is stored wakes it | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md), [0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md), [0071](archive/0071-a-process-starts-the-entities-with-a-message.md), [0073](archive/0073-what-the-runtime-did-is-told-to-a-probe.md), [0076](archive/0076-a-process-over-its-capacity-unloads-the-least-recently-used.md), [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0111](archive/0111-an-entity-s-wait-times-out-its-take-alone.md), [0113](archive/0113-a-suspended-entitys-operations-run-to-their-end.md), [0116](archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md), [0194](0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md) |
 | [0194](0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md) | A timer months away sleeps on Effect's promise of a duration, which Effect keeps by timers of the host in turn |  |
 | [0063](archive/0063-the-runtime-waits-for-what-it-waits-for.md) | The runtime waits for what it waits for, and polls nothing | [0163](archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md) |

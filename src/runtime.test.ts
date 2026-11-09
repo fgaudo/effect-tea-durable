@@ -1057,6 +1057,29 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // A cause holds the program's data, and PostgreSQL holds U+0000 in no text: the write of the suspension would
+  // fail, and the entity would never be suspended (decision 0205).
+  test('a defect whose cause holds U+0000 suspends the entity, and lists it', () =>
+    onBoth(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const citing: Program<T> = {
+        ...program,
+        update: (message, meta) =>
+          message._tag === 'Break' ? () => defect(`broken ${message.nonce}`) : program.update(message, meta),
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(citing), layer)
+          const sender = { _tag: 'Tester' } as const
+          yield* toy.create(id, { at }, { requestId: 'creation', sender })
+          yield* runtime.settled
+          expect(yield* toy.send(id, { _tag: 'Break', nonce: 'a\u0000b' }, { requestId: 'break', sender }))
+            .toEqual({ _tag: 'Suspended' })
+          expect((yield* toy.suspended).map(({ cause }) => cause)).toEqual(['InvariantDefect: broken a\\u0000b'])
+        }))
+    })))
+
   // A step that drops a droppable operation interrupts it, and does not wait for its finalizers (decision 0128).
   test('a droppable operation the state drops is interrupted, and the entity does not wait for its finalizer', () =>
     database(Effect.gen(function*() {

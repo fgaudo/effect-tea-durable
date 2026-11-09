@@ -18,19 +18,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     this one, in its `navigationLinks` and its README, and this README's Status no longer says the site is missing.
     The step is taken by the commit that publishes it, which accepts decision 0203.
 
-The four steps after the site are bugs, found on 2026-11-09, in the order of what each bug costs a deployment. Each
-of the first two crashes an entity where the design suspends it. None has a test yet, and each step says the test
+The three steps after the site are bugs, found on 2026-11-09, in the order of what each bug costs a deployment. The
+first crashes an entity where the design suspends it. None has a test yet, and each step says the test
 that fails today.
-
-- **A defect's cause is stored whatever it holds.** On PostgreSQL a defect whose cause holds U+0000 crashes its
-  entity where the design suspends it. `render` of [`src/machine.ts`](../src/machine.ts) gives the cause as text,
-  and `write` of [`src/storage.ts`](../src/storage.ts) puts that text in the column `suspended_cause` as it is. A
-  cause holds the program's data wherever `defect` or an error of a schema cites it. The write of the suspension
-  fails, the caller is given the storage's error, and the entity is never suspended. An operation of another
-  entity that sends to it sends again after every `retry`, with no end. The step decides, in a note, where the
-  cause becomes text every database holds, in `render` or in the storage, and what stands for U+0000 in it. The
-  test sends a message whose defect cites a string with U+0000, on both dialects. The caller is answered
-  `Suspended`, and `suspended` lists the entity.
 
 - **An index that is no scalar is the program's defect.** An index that gives `undefined` crashes its entity on
   both dialects, at every step that reaches the state. `shownOf` of [`src/machine.ts`](../src/machine.ts) refuses

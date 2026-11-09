@@ -1053,9 +1053,16 @@ const discard = <T extends Types>(program: Program<T>, machine: Machine<T>): Mov
 const died = <T extends Types>(machine: Machine<T>, suspension: Suspension): Moved<T> =>
   machine.stored.suspension === null ? suspend(machine, suspension) : { machine, outputs: [] }
 
-/** A defect's cause as an operator reads it: a suspension stores this, not the value (decision 0028). */
+/**
+ * A defect's cause as an operator reads it: a suspension stores this, not the value (decision 0028). The cause holds
+ * the program's data wherever `defect` or an error of a schema cites it, so it is made text every database holds:
+ * each U+0000 and each lone surrogate is written as the escape JSON gives it, such as `\u0000` (decision 0205). A
+ * regular expression with the flag `u` reads a pair of surrogates as one code point, so `\p{Cs}` finds a lone one
+ * only.
+ */
 export const render = (cause: unknown): string =>
-  cause instanceof Error ? `${cause.name}: ${cause.message}` : typeof cause === 'string' ? cause : String(cause)
+  (cause instanceof Error ? `${cause.name}: ${cause.message}` : typeof cause === 'string' ? cause : String(cause))
+    .replace(/\u0000|\p{Cs}/gu, (unheld) => `\\u${unheld.charCodeAt(0).toString(16).padStart(4, '0')}`)
 
 /**
  * The cause of the program's defect `thrown`, as a suspension stores it. Anything else is thrown again, as the

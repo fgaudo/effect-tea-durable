@@ -1212,6 +1212,16 @@ describe('what the program throws', () => {
     expect(handled(machine, inbound).machine.stored.suspension).toEqual({ cause: broken, on: { _tag: 'Message' } })
   })
 
+  // PostgreSQL holds U+0000 in no text, and no database gives a lone surrogate back as written (decision 0205).
+  test('the cause a suspension writes is text a database holds, with each character none holds escaped', () => {
+    const machine = checked((message) => {
+      if (message === 'go') throw new TypeError('a\u0000b\ud800c😀')
+      return message
+    }, () => ({}))
+    expect(handled(machine, inbound).written?.suspension?.cause).toBe('TypeError: a\\u0000b\\ud800c😀')
+    expect(Machine.render('\udc00')).toBe('\\udc00')
+  })
+
   test('what a cast lets through as work that is none is a defect', () => {
     const base = checked((message) => message, () => ({}))
     const machine = { ...base, program: { ...base.program, work: () => ({ charge: 5 as never }) } }
