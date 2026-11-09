@@ -18,15 +18,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     before the other has committed;
   - a name of its table that no `Migrator` of the application uses in the same database.
 
-- **The runtime's tables in a schema of PostgreSQL of their own.** No statement of the storage names a schema, so on
-  PostgreSQL every table resolves through the `search_path` of the connection, and a launcher could put the
-  runtime's tables in a schema apart from the application's. The prefix `tea_` already keeps them apart
-  ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)), and the design promises no
-  schema. Whether it does is not decided. It would be decided by:
-  - a test of a launch whose client sets a `search_path`, which finds every table, index, trigger and function in
-    that schema, the advisory locks and the trigger's function included;
-  - whether a statement of the storage would ever need a name qualified by its schema, which the promise forbids.
-
 - **A disk that is really full.** A step that cannot commit dies, and a forget and a prune free the room steps need
   ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). The spike `spikes/full-database.test.ts` sees it
   under `PRAGMA max_page_count`, with the rollback journal, which caps the database file and not its journal. On a
@@ -92,7 +83,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     SQLite and on PGlite two writers commit one after the other whatever the head does, so only a server runs it
     ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md));
   - whether a step whose transaction fails with `DeadlockError` or `SerializationError` is retried, as the JSDoc of
-    `SqlClient.withTransaction` shows, or crashes its entity, as a write that fails does.
+    `SqlClient.withTransaction` shows, or crashes its entity, as a write that fails does;
+  - a launch on a server whose role has a `search_path` set by `ALTER ROLE`, which finds every table of the runtime
+    and of Cluster in that schema on every connection of the pool, and two runtimes in two schemas of one database
+    refusing each other
+    ([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)).
 - **A fiber that outlives its transaction.** A fiber forked inside a transaction keeps the transaction's connection
   in its context. At 4.1.2 its statements and savepoints then run on that connection after the commit, outside the
   client's semaphore, and nothing says so: on SQLite another fiber's transaction later fails to begin. The runtime

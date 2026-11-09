@@ -732,6 +732,38 @@ test('every table, index, trigger and function the runtime makes is named with t
       expect(names.map(({ name }) => name).filter((name) => !name.startsWith('tea_'))).toEqual([])
     }).pipe(Effect.orDie)))
 
+// No statement of the storage names a schema, so a client whose search_path names one puts every object there.
+test('on PostgreSQL every object the runtime makes is in the schema its client’s search_path names', () =>
+  Effect.runPromise(
+    Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE SCHEMA runtime`
+      // PGlite runs every statement on one session, so the setting holds for every statement after it.
+      yield* sql`SET search_path TO runtime`
+      yield* createTables
+      yield* storage(ranked, sql).indexed
+      yield* storage(receiver, sql).write('r', created(), 0)
+      const placed = yield* sql<{ schema: string; name: string }>`
+        SELECT nspname AS schema, relname AS name FROM pg_class JOIN pg_namespace ON pg_namespace.oid = relnamespace
+        WHERE starts_with(relname, 'tea_')
+        UNION ALL SELECT nspname, proname FROM pg_proc JOIN pg_namespace ON pg_namespace.oid = pronamespace
+        WHERE starts_with(proname, 'tea_')
+        UNION ALL SELECT nspname, tgname FROM pg_trigger JOIN pg_class ON pg_class.oid = tgrelid
+        JOIN pg_namespace ON pg_namespace.oid = relnamespace WHERE NOT tgisinternal
+      `
+      expect(placed.length).toBeGreaterThan(16)
+      expect(placed.filter(({ schema }) => schema !== 'runtime')).toEqual([])
+      // The trigger's function finds its tables through the same search_path.
+      const row = { name: 'Receiver', partition: 1, seq: 2 }
+      yield* sql`INSERT INTO tea_publications ${
+        sql.insert({ ...row, id: 'r', tag: 'Creation', version: 1, message: '"one"', projection: '"one"' })
+      }`
+      yield* sql`INSERT INTO tea_outbox ${sql.insert({ ...row, topic: 'projection' })}`
+      yield* sql`DELETE FROM tea_outbox`
+      expect(yield* sql`SELECT seq FROM tea_publications`).toEqual([])
+    }).pipe(Effect.provide(client('pg')), Effect.orDie),
+  ))
+
 // Without the prefix, a launch took an application's `versions` for its own and gave it a column, and a rename moved
 // the rows of its `consumers` (decision 0198).
 test('a launch and a rename leave alone the tables of an application named as the runtime once named its own', () =>

@@ -482,7 +482,12 @@ outbox with the publication of each step, the number of its partitions and the h
 their cursors, and on Cluster the versions and the requests it keeps ([`src/storage.ts`](../src/storage.ts)). Every
 table, index, trigger and function the runtime makes is named with `tea_`, as `tea_entities`, so that the tables of an
 application in the same database are never taken for its own. The prefix is fixed, and an application names no
-table of its own with it ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)). Each row carries the version of the program that wrote it, and is read
+table of its own with it ([decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md)). No
+statement of the storage names a schema of PostgreSQL, so the runtime makes every object in the schema that the
+client's `search_path` names first. A launcher that sets the `search_path` of the runtime's role, as Cluster asks for
+its own tables, puts them in a schema of their own. A database is still held by one runtime, whatever its schemas,
+since the advisory lock is the database's
+([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)). Each row carries the version of the program that wrote it, and is read
 by migrating its JSON to the program's version (see [schemas that change](#schemas-that-change)). The row around
 the JSON is read through its table's schema, which says what the storage writes: nothing is filled in or cast, and
 a row it refuses fails the call that meets it ([decision 0062](decisions/archive/0062-a-row-is-read-through-a-schema.md)). A schema whose
