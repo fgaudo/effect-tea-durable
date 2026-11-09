@@ -55,6 +55,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0195](0195-the-package-is-effect-tea-persistent.md) | The package is `@fgaudo/effect-tea-persistent`, a program's work is `work`, a reader fetches, and `deploy` stays |  |
 | [0196](0196-the-quick-start-is-an-example-the-readme-shows-whole.md) | The quick start is an example that the README shows whole, and a test keeps the two equal |  |
 | [0203](0203-the-guides-code-is-found-in-the-examples.md) | The guide's code is found in the examples, part by part, and a test finds it (proposed) |  |
+| [0212](0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md) | The property tests of the fixtures derive their values from the programs' schemas, on Effect's engine |  |
 
 ## The machine and the program
 
@@ -96,7 +97,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md) | A reply is keyed by the version that wrote it |  |
 | [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes | [0182](0182-init-may-reject-the-flags.md) |
 | [0125](archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) | A caller's reply is kept as long as its boundary says, from the step that answers | [0165](archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) |
-| [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md), [0186](0186-a-rehearsal-names-the-work-by-its-key.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md), [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md), [0200](0200-a-rehearsal-sends-under-a-request-id-the-test-names.md) |
+| [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md), [0186](0186-a-rehearsal-names-the-work-by-its-key.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md), [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md), [0200](0200-a-rehearsal-sends-under-a-request-id-the-test-names.md), [0211](0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md) |
 | [0183](0183-a-receiver-is-named-by-a-reference.md) | A receiver is named by a reference, which carries its program's name and types and none of its code |  |
 | [0186](0186-a-rehearsal-names-the-work-by-its-key.md) | A rehearsal names the work by its key, and `underWay` gives it or null |  |
 | [0187](0187-a-rehearsal-moves-time-by-a-duration.md) | A rehearsal moves time by a duration with `advance`, and fires the timers due within it |  |
@@ -105,6 +106,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0190](0190-a-boundary-maps-each-answer-to-its-protocol.md) | A boundary maps each answer to its protocol, with one entry for each tag |  |
 | [0200](0200-a-rehearsal-sends-under-a-request-id-the-test-names.md) | A rehearsal sends under a request id the test names, and a retry is given the stored reply |  |
 | [0201](0201-rejectwith-keeps-the-literal-of-its-reason.md) | `rejectWith` keeps the literal of its reason, with a `const` type parameter |  |
+| [0211](0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md) | A rehearsal gives the projection as a caller reads it, decoded from its JSON |  |
 
 ## Operations and timers
 

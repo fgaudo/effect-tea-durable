@@ -967,6 +967,10 @@ time passes, and when the process dies:
   operation would run again at once, turn after turn, with no pause
   ([decision 0130](decisions/archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md));
 - `fire(pending)` fires a timer;
+- `projection` gives the projection as a caller of the runtime reads it: encoded by its schema, written as JSON and
+  decoded again, so that `-0` is `0`
+  ([decision 0211](decisions/0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md)). `state` gives the
+  state as the entity holds it;
 - `advance(duration)` moves time forward, and fires each timer due within it at its time, in the order of the
   times. A message after it is handled at the time reached. A key whose timer fires twice at one time fails the test:
   it was armed again at a time already reached, and would fire at once, turn after turn. A world advances the one
@@ -987,7 +991,8 @@ time passes, and when the process dies:
 [`src/rehearse.test.ts`](../src/rehearse.test.ts) rehearses deploys of the order.
 
 A migration is a pure function on JSON, and `rehearse` encodes what a step stores only to check it
-([decision 0040](decisions/archive/0040-what-is-stored-encodes-to-json-as-it-is.md)) and never reads it back, so a
+([decision 0040](decisions/archive/0040-what-is-stored-encodes-to-json-as-it-is.md)). It reads back only the
+projection, through no migration, so a
 rehearsed deploy does not exercise one: the runtime's tests deploy a version whose state, operation and
 projection schemas changed.
 

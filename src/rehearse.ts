@@ -1,6 +1,7 @@
 import * as DateTime from 'effect/DateTime'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Schema from 'effect/Schema'
 import * as Machine from './machine.ts'
 import {
   type Address,
@@ -570,7 +571,12 @@ const makeWorld = (at: DateTime.Utc) => {
     const fire = (pending: Pending) => fireOf(entity, pending)
     return {
       state: Effect.sync(() => entity.machine.stored.state),
-      projection: Effect.sync(() => programOf(entity).project(entity.machine.stored.state)),
+      // A caller reads the projection the storage holds, decoded from its JSON, where `-0` is `0` (decision 0211).
+      projection: Effect.sync(() => {
+        const program = programOf(entity)
+        const json = encode(program.schemas.projection, program.project(entity.machine.stored.state), 'projection')
+        return Schema.decodeUnknownSync(program.schemas.projection)(JSON.parse(JSON.stringify(json)))
+      }),
       send: (message, sender, given) =>
         Effect.suspend(() => {
           const program = programOf(entity)

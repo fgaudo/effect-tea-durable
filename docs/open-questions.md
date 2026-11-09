@@ -48,21 +48,6 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - a program with a migration of many branches, whose recorded cases a change could keep while it reads other
     rows otherwise;
   - what an arbitrary of an older version costs to keep, next to the cases recorded of it.
-- **Values generated from a program's schemas.** The property tests of `src/` write their generators by hand with
-  fast-check: the messages, flags and indexes of each test's program. `Arbitrary.schema` of `effect/Arbitrary`
-  derives a generator from a schema, so a test could send any program the messages its schema admits. The spike
-  `spikes/effect-arbitrary-generates.test.ts` sees that at 4.1.2 a string of `Schema.String` holds U+0000, lone
-  surrogates, characters past the first plane and names such as `toString`, and that a number of `Schema.Number`
-  holds `NaN`, the infinities, `-0` and doubles near the largest. These are the cases decisions 0204 to 0210 were
-  found by. The module runs its own engine, not fast-check's, with its own shrinking and its own `checkEffect`, so
-  a test would mix two engines. Whether the tests derive their values from the schemas is not decided. It would be
-  decided by:
-  - the maintainer's agreement, since the module is `@stability unstable` and `src/` does not import it, and since
-    its replay tokens hold across no release;
-  - whether the values it generates for a tagged union reach the branches of `update` as often as a weighted
-    generator written by hand does;
-  - a property over every program of `src/fixtures/`, such as a rehearsal that answers as the runtime does, which
-    a generator written by hand cannot give for a program it does not know.
 - **A caller that follows a projection.** A caller learns that an entity changed only by reading its projection
   again: `read` answers once, and the runtime writes the log without delivering it. A program of effect-tea in a
   browser would follow an entity with a subscription, and send to it with a command that retries under the same
@@ -168,3 +153,11 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
     program does have a sender;
   - what the runtime's housekeeping changes of what a program passes to `send`, since both change the same
     signature.
+- **A reply whose reason holds `-0`.** A rehearsal gives the projection decoded from its JSON, where `-0` is `0`
+  ([decision 0211](decisions/0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md)). A caller's reply is
+  given otherwise: the first send is answered by the step, and a retry by the reply its storage holds. So a
+  rejection whose reason holds `-0` may be given `-0`, then `0` on a retry. That is reasoned from
+  `src/callers.ts`, and no test reaches it. Whether a reply is given as its storage holds it is not decided. It
+  would be decided by:
+  - a test of a program whose rejection holds a number, sent once and retried, on the runtime and in a rehearsal;
+  - whether any reason a program gives holds a number a step computes, rather than a literal.

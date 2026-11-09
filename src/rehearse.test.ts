@@ -288,6 +288,17 @@ describe('a rehearsal', () => {
     ))
   })
 
+  // The runtime gives a caller the projection decoded from the JSON it stored, where `-0` is written `0`.
+  test('gives the projection as a caller reads it from its JSON, -0 as 0 (decision 0211)', () =>
+    Effect.runPromise(rehearse(
+      inventory,
+      { flags: { capacity: -0 }, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        expect(Object.is((yield* rehearsal.state).capacity, -0)).toBe(true)
+        expect(Object.is((yield* rehearsal.projection).available, 0)).toBe(true)
+      }),
+    )))
+
   // A retry belongs inside the runner, or behind a timer: one with no pause loops (decision 0130).
   test('fails when a completion returns the same operation, which would run again at once', async () => {
     const insistent: typeof order = {
