@@ -18,12 +18,66 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     this one, in its `navigationLinks` and its README, and this README's Status no longer says the site is missing.
     The step is taken by the commit that publishes it, which accepts decision 0203.
 
+The five steps after the site are bugs, found on 2026-11-09, in the order of what each bug costs a deployment. Each
+of the first three crashes an entity where the design suspends the entity or refuses the caller. None has a test
+yet, and each step says the test that fails today.
+
+- **A caller's request id is text a database holds.** On PostgreSQL a request id that holds U+0000 crashes its
+  entity. The storage writes the id in the column `request_id` of `tea_replies` as it is, and reads a reply by it,
+  in `reply` and `write` of [`src/storage.ts`](../src/storage.ts). PostgreSQL holds U+0000 in no text, so the
+  statement fails. The entity leaves the process, as on any write that fails, and its operations stop: an
+  at-most-once operation under way delivers its `unknown`. A boundary that takes the request id from its caller
+  lets that caller stop the operations of any entity. `create` and `send` of a handle, in
+  [`src/runtime.ts`](../src/runtime.ts), check the id of the entity and not the id of the request. The step
+  decides between two fixes, in a note. Either a handle refuses such a request id as the caller's defect, as it
+  refuses such an id of an entity, and a rehearsal refuses it too. Or the column holds the id as JSON writes it.
+  The test sends a message under a request id with U+0000 on PGlite while an at-most-once operation runs, and
+  finds the operation still under way.
+
+- **A defect's cause is stored whatever it holds.** On PostgreSQL a defect whose cause holds U+0000 crashes its
+  entity where the design suspends it. `render` of [`src/machine.ts`](../src/machine.ts) gives the cause as text,
+  and `write` of [`src/storage.ts`](../src/storage.ts) puts that text in the column `suspended_cause` as it is. A
+  cause holds the program's data wherever `defect` or an error of a schema cites it. The write of the suspension
+  fails, the caller is given the storage's error, and the entity is never suspended. An operation of another
+  entity that sends to it sends again after every `retry`, with no end. The step decides, in a note, where the
+  cause becomes text every database holds, in `render` or in the storage, and what stands for U+0000 in it. The
+  test sends a message whose defect cites a string with U+0000, on both dialects. The caller is answered
+  `Suspended`, and `suspended` lists the entity.
+
+- **An index that is no scalar is the program's defect.** An index that gives `undefined` crashes its entity on
+  both dialects, at every step that reaches the state. `shownOf` of [`src/machine.ts`](../src/machine.ts) refuses
+  an index that is a number JSON does not hold, or a string a database does not hold, and nothing else.
+  `indexesText` of [`src/storage.ts`](../src/storage.ts) then writes `{"first":undefined}`, which is no JSON, and
+  the write fails. A program needs no cast for it: `(p) => p.tags[0]` is typed `string` where the compiler runs
+  without `noUncheckedIndexedAccess`, and is `undefined` for a projection with no tag. The step makes an index
+  that is not null, a string, a boolean or a finite number a defect of the machine, which suspends the entity.
+  It is a rule of the machine, so it has a note and a test in [`src/machine.test.ts`](../src/machine.test.ts).
+  A test of the runtime sends the message that empties the tags, and is answered `Suspended`.
+
+- **A criterion is a scalar a query compares.** A criterion whose value is `NaN` finds no row on SQLite, and
+  finds rows on PostgreSQL, where `NaN` is a number greater than every other. So
+  `count({ where: [{ index, is: '<', value: NaN }] })` counts nothing on one dialect, and every entity whose index
+  holds a number on the other. `criteria` of [`src/storage.ts`](../src/storage.ts) checks the comparison and not
+  the value, while `cursorOf` refuses a number that is not finite in `after`. The step refuses a value that is no
+  scalar, or a number that is not finite, as the caller's defect, for `query`, `count`, `sum` and `countBy`
+  ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). It also reads what a string with
+  U+0000 does in a criterion and in the id of `after`, which PostgreSQL holds in no text, and refuses it if the
+  dialects differ. The test asks both dialects the same count under `NaN`, and is given the same answer.
+
+- **A launch checks every option.** `launch` of [`src/runtime.ts`](../src/runtime.ts) checks `drain`, `capacity`,
+  `callers` and `log`, and takes `retry`, `passivate` and `warn` as they are given. Each of those times becomes
+  the text of a duration, and Effect reads no `Infinity millis` and no `NaN millis`. Under
+  `passivate: { millis: Infinity }` the sleep of an entity's wait dies, and no entity is ever unloaded by time.
+  Under `retry: { millis: NaN }` the sleep of an operation that sends again dies, and so does the operation. The
+  step refuses each of the three as the launcher's defect unless it is a non-negative integer, as it refuses the
+  others. The test launches with each such value, and the launch dies naming the option.
+
+## Later
+
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point
   where fibers yield, after which the pinned seeds of the explored tests are found again. The runtime's
-  housekeeping, a step of later, finds them again too if it adds a fiber.
-
-## Later
+  housekeeping, the step after this one, finds them again too if it adds a fiber.
 
 - **The runtime's housekeeping**, once a release of Effect holds the retention of completed requests of Cluster.
   `expire`, `prune` and `forget` are an operator's calls, and a reply sent without `keep` is kept for ever, so the
