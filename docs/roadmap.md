@@ -12,7 +12,10 @@ None: the next step is the first of Later, unless the maintainer picks another.
 - **What the runtime tells a tracer**: the spans and metrics of the machine's events, which the
   [open question](open-questions.md#running) lists what would decide. A span opened in the loop may add a point
   where fibers yield, after which the pinned seeds of the explored tests are found again. The runtime's
-  housekeeping, the step after this one, finds them again too if it adds a fiber.
+  housekeeping, the step after this one, finds them again too if it adds a fiber. The step also decides whether the
+  waker sleeps at most a bound and reads the clock again, and whether a loaded entity's timer sleeps again when its
+  sleep ends before its time ([open question](open-questions.md#running)). Both add yields too, so the seeds are
+  found again once for the spans and the timers together.
 
 - **The runtime's housekeeping**, once a release of Effect holds the retention of completed requests of Cluster.
   `expire`, `prune` and `forget` are an operator's calls, and a reply sent without `keep` is kept for ever, so the
@@ -34,8 +37,12 @@ None: the next step is the first of Later, unless the maintainer picks another.
 
 - **PostgreSQL on a server with a pool.** The storage's tests and the runtime's tests of the log run against a
   server in a container, in the CI on Linux, so that what is only reasoned of many connections is tested:
-  the order of a partition's commits, the advisory lock, a deadlock or a failure of serialization in a step
-  ([open question](open-questions.md#running)). A library for most backends needs it before its release.
+  the order of a partition's commits under two writers, the advisory lock, a deadlock or a failure of serialization
+  in a step, a role whose `search_path` is set by `ALTER ROLE`, and two launches at once that run the migrations of
+  `createTables` ([open question](open-questions.md#running)). A library for most backends needs it before its
+  release. The same job on Linux fills a database of SQLite in WAL mode on a volume of fixed size, and runs the
+  forget and the prune on it, so that what an operator does on a disk that is really full is decided before the
+  release too ([open question](open-questions.md#storage-and-reading)).
 
 - **The release**, once there is code to publish. It is released as experimental while it depends
   on Effect's unstable modules ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).

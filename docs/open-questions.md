@@ -1,6 +1,8 @@
 # Open questions
 
-What is not decided yet. A question leaves this file when a note in [`decisions/`](decisions) decides it.
+What is not decided yet. A question leaves this file when a note in [`decisions/`](decisions) decides it. Each
+question says what it waits for: a step of the [roadmap](roadmap.md), a release of a dependency, or a program
+with a requirement that no example has yet.
 
 ## Storage and reading
 
@@ -9,7 +11,7 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   under `PRAGMA max_page_count`, with the rollback journal, which caps the database file and not its journal. On a
   disk that is really full a delete needs room in the journal too, and in WAL mode, the client's default, the rows
   go to the WAL, which `max_page_count` does not cap. Whether a prune can still run there, and what an operator does
-  where it cannot, is not decided. It would be decided by:
+  where it cannot, is not decided. The roadmap's step on PostgreSQL decides it. It would be decided by:
   - a database on a volume of fixed size, in WAL mode, filled under a consumer that stalled, and the forget and the
     prune run on it;
   - whether the runtime keeps room of its own, a file it drops once the disk is full, so that a prune always has
@@ -21,7 +23,8 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   program's version needs no recorded reading: a generated value of the older version, migrated and decoded,
   must not die. A case without `read` would check that alone, over values a property test generates. But an
   arbitrary of an older version's JSON is a shape of that version kept in the tests for as long as the
-  migration, which decision 0036 keeps out of the code. Whether it is worth it is not decided. It would be decided by:
+  migration, which decision 0036 keeps out of the code. Whether it is worth it is not decided. It waits for a
+  program whose migrations a change could break unseen. It would be decided by:
   - a program with a migration of many branches, whose recorded cases a change could keep while it reads other
     rows otherwise;
   - what an arbitrary of an older version costs to keep, next to the cases recorded of it.
@@ -30,7 +33,8 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   browser would follow an entity with a subscription, and send to it with a command that retries under the same
   request id while the entity answers `Suspended`. That client would be a module of its own, which depends on both
   libraries while neither depends on the other. How a caller follows the changes of one projection, and whether the
-  library ships that client, is not decided. It would be decided by:
+  library ships that client, is not decided. It waits for a program that follows an entity, after the release. It
+  would be decided by:
   - whether a boundary reads the log as one consumer and sends each row to the callers that follow its entity, given
     that the consumers of a topic are declared at deploy
     ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)) and a browser is not one;
@@ -45,7 +49,8 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   the topic `projection` into a table of the application keeps an audit of the changes callers saw, and not of every
   message an entity handled. A topic declared later has no rows for the steps before its deploy, so a new read model
   cannot be built from the past. Event sourcing, as Akka Persistence does it, keeps both by construction. Whether the
-  runtime keeps a record of every step, and where, is not decided. It would be decided by:
+  runtime keeps a record of every step, and where, is not decided. It waits for a requirement that an audit of the
+  projection's changes does not meet. It would be decided by:
   - a requirement that an audit of the projection's changes does not meet, such as a rejection a regulator asks to
     see;
   - whether such a record is a topic that every step writes, so that it keeps the log's order, cursors and prune, or
@@ -63,7 +68,7 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   the caller left open reads at the caller's level, and at PostgreSQL's default a step committed between two of its
   parts may move a row into it twice
   ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
-  It would be decided by:
+  The roadmap's step on PostgreSQL decides it. It would be decided by:
   - the storage's tests and the runtime's tests of the log run against a server, in CI or by hand;
   - a test with two writers of one partition, which checks that its steps commit in the order of their `seq`. On
     SQLite and on PGlite two writers commit one after the other whatever the head does, so only a server runs it
@@ -85,7 +90,7 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   and a test holds the rule for the operations and for the loop. A fork that the tests do not reach would still fail
   in silence. Reported as [Effect-TS/effect#10431](https://github.com/Effect-TS/effect/issues/10431), with
   [Effect-TS/effect#10433](https://github.com/Effect-TS/effect/pull/10433) open on 2026-11-07, which makes such a
-  statement fail with a `SqlError`. It would be decided by:
+  statement fail with a `SqlError`. It waits for the release of Effect that holds the fix. It would be decided by:
   - a release of Effect with the fix, after which a fork that keeps the transaction fails where it runs;
   - the spikes and the tests of the runtime run at that release, which a fork the rule missed would then fail.
 - **A planned stop on Cluster.** A rolling deploy stops each runner with `SIGTERM`, and a test of
@@ -93,7 +98,7 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   expires. The server launches its runtime without `drain`, so that test stops every operation as a crash does. What
   the planned stop does on Cluster, which drains the at-most-once operations and stops the rest at once
   ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)), is only reasoned. It
-  would be decided by:
+  waits for nothing but the test below. It would be decided by:
   - a test of `examples/server` launched with `drain`, which stops a runner with `SIGTERM` during an email, and
     checks that the email is sent once and that the other runner finishes the order.
 - **A timer and the wall clock.** A timer stores its time on the wall clock, and is slept as the milliseconds left
@@ -102,7 +107,8 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   entity's timer then fires when its sleep ends, and nothing checks its time against the clock: it fires late by the
   time the host was suspended, or early by a step of the clock back. The waker activates only the entities whose time
   has come on the wall clock, so it fires no timer early. It reads the clock again only when its sleep ends or it is
-  poked, so it fires late by the time the host was suspended. It would be decided by:
+  poked, so it fires late by the time the host was suspended. The roadmap's step on a tracer decides it, since both
+  add yields to the runtime. It would be decided by:
   - whether a host that runs the library is suspended or set back by more than a program can bear, which the
     examples do not say;
   - whether the waker sleeps at most a bound, such as an hour, and reads the clock again, and whether a loaded
@@ -113,7 +119,8 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   statement of `effect/sql`, a request of `effect/rpc`, and a message to an entity of Cluster. So a step, an
   operation, a timer's firing and a suspension are no span, and the length of a mailbox or the age of the oldest
   row a consumer has not read is no metric. Which spans and metrics the runtime records, under which names, and
-  whether a span follows a request into the operation it sets going, is not decided. It would be decided by:
+  whether a span follows a request into the operation it sets going, is not decided. The roadmap's step on a tracer
+  decides it. It would be decided by:
   - the questions an operator asks of a stuck entity, such as why an order did not move, each answered by a span
     or a metric of the machine's events;
   - whether a span opened in the loop of `src/loop.ts` adds a point where fibers yield, after which the pinned
