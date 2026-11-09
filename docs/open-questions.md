@@ -60,6 +60,21 @@ What is not decided yet. A question leaves this file when a note in [`decisions/
   - what a caller that reconnects reads first, so that it misses no change between its last row and the next;
   - an example in which a program of effect-tea drives an entity of `examples/order`, whose view shows only the
     actions the projection allows.
+- **A record of every step.** The outbox writes a row only for a step that changes what a topic selects, with the
+  message the step handled and the projection it left
+  ([decisions 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md),
+  [0138](decisions/archive/0138-the-log-publishes-topics.md)). A message that is rejected writes no row, and neither
+  does a message that changes the state and leaves the projection as it was. So a consumer that copies every row of
+  the topic `projection` into a table of the application keeps an audit of the changes callers saw, and not of every
+  message an entity handled. A topic declared later has no rows for the steps before its deploy, so a new read model
+  cannot be built from the past. Event sourcing, as Akka Persistence does it, keeps both by construction. Whether the
+  runtime keeps a record of every step, and where, is not decided. It would be decided by:
+  - a requirement that an audit of the projection's changes does not meet, such as a rejection a regulator asks to
+    see;
+  - whether such a record is a topic that every step writes, so that it keeps the log's order, cursors and prune, or
+    a table of its own;
+  - what the record costs a step: a row more in each transaction, and the message stored for every step, next to
+    what the outbox already stores once per publication.
 
 ## Running
 
