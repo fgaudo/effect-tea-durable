@@ -404,7 +404,8 @@ export const applyInProcess = <T extends Types>(
       yield* warnOfSize(p, loaded, entity, characters)
     }
     loaded.machine = transition.machine
-    yield* told(entity, before, transition.machine, transition.outputs, written !== null)
+    // After the commit: the step is told and counted at once.
+    yield* Effect.flatten(told(entity, before, transition.machine, transition.outputs, written !== null))
     if (before.stored.suspension !== null && transition.machine.stored.suspension === null) {
       wake(p, entity)
     }

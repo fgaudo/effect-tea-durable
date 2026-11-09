@@ -172,7 +172,8 @@ const operationsRunning = Metric.gauge('tea.operations.running', {
 
 /**
  * What a step tells the tracer once the machine has stepped: on its span, the outputs it set going, and the
- * suspension it made; as metrics, the length of the mailbox it wrote and the suspension (decision 0220).
+ * suspension it made. It gives the metrics of the step, the length of the mailbox it wrote and the suspension, to
+ * record once the step is known to be committed, so that a step rolled back counts nothing (decision 0220).
  */
 export const told = <T extends Types>(
   entity: Address,
@@ -180,15 +181,18 @@ export const told = <T extends Types>(
   after: Machine.Machine<T>,
   outputs: ReadonlyArray<Machine.Output<T>>,
   written: boolean,
-) =>
+): Effect.Effect<Effect.Effect<void>> =>
   Effect.gen(function*() {
     const program = { 'tea.entity.name': entity.name }
     yield* Effect.annotateCurrentSpan({ 'tea.written': written, 'tea.outputs': outputs.map((output) => output._tag) })
-    if (written) yield* Metric.update(Metric.withAttributes(mailboxes, program), after.stored.mailbox.length)
-    const { suspension } = after.stored
-    if (suspension === null || before.stored.suspension !== null) return
-    yield* Effect.annotateCurrentSpan({ 'tea.suspended': true, 'tea.suspension.on': suspension.on._tag })
-    yield* Metric.update(Metric.withAttributes(suspensions, program), 1)
+    const suspension = before.stored.suspension === null ? after.stored.suspension : null
+    if (suspension !== null) {
+      yield* Effect.annotateCurrentSpan({ 'tea.suspended': true, 'tea.suspension.on': suspension.on._tag })
+    }
+    return Effect.andThen(
+      written ? Metric.update(Metric.withAttributes(mailboxes, program), after.stored.mailbox.length) : Effect.void,
+      suspension !== null ? Metric.update(Metric.withAttributes(suspensions, program), 1) : Effect.void,
+    )
   })
 
 /**
@@ -251,6 +255,8 @@ export type Stepped<T extends Types> = Readonly<{
   outputs: ReadonlyArray<Machine.Output<T>>
   /** The span of the step, which the operations it starts link once performed (decision 0220). */
   span: Tracer.AnySpan | undefined
+  /** The metrics of the step, recorded with what it set going, once its commit is known (decision 0220). */
+  counted: Effect.Effect<void>
 }>
 
 /** An entity loaded in this process: its machine, the events waiting, and what is running for it. */

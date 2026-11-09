@@ -50,15 +50,17 @@ const administer = (url: string, statement: string) =>
 
 /**
  * A new database on the server, dropped when the scope closes, given by its URL. Each test makes its own, as each
- * test of PGlite copies a new one, so that no test reads what another wrote.
+ * test of PGlite copies a new one, so that no test reads what another wrote. The name is drawn each time the effect
+ * runs, so that a layer built twice makes two databases, as a copy of PGlite would.
  */
-export const database = (url: string): Effect.Effect<string, never, Scope.Scope> => {
-  const name = `effecttea_test_${process.pid}_${made++}`
-  return Effect.acquireRelease(
-    Effect.as(administer(url, `CREATE DATABASE ${name}`), at(url, name)),
-    () => administer(url, `DROP DATABASE ${name} WITH (FORCE)`),
-  )
-}
+export const database = (url: string): Effect.Effect<string, never, Scope.Scope> =>
+  Effect.suspend(() => {
+    const name = `effecttea_test_${process.pid}_${made++}`
+    return Effect.acquireRelease(
+      Effect.as(administer(url, `CREATE DATABASE ${name}`), at(url, name)),
+      () => administer(url, `DROP DATABASE ${name} WITH (FORCE)`),
+    )
+  })
 
 /** A pool of connections to the database at `url`, with the options of `PgClient` given. */
 export const pool = (url: string, options: Omit<PgClient.PgPoolConfig, 'url'> = {}) =>

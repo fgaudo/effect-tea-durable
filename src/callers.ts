@@ -230,8 +230,9 @@ export const create = <T extends Types>(
         const loaded = yield* activate(p, deployed, stored)
         return { _tag: 'Asked', asked: yield* ask(p, p.creations, loaded, entity, requested, creating) } as const
       }
-      // The creation is a step of its own, linked to its caller's span (decision 0220).
-      return yield* traced(entity, { _tag: 'Create' }, yield* spanHere)(Effect.gen(function*() {
+      // The creation is a step of its own, linked to its caller's span (decision 0220). The entity's loop is forked
+      // past the step's span, which would otherwise parent what the loop runs outside its steps.
+      const made = yield* traced(entity, { _tag: 'Create' }, yield* spanHere)(Effect.gen(function*() {
         const now = yield* DateTime.now
         const started = Machine.start(deployed.program, id, flags, now, request)
         // A defect at creation stores nothing (decision 0014): its creator is given the defect itself, and a
@@ -239,15 +240,15 @@ export const create = <T extends Types>(
         if (started._tag === 'Defect') return yield* Effect.fail(new Faulted({ defect: started.cause }))
         // A creation `init` rejects stores nothing, and its reply is not stored either: a retry runs `init` again
         // (decision 0182).
-        if (started._tag === 'Rejected') return started.reply
+        if (started._tag === 'Rejected') return { _tag: 'Rejected', reply: started.reply } as const
         const loaded = yield* fresh<T>(p, started.machine, 0)
-        yield* told(entity, started.machine, started.machine, started.outputs, true)
         const creation: Machine.Event<T> = { _tag: 'Create', request }
         yield* at(p, 'BeforeCommit', entity, creation)
         const characters = yield* transaction(
           p.sql,
           deployed.storage.write(id, started.written, DateTime.toEpochMillis(now)),
         ).pipe(Effect.orDie)
+        yield* Effect.flatten(told(entity, started.machine, started.machine, started.outputs, true))
         tell(p.readings, entity.name, started.written)
         yield* warnOfSize(p, loaded, entity, characters)
         // The entity exists from here: its creation is the first event committed for it.
@@ -258,9 +259,11 @@ export const create = <T extends Types>(
         yield* perform(p, deployed, loaded, entity, creation, started.outputs, yield* spanHere).pipe(
           Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(p, deployed, loaded, cause)),
         )
-        yield* Effect.forkIn(untransacted(p.sql, loop(p, deployed, loaded)), deployed.scope)
-        return { _tag: 'Created' } as const
+        return { _tag: 'Made', loaded } as const
       }))
+      if (made._tag === 'Rejected') return made.reply
+      yield* Effect.forkIn(untransacted(p.sql, loop(p, deployed, made.loaded)), deployed.scope)
+      return { _tag: 'Created' } as const
     })))
     // An entity already there answers through the machine, and its caller waits for that answer.
     return asked._tag === 'Asked' ? yield* answered(asked.asked) : asked

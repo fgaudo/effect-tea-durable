@@ -72,8 +72,9 @@ export const settle = <T extends Types>(p: Process, deployed: Deployment<T>, loa
       loaded.machine = uncommitted.machine
       loaded.steps = uncommitted.steps
       if (before.stored.suspension !== null && uncommitted.machine.stored.suspension === null) wake(p, { name, id })
-      for (const { event, written, outputs, span } of uncommitted.transitions) {
+      for (const { event, written, outputs, span, counted } of uncommitted.transitions) {
         if (written !== null) tell(p.readings, name, written)
+        yield* counted
         yield* observe(p, { name, id }, event)
         yield* perform(p, deployed, loaded, { name, id }, event, outputs, span)
       }
@@ -129,11 +130,12 @@ export const applyOnCluster = <T extends Types>(
       // connection runs after this one, so it never reads them between this one's commit and the assignments. A
       // commit that fails crashes the entity, and nothing reads them then (decision 0161).
       loaded.machine = transition.machine
-      yield* told(entity, before, transition.machine, transition.outputs, transition.written !== null)
-      return { event, before, transition, characters }
+      const counted = yield* told(entity, before, transition.machine, transition.outputs, transition.written !== null)
+      return { event, before, transition, characters, counted }
     }))).pipe(Effect.orDie)
     if (stepped === null) return
-    const { event, before, transition, characters } = stepped
+    const { event, before, transition, characters, counted } = stepped
+    yield* counted
     if (transition.written !== null) {
       tell(p.readings, entity.name, transition.written)
       yield* warnOfSize(p, loaded, entity, characters)
@@ -153,8 +155,11 @@ export const applyOnCluster = <T extends Types>(
     loaded.applying = false
     end(p)
   })))
-  // A `Settle` steps no event of its own: what it performs links the spans of the door's steps (decision 0220).
-  return offered._tag === 'Settle' ? step : traced(loaded.machine.stored, offered, undefined)(step)
+  // A `Settle` steps no event of its own: what it performs links the spans of the door's steps. A `Receive` steps
+  // nothing here, since a caller's message reaches the entity through its door (decision 0220).
+  return offered._tag === 'Settle' || offered._tag === 'Receive'
+    ? step
+    : traced(loaded.machine.stored, offered, undefined)(step)
 }
 
 /** On Cluster, the steps of an entity in one transaction, from the entity `loaded`, or from none. */
@@ -184,12 +189,12 @@ export const stepIn = <T extends Types>(
         yield* deployed.storage.write(entity.id, transition.written, DateTime.toEpochMillis(now))
         stepped.steps += 1
       }
-      yield* told(entity, before, transition.machine, transition.outputs, transition.written !== null)
       stepped.transitions.push({
         event,
         written: transition.written,
         outputs: transition.outputs,
         span: yield* spanHere,
+        counted: yield* told(entity, before, transition.machine, transition.outputs, transition.written !== null),
       })
       stepped.machine = transition.machine
       return transition
@@ -240,7 +245,8 @@ export const finishIn = <T extends Types>(
     if (stepped.steps === held.steps) {
       // Nothing was written, so nothing can roll back: the machine is the entity's at once (decision 0092).
       held.machine = stepped.machine!
-      for (const { event, outputs, span } of stepped.transitions) {
+      for (const { event, outputs, span, counted } of stepped.transitions) {
+        yield* counted
         yield* observe(p, entity, event)
         yield* perform(p, deployed, held, entity, event, outputs, span)
       }
@@ -311,10 +317,10 @@ export const doorStep = <T extends Types>(p: Process, deployed: Deployment<T>) =
         // client resets it, as it resets `NotFound` (decision 0182).
         if (started._tag === 'Rejected') return { _tag: 'Create', answer: started.reply }
         // The creation is a step of its own, linked to the span of the door's request (decision 0220).
-        const span = yield* traced(entity, { _tag: 'Create' }, yield* spanHere)(Effect.gen(function*() {
+        const { span, counted } = yield* traced(entity, { _tag: 'Create' }, yield* spanHere)(Effect.gen(function*() {
           yield* stored.write(id, started.written, DateTime.toEpochMillis(now))
-          yield* told(entity, started.machine, started.machine, started.outputs, true)
-          return yield* spanHere
+          const counted = yield* told(entity, started.machine, started.machine, started.outputs, true)
+          return { span: yield* spanHere, counted }
         }))
         stepped.loaded = yield* fresh<T>(p, started.machine, 0)
         stepped.steps = 1
@@ -324,6 +330,7 @@ export const doorStep = <T extends Types>(p: Process, deployed: Deployment<T>) =
           written: started.written,
           outputs: started.outputs,
           span,
+          counted,
         })
         answer = { _tag: 'Create', answer: { _tag: 'Created' } }
       } else {
