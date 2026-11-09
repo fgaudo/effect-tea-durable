@@ -93,14 +93,6 @@ with a requirement that no example has yet.
   statement fail with a `SqlError`. It waits for the release of Effect that holds the fix. It would be decided by:
   - a release of Effect with the fix, after which a fork that keeps the transaction fails where it runs;
   - the spikes and the tests of the runtime run at that release, which a fork the rule missed would then fail.
-- **A planned stop on Cluster.** A rolling deploy stops each runner with `SIGTERM`, and a test of
-  `examples/server` stops one of two runners so, off Windows: the other runner finishes the orders before any lease
-  expires. The server launches its runtime without `drain`, so that test stops every operation as a crash does. What
-  the planned stop does on Cluster, which drains the at-most-once operations and stops the rest at once
-  ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)), is only reasoned. It
-  waits for nothing but the test below. It would be decided by:
-  - a test of `examples/server` launched with `drain`, which stops a runner with `SIGTERM` during an email, and
-    checks that the email is sent once and that the other runner finishes the order.
 - **A timer and the wall clock.** A timer stores its time on the wall clock, and is slept as the milliseconds left
   when it is armed, measured on the host's timers ([decision 0194](decisions/0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md)). A host suspended
   during the sleep, a virtual machine paused, or a wall clock set back makes the sleep end late or early. A loaded

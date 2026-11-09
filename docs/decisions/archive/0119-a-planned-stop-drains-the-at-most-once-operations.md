@@ -4,7 +4,8 @@
 [decision 0011](0011-an-operation-declares-what-a-crash-does.md) says the runtime should run before a planned
 stop. Its order of finalizers holds in a sequential scope alone, and the runtime forks one of its own, by
 [decision 0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md), which also finds that `Scope.close` documents
-finalizers as uninterruptible.
+finalizers as uninterruptible. Its wait is no longer made interruptible, since a scope closed by an interrupted fiber
+ended it at once, by [decision 0219](../0219-a-drain-holds-when-an-interrupted-fiber-closes-its-scope.md).
 
 ## Context
 

@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-11-04. Corrects what [decision 0119](0119-a-planned-stop-drains-the-at-most-once-operations.md)
 and [decision 0080](0080-a-database-is-held-by-one-runtime.md) rest on: a scope runs its finalizers in the
 reverse order of their adding only when its strategy is sequential. Corrects too what decision 0119 says of
-`Scope.close`'s documentation. Found by the review of 0098 to 0119.
+`Scope.close`'s documentation. Found by the review of 0098 to 0119. The drain's wait is no longer made
+`interruptible`, since a scope closed by an interrupted fiber ended it at once, by
+[decision 0219](../0219-a-drain-holds-when-an-interrupted-fiber-closes-its-scope.md).
 
 ## Context
 

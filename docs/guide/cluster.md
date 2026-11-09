@@ -116,13 +116,19 @@ DATABASE=orders.db WORLD_URL=http://localhost:4000 HOST=localhost PORT=3000 bun 
 
 The runners send to each other over HTTP, beside the boundary's routes, and Cluster's `ShardingConfig` reads the
 rest of its settings from the environment. The runtime is launched and the orders deployed in the layer's scope,
-so they stop when the server stops:
+so they stop when the server stops. Given `DRAIN_MILLIS`, the runtime is launched with `drain`, and a stop waits
+that long for the emails under way. The layer is built over the runner's `Sharding`, so the drain ends before the
+runner lets its shards go. The completion of each email is committed, and the runner that takes the shard handles
+it ([decision 0219](../decisions/0219-a-drain-holds-when-an-interrupted-fiber-closes-its-scope.md)):
 
 ```ts
 const orders = (settings: Settings) =>
   Layer.effect(
     Orders,
-    Effect.flatMap(launch(), (runtime) => runtime.deploy(order)),
+    Effect.flatMap(
+      launch(settings.drain === undefined ? {} : { drain: settings.drain }),
+      (runtime) => runtime.deploy(order),
+    ),
   ).pipe(
     Layer.provide(world(settings.world)),
     Layer.provideMerge(
@@ -143,7 +149,8 @@ const orders = (settings: Settings) =>
 
 Its tests start the server as processes and kill them. An order whose process is killed during its charge is paid
 once, by the process started again on the same file. With two runners, the one that survives finishes the orders
-of the one killed, and charges each once.
+of the one killed, and charges each once. A runner launched with `DRAIN_MILLIS` and stopped by `SIGTERM` sends the
+emails under way once, and the other runner finds them sent.
 
 ## Shards, and a runner that dies
 

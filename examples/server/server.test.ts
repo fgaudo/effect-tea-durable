@@ -1,7 +1,7 @@
 /**
  * The server of the orders as a process (decision 0178). The world is a server of the test, which charges once per
  * idempotency key, as a payment provider does. It holds the first charge of each key open until the test releases
- * it, and records the runners that asked for each one.
+ * it, and records the runners that asked for each one. It records each email too, and holds it open if asked.
  */
 import { BunHttpServer, BunServices } from '@effect/platform-bun'
 import { SqliteClient } from '@effect/sql-sqlite-bun'
@@ -10,6 +10,7 @@ import * as Context from 'effect/Context'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import {
   FetchHttpClient,
@@ -23,6 +24,7 @@ import {
   HttpServerResponse,
 } from 'effect/http'
 import * as Layer from 'effect/Layer'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Ref from 'effect/Ref'
@@ -42,22 +44,28 @@ const portOf = <E, R>(layer: Layer.Layer<HttpServer.HttpServer, E, R>, scope: Sc
 /** A port no server listens on now: the port of a server that listened on any port, and stopped. */
 const freePort = Effect.scoped(Effect.flatMap(Effect.scope, (scope) => portOf(BunHttpServer.layerServer({ port: 0 }), scope)))
 
+/** What the world does besides charging once per key: fail the first calls, or hold each email open. */
+type Behaviour = Readonly<{ failing?: boolean; holdingMails?: boolean }>
+
 /**
  * The world. `charges` holds the charge of each idempotency key, and `asked` the runners that asked for it, in
  * order. A charge is taken as it arrives, so a charge whose answer the process never got is still taken. The first
  * charge of each key waits for `release`. A world `failing` answers `503` to the first charge, before it takes or
- * records it, and to the first email. `mails` counts the emails asked for.
+ * records it, and to the first email. `mailed` holds each email asked for, with the runner that asked, and `mails`
+ * counts them. A world `holdingMails` answers each email only once `releaseMails` runs.
  */
-const world = (failing: boolean) => Effect.gen(function*() {
+const world = ({ failing = false, holdingMails = false }: Behaviour) => Effect.gen(function*() {
   const charges = yield* Ref.make(new Map<string, string>())
   const asked = yield* Ref.make(new Map<string, ReadonlyArray<string>>())
   const released = yield* Deferred.make<void>()
   const failed = yield* Ref.make(new Set<string>())
-  const mails = yield* Ref.make(0)
+  const mailed = yield* Ref.make<ReadonlyArray<Readonly<{ runner: string; subject: string }>>>([])
+  const mailsReleased = yield* Deferred.make<void>()
   /** Whether the world answers `503` to the call of `path`: only the first, and only of a world `failing`. */
   const fails = (path: string) => Ref.modify(failed, (paths) => [failing && !paths.has(path), new Set(paths).add(path)])
   const unavailable = HttpServerResponse.empty({ status: 503 })
   const Charge = Schema.Struct({ idempotencyKey: Schema.String })
+  const Mail = Schema.Struct({ subject: Schema.String })
   const Runner = Schema.Struct({ 'x-runner': Schema.String })
   const routes = Layer.mergeAll(
     HttpRouter.add(
@@ -80,8 +88,14 @@ const world = (failing: boolean) => Effect.gen(function*() {
     HttpRouter.add(
       'POST',
       '/mail',
-      Effect.flatMap(Ref.updateAndGet(mails, (count) => count + 1), () =>
-        Effect.map(fails('/mail'), (fail) => fail ? unavailable : HttpServerResponse.empty({ status: 204 }))),
+      Effect.gen(function*() {
+        const { subject } = yield* HttpServerRequest.schemaBodyJson(Mail)
+        const { 'x-runner': runner } = yield* HttpServerRequest.schemaHeaders(Runner)
+        yield* Ref.update(mailed, (all) => [...all, { runner, subject }])
+        if (yield* fails('/mail')) return unavailable
+        if (holdingMails) yield* Deferred.await(mailsReleased)
+        return HttpServerResponse.empty({ status: 204 })
+      }),
     ),
     HttpRouter.add('POST', '/*', HttpServerResponse.empty({ status: 204 })),
   )
@@ -95,7 +109,8 @@ const world = (failing: boolean) => Effect.gen(function*() {
     url: `http://localhost:${port}`,
     charges: Ref.get(charges),
     asked: Ref.get(asked),
-    mails: Ref.get(mails),
+    mailed: Ref.get(mailed),
+    mails: Effect.map(Ref.get(mailed), (all) => all.length),
     /** Waits until the world holds the first charge of `count` keys. */
     holding: (count: number) =>
       Ref.get(asked).pipe(
@@ -103,6 +118,13 @@ const world = (failing: boolean) => Effect.gen(function*() {
         Effect.retry({ schedule: Schedule.spaced('50 millis'), times: 600 }),
       ),
     release: Deferred.succeed(released, undefined),
+    /** Waits until the world holds `count` emails. */
+    holdingMails: (count: number) =>
+      Ref.get(mailed).pipe(
+        Effect.filterOrFail((all) => all.length >= count),
+        Effect.retry({ schedule: Schedule.spaced('50 millis'), times: 600 }),
+      ),
+    releaseMails: Deferred.succeed(mailsReleased, undefined),
   }
 })
 
@@ -171,6 +193,38 @@ const paid = (client: HttpClient.HttpClient, id: string) =>
   )
 
 /**
+ * Sends `message` to the order `id` as `who` until it is answered `tag`, each try under a request id of its own,
+ * since a retry under the same request id is answered as the first try.
+ */
+const answered = <M extends { readonly _tag: string }>(
+  client: HttpClient.HttpClient,
+  id: string,
+  who: string,
+  message: M,
+  tag: string,
+) => {
+  let tries = 0
+  return Effect.suspend(() =>
+    client.post(`/orders/${id}/events`, {
+      headers: as(who, `${message._tag}-${id}-${tries++}`),
+      body: HttpBody.jsonUnsafe(message),
+    })
+  ).pipe(
+    Effect.flatMap(HttpClientResponse.schemaBodyJson(Tagged)),
+    Effect.filterOrFail(({ _tag }) => _tag === tag),
+    Effect.retry({ schedule: Schedule.spaced('100 millis'), times: 200 }),
+  )
+}
+
+/** The email of each order, read from the state the runtime stored in the file of `settings`. */
+const emails = (settings: Settings) =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql<{ id: string; state: string }>`SELECT id, state FROM effecttea_entities`
+    return new Map(rows.map(({ id, state }) => [id, (JSON.parse(state) as { email?: string }).email]))
+  }).pipe(Effect.provide(SqliteClient.layer({ filename: settings.filename })))
+
+/**
  * Waits until each runner of `addresses` holds a lock of `cluster_locks`, so that the orders created next are divided
  * between them. A runner takes its shards at its next reading of the runners, which `refreshAssignmentsInterval`
  * spaces, and a shard another runner lets go may stay free for two of them, as the JSDoc of `runnerJoinDebounce`
@@ -185,16 +239,16 @@ const holdingShards = (settings: Settings, addresses: ReadonlyArray<string>) =>
     )
   }).pipe(Effect.provide(SqliteClient.layer({ filename: settings.filename })))
 
-/** Runs `body` with a world, `failing` or not, and a file of SQLite in a directory removed afterwards. */
+/** Runs `body` with a world of `behaviour`, and a file of SQLite in a directory removed afterwards. */
 const run = <A, E>(
   body: (settings: Settings, theWorld: Effect.Success<ReturnType<typeof world>>) => Effect.Effect<A, E, any>,
-  failing = false,
+  behaviour: Behaviour = {},
 ) =>
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'effect-tea-persistent-server-' })
-    const theWorld = yield* world(failing)
+    const theWorld = yield* world(behaviour)
     return yield* body({ filename: path.join(directory, 'orders.db'), world: theWorld.url }, theWorld)
   })).pipe(Effect.provide([BunServices.layer, FetchHttpClient.layer])) as Effect.Effect<A, unknown>)
 
@@ -251,7 +305,8 @@ test('the orders of a runner killed during their charges are paid once by the ot
 }, 90_000)
 
 // The process stops on the signal as its layer's scope closes, and Cluster lets the runner's shards go as the runner
-// unregisters. The server launches its runtime without `drain`, so its charges stop as in a crash (decision 0119).
+// unregisters. Without `DRAIN_MILLIS` the server launches its runtime without `drain`, so its charges stop as in a
+// crash (decision 0119).
 // Under a lease and a health check longer than the test, only the unregistration frees the shards. On Windows a
 // child process is ended at once by any signal, so the stop cannot be tested there.
 test.skipIf(process.platform === 'win32')(
@@ -281,6 +336,55 @@ test.skipIf(process.platform === 'win32')(
         expect((yield* theWorld.charges).size).toBe(ids.length)
       })
     )
+  },
+  90_000,
+)
+
+// With `DRAIN_MILLIS` the stop waits for the emails under way, and commits their completions before the runner lets
+// its shards go. The other runner handles each completion, and finds each email sent and not unsure (decisions 0119,
+// 0219). The world holds the emails, so the drain still holds the process two seconds after the signal. The emails are
+// released only then, so that each ends in the drain and not before the stop. `kill` returns once the process has
+// ended, so it runs in a fiber of its own.
+test.skipIf(process.platform === 'win32')(
+  'a runner stopped by SIGTERM with a drain sends its emails under way once, and the other runner finishes the orders',
+  async () => {
+    await run((settings, theWorld) =>
+      Effect.gen(function*() {
+        const env = {
+          SHARD_LOCK_EXPIRATION: '10 minutes',
+          RUNNER_HEALTH_CHECK_INTERVAL: '10 minutes',
+          DRAIN_MILLIS: '30000',
+        }
+        const ids = Array.from({ length: 16 }, (_, n) => `o-${n}`)
+        yield* theWorld.release
+        const doomed = yield* Scope.make()
+        const stopped = yield* start(settings, yield* freePort, env).pipe(Scope.provide(doomed))
+        const survivor = yield* start(settings, yield* freePort, env)
+        yield* holdingShards(settings, [stopped.address, survivor.address])
+        for (const id of ids) yield* order(survivor.client, id)
+        for (const id of ids) yield* paid(survivor.client, id)
+        for (const id of ids) {
+          yield* answered(survivor.client, id, 'warehouse', { _tag: 'ShipmentReported', tracking: id }, 'Accepted')
+        }
+        yield* theWorld.holdingMails(ids.length)
+
+        const mailedByStopped = (yield* theWorld.mailed).filter(({ runner }) => runner === stopped.address)
+        expect(mailedByStopped.length).toBeGreaterThan(0)
+        const killing = yield* Effect.forkChild(stopped.process.kill({ killSignal: 'SIGTERM' }))
+        expect(Option.isNone(yield* Effect.timeoutOption(stopped.process.exitCode, '2 seconds'))).toBe(true)
+        yield* theWorld.releaseMails
+        yield* Fiber.join(killing)
+        yield* Scope.close(doomed, Exit.void)
+
+        for (const id of ids) {
+          yield* answered(survivor.client, id, 'customer:ada', { _tag: 'CancelRequested' }, 'Rejected')
+        }
+        const mailed = yield* theWorld.mailed
+        expect(mailed.length).toBe(ids.length)
+        expect(new Set(mailed.map(({ subject }) => subject)).size).toBe(ids.length)
+        const stored = yield* emails(settings)
+        expect(ids.map((id) => stored.get(id))).toEqual(ids.map(() => 'Sent'))
+      }), { holdingMails: true })
   },
   90_000,
 )
@@ -318,5 +422,5 @@ test('a charge the world fails is tried again, and an email it fails suspends it
       )
       expect(suspended).toEqual({ status: 409, body: { _tag: 'Suspended' } })
       expect(yield* theWorld.mails).toBe(1)
-    }), true)
+    }), { failing: true })
 }, 60_000)

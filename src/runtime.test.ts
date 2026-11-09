@@ -1806,13 +1806,16 @@ describe('a planned stop', () => {
   /**
    * A first process, with `drain`, that creates the entity and ends with its work under way, in a fiber of its own.
    * `during` runs once the drain has interrupted the `interrupts` operations that run again, with the handle, while
-   * the scope's closing waits. A second process without the option then activates the entity, and gives what it
-   * acted and what the entity published.
+   * the scope's closing waits. A first process `interrupted` waits instead of ending, and its scope closes as its
+   * fiber is interrupted, as `runMain` interrupts the main fiber on a signal. A second process without the option
+   * then activates the entity, and gives what it acted and what the entity published.
    */
   const stopped = <A>(
     options: Options & Hooks,
     during: (toy: Library.Handle<T>, open: Effect.Effect<boolean>) => Effect.Effect<A>,
-    { program: deployed = program, interrupts = 2 }: Readonly<{ program?: Program<T>; interrupts?: number }> = {},
+    { program: deployed = program, interrupts = 2, interrupted = false }: Readonly<
+      { program?: Program<T>; interrupts?: number; interrupted?: boolean }
+    > = {},
   ) =>
     Effect.gen(function*() {
       const first = yield* held(interrupts)
@@ -1823,11 +1826,13 @@ describe('a planned stop', () => {
           const toy = yield* Effect.provide(runtime.deploy(deployed), first.layer)
           yield* ran(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
           yield* Deferred.succeed(handle, toy)
+          if (interrupted) yield* Effect.never
         })))
       const toy = yield* Deferred.await(handle)
+      const ended = interrupted ? yield* Effect.forkChild(Fiber.interrupt(stopping)) : stopping
       yield* first.interrupted
       const during_ = yield* during(toy, first.open)
-      yield* Fiber.join(stopping)
+      yield* Fiber.join(ended)
       const second = yield* hands()
       const after = yield* process({}, (runtime) =>
         Effect.gen(function*() {
@@ -1861,6 +1866,28 @@ describe('a planned stop', () => {
         open)
       expect(second.filter((act) => act === 'b').length).toBe(0)
       expect(unknown(published)).toEqual([])
+    })))
+
+  test('a drain holds when the scope closes as the fiber that launched the runtime is interrupted', () =>
+    database(Effect.gen(function*() {
+      // Decision 0219: the scope closes in the interrupted fiber, whose interruption is still pending in the
+      // finalizer. A wait made interruptible there would end at once, and `b` would be delivered `unknown`.
+      const { second, published } = yield* stopped({ drain: { millis: 100 } }, (_toy, open) => open, {
+        interrupted: true,
+      })
+      expect(second.filter((act) => act === 'b').length).toBe(0)
+      expect(unknown(published)).toEqual([])
+    })))
+
+  test('a drain whose launching fiber is interrupted still ends once its millis run out', () =>
+    database(Effect.gen(function*() {
+      // The wait runs where the finalizer cannot be interrupted, and the timeout alone ends it (decision 0219).
+      const { published } = yield* stopped(
+        { drain: { millis: 100 } },
+        () => Effect.andThen(TestClock.adjust('1 millis'), TestClock.adjust('100 millis')),
+        { interrupted: true },
+      )
+      expect(unknown(published)).toEqual([{ _tag: 'Unknown', key: 'b' }])
     })))
 
   test('the drain waits for the completion of an at-most-once operation, under prioritized schedules', () => {
