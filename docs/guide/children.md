@@ -58,6 +58,8 @@ const Event = Schema.TaggedStruct('Removed', {})
 // What the cart tells every line: the checkout is a fact of the cart's, which no caller sends a line.
 const External = Schema.TaggedStruct('CheckedOut', {})
 
+// …
+
 export const line = part({
   state: State,
   flags: Flags,
@@ -70,7 +72,7 @@ export const line = part({
 })({
   keys: ['reserve', 'release'],
   init: ({ sku, quantity }) => ({ _tag: 'Reserving', sku, quantity }),
-  // update, work, operations and project, as a program's
+  // …, then update, work, operations and project, as a program's
 })
 ```
 
@@ -88,17 +90,28 @@ starts. A part may hold children of its own, so a tree is as deep as a program n
 The cart keeps its lines in a record by article, and declares them as children by id:
 
 ```ts
+const Line = line.schemas.state
+
 const State = Schema.Struct({
   phase: Schema.Literals(['Open', 'CheckedOut']),
   // By article: the line of an article is its child under the article's id.
-  lines: Schema.Record(Schema.String, line.schemas.state),
+  lines: Schema.Record(Schema.String, Line),
 })
+
+// …
 
 const lines = Optic.id<State>().key('lines').compose(Optic.entries())
 
-export const cart = program({ state: State, flags: Schema.Null, inbound: Inbound, projection: Projection })({
+export const cart = program({
+  state: State,
+  flags: Schema.Null,
+  inbound: Inbound,
+  projection: Projection,
+})({
   name: 'Cart',
+
   children: { Line: each(line, { id: Schema.String, at: lines }) },
+
   init: () => ({ phase: 'Open', lines: {} }),
   // …
 })
@@ -187,7 +200,7 @@ StockReleased: () =>
 onEvent: {
   Line: (sku) => (state) => {
     const { [sku]: _, ...kept } = state.lines
-    return { ...state, lines: kept }
+    return { ...state, lines: kept satisfies Readonly<Record<string, LineState>> }
   },
 },
 ```
@@ -238,6 +251,9 @@ A rehearsal answers a line's work with a message wrapped as the line's, and read
 
 ```ts
 yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 }, null)
+// A line reserving its stock cannot be removed: only the reservation's answer leaves that state.
+expect(yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }, null))
+  .toMatchObject(rejected)
 yield* rehearsal.answer('Line.reserve', 'mug', {
   _tag: 'Line',
   id: 'mug',
@@ -245,7 +261,11 @@ yield* rehearsal.answer('Line.reserve', 'mug', {
 })
 yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }, null)
 expect((yield* rehearsal.state).lines['mug']?._tag).toBe('Releasing')
-yield* rehearsal.answer('Line.release', 'mug', { _tag: 'Line', id: 'mug', message: { _tag: 'StockReleased' } })
+yield* rehearsal.answer('Line.release', 'mug', {
+  _tag: 'Line',
+  id: 'mug',
+  message: { _tag: 'StockReleased' },
+})
 expect((yield* rehearsal.state).lines).toEqual({})
 ```
 

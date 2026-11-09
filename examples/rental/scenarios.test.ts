@@ -85,6 +85,7 @@ describe('ride', () => {
         yield* rehearsal.answer('unlock', { _tag: 'Unlocked' })
         const end = { requestId: 'end-1' }
         expect(yield* rehearsal.send({ _tag: 'EndRequested' }, ann, end)).toEqual(accepted)
+        // The phone never got the answer, and sends the end again: the ride ended once, and is told so again.
         expect(yield* rehearsal.send({ _tag: 'EndRequested' }, ann, end)).toEqual(accepted)
         expect(yield* rehearsal.send({ _tag: 'EndRequested' }, ann, { requestId: 'end-2' })).toMatchObject(rejected)
         expect((yield* rehearsal.state)._tag).toBe('Docking')

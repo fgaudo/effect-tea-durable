@@ -39,6 +39,7 @@ A runner is a layer of Cluster's, with the library's `sharding` in place of Clus
 
 ```ts
 import { SqliteClient } from '@effect/sql-sqlite-bun'
+// …
 import {
   RunnerAddress,
   RunnerHealth,
@@ -48,9 +49,13 @@ import {
   SqlRunnerStorage,
 } from 'effect/cluster'
 import { Digest } from 'effect/crypto'
+import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
+// …
 import { launch, sharding } from '@fgaudo/effect-tea-persistent/cluster'
+
+// …
 
 const runner = (filename: string) =>
   sharding([order]).pipe(
@@ -82,7 +87,12 @@ const runtime = yield* launch()
 const orders = yield* Effect.provide(runtime.deploy(order), world)
 
 for (const id of ['o-1', 'o-2']) {
-  yield* orders.create(id, { order: { customer: 'ada', totalInCents: 1_000 } }, { requestId: `c-${id}`, sender: ada })
+  expect(
+    yield* orders.create(id, { order: { customer: 'ada', totalInCents: 1_000 } }, {
+      requestId: `c-${id}`,
+      sender: ada,
+    }),
+  ).toEqual({ _tag: 'Created' })
 }
 const pay = { _tag: 'PayRequested', payment: 'card-1' } as const
 expect(yield* orders.send('o-2', pay, { requestId: 'p-o-2', sender: ada })).toEqual({ _tag: 'Accepted' })
@@ -110,13 +120,22 @@ so they stop when the server stops:
 
 ```ts
 const orders = (settings: Settings) =>
-  Layer.effect(Orders, Effect.flatMap(launch(), (runtime) => runtime.deploy(order))).pipe(
+  Layer.effect(
+    Orders,
+    Effect.flatMap(launch(), (runtime) => runtime.deploy(order)),
+  ).pipe(
     Layer.provide(world(settings.world)),
     Layer.provideMerge(
       sharding([order]).pipe(
         Layer.provide(RunnerHealth.layerPing),
         Layer.provideMerge(Runners.layerRpc),
-        // the client of the other runners over HTTP, the storage of Cluster, the serialization and SQLite
+        Layer.provide(HttpRunner.layerClientProtocolHttp({ path: runnerPath }).pipe(Layer.provide(FetchHttpClient.layer))),
+        Layer.provideMerge(SqlMessageStorage.layer),
+        Layer.provide(SqlRunnerStorage.layer),
+        Layer.provideMerge(RpcSerialization.layerSchemaBinary()),
+        Layer.provideMerge(SqliteClient.layer({ filename: settings.filename })),
+        Layer.provide(Digest.layerWebCrypto),
+        Layer.orDie,
       ),
     ),
   )

@@ -125,7 +125,7 @@ const cases: ReadonlyArray<MigrationCase> = [
     written: { _tag: 'Docked', centsPerMinute: 20 },
     read: { _tag: 'Docked', centsPerMinute: 20, rides: 0 },
   },
-  // the state Ridden, and the projection
+  // …, the state Ridden, and the projection
 ]
 
 test('the bike reads what each version before it wrote', () => {
@@ -152,9 +152,12 @@ A program's name is stored with each of its entities. A program is renamed by it
 
 ```ts
 const runtime = yield* launch({ renames: { Bike: 'Cycle' } })
+const cycles = yield* runtime.deploy({ ...bike, name: 'Cycle' })
+expect(yield* cycles.read('bike-7')).toMatchObject({ status: 'Docked', centsPerMinute: 20 })
 ```
 
-The program then carries its new name, `name: 'Cycle'`. The launch moves every row of the old name to the new one,
+The program then carries its new name, `name: 'Cycle'`, here given by the deploy, and written in its declaration
+once the old name is gone. The launch moves every row of the old name to the new one,
 in one transaction, before any deploy. A reply stored for a request of the old name names the new name, so a
 caller's retry and an entity's request sent again still find their replies. An entity keeps the idempotency keys
 of its work, so an operation under way runs again under the key it was given. A state that holds an address of the

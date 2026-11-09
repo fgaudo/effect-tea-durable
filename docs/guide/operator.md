@@ -108,7 +108,10 @@ const rides = yield* Effect.provide(runtime.deploy(ride), mailer)
 expect((yield* rides.suspended).map((suspension) => suspension.id)).toEqual([id])
 expect(yield* rides.resume(id)).toEqual({ _tag: 'Resumed' })
 yield* runtime.settled
+// The end is applied by the fix. The email was under way when the first process stopped, and is sent at most
+// once, so the ride records that it is not known.
 expect(yield* rides.inspect(id)).toMatchObject({ state: { _tag: 'Ended', email: 'Unsure' }, suspension: null })
+expect(yield* bikes.read('bike-7')).toMatchObject({ status: 'Docked', rides: 1 })
 // The customer's retry is answered from the reply the fix stored, and ends nothing twice.
 expect(yield* rides.send(id, end, { requestId: 'end-1', sender: ann })).toEqual({ _tag: 'Accepted' })
 ```

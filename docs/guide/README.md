@@ -49,7 +49,9 @@ A customer has no life of its own. Nothing about a customer waits, expires or re
 table of the application, read and written by request handlers, as in any backend.
 
 ```ts
-// A customer has no life of its own, so it is a row of the application's table, and no entity.
+// A customer has no life of its own, so it is a row of the application's table, and no entity. The table lives in
+// the runtime's database, under a name that does not start with `tea_`, which the runtime keeps for its own
+// (decision 0198).
 export const createCustomers = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
   yield* sql`CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, email TEXT NOT NULL)`
@@ -77,9 +79,12 @@ const State = Schema.Union([
   Schema.TaggedStruct('Riding', {
     ride: Ride,
     startedAt: Schema.DateTimeUtcFromMillis,
+    // Until when a cancellation is free, and null once that time has passed: a timer sets it, so that `project`
+    // reads it and no clock.
     cancellableUntil: Schema.NullOr(Schema.DateTimeUtcFromMillis),
     email: Email,
   }),
+  // The ride is over, and its cost known: only the bike's reply to the dock leaves it.
   Schema.TaggedStruct('Docking', { ride: Ride, costInCents: Schema.Int, email: Email }),
   Schema.TaggedStruct('Ended', { ride: Ride, costInCents: Schema.Int, email: Email }),
 ])
@@ -112,6 +117,8 @@ import {
   send,
   timer,
 } from '@fgaudo/effect-tea-persistent/program'
+
+// …
 
 export const ride = program({
   state: State,
@@ -176,9 +183,15 @@ const Internal = Schema.Union([
 second device. So `update` **rejects** an inbound message that does not apply, and never fails on it:
 
 ```ts
+// The email under way is carried into the next state, with its key.
 EndRequested: () =>
   state._tag === 'Riding' && isCustomer(from, state.ride)
-    ? { _tag: 'Docking', ride: state.ride, costInCents: costOf(state.ride, state.startedAt, at), email: state.email }
+    ? {
+      _tag: 'Docking',
+      ride: state.ride,
+      costInCents: costOf(state.ride, state.startedAt, at),
+      email: state.email,
+    }
     : reject,
 ```
 
@@ -206,7 +219,7 @@ update: (message, { from, at }) => (state) =>
       EndRequested: () => …,
       CancelRequested: () => …,
       Unlocked: () => …,
-      // one case for each inbound and internal message
+      // …, one case for each inbound and internal message
     }),
   ),
 ```
@@ -235,6 +248,8 @@ under the **keys** the program declares:
 
 ```ts
 keys: ['unlock', 'cancellation', 'email', 'dock'],
+
+// …
 
 work: (state) =>
   Match.valueTags(state, {
@@ -286,7 +301,15 @@ const charge = Effect.fn('Charge')(
     onFailure: (): Internal => ({ _tag: 'ChargeDeclined' }),
   }),
 )
-// operations: { Charge: operation(charge) }, or operation.digest(charge) for a provider that caps a key's length
+
+// in the program:
+operations: {
+  // A payment provider caps the length of an idempotency key, and an order's id may be long: the provider is
+  // given the key's digest.
+  Charge: operation.digest(charge),
+  TellWarehouse: operation(tellWarehouse),
+  // …
+},
 ```
 
 This one is the order's, of [`examples/order`](../../examples/order/order.ts). A failure the provider may recover
@@ -390,6 +413,7 @@ carries it, the ride's flags store it, and the ride's operation sends it to the 
 const unlock = Effect.fn('Unlock')(
   function*({ bike, centsPerMinute }: Extract<Operation, { _tag: 'Unlock' }>) {
     const reply = yield* send(Bike, bike, { _tag: 'UnlockRequested', centsPerMinute }, 'unlock')
+    // A rejection with no reason means the two entities disagree: a ride unlocks as itself.
     return reply._tag === 'Accepted'
       ? { _tag: 'Unlocked' } satisfies Internal
       : reply._tag === 'NotFound'
@@ -426,6 +450,8 @@ export const rent = (rides: Handle<TypesOf<typeof ride>>) => (request: RentReque
     if (Option.isNone(found)) return { _tag: 'NoSuchCustomer' } as const
     const customer = found.value
     const id = rideOf(request)
+    // The ride needs the customer's email and the bike's rate, and a reply carries no data: both travel with the
+    // creation. The bike refuses the rate if it has changed since the customer was shown it.
     yield* rides.create(id, {
       customer: request.customer,
       email: customer.email,
@@ -527,7 +553,10 @@ Then the program runs on the runtime, with a database:
 
 ```ts
 const runtime = yield* launch()
+const sql = yield* SqlClient.SqlClient
+// The application's table is written on the client the runtime was launched with, in the same database.
 yield* createCustomers
+yield* sql`INSERT INTO customers (id, email) VALUES ('ann', 'ann@example.com')`
 const bikes = yield* runtime.deploy(bike)
 const rides = yield* Effect.provide(runtime.deploy(ride), mailer)
 ```
@@ -544,9 +573,12 @@ The work a step starts runs on its own, after `create` or `send` has answered. A
 `runtime.settled`, which ends once nothing is under way:
 
 ```ts
-yield* rent(rides)(request)
+const first = yield* rent(rides)(request)
+const again = yield* rent(rides)(request)
+expect(again).toEqual(first)
 yield* runtime.settled
-expect(yield* rides.read(rideOf(request))).toMatchObject({ status: 'Riding' })
+expect(yield* rides.count({})).toBe(1)
+expect(first._tag === 'Rented' ? yield* rides.read(first.ride) : null).toMatchObject({ status: 'Riding' })
 ```
 
 ## The rules, in one list

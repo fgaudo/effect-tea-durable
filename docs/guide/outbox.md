@@ -37,11 +37,12 @@ step that did not. After an order is created and paid, its log reads:
 
 ```ts
 const statuses = yield* orders.published('status', [], all)
-expect(statuses.map(({ id, kind, message, value }) => [id, kind, message?._tag ?? null, value])).toEqual([
-  ['o-1', 'Creation', null, 'AwaitingPayment'],
-  ['o-1', 'Inbound', 'PayRequested', 'Charging'],
-  ['o-1', 'Internal', 'ChargeSucceeded', 'Paid'],
-])
+expect(statuses.map(({ id, kind, message, value }) => [id, kind, message?._tag ?? null, value]))
+  .toEqual([
+    ['o-1', 'Creation', null, 'AwaitingPayment'],
+    ['o-1', 'Inbound', 'PayRequested', 'Charging'],
+    ['o-1', 'Internal', 'ChargeSucceeded', 'Paid'],
+  ])
 ```
 
 A row holds the entity's id, the message the step handled with its `kind`, and a `value` taken of the projection
@@ -96,6 +97,7 @@ the deployment, so the consumers are declared where the program is deployed:
 ```ts
 const consumers = { consumers: { billing: ['invoices'], status: ['dashboard'] } } as const
 
+// …
 const orders = yield* Effect.provide(runtime.deploy(order, consumers), world)
 ```
 
@@ -107,12 +109,14 @@ declares it, so no row written after that deploy is dropped before the consumer 
 
 ## Reading, then acking
 
-A consumer reads with `fetch`, acts on the rows, and then acks them:
+A consumer reads with `fetch`, acts on the rows, and then acks them. Here `all` is a limit of 100, which no reading
+of the test reaches, and the dashboard acks the first two rows of its topic:
 
 ```ts
-const page = yield* orders.fetch('status', 'dashboard', 100)
-// act on the page
-yield* orders.ack('status', 'dashboard', page)
+expect(yield* orders.fetch('billing', 'invoices', all)).toEqual(billing)
+expect(yield* orders.fetch('status', 'dashboard', all)).toEqual(statuses)
+yield* orders.ack('status', 'dashboard', statuses.slice(0, 2))
+expect(yield* orders.fetch('status', 'dashboard', all)).toEqual(statuses.slice(2))
 ```
 
 `fetch(topic, consumer, limit)` gives at most `limit` rows past the consumer's cursors, the oldest first. The limit
@@ -135,18 +139,26 @@ does not answer needs a store made for it. The report of [`report.ts`](../../exa
 status of each order in a table of the runtime's database:
 
 ```ts
-yield* sql`CREATE TABLE order_status (id TEXT PRIMARY KEY, status TEXT NOT NULL)`
+export const statusReport = Effect.gen(function*() {
+  const sql = yield* SqlClient.SqlClient
+  // …
+  yield* sql`CREATE TABLE order_status (id TEXT PRIMARY KEY, status TEXT NOT NULL)`
 
-const record = (page: ReadonlyArray<Published<Order, 'status'>>) =>
-  Effect.forEach(
-    page,
-    ({ id, value }) =>
-      sql`
-        INSERT INTO order_status (id, status) VALUES (${id}, ${value})
-        ON CONFLICT (id) DO UPDATE SET status = excluded.status
-      `,
-    { discard: true },
-  ).pipe(Effect.orDie)
+  return {
+    // …
+    record: (page: ReadonlyArray<Published<Order, 'status'>>) =>
+      Effect.forEach(
+        page,
+        ({ id, value }) =>
+          sql`
+            INSERT INTO order_status (id, status) VALUES (${id}, ${value})
+            ON CONFLICT (id) DO UPDATE SET status = excluded.status
+          `,
+        { discard: true },
+      ).pipe(Effect.orDie),
+    // …, and the counts by status
+  }
+})
 ```
 
 The store holds the last status, and not a count per status. A row gives the status the step left and not the one
@@ -156,7 +168,7 @@ store. The table's name does not start with `tea_`, which is the runtime's.
 `consume` runs the consumer's loop:
 
 ```ts
-yield* orders.consume('status', 'dashboard', record, { limit: 100 })
+yield* orders.consume('status', 'dashboard', report.record, { limit: 3 })
 ```
 
 It reads a page with `fetch`, runs the handler on it, and acks it in one transaction of the client the runtime was
@@ -172,10 +184,11 @@ for the same reason.
 ## Waiting for the next row
 
 Without `wait`, `consume` ends at the first empty page, and the rows it did not read stay for the next reader. A
-dashboard's reader runs as long as the runtime:
+dashboard's reader runs as long as the runtime, in a fiber of its own. Here `record` is the report's handler, which
+also tells the test that a page was written:
 
 ```ts
-yield* orders.consume('status', 'dashboard', record, { limit: 100, wait: true })
+yield* Effect.forkChild(orders.consume('status', 'dashboard', record, { limit: 3, wait: true }))
 ```
 
 A reading that finds no row waits until a step commits a row in its topic, and polls nothing. A commit in another
@@ -206,9 +219,15 @@ A consumer whose action on a row is slow is read by several readers, each naming
 pool of `n` readers divides them with a line, the reader `i` reading the partitions `p` where `p % n === i`:
 
 ```ts
-const mine = Array.from({ length: orders.partitions }, (_, at) => at + 1).filter((p) => p % n === i)
-yield* orders.consume('billing', 'invoices', invoice, { limit: 100, wait: true, partitions: mine })
+const n = 2
+for (let i = 0; i < n; i++) {
+  const mine = Array.from({ length: orders.partitions }, (_, at) => at + 1).filter((p) => p % n === i)
+  yield* orders.consume('status', 'dashboard', report.record, { limit: 3, partitions: mine })
+}
 ```
+
+The test runs the two readers one after the other, without `wait`, and the store then counts every order once. A
+pool runs each reader in a fiber or a process of its own, with `wait: true`.
 
 The cursors stay the consumer's, whichever reader acked them, and the runtime holds no reader. A slow row holds only
 its reader's partitions. Two readers that name one partition are given the same rows, and their actions on them
@@ -223,6 +242,7 @@ stay readable keeps it where callers read it, in the state or in entities of its
 
 ```ts
 yield* orders.ack('status', 'dashboard', statuses.slice(0, 2))
+expect(yield* orders.fetch('status', 'dashboard', all)).toEqual(statuses.slice(2))
 expect(yield* orders.prune).toBe(2)
 ```
 
@@ -231,7 +251,10 @@ the log grows. `orders.consumers` shows each consumer, its topic, whether the de
 are past its cursors:
 
 ```ts
-{ topic: 'billing', consumer: 'invoices', declared: true, behind: 2, cursors: [{ partition, seq: 0 }] }
+expect(yield* orders.consumers).toEqual([
+  { topic: 'billing', consumer: 'invoices', declared: true, behind: 2, cursors: [{ partition, seq: 0 }] },
+  // …, and the dashboard's
+])
 ```
 
 A consumer no longer declared is kept, and the deploy logs a warning for it. An operator lets it go by deploying

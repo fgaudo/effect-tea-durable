@@ -54,6 +54,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0193](0193-the-public-surface-is-four-entries.md) | The public surface is four entries: the main one, a program's module, a test's and a launcher's on Cluster |  |
 | [0195](0195-the-package-is-effect-tea-persistent.md) | The package is `@fgaudo/effect-tea-persistent`, a program's work is `work`, a reader fetches, and `deploy` stays |  |
 | [0196](0196-the-quick-start-is-an-example-the-readme-shows-whole.md) | The quick start is an example that the README shows whole, and a test keeps the two equal |  |
+| [0203](0203-the-guides-code-is-found-in-the-examples.md) | The guide's code is found in the examples, part by part, and a test finds it (proposed) |  |
 
 ## The machine and the program
 

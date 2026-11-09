@@ -6,6 +6,7 @@
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
+import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
@@ -187,4 +188,37 @@ test('a report built from the log counts the orders in each status, as the read 
     ])
     // A limit that is no non-negative integer is the caller's defect, as a query's is (decision 0141).
     expect(Exit.isFailure(yield* Effect.exit(orders.countBy({ index: 'status', limit: -1 })))).toBe(true)
+  }))))
+
+// A consumer read by several readers: each names the partitions it reads, and the cursors stay the consumer's. A
+// reader that waits runs as long as the runtime, and records each row once its step commits (decisions 0142, 0184).
+test('readers that divide the partitions read each row once, and a reader that waits reads the next', () =>
+  database(Effect.scoped(Effect.gen(function*() {
+    const runtime = yield* launch()
+    const orders = yield* Effect.provide(runtime.deploy(order, consumers), world)
+    const report = yield* statusReport
+    for (const id of ['o-1', 'o-2', 'o-3', 'o-4']) {
+      yield* orders.create(id, { order: { customer: 'ada', totalInCents: 1_000 } }, {
+        requestId: `c-${id}`,
+        sender: ada,
+      })
+    }
+
+    const n = 2
+    for (let i = 0; i < n; i++) {
+      const mine = Array.from({ length: orders.partitions }, (_, at) => at + 1).filter((p) => p % n === i)
+      yield* orders.consume('status', 'dashboard', report.record, { limit: 3, partitions: mine })
+    }
+    expect(yield* report.counts).toEqual({ AwaitingPayment: 4 })
+    expect(yield* orders.fetch('status', 'dashboard', 3)).toEqual([])
+
+    // The handler signals inside the reader's transaction. The client of SQLite runs one statement or transaction
+    // at a time, so the counts read after the signal wait for the commit.
+    const recorded = yield* Deferred.make<void>()
+    const record = (page: Parameters<typeof report.record>[0]) =>
+      Effect.andThen(report.record(page), Deferred.succeed(recorded, undefined))
+    yield* Effect.forkChild(orders.consume('status', 'dashboard', record, { limit: 3, wait: true }))
+    yield* orders.send('o-4', { _tag: 'CancelRequested' }, { requestId: 'x-o-4', sender: ada })
+    yield* Deferred.await(recorded)
+    expect(yield* report.counts).toEqual({ AwaitingPayment: 3, Cancelled: 1 })
   }))))

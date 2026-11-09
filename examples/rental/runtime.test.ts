@@ -170,3 +170,19 @@ test('a ride the first version suspends is inspected, and resumed by the fix', (
       expect(yield* rides.send(id, end, { requestId: 'end-1', sender: ann })).toEqual({ _tag: 'Accepted' })
     }))
   })))
+
+// A rename is the launch's: the rows of the old name move to the new one before any deploy, and the bike keeps its
+// state under the name it now carries.
+test('a bike renamed by the launch keeps its state under its new name', () =>
+  database(Effect.gen(function*() {
+    yield* Effect.scoped(Effect.gen(function*() {
+      const runtime = yield* launch()
+      const bikes = yield* runtime.deploy(bike)
+      yield* bikes.create('bike-7', { centsPerMinute: 20 }, { requestId: 'add-bike-7', sender: operator })
+    }))
+    yield* Effect.scoped(Effect.gen(function*() {
+      const runtime = yield* launch({ renames: { Bike: 'Cycle' } })
+      const cycles = yield* runtime.deploy({ ...bike, name: 'Cycle' })
+      expect(yield* cycles.read('bike-7')).toMatchObject({ status: 'Docked', centsPerMinute: 20 })
+    }))
+  })))

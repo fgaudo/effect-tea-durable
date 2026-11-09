@@ -329,6 +329,36 @@ describe('the form of the examples', () => {
     const blocks = [...section.matchAll(/```ts\n([\s\S]*?)```\n/g)].map(([, code]) => code)
     expect(blocks).toEqual([read('examples/quick-start/hold.ts'), read('examples/quick-start/hold.test.ts')])
   })
+  // The guide shows parts of the examples, so a change of the API that `bun test` finds in them fails here until the
+  // guide shows it too. A part is cut at an elision, and compared without indentation or blank lines (decision 0203).
+  test("the guide's code is found in the examples, part by part", () => {
+    const root = join(import.meta.dir, '..')
+    const read = (file: string) => readFileSync(join(root, file), 'utf8').replaceAll('\r\n', '\n')
+    const lines = (code: string) => code.split('\n').map((line) => line.trim()).filter((line) => line !== '')
+    const examples = readdirSync(join(root, 'examples'), { recursive: true, encoding: 'utf8' })
+      .filter((file) => file.endsWith('.ts'))
+      .map((file) => lines(read(join('examples', file))))
+    const elides = (line: string) => line.includes('…') || /^\/\/ (in |[\w-]+\.ts$)/.test(line)
+    const holds = (file: ReadonlyArray<string>, part: ReadonlyArray<string>) =>
+      file.some((_, at) => part.every((line, offset) => file[at + offset] === line))
+    const pages = ['README.md', ...readdirSync(join(root, 'docs', 'guide')).map((page) => `docs/guide/${page}`)]
+    expect(pages).toContain('docs/guide/children.md')
+    const missing = pages.flatMap((page) => {
+      const text = read(page)
+      return [...text.matchAll(/^```ts\n([\s\S]*?)^```$/gm)].flatMap((block) => {
+        const parts: Array<Array<string>> = [[]]
+        for (const line of lines(block[1] ?? '')) {
+          if (elides(line)) parts.push([])
+          else parts.at(-1)?.push(line)
+        }
+        const at = text.slice(0, block.index).split('\n').length
+        return parts
+          .filter((part) => part.length > 0 && !examples.some((file) => holds(file, part)))
+          .map((part) => `${page}:${at}: ${part[0]}`)
+      })
+    })
+    expect(missing).toEqual([])
+  })
 })
 
 describe('the check of the form', () => {
