@@ -11,6 +11,7 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Schema from 'effect/Schema'
+import fc from 'fast-check'
 import {
   checkProgram,
   encode,
@@ -62,6 +63,49 @@ test('a value is JSON as it is: finite numbers, and plain objects and arrays of 
   for (const value of [new Date(0), new Map(), [1, Number.NaN], { a: [undefined] }, { a: () => 1 }, 1n, undefined]) {
     expect(reasonOf(value)).toBe('the value encodes to what JSON does not hold')
   }
+})
+
+test('a value encode lets through is read back from its JSON as it was, and every value of JSON is let through', () => {
+  const any = Schema.Unknown as unknown as Schema.Codec<unknown, Json>
+  const passes = (value: unknown) => {
+    try {
+      encode(any, value, 'value')
+      return true
+    } catch {
+      return false
+    }
+  }
+  // A hole of an array is told from a value, which `toEqual` would not. `-0` is read back as `0`, which it equals
+  // (decision 0210).
+  const same = (left: unknown, right: unknown): boolean =>
+    Array.isArray(left)
+      ? Array.isArray(right) && left.length === right.length && left.every((value, at) => at in right && same(value, right[at]))
+      : typeof left === 'object' && left !== null
+      ? typeof right === 'object' && right !== null && !Array.isArray(right) &&
+        Object.keys(left).length === Object.keys(right).length &&
+        Object.entries(left).every(([key, value]) => Object.hasOwn(right, key) && same(value, (right as Record<string, unknown>)[key]))
+      : left === right
+  fc.assert(
+    fc.property(
+      fc.anything({
+        withNullPrototype: true,
+        withSparseArray: true,
+        withBoxedValues: true,
+        withMap: true,
+        withSet: true,
+        withDate: true,
+        withBigInt: true,
+        withObjectString: true,
+        withTypedArray: true,
+        withUnicodeString: true,
+        key: fc.oneof(fc.string(), fc.constantFrom('__proto__', 'toJSON', 'constructor', '')),
+        values: [fc.double(), fc.constant(-0), fc.integer(), fc.string({ unit: 'binary' }), fc.boolean(), fc.constant(null), fc.constant(undefined)],
+      }),
+      (value) => !passes(value) || same(JSON.parse(JSON.stringify(value)), value),
+    ),
+    { numRuns: 5_000 },
+  )
+  fc.assert(fc.property(fc.jsonValue(), (value) => passes(value)), { numRuns: 2_000 })
 })
 
 const schemas = {

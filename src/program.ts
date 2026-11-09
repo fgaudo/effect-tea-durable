@@ -75,7 +75,8 @@ export type Json = Schema.Json
 const isJson = (value: unknown): boolean => {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
   if (typeof value === 'number') return Number.isFinite(value)
-  if (Array.isArray(value)) return value.every(isJson)
+  // `every` passes over the holes of a sparse array, which `JSON.stringify` writes as `null` (decision 0210).
+  if (Array.isArray(value)) return Array.from(value.keys(), (at) => at in value && isJson(value[at])).every(Boolean)
   if (typeof value !== 'object') return false
   const prototype: unknown = Object.getPrototypeOf(value)
   return (prototype === Object.prototype || prototype === null) && Object.values(value).every(isJson)

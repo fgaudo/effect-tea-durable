@@ -2471,3 +2471,42 @@ test('the digest of an idempotency key is the SHA-256 of its JSON, in unpadded b
   expect(of('\udbff')).not.toBe(of('\ud800'))
   expect(of('x'.repeat(1000))).toMatch(/^[A-Za-z0-9_-]{43}$/)
 })
+
+// A key's text and its idempotency key are what the work under way is found by after a restart: two parameters
+// that are one value must give one, and two values two (decisions 0123, 0136).
+test('a key is one text for one parameter, whatever the order of its fields, and an idempotency key one digest', () => {
+  const slots = declare({
+    state: Schema.Struct({}),
+    flags: Schema.Null,
+    inbound: Schema.Literal('Go'),
+    internal: Schema.Literal('Booked'),
+    operation: Schema.TaggedStruct('Book', {}),
+    projection: Schema.Null,
+  })({
+    name: 'Slots',
+    keys: [keyWithParameter('slot', Schema.Record(Schema.String, Schema.Int))],
+    init: () => ({}),
+    update: () => (state) => state,
+    work: () => ({ slot: [] }),
+    operations: { Book: operation(() => Effect.succeed('Booked' as const)) },
+    project: () => null,
+  })
+  const field = fc.string({ unit: 'binary', maxLength: 4 })
+  const parameter = fc.dictionary(field, fc.integer({ min: -3, max: 3 }), { maxKeys: 5 })
+  fc.assert(
+    fc.property(parameter, parameter, fc.string({ unit: 'binary' }), fc.nat(3), (left, right, id, incarnation) => {
+      const reversed = Object.fromEntries(Object.entries(left).reverse())
+      const text = (value: object) => Machine.keyText(Machine.keyOf(slots, 'slot', value))
+      expect(text(reversed)).toBe(text(left))
+      const alike = JSON.stringify(Object.entries(left).sort()) === JSON.stringify(Object.entries(right).sort())
+      expect(text(left) === text(right)).toBe(alike)
+      // JSON escapes a lone surrogate, so the key is text UTF-8 writes as it is, and its digest tells it apart.
+      const keyed = (value: object) =>
+        idempotencyKey({ name: 'Slots', id }, Machine.keyOf(slots, 'slot', value), incarnation)
+      expect(keyed(left)).toMatch(/^[^\p{Cs}]*$/u)
+      expect(Machine.digestOf(keyed(left)) === Machine.digestOf(keyed(right))).toBe(alike)
+      expect(Machine.digestOf(keyed(left))).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    }),
+    { numRuns: 2_000 },
+  )
+})

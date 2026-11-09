@@ -489,11 +489,13 @@ a row it refuses fails the call that meets it ([decision 0062](decisions/archive
 encoded side is not JSON does not compile: a time is held as `Schema.DateTimeUtcFromMillis`, not as
 `Schema.DateTimeUtc` ([decision 0030](decisions/archive/0030-a-schema-encodes-to-json.md)). `Json` is Effect's
 `Schema.Json`, under the name the library had for it ([decision 0098](decisions/archive/0098-json-is-effect-s.md)). A value its schema refuses,
-or that encodes to a number JSON does not hold (`NaN`, `Infinity`), cannot be stored: the machine encodes what a
-step would store, and such a step is a defect; an inbound message that does not encode is its caller's defect,
+or that encodes to a number JSON does not hold (`NaN`, `Infinity`) or to an array with a hole, cannot be stored.
+The machine encodes what a step would store, and a step that would store such a value is a defect; an inbound
+message that does not encode is its caller's defect,
 and reaches no entity ([decision 0040](decisions/archive/0040-what-is-stored-encodes-to-json-as-it-is.md)). So are flags
 that do not encode: `init` sees only flags its schema takes
-([decision 0049](decisions/archive/0049-flags-are-checked-by-their-schema.md)).
+([decision 0049](decisions/archive/0049-flags-are-checked-by-their-schema.md)). A `-0` is stored as `0`, which it
+equals ([decision 0210](decisions/0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md)).
 
 How the machine and the storage write these rows, and how a reply is kept and deleted, is under
 [what the storage writes](#what-the-storage-writes).

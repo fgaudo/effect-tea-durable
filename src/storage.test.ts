@@ -13,7 +13,9 @@ import { SqlClient, Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
 import { InvariantDefect, isTimer, type Json, type Migration, noWork, operation, type Program, type Scalar } from './program.ts'
 import {
+  type Comparison,
   createTables,
+  type Criterion,
   type Dialect,
   dialectOf,
   type Found,
@@ -26,6 +28,7 @@ import {
   storage,
 } from './storage.ts'
 import { client, onEach } from './test-databases.ts'
+import fc from 'fast-check'
 import { everySchedule } from './testing.ts'
 
 type T = {
@@ -1829,4 +1832,143 @@ describe('renaming a program (decision 0156)', () => {
         expect(yield* store.consumers).toEqual([])
         expect(yield* store.published('upper', [], all)).toEqual([])
       }).pipe(Effect.orDie)))
+})
+
+/**
+ * The readings of the read model over rows that fast-check generates. Each property holds whatever the rows hold,
+ * so none of them repeats the order of the kinds that the tests above write out (decisions 0143, 0145, 0148, 0150).
+ */
+describe('readings over generated rows', () => {
+  /** Text a database holds: no U+0000 and no lone surrogate, which a row never holds (decisions 0157, 0206). */
+  const text = fc.string({ unit: fc.constantFrom('a', 'b', 'B', 'é', 'ß', '😀', '0', ' '), maxLength: 3 })
+  const id = fc.string({ unit: fc.constantFrom('a', 'b', 'B', 'é', '😀', '0'), minLength: 1, maxLength: 3 })
+  const number = fc.oneof(fc.integer({ min: -2, max: 2 }), fc.double({ noNaN: true, noDefaultInfinity: true }))
+  const rank: fc.Arbitrary<Scalar | undefined> = fc.oneof(
+    fc.constant(null),
+    fc.constant(undefined),
+    fc.boolean(),
+    number,
+    text,
+  )
+  const rows = fc.uniqueArray(fc.tuple(id, rank), { selector: ([id]) => id, maxLength: 12 })
+  const comparison = fc.constantFrom<Comparison>('=', '<>', '<', '<=', '>', '>=')
+  const criterion = fc.record({ is: comparison, value: rank })
+    .map(({ is, value }) => ({ index: 'rank' as const, is, value: value ?? null }))
+  const where = fc.array(criterion, { maxLength: 2 })
+
+  type Store = ReturnType<typeof storage<Ranked>>
+
+  const write = (store: Store, entries: ReadonlyArray<readonly [string, Scalar | undefined]>) =>
+    Effect.forEach(entries, ([id, rank]) =>
+      store.write(
+        id,
+        created({ shown: { projection: JSON.stringify(rank ?? null), indexes: rank === undefined ? {} : { rank } } }),
+        0,
+      ))
+
+  /** What a query compares of a row: its rank, a boolean read as its number, as a query orders it (decision 0150). */
+  const key = (value: Scalar) => JSON.stringify(typeof value === 'boolean' ? Number(value) : value)
+
+  const property = <A>(arbitrary: fc.Arbitrary<A>, body: (store: Store, value: A) => Effect.Effect<void>) =>
+    fc.assert(
+      fc.asyncProperty(arbitrary, (value) => database((sql) => body(storage(ranked, sql), value))),
+      { numRuns: Bun.env['SCHEDULES'] === 'all' ? 200 : 20 },
+    )
+
+  test('the pages of a query, read one after the other, give the query read at once, in either order', () =>
+    property(
+      fc.tuple(rows, where, fc.option(fc.boolean(), { nil: undefined }), fc.integer({ min: 1, max: 4 })),
+      (store, [entries, where, descending, limit]) =>
+        Effect.gen(function*() {
+          yield* write(store, entries)
+          const order = descending === undefined ? {} : { order: { index: 'rank' as const, descending } }
+          const whole = yield* store.query({ where, ...order, limit: all })
+          const pages: Array<Found<Ranked>> = []
+          let after: Found<Ranked> | undefined
+          do {
+            const page = yield* store.query({ where, ...order, limit, after })
+            expect(page.length).toBeLessThanOrEqual(limit)
+            pages.push(...page)
+            after = page.at(-1)
+          } while (after !== undefined && pages.length <= entries.length)
+          expect(pages).toEqual([...whole])
+          if (descending !== undefined) {
+            const other = yield* store.query({ where, order: { index: 'rank', descending: !descending }, limit: all })
+            expect(other).toEqual([...whole].reverse())
+          }
+        }),
+    ), 120_000)
+
+  test('a criterion that orders finds a prefix or a suffix of the rows that hold a value, in the order of a query', () =>
+    property(fc.tuple(rows, criterion), (store, [entries, { is, value }]) =>
+      Effect.gen(function*() {
+        yield* write(store, entries)
+        const ids = (where: ReadonlyArray<Criterion<Ranked>>) =>
+          Effect.map(store.query({ where, order: { index: 'rank' }, limit: all }), (rows) => rows.map(({ id }) => id))
+        const every = yield* ids([])
+        const held = yield* ids([{ index: 'rank', is: '<>', value: null }])
+        const found = yield* ids([{ index: 'rank', is, value }])
+        // Against null, `=` and `<>` ask whether a row holds a value, and an order finds nothing.
+        if (value === null) {
+          expect(found).toEqual(is === '=' ? every.filter((id) => !held.includes(id)) : is === '<>' ? held : [])
+          return
+        }
+        if (is === '<' || is === '<=') expect(found).toEqual(held.slice(0, found.length))
+        if (is === '>' || is === '>=') expect(found).toEqual(held.slice(held.length - found.length))
+        const both = (left: Comparison, right: Comparison) =>
+          Effect.map(
+            Effect.all([ids([{ index: 'rank', is: left, value }]), ids([{ index: 'rank', is: right, value }])]),
+            ([left, right]) => [...left, ...right].sort(),
+          )
+        // The comparisons split the rows that hold a value as an order splits them.
+        const sorted = [...held].sort()
+        expect(yield* both('<', '>=')).toEqual(sorted)
+        expect(yield* both('<=', '>')).toEqual(sorted)
+        expect(yield* both('=', '<>')).toEqual(sorted)
+      })), 120_000)
+
+  test('a count, a count per value and a sum read the rows a query finds', () =>
+    property(fc.tuple(rows, where), (store, [entries, where]) =>
+      Effect.gen(function*() {
+        yield* write(store, entries)
+        const found = yield* store.query({ where, order: { index: 'rank' }, limit: all })
+        expect(yield* store.count({ where })).toBe(found.length)
+        const tallies = yield* store.countBy({ index: 'rank', where, limit: all })
+        // `true` and `1` are two values of a count, and a query orders them as one (decision 0150).
+        const counted = new Map<string, number>()
+        for (const { indexes } of found) {
+          const value = JSON.stringify(indexes.rank)
+          counted.set(value, (counted.get(value) ?? 0) + 1)
+        }
+        expect(new Map(tallies.map(({ value, count }) => [JSON.stringify(value), count]))).toEqual(counted)
+        const keys = (values: ReadonlyArray<Scalar>) => values.map(key).filter((key, at, all) => all.indexOf(key) === at)
+        expect(keys(tallies.map(({ value }) => value))).toEqual(keys(found.map(({ indexes }) => indexes.rank)))
+        const numbers = found.flatMap(({ indexes }) => typeof indexes.rank === 'number' ? [indexes.rank] : [])
+        if (numbers.length === found.filter(({ indexes }) => indexes.rank !== null).length) {
+          const total = yield* store.sum({ index: 'rank', where })
+          const magnitudes = numbers.reduce((total, n) => total + Math.abs(n), 0)
+          const exact = numbers.reduce((total, n) => total + n, 0)
+          expect(Math.abs(total - exact)).toBeLessThanOrEqual(8 * Number.EPSILON * magnitudes)
+        }
+      })), 120_000)
+
+  test('numbers are ordered as numbers and text by its bytes of UTF-8, the id breaking ties', () =>
+    property(
+      fc.oneof(
+        fc.uniqueArray(fc.tuple(id, number), { selector: ([id]) => id, maxLength: 10 }),
+        fc.uniqueArray(fc.tuple(id, text), { selector: ([id]) => id, maxLength: 10 }),
+      ),
+      (store, entries) =>
+        Effect.gen(function*() {
+          yield* write(store, entries)
+          const bytes = (left: string, right: string) => Buffer.compare(Buffer.from(left), Buffer.from(right))
+          const compare = (left: Scalar, right: Scalar) =>
+            typeof left === 'number' && typeof right === 'number' ? left - right : bytes(String(left), String(right))
+          const expected = [...entries]
+            .sort(([a, left], [b, right]) => compare(left, right) || bytes(a, b))
+            .map(([id]) => id)
+          const found = yield* store.query({ order: { index: 'rank' }, limit: all })
+          expect(found.map(({ id }) => id)).toEqual(expected)
+        }),
+    ), 120_000)
 })

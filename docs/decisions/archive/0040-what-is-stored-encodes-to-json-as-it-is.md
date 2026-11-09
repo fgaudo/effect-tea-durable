@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-10-30. Its consequence that each step encodes what it stores twice, and its bullet that
 the storage writes through `encode`, are changed by [decision 0057](0057-the-machine-gives-what-is-written.md): the
-machine gives what is written, encoded once, and the storage writes it.
+machine gives what is written, encoded once, and the storage writes it. A sparse array is no JSON, and `-0` is
+let through and read back as `0`, since [decision 0210](../0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md).
 
 ## Context
 
