@@ -242,10 +242,12 @@ An API that changes under it costs an update of the runtime, never of the pure c
 
 - **What runs:** a program and its rehearsals, the runtime on one process on SQLite or PostgreSQL, and the runtime on
   Effect Cluster with its runners on one machine.
-- **What does not yet:** a published package, a site with the API's reference, and the runtime on Cluster across
-  machines. [`docs/roadmap.md`](docs/roadmap.md) lists the steps in order.
+- **What does not yet:** a published package, and the runtime on Cluster across machines. [`docs/roadmap.md`](docs/roadmap.md) lists the steps in order.
 
 ## Documentation
+
+The [site](https://fgaudo.github.io/effect-tea-persistent/) holds the guide, the concepts, the design, the glossary,
+the examples and the API's reference.
 
 - [`docs/guide/README.md`](docs/guide/README.md): the guide, from a requirement to a program, on the rental of
   bikes. Read it first. Its pages by topic, on children, the outbox, schemas that change, Effect Cluster and the

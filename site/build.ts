@@ -10,7 +10,7 @@ const here = import.meta.dir
 const root = resolve(here, '..')
 const build = join(here, '.build')
 const dist = join(here, 'dist')
-const repository = 'https://github.com/fgaudo/effect-tea-durable'
+const repository = 'https://github.com/fgaudo/effect-tea-persistent'
 const revision = (await $`git rev-parse HEAD`.cwd(root).text()).trim()
 
 /** A path of the repository, with forward slashes, from its root. */

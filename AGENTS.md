@@ -157,7 +157,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   `site/package.json`, as effect-tea's site is. A warning of TypeDoc fails the build. So every export of the four
   entries has a doc comment, which says what it takes and gives, and every link of a page resolves. A name that
   TypeDoc infers and that no declaration holds is excused in `site/typedoc.json`, and an export never is. A change
-  of `src/`, of the guide or of an example builds the site before it is committed.
+  of `src/`, of the guide or of an example builds the site before it is committed. The workflow
+  [`.github/workflows/docs.yml`](.github/workflows/docs.yml) deploys the site to GitHub Pages from `main`, once
+  `ci.yml` passes on it.
 - Each example has a `README.md`: its title, a paragraph on what it shows, and a line for each of its files. The
   site's page of an example is that README, followed by its files.
 - A block of TypeScript of the guide or of the README is code of an example, cut at elisions, and the test

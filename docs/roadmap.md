@@ -5,19 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **A site with the guide and the API reference**, under way. The site is built as effect-tea's, with TypeDoc, and
-  holds the guide, the reference and the examples, each with a paragraph on what it shows. The two sites link each
-  other, since a program is written the same way in both. A test runs the code of the guide, so that a change of
-  the API fails a test before it fails a reader.
-  - Done: the test that finds the guide's code in the examples, with the guide and the examples made to pass it
-    ([decision 0203](decisions/0203-the-guides-code-is-found-in-the-examples.md)). The build in
-    [`site/`](../site/build.ts), which fails on a warning of TypeDoc, a doc comment on every export of the four
-    entries, and a `README.md` for each example. [`AGENTS.md`](../AGENTS.md) states the site's rules of work.
-  - Next: the site is published, which the maintainer decides. A workflow of GitHub Pages deploys `site/dist/`, as
-    effect-tea's `docs.yml` does, once the checks of `ci.yml` pass. The repository is now
-    `fgaudo/effect-tea-persistent`, while `site/build.ts` and `site/typedoc.json` still link `effect-tea-durable`. Then effect-tea's site links
-    this one, in its `navigationLinks` and its README, and this README's Status no longer says the site is missing.
-    The step is taken by the commit that publishes it, which accepts decision 0203.
+None: the next step is the first of Later, unless the maintainer picks another.
 
 ## Later
 

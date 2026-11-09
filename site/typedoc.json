@@ -17,7 +17,7 @@
   "groupOrder": ["Guide", "Examples", "Specification", "*"],
   "navigationLinks": {
     "effect-tea": "https://fgaudo.github.io/effect-tea/",
-    "GitHub": "https://github.com/fgaudo/effect-tea-durable"
+    "GitHub": "https://github.com/fgaudo/effect-tea-persistent"
   },
   "markdownItOptions": { "html": true, "linkify": false },
   "ignoredHighlightLanguages": ["mermaid"],

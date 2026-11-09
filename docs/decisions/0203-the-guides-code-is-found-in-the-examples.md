@@ -1,6 +1,6 @@
 # 0203. The guide's code is found in the examples, and a test finds it
 
-**Status:** proposed, 2026-11-09, for the step A site with the guide and the API reference of the
+**Status:** accepted, 2026-11-09, with the step A site with the guide and the API reference of the
 [roadmap](../roadmap.md).
 
 ## Context
