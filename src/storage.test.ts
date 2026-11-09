@@ -639,7 +639,8 @@ test('a row the runtime never writes fails the call that meets it, and is read a
         ))
         // PostgreSQL refuses by the types of its columns some rows SQLite holds, such as a time that is no integer.
         if (!Exit.isExit(exit) && dialectOf(sql) === 'pg') continue
-        expect([index, Exit.isExit(exit) && exit._tag]).toEqual([index, 'Failure'])
+        expect([index, Exit.isExit(exit) && exit._tag, Exit.isExit(exit) && Exit.isSuccess(exit) ? exit.value : null])
+          .toEqual([index, 'Failure', null])
         if (Exit.isExit(exit) && exit._tag === 'Failure') {
           expect(String(Cause.squash(exit.cause))).toContain('no row the runtime writes')
         }
