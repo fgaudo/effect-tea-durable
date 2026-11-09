@@ -16,6 +16,7 @@ import * as Machine from './machine.ts'
 import {
   type Piece,
   InvariantDefect,
+  isText,
   type Json,
   type Key,
   KeyCodec,
@@ -34,6 +35,18 @@ import {
 
 /** The dialects the storage speaks (decision 0157). */
 export type Dialect = 'sqlite' | 'pg'
+
+/**
+ * Whether a caller's value is one a query compares alike on both dialects: null, a boolean, a finite number, or a
+ * string that is text a database holds (decisions 0143, 0207).
+ */
+const isCompared = (value: unknown): value is Scalar =>
+  value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))
+  || (typeof value === 'string' && isText(value))
+
+/** A caller's value as a reason shows it: a string as JSON writes it, so that U+0000 is read. */
+const shownValue = (value: unknown): string =>
+  typeof value === 'string' || (typeof value === 'object' && value !== null) ? JSON.stringify(value) : String(value)
 
 /** The client's dialect. One the storage does not speak is the launcher's defect, and is named (decision 0157). */
 export const dialectOf = (sql: SqlClient.SqlClient): Dialect => {
@@ -1000,7 +1013,9 @@ const comparisons: ReadonlyArray<Comparison> = ['=', '<>', '<', '<=', '>', '>=']
 
 /**
  * One thing that holds of the entities a query finds: the value of an index, compared with a value. Against
- * `null`, `=` and `<>` ask whether the index holds one; an order against `null` finds nothing, as in SQL.
+ * `null`, `=` and `<>` ask whether the index holds one; an order against `null` finds nothing, as in SQL. A value
+ * that is a number but not finite, or a string that is no text a database holds, is the caller's defect, since the
+ * dialects would answer it otherwise (decision 0207).
  */
 export type Criterion<T extends Types> = Readonly<{ index: T['index']; is: Comparison; value: Scalar }>
 
@@ -1978,14 +1993,17 @@ export const storage = <T extends Types>(
     if (typeof after.id !== 'string') {
       throw new InvariantDefect({ reason: `the id after is ${String(after.id)}, which is no string` })
     }
+    // No row holds an id that is no text a database holds, and PostgreSQL takes no U+0000 in a parameter of text
+    // (decision 0207).
+    if (!isText(after.id)) {
+      throw new InvariantDefect({
+        reason: `the id after is ${JSON.stringify(after.id)}, which is no text a database holds`,
+      })
+    }
     if (index === undefined) return null
     const value: unknown = (after.indexes as Readonly<Record<string, unknown>> | undefined)?.[index]
-    if (
-      !(value === null || typeof value === 'string' || typeof value === 'boolean'
-        || (typeof value === 'number' && Number.isFinite(value)))
-    ) {
-      const shown = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)
-      throw new InvariantDefect({ reason: `the index '${index}' after is ${shown}, which is no scalar` })
+    if (!isCompared(value)) {
+      throw new InvariantDefect({ reason: `the index '${index}' after is ${shownValue(value)}, which is no scalar` })
     }
     return value
   }
@@ -2032,6 +2050,13 @@ export const storage = <T extends Types>(
     const clauses = [sql`name = ${name}`]
     for (const { index, is, value } of where) {
       if (!comparisons.includes(is)) throw new Error(`'${is}' is no comparison`)
+      // SQLite finds no row under `NaN`, where PostgreSQL holds it a number past every other, and PostgreSQL takes
+      // no U+0000 in a parameter of text: so the dialects would answer the same question otherwise (decision 0207).
+      if (!isCompared(value)) {
+        throw new InvariantDefect({
+          reason: `the value compared with the index '${index}' is ${shownValue(value)}, which is no scalar a query compares`,
+        })
+      }
       clauses.push(
         // Nothing but `=` and `<>` says anything of an index that holds no value, as in SQL, where a
         // comparison with null is null: `never` is the clause no row holds.

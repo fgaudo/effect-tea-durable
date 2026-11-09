@@ -680,7 +680,12 @@ the row, `read` or `query` ([decision 0121](decisions/archive/0121-a-read-answer
 `query` takes the criteria that hold, an index to order by and a limit, and gives the ids found with their
 projections, at most `limit` of them. The limit is required: a reading that holds a program's whole read model in
 one array is never what its caller meant, and a call without one is the caller's defect
-([decision 0141](decisions/archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)).
+([decision 0141](decisions/archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)). A criterion's value is
+null, a boolean, a finite number or a string that is text a database holds, and so is the id and the value of the
+row passed as `after`. Anything else is the caller's defect, for `query`, `count`, `sum` and `countBy`. SQLite finds
+no row under `NaN`, where PostgreSQL holds it a number past every other, and PostgreSQL takes no U+0000 in a
+parameter of text, so each dialect would answer the same call otherwise
+([decision 0207](decisions/0207-a-criterion-is-a-scalar-both-dialects-compare-alike.md)).
 
 A query pages after the last row it gave. Each row found carries `indexes`, the value of each index as its row
 stores it, which is what the query compared. A caller passes the last row of a page as `after`, and is given the

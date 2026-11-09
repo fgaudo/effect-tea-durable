@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-10-31. Its limit left out, read as no limit, is changed by
 [decision 0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md): a limit is required, and one left out is
 the caller's defect. An empty id is refused too, by [decision 0179](../0179-an-id-is-not-empty.md). A request id that is no text a database holds
-is refused too, by [decision 0204](../0204-a-request-id-is-text-a-database-holds.md).
+is refused too, by [decision 0204](../0204-a-request-id-is-text-a-database-holds.md). A criterion that is no scalar both
+dialects compare alike is refused too, by [decision 0207](../0207-a-criterion-is-a-scalar-both-dialects-compare-alike.md).
 
 ## Context
 

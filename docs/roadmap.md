@@ -18,18 +18,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     this one, in its `navigationLinks` and its README, and this README's Status no longer says the site is missing.
     The step is taken by the commit that publishes it, which accepts decision 0203.
 
-The two steps after the site are bugs, found on 2026-11-09, in the order of what each bug costs a deployment. None
-has a test yet, and each step says the test that fails today.
-
-- **A criterion is a scalar a query compares.** A criterion whose value is `NaN` finds no row on SQLite, and
-  finds rows on PostgreSQL, where `NaN` is a number greater than every other. So
-  `count({ where: [{ index, is: '<', value: NaN }] })` counts nothing on one dialect, and every entity whose index
-  holds a number on the other. `criteria` of [`src/storage.ts`](../src/storage.ts) checks the comparison and not
-  the value, while `cursorOf` refuses a number that is not finite in `after`. The step refuses a value that is no
-  scalar, or a number that is not finite, as the caller's defect, for `query`, `count`, `sum` and `countBy`
-  ([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). It also reads what a string with
-  U+0000 does in a criterion and in the id of `after`, which PostgreSQL holds in no text, and refuses it if the
-  dialects differ. The test asks both dialects the same count under `NaN`, and is given the same answer.
+The step after the site is a bug, found on 2026-11-09. It has no test yet, and the step says the test that fails
+today.
 
 - **A launch checks every option.** `launch` of [`src/runtime.ts`](../src/runtime.ts) checks `drain`, `capacity`,
   `callers` and `log`, and takes `retry`, `passivate` and `warn` as they are given. Each of those times becomes

@@ -1192,6 +1192,45 @@ test('a cursor that holds no id, or no scalar of the index ordered by, is its ca
       }
     })))
 
+// SQLite finds no row under `NaN`, where PostgreSQL holds it a number past every other, and PostgreSQL takes no
+// U+0000 in a parameter of text: each dialect would answer otherwise, so each is refused alike (decision 0207).
+test('a criterion or a cursor that is no scalar a query compares is its caller’s defect, on both dialects', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(ranked, sql)
+      yield* store.write('a', created({ shown: { projection: '1', indexes: { rank: 1 } } }), 0)
+      const unheld: ReadonlyArray<unknown> = [Number.NaN, Number.POSITIVE_INFINITY, 'a\u0000', '\ud800', undefined, []]
+      for (const value of unheld) {
+        const where = [{ index: 'rank', is: '<', value: value as never }] as const
+        const shown = typeof value === 'string' || typeof value === 'object' ? JSON.stringify(value) : String(value)
+        for (
+          const call of [
+            store.query({ limit: all, where }),
+            store.count({ where }),
+            store.sum({ index: 'rank', where }),
+            store.countBy({ index: 'rank', where, limit: all }),
+          ] as ReadonlyArray<Effect.Effect<unknown>>
+        ) {
+          const exit = yield* Effect.exit(call)
+          const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+          expect(cause instanceof InvariantDefect && cause.reason)
+            .toBe(`the value compared with the index 'rank' is ${shown}, which is no scalar a query compares`)
+        }
+      }
+      const order = { index: 'rank' } as const
+      const cursors = [
+        [{ id: 'a\u0000', indexes: { rank: 1 } }, 'the id after is "a\\u0000", which is no text a database holds'],
+        [{ id: 'a', indexes: { rank: 'x\u0000' } }, `the index 'rank' after is "x\\u0000", which is no scalar`],
+      ] as const
+      for (const [after, reason] of cursors) {
+        const exit = yield* Effect.exit(store.query({ limit: all, order, after }))
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        expect(cause instanceof InvariantDefect && cause.reason).toBe(reason)
+      }
+      // A criterion every database holds still finds the row.
+      expect(yield* store.count({ where: [{ index: 'rank', is: '<', value: 2 }] })).toBe(1)
+    })))
+
 // `JSON.stringify` writes an integer beyond 2^53 with the fewest digits that read back as it, which SQLite reads as
 // another integer: without the exact digits, the page gives the row for ever, and a criterion misses it (decision 0146).
 test('a query pages past, and finds by its value, a row whose index is an integer beyond 2^53', () =>

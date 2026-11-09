@@ -177,13 +177,14 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0138](archive/0138-the-log-publishes-topics.md) | The log publishes topics, and a consumer reads one | [0139](archive/0139-the-projection-is-json.md), [0140](archive/0140-a-row-of-a-topic-gives-its-value.md), [0152](archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md), [0154](archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md) |
 | [0139](archive/0139-the-projection-is-json.md) | The projection is JSON, and `project` converts |  |
 | [0140](archive/0140-a-row-of-a-topic-gives-its-value.md) | A row of a topic gives the value the topic selects | [0154](archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md) |
-| [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md) | A query and a reading of the log take a limit, and one left out is the caller's defect | [0143](archive/0143-a-query-pages-after-the-last-row-it-gave.md) |
+| [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md) | A query and a reading of the log take a limit, and one left out is the caller's defect | [0143](archive/0143-a-query-pages-after-the-last-row-it-gave.md), [0207](0207-a-criterion-is-a-scalar-both-dialects-compare-alike.md) |
 | [0142](archive/0142-a-consumer-waits-for-a-row-of-its-topic.md) | A consumer waits for a row of its topic, woken by the commit that writes it | [0153](archive/0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md), [0163](archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md), [0184](0184-consume-runs-a-reader-of-a-consumer.md) |
 | [0143](archive/0143-a-query-pages-after-the-last-row-it-gave.md) | A query pages after the last row it gave, by the index it orders by and the id | [0144](archive/0144-a-page-reads-the-rows-before-its-cursor.md), [0145](archive/0145-a-page-is-read-as-ranges-of-its-index.md), [0146](archive/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md) |
 | [0144](archive/0144-a-page-reads-the-rows-before-its-cursor.md) | A page reads the rows of its program before its cursor, and decision 0143 stands on its other reasons | [0145](archive/0145-a-page-is-read-as-ranges-of-its-index.md) |
 | [0145](archive/0145-a-page-is-read-as-ranges-of-its-index.md) | A page is read as ranges of an index of the value and the id, and a descending order reverses the ids | [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) |
 | [0146](archive/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md) | An index that is an integer beyond 2^53 is written with the exact digits of its double |  |
 | [0148](archive/0148-a-count-and-a-sum-are-read-in-one-statement.md) | A count and a sum over the entities that match are read in one statement, and a sum that meets no number is its caller's defect |  |
+| [0207](0207-a-criterion-is-a-scalar-both-dialects-compare-alike.md) | A criterion's value and a cursor are scalars both dialects compare alike, and anything else is the caller's defect |  |
 | [0149](archive/0149-the-read-model-answers-what-a-program-acts-on.md) | The read model answers what a program acts on, in three forms, and any other question is a report fed from the log | [0150](archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md) |
 | [0150](archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md) | A count per value of an index is read in one statement, and an ack joins the caller's transaction |  |
 | [0151](archive/0151-a-process-holds-ten-thousand-entities-by-default.md) | A process holds ten thousand entities by default |  |
@@ -217,7 +218,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0179](0179-an-id-is-not-empty.md) | An id is not empty, and an empty id is the defect of whoever gave it |  |
 | [0204](0204-a-request-id-is-text-a-database-holds.md) | A request id is text a database holds, and one that is not is the caller's defect |  |
 | [0052](archive/0052-what-crosses-the-library-is-never-mutated.md) | What crosses the library is never mutated |  |
-| [0053](archive/0053-what-a-handle-is-given-is-checked.md) | What a handle is given is checked | [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0179](0179-an-id-is-not-empty.md), [0204](0204-a-request-id-is-text-a-database-holds.md) |
+| [0053](archive/0053-what-a-handle-is-given-is-checked.md) | What a handle is given is checked | [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0179](0179-an-id-is-not-empty.md), [0204](0204-a-request-id-is-text-a-database-holds.md), [0207](0207-a-criterion-is-a-scalar-both-dialects-compare-alike.md) |
 | [0054](archive/0054-a-program-is-checked-where-it-enters.md) | A program is checked where it enters | [0064](archive/0064-the-program-is-not-the-machines-state.md), [0132](archive/0132-a-key-may-take-a-parameter.md), [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md) |
 
 ## The runtime

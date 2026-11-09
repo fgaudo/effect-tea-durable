@@ -9,7 +9,8 @@ reading of every row skipped, since the clause taken reads the rows before its c
 that tie too, and whose page is read as ranges of an index of the value and the id. Changed by
 [decision 0146](0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md), which writes an integer beyond
 2^53 with the exact digits of its double, since the digits `JSON.stringify` writes are read by SQLite as another
-number, and a page whose cursor held one gave the row for ever.
+number, and a page whose cursor held one gave the row for ever. A cursor whose id is no text a database
+holds, or whose string is none, is refused too, by [decision 0207](../0207-a-criterion-is-a-scalar-both-dialects-compare-alike.md).
 
 ## Context
 
