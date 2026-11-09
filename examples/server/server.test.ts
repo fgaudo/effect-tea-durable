@@ -340,9 +340,9 @@ test.skipIf(process.platform === 'win32')(
 )
 
 // With `DRAIN_MILLIS` the stop waits for the emails under way, and commits their completions before the runner lets
-// its shards go, so the other runner finds each email sent and not unsure (decisions 0119, 0219). The world holds the
-// emails, so the drain still holds the process two seconds after the signal. The emails are released only then, so
-// that each ends in the drain and not before the stop.
+// its shards go. The other runner handles each completion, and finds each email sent and not unsure (decisions 0119,
+// 0219). The world holds the emails, so the drain still holds the process two seconds after the signal. The emails are
+// released only then, so that each ends in the drain and not before the stop.
 test.skipIf(process.platform === 'win32')(
   'a runner stopped by SIGTERM with a drain sends its emails under way once, and the other runner finishes the orders',
   async () => {

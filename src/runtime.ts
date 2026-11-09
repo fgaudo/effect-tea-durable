@@ -1235,8 +1235,10 @@ export const launchWith = (
       return drained() ? Effect.void : Effect.flatMap(Deferred.await(next), () => emptied)
     })
 
-    // A planned stop, added after `running` and so run before it closes (decision 0119). Its wait is made
-    // interruptible, so that the timeout ends it even if a finalizer runs uninterruptibly.
+    // A planned stop, added after `running` and so run before it closes (decision 0119). Its wait stays as
+    // uninterruptible as the finalizer: a scope closed by an interrupted fiber, as `runMain` closes it on a signal,
+    // keeps the interruption pending, and an interruptible wait would end at once. The timeout ends the wait alone,
+    // since a race forks its sides interruptible and resumes on the first to end (decision 0219).
     if (drain !== undefined) {
       yield* Scope.addFinalizer(scope, Effect.gen(function*() {
         p.draining = true
@@ -1247,7 +1249,7 @@ export const launchWith = (
             for (const id of [...loaded.rerun]) yield* stop(loaded.operations, id)
           }
         }
-        yield* Effect.interruptible(Effect.timeoutOption(emptied, `${drain} millis`))
+        yield* Effect.timeoutOption(emptied, `${drain} millis`)
         Deferred.doneUnsafe(stopped, Effect.interrupt)
       }))
     }

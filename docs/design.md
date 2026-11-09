@@ -1148,7 +1148,11 @@ operation such a step starts, and for a creation committed whose work has not st
 `millis` stops as in a crash. A process launched without the option ends with a crash, as it always did
 ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). The runtime closes a sequential
 scope of its own, so that the drain runs first and the database is let go last whatever the strategy of the scope it
-was launched in ([decision 0120](decisions/archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md)).
+was launched in ([decision 0120](decisions/archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md)). The drain
+holds whether that scope is closed by `Scope.close` or by the interruption of the fiber that launched the runtime, as
+`runMain` stops a process on a signal. On Cluster it ends before the runner lets its shards go, when the runtime is
+launched in a layer built over the runner's `Sharding`
+([decision 0219](decisions/0219-a-drain-holds-when-an-interrupted-fiber-closes-its-scope.md)).
 
 ### On Effect Cluster
 

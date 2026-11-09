@@ -118,8 +118,8 @@ The runners send to each other over HTTP, beside the boundary's routes, and Clus
 rest of its settings from the environment. The runtime is launched and the orders deployed in the layer's scope,
 so they stop when the server stops. Given `DRAIN_MILLIS`, the runtime is launched with `drain`, and a stop waits
 that long for the emails under way. The layer is built over the runner's `Sharding`, so the drain ends before the
-runner lets its shards go, and the completions of the emails are committed
-([decision 0219](../decisions/0219-on-cluster-a-planned-stop-drains-before-the-runner-lets-its-shards-go.md)):
+runner lets its shards go. The completion of each email is committed, and the runner that takes the shard handles
+it ([decision 0219](../decisions/0219-a-drain-holds-when-an-interrupted-fiber-closes-its-scope.md)):
 
 ```ts
 const orders = (settings: Settings) =>
