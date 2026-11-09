@@ -60,28 +60,20 @@ with a requirement that no example has yet.
 
 ## Running
 
-- **PostgreSQL with many connections.** The storage's tests run on PGlite, which runs one statement at a time on
-  one session ([decision 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). On a server with a
-  pool, steps of different entities commit at once. That the head of a partition still orders the commits of its
-  steps, that a session advisory lock holds the database, that a page read at `REPEATABLE READ` gives a row once, and
-  what a deadlock or a failure of serialization does to a step, are only reasoned. A page read inside a transaction
-  the caller left open reads at the caller's level, and at PostgreSQL's default a step committed between two of its
-  parts may move a row into it twice
-  ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
-  The roadmap's step on PostgreSQL decides it. It would be decided by:
-  - the storage's tests and the runtime's tests of the log run against a server, in CI or by hand;
-  - a test with two writers of one partition, which checks that its steps commit in the order of their `seq`. On
-    SQLite and on PGlite two writers commit one after the other whatever the head does, so only a server runs it
-    ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md));
-  - whether a step whose transaction fails with `DeadlockError` or `SerializationError` is retried, as the JSDoc of
-    `SqlClient.withTransaction` shows, or crashes its entity, as a write that fails does;
-  - a launch on a server whose role has a `search_path` set by `ALTER ROLE`, which finds every table of the runtime
-    and of Cluster in that schema on every connection of the pool, and two runtimes in two schemas of one database
-    refusing each other
-    ([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)).
-  - two launches at once that run the migrations of `createTables`, where the second waits on
-    `LOCK TABLE effecttea_migrations IN ACCESS EXCLUSIVE MODE` until the first commits, and runs none
-    ([decision 0216](decisions/0216-the-tables-are-made-by-effects-migrator.md)).
+- **A runtime that loses its session on PostgreSQL.** A runtime holds a database of PostgreSQL with a session
+  advisory lock, on a connection it reserves for its scope
+  ([decision 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). The lock goes with its
+  session, as PostgreSQL documents. A server that ends the session, by `idle_session_timeout`, a restart or a broken
+  connection, gives the lock back while the runtime still runs, and nothing tells the runtime. A second runtime may
+  then launch on the database, and the two would load the same entities
+  ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). Whether the runtime checks its hold,
+  and how often, is not decided. It waits for the step on Cluster across machines on PostgreSQL in the
+  [roadmap](roadmap.md), whose fence would make every commit check it
+  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). It would be decided by:
+  - a test on a server that ends the reserved connection with `pg_terminate_backend`, and sees a second launch
+    succeed while the first runs;
+  - what a check costs a step: a statement of the reserved connection, or a reading of `pg_locks`, against a fence
+    that a commit checks anyway.
 - **A fiber that outlives its transaction.** A fiber forked inside a transaction keeps the transaction's connection
   in its context. At 4.1.2 its statements and savepoints then run on that connection after the commit, outside the
   client's semaphore, and nothing says so: on SQLite another fiber's transaction later fails to begin. The runtime

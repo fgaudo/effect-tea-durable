@@ -1093,11 +1093,22 @@ is written once. A launch on a client of any other dialect is the launcher's def
 
 - A query finds and orders the same rows on both, and ids are ordered alike too. How each dialect stores and orders
   a value is under [what the storage writes](#what-the-storage-writes).
+- On PostgreSQL every transaction the runtime begins states its level, whatever default the role or the database
+  sets. A step and every other write begin at `READ COMMITTED`, where a step that draws its `seq` behind another of
+  its partition waits for it, and a higher level would fail it. A reading of one snapshot begins at `REPEATABLE READ`
+  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)).
+- A step whose transaction PostgreSQL ends with a deadlock crashes its entity, as a write that fails does, and is not
+  retried ([decision 0222](decisions/0222-postgresql-with-many-connections.md)).
 - A page of a query reads its ranges in one transaction, begun at `REPEATABLE READ` on PostgreSQL where the
-  transaction is the page's own. Inside a transaction a caller left open, the page reads at the caller's level: on one
-  connection nothing commits between its parts, and on a server at PostgreSQL's default level a step committed between
-  two parts may move a row into the page twice
-  ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)).
+  transaction is the page's own, so that it gives a row once though a step moves it between its parts. Inside a
+  transaction a caller left open, the page reads at the caller's level: on one connection nothing commits between its
+  parts, and on a server at `READ COMMITTED` a step committed between two parts gives a row twice. A caller that reads
+  pages in its own transaction, and needs each row once, begins it at `REPEATABLE READ`
+  ([decisions 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md),
+  [0222](decisions/0222-postgresql-with-many-connections.md)).
+- An integer of a row may come from the driver as a number or as a bigint: PGlite gives a number, and
+  `@effect/sql-pg` a bigint. Either is read as a number up to 2^53
+  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)).
 - An id, a request id, a name, a key's name, a topic's, a consumer's, and a string an index holds are text every
   database holds as it is: no U+0000, which PostgreSQL holds in no text, and no lone surrogate, which no database
   gives back as written, so that two ids would be one. Anything else is the defect of whoever gave it.
@@ -1108,8 +1119,11 @@ is written once. A launch on a client of any other dialect is the launcher's def
   refuse one that is no text a database holds as the caller's defect, since the storage writes it as it is in
   `request_id` ([decision 0204](decisions/0204-a-request-id-is-text-a-database-holds.md)).
 - The tests of the storage run on both, PostgreSQL on PGlite, and the tests of the runtime whose steps write what the
-  dialects write otherwise run on both too. What a server with many connections does is an
-  [open question](open-questions.md#running).
+  dialects write otherwise run on both too. The CI runs them on a server of PostgreSQL with a pool as well, with the
+  tests only a server runs: two writers of one partition, a deadlock, the levels of a page, the advisory lock across
+  pools and schemas, a role whose `search_path` is set by `ALTER ROLE`, and two runs of `createTables` at once
+  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). A runtime whose session the server ends loses
+  its hold without knowing it, which is an [open question](open-questions.md#running).
 
 ### Entities in the process
 

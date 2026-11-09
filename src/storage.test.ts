@@ -632,14 +632,14 @@ test('a row the runtime never writes fails the call that meets it, and is read a
           store.published('projection', [], all),
         ],
       ] as const
-      for (const [breaking, reading] of broken) {
+      for (const [index, [breaking, reading]] of broken.entries()) {
         // Broken and read in a transaction that fails with what the reading gave, so that nothing of it stays.
         const exit = yield* Effect.flip(sql.withTransaction(
           Effect.andThen(breaking, Effect.flatMap(Effect.exit<unknown, never, never>(reading), Effect.fail)),
         ))
         // PostgreSQL refuses by the types of its columns some rows SQLite holds, such as a time that is no integer.
         if (!Exit.isExit(exit) && dialectOf(sql) === 'pg') continue
-        expect(Exit.isExit(exit) && exit._tag).toBe('Failure')
+        expect([index, Exit.isExit(exit) && exit._tag]).toEqual([index, 'Failure'])
         if (Exit.isExit(exit) && exit._tag === 'Failure') {
           expect(String(Cause.squash(exit.cause))).toContain('no row the runtime writes')
         }
@@ -1052,7 +1052,8 @@ describe('topics of the log (decision 0138)', () => {
               AND effecttea_outbox.seq = effecttea_publications.seq
             GROUP BY effecttea_publications.seq ORDER BY effecttea_publications.seq
           `,
-          (held) => held.map(({ seq, rows }) => [seq, rows]),
+          // A driver may give an integer as a bigint (decision 0222).
+          (held) => held.map(({ seq, rows }) => [Number(seq), Number(rows)]),
         )
         expect(yield* stored).toEqual([[1, 2], [2, 2]])
         // `upper` is read past both steps, and `size` past the first: the second step's publication stays for `size`.
