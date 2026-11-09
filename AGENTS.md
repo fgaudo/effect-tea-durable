@@ -143,3 +143,13 @@ This repository is a design and its pure core, not a library yet: read [`README.
   diagram in the same commit.
 - The design follows effect-tea's Guide (`README.md` of `github.com/fgaudo/effect-tea`) wherever the Guide
   applies; `docs/design.md` says where a server departs from it, and why.
+- The site is built by [`site/build.ts`](site/build.ts) with TypeDoc, pinned with its TypeScript in
+  `site/package.json`, as effect-tea's site is. A warning of TypeDoc fails the build. So every export of the four
+  entries has a doc comment, which says what it takes and gives, and every link of a page resolves. A name that
+  TypeDoc infers and that no declaration holds is excused in `site/typedoc.json`, and an export never is. A change
+  of `src/`, of the guide or of an example builds the site before it is committed.
+- Each example has a `README.md`: its title, a paragraph on what it shows, and a line for each of its files. The
+  site's page of an example is that README, followed by its files.
+- A block of TypeScript of the guide or of the README is code of an example, cut at elisions, and the test
+  `the guide's code is found in the examples, part by part` in `src/form.test.ts` checks it
+  ([decision 0203](docs/decisions/0203-the-guides-code-is-found-in-the-examples.md)).

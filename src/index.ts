@@ -3,6 +3,8 @@
  * alone is in `index.program.ts`, a test's helpers in `index.testing.ts`, and a launcher's on Effect Cluster in
  * `index.cluster.ts`, so that a process imports neither Cluster nor the checks of a test unless it uses them
  * (decision 0193).
+ *
+ * @module @fgaudo/effect-tea-persistent
  */
 export * from './index.program.ts'
 export {

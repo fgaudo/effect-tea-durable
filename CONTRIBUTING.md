@@ -17,6 +17,14 @@ bun run links
 seed, and a step of the roadmap that changes the runtime passes it. `bun run test:explore` runs the explored tests
 from random seeds until one fails. [`AGENTS.md`](AGENTS.md) says when each one is run.
 
+The site, with the guide, the examples and the API reference, is built into `site/dist/` by a package of its own:
+
+```sh
+cd site
+bun install
+bun run build
+```
+
 ## The documents
 
 - [`docs/guide/README.md`](docs/guide/README.md): the guide for whoever writes a program, on the rental of bikes.
@@ -33,6 +41,9 @@ from random seeds until one fails. [`AGENTS.md`](AGENTS.md) says when each one i
 - [`spikes/`](spikes): tests of what a dependency does when it runs, at the version pinned.
 - [`scripts/`](scripts): the link checker, the exploration of seeds, the mutations a review runs, and the tools of a
   move of Effect's version.
+- [`site/`](site): the build of the site. The README is its home page, the guide, the design and the glossary are
+  its pages, each example is a page of its README and its files, and the reference is made of the doc comments of
+  the four entries of `src/`.
 
 ## The modules of `src/`
 
@@ -82,5 +93,5 @@ flowchart TB
 ## The examples
 
 Each example in [`examples/`](examples) imports the library by the package's name, as a user does, and runs on the
-sources with no build. The library's own tests run on copies of the examples' programs in
+sources with no build. Its `README.md` says in a paragraph what it shows, and lists its files. The library's own tests run on copies of the examples' programs in
 [`src/fixtures/`](src/fixtures), so that a change of an example breaks no test of the library.

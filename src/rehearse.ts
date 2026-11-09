@@ -34,7 +34,9 @@ export const rejected: Readonly<{ _tag: 'Rejected' }> = { _tag: 'Rejected' }
  * for a key that takes one (decision 0136).
  */
 export interface Pending<Work = unknown> {
+  /** The key the work is under. */
   readonly key: Key
+  /** The incarnation of the run under way, which its answer carries. */
   readonly incarnation: number
   /**
    * The idempotency key the operation's runner is given: its digest for a runner declared with
@@ -53,7 +55,9 @@ type PendingOf<T extends Types> = Pending<Piece<T['operation'], T['internal']>>
 
 /** What a rehearsal does to one entity, whether it runs alone or in a world. */
 interface Acts<T extends Types> {
+  /** The entity's state, as it stands after the last act of the test. */
   readonly state: Effect.Effect<T['state']>
+  /** The entity's projection, as a caller reads it after the last act of the test. */
   readonly projection: Effect.Effect<T['projection']>
   /**
    * Delivers an inbound message from a caller. Given a request id, it is a request the test names: a second send
@@ -99,6 +103,7 @@ interface Acts<T extends Types> {
   }
 }
 
+/** A rehearsal of one entity, as `rehearse` gives it to the scenario: what the test does to the entity, and reads of it. */
 export interface Rehearsal<T extends Types> extends Acts<T> {
   /**
    * The process dies after the last commit, and the entity is activated again from what was stored. At-most-once
@@ -676,6 +681,12 @@ const rehearseOne = <T extends Types, E>(
 const together = <E, R>(at: DateTime.Utc, scenario: (world: World) => Effect.Effect<void, E, R>): Effect.Effect<void, E, R> =>
   Effect.suspend(() => scenario(makeWorld(at)))
 
+/**
+ * Runs a scenario of one entity of `program`, created from `start.flags` at `start.at`, without a database or a
+ * clock. The scenario is given a `Rehearsal`, and the test answers the entity's operations, fires its timers and
+ * restarts the process. `rehearse.together(at, scenario)` runs several entities in one world instead, where a
+ * runner's requests reach the other entities.
+ */
 export const rehearse: typeof rehearseOne & { readonly together: typeof together } = Object.assign(rehearseOne, {
   together,
 })

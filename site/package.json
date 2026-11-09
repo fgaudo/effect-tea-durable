@@ -1,0 +1,16 @@
+{
+  "name": "effect-tea-persistent-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build.ts"
+  },
+  "devDependencies": {
+    "mermaid": "11.17.2",
+    "typedoc": "0.28.20",
+    "typescript": "6.0.x"
+  },
+  "overrides": {
+    "katex": "0.18.11"
+  }
+}

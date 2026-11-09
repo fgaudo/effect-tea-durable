@@ -2,6 +2,8 @@
  * The entry of a program's module: what declares a program, its schemas' types and its references, and nothing that
  * runs it. It reaches no module of Node or of Bun, so a browser imports a module that declares a program, for its
  * schemas (decisions 0192, 0193). The main entry gives all of it too.
+ *
+ * @module @fgaudo/effect-tea-persistent/program
  */
 export {
   type Address,

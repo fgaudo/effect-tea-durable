@@ -161,6 +161,7 @@ export const Probe = Context.Reference<(said: Said) => Effect.Effect<void>>('@fg
   defaultValue: () => () => Effect.void,
 })
 
+/** The options of `launch`, each with a default: a launch with none runs on one process with the tables it creates. */
 export interface Options {
   /**
    * How long a `send` or a `create` from another entity waits before sending again to a receiver that crashed on
@@ -472,6 +473,10 @@ export interface Handle<T extends Types, C = {}> {
   readonly discard: (id: string) => Effect.Effect<Operated>
 }
 
+/**
+ * The runtime `launch` gives: it deploys programs on the database it holds, and `settled` waits for the work they
+ * have under way.
+ */
 export interface Runtime {
   /**
    * Runs a program's entities in this process. The operations' services are taken from here, and their fibers run

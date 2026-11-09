@@ -1,0 +1,25 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "effect-tea-persistent",
+  "entryPoints": ["../src/index.program.ts", "../src/index.ts", "../src/index.testing.ts", "../src/index.cluster.ts"],
+  "tsconfig": "tsconfig.json",
+  "out": "dist",
+  "validation": { "notExported": false, "notDocumented": true },
+  "requiredToBeDocumented": ["Function", "Variable", "Interface", "TypeAlias", "Class", "Enum"],
+  "intentionallyNotDocumented": [
+    "@fgaudo/effect-tea-persistent/program.program.__type.Indexes",
+    "@fgaudo/effect-tea-persistent/program.program.__type.Topics",
+    "@fgaudo/effect-tea-persistent/program.program.__type.__type.services.__type.run",
+    "@fgaudo/effect-tea-persistent/program.part.__type.__type.services.__type.run"
+  ],
+  "treatWarningsAsErrors": true,
+  "headings": { "readme": false, "document": false },
+  "groupOrder": ["Guide", "Examples", "Specification", "*"],
+  "navigationLinks": {
+    "effect-tea": "https://fgaudo.github.io/effect-tea/",
+    "GitHub": "https://github.com/fgaudo/effect-tea-durable"
+  },
+  "markdownItOptions": { "html": true, "linkify": false },
+  "ignoredHighlightLanguages": ["mermaid"],
+  "customJs": ".build/custom.js"
+}

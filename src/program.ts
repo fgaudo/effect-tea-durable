@@ -22,6 +22,7 @@ const RejectedWithTypeId: unique symbol = Symbol.for('@fgaudo/effect-tea-persist
 /** A rejection with a reason the caller can act on, stored with the reply. No state can be taken for it. */
 export interface RejectedWith<Reason> {
   readonly [RejectedWithTypeId]: typeof RejectedWithTypeId
+  /** The reason the caller is answered, in `Rejected`. */
   readonly reason: Reason
 }
 
@@ -34,6 +35,7 @@ export const rejectWith = <const Reason>(reason: Reason): RejectedWith<Reason> =
   reason,
 })
 
+/** A rejection, with a reason of the program's `rejection` schema or with none: what `update` gives for a message. */
 export type Rejected<Reason = never> = typeof reject | RejectedWith<Reason>
 
 export const isRejected = (result: unknown): result is Rejected<unknown> =>
@@ -121,12 +123,19 @@ export const encode = <A>(codec: Schema.Codec<A, Json>, value: A, what: string):
  * types and schemas of the version before do not live on in the code (decision 0036).
  */
 export type Migration = Readonly<{
+  /** Reads a stored state. */
   state?: (json: Json) => Json
+  /** Reads an inbound message waiting in the mailbox. */
   inbound?: (json: Json) => Json
+  /** Reads an internal message waiting in the mailbox. */
   internal?: (json: Json) => Json
+  /** Reads an operation stored as work under way. */
   operation?: (json: Json) => Json
+  /** Reads the reason of a stored reply. */
   rejection?: (json: Json) => Json
+  /** Reads the sender of a stored reply or of a message waiting. */
   sender?: (json: Json) => Json
+  /** Reads a stored projection, in the read model and in the log. */
   projection?: (json: Json) => Json
 }>
 
@@ -183,9 +192,11 @@ export const originOf = <Sender>(request: Request<Sender>): Origin<Sender> =>
     ? { _tag: 'Entity', entity: request.entity }
     : { _tag: 'Self' }
 
+/** What `update` is told of a message besides the message itself: when it is handled, and who sent it. */
 export type Meta<Sender> = Readonly<{
   /** When the runtime handles the message, read once before `update`. */
   at: DateTime.Utc
+  /** Who sent the message: a caller with its sender, another entity, or the entity's own work. */
   from: Origin<Sender>
 }>
 
@@ -201,6 +212,10 @@ export type Reply<Reason> =
   | Readonly<{ _tag: 'Rejected'; reason: Reason | null }>
   | Readonly<{ _tag: 'NotFound' }>
 
+/**
+ * The type of `update`: given a message and its meta, a function from the state to the next state or to a rejection.
+ * It is pure, and reads time only from `meta.at`.
+ */
 export type Update<State, Message, Sender, Reason> = (
   message: Message,
   meta: Meta<Sender>,
@@ -235,26 +250,38 @@ export type Runner<Operation, Message, R> =
   /** Runs again with the same idempotency key, which it passes on: the world recognises it. */
   | Readonly<{
     delivery: 'Idempotent'
+    /** Runs the operation, and ends with the internal message its entity is delivered. */
     run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>
   }>
   /** Runs again as an idempotent one does, given the digest of its idempotency key (decision 0123). */
   | Readonly<{
     delivery: 'IdempotentDigest'
+    /** Runs the operation, and ends with the internal message its entity is delivered. */
     run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>
   }>
   /** Runs again, and may act twice. */
-  | Readonly<{ delivery: 'AtLeastOnce'; run: (operation: Operation) => Effect.Effect<Message, never, R> }>
+  | Readonly<{
+    delivery: 'AtLeastOnce'
+    /** Runs the operation, and ends with the internal message its entity is delivered. */
+    run: (operation: Operation) => Effect.Effect<Message, never, R>
+  }>
   /** Never runs again: an activation that finds it with no completion delivers `unknown`, since it may have acted. */
   | Readonly<{
     delivery: 'AtMostOnce'
+    /** Runs the operation, and ends with the internal message its entity is delivered. */
     run: (operation: Operation) => Effect.Effect<Message, never, R>
+    /** The message delivered for an operation the process died during, whose outcome is not known. */
     unknown: (operation: Operation) => Message
   }>
   /**
    * Acts on nothing: a state may drop it or change it while it runs, which interrupts it, and a crash runs it again.
    * It sends to no entity and creates none, since a request is an act on the receiver (decision 0128).
    */
-  | Readonly<{ delivery: 'Droppable'; run: (operation: Operation) => Effect.Effect<Message, never, R> }>
+  | Readonly<{
+    delivery: 'Droppable'
+    /** Runs the operation, and ends with the internal message its entity is delivered. */
+    run: (operation: Operation) => Effect.Effect<Message, never, R>
+  }>
 
 /** What a droppable runner's effect is checked against where its services `R` hold `Entities` (decision 0129). */
 interface SendsToNoEntity {
@@ -267,6 +294,11 @@ interface SendsToNoEntity {
  */
 type WithoutEntities<R> = [Extract<R, Entities>] extends [never] ? R : SendsToNoEntity
 
+/**
+ * The runner of an operation, with its delivery: what a crash during the operation does to it. Called as a
+ * function, it declares an idempotent runner: one run again after a crash, under the same idempotency key, which it
+ * passes to the service it calls.
+ */
 export const operation: {
   /** An idempotent operation, which passes its idempotency key on. */
   <Operation, Message, R>(
@@ -276,9 +308,17 @@ export const operation: {
   readonly digest: <Operation, Message, R>(
     run: (operation: Operation, key: IdempotencyKey) => Effect.Effect<Message, never, R>,
   ) => Runner<Operation, Message, R>
+  /**
+   * An operation run again after a crash, with no idempotency key: for an action that is the same however many
+   * times it runs, as a request to another entity under a name.
+   */
   readonly atLeastOnce: <Operation, Message, R>(
     run: (operation: Operation) => Effect.Effect<Message, never, R>,
   ) => Runner<Operation, Message, R>
+  /**
+   * An operation never run again after a crash, as an email a second copy of is worse than none. An operation the
+   * process died during delivers the message that `unknown` gives instead, which says that its outcome is not known.
+   */
   readonly atMostOnce: <Operation, Message, R>(
     run: (operation: Operation) => Effect.Effect<Message, never, R>,
     unknown: (operation: Operation) => Message,
@@ -317,9 +357,12 @@ export const operation: {
 
 const TimerTypeId: unique symbol = Symbol.for('@fgaudo/effect-tea-persistent/Timer')
 
+/** A timer, as `work` returns it under a key: data, which the runtime arms while the state holds it. */
 export interface Timer<Message> {
   readonly [TimerTypeId]: typeof TimerTypeId
+  /** When the timer fires. */
   readonly at: DateTime.Utc
+  /** The internal message the timer sends its entity when it fires. */
   readonly message: Message
 }
 
@@ -372,7 +415,9 @@ const KeyWithParameterTypeId: unique symbol = Symbol.for('@fgaudo/effect-tea-per
 /** A key that takes a parameter, as a declaration lists it: its name, and the schema of its parameter. */
 export interface KeyWithParameter<Name extends string, Parameter> {
   readonly [KeyWithParameterTypeId]: typeof KeyWithParameterTypeId
+  /** The key's name, which `work` returns the key's work under. */
   readonly name: Name
+  /** The schema of the key's parameter, which tells apart two pieces of work under one name. */
   readonly parameter: Schema.Codec<Parameter, Json>
 }
 
@@ -406,8 +451,13 @@ type LiteralNames<List extends DeclaredKeys> = string extends NameOf<List[number
   ? Readonly<{ 'each key is named by a literal: write the list in the call, or `as const`': never }>
   : unknown
 
+/** What `work` returns for a state that holds no work: no operation and no timer. */
 export const noWork: Readonly<Record<string, never>> = Object.freeze({})
 
+/**
+ * The types of a program, as one record: what its schemas decode to, and the names of its keys, indexes and topics.
+ * `TypesOf<typeof program>` gives the record of a declared program, which a handle and a rehearsal are typed by.
+ */
 export type Types = Readonly<{
   state: object
   flags: unknown
@@ -534,6 +584,10 @@ type LiteralName<Name extends string> = string extends Name ? never : Name
 export const isProgram = <T extends Types>(receiver: Receiver<T>): receiver is Program<T> =>
   Object.hasOwn(receiver, 'init')
 
+/**
+ * A program, as `program` declares it: the pieces the runtime runs every entity of one kind with. A deploy takes it,
+ * and a rehearsal runs it without a database or a clock.
+ */
 export interface Program<T extends Types, Name extends string = string> {
   /** What other entities read in `Address.name`, and the runtime stores the entity under. */
   readonly name: Name
@@ -543,6 +597,7 @@ export interface Program<T extends Types, Name extends string = string> {
    * (decisions 0037, 0132), and a deploy that renames one is a change of the type (decision 0033).
    */
   readonly keys: Keys<T['key'], T['parameter']>
+  /** The schemas the declaration gave, by their keys: `state`, `flags`, `inbound` and the others. */
   readonly schemas: Schemas<
     T['state'],
     T['flags'],
@@ -558,12 +613,15 @@ export interface Program<T extends Types, Name extends string = string> {
    * is answered `Rejected` (decision 0182).
    */
   readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state'] | Rejected<T['rejection']>
+  /** The next state for an inbound or an internal message, or a rejection of the message. */
   readonly update: Update<T['state'], T['inbound'] | T['internal'], T['sender'], T['rejection']>
   /** The work each state holds, which the machine reads by key, under the keys the program declares. */
   readonly work: (
     state: T['state'],
   ) => Readonly<Record<string, Returned<T['operation'], T['internal']> | undefined>>
+  /** The runner of each operation, by its tag, with its delivery. */
   readonly operations: Runners<T>
+  /** The projection of a state: what callers read, what a query filters on, and what the log publishes. */
   readonly project: (state: T['state']) => T['projection']
   /**
    * The topics of the log, each a pure function that selects, of the projection, the topic's value: a step writes
@@ -734,7 +792,9 @@ const RaisedTypeId: unique symbol = Symbol.for('@fgaudo/effect-tea-persistent/Ra
  */
 export interface Raised<State, Event> {
   readonly [RaisedTypeId]: typeof RaisedTypeId
+  /** The child's next state. */
   readonly state: State
+  /** The events for the parent, in the order they were raised. */
   readonly events: ReadonlyArray<Event>
 }
 
@@ -853,6 +913,7 @@ declare const PartTypeId: unique symbol
 export interface Part<T extends PartTypes> {
   /** Only in the type, so that a parent reads the part's types back: no part has the property. */
   readonly [PartTypeId]?: T
+  /** Every key the child's work is held under, as a program's are. The parent holds them under the child's name. */
   readonly keys: Keys<T['key'], T['parameter']>
   /**
    * The schemas the parent's are made of. The parent's state and projection schemas are the parent's own, and hold
@@ -870,14 +931,21 @@ export interface Part<T extends PartTypes> {
    * the parent decides there whether the child starts (decision 0182).
    */
   readonly init: (flags: T['flags'], at: DateTime.Utc) => T['state']
+  /**
+   * The child's next step for one of its messages, its parent's included: a state, a state with events for the
+   * parent, or a rejection.
+   */
   readonly update: (
     message: T['inbound'] | T['internal'] | T['external'],
     meta: Meta<T['sender']>,
   ) => (state: T['state']) => Step<T['state'], T['event']> | Rejected<T['rejection']>
+  /** The work the child's state holds, by key, as a program's `work`. */
   readonly work: (
     state: T['state'],
   ) => Readonly<Record<string, Returned<T['operation'], T['internal']> | undefined>>
+  /** The runner of each of the child's operations, by its tag, with its delivery. */
   readonly operations: Runners<T>
+  /** The child's projection, which the parent reads in its own `project`. */
   readonly project: (state: T['state']) => T['projection']
 }
 
@@ -892,7 +960,9 @@ type StateOf<P> = PartTypesOf<P> extends Readonly<{ state: infer State }> ? Stat
 /** One child, where an optic finds it in the parent's state: where the optic focuses nothing, it is not there. */
 export interface One<State, P> {
   readonly kind: 'one'
+  /** The part the child runs. */
   readonly part: P
+  /** Where the child's state is in the parent's. */
   readonly at: Optic.Optional<State, StateOf<P>>
 }
 
@@ -903,8 +973,11 @@ export interface One<State, P> {
  */
 export interface Each<State, Id, P> {
   readonly kind: 'each'
+  /** The part each child runs. */
   readonly part: P
+  /** The schema of a child's id, which a message to the child carries. */
   readonly id: Schema.Codec<Id, Json>
+  /** The children in the parent's state, each its id and its state. */
   readonly at: Optic.Optional<State, ReadonlyArray<readonly [Id, StateOf<P>]>>
 }
 
@@ -1716,12 +1789,14 @@ export type Creation<Reason = never> =
  * with the name the operation gives (decisions 0047, 0060).
  */
 export class Entities extends Context.Service<Entities, {
+  /** Sends an inbound message to another entity, as `send` does. */
   readonly send: <T extends Types>(
     program: Receiver<T>,
     id: string,
     message: T['inbound'],
     name: string,
   ) => Effect.Effect<Reply<T['rejection']>>
+  /** Creates another entity, as `create` does. */
   readonly create: <T extends Types>(
     program: Receiver<T>,
     id: string,
