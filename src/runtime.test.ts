@@ -1080,6 +1080,28 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // An index that reads past what it looks up is `undefined`, though typed a scalar: the storage would write no JSON,
+  // and the entity would crash at every step (decision 0206).
+  test('an index that is no scalar suspends the entity, and lists it', () =>
+    onBoth(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const named: Readonly<Record<number, number>> = { [keys.length]: 1 }
+      const lookingUp: Program<T> = { ...program, indexes: { wanted: (projection) => named[projection] as number } }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(lookingUp), layer)
+          const sender = { _tag: 'Tester' } as const
+          yield* toy.create(id, { at }, { requestId: 'creation', sender })
+          yield* runtime.settled
+          const want: Inbound = { _tag: 'Want', key: 'a', on: false, nonce: 'w' }
+          expect(yield* toy.send(id, want, { requestId: 'r', sender })).toEqual({ _tag: 'Suspended' })
+          expect((yield* toy.suspended).map(({ cause }) => cause)).toEqual([
+            "InvariantDefect: the index 'wanted' is no scalar: null, a string, a boolean or a number",
+          ])
+        }))
+    })))
+
   // A step that drops a droppable operation interrupts it, and does not wait for its finalizers (decision 0128).
   test('a droppable operation the state drops is interrupted, and the entity does not wait for its finalizer', () =>
     database(Effect.gen(function*() {

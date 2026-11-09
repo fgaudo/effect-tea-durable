@@ -6,7 +6,8 @@ its index converting a time to its milliseconds, are changed by [decision 0139](
 the projection is JSON, and `project` converts. Its `limit` as an option of a query is changed by
 [decision 0141](0141-a-query-and-a-reading-of-the-log-take-a-limit.md): a query takes one. Its read model, which
 answers only with rows, is changed by [decision 0148](0148-a-count-and-a-sum-are-read-in-one-statement.md): a
-count and a sum over the entities that match are read in one statement.
+count and a sum over the entities that match are read in one statement. An index that is no scalar is the program's
+defect, by [decision 0206](../0206-an-index-that-is-no-scalar-is-the-programs-defect.md).
 
 ## Context
 

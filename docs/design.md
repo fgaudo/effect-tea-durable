@@ -664,6 +664,9 @@ entity, written in the step's transaction, holding the encoded projection; `inde
 pure function from the projection to a scalar, which is what a query filters and orders by. So a query answers
 with the values a caller reads of a single entity, and nothing is queried that a caller cannot read
 ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md)). A time is its milliseconds, as a stored time is.
+An index that gives anything but null, a string, a boolean or a finite number is the program's defect, and
+suspends the entity: `(projection) => projection.tags[0]` is typed a string, and gives `undefined` for a projection
+with no tag ([decision 0206](decisions/0206-an-index-that-is-no-scalar-is-the-programs-defect.md)).
 
 `read` gives the same row for one entity, and never calls `project`. It takes no sender, so the boundary alone
 decides who may read a projection

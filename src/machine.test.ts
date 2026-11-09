@@ -1303,6 +1303,14 @@ describe('what a runtime writes', () => {
             projection === 'go' ? Number.POSITIVE_INFINITY as never : projection),
           "the index 'shown' is a number JSON does not hold",
         ],
+        // An index that reads past an array's end is `undefined`, which no store writes as JSON (decision 0206).
+        ...[undefined, {}, [], 1n].map((value) =>
+          [
+            checked((message) => message, () => ({}), undefined, undefined, (projection) =>
+              projection === 'go' ? value as never : projection),
+            "the index 'shown' is no scalar: null, a string, a boolean or a number",
+          ] as const
+        ),
         // An index that is a string holding U+0000, which PostgreSQL holds in no text (decision 0157).
         [
           checked((message) => message, () => ({}), undefined, undefined, (projection) =>

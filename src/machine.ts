@@ -241,8 +241,8 @@ const shown = new WeakMap<object, WeakMap<object, ShownRow>>()
 /**
  * What callers read of `state`, computed once for each program: the step that publishes compares it with the one
  * the step before computed, topic by topic (decisions 0038, 0057, 0138). A projection that does not encode, a topic
- * that selects what JSON does not hold, an index that is a number JSON does not hold, or an index that is a string a
- * database does not hold, is a defect (decisions 0040, 0157).
+ * that selects what JSON does not hold, an index that is no scalar, an index that is a number JSON does not hold, or
+ * an index that is a string a database does not hold, is a defect (decisions 0040, 0157, 0206).
  */
 export const shownOf = <T extends Types>(
   program: Program<T>,
@@ -258,6 +258,11 @@ export const shownOf = <T extends Types>(
   const projection = byProgram(() => program.project(state))
   const indexes = byProgram(() => indexesOf(program, projection))
   for (const [name, value] of Object.entries(indexes)) {
+    // The types say an index is a scalar, and an index that reads past an array's end is `undefined` all the same,
+    // which the storage would write as no JSON (decision 0206).
+    if (value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+      broken(`the index '${name}' is no scalar: null, a string, a boolean or a number`)
+    }
     if (typeof value === 'number' && !Number.isFinite(value)) {
       broken(`the index '${name}' is a number JSON does not hold`)
     }

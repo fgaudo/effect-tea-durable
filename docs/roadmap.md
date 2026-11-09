@@ -18,19 +18,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     this one, in its `navigationLinks` and its README, and this README's Status no longer says the site is missing.
     The step is taken by the commit that publishes it, which accepts decision 0203.
 
-The three steps after the site are bugs, found on 2026-11-09, in the order of what each bug costs a deployment. The
-first crashes an entity where the design suspends it. None has a test yet, and each step says the test
-that fails today.
-
-- **An index that is no scalar is the program's defect.** An index that gives `undefined` crashes its entity on
-  both dialects, at every step that reaches the state. `shownOf` of [`src/machine.ts`](../src/machine.ts) refuses
-  an index that is a number JSON does not hold, or a string a database does not hold, and nothing else.
-  `indexesText` of [`src/storage.ts`](../src/storage.ts) then writes `{"first":undefined}`, which is no JSON, and
-  the write fails. A program needs no cast for it: `(p) => p.tags[0]` is typed `string` where the compiler runs
-  without `noUncheckedIndexedAccess`, and is `undefined` for a projection with no tag. The step makes an index
-  that is not null, a string, a boolean or a finite number a defect of the machine, which suspends the entity.
-  It is a rule of the machine, so it has a note and a test in [`src/machine.test.ts`](../src/machine.test.ts).
-  A test of the runtime sends the message that empties the tags, and is answered `Suspended`.
+The two steps after the site are bugs, found on 2026-11-09, in the order of what each bug costs a deployment. None
+has a test yet, and each step says the test that fails today.
 
 - **A criterion is a scalar a query compares.** A criterion whose value is `NaN` finds no row on SQLite, and
   finds rows on PostgreSQL, where `NaN` is a number greater than every other. So
