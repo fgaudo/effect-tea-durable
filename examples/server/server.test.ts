@@ -111,9 +111,9 @@ type Settings = Readonly<{ filename: string; world: string }>
 /**
  * The process of a runner at `localhost:<port>` in the current scope, once its boundary answers. Closing the scope
  * kills it, and the client returned calls its boundary. The lease expires after three seconds, so that a runner that
- * dies frees its shards within the test.
+ * dies frees its shards within the test, unless `env` sets Cluster's settings otherwise.
  */
-const start = Effect.fn('start')(function*(settings: Settings, port: number) {
+const start = Effect.fn('start')(function*(settings: Settings, port: number, env: Record<string, string> = {}) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const path = yield* Path.Path
   const process = yield* spawner.spawn(ChildProcess.make('bun', [path.join(import.meta.dir, 'main.ts')], {
@@ -123,6 +123,7 @@ const start = Effect.fn('start')(function*(settings: Settings, port: number) {
       HOST: 'localhost',
       PORT: String(port),
       SHARD_LOCK_EXPIRATION: '3 seconds',
+      ...env,
     },
     extendEnv: true,
     stdout: 'ignore',
@@ -248,6 +249,40 @@ test('the orders of a runner killed during their charges are paid once by the ot
     })
   )
 }, 90_000)
+
+// A planned stop interrupts the operations that may run again, as a charge may (decision 0119), and Cluster lets the
+// runner's shards go as the runner unregisters. Under a lease and a health check longer than the test, only that
+// frees the shards. On Windows a child process is ended at once by any signal, so the stop cannot be tested there.
+test.skipIf(process.platform === 'win32')(
+  'the orders of a runner stopped by SIGTERM in their charges are paid once by the other runner, within its lease',
+  async () => {
+    await run((settings, theWorld) =>
+      Effect.gen(function*() {
+        const lease = { SHARD_LOCK_EXPIRATION: '10 minutes', RUNNER_HEALTH_CHECK_INTERVAL: '10 minutes' }
+        const ids = Array.from({ length: 16 }, (_, n) => `o-${n}`)
+        const doomed = yield* Scope.make()
+        const stopped = yield* start(settings, yield* freePort, lease).pipe(Scope.provide(doomed))
+        const survivor = yield* start(settings, yield* freePort, lease)
+        yield* holdingShards(settings, [stopped.address, survivor.address])
+        for (const id of ids) yield* order(survivor.client, id)
+        yield* theWorld.holding(ids.length)
+
+        const askedOfStopped = [...(yield* theWorld.asked)].filter(([, runners]) => runners[0] === stopped.address)
+        expect(askedOfStopped.length).toBeGreaterThan(0)
+        yield* stopped.process.kill({ killSignal: 'SIGTERM' })
+        yield* stopped.process.exitCode
+        yield* Scope.close(doomed, Exit.void)
+        yield* theWorld.release
+
+        for (const id of ids) yield* paid(survivor.client, id)
+        const asked = yield* theWorld.asked
+        for (const [key] of askedOfStopped) expect(asked.get(key)?.at(-1)).toBe(survivor.address)
+        expect((yield* theWorld.charges).size).toBe(ids.length)
+      })
+    )
+  },
+  90_000,
+)
 
 // A charge carries an idempotency key, so its client tries it again. An email carries none and runs at most once,
 // so the failure of its call suspends the order, which is then answered `409` and not `503` (decisions 0178, 0190).
