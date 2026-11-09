@@ -41,6 +41,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0175](archive/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md) | On Cluster, every step checks the newest version and the shard's lease, a door's, the loop's and an activation's | [0176](archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md) |
 | [0176](archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md) | On Cluster, a rename marks the old name, which no runner steps again, and keeps a door under it that delivers to the new program | [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) |
 | [0178](archive/0178-a-server-of-the-orders-on-cluster-is-run-as-a-process.md) | A server of the orders on Cluster is run as a process, on one runner and then on two |  |
+| [0219](0219-on-cluster-a-planned-stop-drains-before-the-runner-lets-its-shards-go.md) | On Cluster, a planned stop drains before the runner lets its shards go |  |
 
 ## The project
 

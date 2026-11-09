@@ -6,6 +6,8 @@ own on a file of SQLite. The boundary takes the request id from the header `Idem
 payment provider does. The tests start the runners as processes and kill them: an order whose runner is killed
 during its charge is paid once, by the runner started again on the same file. With two runners, the one that
 survives finishes the orders of the one killed, and those of one stopped by `SIGTERM`, a test run off Windows.
+Launched with `DRAIN_MILLIS`, a runner stopped by `SIGTERM` first sends the emails under way, each once, and the
+other runner finds them sent, a test run off Windows too.
 
 - [`server.ts`](server.ts): the runner's layer and the boundary's routes.
 - [`main.ts`](main.ts): the process, configured by its environment.

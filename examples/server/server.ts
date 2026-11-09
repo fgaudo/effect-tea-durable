@@ -47,10 +47,11 @@ import { launch, sharding } from '@fgaudo/effect-tea-persistent/cluster'
 import { Mailer, order, Payments, type Sender, Warehouse } from '../order/order.ts'
 
 /**
- * Where the runner's file and the world are. The runner's address, which its boundary listens on too, and the
- * lease's expiration are Cluster's `ShardingConfig`, read from the environment.
+ * Where the runner's file and the world are, and how long a planned stop drains the at-most-once operations, if it
+ * drains them (decision 0119). The runner's address, which its boundary listens on too, and the lease's expiration
+ * are Cluster's `ShardingConfig`, read from the environment.
  */
-export type Settings = Readonly<{ filename: string; world: string }>
+export type Settings = Readonly<{ filename: string; world: string; drain?: Readonly<{ millis: number }> }>
 
 /**
  * The world over HTTP, through a client of the world's address, which tells the world the runner that calls in
@@ -114,7 +115,10 @@ export class Orders extends Context.Service<Orders, Handle<OrderTypes>>()('examp
 const orders = (settings: Settings) =>
   Layer.effect(
     Orders,
-    Effect.flatMap(launch(), (runtime) => runtime.deploy(order)),
+    Effect.flatMap(
+      launch(settings.drain === undefined ? {} : { drain: settings.drain }),
+      (runtime) => runtime.deploy(order),
+    ),
   ).pipe(
     Layer.provide(world(settings.world)),
     Layer.provideMerge(
