@@ -1194,10 +1194,13 @@ describe('the shards of a runner on Cluster', () => {
         })
         yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
         yield* create(runner, 'one')
-        const at = DateTime.toEpochMillis(yield* DateTime.now) + 1_500
+        const at = DateTime.toEpochMillis(yield* DateTime.now) + 3_000
         yield* send(runner, 'one', { _tag: 'Ring', at }, 'm1')
-        // The entity is unloaded long before its timer is due, so that only the waker can wake it.
+        // The entity is unloaded long before its timer is due, so that only the waker can wake it. The check names a
+        // machine too slow for the margin.
         yield* until(Effect.sync(() => unloaded.length), (n) => n > 0)
+        expect(DateTime.toEpochMillis(yield* DateTime.now), 'the entity is unloaded before its timer is due')
+          .toBeLessThan(at)
         expect((yield* stateOf('one'))?.rung).toBe(false)
         expect(yield* until(stateOf('one'), (state) => state?.rung === true)).toMatchObject({ ring: null, rung: true })
         expect(DateTime.toEpochMillis(yield* DateTime.now)).toBeGreaterThanOrEqual(at)
@@ -1232,13 +1235,17 @@ describe('the shards of a runner on Cluster', () => {
         })
         yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
         yield* create(runner, 'one')
-        const at = DateTime.toEpochMillis(yield* DateTime.now) + 1_500
+        const at = DateTime.toEpochMillis(yield* DateTime.now) + 3_000
         yield* send(runner, 'one', { _tag: 'Ring', at }, 'm1')
-        // The entity is unloaded before its timer is due, so that only the waker's activation can step it.
+        // The entity is unloaded, and the newer version recorded, before its timer is due, so that only the waker's
+        // activation can step it, and under the newer version. The check names a machine too slow for the margin,
+        // which would otherwise fail on `rung` or on a restart, as a run once did.
         yield* until(Effect.sync(() => unloaded.length), (n) => n > 0)
         yield* recordVersions('localhost:9', [{ name: 'Bell', version: 2 }])
         newer = true
-        yield* Effect.sleep('3000 millis')
+        const recorded = DateTime.toEpochMillis(yield* DateTime.now)
+        expect(recorded, 'the newer version is recorded before the timer is due').toBeLessThan(at)
+        yield* Effect.sleep(Duration.millis(at + 1_500 - recorded))
         expect(runner.count()).toBe(shardsPerGroup)
         expect((yield* stateOf('one'))?.rung).toBe(false)
         expect(restarts).toEqual([])
