@@ -5,10 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-None: the next step is the first of Later, unless the maintainer picks another.
-
-## Later
-
 - **Modules and test files a reviewer reads whole.** `src/storage.ts` holds 2 669 lines, and `src/runtime.test.ts`
   6 495, with `src/machine.test.ts`, `src/storage.test.ts` and `src/program.ts` each past 1 800. A change of one rule
   is reviewed in a file that holds every other. The step divides `storage.ts` by what it stores, as the runtime is
@@ -18,17 +14,16 @@ None: the next step is the first of Later, unless the maintainer picks another.
   [`AGENTS.md`](../AGENTS.md) in the same commit. A test that moves to another file keeps its name, so that its
   pinned seeds still name it.
 
-  The step also decides whether `src/` is divided into folders, and which, so that the links of a moved file are
-  moved once. Every module of `src/` lies in one folder today, about twenty modules beside their tests. The runtime
-  is seven of them, `runtime.ts`, `process.ts`, `loop.ts`, `callers.ts`, `doors.ts`, `waker.ts` and `readings.ts`,
-  which import each other and are entered from outside by `runtime.ts` alone. A folder `src/runtime/` would show
-  that boundary in the tree, where today only `AGENTS.md` states it, and the modules divided out of `storage.ts`
-  would form a group `src/storage/` of the same kind. A move costs every link and citation of the files it moves, in
-  the notes, the comments and `CONTRIBUTING.md`. The step weighs whether a test of the form of `src/` can check that
-  a module of a group is imported from outside only through the group's entry. A folder changes the rule of
-  `AGENTS.md` on the area a commit's subject names, and the step says what the area of a module in a folder is.
-  The parts go in order: the folders are decided first, then `storage.ts` is divided and every file moves once,
-  then the tests of the runtime are divided.
+  The parts are three, in order. The first decided the folders, in
+  [decision 0241](decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md): the
+  runtime's modules other than `runtime.ts` move into `src/runtime/`, the modules divided out of `storage.ts` lie in
+  `src/storage/`, and the two entries stay where they are. The second, next, moves the runtime's modules, divides
+  `storage.ts` as the note says, adds the test of the boundary of a group, and makes the checks of the form read
+  every folder of `src/`. It begins in [`src/storage.ts`](../src/storage.ts). The third divides
+  `src/runtime.test.ts`, and makes `bun run test:explore` and `bun run test:postgres` run the files the tests move
+  to.
+
+## Later
 
 - **A faster run of the checks.** `bun test` takes about four minutes on the maintainer's machine, running one seed
   in twenty of the explored tests, and the CI runs the suite in one job. The step divides the files of the tests
