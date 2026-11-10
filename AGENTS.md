@@ -93,7 +93,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   and the review is a section of [`docs/decisions/reviews.md`](docs/decisions/reviews.md): its date and the notes
   read, then one bullet per kind of finding.
   [`scripts/mutate.ts`](scripts/mutate.ts) takes out, one at a time, the rules a review writes as mutations, and runs
-  the tests and the compiler against each. A review runs it with `SCHEDULES=all`, so that every seed runs. A rule no
+  the tests and the compiler against each. It runs in two passes: first the schedules `bun test` runs, then every
+  seed, under `SCHEDULES=all`, for each mutation the first pass leaves alive. A kill of the first pass is a test of
+  `bun test` that fails, so it holds under every seed. So a test reads `SCHEDULES` only for how many cases it runs. A
+  kill of the second pass is a rule that only `bun run test:release` holds. A rule no
   mutation takes out is not checked by it: a review writes one for each rule its notes decide that the code keeps,
   and keeps them outside the repository. A survivor is a rule no test holds, or a mutation that changes nothing,
   which only reading tells apart; an `uncertain` one failed only under load, and is read as a survivor.
