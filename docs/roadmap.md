@@ -24,7 +24,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   `src/runtime/`, and makes `bun run test:explore` and `bun run test:postgres` run the files the tests move to. It
   begins in [`src/runtime.test.ts`](../src/runtime.test.ts), with the helpers its tests share, and in
   [`scripts/explore.ts`](../scripts/explore.ts), which names that file alone. `bun run test:release` passed on
-  `main` before the step and after the second part, and passes again once the third part is done.
+  `main` before the step and after the second part, and passes again once the third part is done. Two things bind
+  the third part. The test of the boundary of a group, in [`src/form.test.ts`](../src/form.test.ts), lets only
+  `src/runtime.ts` and the files of `src/runtime/` import a file of `src/runtime/`, so `src/runtime.test.ts` cannot
+  import helpers put in that folder. And a file of `src/` that is not a `.test.ts` is read by the checks of the form
+  as a module, so a module of helpers is held to their rules of forks and counts. The part also changes what names
+  `src/runtime.test.ts` as the place of the runtime's tests: the rule of [`AGENTS.md`](../AGENTS.md) on a change to
+  the runtime, and the paragraph of [`CONTRIBUTING.md`](../CONTRIBUTING.md) on the modules of `src/`.
 
 ## Later
 
