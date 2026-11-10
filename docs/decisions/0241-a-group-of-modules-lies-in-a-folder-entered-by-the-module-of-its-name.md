@@ -32,18 +32,22 @@ modules of the runtime are mentioned 27 times in all.
   `../runtime.ts` only for the types the entry declares, as `process.ts` does today.
 - **The modules of `src/storage/` are divided by what they store.** Each module holds the statements of its tables,
   and the part of `Storage<T>` that reads and writes them:
-  - `tables.ts`: the dialect, the transaction, the hold of a database, the partitions, and the migrations that make
-    every table.
-  - `codecs.ts`: the codecs of the rows, and what the storage of one program holds once its schemas are read, which
-    the other modules share, as `src/runtime/process.ts` is shared by the runtime's.
+  - `tables.ts`: the dialect, the transaction, the hold of a database, the partitions, the migrations that make
+    every table, and the rename of a program, which moves its rows in every table.
+  - `rows.ts`: the schemas of the rows as the runtime writes them, and the codecs of the JSON they hold. It imports
+    no other module of the storage, so that `tables.ts` reads a row through it and no import goes round in a cycle.
+  - `held.ts`: what the storage of one program holds once its schemas are read, which the other modules share, as
+    `src/runtime/process.ts` is shared by the runtime's: the program, its client, its codecs, the readings of an
+    older version, the upsert and the snapshot.
   - `entities.ts`: the entities, their keys, the mailbox and the replies. A step's `write` lies here, since a step
-    writes an entity's row first.
+    writes an entity's row first. It writes the row of the read model through `projections.ts` and deletes
+    Cluster's rows through `cluster.ts`.
   - `projections.ts`: the read model and its queries, counts, sums and the reindex.
   - `log.ts`: the publications, the log, the heads, the consumers and their cursors.
   - `cluster.ts`: the tables of Cluster, the versions, the runners' versions, the waiters and the request ids kept.
-  `src/storage.ts` keeps the interface `Storage<T>`, makes it of the parts, and re-exports what the modules outside
-  import. A part whose division the code shows to be wrong is moved by the part of the step that divides it, and this
-  note says where.
+  Each of the last four gives a part of `Storage<T>`, a function of a `Held<T>`. `src/storage.ts` keeps the
+  interface `Storage<T>`, makes it of the four parts, and re-exports what the modules outside import. The code of
+  each function moved as it was, with the names it reads taken from the `Held<T>` it is given.
 - **A test of a module of a group lies beside it, in the group's folder.** A test of the entry, or of the group as a
   whole, stays beside the entry: `src/storage.test.ts` and `src/runtime.test.ts`. How the tests of the runtime divide
   among the modules is the step's last part, and this note says it once that part is done.

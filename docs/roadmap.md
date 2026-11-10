@@ -17,11 +17,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   The parts are three, in order. The first decided the folders, in
   [decision 0241](decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md): the
   runtime's modules other than `runtime.ts` move into `src/runtime/`, the modules divided out of `storage.ts` lie in
-  `src/storage/`, and the two entries stay where they are. The second, next, moves the runtime's modules, divides
-  `storage.ts` as the note says, adds the test of the boundary of a group, and makes the checks of the form read
-  every folder of `src/`. It begins in [`src/storage.ts`](../src/storage.ts). The third divides
-  `src/runtime.test.ts`, and makes `bun run test:explore` and `bun run test:postgres` run the files the tests move
-  to.
+  `src/storage/`, and the two entries stay where they are. The second moved the runtime's modules, divided
+  `storage.ts` into seven modules of `src/storage/`, added the test of the boundary of a group, and made the checks
+  of the form read every folder of `src/`. The note says where each part of the storage lies. The third, next,
+  divides `src/runtime.test.ts` by the module each test tests, into test files beside the modules of
+  `src/runtime/`, and makes `bun run test:explore` and `bun run test:postgres` run the files the tests move to. It
+  begins in [`src/runtime.test.ts`](../src/runtime.test.ts), with the helpers its tests share, and in
+  [`scripts/explore.ts`](../scripts/explore.ts), which names that file alone. `bun run test:release` passed on
+  `main` before the step, and passes again once the third part is done.
 
 ## Later
 
