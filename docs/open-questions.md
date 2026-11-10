@@ -140,18 +140,6 @@ with a requirement that no example has yet.
 
 ## The code
 
-- **Folders in `src/`.** Every module of `src/` lies in one folder, about twenty modules beside their tests. The
-  runtime is seven of them, `runtime.ts`, `process.ts`, `loop.ts`, `callers.ts`, `doors.ts`, `waker.ts` and
-  `readings.ts`, which import each other and are entered from outside by `runtime.ts` alone. A folder
-  `src/runtime/` would show that boundary in the tree, where today only `AGENTS.md` states it. A move costs every
-  link and citation of those files, in the notes, the comments and `CONTRIBUTING.md`, and a rule for the area a
-  commit's subject names. Whether `src/` is divided into folders, and which, is not decided. It waits for the
-  decision on the largest modules, so that the links are moved once. It would be decided by:
-  - whether `storage.ts` and `program.ts`, the two largest modules, are divided by concept, which would give
-    `storage` a group of its own;
-  - whether a test of the form of `src/` can check that a module of the group is imported from outside only through
-    its entry;
-  - what the area of a commit's subject becomes for a module in a folder.
 - **A run of the mutations in two passes.** A review runs `scripts/mutate.ts` with `SCHEDULES=all`, and the suite
   then runs some sixteen minutes, for the code unchanged and for each mutation that survives. Most mutations are
   killed in seconds by a test that runs one schedule. The review of 0194 to 0224 ran the mutations on the seeds

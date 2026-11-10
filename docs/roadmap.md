@@ -18,6 +18,18 @@ None: the next step is the first of Later, unless the maintainer picks another.
   [`AGENTS.md`](../AGENTS.md) in the same commit. A test that moves to another file keeps its name, so that its
   pinned seeds still name it.
 
+  The step also decides whether `src/` is divided into folders, and which, so that the links of a moved file are
+  moved once. Every module of `src/` lies in one folder today, about twenty modules beside their tests. The runtime
+  is seven of them, `runtime.ts`, `process.ts`, `loop.ts`, `callers.ts`, `doors.ts`, `waker.ts` and `readings.ts`,
+  which import each other and are entered from outside by `runtime.ts` alone. A folder `src/runtime/` would show
+  that boundary in the tree, where today only `AGENTS.md` states it, and the modules divided out of `storage.ts`
+  would form a group `src/storage/` of the same kind. A move costs every link and citation of the files it moves, in
+  the notes, the comments and `CONTRIBUTING.md`. The step weighs whether a test of the form of `src/` can check that
+  a module of a group is imported from outside only through the group's entry. A folder changes the rule of
+  `AGENTS.md` on the area a commit's subject names, and the step says what the area of a module in a folder is.
+  The parts go in order: the folders are decided first, then `storage.ts` is divided and every file moves once,
+  then the tests of the runtime are divided.
+
 - **A faster run of the checks.** `bun test` takes about four minutes on the maintainer's machine, running one seed
   in twenty of the explored tests, and the CI runs the suite in one job. The step divides the files of the tests
   among jobs that run at once, and keeps `bun test` on one machine as it is. It also weighs what dominates the time,
