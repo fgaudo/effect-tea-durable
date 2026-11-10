@@ -3,9 +3,9 @@
  * question on a runtime that loses its session. A runtime holds the database with a session advisory lock, on a
  * connection it reserves for its scope (decision 0157). The server ends that session here by `pg_terminate_backend`,
  * as `idle_session_timeout`, a restart or a broken connection would, while the runtime still runs. The spike looks at
- * whether the first runtime is told, whether it still answers, and whether a second runtime then launches on the
- * same database, so that two would load the same entity (decision 0080). It runs on the server `POSTGRES_URL` names,
- * as the CI's job on PostgreSQL gives one, and is skipped without it.
+ * whether the first runtime is told, whether it still answers, whether a second runtime then launches on the same
+ * database, so that two load the same entity (decision 0080), and what the two leave of it. It runs on the server
+ * `POSTGRES_URL` names, as the CI's job on PostgreSQL gives one, and is skipped without it.
  */
 import { expect, test } from 'bun:test'
 import * as Context from 'effect/Context'
@@ -102,4 +102,6 @@ test.skipIf(server === undefined)(name, () =>
     expect(sentBySecond).toEqual(Exit.succeed({ _tag: 'Accepted' }))
     expect(sentAgainByFirst).toEqual(Exit.succeed({ _tag: 'Accepted' }))
     expect(after.length).toBe(1)
+    // The first runtime stepped from the state it held in memory, and wrote over the second's step.
+    expect(stored).toEqual({ count: 2 })
   })).pipe(Effect.orDie)), 60_000)
