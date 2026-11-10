@@ -70,6 +70,8 @@ its schemas. [`src/machine.ts`](src/machine.ts) is the runtime's semantics as a 
 runs and property tests check. The runtime interprets the machine over Effect's `SqlClient`, in
 [`src/runtime.ts`](src/runtime.ts) and the modules it is divided into, in [`src/runtime/`](src/runtime), and stores in
 [`src/storage.ts`](src/storage.ts). It unloads an entity that has nothing to do, and wakes it from its stored timers.
+[`src/check.ts`](src/check.ts) steps the activation of every stored entity with the machine, before a deploy,
+and writes nothing.
 [`src/runtime/loop.test.ts`](src/runtime/loop.test.ts) tests it by dying at each point of the design's crash table,
 and comparing where it ends with the machine. The tests of a module of `src/runtime/` lie beside it, and
 [`src/runtime.test.ts`](src/runtime.test.ts) tests `src/runtime.ts` and what several modules keep together. What
@@ -92,6 +94,7 @@ flowchart TB
     readings["runtime/readings.ts: the readings of the log that wait for a commit"]
     process["runtime/process.ts: what the runtime of one process holds,<br/>which its modules share"]
   end
+  check["check.ts: the check of a program against the stored entities,<br/>before its deploy, stepped by the machine, which writes nothing"]
   cluster["cluster.ts: on Effect Cluster, the Sharding of a runner,<br/>built once its versions are recorded, its RunnerHealth,<br/>the door of each program, which steps at the newest version,<br/>the client every request is sent through,<br/>and launch, the runtime of a runner"]
   subgraph storage["the storage"]
     store["storage.ts: the storage of one program, made of its parts"]
@@ -110,6 +113,9 @@ flowchart TB
   machine --> rehearse
   program --> testing
   machine --> runtime
+  machine --> check
+  check --> runtime
+  check --> storage
   program --> cluster
   runtime --> storage
   cluster --> runtime
@@ -119,6 +125,7 @@ flowchart TB
   testing --> entries
   cluster --> entries
   runtime --> entries
+  check --> entries
 ```
 
 ## The examples

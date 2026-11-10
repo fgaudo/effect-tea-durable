@@ -128,16 +128,43 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // `Migrator` looks for its table in every schema of the `search_path`, and would take the history of a schema
   // further on it for this one's. Named in the schema the tables are made in, it finds only this one's
   // (decision 0217). Without a schema to make them in, the creation fails as it would unnamed.
-  const schema = dialect === 'pg'
-    ? (yield* sql<{ schema: string | null }>`SELECT current_schema() AS schema`)[0]?.schema ?? null
-    : null
+  const schema = dialect === 'pg' ? yield* schemaOf(sql) : null
   const migrated = Migrator.make({})({
-    loader: Migrator.fromRecord({ '0001_tables': tables }),
-    table: schema === null ? 'effecttea_migrations' : `${schema}.effecttea_migrations`,
+    loader: Migrator.fromRecord(migrations),
+    table: migrationsTable(schema),
   })
   yield* dialect === 'sqlite'
     ? Effect.provideService(migrated, SqlClient.BeginTransaction, 'BEGIN IMMEDIATE')
     : migrated
+}).pipe(Effect.orDie)
+
+/** The schema the tables are made in on PostgreSQL, the first of the `search_path`, or null for none (decision 0215). */
+const schemaOf = (sql: SqlClient.SqlClient) =>
+  Effect.map(sql<{ schema: string | null }>`SELECT current_schema() AS schema`, (found) => found[0]?.schema ?? null)
+
+/** `effecttea_migrations`, named in the schema the tables are made in, where there is one (decision 0217). */
+const migrationsTable = (schema: string | null) =>
+  schema === null ? 'effecttea_migrations' : `${schema}.effecttea_migrations`
+
+/**
+ * Dies unless the tables were made by the migrations `createTables` runs, every one and no other: `check` reads the
+ * tables a launch of this release would read, and makes none (decision 0247).
+ */
+export const tablesMade: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.gen(function*() {
+  const sql = yield* SqlClient.SqlClient
+  const schema = dialectOf(sql) === 'pg' ? yield* schemaOf(sql) : null
+  const recorded = yield* Effect.flatMap(
+    sql`SELECT migration_id, name FROM ${sql(migrationsTable(schema))} ORDER BY migration_id`,
+    Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ migration_id: Count, name: Schema.String }))),
+  )
+  const held = recorded.map(({ migration_id, name }) => `${String(migration_id).padStart(4, '0')}_${name}`)
+  const made = Object.keys(migrations)
+  if (held.join(',') !== made.join(',')) {
+    const reason = `the tables are made by the migrations [${held.join(', ')}], and this release reads those of [${
+      made.join(', ')
+    }]`
+    return yield* Effect.die(new InvariantDefect({ reason }))
+  }
 }).pipe(Effect.orDie)
 
 // The schema of the first release. A later change of a table is a migration of its own, after this one.
@@ -423,6 +450,9 @@ const tables = Effect.gen(function*() {
   // `expire` reads a program's ids past their time, of every entity (decision 0245).
   yield* sql`CREATE INDEX effecttea_given_requests_expire ON effecttea_given_requests (name, until)`
 })
+
+/** The migrations that make the tables, each by the name `Migrator` records it under. */
+const migrations = { '0001_tables': tables }
 
 /**
  * Stores the number of partitions of the log at the first launch, and checks it at every other: a launch given

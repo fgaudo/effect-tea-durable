@@ -9,7 +9,7 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import type * as Scope from 'effect/Scope'
 import { SqlClient } from 'effect/sql'
-import { type Handle, launch, type TypesOf } from '@fgaudo/effect-tea-persistent'
+import { check, type Handle, launch, type TypesOf } from '@fgaudo/effect-tea-persistent'
 import { bike } from './bike.ts'
 import { createCustomers, rent, rideOf } from './boundary.ts'
 import { Mailer, ride } from './ride.ts'
@@ -152,6 +152,12 @@ test('a ride the first version suspends is inspected, and resumed by the fix', (
       expect(inspected?.state).toMatchObject({ _tag: 'Riding', email: 'Sending' })
       expect(inspected?.mailbox).toMatchObject([{ _tag: 'Inbound', message: end }])
       expect(inspected?.work.map(({ key }) => key.name)).toEqual(['cancellation', 'email'])
+      // The fix is checked against the stored rides before its deploy, while this process still holds the database.
+      // A resume by the fix gets past the ride's activation, and the end it died on is handled after the check.
+      expect(yield* check(ride, { limit: 10 })).toEqual({
+        active: { checked: 0, failing: 0, failed: [] },
+        suspended: { checked: 1, failing: 0, failed: [] },
+      })
     }))
 
     // The fix is a deploy, by a new process on the same database: the ride stays suspended through it.

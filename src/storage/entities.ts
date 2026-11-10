@@ -12,7 +12,7 @@ import type { Storage } from '../storage.ts'
 import { forgetSent, forgetUnder } from './cluster.ts'
 import type { Held } from './held.ts'
 import { rowOf } from './projections.ts'
-import { batch, callerOf, Count, keyOfRow, keyRow, Rows } from './rows.ts'
+import { batch, callerOf, Count, type Guard, keyOfRow, keyRow, Rows, unguarded } from './rows.ts'
 import { partitionOf, transaction } from './tables.ts'
 
 /**
@@ -32,6 +32,19 @@ export type Suspension = Readonly<{
 
 /** What is stored of one entity, as an operator sees it: the suspension as `suspended` lists it (decision 0185). */
 export type Inspection<T extends Types> = Readonly<{ stored: Machine.Stored<T>; suspension: Suspension | null }>
+
+/**
+ * One entity as `check` reads it: what is stored, or the cause of what the program read of a row and died on, a
+ * migration or a schema (decision 0247).
+ */
+export type Examined<T extends Types> =
+  | Readonly<{ _tag: 'Read'; stored: Machine.Stored<T> }>
+  | Readonly<{ _tag: 'Unread'; cause: string }>
+
+/** What the program read of a row and died on, thrown out of the reading for `examine` to catch. */
+class Unread {
+  constructor(readonly reason: string) {}
+}
 
 /** The entities an unloaded timer is due for, and the next time one is (decision 0029). */
 export type Due = Readonly<{
@@ -56,14 +69,19 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
   | 'expire'
   | 'suspended'
   | 'inspect'
+  | 'examine'
+  | 'entities'
 > => {
   const { program, sql, partitions, onCluster, name, version, upsert, rows, up, upRequest, upReason, readWork, snapshot } =
     held
   const { state, inbound, internal, flags, request, reason, suspended } = held.codecs
   const row = rowOf(held)
 
-  /** The entity's rows, read through the migrations, and its cause and the time it suspended, if it is. */
-  const entity = (id: string) =>
+  /**
+   * The entity's rows, read through the migrations, and its cause and the time it suspended, if it is. What the
+   * program reads of a row runs inside `guard`.
+   */
+  const entity = (id: string, guard: Guard = unguarded) =>
     Effect.gen(function*() {
       const entities = yield* rows('effecttea_entities', Rows.entity)(
         sql`SELECT keyed_as, state, version, creation, incarnations, suspended_on, suspended_cause, suspended_at
@@ -85,7 +103,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
         keys[Machine.keyText(key)] = {
           key,
           incarnation: row.incarnation,
-          work: readWork(row.work, row.version),
+          work: readWork(row.work, row.version, guard),
           ...(row.delivery === null ? {} : { delivery: row.delivery }),
         }
       }
@@ -93,26 +111,26 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
         envelope.tag === 'Inbound'
           ? {
             _tag: 'Inbound',
-            request: request.read(envelope.request, upRequest(envelope.version)),
-            message: inbound.read(envelope.message, up('inbound', envelope.version)),
+            request: request.read(envelope.request, upRequest(envelope.version), guard),
+            message: inbound.read(envelope.message, up('inbound', envelope.version), guard),
             ...(envelope.keep === null ? {} : { keep: envelope.keep }),
           }
           : {
             _tag: 'Internal',
             key: keyOfRow(envelope.key, envelope.parameter),
             incarnation: envelope.incarnation,
-            message: internal.read(envelope.message, up('internal', envelope.version)),
+            message: internal.read(envelope.message, up('internal', envelope.version), guard),
           }
       )
       const stored = {
         name,
         ...(row.keyed_as === null ? {} : { keyedAs: row.keyed_as }),
         id,
-        state: state.read(row.state, up('state', row.version)),
+        state: state.read(row.state, up('state', row.version), guard),
         keys,
         incarnations: row.incarnations,
         mailbox,
-        creation: request.read(row.creation, upRequest(row.version)),
+        creation: request.read(row.creation, upRequest(row.version), guard),
         // The cause is what was rendered when the entity suspended: an operator reads it, nothing acts on it.
         suspension: row.suspended_on === null
           ? null
@@ -138,6 +156,32 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
           (suspension) => ({ stored, suspension }),
         )
       }),
+      Effect.orDie,
+    )
+
+  // What the program reads of a row and dies on is told apart from what the runtime throws, a row that is no JSON
+  // included, which still fails the call (decisions 0122, 0247).
+  const examine = (id: string): Effect.Effect<Examined<T> | null> =>
+    snapshot(entity(id, (read) => {
+      try {
+        return read()
+      } catch (thrown) {
+        throw new Unread(Machine.render(thrown))
+      }
+    })).pipe(
+      Effect.map((found): Examined<T> | null => found === null ? null : { _tag: 'Read', stored: found.stored }),
+      Effect.catchDefect((defect) =>
+        defect instanceof Unread ? Effect.succeed({ _tag: 'Unread', cause: defect.reason } as const) : Effect.die(defect)
+      ),
+      Effect.orDie,
+    )
+
+  const entities = (after: string) =>
+    rows('effecttea_entities', Rows.listed)(sql`
+      SELECT id, CASE WHEN suspended_on IS NULL THEN 0 ELSE 1 END AS suspended FROM effecttea_entities
+      WHERE name = ${name} AND id > ${after} ORDER BY id LIMIT ${batch}
+    `).pipe(
+      Effect.map((page) => page.map(({ id, suspended }) => ({ id, suspended: suspended > 0 }))),
       Effect.orDie,
     )
 
@@ -563,5 +607,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
     expire,
     suspended: suspensions,
     inspect,
+    examine,
+    entities,
   }
 }

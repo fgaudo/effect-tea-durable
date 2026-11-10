@@ -18,7 +18,7 @@ import type { SqlClient } from 'effect/sql'
 import type * as Machine from './machine.ts'
 import type { Key, Program, Request, Topic, Types } from './program.ts'
 import { onClusterOf } from './storage/cluster.ts'
-import { type Due, entitiesOf, type Inspection, type Suspension } from './storage/entities.ts'
+import { type Due, entitiesOf, type Examined, type Inspection, type Suspension } from './storage/entities.ts'
 import { heldOf } from './storage/held.ts'
 import { type Consumer, type Cursor, logOf, type Published } from './storage/log.ts'
 import {
@@ -41,7 +41,7 @@ export {
   standingOf,
   type Versioned,
 } from './storage/cluster.ts'
-export { type Due, type Inspection, type Suspension } from './storage/entities.ts'
+export { type Due, type Examined, type Inspection, type Suspension } from './storage/entities.ts'
 export { type Consumer, type Cursor, type Published } from './storage/log.ts'
 export { batch } from './storage/rows.ts'
 export {
@@ -65,6 +65,7 @@ export {
   partitioned,
   partitionOf,
   renamed,
+  tablesMade,
   transaction,
 } from './storage/tables.ts'
 
@@ -210,6 +211,17 @@ export interface Storage<T extends Types> {
    */
   readonly inspect: (id: string) => Effect.Effect<Inspection<T> | null>
   /**
+   * For `check`: what is stored for the entity `id`, read as `inspect` reads it, from one snapshot, or the cause of
+   * what the program read of a row and died on, or null when there is none. What the runtime throws, a row that is
+   * no JSON included, fails the call (decision 0247).
+   */
+  readonly examine: (id: string) => Effect.Effect<Examined<T> | null>
+  /**
+   * For `check`: a page of the program's entities past the id `after`, by id, each with whether it is suspended
+   * (decision 0247).
+   */
+  readonly entities: (after: string) => Effect.Effect<ReadonlyArray<Readonly<{ id: string; suspended: boolean }>>>
+  /**
    * On Cluster: records that an operation of the entity `sender` was answered `Suspended` by the entity `id`, once
    * for each sender however often it is answered so (decision 0167).
    */
@@ -243,14 +255,17 @@ export interface Storage<T extends Types> {
 /**
  * The storage of one program's entities, on one client, with its schemas read once. `partitions` is the number of
  * partitions of the log, which `partitioned` checks against the database. `onCluster` says whether Cluster's tables
- * are beside the runtime's, whose rows a step deletes with the work that sent them (decision 0169).
+ * are beside the runtime's, whose rows a step deletes with the work that sent them (decision 0169). `stored` is the
+ * name the rows are stored under: the program's, but for `check` of a program a launch is to rename them to
+ * (decision 0247).
  */
 export const storage = <T extends Types>(
   program: Program<T>,
   sql: SqlClient.SqlClient,
   partitions: number = defaultPartitions,
   onCluster: boolean = false,
+  stored: string = program.name,
 ): Storage<T> => {
-  const held = heldOf(program, sql, partitions, onCluster)
+  const held = heldOf(program, sql, partitions, onCluster, stored)
   return { ...entitiesOf(held), ...projectionsOf(held), ...logOf(held), ...onClusterOf(held) }
 }

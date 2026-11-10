@@ -7,6 +7,7 @@
  * @module @fgaudo/effect-tea-persistent
  */
 export * from './index.program.ts'
+export { check, type Checked, type CheckedEntities, type CheckFailure } from './check.ts'
 export {
   type Answer,
   type ConsumerOf,

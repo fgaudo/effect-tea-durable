@@ -275,7 +275,7 @@ const sweepOf = <T extends Types>(deployed: Deployment<T>, sweep: Readonly<{ mil
  * names renamed to one are not refused here: the storage refuses a move onto a name that holds an entity already
  * (decision 0176).
  */
-const renamesOf = (renames: Readonly<Record<string, string>>): ReadonlyArray<readonly [string, string]> => {
+export const renamesOf = (renames: Readonly<Record<string, string>>): ReadonlyArray<readonly [string, string]> => {
   const pairs = Object.entries(renames)
   for (const [from, to] of pairs) {
     const reason = typeof to !== 'string' || from === '' || to === ''

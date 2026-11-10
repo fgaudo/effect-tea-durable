@@ -8,6 +8,12 @@ import * as SchemaTransformation from 'effect/SchemaTransformation'
 import type * as Machine from '../machine.ts'
 import { type Json, type Key, KeyCodec, type Program, type Types } from '../program.ts'
 
+/** Runs what the program reads of a row: as it is, or, for `check`, telling what it dies on apart (decision 0247). */
+export type Guard = <A>(read: () => A) => A
+
+/** What the program reads of a row, run as it is: what it throws is thrown. */
+export const unguarded: Guard = (read) => read()
+
 /**
  * A value read from JSON text through its schema: what the machine wrote, encoded by the same schema
  * (decisions 0030, 0040, 0057).
@@ -15,9 +21,15 @@ import { type Json, type Key, KeyCodec, type Program, type Types } from '../prog
 export const json = <A>(codec: Schema.Codec<A, Json>) => {
   const decode = Schema.decodeSync(codec)
   return {
-    /** `up` is how the version that wrote the text is read at the program's, and is identity for its own. */
-    read: (text: string, up: (json: Json) => Json = (json) => json): A =>
-      decode(up(JSON.parse(text) as Json) as never),
+    /**
+     * `up` is how the version that wrote the text is read at the program's, and is identity for its own. The text
+     * is parsed outside `guard`, since a text that is no JSON is no row the runtime writes; the migrations and the
+     * schema are the program's, and run inside it (decision 0247).
+     */
+    read: (text: string, up: (json: Json) => Json = (json) => json, guard: Guard = unguarded): A => {
+      const parsed = JSON.parse(text) as Json
+      return guard(() => decode(up(parsed) as never))
+    },
     /** JSON already parsed, at the program's version. */
     decode: (json: Json): A => decode(json as never),
   }
@@ -211,6 +223,8 @@ export const Rows = {
     }),
   ])),
   id: decoder(Schema.Struct({ id: Schema.String })),
+  /** An entity's id, and 1 where it is suspended: PostgreSQL gives a boolean where SQLite gives an integer. */
+  listed: decoder(Schema.Struct({ id: Schema.String, suspended: Count })),
   /** A timer's time, in milliseconds: one before 1970 is a time too. */
   due: decoder(Schema.Struct({ id: Schema.String, at: Integer })),
   seq: decoder(Schema.Struct({ seq: Count })),

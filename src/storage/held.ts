@@ -19,7 +19,7 @@ import {
   type Types,
   versionOf,
 } from '../program.ts'
-import { json, reasonOf, Suspended, workOf } from './rows.ts'
+import { type Guard, json, reasonOf, Suspended, unguarded, workOf } from './rows.ts'
 import { dialectOf } from './tables.ts'
 
 /** What the storage of one program holds, as `heldOf` makes it. */
@@ -28,12 +28,14 @@ export type Held<T extends Types> = ReturnType<typeof heldOf<T>>
 /**
  * What the storage of `program` holds on the client `sql`, with its schemas read once. `partitions` is the number of
  * partitions of the log, and `onCluster` says whether Cluster's tables are beside the runtime's (decision 0169).
+ * `stored` is the name the rows are stored under (decision 0247).
  */
 export const heldOf = <T extends Types>(
   program: Program<T>,
   sql: SqlClient.SqlClient,
   partitions: number,
   onCluster: boolean,
+  stored: string = program.name,
 ) => {
   const state = json(program.schemas.state)
   const inbound = json(program.schemas.inbound)
@@ -50,7 +52,7 @@ export const heldOf = <T extends Types>(
    * (decisions 0138, 0140).
    */
   const topics = new Map(topicsOf(program).map(({ topic, select }) => [topic, select]))
-  const { name } = program
+  const name = stored
   const version = versionOf(program)
   const dialect = dialectOf(sql)
 
@@ -85,7 +87,16 @@ export const heldOf = <T extends Types>(
     const at = `${of}@${from}`
     const held = readings.get(at)
     if (held !== undefined) return held
-    const reading = migrationOf(program, of, from)
+    // A version no migration reads throws where its reading runs, and not where it is composed, so that the
+    // throw falls inside what `check` tells apart as the program's (decision 0247).
+    let reading: (json: Json) => Json
+    try {
+      reading = migrationOf(program, of, from)
+    } catch (thrown) {
+      reading = () => {
+        throw thrown
+      }
+    }
     readings.set(at, reading)
     return reading
   }
@@ -120,8 +131,8 @@ export const heldOf = <T extends Types>(
   /** The reason a reply carries, null for a bare `reject`, which no migration reads. */
   const upReason = (from: number) => (held: Json): Json => held === null ? held : up('rejection', from)(held)
 
-  const readWork = (text: string, from: number): Piece<T['operation'], T['internal']> => {
-    const held = work.read(text, upWork(from))
+  const readWork = (text: string, from: number, guard: Guard = unguarded): Piece<T['operation'], T['internal']> => {
+    const held = work.read(text, upWork(from), guard)
     return held._tag === 'Timer' ? timer(held.at, held.message) : held.operation
   }
 

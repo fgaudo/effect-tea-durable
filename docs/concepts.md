@@ -69,7 +69,7 @@ people:
   ([Reading](design.md#reading)).
 - **A consumer of the outbox**: `fetch`, `ack`, `consume`, `published`, `consumers`, `prune` and `forget`
   ([Publishing what happened](design.md#publishing-what-happened)).
-- **An operator**: `suspended`, `inspect`, `resume`, `discard`, `reindex` and `expire`
+- **An operator**: `check`, `suspended`, `inspect`, `resume`, `discard`, `reindex` and `expire`
   ([the operator's calls](guide/operator.md)).
 
 A test calls none of them. It calls `rehearse`, which runs the program without a database or a clock

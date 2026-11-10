@@ -9,6 +9,9 @@ Cluster's says so.
   caller, and writes the sender. The runtime trusts the sender the boundary gives, and `read` takes none.
 - **Capacity.** How many entities a process keeps loaded, an option of the runtime, 10 000 by default. Over it, the
   least recently used of the idle ones is unloaded; a busy entity, or one whose timer is due, never is.
+- **Check.** `check(program, { limit })` reads every stored entity of a program, before its deploy, as an
+  activation of the new program would, and gives the entities it would not run, with the cause of each. It launches,
+  holds and writes nothing.
 - **Child, parent.** A part a program or another part holds in its state, declared in its `children` with `child`
   for one, or `each` for children by id; the one that holds it is its parent. The library routes a child's messages,
   holds its work under `<child>.<key>`, and runs its operations under `<child>.<tag>`.

@@ -72,7 +72,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0035](archive/0035-one-place-where-a-program-is-declared.md) | One place where a program is declared | [0180](0180-a-program-leaves-out-what-it-does-not-have.md) |
 | [0037](archive/0037-the-machine-checks-the-declared-keys.md) | The machine checks the declared keys | [0132](archive/0132-a-key-may-take-a-parameter.md) |
 | [0057](archive/0057-the-machine-gives-what-is-written.md) | The machine gives what is written |  |
-| [0064](archive/0064-the-program-is-not-the-machines-state.md) | The program is not the machine's state, and a fix is a deploy | [0075](archive/0075-a-name-is-deployed-once-in-a-process.md) |
+| [0064](archive/0064-the-program-is-not-the-machines-state.md) | The program is not the machine's state, and a fix is a deploy | [0075](archive/0075-a-name-is-deployed-once-in-a-process.md), [0247](0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md) |
 | [0132](archive/0132-a-key-may-take-a-parameter.md) | A key may take a parameter, and an incarnation is drawn from one counter of the entity | [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md), [0197](0197-a-program-lists-its-keys-and-key-gives-one-a-parameter.md) |
 | [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md) | A key is a name and a parameter, as data, in every value and row that holds one |  |
 | [0133](archive/0133-an-entity-composes-children-as-effect-tea-does.md) | An entity composes children as effect-tea does: a part, placed with `child` or `each`, whose messages, keys, operations and reasons the library wraps | [0155](archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md) |
@@ -170,6 +170,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0058](archive/0058-work-is-compared-by-what-is-stored.md) | Work is compared by what is stored |  |
 | [0075](archive/0075-a-name-is-deployed-once-in-a-process.md) | A name is deployed once in a process | [0078](archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) |
 | [0102](archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md) | A deploy interrupted before it registers undoes itself whole |  |
+| [0247](0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md) | `check` reads the stored entities as a deploy of a new program would activate them, and writes nothing |  |
 
 ## Schemas, storage and projections
 

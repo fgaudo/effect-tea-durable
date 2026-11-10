@@ -14,6 +14,7 @@ behind each rule.
 - [What a caller is told](#what-a-caller-is-told)
 - [Finding the suspended entities](#finding-the-suspended-entities)
 - [Reading one before deciding](#reading-one-before-deciding)
+- [Checking a fix before its deploy](#checking-a-fix-before-its-deploy)
 - [Resuming with a fix](#resuming-with-a-fix)
 - [Discarding the message](#discarding-the-message)
 - [What a resume or a discard answers](#what-a-resume-or-a-discard-answers)
@@ -97,6 +98,29 @@ the state holds with the oldest first, and its suspension as `suspended` lists i
 `Riding`, the end is next, and the email and the cancellation's timer are its work. `inspect` activates nothing,
 so it reads an entity of any process, and an entity that is not suspended too. It reads from one snapshot, through
 the migrations, so a step that commits meanwhile is read whole or not at all.
+
+## Checking a fix before its deploy
+
+```ts
+expect(yield* check(ride, { limit: 10 })).toEqual({
+  active: { checked: 0, failing: 0, failed: [] },
+  suspended: { checked: 1, failing: 0, failed: [] },
+})
+```
+
+**A new program is checked against the stored entities before it is deployed.** `check(program, { limit })`, from
+the main entry, reads every stored entity of the program as an activation of the deploy would, and steps that
+activation in memory. It launches, holds and writes nothing, so it runs while the old version still holds the
+database. Here the fix is checked against the stored rides, and the suspended ride passes.
+
+It gives the entities that are not suspended and the suspended ones apart. For each kind it gives how many it
+`checked`, how many are `failing`, and the first `limit` of them in `failed`, each with its `id`, where it fails
+and the `cause`. A failure `on: 'Load'` is a migration or a schema that does not read a stored row, so every call
+that loads the entity would die. A failure `on: 'Activation'` is a program that dies on the stored state, or that
+changes an operation under way, so the deploy would suspend the entity. A suspended entity is checked as a `resume`
+by the new program would activate it. The message it died on is not handled, so a fix that dies on that message
+still passes the check. The check is a reading of a moment: an operation under way at the check may have ended by
+the deploy. A check before a launch that renames the program is given the launch's `renames`.
 
 ## Resuming with a fix
 
@@ -208,7 +232,8 @@ stops growing and does not shrink. `forget` stays the operator's, since only the
 2. **`Suspended` says only that the request has no reply yet**, and the caller retries under the same request id.
 3. **Nobody is told on a clock.** A deployment that wants an alarm reads `suspended`.
 4. **An operator reads `inspect` before deciding**, and it activates nothing.
-5. **A fix is a deploy, and a resume follows it.**
-6. **Only an inbound message is discarded**, and its caller's retry is a new message.
-7. **The runtime sweeps, and an operator forgets.** The sweep runs `expire` and `prune` at an interval, and an
+5. **A new program is checked before its deploy**, and the check writes nothing.
+6. **A fix is a deploy, and a resume follows it.**
+7. **Only an inbound message is discarded**, and its caller's retry is a new message.
+8. **The runtime sweeps, and an operator forgets.** The sweep runs `expire` and `prune` at an interval, and an
    operator forgets a consumer that is gone.

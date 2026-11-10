@@ -9,16 +9,6 @@ None: the next step is the first of Later, unless the maintainer picks another.
 
 ## Later
 
-- **A check of a program against the stored entities, before it is deployed.** A new program that dies on a stored
-  state suspends each such entity at its activation, and an operator learns it from `suspended` once the deploy has
-  happened ([decision 0064](decisions/archive/0064-the-program-is-not-the-machines-state.md)). The step gives an
-  operator a call that reads every stored entity of a name through the new program's migrations, as `inspect` reads
-  one, and runs its schema, `work`, `project` and the indexes on each state, activating nothing and writing nothing.
-  It gives the entities the new program would suspend, with the cause of each. The step decides whether the call
-  pages its entities as `reindex` does, and whether it checks the stored work against the new `work` too, since an
-  operation under way keeps what it started with
-  ([decision 0022](decisions/archive/0022-a-new-program-keeps-what-work-started-with.md)).
-
 - **The release**, once there is code to publish. It is released as experimental while it depends
   on Effect's unstable modules ([decision 0099](decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
   The release archives the notes the design has come to cover since the last archiving, as

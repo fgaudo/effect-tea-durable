@@ -39,7 +39,8 @@ the runtime.
 - [Work](#work): [keys with a parameter](#keys-with-a-parameter), [incarnations](#incarnations) and
   [entities that talk](#entities-that-talk)
 - [Persistence](#persistence): [what a step costs](#what-a-step-costs) and [the tables](#the-tables)
-- [Schemas that change](#schemas-that-change), and [renaming a program](#renaming-a-program)
+- [Schemas that change](#schemas-that-change): [checking a program before its deploy](#checking-a-program-before-its-deploy)
+  and [renaming a program](#renaming-a-program)
 - [Execution](#execution) and [what survives a crash](#what-survives-a-crash)
 - [Defects](#defects)
 - [Reading](#reading)
@@ -560,6 +561,25 @@ A program keeps every migration it ever had, since a row is migrated only when i
 once deployed is never changed, since it is how a version that exists in storage is read. A test records cases of
 each migration: a JSON value a version wrote of one kind, and the JSON value the next version reads of it.
 `migrationViolations` checks the program against them.
+
+### Checking a program before its deploy
+
+`check(program, { limit })` finds, before a deploy, the stored entities a new program would not run. It reads each
+entity as an activation reads it, through the new program's migrations and from one snapshot, and steps its
+activation with the machine, in memory. So it runs `work`, `project`, the indexes and the topics on the stored
+state, compares the operations under way with the new `work`, and calls the `unknown` of an at-most-once operation
+that may have run. A suspended entity is stepped as a `resume` by the new program would activate it, and the
+message it died on is not handled. The check launches nothing, holds nothing and writes nothing, so it runs on the
+database the old version holds ([decision 0247](decisions/0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)).
+
+It gives the entities not suspended and the suspended ones apart: how many it checked, how many fail, and the first
+`limit` failures in the order it read them. A failure is `Load`, a migration or a schema that dies on a stored row,
+so that every activation of the entity dies, or `Activation`, an activation that suspends the entity. Each gives
+its cause, as a suspension renders it. What the runtime throws fails the whole call, as it fails `reindex`. The
+entities are read by pages of their ids, so the check is a reading of a moment: an operation under way at the check
+may have ended by the deploy. `renames` are the launch's, and the check reads the entities of a name renamed to the
+program's as the program's. The check dies on tables that a migration of another release made, since it migrates
+nothing.
 
 ### Renaming a program
 

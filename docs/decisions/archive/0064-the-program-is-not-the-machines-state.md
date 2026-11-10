@@ -3,6 +3,7 @@
 **Status:** accepted, 2026-10-31. Decides [a fixed program brought by `resume`](../../open-questions.md#running). Deploying
 a program twice in one process, which it leaves open, is decided by
 [decision 0075](0075-a-name-is-deployed-once-in-a-process.md): a process deploys a name once.
+[Decision 0247](../0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md) adds `check`, which finds before a deploy the entities a new program would suspend.
 
 ## Context
 
