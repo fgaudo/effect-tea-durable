@@ -241,7 +241,7 @@ Each example is a program with its scenarios as tests. If an example reads badly
 The library is experimental, as long as it depends on Effect's unstable modules `effect/sql`, `effect/cluster` and
 `effect/rpc` ([decision 0099](docs/decisions/archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md)).
 An API that changes under it costs an update of the runtime, never of the pure core or of a program. It pins Effect
-4.1.2.
+4.1.3.
 
 - **What runs:** a program and its rehearsals, the runtime on one process on SQLite or PostgreSQL, and the runtime on
   Effect Cluster with its runners on one machine.

@@ -1,5 +1,5 @@
 /**
- * What decision 0153 says of a page of the log read from some partitions only, at `@effect/sql-sqlite-bun` 4.1.2,
+ * What decision 0153 says of a page of the log read from some partitions only, at `@effect/sql-sqlite-bun` 4.1.3,
  * on the tables and the indexes the storage creates, with no statistics, as the runtime leaves a database. The page
  * restricted to a list of partitions is searched as a range of `outbox_topic`, in the order of `position`, as the
  * page of every partition is, and neither sorts. Each row finds its publication by the key of `publications`

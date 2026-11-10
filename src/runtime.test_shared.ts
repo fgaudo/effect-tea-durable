@@ -441,7 +441,7 @@ export const hour = 60 * 60 * 1000
 /**
  * Runs `effects` at once, each forked as a task of its own, and gives what each gives. `Effect.all` starts its
  * children inline, on the stack of its own fiber. So the second child would be forked only once the first one has
- * waited or yielded, and a child that waits before its third step never yields (decisions 0104, 0115, 0117).
+ * waited or yielded, and a child that waits before its second step never yields (decisions 0104, 0117, 0244).
  */
 export const together = <A, E, R>(effects: ReadonlyArray<Effect.Effect<A, E, R>>) =>
   Effect.flatMap(Effect.forEach(effects, (effect) => Effect.forkChild(effect)), (fibers) => Effect.forEach(fibers, Fiber.join))

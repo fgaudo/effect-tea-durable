@@ -1,5 +1,5 @@
 /**
- * What a rewrite of the runtime's bookkeeping would find of `effect` 4.1.2's transactions, under the scheduler of
+ * What a rewrite of the runtime's bookkeeping would find of `effect` 4.1.3's transactions, under the scheduler of
  * the tests (decision 0104). The bookkeeping stays in synchronous steps, and why is decision 0177.
  *
  * Read in the source (`tx`, `awaitPendingTransaction` and `commitTransaction` in `Effect.ts`): a body that calls

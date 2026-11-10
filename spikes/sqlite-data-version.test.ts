@@ -1,5 +1,5 @@
 /**
- * What a runner on Cluster learns of another runner's commit, at `@effect/sql-sqlite-bun` 4.1.2 on a file in WAL
+ * What a runner on Cluster learns of another runner's commit, at `@effect/sql-sqlite-bun` 4.1.3 on a file in WAL
  * mode: `PRAGMA data_version` read on one connection moves once another process commits to the file, and not at the
  * connection's own commit (decision 0163).
  */

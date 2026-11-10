@@ -1,5 +1,5 @@
 /**
- * What a runner of an older version does with a request a newer one persisted, at `effect` 4.1.2, on `SingleRunner`
+ * What a runner of an older version does with a request a newer one persisted, at `effect` 4.1.3, on `SingleRunner`
  * over a SQLite file. The newer version's entity takes the request and is stopped before it answers, so the request is
  * left unprocessed. The older version, whose payload schema the request does not decode, answers it with a defect,
  * which is stored: the newer version, back on the file, never runs it again. The reply stored is a `Die` whose defect

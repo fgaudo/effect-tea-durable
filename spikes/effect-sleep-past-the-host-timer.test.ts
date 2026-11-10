@@ -1,5 +1,5 @@
 /**
- * What decision 0194 says of a sleep longer than a host's timer, at `effect` 4.1.2 on Bun: Bun's `setTimeout` fires
+ * What decision 0194 says of a sleep longer than a host's timer, at `effect` 4.1.3 on Bun: Bun's `setTimeout` fires
  * a delay past 2^31 − 1 milliseconds at once, and `Effect.sleep` on the default clock sets such a sleep as timers of
  * at most that length, one after the other, so that it ends at its time. An interruption clears the timer pending.
  * The runtime's timers sleep as `Effect.sleep(\`${millis} millis\`)`, and the spike sleeps in that form.

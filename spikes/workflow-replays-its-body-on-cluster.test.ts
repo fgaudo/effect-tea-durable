@@ -1,5 +1,5 @@
 /**
- * What decision 0007 says of Effect Workflow, at `effect` 4.1.2, on the engine whose history is stored: Cluster's,
+ * What decision 0007 says of Effect Workflow, at `effect` 4.1.3, on the engine whose history is stored: Cluster's,
  * on `SingleRunner` over a SQLite file. A workflow parked on a signal by one process, and signalled once the next
  * has started on the same file, runs its body again from the start there, its activity answered from what the
  * first stored; and the signal takes one value, which a second completion does not change.

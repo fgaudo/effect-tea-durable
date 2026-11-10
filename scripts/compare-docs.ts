@@ -10,7 +10,7 @@
  * documentation does not promise what a premise needs may promise it in any release, which makes the premise
  * documented. A stable one whose documentation promises it is listed so that the ledger is whole, and only its tag is
  * checked: semantic versioning keeps the promise within the major, and a move to a new major reads every premise again
- * (`AGENTS.md`). Effect's release policy, `.agents/skills/changesets/authoring.md` at `1ec9509`, read on 2026-11-02,
+ * (`AGENTS.md`). Effect's release policy, `.agents/skills/changesets/authoring.md` at `1ec9509`, read on 2026-11-10,
  * has a stable or untagged API follow strict semantic versioning, an `unstable` one break only in a minor, and an
  * `experimental` one in a patch; it requires a tag on every module and importable export since Effect-TS/effect#8770.
  *
@@ -80,6 +80,7 @@ const declarations: ReadonlyArray<Declaration> = [
   // That a fiber forked before the clock moves is given one turn.
   ['effect', 'testing/TestClock.ts', 'adjust', 'undocumented'],
   // Rolls back when its effect fails or is interrupted, which its docs do not say when (decisions 0002 and 0013).
+  // Fails the statements of a fiber that outlives it (decision 0243).
   ['effect', 'sql/SqlClient.ts', 'withTransaction', 'unstable'],
   ['effect', 'cluster/Entity.ts', 'toLayer', 'unstable'],
   ['effect', 'cluster/Entity.ts', 'defectRetryPolicy', 'unstable'],

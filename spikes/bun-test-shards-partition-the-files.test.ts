@@ -1,5 +1,5 @@
 /**
- * What decision 0242 rests on, at Bun 1.4.2: the shards of `bun test --shard=i/n`, for `i` from 1 to `n`, run between
+ * What decision 0242 rests on, at Bun 1.4.4: the shards of `bun test --shard=i/n`, for `i` from 1 to `n`, run between
  * them every file the whole run runs, each file in one shard alone. `bun test --help` says a shard runs "a subset of
  * test files", and says nothing of the subsets together. Each run here names a test no file holds, so that it loads
  * every file of its shard and runs none, and its JUnit report lists the files it loaded.

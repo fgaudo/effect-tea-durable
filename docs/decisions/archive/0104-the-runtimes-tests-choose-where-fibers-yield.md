@@ -1,6 +1,7 @@
 # 0104. The runtime's tests choose where fibers yield
 
-**Status:** accepted, 2026-11-01. Adds to [decision 0066](0066-the-runtimes-tests-move-time.md) and
+**Status:** accepted, 2026-11-01. How the scheduler lets a fiber through at Effect 4.1.3 is changed by
+[decision 0244](../0244-the-scheduler-of-the-tests-lets-a-fiber-through-at-the-task-of-its-yield.md). Adds to [decision 0066](0066-the-runtimes-tests-move-time.md) and
 [decision 0068](0068-what-another-fiber-reads-changes-in-one-step.md) a way to reach interleavings that no budget of
 steps reaches, and moves the runtime's tests under budgets onto it. The spike is
 [`spikes/effect-scheduler-controlled.test.ts`](../../../spikes/effect-scheduler-controlled.test.ts), the scheduler is in

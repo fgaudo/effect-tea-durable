@@ -1,5 +1,5 @@
 /**
- * What `Arbitrary.schema` of `effect/Arbitrary` generates at 4.1.2 for the schemas a program declares: whether its
+ * What `Arbitrary.schema` of `effect/Arbitrary` generates at 4.1.3 for the schemas a program declares: whether its
  * strings hold U+0000, lone surrogates and characters past the first plane, and whether its numbers hold `NaN`,
  * the infinities, `-0` and integers past 2^53. A test that derives its values from a program's schemas finds the
  * cases a database holds otherwise only if they are generated.

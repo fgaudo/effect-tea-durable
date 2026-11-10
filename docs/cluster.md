@@ -6,7 +6,8 @@ changes none of what it says, and saves a success reply
 under `WithTransaction` once instead of up to four times. 4.1.2, pinned on 2026-11-02, fixes the stall and the
 shared backoff below, documents
 `defectRetryPolicy` and `disableFatalDefects`, and wakes a runner for a send a `WithTransaction` handler discards only
-after the commit. Read from its source in `node_modules/effect/src/cluster`
+after the commit. 4.1.3, pinned on 2026-11-10, adds the retention of completed requests described under the
+decisions below, and changes nothing else this study says. Read from its source in `node_modules/effect/src/cluster`
 (and `HashRing.ts` beside it) and from `ai-docs/src/80_cluster`. It says what Cluster gives, what it leaves to the runtime, and which decisions
 it bears on. Nothing here is decided: each finding is decided in a note of its own, as the
 [roadmap](roadmap.md) says, and the list [at the end](#the-decisions-it-bears-on) links the notes taken. What holds of the runtime on Cluster is in
@@ -229,9 +230,17 @@ record both checks read ([decision 0174](decisions/archive/0174-on-cluster-a-run
   on. Decided: a request so answered is handled again when sent again, through `Sharding.reset`, and the message an
   entity dies on stays in the runtime's mailbox, as the machine writes it
   ([decision 0085](decisions/archive/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).
-- **[0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)** — Cluster deletes no reply by
-  itself, and has no operation that forgets a processed request without delivering it again
-  ([Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239)). The sender's work and the receiver's
+- **[0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)** — up to 4.1.2, Cluster deletes no
+  reply by itself, and has no operation that forgets a processed request without delivering it again
+  ([Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239)). 4.1.3 adds both, `@stability
+  unstable`. `MessageStorage.deleteProcessed` deletes up to a limit of an entity type's requests whose final reply is
+  older than a time, with their messages and replies, in one transaction. `MessageRetention.make` registers a
+  singleton that calls it at an interval, one minute by default, for one entity type. A request saved again under the
+  same primary key after the deletion is a new request, and its handler runs again. `SqlMessageStorage` serves the
+  deletion with an index of its own on `entity_type, processed, last_reply_id`, made by Cluster's migration
+  `0005_retention_index`, and locks a
+  request's row before a write of its replies. The runtime uses neither yet: what it still deletes by its own
+  statements is decided by the step of the runtime's housekeeping in the [roadmap](roadmap.md). The sender's work and the receiver's
   replies are on different shards, but in one database, where the runtime on Cluster's transactions come one after
   the other: one statement still reads both. So the runtime's replies are deleted as on one process, and
   Cluster's rows with them, by the runtime's own statements
@@ -269,4 +278,4 @@ record both checks read ([decision 0174](decisions/archive/0174-on-cluster-a-run
   [#10058](https://github.com/Effect-TS/effect/issues/10058) asks for
   ([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)).
 - **[0019](decisions/archive/0019-unstable-effect-modules.md)** — everything read here is `@stability unstable` in
-  `effect` 4.1.0, 4.1.1 and 4.1.2.
+  `effect` 4.1.0, 4.1.1, 4.1.2 and 4.1.3.

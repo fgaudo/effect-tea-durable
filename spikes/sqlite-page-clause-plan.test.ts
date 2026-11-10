@@ -1,5 +1,5 @@
 /**
- * What decision 0144 says of the clause a query pages with, at `@effect/sql-sqlite-bun` 4.1.2, on the table and the
+ * What decision 0144 says of the clause a query pages with, at `@effect/sql-sqlite-bun` 4.1.3, on the table and the
  * index the storage creates: SQLite reads the clause as no range of the index, so a page walks the rows of the
  * program from the first and drops the ones before its cursor. A comparison of the index alone is read as a range,
  * and so is each half of a `UNION ALL` of the rows that tie and the rows past, which SQLite then sorts whole.

@@ -193,7 +193,7 @@ export type Strategy = Readonly<{
 /**
  * How a run under `controlled` takes a fiber that a `Deferred`, a `Fiber.join` or a callback resumes:
  * - `queued`, the default: it yields first, and waits for its pick as a fork does. Effect resumes it inline, on the
- *   stack of the fiber that completes it, so this reaches orders Effect's scheduler does not give at 4.1.2, as one
+ *   stack of the fiber that completes it, so this reaches orders Effect's scheduler does not give at 4.1.3, as one
  *   whose resumptions were not inline would (decision 0104);
  * - `inline`: it runs on where Effect resumes it, as under Effect's scheduler, so that a run reaches only the orders
  *   it gives, but for the preemptions and picks a strategy decides.
@@ -243,7 +243,7 @@ export type Run<A, E> = Readonly<{
  * (decision 0117).
  */
 const controlled = (strategy: Strategy, resumptions: Resumptions) => {
-  const ready: Array<Readonly<{ task: () => void; fiber: number | undefined }>> = []
+  const ready: Array<Readonly<{ task: () => void; fiber: number | undefined; yielder: Fiber.Fiber<unknown, unknown> | undefined }>> = []
   const picks: Array<number> = []
   const preemptions: Array<boolean> = []
   const started = new WeakSet<Fiber.Fiber<unknown, unknown>>()
@@ -257,7 +257,7 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
   // A fiber that began its run on the stack of another, by the task it began in: its yield gives that other one back.
   const nested = new WeakMap<Fiber.Fiber<unknown, unknown>, number>()
   // The fiber this scheduler has just made yield: the task Effect schedules next is its yield's.
-  let yielding: number | undefined
+  let yielding: Fiber.Fiber<unknown, unknown> | undefined
   let first: number | undefined
   // How many times the task under way has asked to yield, counted from each task's start.
   let ops = 0
@@ -282,9 +282,9 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
         return false
       }
     } else {
-      // Effect counts a fiber's steps from 0 at every run, and yields once the count reaches its budget. A budget of 2
-      // yields the step a fiber was resumed for, at every run, and the fiber never gets on: so the least that runs is
-      // 3, and no preemption comes before a run's third step (decision 0115).
+      // A preemption comes from a run's second step, where a budget of 2 makes Effect yield. A run resumed from a yield
+      // this scheduler made is first asked at its third step, since Effect counts its resumption as one step and does
+      // not ask at the next (decision 0244).
       if (fiber.currentOpCount < leastBudget) return false
       if (ready.length === 0 && nested.get(fiber) !== tasks) return false
       const preempts = strategy.preempt(id(fiber), readyTasks())
@@ -292,7 +292,7 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
       if (!preempts) return false
     }
     letThrough.add(fiber)
-    yielding = id(fiber)
+    yielding = fiber
     return true
   }
   const scheduler: Scheduler.Scheduler = {
@@ -318,7 +318,7 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
     },
     makeDispatcher: () => ({
       scheduleTask: (task) => {
-        ready.push({ task, fiber: yielding })
+        ready.push({ task, fiber: yielding === undefined ? undefined : id(yielding), yielder: yielding })
         yielding = undefined
       },
       // Effect flushes only a dispatcher of its own `runSync`, and `scheduled` alone steps this one. A flush inside a
@@ -342,9 +342,18 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
       }
       picks.push(index)
     }
-    const { task } = ready.splice(index, 1)[0]!
+    const { task, yielder } = ready.splice(index, 1)[0]!
     entering = true
     running = undefined
+    if (yielder !== undefined) {
+      // The task of a yield this scheduler made resumes its fiber at the step it yielded, and Effect does not ask
+      // `shouldYield` there (`runLoop` in `internal/effect.ts` at 4.1.3, read in the source). So the fiber is let
+      // through here, as it would be at that step: it is the first fiber its own task runs (decision 0244). A yield
+      // cancelled by an interruption leaves a task that runs no fiber, so nothing reads what it sets.
+      entering = false
+      letThrough.delete(yielder)
+      running = yielder
+    }
     tasks += 1
     ops = 0
     task()
@@ -360,8 +369,8 @@ const controlled = (strategy: Strategy, resumptions: Resumptions) => {
   }
 }
 
-/** The least budget of steps under which Effect's scheduler runs a fiber on: the step a preemption first comes at. */
-const leastBudget = 3
+/** The least budget of steps whose yield is not the one a `queued` resumption makes: the step a preemption first comes at. */
+const leastBudget = 2
 
 /** How many tasks a run may take before it is taken for one that never ends. */
 const maxSteps = 1_000_000
