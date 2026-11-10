@@ -10,7 +10,7 @@ import fc from 'fast-check'
 import { launch } from './index.ts'
 import { program } from './index.program.ts'
 import type { Cursor } from './storage.ts'
-import { client } from './test-databases.ts'
+import { client } from './storage.test_databases.ts'
 
 const counter = program({
   state: Schema.Struct({ n: Schema.Int }),

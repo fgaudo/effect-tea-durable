@@ -1433,7 +1433,7 @@ A runner learns of another runner's commit from the file: while a reading of the
 
 The machine is tested with properties, under random orders of messages, completions, timers, crashes and
 defects ([`src/machine.test.ts`](../src/machine.test.ts)). The runtime is tested against it
-([`src/runtime.test.ts`](../src/runtime.test.ts)): a scenario, and then random sequences of events, are driven
+([`src/runtime/loop.test.ts`](../src/runtime/loop.test.ts)): a scenario, and then random sequences of events, are driven
 on the real runtime with the process dying at each point of the table of
 [what survives a crash](#what-survives-a-crash), and what the database holds
 afterwards is compared with where the machine ends on the events that committed. They run on Effect's
@@ -1464,7 +1464,7 @@ process to settle, with nothing under way, an entity unloading included
 that what an event writes, applied to the rows before it, gives the rows after it, and
 [`src/storage.test.ts`](../src/storage.test.ts) that the storage writes those rows as given
 ([decision 0057](decisions/archive/0057-the-machine-gives-what-is-written.md)).
-The tests of [`src/runtime.test.ts`](../src/runtime.test.ts) under `two entities that talk` run the booking and
+The tests of [`src/runtime/callers.test.ts`](../src/runtime/callers.test.ts) under `two entities that talk` run the booking and
 the inventory of `src/fixtures/` on it, on the test's clock, with a probe and values frozen through.
 [`examples/booking/runtime.test.ts`](../examples/booking/runtime.test.ts) runs the example's booking on real time,
 through the public surface alone.

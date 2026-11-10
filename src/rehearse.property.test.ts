@@ -11,7 +11,7 @@ import fc from 'fast-check'
 import { launch } from './index.ts'
 import { program, reject, rejectWith } from './index.program.ts'
 import { rehearse } from './index.testing.ts'
-import { client } from './test-databases.ts'
+import { client } from './storage.test_databases.ts'
 
 const Sender = Schema.Struct({ role: Schema.Literals(['owner', 'clerk']) })
 
