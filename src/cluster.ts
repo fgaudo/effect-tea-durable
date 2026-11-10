@@ -328,6 +328,27 @@ export const onCluster: Effect.Effect<
      */
     const failureSaved = (latest: Reply.Encoded) => latest._tag === 'WithExit' && latest.exit._tag === 'Failure'
     /**
+     * Gives the answer of `call`, the request `sent` of the RPC `tag` to the program `name`, and calls `given` first
+     * with the request's Cluster id, where it is given. Kept once the answer is given, and not before: a client on
+     * another runner reads its reply from Cluster's table, and a deletion past the reply's time would otherwise take a
+     * reply it has not read (decisions 0171, 0245). The id is read and kept without interruption, so that a caller
+     * that stops waiting after its answer came keeps it all the same.
+     */
+    const keptGiven = <A>(
+      name: string,
+      tag: Delivered['_tag'],
+      sent: Omit<Delivered, '_tag'>,
+      call: Effect.Effect<A, unknown>,
+      given: ((requestId: string) => Effect.Effect<void>) | undefined,
+    ): Effect.Effect<A> =>
+      (given === undefined ? call : Effect.uninterruptibleMask((restore) =>
+        Effect.tap(restore(call), () =>
+          Effect.flatMap(
+            messages.requestIdForPrimaryKey({ address: addressOf(name, sent.id), tag, id: primaryKey(sent) }),
+            Option.match({ onNone: () => Effect.void, onSome: (requestId) => given(String(requestId)) }),
+          ))
+      )).pipe(Effect.orDie)
+    /**
      * Where `call` fails, and Cluster saved a failure of its own as the request's latest reply, resets that reply
      * before the failure is given, so that a retry under the same request id is delivered again. A failure that saved
      * nothing died at the sender, and a retry sends the request again (decision 0168). A keep or a reset that fails
@@ -411,7 +432,7 @@ export const onCluster: Effect.Effect<
       },
       // A failure of Cluster's client or storage is no answer of the program's, and is a defect, as a failure of the
       // runtime's own storage is.
-      create: (program, sent, kept) => {
+      create: (program, sent, kept, given) => {
         const once = resettingSavedFailure(
           program.name,
           'Create',
@@ -427,7 +448,13 @@ export const onCluster: Effect.Effect<
         // Cluster saved under the request is reset before the creation is sent, and a retry under the same request id
         // runs `init` again, as on one process. Before the send, and not after the answer: a process that dies
         // between the answer and a reset would leave a saved `Rejected` for the retry (decision 0182).
-        return Effect.andThen(reset(program.name, 'Create', sent, rejectedSaved), once).pipe(Effect.orDie)
+        return keptGiven(
+          program.name,
+          'Create',
+          sent,
+          Effect.andThen(reset(program.name, 'Create', sent, rejectedSaved), once),
+          given,
+        )
       },
       send: (program, sent, kept, given) => {
         const answered = Schema.decodeEffect(answerCodec(program))
@@ -453,22 +480,7 @@ export const onCluster: Effect.Effect<
           first._tag === 'Suspended' || first._tag === 'NotFound'
             ? Effect.andThen(reset(program.name, 'Message', sent, noReplySaved), once)
             : Effect.succeed(first))
-        if (given === undefined) return final.pipe(Effect.orDie)
-        // Kept once the answer is given, and not before: a client on another runner reads its reply from Cluster's
-        // table, and a deletion past the reply's time would otherwise take a reply it has not read (decision 0171).
-        // The id is read and kept without interruption, so that a caller that stops waiting after its answer came
-        // keeps it all the same.
-        return Effect.uninterruptibleMask((restore) =>
-          Effect.tap(restore(final), () =>
-            Effect.flatMap(
-              messages.requestIdForPrimaryKey({
-                address: addressOf(program.name, sent.id),
-                tag: 'Message',
-                id: primaryKey(sent),
-              }),
-              Option.match({ onNone: () => Effect.void, onSome: (requestId) => given(String(requestId)) }),
-            ))
-        ).pipe(Effect.orDie)
+        return keptGiven(program.name, 'Message', sent, final, given)
       },
       // Sent with `discard` from the transaction of the step that resumes: Cluster saves the request in it, and
       // delivers it after the commit, so that the step never waits for the door it tells (decision 0167).

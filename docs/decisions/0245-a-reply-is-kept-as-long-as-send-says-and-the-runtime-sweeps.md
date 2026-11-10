@@ -76,8 +76,9 @@ A program that has no sender has the sender `null`, and every `create` and `send
   the module `cluster/Singleton.ts`, which wraps `Sharding.registerSingleton`. Two runners that sweep at once while
   the shard moves lose nothing, since both delete the same rows past their time, so the sweep does not rest on it
   for its data, only for its cost.
-- That a retry of a creation whose Cluster rows are gone is answered `Created`: **only reasoned**, from decision
-  0017. A test on Cluster is still to write.
+- That a retry of a creation whose Cluster rows are gone is answered `Created`: **tested**, by the test `a caller’s
+  creation leaves its Cluster rows to expire, and a retry after is answered Created` in
+  [`src/cluster.test.ts`](../../src/cluster.test.ts).
 
 ## Alternatives
 

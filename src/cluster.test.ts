@@ -756,6 +756,7 @@ describe('the runtime on Cluster', () => {
       expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep: zero }))
         .toEqual({ _tag: 'Accepted' })
       expect(yield* rowsOf('m1')).toBe(2)
+      // The creation's client kept its id as a keep of 0 does, and the step of m1 took it (decision 0245).
       const [kept] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_given_requests`
       expect(Number(kept?.held)).toBe(1)
       yield* Effect.sleep('5 millis')
@@ -776,6 +777,30 @@ describe('the runtime on Cluster', () => {
       expect(yield* rowsOf('m2')).toBe(2)
       const [held] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_given_requests`
       expect(Number(held?.held)).toBe(1)
+    })), 30_000)
+
+  // A creation's rows go as a keep of 0's do, and a retry after is answered from the entity's row (decisions 0017,
+  // 0245).
+  test('a caller’s creation leaves its Cluster rows to expire, and a retry after is answered Created', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const sender = { user: 'u' }
+      const created = sql<{ held: number }>`
+        SELECT (SELECT COUNT(*) FROM cluster_messages WHERE tag = 'Create')
+          + (SELECT COUNT(*) FROM cluster_replies WHERE request_id IN (
+            SELECT request_id FROM cluster_messages WHERE tag = 'Create'
+          )) AS held
+      `
+      const creating = { flags: { start: 0 }, requestId: 'c1', sender }
+      expect(yield* handle!.create('one', creating)).toEqual({ _tag: 'Created' })
+      expect(Number((yield* created)[0]?.held)).toBe(2)
+      yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep: 'forever' })
+      yield* Effect.sleep('5 millis')
+      yield* handle!.expire
+      expect(Number((yield* created)[0]?.held)).toBe(0)
+      // The retry reaches the door again, and `init` does not run again: the state keeps what the message did.
+      expect(yield* handle!.create('one', creating)).toEqual({ _tag: 'Created' })
+      expect(yield* stateOf).toEqual({ n: 1, asking: false })
     })), 30_000)
 
   test('a caller’s message that does not encode is the caller’s defect, and reaches no door', () =>

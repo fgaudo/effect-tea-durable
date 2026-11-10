@@ -215,7 +215,14 @@ export const create = <T extends Types>(
     if (p.cluster !== null) {
       const version = versionOf(deployed.program)
       const sent = { id, version, request: requested, message: JSON.stringify(written) }
-      return yield* p.cluster.create(deployed.program, sent, keptFor(p, deployed, request))
+      // A caller's creation keeps its Cluster id as a `keep` of 0 does, so that `expire` deletes Cluster's rows of it
+      // once its client has the answer. A retry after reaches the door again, and the machine answers it from the
+      // entity's row (decisions 0017, 0245). An operation's go with its work.
+      const given = request._tag === 'Caller'
+        ? (requestId: string) =>
+          Effect.flatMap(DateTime.now, (now) => deployed.storage.keepGiven(requestId, id, DateTime.toEpochMillis(now)))
+        : undefined
+      return yield* p.cluster.create(deployed.program, sent, keptFor(p, deployed, request), given)
     }
     // Detached from the caller: a creation committed is always started, and its entity loaded (decision 0079).
     const asked = yield* detached(p, deployed, holding(p, entity)(Effect.gen(function*() {

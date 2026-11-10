@@ -617,12 +617,15 @@ export interface OnCluster {
    * reset before the creation is sent, so that a retry runs `init` again (decision 0182). A failure Cluster saved as its reply is reset
    * before it is given (decision 0168). `kept` is an operation's: the client calls it with the request's Cluster id
    * before that reset, and it gives whether the asker's work still holds. Where the work has ended, the client neither
-   * resets nor gives the failure, and waits until it is interrupted (decisions 0092, 0170).
+   * resets nor gives the failure, and waits until it is interrupted (decisions 0092, 0170). `given` is a caller's:
+   * the client calls it with the request's Cluster id once Cluster has given it the answer, before it gives the
+   * answer (decision 0245).
    */
   readonly create: <T extends Types>(
     program: Program<T>,
     sent: Omit<Delivered, '_tag' | 'keep'>,
     kept?: (requestId: string) => Effect.Effect<boolean>,
+    given?: (requestId: string) => Effect.Effect<void>,
   ) => Effect.Effect<Creation<T['rejection']>>
   /**
    * A message, sent through the program's door by Cluster's client. An answer `Suspended` or `NotFound` is no reply:
