@@ -161,3 +161,15 @@ with a requirement that no example has yet.
   - whether a test of the form of `src/` can check that a module of the group is imported from outside only through
     its entry;
   - what the area of a commit's subject becomes for a module in a folder.
+- **A run of the mutations in two passes.** A review runs `scripts/mutate.ts` with `SCHEDULES=all`, and the suite
+  then runs some sixteen minutes, for the code unchanged and for each mutation that survives. Most mutations are
+  killed in seconds by a test that runs one schedule. The review of 0194 to 0224 ran the mutations on the seeds
+  `bun test` runs, then only the survivors under `SCHEDULES=all`
+  ([reviews](decisions/reviews.md#2026-11-10-0194-to-0224)). The seeds `bun test` runs of an explored test, one in
+  twenty from seed 0, are among the seeds of `SCHEDULES=all`, so a mutation killed in the first pass is killed under
+  every seed. Whether `scripts/mutate.ts` runs every review in these two passes, and gives one result, is not
+  decided. It would be decided by:
+  - whether the property tests that read `SCHEDULES`, in `src/fixtures.property.test.ts`,
+    `src/log.property.test.ts` and `src/rehearse.property.test.ts`, run as their first scenarios under
+    `SCHEDULES=all` the scenarios they run without it, from the same seed;
+  - whether any other test reads `SCHEDULES` for something other than how many cases it runs.
