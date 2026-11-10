@@ -211,6 +211,9 @@ what the one before stored. This library writes it once, so that a program holds
 - **[Restate](https://restate.dev)** journals each step of a handler, and replays the handler over its journal, on a
   server of its own. Its virtual objects are the closest idea, an entity by key with one call at a time. Here the
   entity is a state machine, not a function that resumes.
+- **[Resonate](https://resonatehq.io)** stores the result of each step of an async function as a durable promise.
+  After a crash, the function runs again and takes the stored results of the steps already done. Its durable mode
+  runs a server of its own beside the database. Here the state is stored, and no function resumes.
 - **[Akka Persistence](https://akka.io)** rebuilds an
   event-sourced actor by replaying its events, on the JVM. Here the state after each message is what is stored, and
   the timers and the work are derived from it.
