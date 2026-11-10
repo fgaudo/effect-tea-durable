@@ -7,6 +7,7 @@ import { PGlite } from '@electric-sql/pglite'
 import { PgClient } from '@effect/sql-pg'
 import { PgliteClient } from '@effect/sql-pglite'
 import { SqliteClient } from '@effect/sql-sqlite-bun'
+import { beforeAll } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Redacted from 'effect/Redacted'
@@ -31,6 +32,11 @@ const copied = () =>
     await pg.close()
     return dump
   })
+
+// The first database of PGlite takes seconds to make, and more under load. A test that made it would spend its own
+// timeout on it, so every file that imports this module makes it first, in a hook with a timeout of its own. A run of
+// one process makes it once, and each shard or worker once per file (decision 0242).
+if (server === undefined) beforeAll(async () => void await copied(), 60_000)
 
 let made = 0
 

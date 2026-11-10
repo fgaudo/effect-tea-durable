@@ -45,9 +45,24 @@ PGlite. Under 24 workers at once it took 6.2 s, past Bun's default timeout of 5 
 - **The division takes no timings.** A file of durations would have to be measured again and committed as the
   tests change. `src/cluster.test.ts` alone takes 57 s, so balanced shards would gain at most some 25 s over the
   84 s dealt in turn.
-- **`bun test` stays one run, in one process, on one machine.** `--parallel` is not adopted. It made a test fail
-  on its timeout, and `scripts/mutate.ts` reads a test that fails only under load as uncertain. A run in one process
-  also gives the times this note measured.
+- **Every file that imports [`src/storage.test_databases.ts`](../../src/storage.test_databases.ts) makes the first
+  database of PGlite in a `beforeAll`, with a timeout of its own of 60 s.** The tests copy that database, and before
+  this note the first test of a run to use PostgreSQL made it, within its own timeout of 5 s. Made with nothing else
+  running, it takes 2.6 s. A run of one process makes it once, so one test paid for it. A shard runs in a process
+  of its own, and under `--parallel` each file runs in a global of its own, so each makes it again. The test that
+  timed out under 24 workers was the first of its file, making that database. The module declares the hook, so that
+  a new file of the tests needs no line of its own. A file that never uses PostgreSQL makes the database all the
+  same under `--parallel`. Where `POSTGRES_URL` names a server, the hook does nothing.
+- **`bun test` stays one run, in one process, on one machine.** `scripts/mutate.ts` runs many runs of `bun test` at
+  once, and reads a test that fails only under load as uncertain. Workers inside each of those runs would add load.
+  The tests on Cluster run on a clock that is real, with leases of seconds, and load is what they fail under first.
+  A run in one process also gives the times this note measured.
+- **`bun run test:parallel` runs the suite under `--parallel=8`, for a quicker run while a change is under way.**
+  Eight workers stay under the twelve cores of the maintainer's machine, and ran the suite in 97 s with every test
+  green. With the hook above, 24 workers still failed four other tests on their timeout, two spikes of Effect's
+  scheduler, the spike of a role of PGlite and a test of the runtime, which each keep a core busy. Past the cores, the
+  load alone slows a test past 5 s. `src/cluster.test.ts` alone waits 57 s, so more workers would gain little anyway.
+  A commit still passes `bun test`.
 
 ## What it rests on
 
@@ -59,5 +74,10 @@ PGlite. Under 24 workers at once it took 6.2 s, past Bun's default timeout of 5 
   partition.
 - A job of a matrix runs on its own runner, and the workflow fails when one job fails. This is documented by GitHub
   Actions. `fail-fast: false` lets the other shards finish, so that a run names every test that failed.
+- A `beforeAll` that a module declares at its top level has run before the first test of every file that imports the
+  module, both in a run of one process and under `--parallel`. The JSDoc of `beforeAll` at 1.4.2 says the hook runs
+  once before all the tests, and says nothing of a hook a module declares for the files that import it. The spike
+  [`spikes/bun-before-all-of-an-imported-module.test.ts`](../../spikes/bun-before-all-of-an-imported-module.test.ts)
+  tests it in both modes.
 - Splitting the tests among jobs changes no test's result, since each job runs its files in one process as before.
   This is only reasoned. The run on the branch checks it.

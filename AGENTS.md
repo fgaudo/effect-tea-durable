@@ -146,7 +146,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
   pull request: `bun audit`, `bun run typecheck`, `bun run links`, and the audit and the build of the site. It runs
   `bun test` in four jobs at once, each with `--shard`, and a test of the workflow's form checks that the jobs run
   every shard ([decision 0242](docs/decisions/0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md)).
-  `bun test` on one machine stays one run. Another job runs `bun run test:postgres` against a container of
+  `bun test` on one machine stays one run. `bun run test:parallel` runs the suite under eight workers, for a quicker
+  run while a change is under way, and a commit passes `bun test`. Another job runs `bun run test:postgres` against a container of
   PostgreSQL, and `spikes/full-volume.test.ts` on a volume of fixed size it mounts. A change of the storage, of a transaction of the
   runtime or of a statement passes that job too, run on the branch, since PGlite runs one session and hides what a
   pool does. Run by hand from the repository's Actions, the workflow also runs `bun run test:release`, in four jobs
