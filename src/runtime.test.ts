@@ -6391,6 +6391,8 @@ describe('what the runtime tells a tracer (decision 0220)', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          // A retry of the creation is a step that writes nothing, and records no length of the mailbox.
+          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
           yield* Deferred.await(acting)
           expect(value(yield* metrics, 'tea.operations.running')).toEqual({ value: 3 })
           const breaking = { requestId: 'break', sender: tester }

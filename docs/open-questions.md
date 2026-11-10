@@ -134,6 +134,18 @@ with a requirement that no example has yet.
   - the boundaries of the examples, and which calls each uses;
   - whether a view is a type over one handle, or a value a deployment gives, so that a boundary cannot reach what
     it was not given.
+- **The prefix of the spans and the metrics.** The runtime names its spans, their attributes and its metrics with
+  `tea.`, as `tea.step` and `tea.mailbox.length`, which a scrape of Prometheus reads as `tea_mailbox_length`
+  ([decision 0220](decisions/0220-the-runtime-records-a-span-for-each-step-and-each-operation.md)). Decision 0220
+  gives as its reason that every object the runtime makes is named with `tea_`. That reason fell the same day:
+  [decision 0218](decisions/0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md) names the tables with
+  `effecttea_`, since `tea` is a word an application plausibly uses. A backend of metrics holds the series of every
+  service it scrapes, so a metric of an application about tea may share a name with the runtime's. Whether the spans
+  and the metrics are named with `effecttea.`, as the tables are, is not decided. A rename after the release changes
+  every dashboard and alert a deployment wrote. It would be decided by:
+  - whether the names of OpenTelemetry's attributes for a library are expected to carry the library's whole name, as
+    in its conventions for instrumentation libraries;
+  - whether a backend a deployment uses already holds a series named `tea_…`.
 
 ## The code
 

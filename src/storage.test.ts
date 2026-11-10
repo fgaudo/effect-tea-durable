@@ -860,6 +860,44 @@ test('a launch on a database that holds a table named as one of the runtime’s 
       }).pipe(Effect.provide(client(dialect)), Effect.orDie),
     )))
 
+// A table and an index share one namespace on both dialects, so a table of the application under the name of any
+// table or index the first migration makes must make the launch die, and not only under `effecttea_consumers`
+// (decision 0218).
+test('a launch dies on a table of the application under the name of any table or index the runtime makes', () =>
+  onEach(['sqlite', 'pg'], async (dialect) => {
+    const relations = (sql: SqlClient.SqlClient) =>
+      dialect === 'sqlite'
+        ? sql<{ name: string }>`
+          SELECT name FROM sqlite_master WHERE type IN ('table', 'index') AND name LIKE 'effecttea\\_%' ESCAPE '\\'
+          ORDER BY name
+        `
+        : sql<{ name: string }>`
+          SELECT relname AS name FROM pg_class WHERE relnamespace = current_schema()::regnamespace
+            AND relkind IN ('r', 'i') AND relname LIKE 'effecttea\\_%' AND relname NOT LIKE '%\\_pkey'
+          ORDER BY name
+        `
+    const made = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        yield* createTables
+        // `effecttea_migrations` is made by `Migrator` before the migration, and is no object of the migration.
+        return (yield* relations(sql)).map(({ name }) => name).filter((name) => name !== 'effecttea_migrations')
+      }).pipe(Effect.provide(client(dialect)), Effect.orDie),
+    )
+    expect(made.length).toBeGreaterThan(10)
+    for (const name of made) {
+      const died = await Effect.runPromise(
+        Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          yield* sql.unsafe(`CREATE TABLE "${name}" (x TEXT)`)
+          const launched = yield* Effect.exit(createTables)
+          return Exit.isFailure(launched)
+        }).pipe(Effect.provide(client(dialect)), Effect.orDie),
+      )
+      expect({ name, died }).toEqual({ name, died: true })
+    }
+  }), 120_000)
+
 // PostgreSQL compares text by the collation of its column, and the database's own may order by language. Every text
 // column the storage makes is `C`, which compares bytes as SQLite's `BINARY` does. PGlite's database is `C` itself,
 // so the order of the read model's ids is the same without the collation, and the test reads it off the columns

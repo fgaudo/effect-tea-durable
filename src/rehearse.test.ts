@@ -447,6 +447,23 @@ describe("a rehearsal's request ids", () => {
       }),
     )))
 
+  // Only a named request's reply is kept, so a send drawn first leaves no reply that a request named later under the
+  // same id would be given as a retry (decision 0200).
+  test('gives a named request no reply of a send drawn before it, whatever id that send drew', () =>
+    Effect.runPromise(rehearse(
+      door,
+      opened,
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Opened' }, north)
+        yield* rehearsal.send(entered, north)
+        yield* rehearsal.send(entered, north)
+        for (const requestId of ['request-1', 'request-2', 'request-3', 'request-4']) {
+          yield* rehearsal.send(entered, north, { requestId })
+        }
+        expect(yield* rehearsal.projection).toEqual({ entries: 6 })
+      }),
+    )))
+
   test('answers a retry of a member of a world as the rehearsal of one entity does', () =>
     Effect.runPromise(rehearse.together(
       placedAt,
