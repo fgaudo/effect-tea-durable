@@ -21,7 +21,7 @@ import type * as Machine from './machine.ts'
 import { InvariantDefect, noWork, operation, type Program, type Scalar } from './program.ts'
 import { launch } from './runtime.ts'
 import { createTables, storage, transaction } from './storage.ts'
-import { database, pool, server } from './test-databases.ts'
+import { database, pool, server } from './storage.test_databases.ts'
 
 type T = {
   state: Readonly<{ last: string }>

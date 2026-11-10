@@ -15,7 +15,7 @@ import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import { createTables, launch, noWork, program } from '../src/index.ts'
-import { database, pool, server } from '../src/test-databases.ts'
+import { database, pool, server } from '../src/storage.test_databases.ts'
 
 const notes = program({
   state: Schema.Struct({ count: Schema.Int }),

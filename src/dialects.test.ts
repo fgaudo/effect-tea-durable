@@ -13,7 +13,7 @@ import fc from 'fast-check'
 import { launch } from './index.ts'
 import { defect, program } from './index.program.ts'
 import type { Comparison, Dialect } from './storage.ts'
-import { client } from './test-databases.ts'
+import { client } from './storage.test_databases.ts'
 
 const fields = {
   label: Schema.String,

@@ -27,7 +27,7 @@ import {
   standingOf,
   storage,
 } from './storage.ts'
-import { client, onEach } from './test-databases.ts'
+import { client, onEach } from './storage.test_databases.ts'
 import fc from 'fast-check'
 import { everySchedule } from './testing.ts'
 

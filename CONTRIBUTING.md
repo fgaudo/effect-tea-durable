@@ -68,8 +68,11 @@ its schemas. [`src/machine.ts`](src/machine.ts) is the runtime's semantics as a 
 runs and property tests check. The runtime interprets the machine over Effect's `SqlClient`, in
 [`src/runtime.ts`](src/runtime.ts) and the modules it is divided into, in [`src/runtime/`](src/runtime), and stores in
 [`src/storage.ts`](src/storage.ts). It unloads an entity that has nothing to do, and wakes it from its stored timers.
-[`src/runtime.test.ts`](src/runtime.test.ts) tests it by dying at each point of the design's crash table, and
-comparing where it ends with the machine. A folder of `src/` beside a module of its name is a group, which a module
+[`src/runtime/loop.test.ts`](src/runtime/loop.test.ts) tests it by dying at each point of the design's crash table,
+and comparing where it ends with the machine. The tests of a module of `src/runtime/` lie beside it, and
+[`src/runtime.test.ts`](src/runtime.test.ts) tests `src/runtime.ts` and what several modules keep together. What
+they share is in [`src/runtime.test_shared.ts`](src/runtime.test_shared.ts). A file that only tests import is
+named `<module>.test_<role>.ts`, beside the module whose tests it serves, and no module of the library imports one. A folder of `src/` beside a module of its name is a group, which a module
 outside the group imports through that module alone. Each module is built on the one above it:
 
 ```mermaid

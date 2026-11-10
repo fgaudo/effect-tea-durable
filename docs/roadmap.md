@@ -5,40 +5,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **Modules and test files a reviewer reads whole.** `src/storage.ts` holds 2 669 lines, and `src/runtime.test.ts`
-  6 495, with `src/machine.test.ts`, `src/storage.test.ts` and `src/program.ts` each past 1 800. A change of one rule
-  is reviewed in a file that holds every other. The step divides `storage.ts` by what it stores, as the runtime is
-  divided into `loop.ts`, `callers.ts` and the rest, and divides the tests of the runtime by the module each tests.
-  It moves no rule and changes no behaviour, so `bun run test:release` passes before and after. It changes the
-  diagram of the modules in [`CONTRIBUTING.md`](../CONTRIBUTING.md) and the list of the runtime's modules in
-  [`AGENTS.md`](../AGENTS.md) in the same commit. A test that moves to another file keeps its name, so that its
-  pinned seeds still name it.
-
-  The parts are three, in order. The first decided the folders, in
-  [decision 0241](decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md): the
-  runtime's modules other than `runtime.ts` move into `src/runtime/`, the modules divided out of `storage.ts` lie in
-  `src/storage/`, and the two entries stay where they are. The second moved the runtime's modules, divided
-  `storage.ts` into seven modules of `src/storage/`, added the test of the boundary of a group, and made the checks
-  of the form read every folder of `src/`. The note says where each part of the storage lies. The third, next,
-  divides `src/runtime.test.ts` by the module each test tests, into test files beside the modules of
-  `src/runtime/`, and makes `bun run test:explore` and `bun run test:postgres` run the files the tests move to. It
-  begins in [`src/runtime.test.ts`](../src/runtime.test.ts), with the helpers its tests share, and in
-  [`scripts/explore.ts`](../scripts/explore.ts), which names that file alone. `bun run test:release` passed on
-  `main` before the step and after the second part, and passes again once the third part is done. Two things bind
-  the third part. The test of the boundary of a group, in [`src/form.test.ts`](../src/form.test.ts), lets only
-  `src/runtime.ts` and the files of `src/runtime/` import a file of `src/runtime/`, so `src/runtime.test.ts` cannot
-  import helpers put in that folder. And a file of `src/` that is not a `.test.ts` is read by the checks of the form
-  as a module, so a module of helpers is held to their rules of forks and counts. The part also changes what names
-  `src/runtime.test.ts` as the place of the runtime's tests: the rule of [`AGENTS.md`](../AGENTS.md) on a change to
-  the runtime, and the paragraph of [`CONTRIBUTING.md`](../CONTRIBUTING.md) on the modules of `src/`.
-
-## Later
-
 - **A faster run of the checks.** `bun test` takes about four minutes on the maintainer's machine, running one seed
   in twenty of the explored tests, and the CI runs the suite in one job. The step divides the files of the tests
   among jobs that run at once, and keeps `bun test` on one machine as it is. It also weighs what dominates the time,
   the explored tests or the tests on SQLite files, before it divides anything. A division keeps every test in some
   job, and a test of the workflow's form checks it.
+
+## Later
 
 - **The runtime's housekeeping**, once a release of Effect holds the retention of completed requests of Cluster.
   `expire`, `prune` and `forget` are an operator's calls, and a reply sent without `keep` is kept for ever, so the
@@ -78,7 +51,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   The release decides whether `exports` names the sources or JavaScript with declarations, as effect-tea ships, and
   writes the metadata of `package.json`: a `description` in the words of the README, `repository`, `homepage` to the
   site, `sideEffects`, and `keywords` with the words people search this problem by, `saga` and `durable-execution`
-  among them, since the README says where the library differs.
+  among them, since the README says where the library differs. What it publishes leaves out the files of the tests,
+  `*.test.ts` and `*.test_*.ts` ([decision 0241](decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md)).
 
 - **The runtime on Cluster across machines, on PostgreSQL**, once Cluster has a fence
   ([Effect-TS/effect#10058](https://github.com/Effect-TS/effect/issues/10058)), or the runtime one of its own. Until

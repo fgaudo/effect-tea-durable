@@ -56,7 +56,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0196](0196-the-quick-start-is-an-example-the-readme-shows-whole.md) | The quick start is an example that the README shows whole, and a test keeps the two equal |  |
 | [0203](0203-the-guides-code-is-found-in-the-examples.md) | The guide's code is found in the examples, part by part, and a test finds it |  |
 | [0212](0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md) | The property tests of the fixtures derive their values from the programs' schemas, on Effect's engine |  |
-| [0241](0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md) | A group of modules lies in a folder of `src/`, entered by the module of its name beside it (proposed) |  |
+| [0241](0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md) | A group of modules lies in a folder of `src/`, entered by the module of its name beside it, the tests of the runtime lie beside the modules they test, and a file only tests import is named `<module>.test_<role>.ts` |  |
 
 ## The machine and the program
 

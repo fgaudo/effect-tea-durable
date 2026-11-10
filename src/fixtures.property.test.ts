@@ -19,7 +19,7 @@ import { launch } from './index.ts'
 import { operation, type Program, type Types } from './index.program.ts'
 import { rehearse } from './index.testing.ts'
 import type { Dialect } from './storage.ts'
-import { client } from './test-databases.ts'
+import { client } from './storage.test_databases.ts'
 
 // The runners of `stalled` need no service, so a program of the property needs none from the test.
 type Any = Types & Readonly<{ services: never }>

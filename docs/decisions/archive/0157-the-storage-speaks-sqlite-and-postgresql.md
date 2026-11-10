@@ -192,7 +192,7 @@ that differ from SQLite:
   an index, `checkProgram` of the names, and [`src/runtime.ts`](../../../src/runtime.ts) of the renames, the consumers
   and the ids. [`src/machine.test.ts`](../../../src/machine.test.ts),
   [`src/program.test.ts`](../../../src/program.test.ts) and [`src/runtime.test.ts`](../../../src/runtime.test.ts) check
-  each. [`src/test-databases.ts`](../../../src/test-databases.ts) gives the tests a database of each dialect.
+  each. [`src/storage.test_databases.ts`](../../../src/storage.test_databases.ts) gives the tests a database of each dialect.
 - [`src/storage.test.ts`](../../../src/storage.test.ts) runs its tests on both dialects, and reads the plans of
   PostgreSQL. [`src/runtime.test.ts`](../../../src/runtime.test.ts) runs on both the tests that write what differs.
 - `docs/design.md` says, under Where it runs, which databases the runtime runs on. The glossary defines a dialect

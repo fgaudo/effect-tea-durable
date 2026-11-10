@@ -109,6 +109,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   its tests and the examples change with it, and `bun run typecheck`, `bun test` and `bun run links` pass.
 - The library's tests run on programs of [`src/fixtures/`](src/fixtures), copied from the examples once, and import
   no example, so that a change of an example breaks no test of the library. A test of the form of `src/` checks it.
+- A file that only tests import is named `<module>.test_<role>.ts`, beside the module whose tests it serves, as
+  `src/runtime.test_shared.ts`. `bun test` runs no such file, the checks of the library's rules read none, and no
+  module of the library imports one, as a test of the form of `src/` checks
+  ([decision 0241](docs/decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md)).
 - Before code adds a helper, a data structure or a coordination of fibers, it looks in `node_modules/effect/src`
   for a module of the pinned version that does the same, among the modules marked `@stability unstable` too. A
   primitive of Effect is used where it does the same, since its contract is in its JSDoc and needs no test of its
@@ -121,8 +125,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   [`src/runtime/`](src/runtime): `process.ts`, `loop.ts`, `callers.ts`, `doors.ts`, `waker.ts` and `readings.ts`. A
   module outside the runtime imports `src/runtime.ts` alone, as a test of the form of `src/` checks
   ([decision 0241](docs/decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md)). A change to the runtime that adds or moves a
-  wait, a lock, a fork, or state another fiber reads has a test in [`src/runtime.test.ts`](src/runtime.test.ts)
-  that fails or hangs without it, run against the code before the change. The scheduler of the tests, in [`src/testing.ts`](src/testing.ts), is how a
+  wait, a lock, a fork, or state another fiber reads has a test that fails or hangs without it, run against the
+  code before the change. The test lies beside the module it tests, in `src/runtime/`, or in
+  [`src/runtime.test.ts`](src/runtime.test.ts) where it tests `src/runtime.ts` or what several modules keep together,
+  and what the tests share is in [`src/runtime.test_shared.ts`](src/runtime.test_shared.ts). The scheduler of the tests, in [`src/testing.ts`](src/testing.ts), is how a
   test moves the points where fibers yield. Where the interleaving cannot be reached, the decision says why, and why
   the change holds. A test under `explored` runs one seed in twenty, from seed 0, so that the suite runs in seconds;
   `bun run test:release` runs them all, and a release passes it. A step of the roadmap that changes the runtime

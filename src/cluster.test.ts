@@ -55,7 +55,7 @@ import {
 } from './program.ts'
 import { type Handle, type Options, Probe, type Said } from './runtime.ts'
 import { createTables, leased, newestVersion, outranked, recordVersions } from './storage.ts'
-import { client, onEach } from './test-databases.ts'
+import { client, onEach } from './storage.test_databases.ts'
 
 type T = {
   state: Readonly<{ last: string }>

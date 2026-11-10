@@ -12,7 +12,9 @@
  * - a count, a name the module both raises and lowers, is raised in the acquisition and lowered in the release of one
  *   `Effect.acquireUseRelease`, whose raise no interruption splits from its lowering (decision 0163);
  * - a module of a group, a folder of `src/` beside a module of its name, is imported only by that module and by the
- *   files of the folder (decision 0241).
+ *   files of the folder (decision 0241);
+ * - a module imports no file of the tests: a test, named `.test.ts`, or a file only tests import, named
+ *   `<module>.test_<role>.ts`, which the other rules do not read (decision 0241).
  *
  * A fork that must keep the transaction is preceded by a line comment that says `Keeps the transaction:` and why. A
  * count that one fiber raises and another lowers is preceded, at each raise and lowering, by a line comment that says
@@ -268,11 +270,21 @@ export const groupsCrossed = (files: ReadonlyMap<string, string>): ReadonlyArray
   return found
 }
 
+/** Whether `file` is one of the tests: a test, or a file only tests import (decision 0241). */
+export const ofTheTests = (file: string): boolean => /\.test(_\w+)?\.ts$/.test(file)
+
+/** The imports of a file of the tests by a module, as `file: specifier`, given the text of each file by its path. */
+export const testsImported = (texts: ReadonlyMap<string, string>): ReadonlyArray<string> =>
+  [...texts].filter(([file]) => !ofTheTests(file)).flatMap(([file, text]) =>
+    importsOf(text).filter((specifier) => specifier.startsWith('.') && ofTheTests(specifier))
+      .map((specifier) => `${file}: ${specifier}`)
+  )
+
 /** Every file of `src/` and of its folders, as a path under `src/` written with `/`. */
 const filesOfSrc = readdirSync(import.meta.dir, { recursive: true, encoding: 'utf8' })
   .map((file) => file.replaceAll(sep, '/'))
   .filter((file) => file.endsWith('.ts'))
-const modules = filesOfSrc.filter((file) => !file.endsWith('.test.ts'))
+const modules = filesOfSrc.filter((file) => !ofTheTests(file))
 const each = (check: (text: string) => ReadonlyArray<string>) =>
   modules.flatMap((file) => check(readFileSync(join(import.meta.dir, file), 'utf8')).map((line) => `${file}:${line}`))
 
@@ -330,6 +342,12 @@ describe('the form of src', () => {
     expect(modules).toContain('runtime/process.ts')
     const texts = new Map(filesOfSrc.map((file) => [file, readFileSync(join(import.meta.dir, file), 'utf8')]))
     expect(groupsCrossed(texts)).toEqual([])
+  })
+  test('no module of src imports a file of the tests', () => {
+    expect(filesOfSrc).toContain('runtime.test_shared.ts')
+    expect(modules).not.toContain('runtime.test_shared.ts')
+    const texts = new Map(filesOfSrc.map((file) => [file, readFileSync(join(import.meta.dir, file), 'utf8')]))
+    expect(testsImported(texts)).toEqual([])
   })
   test('no file of src imports an example', () => {
     expect(filesOfSrc).toContain('fixtures/order.ts')
@@ -434,6 +452,17 @@ describe('the check of the form', () => {
       ['runtime.test.ts', "import { order } from './fixtures/order.ts'"],
     ])
     expect(groupsCrossed(texts)).toEqual(['loop/step.ts: ../storage/tables.ts', 'cluster.ts: ./storage/tables.ts'])
+  })
+
+  test('an import of a file of the tests by a module is found, and one by a file of the tests passes', () => {
+    const texts = new Map([
+      ['loop.ts', ["import { x } from './loop.test_shared.ts'", "// from './loop.test.ts'"].join('\n')],
+      ['storage/tables.ts', "import { y } from '../storage.test.ts'"],
+      ['loop.test.ts', "import { x } from './loop.test_shared.ts'"],
+      ['loop.test_shared.ts', "import { z } from './storage.test_databases.ts'\nimport { w } from './loop.ts'"],
+      ['testing.ts', "import { v } from './testing/scheduler.ts'"],
+    ])
+    expect(testsImported(texts)).toEqual(['loop.ts: ./loop.test_shared.ts', 'storage/tables.ts: ../storage.test.ts'])
   })
 
   test('a fork not given untransacted is found, in each of its forms', () => {

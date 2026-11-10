@@ -3,10 +3,11 @@
  * stopped. `bun test` and the release start from seed 0 and replay the same schedules each time; this tries new ones.
  * Each round prints its first seed. A failure names the seed that failed, which `SEED=<seed>` runs first.
  *
- * Usage: `bun run test:explore [arguments of bun test]`, such as `-t <test>`. It runs `src/runtime.test.ts`, where the
- * explored tests are. Ctrl+C stops the script with the run under way.
+ * Usage: `bun run test:explore [arguments of bun test]`, such as `-t <test>`. It runs the tests of the runtime, where the
+ * explored tests are: `src/runtime.test.ts` and the test files of `src/runtime/` (decision 0241). Ctrl+C stops the
+ * script with the run under way.
  */
-const args = ['src/runtime.test.ts', ...Bun.argv.slice(2)]
+const args = ['src/runtime.test.ts', 'src/runtime/', ...Bun.argv.slice(2)]
 
 for (let round = 1;; round++) {
   // Below 2^31, less the 2,000 seeds a run takes, so that every seed of the run is a distinct 32-bit integer.
@@ -19,7 +20,7 @@ for (let round = 1;; round++) {
   if (!run.success) {
     // bun test also exits with 1 when `-t` matches no test: the output above says which it was.
     console.log(`test:explore: round ${round} ended with ${run.signalCode ?? run.exitCode}, from first seed ${first}`)
-    console.log('A failed seed replays with: SEED=<seed> bun test src/runtime.test.ts -t "<test>"')
+    console.log('A failed seed replays with: SEED=<seed> bun test <file of the test> -t "<test>"')
     process.exit(run.exitCode ?? 1)
   }
 }
