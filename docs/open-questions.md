@@ -79,6 +79,17 @@ with a requirement that no example has yet.
   - whether a retry inside the runtime keeps the rule that a step is one transaction, applied once, when the commit's
     answer is lost and the commit is not;
   - whether `consume` and the other calls should agree, one way or the other.
+- **A model of the runtime's protocol on Cluster.** The protocol between runners is checked by tests, which run the
+  interleavings their seeds draw. A model in TLA+, or in a model checker like it, would check every state the
+  protocol reaches within its bounds: the shards a runner holds and lets go, a step's commit that checks the shard,
+  and two versions at once
+  ([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md),
+  [decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md),
+  [decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)). A model proves the protocol and not the code, so the tests would stay. Whether to write one is not
+  decided. It would be decided by:
+  - whether the tests on Cluster keep finding interleavings between runners;
+  - what the step on Cluster across machines on PostgreSQL in the [roadmap](roadmap.md) adds to the protocol, a
+    fence above all.
 
 ## Programs
 

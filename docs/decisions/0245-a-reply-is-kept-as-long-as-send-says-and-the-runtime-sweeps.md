@@ -1,6 +1,6 @@
 # 0245. A reply is kept as long as `send` says, and the runtime sweeps what no reader needs
 
-**Status:** proposed, 2026-11-10, for the step The runtime's housekeeping of the [roadmap](../roadmap.md). Changes
+**Status:** accepted, 2026-11-10, with the step The runtime's housekeeping of the roadmap. Changes
 [decision 0125](archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md): `keep` is required, and the
 alternative of a fiber that sweeps is taken. Changes
 [decision 0171](archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md) for a
@@ -85,9 +85,11 @@ A program that has no sender has the sender `null`, and every `create` and `send
   sweep expires and prunes at its interval, and one that fails is warned of and leaves the next`, and on Cluster in
   [`src/cluster.test.ts`](../../src/cluster.test.ts), by `on Cluster the sweep runs as a singleton, and takes the
   replies and Cluster rows past their time`.
-- That a prune in batches needs less free room on a full volume than one prune: **not seen**. It depends on a
-  checkpoint of the WAL between batches, which a reader can hold back. `spikes/full-volume.test.ts` is to check it
-  before the design says it.
+- That a prune in batches needs no more room on a full volume than one prune: **seen**, in
+  [`spikes/full-volume.test.ts`](../../spikes/full-volume.test.ts), on the CI's volume of 32 MB. The first batch
+  fails on the full volume, as one prune did. Once 1 MB is freed, the batches take about 824 KB of it, where one
+  prune took 892 KB. So the batches serve the writer's time and not the room, and the procedure of decision 0223
+  stands as it was: the operator frees room first, then forgets and prunes.
 - That a singleton of Cluster has one active owner, the runner that holds its shard: **documented**, in the JSDoc of
   the module `cluster/Singleton.ts`, which wraps `Sharding.registerSingleton`. Two runners that sweep at once while
   the shard moves lose nothing, since both delete the same rows past their time, so the sweep does not rest on it
@@ -123,3 +125,5 @@ A program that has no sender has the sender `null`, and every `create` and `send
 - SQLite gives no room back to the volume once rows are deleted: a sweep bounds the growth of the file and shrinks
   nothing. A vacuum is the launcher's.
 - A row already stored with no time stays for ever. No deployment holds one before the release.
+- On a disk that is really full a prune in batches fails as one prune did, so an operator frees room first, as
+  decision 0223 says.

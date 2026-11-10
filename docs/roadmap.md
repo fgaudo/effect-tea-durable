@@ -5,34 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **The runtime's housekeeping**, under way. What it decides is in
-  [decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md), `proposed`, which the
-  maintainer chose on 2026-11-10. Its parts, in order:
-  1. `send` requires `keep`, `{ millis }` or `'forever'`, `create` takes its flags in the request, and a request
-     leaves out a sender and flags that are `null`, in
-     `src/runtime.ts`, `src/rehearse.ts`, the examples, the fixtures, the guide and the tests. An argument that may
-     be left out comes last: the rehearsal's `send` takes its sender in the request, the start of `rehearse` and
-     `world.create` leave out flags that are `null`, and an operation's `create` takes its flags last.
-  2. `prune` and `expire` delete in batches, in `src/storage/log.ts` and `src/storage/entities.ts`. Each batch is a
-     transaction of its own, so the count each gives is a sum, and the doc comments of `Handle.prune` and
-     `Handle.expire` say so. The part checks that the replies and `given_requests` have an index by program and time,
-     which a sweep's `expire` reads by.
-  3. On Cluster, a creation's client keeps its id in `given_requests`, in `src/runtime/callers.ts`, so that `expire`
-     deletes its rows, with a test on Cluster that a retry after is answered `Created`.
-  4. The sweep, an option of `launch` and a singleton of Cluster per program, with its tests; the shared launcher of
-     the tests passes `sweep: 'none'`. It adds a fiber, so the pinned seeds of the explored tests are found again.
-  5. `spikes/full-volume.test.ts` checks a prune in batches on a full volume, in the CI's job; `design.md` and
-     `glossary.md` say what holds, and so does the guide: `operator.md` no longer says the runtime caps nothing, and
-     `outbox.md` says a sweep drops whole a topic no consumer is stored for; `bun run test:release` passes; the
-     note is taken.
-
-  Parts 1 to 4 are done: `bun test`, `bun run typecheck`, `bun run links` and the site's build pass. Part 2 added
-  the index `effecttea_given_requests_expire`, by program and time. Part 3 gave Cluster's `create` a `given`, as
-  `send` has, which a caller's creation calls with its time as a `keep` of 0. Part 4 added `sweep` to `launch`, whose
-  singleton on Cluster is named `@fgaudo/effect-tea-persistent/<program>/sweep`. The shared launcher of the
-  runtime's tests and `onRunner` of `src/cluster.test.ts` pass `'none'`, and a sweep of `'none'` adds no yield, so the
-  pinned seeds were not moved and stay as they are. Part 5 is next, from `spikes/full-volume.test.ts`. When the note
-  is taken, the status lines of decisions 0125, 0171 and 0223 link it.
+None: the next step is the first of Later, unless the maintainer picks another.
 
 ## Later
 
@@ -64,8 +37,3 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The step also decides whether the runtime
   checks its advisory lock, which a server that ends its session gives back
   ([open question](open-questions.md#running)).
-
-- **A model of the runtime's protocol on Cluster**, in TLA+ or a model checker like it, if the tests on Cluster
-  keep finding interleavings between runners. The model checks every state the protocol reaches within its bounds:
-  the shards a runner holds and lets go, a step's commit that checks the shard, and two versions at once
-  (decisions 0084, 0159 and 0162). A model proves the protocol and not the code, so the tests stay.

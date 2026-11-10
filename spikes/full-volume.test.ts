@@ -8,6 +8,9 @@
  * until a step cannot commit. It looks at what still answers. A second process deploys without the consumer that
  * stalled, forgets it and prunes, then sends again. A file of the volume's, dropped once the second process has
  * tried, stands for room an operator frees: the forget and the prune are tried again after it.
+ *
+ * The prune deletes in batches, each a transaction of its own (decision 0245). Its first batch fails on the full
+ * volume as one prune did, and once room is freed the batches together take about as much of it as one prune took.
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
@@ -153,9 +156,9 @@ test.skipIf(volume === undefined)('a volume that is really full stops the steps,
     const onFull = await run(Effect.exit(freeing(filename)))
     console.log('the second process on the full volume:', Exit.isSuccess(onFull) ? 'launched' : shown(onFull))
     const after = await run(freed(filename, ballast))
-    // What decision 0223 rests on: a step that cannot commit dies, and the readings and acks still answer. On the
-    // full volume a forget commits and a prune of the stalled consumer's rows does not. Once room is freed the prune
-    // commits, and the steps commit again.
+    // What decisions 0223 and 0245 rest on: a step that cannot commit dies, and the readings and acks still answer.
+    // On the full volume a forget commits and a prune of the stalled consumer's rows does not, even in batches. Once
+    // room is freed the prune commits, and the steps commit again.
     expect(full.sent).toBeGreaterThan(0)
     expect(full.failed !== undefined && Exit.isFailure(full.failed)).toBe(true)
     expect(Exit.isSuccess(full.read) && Exit.isSuccess(full.consumers) && Exit.isSuccess(full.current)).toBe(true)

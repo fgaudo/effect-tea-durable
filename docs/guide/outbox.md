@@ -249,8 +249,10 @@ expect(yield* orders.fetch('status', 'dashboard', all)).toEqual(statuses.slice(2
 expect(yield* orders.prune).toBe(2)
 ```
 
-The runtime caps nothing of the log, and drops nothing by time. A consumer that stops reading holds its topic, and
-the log grows. `orders.consumers` shows each consumer, its topic, whether the deploy declares it, and how many rows
+The runtime prunes each program in its sweep, every five minutes by default, and drops nothing by time. The sweep
+drops whole a topic no consumer is stored for. So a deployment that wants a topic's history declares its consumer
+before the topic's first step, or launches with `sweep: { millis: 300_000, prune: false }`. A consumer that stops
+reading holds its topic, and the log grows. `orders.consumers` shows each consumer, its topic, whether the deploy declares it, and how many rows
 are past its cursors, ordered by topic and then by consumer. It shows too, as `since`, the time of the step that wrote
 the oldest of the rows the consumer reads next, which the test leaves out since it is the runtime's clock:
 

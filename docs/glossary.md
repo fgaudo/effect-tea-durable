@@ -131,6 +131,8 @@ Cluster's says so.
   name it gave `send`. A request is applied once, whichever retry finds it while its reply is kept.
 - **Runner.** Of an operation: the function in `operations` that runs its kind. Of Cluster: a process that serves
   entities ([`cluster.md`](cluster.md)).
+- **Sweep.** What the runtime runs for each program at an interval, as `launch`'s `sweep` says: `expire`, then
+  `prune`, each in batches. On Cluster one runner sweeps a program, as a singleton.
 - **Schedule, seed.** In the runtime's tests: the recorded sequence of choices of where fibers yield, drawn from a seed.
   A run that fails is replayed exactly from it.
 - **Sender.** Who sent an inbound message, as the program's schema writes it, read in `update` as `meta.from`. Request

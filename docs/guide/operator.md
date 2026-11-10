@@ -183,8 +183,8 @@ order waits for an operator.
 
 ## The calls that keep the database small
 
-The runtime caps nothing and drops nothing by time, so an operator runs these calls, each from the handle of one
-program:
+The runtime sweeps each program at an interval, every five minutes by default: it runs `expire`, then `prune`.
+An operator runs these calls too, each from the handle of one program:
 
 | Call | What it does | Where it is explained |
 | --- | --- | --- |
@@ -195,7 +195,11 @@ program:
 | `reindex` | Writes the read model again, after a deploy that added or changed an index. | [Schemas that change](schemas.md#how-a-stored-row-is-read) |
 
 A step deletes its own entity's replies past their time, so `expire` frees the rows of the entities that take no
-step. The runtime runs none of these calls by itself yet.
+step. The sweep is an option of `launch`. `sweep: { millis: 60_000 }` sweeps every minute, and
+`sweep: { millis: 300_000, prune: false }` expires and leaves the log to an operator's `prune`. `sweep: 'none'` runs
+no sweep. A sweep that fails logs a warning, and the next one runs at the next interval. On Cluster one runner
+sweeps each program. A sweep frees rows in the database, and SQLite gives no room back to the volume, so the file
+stops growing and does not shrink. `forget` stays the operator's, since only the operator knows a consumer is gone.
 
 ## The rules, in one list
 
@@ -206,4 +210,5 @@ step. The runtime runs none of these calls by itself yet.
 4. **An operator reads `inspect` before deciding**, and it activates nothing.
 5. **A fix is a deploy, and a resume follows it.**
 6. **Only an inbound message is discarded**, and its caller's retry is a new message.
-7. **The runtime caps nothing.** An operator runs `expire` and `prune`, and forgets a consumer that is gone.
+7. **The runtime sweeps, and an operator forgets.** The sweep runs `expire` and `prune` at an interval, and an
+   operator forgets a consumer that is gone.

@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-11-09, with the step PostgreSQL on a server with a pool of the roadmap. Decides the open
 question of a disk that is really full, which
 [decision 0152](archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md) left, and says how that note's
-forget and prune hold in WAL mode.
+forget and prune hold in WAL mode. Changed by
+[decision 0245](0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md): a prune deletes in batches, which
+fail on the full volume as one prune did, so the procedure stands.
 
 ## Context
 

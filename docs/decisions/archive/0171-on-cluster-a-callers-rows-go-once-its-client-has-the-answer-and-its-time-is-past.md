@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Says how
 [decision 0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md) is code for
 Cluster's rows of a caller's message, and changes what it decided of them: the client keeps the request's id once it
-has the answer, and the door's step keeps none.
+has the answer, and the door's step keeps none. Changed by
+[decision 0245](../0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md): a creation's client keeps its
+id too, as a `keep` of 0 does.
 
 ## Context
 

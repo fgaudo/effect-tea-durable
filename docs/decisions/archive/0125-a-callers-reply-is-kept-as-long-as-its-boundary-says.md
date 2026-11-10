@@ -5,6 +5,8 @@
 was kept for ever. What decision 0021 decides of a reply to another entity is left as it is. On Effect Cluster a
 caller's `keep` is in the door's payload, and Cluster's rows of the request go with its reply once its time is past,
 by [decision 0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md).
+Changed by [decision 0245](../0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md): `keep` is required,
+and the runtime sweeps at an interval.
 
 ## Context
 

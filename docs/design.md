@@ -45,7 +45,7 @@ the runtime.
 - [Reading](#reading)
 - [Publishing what happened](#publishing-what-happened): [topics](#topics), [the order of the log](#the-order-of-the-log),
   [consumers](#consumers), [readers of one consumer](#readers-of-one-consumer),
-  [declared consumers](#declared-consumers) and [what a step publishes](#what-a-step-publishes)
+  [declared consumers](#declared-consumers), [the sweep](#the-sweep) and [what a step publishes](#what-a-step-publishes)
 - [Testing](#testing): [the tests of a program](#the-tests-of-a-program), [rehearsing](#rehearsing) and
   [rehearsing a world](#rehearsing-a-world)
 - [Where it departs from effect-tea](#where-it-departs-from-effect-tea)
@@ -245,7 +245,7 @@ A message is one of two kinds, and the rule for a message that does not apply fo
   protocol retries for, and `keep` is required, since only the boundary knows that time. The reply is then kept for
   that time from the step that answers, and a retry after it is a new request, applied again. A `keep` of
   `'forever'` keeps the reply for ever. A step that stores a reply deletes its entity's replies past their time, and
-  `Handle.expire` those of the whole program
+  `Handle.expire` those of the whole program, which [the sweep](#the-sweep) runs at an interval
   ([decisions 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md),
   [0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)). A program whose sender is
   `null` takes none, and its callers' requests leave the sender out. Request ids are their
@@ -935,16 +935,42 @@ warning for it, `consumers` shows it as not declared, and `forget` drops it. A c
 forgotten, since a deploy without it is how it goes
 ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
 
-The runtime caps nothing of the log, and drops nothing by time. A database that is full fails the commit of every
-step, and each caller is given the defect, while the readings, the acks and `forget` still answer. An operator
+The runtime drops nothing of the log by time. A prune, by hand or by [the sweep](#the-sweep), drops only what every
+stored consumer has read, so a consumer that stalls holds its topic under any sweep. A database that is full fails
+the commit of every step, and each caller is given the defect, while the readings, the acks and `forget` still answer. An operator
 finds in `consumers` the consumer that holds the log, deploys without it, forgets it and prunes, and the steps
 commit again ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
 
 On a disk that is really full, a file of SQLite in WAL mode still commits a forget, and not a prune of many rows,
-which writes a page of the WAL for each page it changes. The operator frees room on the volume first, about a
+which writes a page of the WAL for each page it changes. A prune in batches needs about as much room as one prune,
+since its first batch fails on the full volume too. The operator frees room on the volume first, about a
 twentieth of what the stalled consumer holds, then forgets and prunes. The runtime keeps no room of its own: it does
 not hold the volume, and a file of reserved room is the operator's to keep and drop
-([decision 0223](decisions/0223-a-disk-that-is-really-full.md)).
+([decision 0223](decisions/0223-a-disk-that-is-really-full.md), [decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)).
+
+### The sweep
+
+The runtime sweeps each program it deploys at an interval: it runs `expire`, then `prune`. `launch` takes `sweep`,
+as `{ millis }`, every 300 000 ms by default, or `{ millis, prune: false }` to leave the log to an operator's
+`prune`, or `'none'` to leave both to an operator. The first sweep runs one interval after the deploy. A sweep that
+fails logs a warning with its cause, and the next one runs at the next interval, while the deployment goes on. A
+`sweep` that is neither `'none'` nor a positive integer of millis, with `prune` left out or `false`, is the
+launcher's defect. On Effect Cluster one runner sweeps a program, as a singleton of Cluster named
+`@fgaudo/effect-tea-persistent/<program>/sweep`, so that runners do not contend for the same rows.
+
+A sweep changes no answer. It deletes only the replies past their `keep` and the rows of the log that every stored
+consumer has read. A topic no consumer is stored for keeps no rows under a sweep, so a deployment that wants a
+topic's history declares its consumer before the topic's first step, or sweeps with `prune: false`. `forget` stays
+an operator's call. SQLite gives no room back to the volume once rows are deleted, so a sweep bounds the growth of
+the file and shrinks nothing.
+
+`prune` and `expire` delete in batches of 256 rows, read in the order of an index, and repeat until a batch deletes
+fewer. Each batch is a transaction of its own. A short transaction holds SQLite's one writer for less time, so a
+sweep does not stall the steps. The count each gives is the sum of its batches. A batch of `prune` reads the cursors
+in its own transaction, and a batch of `expire` on Cluster deletes Cluster's rows under each id it takes. The runtime
+calls neither Cluster's `deleteProcessed` nor its `MessageRetention`, since neither spares an operation's request
+ids kept under its work, nor a caller's rows its client has not read
+([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)).
 
 ### What a step publishes
 
@@ -1436,7 +1462,9 @@ A runner learns of another runner's commit from the file: while a reading of the
 - A caller's client keeps its message's id once it has the answer, and Cluster's rows go once the message's `keep`
   is past, by a step of the entity or by `Handle.expire`
   ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
-  A message sent with `keep: 'forever'` keeps its rows for ever.
+  A message sent with `keep: 'forever'` keeps its rows for ever. A creation's client keeps its id with the time it
+  has the answer, as a `keep` of 0 does, so its rows go at the next `expire`, and a retry after is answered `Created`
+  from the entity's row ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)).
 - A reply Cluster saves of its own after its request's rows are gone is left
   ([decision 0173](decisions/archive/0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md)).
 

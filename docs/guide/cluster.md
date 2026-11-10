@@ -195,12 +195,12 @@ The handle is the same, and three things differ:
   table. The request is handled when its turn comes, and a retry under the same request id gets its answer.
 - **A message sent with `keep: 'forever'` keeps Cluster's rows for ever.** The boundary gives `keep`, the time its
   protocol retries for, with every `send`. Once that time is past, the next step of the entity deletes the rows, or
-  an operator's `expire` does. A boundary that runs on Cluster gives a time to every message, since the rows of each
+  the sweep does, which one runner runs for each program. A boundary that runs on Cluster gives a time to every message, since the rows of each
   reply would otherwise add up. The server gives a day, the time its clients retry a request for:
   `orders.send(id, message, { ...caller, keep: { millis: 86_400_000 } })`. On one process a reply kept
   `'forever'` is kept for ever too, and a time frees it. `create` takes no `keep`: a creation is answered from
-  the entity's row, which is kept for ever, as every entity is. On Cluster the creation's request and reply stay
-  in Cluster's tables for ever too, one pair for each entity.
+  the entity's row, which is kept for ever, as every entity is. On Cluster the creation's request and reply go at
+  the next sweep once its client has the answer, and a retry after is answered `Created` from the entity's row.
 
 ## The rules, in one list
 
