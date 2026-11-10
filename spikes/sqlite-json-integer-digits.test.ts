@@ -1,5 +1,5 @@
 /**
- * What decision 0146 says of a numeric index, at `@effect/sql-sqlite-bun` 4.1.2: `JSON.stringify` writes an integer
+ * What decision 0146 says of a numeric index, at `@effect/sql-sqlite-bun` 4.1.3: `JSON.stringify` writes an integer
  * beyond 2^53 with the fewest digits that read back as the same double, and `json_extract` reads those digits as the
  * exact integer they spell, which is another number, so a comparison with the double bound misses the row. The exact
  * digits of the double, those of `BigInt(value)`, are read as the same number, within the range of an integer of

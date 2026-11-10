@@ -1,6 +1,6 @@
 /**
  * What a role of PostgreSQL that may only read and write rows does with the storage's tables, at
- * `@effect/sql-pglite` 4.1.2 and the `@electric-sql/pglite` it pins (decisions 0191, 0216). The owner creates the
+ * `@effect/sql-pglite` 4.1.3 and the `@electric-sql/pglite` it pins (decisions 0191, 0216). The owner creates the
  * tables, and the role is granted the rows of each. The role may not create a table, runs `createTables` where every
  * migration is recorded, and steps a runtime launched with `tables: 'existing'`.
  */

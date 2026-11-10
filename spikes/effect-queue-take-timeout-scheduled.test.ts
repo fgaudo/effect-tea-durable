@@ -1,15 +1,11 @@
 /**
- * What decision 0116 rests on, at `effect` 4.1.2, under Effect's own scheduler: a race of a take alone loses the item
- * offered as the other side wins, when the racing fiber's budget of steps is 3. Under the default budget, and under
- * any budget above 3, it loses nothing.
- *
- * `raceFirst` races its sides in fibers of their own, and `timeoutOption` is a `raceFirst` of the effect and a sleep.
- * The racing fiber interrupts the loser once it is resumed, a few steps into its run (`raceAllFirst` and
- * `onExitUnsafe` in `internal/effect.ts`, read in the source). Effect counts a fiber's steps from 0 at every run, and
- * yields once the count reaches the budget (`runLoop` in `internal/effect.ts`). Under a budget of 3 the racing fiber
- * yields before it interrupts the take. The take's fiber, woken by the offer, runs first and takes the item. Its end
- * is not the race's, and the item is in no place. The budget is a `Context.Reference`, so a fiber can have one of its
- * own.
+ * What decision 0116 rests on, at `effect` 4.1.3, under Effect's own scheduler: a race of a take alone loses no item
+ * offered as the other side wins, under any budget of steps of the racing fiber. At 4.1.2 it lost the item under a
+ * budget of 3 (Effect-TS/effect#10365): the racing fiber interrupted the loser only once it was resumed, and under that
+ * budget it yielded first, so the take's fiber, woken by the offer, took the item and its end was not the race's. 4.1.3
+ * interrupts the losers as the race settles (`interruptRaceLosers` in `internal/effect.ts`, read in the source, from
+ * Effect-TS/effect#10367). The JSDoc of `raceFirst` and `timeoutOption` does not promise it, so an entity's wait still
+ * races nothing against its take.
  */
 import { expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
@@ -53,8 +49,7 @@ test('a race of a take loses no item when the racing fiber has a budget above 3'
   expect(await ends([4, 5, 8, 2048])).toEqual(['left', 'taken'])
 })
 
-test('a race of a take loses the item when the racing fiber has a budget of 3', async () => {
-  // Reported as Effect-TS/effect#10365. Failing here means a release keeps the item: decision 0116 can then be read
-  // again, and an entity's wait may go back to a timeout once Effect's JSDoc promises it.
-  expect(await ends([3])).toContain('lost')
+test('a race of a take loses no item when the racing fiber has a budget of 3', async () => {
+  // Failing here means a release loses the item again, as 4.1.2 did: decision 0116 keeps the wait from racing its take.
+  expect(await ends([3])).toEqual(['left', 'taken'])
 })

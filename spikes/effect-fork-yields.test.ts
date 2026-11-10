@@ -1,5 +1,5 @@
 /**
- * What decision 0068 says of a fork, at `effect` 4.1.2: a fiber yields to the others once it has run as many steps
+ * What decision 0068 says of a fork, at `effect` 4.1.3: a fiber yields to the others once it has run as many steps
  * as `Scheduler.MaxOpsBeforeYield` gives it, 2048 by default (documented in `Scheduler.ts`), wherever that count
  * falls. So a fiber forked by `forkIn` may run to its end, finalizers included, before the step that forked it
  * goes on: under some budgets it has, and under the default it has not.

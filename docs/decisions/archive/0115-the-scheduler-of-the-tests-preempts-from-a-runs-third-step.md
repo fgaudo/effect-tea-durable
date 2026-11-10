@@ -6,6 +6,9 @@ of the tests: under `inline` resumptions they gave orders Effect's scheduler doe
 [decision 0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md), which the corrected scheduler made necessary.
 A fiber on another's stack is asked of preemption even with no task ready, by
 [decision 0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md).
+Its premise that no fiber gets on under a budget of 2 or less fell at Effect 4.1.3, and
+[decision 0244](../0244-the-scheduler-of-the-tests-lets-a-fiber-through-at-the-task-of-its-yield.md) replaces its rule: a
+preemption comes from a run's second step.
 
 ## Context
 

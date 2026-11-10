@@ -1,5 +1,5 @@
 /**
- * What decision 0104 asks of `effect` 4.1.2's `Scheduler`: whether a test can choose where every fiber yields and
+ * What decision 0104 asks of `effect` 4.1.3's `Scheduler`: whether a test can choose where every fiber yields and
  * which runs next. Read in the source: a fiber asks `shouldYield` before each step of its run loop, and one that
  * yields, is forked, or is woken by a `Semaphore`, a `Queue` or a `Latch` goes through `scheduleTask` of a dispatcher
  * its scheduler makes (a wake is a task, which resumes the waiters inline when it runs); but a `Deferred`, a
@@ -53,7 +53,9 @@ const controlled = (
   choose: (ready: number) => number,
   preempt: (fiber: Fiber.Fiber<unknown, unknown>) => boolean
 ) => {
-  const ready: Array<() => void> = []
+  const ready: Array<Readonly<{ task: () => void; yielder: Fiber.Fiber<unknown, unknown> | undefined }>> = []
+  // The fiber this scheduler has just made yield: the task Effect schedules next is its yield's.
+  let yielding: Fiber.Fiber<unknown, unknown> | undefined
   const started = new WeakSet<Fiber.Fiber<unknown, unknown>>()
   const letThrough = new WeakSet<Fiber.Fiber<unknown, unknown>>()
   // Whether a task has started and no fiber has started to run in it yet.
@@ -79,11 +81,13 @@ const controlled = (
         return false
       }
       letThrough.add(fiber)
+      yielding = fiber
       return true
     }
     if (!preempt(fiber)) return false
     trace.push(`preempts ${id(fiber)}`)
     letThrough.add(fiber)
+    yielding = fiber
     return true
   }
   const scheduler: Scheduler.Scheduler = {
@@ -95,7 +99,8 @@ const controlled = (
     },
     makeDispatcher: () => ({
       scheduleTask: (task) => {
-        ready.push(task)
+        ready.push({ task, yielder: yielding })
+        yielding = undefined
       },
       flush: () => {
         while (step()) {}
@@ -104,13 +109,24 @@ const controlled = (
   }
   const step = () => {
     if (ready.length === 0) return false
-    const task = ready.splice(choose(ready.length), 1)[0]!
+    const { task, yielder } = ready.splice(choose(ready.length), 1)[0]!
     entering = true
     running = undefined
+    if (yielder !== undefined && letThrough.delete(yielder)) {
+      // Effect resumes a fiber from a yield its scheduler asked for at the step it yielded, without asking
+      // `shouldYield` there (`runLoop` in `internal/effect.ts`, read in the source), so it is let through here. A
+      // yield an interruption cancelled leaves a task that runs no fiber.
+      entering = false
+      running = yielder
+      trace.push(`runs ${id(yielder)}`)
+    }
     task()
     return true
   }
-  return { scheduler, step, trace, firstId: () => first, ready: () => ready.length }
+  // A yield of a fiber that has ended is a task that runs nothing: an interruption cancelled it, and the fiber ran to
+  // its end from another task.
+  const live = () => ready.filter(({ yielder }) => yielder === undefined || yielder.pollUnsafe() === undefined).length
+  return { scheduler, step, trace, firstId: () => first, ready: live }
 }
 
 interface Run<A> {
@@ -119,7 +135,7 @@ interface Run<A> {
   readonly choices: ReadonlyArray<number>
   readonly preemptions: ReadonlyArray<boolean>
   readonly firstId: number | undefined
-  /** How many tasks were still ready when the run ended. */
+  /** How many tasks that would run a fiber were still ready when the run ended. */
   readonly left: number
 }
 
@@ -484,9 +500,8 @@ test('a fiber interrupted before it starts does not run, as under the scheduler 
 
 test('a fiber that yielded and is interrupted waits for its turn, as one resumed inline does', () => {
   // The fiber is preempted at the third step of each run, and yields nowhere else: so it has always yielded when the
-  // fiber that forked it, never preempted, interrupts it. (Preempted at the second, it would never move: the first step
-  // of a run that resumes it goes to the yield.) From the interruption on no fiber is preempted, so that only a pick
-  // keeps the fiber from running to its end inline, before the one that interrupts goes on.
+  // fiber that forked it, never preempted, interrupts it. From the interruption on no fiber is preempted, so that only
+  // a pick keeps the fiber from running to its end inline, before the one that interrupts goes on.
   let interrupting = false
   const body = Effect.gen(function*() {
     let started = false

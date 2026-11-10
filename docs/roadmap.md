@@ -9,7 +9,7 @@ None: the next step is the first of Later, unless the maintainer picks another.
 
 ## Later
 
-- **The runtime's housekeeping**, once a release of Effect holds the retention of completed requests of Cluster.
+- **The runtime's housekeeping.**
   `expire`, `prune` and `forget` are an operator's calls, and a reply sent without `keep` is kept for ever, so the
   replies of a deployment grow without bound by default
   ([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). The step
@@ -20,10 +20,16 @@ None: the next step is the first of Later, unless the maintainer picks another.
   Cluster forgets no processed request ([decision 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md),
   [0169](decisions/archive/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md),
   [0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
-  The pull request for [Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239) adds that
-  retention, merged and in no release at 4.1.2. The step waits for the release that holds it, since what Cluster
-  then forgets by itself decides which rows the runtime still deletes, and so what a sweep of the runtime has to do.
-  The move of Effect's version to that release weighs the retention against those statements first. The step
+  Effect 4.1.3 adds a retention of completed requests, for
+  [Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239): `MessageStorage.deleteProcessed` and
+  `MessageRetention.make`, both `@stability unstable` ([`cluster.md`](cluster.md#the-decisions-it-bears-on)). The
+  move to 4.1.3 weighed it against those statements, and it replaces none of them. Cluster's retention deletes every
+  request of an entity type whose final reply is older than a time, whatever the work that asked. The runtime keeps a
+  reply while that work holds, and a caller's reply as long as its boundary says
+  ([decisions 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md),
+  [0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). A request deleted while
+  its sender may still send it again is handled again. So the step decides only whether a sweep of the runtime calls
+  `deleteProcessed` for rows no rule of the runtime keeps, or keeps its own statements for all of them. The step
   weighs too the rows of a creation on Cluster, one pair for each entity, which `create` keeps for ever since it
   takes no `keep`. Since a default `keep` changes the signature of `send`, the step also decides whether a request
   may leave out a sender that is `null`, and `create` flags that are `null`

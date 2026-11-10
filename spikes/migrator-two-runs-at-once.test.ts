@@ -1,6 +1,6 @@
 /**
- * What `Migrator` of `effect/sql` does when two runs migrate one database at once, at `effect` 4.1.2 with
- * `@effect/sql-sqlite-bun` and `@effect/sql-pglite` 4.1.2 (the open question of the tables migrated by `Migrator`).
+ * What `Migrator` of `effect/sql` does when two runs migrate one database at once, at `effect` 4.1.3 with
+ * `@effect/sql-sqlite-bun` and `@effect/sql-pglite` 4.1.3 (the open question of the tables migrated by `Migrator`).
  * On SQLite the first run is another process, which waits inside its migration, and the second runs here on a
  * connection of its own. PGlite runs one session, so two runs at once on PostgreSQL are not seen here: what is seen
  * is what a role that may only read and write rows can do with the migrations an owner ran.

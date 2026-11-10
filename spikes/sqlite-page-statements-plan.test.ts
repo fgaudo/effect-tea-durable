@@ -1,5 +1,5 @@
 /**
- * What decision 0145 says of the statements a page is read as, at `@effect/sql-sqlite-bun` 4.1.2, on the table the
+ * What decision 0145 says of the statements a page is read as, at `@effect/sql-sqlite-bun` 4.1.3, on the table the
  * storage creates and an index of the name, the expression and the id. Each statement is searched as a range of the
  * index, in the order it gives, so that no plan sorts: the rows that tie with the cursor past its id, the rows past
  * its value, and the rows that hold no value. A descending order whose ids ascend among the rows that tie sorts each

@@ -1225,12 +1225,12 @@ test('an entity whose wait runs out as an event arrives waits again from the eve
 }, 60_000)
 
 test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {
-  // Decision 0116: an entity's wait ends with an item of its queue, and nothing races its take. A take raced against a
-  // timeout loses the event when the racing fiber is preempted at the third step after its resumption, and its caller
-  // waits for ever. Seed 2009658187, pinned, reaches it against the wait written as `Effect.timeoutOption` of the take,
-  // mapped to a `Passivate` where it runs out, with the sleep and the pass-over left in place unused, under the spans
-  // and the timers' sleeps of decisions 0220 and 0221. A seed draws its schedule from the yields of the code it runs,
-  // so another form of the old wait needs a seed of its own, which `bun run test:explore` finds in a round or two.
+  // Decision 0116: an entity's wait ends with an item of its queue, and nothing races its take. At Effect 4.1.2 a take
+  // raced against a timeout lost the event when the racing fiber was preempted at the third step after its resumption,
+  // and its caller waited for ever. Effect 4.1.3 interrupts a race's losers as the race settles, and the wait written
+  // as `Effect.timeoutOption` of the take lost nothing on 2026-11-10, over 284 rounds of `bun run test:explore`. So no
+  // seed is pinned. A release that loses the item again, as `spikes/effect-queue-take-timeout-scheduled.test.ts`
+  // would see, needs a seed found again against that form, which `bun run test:explore` found in a round or two.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -1251,7 +1251,7 @@ test('a message that arrives as the wait of its entity runs out is handled, unde
           yield* runtime.settled
           return reply
         }))
-    }), { _tag: 'Accepted' }, { open: false, pinned: [2009658187] })
+    }), { _tag: 'Accepted' }, { open: false })
 }, 60_000)
 
 test('settled never returns between a crash and the activation its due timer brings, under prioritized schedules', () => {
@@ -1260,7 +1260,8 @@ test('settled never returns between a crash and the activation its due timer bri
   // `settled` that looked between two steps would find the entity neither held nor known to the waker, with its timer
   // due. The message's commit waits at a gate while the timer comes due, then dies once the window is open. A leave
   // split in two steps, the entity taken out of the process in one and the waker poked in the next, returns early at
-  // seed 64213746, pinned, under the spans and the timers' sleeps of decisions 0220 and 0221.
+  // seed 1031955209, pinned, under the spans and the timers' sleeps of decisions 0220 and 0221, at Effect 4.1.3 and
+  // the scheduler of decision 0244.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -1298,7 +1299,7 @@ test('settled never returns between a crash and the activation its due timer bri
           yield* runtime.settled
           return { early, restarted }
         }))
-    }), { early: false, restarted: true }, { open: false, pinned: [64213746] })
+    }), { early: false, restarted: true }, { open: false, pinned: [1031955209] })
 }, 60_000)
 
 describe('what the runtime tells a tracer (decision 0220)', () => {

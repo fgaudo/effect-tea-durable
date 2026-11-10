@@ -1,5 +1,5 @@
 /**
- * What a step's transaction rests on, at `@effect/sql-sqlite-bun` 4.1.2 on a file in WAL mode: a transaction is
+ * What a step's transaction rests on, at `@effect/sql-sqlite-bun` 4.1.3 on a file in WAL mode: a transaction is
  * stored whole or not at all, whether it fails, is interrupted, or its process is killed inside it (decisions 0002,
  * 0007, 0013).
  */

@@ -1,5 +1,5 @@
 /**
- * What a `RunnerHealth` that answers by version does to two runners, at `effect` 4.1.2, on one SQLite file. Both
+ * What a `RunnerHealth` that answers by version does to two runners, at `effect` 4.1.3, on one SQLite file. Both
  * runners read one record of the version each runs, as a table of the database would hold it. A runner is alive only
  * while no runner of a newer version is registered.
  *

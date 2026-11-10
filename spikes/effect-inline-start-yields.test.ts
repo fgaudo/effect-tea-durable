@@ -1,5 +1,5 @@
 /**
- * What decision 0117 asks of `effect` 4.1.2: that a fiber started inline, on its parent's stack, can yield there and
+ * What decision 0117 asks of `effect` 4.1.3: that a fiber started inline, on its parent's stack, can yield there and
  * give its parent back before its own run goes on. Effect starts a child inline under `startImmediately`, which
  * `raceFirst`, `timeoutOption` and the concurrent `forEach` use (`forkUnsafe` in `internal/effect.ts`, read in the
  * source). Its scheduler yields a fiber at the first step its count of steps reaches the budget,

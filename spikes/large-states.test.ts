@@ -8,7 +8,7 @@
  * It prints what it measured, and checks only what does not depend on the machine: a step writes the state whole,
  * and the outbox keeps one copy of the projection per step.
  *
- * Seen on 2026-11-04, on Windows with Bun 1.4.2, on a file, 20 steps each. With a projection that holds the items,
+ * Seen on 2026-11-04, on Windows with Bun 1.4.4, on a file, 20 steps each. With a projection that holds the items,
  * a step took 3 ms at 10 items, 5 ms at 1 000 (48 KB), 21 ms at 10 000 (0.5 MB) and 240 ms at 100 000 (5 MB). The
  * outbox grew by the size of the state at each step. With a projection that holds a count, a step took 3, 3, 7 and
  * 60 to 110 ms. A profile of the 100 000 case puts close to half the time in SQLite's write of the row, and most of

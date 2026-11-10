@@ -1447,8 +1447,9 @@ where fibers yield: a scheduler of the tests' answers Effect's `Scheduler` from 
 that fails is replayed exactly, and explores by random priorities over many seeds, or by delay bounding around one
 point; none runs under budgets of steps
 ([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)). The scheduler preempts a
-fiber from the third step of a run and never before, since Effect makes no fiber yield earlier under any budget
-([decision 0115](decisions/archive/0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md)). A fiber that began
+fiber from the second step of a run, where Effect yields under a budget of 2, and lets it through at the task of the
+yield it made
+([decision 0244](decisions/0244-the-scheduler-of-the-tests-lets-a-fiber-through-at-the-task-of-its-yield.md)). A fiber that began
 its run on another fiber's stack, started or resumed inline, is asked whether it yields even with no task ready, so
 that a run reaches the orders in which Effect's budgets give a parent back before its child's run goes on
 ([decision 0117](decisions/archive/0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md)). PCT finds a bug of depth

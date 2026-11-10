@@ -4,7 +4,8 @@
 [decision 0161](0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md): every fork of
 the runtime runs without the transaction of the fiber that forks it, and not only the forks of an operation, a timer
 and a loop. Says how the count of [decision 0163](0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)
-is kept.
+is kept. What Effect 4.1.3 does with a fork the rule misses is added by
+[decision 0243](../0243-a-fork-that-keeps-a-transaction-it-outlives-fails-where-it-runs.md).
 
 ## Context
 

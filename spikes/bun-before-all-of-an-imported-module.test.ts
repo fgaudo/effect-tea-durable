@@ -1,5 +1,5 @@
 /**
- * What decision 0242 rests on, at Bun 1.4.2: a `beforeAll` that a module declares at its top level, outside any
+ * What decision 0242 rests on, at Bun 1.4.4: a `beforeAll` that a module declares at its top level, outside any
  * `describe`, has run before the first test of every file that imports the module. This holds in a run of one
  * process, where Bun evaluates the module once for every file, and in a run of `--parallel`, where each file
  * evaluates it again. The JSDoc of `beforeAll` says that the hook runs once, before all the tests, and says nothing

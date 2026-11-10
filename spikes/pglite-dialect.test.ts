@@ -1,5 +1,5 @@
 /**
- * What PostgreSQL does, at `@effect/sql-pglite` 4.1.2 and the `@electric-sql/pglite` it pins, with the statements
+ * What PostgreSQL does, at `@effect/sql-pglite` 4.1.3 and the `@electric-sql/pglite` it pins, with the statements
  * the storage would write on it (decision 0157). PGlite is PostgreSQL compiled to run in the process, on one
  * session: what a server with many connections does is not seen here.
  */

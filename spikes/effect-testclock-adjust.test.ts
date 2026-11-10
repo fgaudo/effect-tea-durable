@@ -1,5 +1,5 @@
 /**
- * What decision 0066 says of `TestClock`, at `effect` 4.1.2, provided by its `layer` as the runtime's tests provide
+ * What decision 0066 says of `TestClock`, at `effect` 4.1.3, provided by its `layer` as the runtime's tests provide
  * it: the clock starts at 0, and `DateTime.now`, `Effect.sleep` and `Effect.timeoutOption` read it; `adjust` wakes
  * the sleeps due in the order of their times, and after each one waits until every fiber it woke, and every fiber
  * those set going, waits again, under any budget of steps. What it gives a fiber forked before it is one turn, of as
