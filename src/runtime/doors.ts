@@ -12,7 +12,7 @@ import * as Queue from 'effect/Queue'
 import * as Schedule from 'effect/Schedule'
 import { wake } from './callers.ts'
 import { crash, entersHeld, fresh, loadable, loop, offer, perform, warnOfSize } from './loop.ts'
-import * as Machine from './machine.ts'
+import * as Machine from '../machine.ts'
 import {
   at,
   type Deployment,
@@ -29,10 +29,10 @@ import {
   traced,
   untransacted,
 } from './process.ts'
-import { type Address, InvariantDefect, type Request, type Types } from './program.ts'
+import { type Address, InvariantDefect, type Request, type Types } from '../program.ts'
 import { tell } from './readings.ts'
-import type { Delivered, DoorAnswer, OnCluster, Operating } from './runtime.ts'
-import { partitionOf, transaction } from './storage.ts'
+import type { Delivered, DoorAnswer, OnCluster, Operating } from '../runtime.ts'
+import { partitionOf, transaction } from '../storage.ts'
 import { poke } from './waker.ts'
 
 /**

@@ -10,9 +10,11 @@
  * is what wakes it (decision 0029).
  *
  * This module launches the runtime and gives each deployment its handle. The rest of the runtime is divided by what it
- * does: an entity's loop in [`loop.ts`](loop.ts), its callers in [`callers.ts`](callers.ts), the steps on Cluster in
- * [`doors.ts`](doors.ts), the waker in [`waker.ts`](waker.ts), and the readings of the log that wait in
- * [`readings.ts`](readings.ts). What they share is in [`process.ts`](process.ts).
+ * does, in the folder `runtime/`: an entity's loop in [`loop.ts`](runtime/loop.ts), its callers in
+ * [`callers.ts`](runtime/callers.ts), the steps on Cluster in [`doors.ts`](runtime/doors.ts), the waker in
+ * [`waker.ts`](runtime/waker.ts), and the readings of the log that wait in [`readings.ts`](runtime/readings.ts). What
+ * they share is in [`process.ts`](runtime/process.ts). A module outside the runtime imports this one alone
+ * (decision 0241).
  */
 import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
@@ -25,11 +27,11 @@ import * as Option from 'effect/Option'
 import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
 import { SqlClient, type SqlError } from 'effect/sql'
-import { create, faulted, operate, send, waitingFor, wake } from './callers.ts'
-import { current, doorStep, serving, singletonsOf } from './doors.ts'
-import { loads, stop } from './loop.ts'
+import { create, faulted, operate, send, waitingFor, wake } from './runtime/callers.ts'
+import { current, doorStep, serving, singletonsOf } from './runtime/doors.ts'
+import { loads, stop } from './runtime/loop.ts'
 import * as Machine from './machine.ts'
-import { type Deployment, forgetUse, type Process, untransacted } from './process.ts'
+import { type Deployment, forgetUse, type Process, untransacted } from './runtime/process.ts'
 import {
   type Address,
   type Key,
@@ -71,8 +73,8 @@ import {
   type Tally,
   transaction,
 } from './storage.ts'
-import { type Readings, tellAll, waited } from './readings.ts'
-import { waking } from './waker.ts'
+import { type Readings, tellAll, waited } from './runtime/readings.ts'
+import { waking } from './runtime/waker.ts'
 
 /**
  * What a caller is answered: the replies stored under its request id, `NotFound` for no entity, `Suspended`,

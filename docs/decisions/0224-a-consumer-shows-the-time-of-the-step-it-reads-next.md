@@ -45,7 +45,7 @@ the clocks of two runners, and a clock set back gives the same.
   `two writers of one partition commit in the order of their seq, the second waiting for the first` in
   [`src/postgres.test.ts`](../../src/postgres.test.ts) (decision 0222).
 - That a step's time may run against its `seq`: **only reasoned**, from where the loop reads the time
-  ([`src/loop.ts`](../../src/loop.ts)) and where the step draws its `seq` ([`src/storage.ts`](../../src/storage.ts)).
+  ([`src/runtime/loop.ts`](../../src/runtime/loop.ts)) and where the step draws its `seq` ([`src/storage.ts`](../../src/storage.ts)).
   The rule does not need it to happen, only that it may.
 - That `since` follows the `seq` and not the earliest time: **tested** by
   `a consumer's time is the step of its next row in each partition, the oldest of them, whatever the clock` in

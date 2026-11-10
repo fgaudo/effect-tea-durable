@@ -1,6 +1,7 @@
 /**
- * The check of three rules that the form of the code keeps (decisions 0164, 0192). It reads the text of every module of `src/`
- * that is not a test, with its comments, strings, regular expressions and the text of its templates taken out:
+ * The check of the rules that the form of the code keeps (decisions 0164, 0192, 0241). It reads the text of every module
+ * of `src/` and of its folders that is not a test, with its comments, strings, regular expressions and the text of its
+ * templates taken out:
  * - every fork of Effect is given, as its effect, a call of `untransacted`, which takes out the transaction of the
  *   fiber that forks it (decision 0161);
  * - `src/program.ts`, which a browser imports for a program's schemas, reaches no module of Node or of Bun, through
@@ -9,7 +10,9 @@
  * - `src/index.ts`, the main entry, reaches through `src/` neither Effect's Cluster nor the modules of a test, which
  *   the entries `index.cluster.ts` and `index.testing.ts` give (decision 0193);
  * - a count, a name the module both raises and lowers, is raised in the acquisition and lowered in the release of one
- *   `Effect.acquireUseRelease`, whose raise no interruption splits from its lowering (decision 0163).
+ *   `Effect.acquireUseRelease`, whose raise no interruption splits from its lowering (decision 0163);
+ * - a module of a group, a folder of `src/` beside a module of its name, is imported only by that module and by the
+ *   files of the folder (decision 0241).
  *
  * A fork that must keep the transaction is preceded by a line comment that says `Keeps the transaction:` and why. A
  * count that one fiber raises and another lowers is preceded, at each raise and lowering, by a line comment that says
@@ -18,7 +21,7 @@
  */
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
-import { isAbsolute, join, relative } from 'node:path'
+import { isAbsolute, join, posix, relative, sep } from 'node:path'
 import type { Returned } from './index.program.ts'
 
 /** `text` with what is not code as spaces: comments, strings, regular expressions, and the text of templates. */
@@ -239,13 +242,44 @@ export const platformModulesReached = (
   return found
 }
 
-const modules = readdirSync(import.meta.dir).filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
+/**
+ * Each import in `files` that reaches a module of a group from outside it, as `file: specifier`. `files` maps each
+ * path under `src/`, written with `/`, to its text. A group is a folder of `src/` beside a module of its name, as
+ * `runtime/` beside `runtime.ts`, and is entered through that module alone (decision 0241).
+ */
+export const groupsCrossed = (files: ReadonlyMap<string, string>): ReadonlyArray<string> => {
+  const groups = new Set(
+    [...files.keys()].flatMap((file) => {
+      const [folder, ...rest] = file.split('/')
+      return rest.length > 0 && files.has(`${folder}.ts`) ? [folder!] : []
+    }),
+  )
+  const found: Array<string> = []
+  for (const [file, text] of files) {
+    for (const specifier of importsOf(text)) {
+      if (!specifier.startsWith('.')) continue
+      const target = posix.normalize(posix.join(posix.dirname(file), specifier))
+      const [group, ...rest] = target.split('/')
+      if (rest.length === 0 || !groups.has(group!)) continue
+      if (file === `${group}.ts` || file.startsWith(`${group}/`)) continue
+      found.push(`${file}: ${specifier}`)
+    }
+  }
+  return found
+}
+
+/** Every file of `src/` and of its folders, as a path under `src/` written with `/`. */
+const filesOfSrc = readdirSync(import.meta.dir, { recursive: true, encoding: 'utf8' })
+  .map((file) => file.replaceAll(sep, '/'))
+  .filter((file) => file.endsWith('.ts'))
+const modules = filesOfSrc.filter((file) => !file.endsWith('.test.ts'))
 const each = (check: (text: string) => ReadonlyArray<string>) =>
   modules.flatMap((file) => check(readFileSync(join(import.meta.dir, file), 'utf8')).map((line) => `${file}:${line}`))
 
 describe('the form of src', () => {
   test('every fork of src runs without the transaction of the fiber that forks it', () => {
     expect(modules).toContain('runtime.ts')
+    expect(modules).toContain('runtime/loop.ts')
     expect(each(forksKeepingTheTransaction)).toEqual([])
   })
 
@@ -292,11 +326,14 @@ describe('the form of src', () => {
     expect(empty).toEqual([])
   })
   // The library's tests run on its own programs, in `src/fixtures/`, so that a change of an example breaks none.
+  test('a module of a group of src is imported only by the entry of the group and by the files of its folder', () => {
+    expect(modules).toContain('runtime/process.ts')
+    const texts = new Map(filesOfSrc.map((file) => [file, readFileSync(join(import.meta.dir, file), 'utf8')]))
+    expect(groupsCrossed(texts)).toEqual([])
+  })
   test('no file of src imports an example', () => {
-    const files = readdirSync(import.meta.dir, { recursive: true, encoding: 'utf8' })
-      .filter((file) => file.endsWith('.ts'))
-    expect(files).toContain(join('fixtures', 'order.ts'))
-    const found = files.flatMap((file) =>
+    expect(filesOfSrc).toContain('fixtures/order.ts')
+    const found = filesOfSrc.flatMap((file) =>
       importsOf(readFileSync(join(import.meta.dir, file), 'utf8'))
         .filter((specifier) => specifier.includes('examples/'))
         .map((specifier) => `${file}: ${specifier}`)
@@ -379,6 +416,24 @@ describe('the check of the form', () => {
       '/c.ts: crypto',
       '/c.ts: bun:test',
     ])
+  })
+
+  test('an import of a group from outside it is found, and the entry, the folder and a folder with no entry pass', () => {
+    const texts = new Map([
+      ['loop.ts', "import { x } from './loop/step.ts'"],
+      ['loop/step.ts', ["import { y } from './fiber.ts'", "import { z } from '../storage/tables.ts'"].join('\n')],
+      ['loop/fiber.ts', "import { w } from '../loop.ts'"],
+      ['storage.ts', "export { t } from './storage/tables.ts'"],
+      ['storage/tables.ts', ''],
+      ['cluster.ts', [
+        "import { t } from './storage/tables.ts'",
+        "// from './loop/fiber.ts'",
+        "import { s } from './storage.ts'",
+      ].join('\n')],
+      ['fixtures/order.ts', ''],
+      ['runtime.test.ts', "import { order } from './fixtures/order.ts'"],
+    ])
+    expect(groupsCrossed(texts)).toEqual(['loop/step.ts: ../storage/tables.ts', 'cluster.ts: ./storage/tables.ts'])
   })
 
   test('a fork not given untransacted is found, in each of its forms', () => {

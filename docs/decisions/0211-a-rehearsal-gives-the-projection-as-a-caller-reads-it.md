@@ -47,5 +47,5 @@ found it on its first run.
 
 - The design says under Rehearsing that `projection` is read back from its JSON.
 - A rejection whose reason holds `-0` may be given `-0` on the first send and `0` on a retry. That is only
-  reasoned from [`src/callers.ts`](../../src/callers.ts), and no fixture's rejection holds a number. It is an
+  reasoned from [`src/runtime/callers.ts`](../../src/runtime/callers.ts), and no fixture's rejection holds a number. It is an
   [open question](../open-questions.md#programs).

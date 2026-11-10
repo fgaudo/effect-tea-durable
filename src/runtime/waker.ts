@@ -9,7 +9,7 @@ import * as Queue from 'effect/Queue'
 import { activateOnCluster } from './doors.ts'
 import { loads } from './loop.ts'
 import { type Deployment, end, type Process, reread } from './process.ts'
-import type { Types } from './program.ts'
+import type { Types } from '../program.ts'
 
 /**
  * The timers of the entities this process does not hold (decision 0029). It reads the earliest time one is
