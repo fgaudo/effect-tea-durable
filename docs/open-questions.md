@@ -78,6 +78,18 @@ with a requirement that no example has yet.
   statement fail with a `SqlError`. It waits for the release of Effect that holds the fix. It would be decided by:
   - a release of Effect with the fix, after which a fork that keeps the transaction fails where it runs;
   - the spikes and the tests of the runtime run at that release, which a fork the rule missed would then fail.
+- **A failure of the storage that passes.** Every call of a handle but `consume` turns a `SqlError` into a defect,
+  with `Effect.orDie`, so a connection that drops for a second reaches a caller as a defect, the same as a bug. A
+  boundary that would retry such a failure must catch every defect to find it, and the type of `send`,
+  `Effect<Answer>`, says nothing of it. `consume` alone gives the `SqlError` in its error channel. Whether the calls
+  of a handle give a failure of the storage as a typed error, or the runtime retries it before it dies, is not
+  decided. It waits for the release, since it changes the signature of each call. It would be decided by:
+  - which failures of `SqlError` are transient on each dialect, a lost connection or a serialization failure, and
+    which are not, a full disk or a missing table;
+  - whether a retry inside the runtime keeps the rule that a step is one transaction, applied once, when the commit's
+    answer is lost and the commit is not;
+  - whether `consume` and the other calls should agree, one way or the other.
+
 ## Programs
 
 - **A request without a sender.** A program that leaves out `sender` has the sender `null`, and every `create` and
@@ -91,3 +103,33 @@ with a requirement that no example has yet.
     program does have a sender;
   - what the runtime's housekeeping changes of what a program passes to `send`, since both change the same
     signature.
+- **A chain of `andThen` over many children.** `forEach` tells a run of messages to children by id and puts them
+  back once ([decision 0155](decisions/archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md)). A
+  program that writes the same step as one `andThen` after the other copies the record of children once per child:
+  the spike [`many-children`](../spikes/many-children.test.ts) sees 111 ms at 1 000 children, against 4 ms by
+  `forEach`. Nothing tells the author of the program, whose step is right and slow. Whether the guide and the doc
+  comment of `andThen` say so, or `andThen` joins a run of messages to children as `forEach` does, is not decided.
+  It waits for a program that tells many children one message at a time. It would be decided by:
+  - whether `andThen` can find the run without changing the step it gives, as `forEach` does;
+  - whether a program has a reason to chain the messages by hand, where `forEach` would not serve.
+- **A retry that outlives the process.** A failure the provider may recover from is retried inside the runner, with
+  `Effect.retry` and a schedule that ends, under the same key (the guide's operations). A crash or a passivation
+  starts that schedule again from its first attempt, and an operation that waits between tries keeps its entity
+  loaded. A retry over hours or days is written in the state, as `examples/subscription` counts its attempts behind a
+  timer. Whether the guide gives that form as a recipe, or the library a helper that writes it, is not decided. A
+  helper would hold the attempts in the state, where the program's schema holds them. It waits for a second program
+  that retries behind a timer. It would be decided by:
+  - how much of `examples/subscription` a second program would write again, state and messages included;
+  - whether a helper can add its attempts and its timer to a program's state and keys without hiding them from
+    `update`, `work` and the rehearsal.
+
+## The surface
+
+- **A handle divided by who uses it.** A handle gives more than twenty calls in one interface: a caller's `create`,
+  `send` and `read`, the queries, the log's `published`, `fetch`, `ack` and `consume`, and an operator's `suspended`,
+  `inspect`, `resume`, `discard`, `prune`, `forget`, `expire` and `reindex`. A boundary that serves callers holds the
+  operator's calls too. Whether a handle is divided into views, one for callers, one for readers of the log and one
+  for an operator, is not decided. It waits for the release, since the surface changes. It would be decided by:
+  - the boundaries of the examples, and which calls each uses;
+  - whether a view is a type over one handle, or a value a deployment gives, so that a boundary cannot reach what
+    it was not given.
