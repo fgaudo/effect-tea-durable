@@ -34,7 +34,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0168](archive/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md) | On Cluster, a failure Cluster saved of its own is reset before it is given | [0170](archive/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md) |
 | [0169](archive/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md) | On Cluster, an operation's request ids are kept under its work, and Cluster's rows deleted with it | [0170](archive/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md) |
 | [0170](archive/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md) | On Cluster, an operation's client keeps the request's id before it resets a failure Cluster saved |  |
-| [0171](archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md) | On Cluster, a caller's rows go once its client has the answer and its time is past | [0245](0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md), [0248](0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md) |
+| [0171](archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md) | On Cluster, a caller's rows go once its client has the answer and its time is past | [0245](0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md), [0248](0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md), [0249](0249-on-cluster-a-reset-drops-the-id-a-callers-client-kept.md) |
 | [0172](archive/0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md) | On Cluster, an operation registers for a resumption before it sends, and two loaders of an entity never wait for its lock at once on SQLite |  |
 | [0173](archive/0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md) | On Cluster, a reply Cluster saves of its own after its request's rows are gone is left |  |
 | [0174](archive/0174-on-cluster-a-runner-deploys-only-the-programs-its-sharding-names.md) | On Cluster, a runner deploys only the programs its `sharding` names, at the version named |  |
@@ -42,6 +42,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0176](archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md) | On Cluster, a rename marks the old name, which no runner steps again, and keeps a door under it that delivers to the new program | [0198](0198-every-object-the-runtime-makes-is-named-with-tea.md) |
 | [0178](archive/0178-a-server-of-the-orders-on-cluster-is-run-as-a-process.md) | A server of the orders on Cluster is run as a process, on one runner and then on two |  |
 | [0248](0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md) | On Cluster, a caller's rows are kept for at least two of Cluster's polls of replies and a second, so that every client of the request reads the answer |  |
+| [0249](0249-on-cluster-a-reset-drops-the-id-a-callers-client-kept.md) | On Cluster, a reset of a caller's answer that is no reply deletes the id its client kept, and the retry's answer keeps it anew |  |
 
 ## The project
 

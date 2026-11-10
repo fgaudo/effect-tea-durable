@@ -34,6 +34,7 @@ import {
 import { defaultPartitions } from './storage/tables.ts'
 
 export {
+  forgetGiven,
   leased,
   newestVersion,
   outranked,
@@ -248,7 +249,8 @@ export interface Storage<T extends Types> {
    * On Cluster: keeps the Cluster request id `requestId` of a caller's creation or message to the entity `id`, once
    * its client was given the answer, until the time `until`, in milliseconds. Past it, a step of the entity that
    * answers a caller and `expire` delete Cluster's rows under the id. An id already kept is not kept again
-   * (decision 0171).
+   * (decision 0171), and a reset of the request's answer deletes it, so that the retry's answer keeps it anew
+   * (decision 0249).
    */
   readonly keepGiven: (requestId: string, id: string, until: number) => Effect.Effect<void>
 }

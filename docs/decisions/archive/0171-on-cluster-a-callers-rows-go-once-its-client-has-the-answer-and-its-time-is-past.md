@@ -7,7 +7,9 @@ has the answer, and the door's step keeps none. Changed by
 [decision 0245](../0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md): a creation's client keeps its
 id too, as a `keep` of 0 does. Changed by
 [decision 0248](../0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md): a `keep` shorter than two of
-Cluster's polls of replies and a second keeps Cluster's rows for that time.
+Cluster's polls of replies and a second keeps Cluster's rows for that time. Changed by
+[decision 0249](../0249-on-cluster-a-reset-drops-the-id-a-callers-client-kept.md): a reset of an answer that is no
+reply deletes the id kept, and the retry's answer keeps it anew.
 
 ## Context
 

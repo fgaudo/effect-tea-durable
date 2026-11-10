@@ -35,7 +35,7 @@ import { Rpc } from 'effect/rpc'
 import { SqlClient } from 'effect/sql'
 import { type Address, InvariantDefect, type Program, type Types, versionOf } from './program.ts'
 import { type Delivered, launchWith, type OnCluster, type Operating, type Options, type Runtime } from './runtime.ts'
-import { createTables, leased, outranked, recordVersions, standingOf } from './storage.ts'
+import { createTables, forgetGiven, leased, outranked, recordVersions, standingOf } from './storage.ts'
 
 /**
  * The text a runner's address is recorded under: `host:port`, the address's primary key, which Cluster's
@@ -311,6 +311,10 @@ export const onCluster: Effect.Effect<
         const latest = (yield* messages.repliesForUnfiltered([requestId.value])).at(-1)
         if (latest === undefined || !resettable(latest)) return true
         if (kept !== undefined && !(yield* kept(String(requestId.value)))) return false
+        // The id a caller's client kept goes before the reset, and not after: past its time, a step or `expire`
+        // would delete the request between the reset and Cluster's delivery, or the step that answers it would
+        // delete its own request. The retry's answer keeps the id again (decision 0249).
+        yield* Effect.provideService(forgetGiven(String(requestId.value)), SqlClient.SqlClient, sql)
         yield* sharding.reset(requestId.value, { expectedReplyId: Snowflake.Snowflake(latest.id) })
         return true
       })

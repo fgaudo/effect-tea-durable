@@ -40,6 +40,17 @@ export const forgetUnder = (
     return gone.length
   })
 
+/**
+ * Deletes the kept Cluster id `requestId` of a caller's request, and none of Cluster's rows: a reset of the request's
+ * answer runs it first, so that no step or `expire` deletes the request before Cluster delivers it again, and the
+ * retry's answer keeps the id anew (decision 0249).
+ */
+export const forgetGiven = (requestId: string): Effect.Effect<void, never, SqlClient.SqlClient> =>
+  Effect.flatMap(
+    SqlClient.SqlClient,
+    (sql) => sql`DELETE FROM effecttea_given_requests WHERE request_id = ${requestId}`,
+  ).pipe(Effect.asVoid, Effect.orDie)
+
 export const forgetSent = (sql: SqlClient.SqlClient, where: Statement.Fragment) => forgetUnder(sql, 'effecttea_sent_requests', where)
 
 /** A program's name and the version it runs, as a launch on Cluster records them (decision 0159). */

@@ -396,7 +396,8 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
       }
       // A step that answers a caller takes its entity's replies past their time with it (decision 0125). On
       // Cluster it takes Cluster's rows of the requests whose clients were given their answers and whose time is past
-      // too. The step's own request has no such row yet: its client keeps it once given the answer (decision 0171).
+      // too. The step's own request has no such row: its client keeps it once given the answer (decision 0171), and a
+      // reset of an earlier answer deleted the row it kept (decision 0249).
       if (written.replies.length > 0) {
         yield* sql`DELETE FROM effecttea_replies WHERE name = ${name} AND id = ${id} AND until IS NOT NULL AND until <= ${at}`
         if (onCluster) {

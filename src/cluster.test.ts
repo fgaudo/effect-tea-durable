@@ -148,6 +148,23 @@ const withholding = (withheld: (reply: Reply.Reply<any>) => boolean) =>
       })),
   ).pipe(Layer.provide(SqlMessageStorage.layer))
 
+/**
+ * Cluster's storage of messages on SQLite, which runs `after` once it has saved a request it finds saved already and
+ * not answered, before the client that sent it is told: what another fiber or runner does between a client's send of
+ * a request it reset and Cluster's next delivery of that request.
+ */
+const afterDuplicate = (after: () => Effect.Effect<unknown>) =>
+  Layer.effect(
+    MessageStorage.MessageStorage,
+    Effect.map(Effect.service(MessageStorage.MessageStorage), (storage) =>
+      MessageStorage.MessageStorage.of({
+        ...storage,
+        saveRequest: (message) =>
+          Effect.tap(storage.saveRequest(message), (saved) =>
+            saved._tag === 'Duplicate' && Option.isNone(saved.lastReceivedReply) ? Effect.asVoid(after()) : Effect.void),
+      })),
+  ).pipe(Layer.provide(SqlMessageStorage.layer))
+
 describe('the versions a launch records', () => {
   test('a launch older than the newest recorded dies, naming the program and both versions, and records nothing', () =>
     onEach(['sqlite', 'pg'], (dialect) =>
@@ -602,12 +619,13 @@ describe('the runtime on Cluster', () => {
     run: Effect.Effect<void, unknown, Sharding.Sharding | SqlClient.SqlClient | Scope.Scope>,
     probe?: (sql: SqlClient.SqlClient) => (said: Said) => Effect.Effect<void>,
     options: Options = { sweep: 'none' },
+    messages: typeof SqlMessageStorage.layer = SqlMessageStorage.layer,
   ) => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
     const runner = sharding([tally]).pipe(
       Layer.provideMerge(Runners.layerNoop),
-      Layer.provideMerge(SqlMessageStorage.layer),
+      Layer.provideMerge(messages),
       Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
       Layer.provideMerge(ShardingConfig.layer({
         runnerAddress: Option.some(RunnerAddress.make('localhost', 1)),
@@ -813,6 +831,74 @@ describe('the runtime on Cluster', () => {
       // The retry reaches the door again, and `init` does not run again: the state keeps what the message did.
       expect(yield* handle!.create('one', creating)).toEqual({ _tag: 'Created' })
       expect(yield* stateOf).toEqual({ n: 1, asking: false })
+    })), 30_000)
+
+  // A creation `init` rejected keeps its Cluster id, and a retry resets the saved `Rejected` under that same id, so that
+  // Cluster delivers the request again (decision 0182). The reset drops the id kept, so that an `expire` between the
+  // retry's send and the delivery leaves the request, which past the least time it would delete (decision 0249).
+  test('a retry of a rejected creation is answered though an expire runs before Cluster delivers it again', () => {
+    let sweeping = false
+    return onRunner(
+      Effect.gen(function*() {
+        const sender = { user: 'u' }
+        const creating = { flags: { start: 1 }, requestId: 'c1', sender }
+        refusing = true
+        expect(yield* handle!.create('one', creating)).toEqual({ _tag: 'Rejected', reason: { why: 'closed' } })
+        refusing = false
+        yield* Effect.sleep(least)
+        sweeping = true
+        const retried = yield* Effect.forkDetach(handle!.create('one', creating))
+        yield* Effect.sleep('5 seconds')
+        expect(retried.pollUnsafe()).toEqual(Exit.succeed({ _tag: 'Created' }))
+      }),
+      undefined,
+      { sweep: 'none' },
+      afterDuplicate(() => sweeping ? handle!.expire : Effect.void),
+    )
+  }, 30_000)
+
+  // The same of a message answered `Suspended`: a retry once the entity is back resets the saved `Suspended` under the
+  // id its client kept (decisions 0085, 0165), and an `expire` past the time kept leaves the request (decision 0249).
+  test('a retry of a message answered Suspended is answered though an expire runs before Cluster delivers it again', () => {
+    let sweeping = false
+    return onRunner(
+      Effect.gen(function*() {
+        const sender = { user: 'u' }
+        yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
+        const zero = { millis: 0 }
+        expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender, keep: zero })).toEqual({ _tag: 'Suspended' })
+        const add = { _tag: 'Add', n: 1 } as const
+        expect(yield* handle!.send('one', add, { requestId: 'm2', sender, keep: zero })).toEqual({ _tag: 'Suspended' })
+        expect(yield* handle!.discard('one')).toEqual({ _tag: 'Discarded' })
+        yield* Effect.sleep(least)
+        sweeping = true
+        const retried = yield* Effect.forkDetach(handle!.send('one', add, { requestId: 'm2', sender, keep: zero }))
+        yield* Effect.sleep('5 seconds')
+        expect(retried.pollUnsafe()).toEqual(Exit.succeed({ _tag: 'Accepted' }))
+      }),
+      undefined,
+      { sweep: 'none' },
+      afterDuplicate(() => sweeping ? handle!.expire : Effect.void),
+    )
+  }, 30_000)
+
+  // A step deletes Cluster's rows under its entity's ids past their time (decision 0171). An earlier answer
+  // `Suspended` was given and its id kept, and the retry reset it (decisions 0085, 0165). The reset dropped the id, so
+  // the step that answers the retry leaves its own request, and Cluster saves no reply without one (decision 0249).
+  test('the step that answers a retry of a message answered Suspended leaves no reply without its request', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const sender = { user: 'u' }
+      const zero = { millis: 0 }
+      const add = { _tag: 'Add', n: 1 } as const
+      yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
+      expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Suspended' })
+      expect(yield* handle!.send('one', add, { requestId: 'm2', sender, keep: zero })).toEqual({ _tag: 'Suspended' })
+      expect(yield* handle!.discard('one')).toEqual({ _tag: 'Discarded' })
+      yield* Effect.sleep(least)
+      expect(yield* handle!.send('one', add, { requestId: 'm2', sender, keep: zero })).toEqual({ _tag: 'Accepted' })
+      const orphans = yield* sql`SELECT 1 FROM cluster_replies WHERE request_id NOT IN (SELECT request_id FROM cluster_messages)`
+      expect(orphans).toEqual([])
     })), 30_000)
 
   // The sweep of a program is a singleton of Cluster, which the runner that holds its shard runs (decision 0245).
