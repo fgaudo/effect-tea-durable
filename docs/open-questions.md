@@ -82,17 +82,6 @@ with a requirement that no example has yet.
 
 ## Programs
 
-- **A request without a sender.** A program that leaves out `sender` has the sender `null`, and every `create` and
-  `send` of it, and every `send` of its rehearsal, still passes `sender: null`, as the quick start does
-  ([decision 0196](decisions/0196-the-quick-start-is-an-example-the-readme-shows-whole.md)). The same holds of
-  `flags` left as `Schema.Null` ([decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)).
-  Whether a request may leave out a sender that is `null`, and `create` flags that are `null`, is not decided. The
-  step of the runtime's housekeeping in the [roadmap](roadmap.md) decides it. It would be decided by:
-  - how many programs of the guide have no sender or no flags, once the guide is written;
-  - whether an optional field typed by a conditional type keeps the errors of the compiler readable where a
-    program does have a sender;
-  - what the runtime's housekeeping changes of what a program passes to `send`, since both change the same
-    signature.
 - **A retry that outlives the process.** A failure the provider may recover from is retried inside the runner, with
   `Effect.retry` and a schedule that ends, under the same key (the guide's operations). A crash or a passivation
   starts that schedule again from its first attempt, and an operation that waits between tries keeps its entity

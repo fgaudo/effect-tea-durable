@@ -99,13 +99,13 @@ const measure = (size: number) =>
     const sql = yield* SqlClient.SqlClient
     const runtime = yield* launch()
     const entities = yield* runtime.deploy(parent)
-    yield* entities.create('p', { size }, { requestId: 'create', sender: null })
+    yield* entities.create('p', { flags: { size }, requestId: 'create', sender: null })
     yield* runtime.settled
     const started = performance.now()
     for (let step = 0; step < steps; step++) {
       // The last child, so that a search from the first passes every other.
       const message = { _tag: 'Line', id: `line-${size - 1}`, message: { _tag: 'Touch' } } as const
-      yield* entities.send('p', message, { requestId: `touch-${step}`, sender: null })
+      yield* entities.send('p', message, { requestId: `touch-${step}`, sender: null, keep: 'forever' })
     }
     yield* runtime.settled
     const elapsed = performance.now() - started
@@ -154,10 +154,10 @@ const tellEvery = (size: number, by: 'forEach' | 'andThen') =>
     const sql = yield* SqlClient.SqlClient
     const runtime = yield* launch()
     const entities = yield* runtime.deploy(parent)
-    yield* entities.create('p', { size }, { requestId: 'create', sender: null })
+    yield* entities.create('p', { flags: { size }, requestId: 'create', sender: null })
     yield* runtime.settled
     const started = performance.now()
-    yield* entities.send('p', { _tag: 'TouchAll', by }, { requestId: 'touch-all', sender: null })
+    yield* entities.send('p', { _tag: 'TouchAll', by }, { requestId: 'touch-all', sender: null, keep: 'forever' })
     yield* runtime.settled
     const elapsed = performance.now() - started
     const [row] = yield* sql<{ state: string }>`SELECT state FROM effecttea_entities WHERE id = 'p'`

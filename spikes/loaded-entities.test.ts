@@ -54,12 +54,12 @@ const measure = (size: number, capacity?: number) =>
     })
     const entities = yield* runtime.deploy(rooms)
     const sender = { id: 'ada' }
-    yield* entities.create('warm', { size }, { requestId: 'warm', sender })
+    yield* entities.create('warm', { flags: { size }, requestId: 'warm', sender })
     yield* runtime.settled
     const before = heap()
     const started = performance.now()
     for (let index = 0; index < count; index++) {
-      yield* entities.create(`r${index}`, { size }, { requestId: `create-${index}`, sender })
+      yield* entities.create(`r${index}`, { flags: { size }, requestId: `create-${index}`, sender })
     }
     yield* runtime.settled
     const elapsed = performance.now() - started

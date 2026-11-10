@@ -271,6 +271,26 @@ export type ConsumerOf<C, Name extends string> = Name extends keyof C
   ? NonNullable<C[Name]> extends ReadonlyArray<infer Consumer extends string> ? Consumer : never
   : never
 
+/**
+ * How long a caller's reply is kept from the step that answers: `millis`, a non-negative integer, or `'forever'`
+ * (decisions 0125, 0245).
+ */
+export type Keep = Readonly<{ millis: number }> | 'forever'
+
+/**
+ * The sender of a caller's request, as the program's schema writes it. A program whose sender is `null` takes none,
+ * and a request may leave it out (decision 0245).
+ */
+export type SenderOf<T extends Types> = [T['sender']] extends [null] ? Readonly<{ sender?: null }>
+  : Readonly<{ sender: T['sender'] }>
+
+/**
+ * The flags of a creation, as the program's schema writes them. A program whose flags are `null` takes none, and a
+ * request may leave them out (decision 0245).
+ */
+export type FlagsOf<T extends Types> = [T['flags']] extends [null] ? Readonly<{ flags?: null }>
+  : Readonly<{ flags: T['flags'] }>
+
 /** What a caller does with one program's entities, deployed with the consumers `C`. */
 export interface Handle<T extends Types, C = {}> {
   /**
@@ -279,31 +299,32 @@ export interface Handle<T extends Types, C = {}> {
    */
   readonly partitions: number
   /**
-   * Creates the entity `id`. A retry of the request that created it is answered `Created` (decision 0017). Flags the
+   * Creates the entity `id` with the request's `flags`, left out where the program's flags are `null`
+   * (decision 0245). A retry of the request that created it is answered `Created` (decision 0017). Flags the
    * program's `init` rejects are answered `Rejected`, and nothing is stored: a retry runs `init` again
    * (decision 0182). A request id that is no text a database holds is the caller's defect (decision 0204).
    */
   readonly create: (
     id: string,
-    flags: T['flags'],
-    request: Readonly<{ requestId: string; sender: T['sender'] }>,
+    request: Readonly<{ requestId: string } & FlagsOf<T> & SenderOf<T>>,
   ) => Effect.Effect<Creation<T['rejection']>>
   /**
    * Sends an inbound message, and waits for the reply. A retry under the same request id gets the reply stored for
    * it. The boundary gives `keep`, the time its protocol retries for. The reply is then kept for `keep.millis` from
-   * the step that answers, and a retry after that is a new request, applied again. Without `keep` the reply is kept
-   * for ever. `keep.millis` is a non-negative integer, and anything else is the caller's defect (decision 0125). A
+   * the step that answers, and a retry after that is a new request, applied again. `'forever'` keeps the reply for
+   * ever. `keep` is required, since only the boundary knows the window, and `keep.millis` is a non-negative integer:
+   * anything else is the caller's defect (decisions 0125, 0245). A
    * request id that is no text a database holds is the caller's defect too (decision 0204). An
    * entity that holds as many callers' messages as `callers.messages` answers `Full` at once, and nothing of the
    * message is offered or stored: the caller retries later, under the same request id or another (decision 0147).
    * On Cluster a caller is never answered `Full`, and its message waits for the entity. There, until a step of the
    * entity or `expire` deletes Cluster's rows of a reply past its time, a retry after `keep` is given the reply
-   * Cluster saved (decisions 0165, 0171).
+   * Cluster saved, and a message kept `'forever'` keeps Cluster's rows for ever (decisions 0165, 0171).
    */
   readonly send: (
     id: string,
     message: T['inbound'],
-    request: Readonly<{ requestId: string; sender: T['sender']; keep?: Readonly<{ millis: number }> }>,
+    request: Readonly<{ requestId: string; keep: Keep } & SenderOf<T>>,
   ) => Effect.Effect<Answer<T['rejection']>>
   /**
    * What callers read of the entity, or null when there is none: the row written by its last event that changed
@@ -628,7 +649,7 @@ export interface OnCluster {
 /**
  * Runs `effect` once each count a caller gave — a cursor, a limit — is a non-negative integer: anything else is
  * the caller's defect, and nothing is read or stored for it. A count left out is refused with the rest, since the
- * types do not hold a cast or a call from JavaScript: a `keep` that is none is not passed (decisions 0053, 0141).
+ * types do not hold a cast or a call from JavaScript (decisions 0053, 0141).
  */
 const counted = <A, E = never, R = never>(
   counts: Readonly<Record<string, number>>,
@@ -641,6 +662,34 @@ const counted = <A, E = never, R = never>(
     }
     return effect
   })
+
+/**
+ * Runs `effect` with the millis of a `keep` the caller gave, or `undefined` for `'forever'`, once it is one of the
+ * two: anything else, a `keep` left out included, is the caller's defect, and nothing is read or stored for it. The
+ * types do not hold a call from JavaScript (decisions 0053, 0245).
+ */
+const kept = <A>(keep: Keep, effect: (millis: number | undefined) => Effect.Effect<A>): Effect.Effect<A> =>
+  Effect.suspend(() => {
+    if (keep === 'forever') return effect(undefined)
+    if (typeof keep === 'object' && keep !== null) return counted({ keep: keep.millis }, effect(keep.millis))
+    return Effect.die(new InvariantDefect({ reason: `the keep is ${String(keep)}, which is neither millis nor 'forever'` }))
+  })
+
+/**
+ * The sender of a caller's request: `null` where the request leaves it out, which the types allow only where the
+ * program's sender is `null`. A program that has a sender is given `null` from JavaScript, and its schema refuses it
+ * (decision 0245).
+ */
+const senderOf = <T extends Types>(request: Readonly<{ sender?: unknown }>): T['sender'] =>
+  request.sender === undefined ? null : request.sender
+
+/**
+ * The flags of a creation: `null` where the request leaves them out, which the types allow only where the program's
+ * flags are `null`. A program that has flags is given `null` from JavaScript, and its schema or `init` refuses it
+ * (decision 0245).
+ */
+const flagsOf = <T extends Types>(request: Readonly<{ flags?: unknown }>): T['flags'] =>
+  request.flags === undefined ? null : request.flags
 
 /**
  * Runs `effect` once the id a caller gave is an id, text a database holds as it is and not empty: anything else is
@@ -1042,29 +1091,32 @@ export const launchWith = (
         }))
         const handle: Handle<T, C> = {
           partitions,
-          create: (id, flags, request) =>
+          create: (id, request) =>
             texted(
               id,
               requested(
                 request.requestId,
                 admitted(faulted(
-                  create(p, deployed, id, flags, { _tag: 'Caller', sender: request.sender, id: request.requestId }),
+                  create(p, deployed, id, flagsOf<T>(request), {
+                    _tag: 'Caller',
+                    sender: senderOf<T>(request),
+                    id: request.requestId,
+                  }),
                 )),
               ),
             ),
           send: (id, message, request) =>
-            texted(id, requested(request.requestId, counted(
-              request.keep === undefined ? {} : { keep: request.keep.millis },
+            texted(id, requested(request.requestId, kept(request.keep, (keep) =>
               admitted(faulted(
                 send(p,
                   deployed,
                   id,
                   message,
-                  { _tag: 'Caller', sender: request.sender, id: request.requestId },
-                  request.keep?.millis,
+                  { _tag: 'Caller', sender: senderOf<T>(request), id: request.requestId },
+                  keep,
                 ),
-              )),
-            ))),
+              )))
+            )),
           read: (id) => texted(id, deployed.storage.projected(id)),
           query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
           count: deployed.storage.count,

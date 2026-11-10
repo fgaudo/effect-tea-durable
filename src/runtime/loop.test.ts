@@ -65,7 +65,7 @@ describe('passivation', () => {
       yield* process({ observe, unloaded, passivate: { millis: 5 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
           yield* runtime.settled
           expect(entities).toEqual([])
           // Only the timer is left, and nothing holds the entity loaded: it is unloaded with the timer stored.
@@ -94,7 +94,7 @@ describe('passivation', () => {
         return yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
-            yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+            yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
             // An operation that ended before it was held would be counted as running for ever, and this would
             // never return: the run would not end. An event not counted as it is offered would let it return before
             // the event is applied, and the entity would be read with a key it no longer wants.
@@ -123,19 +123,19 @@ describe('passivation', () => {
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
             for (const entity of ['e-1', 'e-2']) {
-              yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+              yield* toy.create(entity, { flags: { at }, requestId: entity, sender: tester })
             }
             yield* runtime.settled
             const left = [[...entities]]
             // `e-1` is used again, so `e-2` is the least recently used when a third enters, and it has left
             // once the process is settled.
-            yield* toy.send('e-1', { _tag: 'Refuse', nonce: 'n-1' }, { requestId: 'r-1', sender: tester })
+            yield* toy.send('e-1', { _tag: 'Refuse', nonce: 'n-1' }, { requestId: 'r-1', sender: tester, keep: 'forever' })
             yield* runtime.settled
-            yield* toy.create('e-3', { at }, { requestId: 'e-3', sender: tester })
+            yield* toy.create('e-3', { flags: { at }, requestId: 'e-3', sender: tester })
             yield* runtime.settled
             left.push([...entities])
             // A caller loads it again, and `e-1` leaves in its turn.
-            yield* toy.send('e-2', { _tag: 'Refuse', nonce: 'n-2' }, { requestId: 'r-2', sender: tester })
+            yield* toy.send('e-2', { _tag: 'Refuse', nonce: 'n-2' }, { requestId: 'r-2', sender: tester, keep: 'forever' })
             yield* runtime.settled
             left.push([...entities])
             return left
@@ -164,7 +164,7 @@ describe('passivation', () => {
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
             for (const entity of ['w-1', 'w-2']) {
-              yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+              yield* toy.create(entity, { flags: { at }, requestId: entity, sender: tester })
               yield* runtime.settled
             }
             yield* adjusted(window, '5 millis')
@@ -187,7 +187,7 @@ describe('passivation', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           for (const entity of ['f-1', 'f-2']) {
-            yield* ran(toy.create(entity, { at }, { requestId: entity, sender: { _tag: 'Tester' } }))
+            yield* ran(toy.create(entity, { flags: { at }, requestId: entity, sender: { _tag: 'Tester' } }))
           }
           expect(entities).toEqual([])
         }))
@@ -229,11 +229,11 @@ describe('passivation', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
           for (let index = 0; index < 10_000; index++) {
-            yield* toy.create(`d-${index}`, { at }, { requestId: `d-${index}`, sender: tester })
+            yield* toy.create(`d-${index}`, { flags: { at }, requestId: `d-${index}`, sender: tester })
           }
           yield* runtime.settled
           expect(entities).toEqual([])
-          yield* toy.create('d-last', { at }, { requestId: 'd-last', sender: tester })
+          yield* toy.create('d-last', { flags: { at }, requestId: 'd-last', sender: tester })
           yield* runtime.settled
           expect(entities).toEqual(['d-0'])
         }))
@@ -248,7 +248,7 @@ describe('passivation', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
           for (const entity of ['s-1', 's-2', 's-3']) {
-            yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+            yield* toy.create(entity, { flags: { at }, requestId: entity, sender: tester })
             yield* runtime.settled
           }
           expect(entities).toEqual([])
@@ -276,14 +276,14 @@ describe('passivation', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), late)
           const timers = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-          yield* ran(toy.create('x', { at }, { requestId: 'x', sender: tester }))
-          const failed = yield* Effect.exit(toy.send('x', { _tag: 'Refuse', nonce: 'n' }, { requestId: 'r', sender: tester }))
+          yield* ran(toy.create('x', { flags: { at }, requestId: 'x', sender: tester }))
+          const failed = yield* Effect.exit(toy.send('x', { _tag: 'Refuse', nonce: 'n' }, { requestId: 'r', sender: tester, keep: 'forever' }))
           expect(Exit.isFailure(failed)).toBe(true)
           yield* Deferred.succeed(gate, undefined)
           yield* runtime.settled
           // Two entities fill the capacity, and neither leaves: the one that crashed is not counted.
           for (const entity of ['s-1', 's-2']) {
-            yield* timers.create(entity, { at }, { requestId: entity, sender: tester })
+            yield* timers.create(entity, { flags: { at }, requestId: entity, sender: tester })
             yield* runtime.settled
           }
           expect(entities).toEqual([])
@@ -298,13 +298,13 @@ describe('passivation', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
           const twin = yield* Effect.provide(runtime.deploy({ ...program, name: 'Twin' }), (yield* hands()).layer)
-          yield* toy.create('e-1', { at }, { requestId: 'e-1', sender: tester })
+          yield* toy.create('e-1', { flags: { at }, requestId: 'e-1', sender: tester })
           yield* runtime.settled
-          yield* twin.create('e-2', { at }, { requestId: 'e-2', sender: tester })
+          yield* twin.create('e-2', { flags: { at }, requestId: 'e-2', sender: tester })
           yield* runtime.settled
           expect(entities).toEqual([])
           // A third entity, of the first program: the process holds three, and the least recently used leaves.
-          yield* toy.create('e-3', { at }, { requestId: 'e-3', sender: tester })
+          yield* toy.create('e-3', { flags: { at }, requestId: 'e-3', sender: tester })
           yield* runtime.settled
           expect(entities).toEqual(['e-1'])
         }))
@@ -320,11 +320,11 @@ describe('passivation', () => {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           // Two entities busy at once hold the process over its capacity, and stay once their work is done: only
           // an entity that enters tells the others to leave (decision 0076).
-          for (const entity of ['f-1', 'f-2']) yield* ran(toy.create(entity, { at }, { requestId: entity, sender: tester }))
+          for (const entity of ['f-1', 'f-2']) yield* ran(toy.create(entity, { flags: { at }, requestId: entity, sender: tester }))
           yield* open
           yield* runtime.settled
           expect(entities).toEqual([])
-          yield* toy.create('f-3', { at }, { requestId: 'f-3', sender: tester })
+          yield* toy.create('f-3', { flags: { at }, requestId: 'f-3', sender: tester })
           yield* runtime.settled
           expect([...entities].sort()).toEqual(['f-1', 'f-2'])
         }))
@@ -339,13 +339,13 @@ describe('passivation', () => {
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
             for (const entity of ['s-1', 's-2', 's-3']) {
-              yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+              yield* toy.create(entity, { flags: { at }, requestId: entity, sender: tester })
               yield* runtime.settled
             }
             // Two enter at once: one told to leave and not gone yet counts against the second one's excess.
             yield* together([
-              toy.create('s-4', { at }, { requestId: 's-4', sender: tester }),
-              toy.create('s-5', { at }, { requestId: 's-5', sender: tester }),
+              toy.create('s-4', { flags: { at }, requestId: 's-4', sender: tester }),
+              toy.create('s-5', { flags: { at }, requestId: 's-5', sender: tester }),
             ])
             yield* runtime.settled
             return [...entities].sort()
@@ -361,9 +361,9 @@ describe('passivation', () => {
         Effect.gen(function*() {
           const busy = yield* Effect.provide(runtime.deploy(program), (yield* hands({ holds: true })).layer)
           const timers = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-          yield* ran(busy.create('f-1', { at }, { requestId: 'f-1', sender: tester }))
+          yield* ran(busy.create('f-1', { flags: { at }, requestId: 'f-1', sender: tester }))
           // The process is over its capacity, and only the entity entering has nothing to do: it stays.
-          yield* ran(timers.create('s-1', { at }, { requestId: 's-1', sender: tester }))
+          yield* ran(timers.create('s-1', { flags: { at }, requestId: 's-1', sender: tester }))
           expect(entities).toEqual([])
         }))
     })))
@@ -382,7 +382,7 @@ describe('passivation', () => {
         at: (point, entity, event) =>
           point === 'AfterReply' && entity.id === 's-2' && event._tag === 'Create' && toy !== null
             ? Effect.map(
-              toy.send('s-1', { _tag: 'Refuse', nonce: 'n-1' }, { requestId: 'r-1', sender: tester }),
+              toy.send('s-1', { _tag: 'Refuse', nonce: 'n-1' }, { requestId: 'r-1', sender: tester, keep: 'forever' }),
               (reply) => {
                 answer = reply
               },
@@ -391,15 +391,15 @@ describe('passivation', () => {
       }, (runtime) =>
         Effect.gen(function*() {
           toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-          yield* toy.create('s-1', { at }, { requestId: 's-1', sender: tester })
+          yield* toy.create('s-1', { flags: { at }, requestId: 's-1', sender: tester })
           yield* runtime.settled
-          yield* toy.create('s-2', { at }, { requestId: 's-2', sender: tester })
+          yield* toy.create('s-2', { flags: { at }, requestId: 's-2', sender: tester })
           // A loop that unloaded it would lose the message, and one that kept it told would never settle.
           yield* runtime.settled
           expect(answer).toEqual({ _tag: 'Rejected', reason: 'Refused' })
           expect(entities).toEqual([])
           // The next entity to enter finds the process two over its capacity, and both leave.
-          yield* toy.create('s-3', { at }, { requestId: 's-3', sender: tester })
+          yield* toy.create('s-3', { flags: { at }, requestId: 's-3', sender: tester })
           yield* runtime.settled
           expect([...entities].sort()).toEqual(['s-1', 's-2'])
         }))
@@ -429,9 +429,9 @@ describe('passivation', () => {
       }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-          yield* toy.create('s-1', { at }, { requestId: 's-1', sender: tester })
+          yield* toy.create('s-1', { flags: { at }, requestId: 's-1', sender: tester })
           yield* runtime.settled
-          yield* toy.create('s-2', { at }, { requestId: 's-2', sender: tester })
+          yield* toy.create('s-2', { flags: { at }, requestId: 's-2', sender: tester })
           // The sleeps reach the time too, and each timer fires where it is armed.
           yield* clock.adjust('40 millis')
           yield* runtime.settled
@@ -449,15 +449,15 @@ describe('passivation', () => {
           const timers = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
           const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
           // `w` is due at 40, and `s` later: both spare until then.
-          yield* timers.create('w', { at }, { requestId: 'w', sender: tester })
+          yield* timers.create('w', { flags: { at }, requestId: 'w', sender: tester })
           yield* runtime.settled
           yield* clock.adjust('10 millis')
-          yield* timers.create('s', { at: yield* DateTime.now }, { requestId: 's', sender: tester })
+          yield* timers.create('s', { flags: { at: yield* DateTime.now }, requestId: 's', sender: tester })
           yield* runtime.settled
           // The clock reaches `w`'s time, exactly, and its sleep has not fired yet when a third entity enters:
           // `w` is about to fire, and `s` is told to leave in its place (decision 0078).
           clock.by.millis = 30
-          yield* toy.create('x', { at }, { requestId: 'x', sender: tester })
+          yield* toy.create('x', { flags: { at }, requestId: 'x', sender: tester })
           clock.by.millis = 0
           yield* clock.adjust('30 millis')
           yield* runtime.settled
@@ -472,13 +472,13 @@ describe('passivation', () => {
       yield* process({ unloaded, capacity: { entities: 1 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-          yield* toy.create('s-1', { at }, { requestId: 's-1', sender: tester })
-          expect(yield* toy.send('s-1', { _tag: 'Break', nonce: 'b' }, { requestId: 'b', sender: tester }))
+          yield* toy.create('s-1', { flags: { at }, requestId: 's-1', sender: tester })
+          expect(yield* toy.send('s-1', { _tag: 'Break', nonce: 'b' }, { requestId: 'b', sender: tester, keep: 'forever' }))
             .toEqual({ _tag: 'Suspended' })
           // Its timer's time passes, and no sleep of it is armed: nothing of it fires.
           yield* TestClock.adjust('50 millis')
           yield* runtime.settled
-          yield* toy.create('s-2', { at }, { requestId: 's-2', sender: tester })
+          yield* toy.create('s-2', { flags: { at }, requestId: 's-2', sender: tester })
           yield* runtime.settled
           expect(entities).toEqual(['s-1'])
         }))
@@ -492,7 +492,7 @@ describe('passivation', () => {
         yield* process({}, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-            for (const entity of ['u-1', 'u-2']) yield* toy.create(entity, { at }, { requestId: entity, sender: tester })
+            for (const entity of ['u-1', 'u-2']) yield* toy.create(entity, { flags: { at }, requestId: entity, sender: tester })
             yield* runtime.settled
           }))
         return yield* process({ capacity: { entities: 1 } }, (runtime) =>
@@ -500,8 +500,8 @@ describe('passivation', () => {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
             // Each activation holds its caller's event before the other can tell it to leave (decision 0079).
             return yield* together([
-              toy.send('u-1', want('n-1'), { requestId: 'r-1', sender: tester }),
-              toy.send('u-2', want('n-2'), { requestId: 'r-2', sender: tester }),
+              toy.send('u-1', want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }),
+              toy.send('u-2', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' }),
             ])
           }))
       }), [{ _tag: 'Accepted' }, { _tag: 'Accepted' }])
@@ -516,13 +516,13 @@ describe('passivation', () => {
         yield* process({}, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-            yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+            yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
             yield* runtime.settled
           }))
         return yield* process({}, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-            const caller = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
+            const caller = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }))
             yield* Fiber.interrupt(caller)
             // What runs detached is counted from the step that forks it to its end: a count left behind would
             // keep this from returning, and the run would not end (decision 0079).
@@ -543,12 +543,12 @@ describe('passivation', () => {
         return yield* process({ callers: { messages: 1 } }, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-            yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+            yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
             yield* runtime.settled
-            const caller = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
+            const caller = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }))
             yield* Fiber.interrupt(caller)
             yield* runtime.settled
-            return yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester })
+            return yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' })
           }))
       }), { _tag: 'Accepted' }, { bound: 1 })
   }, 60_000)
@@ -561,7 +561,7 @@ describe('passivation', () => {
       yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
           yield* runtime.settled
           yield* TestClock.adjust('5 millis')
           expect(entities).toEqual([id])
@@ -569,6 +569,7 @@ describe('passivation', () => {
           expect(yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'w' }, {
             requestId: 'r1',
             sender: { _tag: 'Tester' },
+            keep: 'forever',
           })).toEqual({ _tag: 'Accepted' })
           expect(yield* toy.read(id)).toBe(0)
         }))
@@ -584,7 +585,7 @@ describe('passivation', () => {
         Effect.gen(function*() {
           const { layer } = yield* hands()
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
           yield* runtime.settled
         }))
       expect((yield* store.load(id))?.state.want).toEqual(['t'])
@@ -653,11 +654,12 @@ describe('passivation', () => {
       yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
           yield* runtime.settled
           expect(yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, {
             requestId: 'break',
             sender: { _tag: 'Tester' },
+            keep: 'forever',
           })).toEqual({ _tag: 'Suspended' })
           // It is unloaded with the message it died on, and its timer's time passes without firing.
           yield* TestClock.adjust('5 millis')
@@ -694,7 +696,7 @@ describe('passivation', () => {
       yield* process({ unloaded, passivate: { millis: 1 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
           yield* runtime.settled
           const callers = yield* running(Effect.forEach(
             nonces,
@@ -704,6 +706,7 @@ describe('passivation', () => {
                 toy.send(id, { _tag: 'Want', key: 't', on: nth % 2 === 0, nonce: `n${nth}` }, {
                   requestId: `r${nth}`,
                   sender: { _tag: 'Tester' },
+                  keep: 'forever',
                 }),
                 `${nth * 5} millis`,
               ),
@@ -733,8 +736,8 @@ describe('passivation', () => {
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create('slow', { at }, { requestId: 'c-slow', sender: tester })
-          yield* toy.create('other', { at }, { requestId: 'c-other', sender: tester })
+          yield* toy.create('slow', { flags: { at }, requestId: 'c-slow', sender: tester })
+          yield* toy.create('other', { flags: { at }, requestId: 'c-other', sender: tester })
           yield* runtime.settled
         }))
       const gate = yield* Deferred.make<void>()
@@ -749,11 +752,11 @@ describe('passivation', () => {
       }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          const first = yield* running(toy.send('slow', want('n-1'), { requestId: 'r-1', sender: tester }))
-          const second = yield* running(toy.send('slow', want('n-2'), { requestId: 'r-2', sender: tester }))
+          const first = yield* running(toy.send('slow', want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }))
+          const second = yield* running(toy.send('slow', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' }))
           // Another entity is loaded and answered meanwhile (decision 0067). A wait for the activation held would
           // hold this call for ever, which the test's own timeout reports.
-          expect(yield* toy.send('other', want('n-3'), { requestId: 'r-3', sender: tester }))
+          expect(yield* toy.send('other', want('n-3'), { requestId: 'r-3', sender: tester, keep: 'forever' }))
             .toEqual({ _tag: 'Accepted' })
           yield* Deferred.succeed(gate, undefined)
           expect(yield* Fiber.join(first)).toEqual({ _tag: 'Accepted' })
@@ -779,15 +782,15 @@ describe('passivation', () => {
         yield* process({}, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
-            yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+            yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
             yield* runtime.settled
           }))
         const both = yield* process({ observe }, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
             return yield* together([
-              toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }),
-              toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester }),
+              toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }),
+              toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' }),
             ])
           }))
         return { both, restarts: events.filter((event) => event._tag === 'Restart').length }
@@ -804,8 +807,8 @@ describe('passivation', () => {
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(program), layer)
             const both = yield* together([
-              Effect.exit(toy.create(id, { at }, { requestId: 'c-1', sender: tester })),
-              Effect.exit(toy.create(id, { at }, { requestId: 'c-2', sender: tester })),
+              Effect.exit(toy.create(id, { flags: { at }, requestId: 'c-1', sender: tester })),
+              Effect.exit(toy.create(id, { flags: { at }, requestId: 'c-2', sender: tester })),
             ])
             return both.map((exit) => Exit.isSuccess(exit) ? exit.value._tag : 'died').sort()
           }))
@@ -821,7 +824,7 @@ describe('passivation', () => {
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
           yield* runtime.settled
         }))
       const reached = yield* Deferred.make<void>()
@@ -835,13 +838,13 @@ describe('passivation', () => {
       }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          const first = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester }))
+          const first = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }))
           yield* Deferred.await(reached)
           // Its caller gives up, a timeout of its own or an operation stopped: the activation is the entity's, and
           // goes on (decision 0079). One left half done would hold the next caller for ever.
           yield* Fiber.interrupt(first)
           yield* Deferred.succeed(gate, undefined)
-          expect(yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester })).toEqual({ _tag: 'Accepted' })
+          expect(yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
           yield* runtime.settled
         }))
     })))
@@ -861,7 +864,7 @@ describe('passivation', () => {
       }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          const creator = yield* Effect.forkChild(toy.create(id, { at }, { requestId: 'creation', sender: tester }))
+          const creator = yield* Effect.forkChild(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
           yield* Deferred.await(reached)
           yield* Fiber.interrupt(creator)
           yield* Deferred.succeed(gate, undefined)
@@ -889,7 +892,7 @@ describe('the crash table', () => {
         Effect.gen(function*() {
           const { layer } = yield* hands({ holds: true })
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
         }))
       expect(reached).toEqual(points.map((point) => `${point} Create`))
     })))
@@ -908,7 +911,7 @@ describe('the crash table', () => {
         Effect.gen(function*() {
           const { layer } = yield* hands()
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender })
           yield* runtime.settled
           yield* TestClock.adjust('60 millis')
           yield* runtime.settled
@@ -960,7 +963,7 @@ describe('the crash table', () => {
             Effect.gen(function*() {
               const { layer } = yield* hands()
               const toy = yield* Effect.provide(runtime.deploy(program), layer)
-              yield* toy.create(id, { at }, { requestId: 'creation', sender: { _tag: 'Tester' } })
+              yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
               yield* runtime.settled
             }))
           const since = (yield* store.load(id))?.state.since ?? at
@@ -993,7 +996,7 @@ describe('the crash table', () => {
                 ]
                 yield* running(Effect.forEach(
                   sends.entries(),
-                  ([nonce, message]) => toy.send(id, message, { requestId: `r${nonce}`, sender: { _tag: 'Tester' } }),
+                  ([nonce, message]) => toy.send(id, message, { requestId: `r${nonce}`, sender: { _tag: 'Tester' }, keep: 'forever' }),
                   { concurrency: 'unbounded' },
                 ))
                 // The timer's time comes in this process too, if the process lives that long.
@@ -1109,7 +1112,7 @@ describe('random sequences of events', () => {
                 const { layer } = yield* hands()
                 const toy = yield* Effect.provide(runtime.deploy(program), layer)
                 const creation = { requestId: 'creation', sender: { _tag: 'Tester' as const } }
-                yield* toy.create(id, { at }, creation)
+                yield* toy.create(id, { flags: { at }, ...creation })
                 const sent: Array<Readonly<{ requestId: string; message: Inbound }>> = []
                 // The callers that arrive together: they are started at once, at the next command that is no
                 // caller's, and each of them is answered or waits by then. A suspended entity answers none of
@@ -1128,7 +1131,7 @@ describe('random sequences of events', () => {
                       const request = { requestId: `r${nth}`, message: message(command, `n${nth}`) }
                       sent.push(request)
                       arriving.push(
-                        toy.send(id, request.message, { requestId: request.requestId, sender: { _tag: 'Tester' } }),
+                        toy.send(id, request.message, { requestId: request.requestId, sender: { _tag: 'Tester' }, keep: 'forever' }),
                       )
                       break
                     }
@@ -1136,12 +1139,12 @@ describe('random sequences of events', () => {
                       const request = sent[command.pick % Math.max(1, sent.length)]
                       if (request === undefined) break
                       arriving.push(
-                        toy.send(id, request.message, { requestId: request.requestId, sender: { _tag: 'Tester' } }),
+                        toy.send(id, request.message, { requestId: request.requestId, sender: { _tag: 'Tester' }, keep: 'forever' }),
                       )
                       break
                     }
                     case 'Create':
-                      arriving.push(toy.create(id, { at }, creation))
+                      arriving.push(toy.create(id, { flags: { at }, ...creation }))
                       break
                     case 'Wait':
                       yield* arrive
@@ -1208,13 +1211,13 @@ test('an entity whose wait runs out as an event arrives waits again from the eve
       return yield* process({ observe, unloaded, passivate: { millis: 5 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(timed), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
           yield* runtime.settled
           // The wait runs out at 5 millis. An event applied before, at 3, starts it again until 8.
           yield* TestClock.adjust('3 millis')
           yield* opened(window, true)
           yield* together<unknown, unknown, never>([
-            toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'w' }, { requestId: 'w', sender: tester }),
+            toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'w' }, { requestId: 'w', sender: tester, keep: 'forever' }),
             Effect.asVoid(TestClock.adjust('2 millis')),
           ])
           yield* opened(window, false)
@@ -1238,13 +1241,13 @@ test('a message that arrives as the wait of its entity runs out is handled, unde
       return yield* process({ passivate: { millis: 5 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(timed), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
           yield* runtime.settled
           // The message and the move that runs the wait out, at once. The window stays open across the move, where
           // `adjusted` closes it: the race explored is the move's own, between the timeout it fires and the take.
           yield* opened(window, true)
           const [reply] = yield* together<unknown, unknown, never>([
-            toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'w' }, { requestId: 'w', sender: tester }),
+            toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'w' }, { requestId: 'w', sender: tester, keep: 'forever' }),
             Effect.asVoid(TestClock.adjust('5 millis')),
           ])
           yield* opened(window, false)
@@ -1284,9 +1287,9 @@ test('settled never returns between a crash and the activation its due timer bri
         Effect.gen(function*() {
           const at = yield* DateTime.now
           const toy = yield* Effect.provide(runtime.deploy(timed), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
           yield* runtime.settled
-          const sent = yield* Effect.forkChild(Effect.exit(toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'n-1' }, { requestId: 'r-1', sender: tester })))
+          const sent = yield* Effect.forkChild(Effect.exit(toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'n-1' }, { requestId: 'r-1', sender: tester, keep: 'forever' })))
           // The timer rings at 40 millis, while the message waits at the gate: its firing waits behind the message.
           yield* adjusted(window, '40 millis')
           yield* opened(window, true)
@@ -1314,15 +1317,15 @@ describe('what the runtime tells a tracer (decision 0220)', () => {
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
           yield* runtime.settled
           const want = { _tag: 'Want', key: 'a', on: true, nonce: 'w' } as const
-          yield* Effect.withSpan(toy.send(id, want, { requestId: 'want', sender: tester }), 'caller')
+          yield* Effect.withSpan(toy.send(id, want, { requestId: 'want', sender: tester, keep: 'forever' }), 'caller')
           yield* runtime.settled
           // A message a suspended entity answers `Suspended` links its caller's span all the same.
-          yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester })
+          yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester, keep: 'forever' })
           const again = { _tag: 'Want', key: 'a', on: false, nonce: 'v' } as const
-          const queued = { requestId: 'queued', sender: tester }
+          const queued = { requestId: 'queued', sender: tester, keep: 'forever' as const }
           expect(yield* Effect.withSpan(toy.send(id, again, queued), 'queued')).toEqual({ _tag: 'Suspended' })
         })).pipe(Effect.provideService(Tracer.Tracer, tracer))
       const caller = spans.find((span) => span.name === 'caller')!
@@ -1354,7 +1357,7 @@ describe('what the runtime tells a tracer (decision 0220)', () => {
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
           yield* runtime.settled
         })).pipe(Effect.provideService(Tracer.Tracer, tracer))
       const creation = spans.find((span) => span.name === 'tea.step' && event(span) === 'Create')!
@@ -1381,7 +1384,7 @@ describe('what the runtime tells a tracer (decision 0220)', () => {
       yield* process({ unloaded, passivate: { millis: 5 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* Effect.withSpan(toy.create(id, { at }, { requestId: 'creation', sender: tester }), 'caller')
+          yield* Effect.withSpan(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }), 'caller')
           yield* runtime.settled
           yield* TestClock.adjust('5 millis')
         })).pipe(Effect.provideService(Tracer.Tracer, tracer))
@@ -1412,12 +1415,12 @@ describe('what the runtime tells a tracer (decision 0220)', () => {
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
           // A retry of the creation is a step that writes nothing, and records no length of the mailbox.
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
           yield* Deferred.await(acting)
           expect(value(yield* metrics, 'tea.operations.running')).toEqual({ value: 3 })
-          const breaking = { requestId: 'break', sender: tester }
+          const breaking = { requestId: 'break', sender: tester, keep: 'forever' as const }
           expect(yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, breaking)).toEqual({ _tag: 'Suspended' })
           yield* Deferred.succeed(gate, undefined)
           yield* runtime.settled

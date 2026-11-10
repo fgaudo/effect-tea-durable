@@ -76,7 +76,7 @@ test('each consumer acks every row of its topic once, and the rows of an entity 
             })
           let at = 0
           for (const id of created) {
-            yield* counters.create(id, { n: 0 }, { requestId: `create-${id}`, sender: null })
+            yield* counters.create(id, { flags: { n: 0 }, requestId: `create-${id}` })
             written.set(id, [0])
           }
           for (const act of acts) {
@@ -85,7 +85,7 @@ test('each consumer acks every row of its topic once, and the rows of an entity 
             else if (act._tag === 'Read') yield* read(act.consumer, act.limit, act.acked)
             else if (written.has(act.id)) {
               const message = act._tag === 'Set' ? { _tag: 'Set' as const, n: act.n } : { _tag: 'Touch' as const }
-              yield* counters.send(act.id, message, { requestId: `step-${at}`, sender: null })
+              yield* counters.send(act.id, message, { requestId: `step-${at}`, keep: 'forever' })
               const changes = written.get(act.id)!
               if (act._tag === 'Set' && changes.at(-1) !== act.n) changes.push(act.n)
             }

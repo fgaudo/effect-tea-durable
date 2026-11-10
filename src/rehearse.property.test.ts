@@ -89,10 +89,10 @@ const ran = ({ balance, sends }: Scenario) =>
   Effect.runPromise(
     Effect.scoped(Effect.gen(function*() {
       const accounts = yield* (yield* launch()).deploy(account)
-      yield* accounts.create('a', { balance }, { requestId: 'create', sender: { role: 'owner' } })
+      yield* accounts.create('a', { flags: { balance }, requestId: 'create', sender: { role: 'owner' } })
       const replies: Array<unknown> = []
       for (const [at, { message, role }] of sends.entries()) {
-        replies.push(yield* accounts.send('a', message, { requestId: named(sends)[at]!, sender: { role } }))
+        replies.push(yield* accounts.send('a', message, { requestId: named(sends)[at]!, sender: { role }, keep: 'forever' }))
       }
       return { replies, projection: yield* accounts.read('a') }
     })).pipe(Effect.provide(client('sqlite')), Effect.orDie),

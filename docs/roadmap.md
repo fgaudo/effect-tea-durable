@@ -5,36 +5,27 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-None: the next step is the first of Later, unless the maintainer picks another.
+- **The runtime's housekeeping**, under way. What it decides is in
+  [decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md), `proposed`, which the
+  maintainer chose on 2026-11-10. Its parts, in order:
+  1. `send` requires `keep`, `{ millis }` or `'forever'`, `create` takes its flags in the request, and a request
+     leaves out a sender and flags that are `null`, in
+     `src/runtime.ts`, `src/rehearse.ts`, the examples, the fixtures, the guide and the tests.
+  2. `prune` and `expire` delete in batches, in `src/storage/log.ts` and `src/storage/entities.ts`. Each batch is a
+     transaction of its own, so the count each gives is a sum, and the doc comments of `Handle.prune` and
+     `Handle.expire` say so. The part checks that the replies and `given_requests` have an index by program and time,
+     which a sweep's `expire` reads by.
+  3. On Cluster, a creation's client keeps its id in `given_requests`, in `src/runtime/callers.ts`, so that `expire`
+     deletes its rows, with a test on Cluster that a retry after is answered `Created`.
+  4. The sweep, an option of `launch` and a singleton of Cluster per program, with its tests; the shared launcher of
+     the tests passes `sweep: 'none'`. It adds a fiber, so the pinned seeds of the explored tests are found again.
+  5. `spikes/full-volume.test.ts` checks a prune in batches on a full volume, in the CI's job; `design.md` and
+     `glossary.md` say what holds; `bun run test:release` passes; the note is taken.
+
+  Part 1 is done: `bun test`, `bun run typecheck`, `bun run links` and the site's build pass. Part 2 is next, from
+  `prune` in `src/storage/log.ts`.
 
 ## Later
-
-- **The runtime's housekeeping.**
-  `expire`, `prune` and `forget` are an operator's calls, and a reply sent without `keep` is kept for ever, so the
-  replies of a deployment grow without bound by default
-  ([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). The step
-  decides whether the runtime runs `expire` and `prune` at an interval, as an option, or whether `send` has a default
-  `keep`, and says it in the design. It weighs a prune in batches too, which might free room on a disk that is really
-  full, where one prune of many rows needs room an operator frees first
-  ([decision 0223](decisions/0223-a-disk-that-is-really-full.md)). On Cluster the runtime deletes Cluster's rows by its own statements, since
-  Cluster forgets no processed request ([decision 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md),
-  [0169](decisions/archive/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md),
-  [0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
-  Effect 4.1.3 adds a retention of completed requests, for
-  [Effect-TS/effect#10239](https://github.com/Effect-TS/effect/issues/10239): `MessageStorage.deleteProcessed` and
-  `MessageRetention.make`, both `@stability unstable` ([`cluster.md`](cluster.md#the-decisions-it-bears-on)). The
-  move to 4.1.3 weighed it against those statements, and it replaces none of them. Cluster's retention deletes every
-  request of an entity type whose final reply is older than a time, whatever the work that asked. The runtime keeps a
-  reply while that work holds, and a caller's reply as long as its boundary says
-  ([decisions 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md),
-  [0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). A request deleted while
-  its sender may still send it again is handled again. So the step decides only whether a sweep of the runtime calls
-  `deleteProcessed` for rows no rule of the runtime keeps, or keeps its own statements for all of them. The step
-  weighs too the rows of a creation on Cluster, one pair for each entity, which `create` keeps for ever since it
-  takes no `keep`. Since a default `keep` changes the signature of `send`, the step also decides whether a request
-  may leave out a sender that is `null`, and `create` flags that are `null`
-  ([open question](open-questions.md#programs)). A sweep that adds a fiber or a yield to the runtime finds the
-  pinned seeds of the explored tests again, as [`AGENTS.md`](../AGENTS.md) says.
 
 - **A check of a program against the stored entities, before it is deployed.** A new program that dies on a stored
   state suspends each such entity at its activation, and an operator learns it from `suspended` once the deploy has

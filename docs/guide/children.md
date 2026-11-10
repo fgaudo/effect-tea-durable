@@ -140,7 +140,7 @@ A line's inbound messages are the cart's, wrapped with the child's name and its 
 one message to the cart:
 
 ```ts
-yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }, null)
+yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } })
 ```
 
 The library routes the message to the line under `mug`, with the same `meta.from` the cart received. The line's
@@ -253,16 +253,16 @@ thousand is an entity of its own, which others address with a request
 A rehearsal answers a line's work with a message wrapped as the line's, and reads the line in the cart's state:
 
 ```ts
-yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 }, null)
+yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 })
 // A line reserving its stock cannot be removed: only the reservation's answer leaves that state.
-expect(yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }, null))
+expect(yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }))
   .toMatchObject(rejected)
 yield* rehearsal.answer('Line.reserve', 'mug', {
   _tag: 'Line',
   id: 'mug',
   message: { _tag: 'StockReserved', reservation: 'r-1' },
 })
-yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }, null)
+yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } })
 expect((yield* rehearsal.state).lines['mug']?._tag).toBe('Releasing')
 yield* rehearsal.answer('Line.release', 'mug', {
   _tag: 'Line',

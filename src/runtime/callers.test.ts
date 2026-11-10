@@ -44,12 +44,12 @@ describe('two entities that talk', () => {
   // 0052).
   test('the runtime mutates nothing the programs give or the callers offer', () =>
     database(Effect.gen(function*() {
-      const requested = <Sender>(requestId: string, sender: Sender) => frozen({ requestId, sender })
+      const requested = <Sender>(requestId: string, sender: Sender) => frozen({ requestId, sender, keep: 'forever' as const })
       yield* process({}, (runtime) =>
         Effect.gen(function*() {
           const inventories = yield* runtime.deploy(freezing(inventory))
           const bookings = yield* runtime.deploy(freezing(booking))
-          yield* inventories.create('gig', frozen({ capacity: 10 }), requested('c-gig', { ...organizer }))
+          yield* inventories.create('gig', { flags: frozen({ capacity: 10 }), ...requested('c-gig', { ...organizer }) })
           const story = [
             ['b1', 3, 'Confirm'],
             ['b2', 9, null],
@@ -57,7 +57,7 @@ describe('two entities that talk', () => {
           ] as const
           for (const [id, seats] of story) {
             const flags = frozen({ customer: 'ann', event: 'gig', seats })
-            expect(yield* bookings.create(id, flags, requested(`c-${id}`, { ...ann }))).toEqual({ _tag: 'Created' })
+            expect(yield* bookings.create(id, { flags, ...requested(`c-${id}`, { ...ann }) })).toEqual({ _tag: 'Created' })
             yield* runtime.settled
           }
           for (const [id, , then] of story) {
@@ -113,8 +113,8 @@ describe('two entities that talk', () => {
         Effect.gen(function*() {
           const inventories = yield* runtime.deploy(inventory)
           const bookings = yield* runtime.deploy(booking)
-          yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
-          yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+          yield* inventories.create('gig', { flags: { capacity: 10 }, requestId: 'c-gig', sender: organizer })
+          yield* bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann })
           yield* runtime.settled
           expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held' })
         }))
@@ -137,9 +137,9 @@ describe('two entities that talk', () => {
         Effect.gen(function*() {
           const inventories = yield* runtime.deploy(inventory)
           const bookings = yield* runtime.deploy(booking)
-          yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
+          yield* inventories.create('gig', { flags: { capacity: 10 }, requestId: 'c-gig', sender: organizer })
           yield* Effect.raceFirst(
-            bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann }),
+            bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann }),
             Deferred.await(crashed),
           )
         }))
@@ -180,8 +180,8 @@ describe('two entities that talk', () => {
         Effect.gen(function*() {
           const inventories = yield* runtime.deploy(inventory)
           const bookings = yield* runtime.deploy(booking)
-          yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
-          yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+          yield* inventories.create('gig', { flags: { capacity: 10 }, requestId: 'c-gig', sender: organizer })
+          yield* bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann })
           // `settled` waits for the hold, which sleeps until its retry: a move of the clock waits instead for the
           // fibers it wakes to wait again (decision 0066), and the hold has sent once.
           yield* TestClock.adjust('1 millis')
@@ -218,8 +218,8 @@ describe('two entities that talk', () => {
         Effect.gen(function*() {
           const inventories = yield* runtime.deploy(breaking)
           const bookings = yield* runtime.deploy(booking)
-          yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
-          yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+          yield* inventories.create('gig', { flags: { capacity: 10 }, requestId: 'c-gig', sender: organizer })
+          yield* bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann })
           yield* Deferred.await(suspended)
         }))
       // A fix is a deploy (decision 0064): the process that runs the fixed inventory starts the hold again, which is
@@ -260,7 +260,7 @@ describe('two entities that talk', () => {
         const inventories = yield* runtime.deploy(freezing(inventory))
         const bookings = yield* runtime.deploy(freezing(sending))
         const flags = frozen({ customer: 'ann', event: 'gig', seats: 3 })
-        yield* bookings.create('b1', flags, frozen({ requestId: 'c-b1', sender: ann }))
+        yield* bookings.create('b1', { flags, ...frozen({ requestId: 'c-b1', sender: ann }) })
         yield* runtime.settled
         expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held' })
         expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
@@ -298,12 +298,12 @@ test('a sender answered Suspended is woken by the resumption, under prioritized 
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           const senders = yield* runtime.deploy(sender)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
           yield* runtime.settled
-          yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester })
+          yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester, keep: 'forever' })
           // The sender's operation sends to the suspended toy while an operator discards what it died on.
           yield* opened(window, true)
-          yield* senders.create('s', { at }, { requestId: 's', sender: tester })
+          yield* senders.create('s', { flags: { at }, requestId: 's', sender: tester })
           yield* toy.discard(id)
           yield* runtime.settled
           return { applied: (yield* store.load(id))?.state.applied, wanted: yield* senders.read('s') }
@@ -325,11 +325,11 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
       return yield* process({ observe, unloaded, passivate: { millis: 5 } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(timed), layer)
-          yield* toy.create(id, { at }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
           yield* runtime.settled
           yield* TestClock.adjust('5 millis')
           const want = (nonce: string) =>
-            toy.send(id, { _tag: 'Want', key: 't', on: true, nonce }, { requestId: nonce, sender: tester })
+            toy.send(id, { _tag: 'Want', key: 't', on: true, nonce }, { requestId: nonce, sender: tester, keep: 'forever' })
           yield* opened(window, true)
           yield* together([want('w-1'), want('w-2')])
           yield* runtime.settled

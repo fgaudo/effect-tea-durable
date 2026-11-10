@@ -156,11 +156,11 @@ const run = (dialect: Dialect, calls: ReadonlyArray<Call>) =>
           continue
         }
         const answer = call._tag === 'Create'
-          ? items.create(call.id, call.flags, call.request)
+          ? items.create(call.id, { flags: call.flags, ...call.request })
           : call._tag === 'Set'
-          ? items.send(call.id, { _tag: 'Set', ...call.set }, call.request)
+          ? items.send(call.id, { _tag: 'Set', ...call.set }, { ...call.request, keep: 'forever' })
           : call._tag === 'Boom'
-          ? items.send(call.id, { _tag: 'Boom', note: call.note }, call.request)
+          ? items.send(call.id, { _tag: 'Boom', note: call.note }, { ...call.request, keep: 'forever' })
           : call._tag === 'Read'
           ? items.read(call.id)
           : call._tag === 'Query'

@@ -88,16 +88,17 @@ const orders = yield* Effect.provide(runtime.deploy(order), world)
 
 for (const id of ['o-1', 'o-2']) {
   expect(
-    yield* orders.create(id, { order: { customer: 'ada', totalInCents: 1_000 } }, {
+    yield* orders.create(id, {
+      flags: { order: { customer: 'ada', totalInCents: 1_000 } },
       requestId: `c-${id}`,
       sender: ada,
     }),
   ).toEqual({ _tag: 'Created' })
 }
 const pay = { _tag: 'PayRequested', payment: 'card-1' } as const
-expect(yield* orders.send('o-2', pay, { requestId: 'p-o-2', sender: ada })).toEqual({ _tag: 'Accepted' })
+expect(yield* orders.send('o-2', pay, { requestId: 'p-o-2', sender: ada, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
 // A retry under the same request id is answered from what Cluster stored, and charges nothing again.
-expect(yield* orders.send('o-2', pay, { requestId: 'p-o-2', sender: ada })).toEqual({ _tag: 'Accepted' })
+expect(yield* orders.send('o-2', pay, { requestId: 'p-o-2', sender: ada, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
 ```
 
 The program, its rehearsals and its boundary are the same on one process and on Cluster. A program written for one
@@ -192,12 +193,12 @@ The handle is the same, and three things differ:
   `mailboxCapacity` bounds the messages in memory.
 - **A caller that stops waiting stops only its wait.** A timeout or an interruption leaves the request in Cluster's
   table. The request is handled when its turn comes, and a retry under the same request id gets its answer.
-- **A message sent without `keep` keeps Cluster's rows for ever.** The boundary gives `keep`, the time its protocol
-  retries for. Once that time is past, the next step of the entity deletes the rows, or an operator's `expire`
-  does. A boundary that runs on Cluster gives `keep` to every message, since the rows of each reply would
-  otherwise add up. The server gives a day, the time its clients retry a request for:
-  `orders.send(id, message, { ...caller, keep: { millis: 86_400_000 } })`. On one process a reply sent without
-  `keep` is kept for ever too, and the same `keep` frees it. `create` takes no `keep`: a creation is answered from
+- **A message sent with `keep: 'forever'` keeps Cluster's rows for ever.** The boundary gives `keep`, the time its
+  protocol retries for, with every `send`. Once that time is past, the next step of the entity deletes the rows, or
+  an operator's `expire` does. A boundary that runs on Cluster gives a time to every message, since the rows of each
+  reply would otherwise add up. The server gives a day, the time its clients retry a request for:
+  `orders.send(id, message, { ...caller, keep: { millis: 86_400_000 } })`. On one process a reply kept
+  `'forever'` is kept for ever too, and a time frees it. `create` takes no `keep`: a creation is answered from
   the entity's row, which is kept for ever, as every entity is. On Cluster the creation's request and reply stay
   in Cluster's tables for ever too, one pair for each entity.
 

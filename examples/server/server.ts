@@ -245,7 +245,7 @@ const routes = Layer.mergeAll(
       const { totalInCents } = yield* HttpServerRequest.schemaBodyJson(NewOrder)
       const orders = yield* Orders
       const flags = { order: { customer: sender.id, totalInCents } }
-      return yield* answer(yield* orders.create(yield* id, flags, { sender, requestId }))
+      return yield* answer(yield* orders.create(yield* id, { flags, sender, requestId }))
     }),
   ),
   HttpRouter.add(

@@ -58,7 +58,7 @@ crashes the entity alone, and the next call loads it again from what is stored.
 ## What a caller is told
 
 ```ts
-expect(yield* rides.send(id, end, { requestId: 'end-1', sender: ann })).toEqual({ _tag: 'Suspended' })
+expect(yield* rides.send(id, end, { requestId: 'end-1', sender: ann, keep: 'forever' })).toEqual({ _tag: 'Suspended' })
 ```
 
 **`Suspended` says only that the request has no reply yet.** Every caller whose message waits in the mailbox is
@@ -118,7 +118,7 @@ yield* runtime.settled
 expect(yield* rides.inspect(id)).toMatchObject({ state: { _tag: 'Ended', email: 'Unsure' }, suspension: null })
 expect(yield* bikes.read('bike-7')).toMatchObject({ status: 'Docked', rides: 1 })
 // The customer's retry is answered from the reply the fix stored, and ends nothing twice.
-expect(yield* rides.send(id, end, { requestId: 'end-1', sender: ann })).toEqual({ _tag: 'Accepted' })
+expect(yield* rides.send(id, end, { requestId: 'end-1', sender: ann, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
 ```
 
 `resume(id)` activates the entity as after a crash, with the program deployed, and its message is handled next.
@@ -188,7 +188,7 @@ program:
 
 | Call | What it does | Where it is explained |
 | --- | --- | --- |
-| `expire` | Deletes the callers' replies past the `keep` their boundary gave. A reply sent without `keep` is kept for ever. | [Cluster](cluster.md#what-changes-for-a-caller) |
+| `expire` | Deletes the callers' replies past the `keep` their boundary gave. A reply sent with `keep: 'forever'` is kept for ever. | [Cluster](cluster.md#what-changes-for-a-caller) |
 | `prune` | Drops, in each topic of the log, what every consumer of the topic has read. | [The outbox](outbox.md#pruning-and-a-consumer-that-holds-the-log) |
 | `consumers` | Shows each consumer of the log, how many rows it has not read yet, and the time of the oldest it reads next. | [The outbox](outbox.md#pruning-and-a-consumer-that-holds-the-log) |
 | `forget` | Drops a consumer the deploy no longer declares, so that the next prune passes it. | [The outbox](outbox.md#pruning-and-a-consumer-that-holds-the-log) |

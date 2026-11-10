@@ -656,13 +656,13 @@ describe('the runtime on Cluster', () => {
   test('a caller creates and sends through the door, and a retry is answered as the first time', () =>
     onRunner(Effect.gen(function*() {
       const sender = { user: 'u' }
-      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
-      expect(yield* handle!.create('one', { start: 5 }, { requestId: 'c2', sender })).toEqual({ _tag: 'AlreadyExists' })
-      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+      expect(yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+      expect(yield* handle!.create('one', { flags: { start: 5 }, requestId: 'c2', sender })).toEqual({ _tag: 'AlreadyExists' })
+      expect(yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
       const add = { _tag: 'Add', n: 2 } as const
-      expect(yield* handle!.send('one', add, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })
-      expect(yield* handle!.send('one', add, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })
-      expect(yield* handle!.send('one', { _tag: 'Refuse' }, { requestId: 'm2', sender })).toEqual({
+      expect(yield* handle!.send('one', add, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
+      expect(yield* handle!.send('one', add, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
+      expect(yield* handle!.send('one', { _tag: 'Refuse' }, { requestId: 'm2', sender, keep: 'forever' })).toEqual({
         _tag: 'Rejected',
         reason: { why: 'refused' },
       })
@@ -676,22 +676,22 @@ describe('the runtime on Cluster', () => {
     onRunner(Effect.gen(function*() {
       const sender = { user: 'u' }
       const add = { _tag: 'Add', n: 2 } as const
-      expect(yield* handle!.send('one', add, { requestId: 'm1', sender })).toEqual({ _tag: 'NotFound' })
-      yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })
+      expect(yield* handle!.send('one', add, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'NotFound' })
+      yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })
       // Cluster saved `NotFound` under the request: the client resets it, and the step applies the message.
-      expect(yield* handle!.send('one', add, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })
+      expect(yield* handle!.send('one', add, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
       expect(yield* stateOf).toEqual({ n: 3, asking: false })
     })), 30_000)
 
   test('a message answered Suspended is answered Suspended again while its entity is suspended', () =>
     onRunner(Effect.gen(function*() {
       const sender = { user: 'u' }
-      yield* handle!.create('one', { start: 0 }, { requestId: 'c1', sender })
-      expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender })).toEqual({ _tag: 'Suspended' })
-      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })).toEqual({
+      yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
+      expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Suspended' })
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender, keep: 'forever' })).toEqual({
         _tag: 'Suspended',
       })
-      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })).toEqual({
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender, keep: 'forever' })).toEqual({
         _tag: 'Suspended',
       })
     })), 30_000)
@@ -700,10 +700,10 @@ describe('the runtime on Cluster', () => {
     onRunner(Effect.gen(function*() {
       const sender = { user: 'u' }
       expect(yield* handle!.resume('one')).toEqual({ _tag: 'NotFound' })
-      yield* handle!.create('one', { start: 0 }, { requestId: 'c1', sender })
+      yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
       expect(yield* handle!.discard('one')).toEqual({ _tag: 'NotSuspended' })
-      expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender })).toEqual({ _tag: 'Suspended' })
-      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })).toEqual({
+      expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Suspended' })
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender, keep: 'forever' })).toEqual({
         _tag: 'Suspended',
       })
       // The message the entity died on is handled next, by the loop, which dies on it again.
@@ -712,7 +712,7 @@ describe('the runtime on Cluster', () => {
       // A discard is a request of its own, stepped again, and not answered from the reply Cluster saved before.
       expect(yield* handle!.discard('one')).toEqual({ _tag: 'Discarded' })
       // A message answered Suspended was not queued: its retry is reset, and handled once the entity is back.
-      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })).toEqual({
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender, keep: 'forever' })).toEqual({
         _tag: 'Accepted',
       })
       expect(yield* stateOf).toEqual({ n: 1, asking: false })
@@ -723,11 +723,11 @@ describe('the runtime on Cluster', () => {
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       const sender = { user: 'u' }
-      yield* handle!.create('one', { start: 0 }, { requestId: 'c1', sender })
+      yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
       const before = DateTime.toEpochMillis(yield* DateTime.now)
       const keep = { millis: 60_000 }
       yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep })
-      yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender })
+      yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender, keep: 'forever' })
       const rows = yield* sql<{ id: string; until: number | null }>`
         SELECT request_id AS id, until FROM effecttea_replies WHERE name = 'Tally' ORDER BY request_id
       `
@@ -750,7 +750,7 @@ describe('the runtime on Cluster', () => {
           `,
           (rows) => Number(rows[0]?.held ?? 0),
         )
-      yield* handle!.create('one', { start: 0 }, { requestId: 'c1', sender })
+      yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
       // A keep of 0 deletes the reply in its own step, and the client is given the answer all the same.
       const zero = { millis: 0 }
       expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep: zero }))
@@ -782,9 +782,9 @@ describe('the runtime on Cluster', () => {
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       const sender = { user: 'u' }
-      yield* handle!.create('one', { start: 0 }, { requestId: 'c1', sender })
+      yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
       const broken = { _tag: 'Add', n: 0.5 } as const
-      const exit = yield* Effect.exit(handle!.send('one', broken, { requestId: 'm1', sender }))
+      const exit = yield* Effect.exit(handle!.send('one', broken, { requestId: 'm1', sender, keep: 'forever' }))
       expect(Exit.isFailure(exit)).toBe(true)
       const [row] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM cluster_messages WHERE tag = 'Message'`
       expect(Number(row?.held)).toBe(0)
@@ -807,11 +807,11 @@ describe('the runtime on Cluster', () => {
       const sender = { user: 'u' }
       refusing = true
       const rejected = { _tag: 'Rejected', reason: { why: 'closed' } } as const
-      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual(rejected)
+      expect(yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })).toEqual(rejected)
       expect(yield* stateOf).toBeUndefined()
-      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual(rejected)
+      expect(yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })).toEqual(rejected)
       refusing = false
-      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+      expect(yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
       expect(yield* stateOf).toEqual({ n: 1, asking: false })
     })), 30_000)
 
@@ -827,7 +827,7 @@ describe('the runtime on Cluster', () => {
       expect(answered).toBe('{"_tag":"Rejected","reason":{"why":"closed"}}')
       refusing = false
       const sender = { user: 'u' }
-      expect(yield* handle!.create('one', { start: 1 }, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+      expect(yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
       expect(yield* stateOf).toEqual({ n: 1, asking: false })
     })), 30_000)
 
@@ -1500,12 +1500,12 @@ describe('the shards of a runner on Cluster', () => {
         const sender = { user: 'u' }
         // The second runner holds the entity's shard and registers no `Ghost`. Cluster saves a failure, which the
         // client resets before it gives it.
-        const exit = yield* Effect.exit(handle.create(id, {}, { requestId: 'c1', sender }))
+        const exit = yield* Effect.exit(handle.create(id, { flags: {}, requestId: 'c1', sender }))
         expect(Exit.isFailure(exit)).toBe(true)
         yield* second.deployGhost
         // Without the reset, the retry would be given the failure Cluster saved, for ever.
-        expect(yield* handle.create(id, {}, { requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
-        expect(yield* handle.send(id, { _tag: 'Add' }, { requestId: 'm1', sender })).toEqual({ _tag: 'Accepted' })
+        expect(yield* handle.create(id, { flags: {}, requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+        expect(yield* handle.send(id, { _tag: 'Add' }, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
       }), {}, Duration.millis(300)), 30_000)
 
   for (const by of ['create', 'send'] as const) {

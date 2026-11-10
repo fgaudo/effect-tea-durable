@@ -241,11 +241,14 @@ A message is one of two kinds, and the rule for a message that does not apply fo
 - **Inbound** messages come from callers. Each one carries a request id chosen by the caller, and is answered
   `Accepted` or `Rejected`, with the reason `update` gave, if any
   ([decision 0010](decisions/archive/0010-a-rejection-may-carry-a-reason.md)). A caller that retries with the same id
-  gets the same answer, and the message is applied once. The boundary may give `send` a `keep`, the time its
-  protocol retries for. The reply is then kept for that time from the step that answers, and a retry after it is a
-  new request, applied again. Without `keep` the reply is kept for ever. A step that stores a reply deletes its
-  entity's replies past their time, and `Handle.expire` those of the whole program
-  ([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). Request ids are their
+  gets the same answer, and the message is applied once. The boundary gives `send` a `keep`, the time its
+  protocol retries for, and `keep` is required, since only the boundary knows that time. The reply is then kept for
+  that time from the step that answers, and a retry after it is a new request, applied again. A `keep` of
+  `'forever'` keeps the reply for ever. A step that stores a reply deletes its entity's replies past their time, and
+  `Handle.expire` those of the whole program
+  ([decisions 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md),
+  [0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)). A program whose sender is
+  `null` takes none, and its callers' requests leave the sender out. Request ids are their
   sender's: another entity's are
   stored under its address, apart from everyone else's
   ([decision 0015](decisions/archive/0015-a-request-belongs-to-its-sender.md)), and a caller's under its sender, as the
@@ -277,7 +280,9 @@ An entity is created by a request of its own, with its flags, answered `Created`
 after, or `Rejected` where its program's `init` rejects the flags, as the paragraph after this one says. A
 message to an entity that does not exist is answered `NotFound`, and creates nothing
 ([decision 0012](decisions/archive/0012-creation-is-a-request-of-its-own.md),
-[decision 0017](decisions/archive/0017-creation-in-the-machine.md)). A creation and a message may share a request id,
+[decision 0017](decisions/archive/0017-creation-in-the-machine.md)). A caller gives the flags in the request, as
+`create(id, { flags, requestId, sender })`, and a program whose flags are `null` leaves them out
+([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)). A creation and a message may share a request id,
 and each is answered apart ([decision 0050](decisions/archive/0050-a-creation-is-answered-apart-from-a-message.md)). `init`
 sees no sender, so the program does not decide who may create an entity. The boundary decides it, or an entity
 does: the entity's `update` rejects the request, or keeps work whose operation calls `create`. A defect at creation
@@ -986,7 +991,9 @@ time passes, and when the process dies:
   request id, `send(message, sender, { requestId })` is a request the test names: a second send under the same
   sender and request id is a retry, given the stored reply and not applied again, and the reply is kept through a
   restart and a deploy. Without one, each send is a new request
-  ([decision 0200](decisions/0200-a-rehearsal-sends-under-a-request-id-the-test-names.md));
+  ([decision 0200](decisions/0200-a-rehearsal-sends-under-a-request-id-the-test-names.md)). A program whose sender is
+  `null` may leave the sender out, as `send(message)`
+  ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md));
 - `pending(key)` finds the work under way under one of the program's keys, with its idempotency key and its
   value, which a test asserts as it asserts a command in effect-tea. A key with a parameter takes it too:
   `pending('charge', 'line-7')`. It fails the test when there is none, and `underWay(key)` gives null instead;
@@ -1425,7 +1432,7 @@ A runner learns of another runner's commit from the file: while a reading of the
 - A caller's client keeps its message's id once it has the answer, and Cluster's rows go once the message's `keep`
   is past, by a step of the entity or by `Handle.expire`
   ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
-  A message sent without `keep` keeps its rows for ever.
+  A message sent with `keep: 'forever'` keeps its rows for ever.
 - A reply Cluster saves of its own after its request's rows are gone is left
   ([decision 0173](decisions/archive/0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md)).
 

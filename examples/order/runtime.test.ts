@@ -46,12 +46,13 @@ test('a query finds the orders nobody paid, and leaves out the one that was', ()
     const orders = yield* Effect.provide(runtime.deploy(order), world)
 
     for (const id of ['o-1', 'o-2', 'o-3']) {
-      yield* orders.create(id, { order: { customer: 'ada', totalInCents: 1_000 } }, {
+      yield* orders.create(id, {
+        flags: { order: { customer: 'ada', totalInCents: 1_000 } },
         requestId: `c-${id}`,
         sender: ada,
       })
     }
-    yield* orders.send('o-2', { _tag: 'PayRequested', payment: 'card-1' }, { requestId: 'p-2', sender: ada })
+    yield* orders.send('o-2', { _tag: 'PayRequested', payment: 'card-1' }, { requestId: 'p-2', sender: ada, keep: 'forever' })
     yield* runtime.settled
     expect(yield* orders.read('o-2')).toMatchObject({ status: 'Paid', deadline: null })
 
@@ -90,11 +91,12 @@ test('what an order published is what another system learns of it, each consumer
     const runtime = yield* launch()
     const orders = yield* Effect.provide(runtime.deploy(order, consumers), world)
 
-    yield* orders.create('o-1', { order: { customer: 'ada', totalInCents: 1_000 } }, {
+    yield* orders.create('o-1', {
+      flags: { order: { customer: 'ada', totalInCents: 1_000 } },
       requestId: 'c-o-1',
       sender: ada,
     })
-    yield* orders.send('o-1', { _tag: 'PayRequested', payment: 'card-1' }, { requestId: 'p-1', sender: ada })
+    yield* orders.send('o-1', { _tag: 'PayRequested', payment: 'card-1' }, { requestId: 'p-1', sender: ada, keep: 'forever' })
     yield* runtime.settled
 
     // The steps were the creation, the request to pay, the charge coming back, and the warehouse told. A topic has a
@@ -151,7 +153,7 @@ test('what an order published is what another system learns of it, each consumer
     // another order ends its wait, and a wait with no row would give none after ten seconds (decision 0142).
     yield* orders.ack('status', 'dashboard', statuses)
     const next = yield* Effect.forkChild(orders.fetch('status', 'dashboard', all, { wait: { millis: 10_000 } }))
-    yield* orders.create('o-2', { order: { customer: 'ada', totalInCents: 500 } }, { requestId: 'c-o-2', sender: ada })
+    yield* orders.create('o-2', { flags: { order: { customer: 'ada', totalInCents: 500 } }, requestId: 'c-o-2', sender: ada })
     expect((yield* Fiber.join(next)).map(({ id, value }) => [id, value])).toEqual([['o-2', 'AwaitingPayment']])
   }))))
 
@@ -162,15 +164,16 @@ test('a report built from the log counts the orders in each status, as the read 
     const report = yield* statusReport
 
     for (const id of ['o-1', 'o-2', 'o-3', 'o-4']) {
-      yield* orders.create(id, { order: { customer: 'ada', totalInCents: 1_000 } }, {
+      yield* orders.create(id, {
+        flags: { order: { customer: 'ada', totalInCents: 1_000 } },
         requestId: `c-${id}`,
         sender: ada,
       })
     }
     for (const id of ['o-2', 'o-3']) {
-      yield* orders.send(id, { _tag: 'PayRequested', payment: 'card-1' }, { requestId: `p-${id}`, sender: ada })
+      yield* orders.send(id, { _tag: 'PayRequested', payment: 'card-1' }, { requestId: `p-${id}`, sender: ada, keep: 'forever' })
     }
-    yield* orders.send('o-4', { _tag: 'CancelRequested' }, { requestId: 'x-o-4', sender: ada })
+    yield* orders.send('o-4', { _tag: 'CancelRequested' }, { requestId: 'x-o-4', sender: ada, keep: 'forever' })
     yield* runtime.settled
 
     // The consumer: `consume` writes each page of its topic to the store and acks it in one transaction, until a
@@ -206,7 +209,8 @@ test('readers that divide the partitions read each row once, and a reader that w
     const orders = yield* Effect.provide(runtime.deploy(order, consumers), world)
     const report = yield* statusReport
     for (const id of ['o-1', 'o-2', 'o-3', 'o-4']) {
-      yield* orders.create(id, { order: { customer: 'ada', totalInCents: 1_000 } }, {
+      yield* orders.create(id, {
+        flags: { order: { customer: 'ada', totalInCents: 1_000 } },
         requestId: `c-${id}`,
         sender: ada,
       })
@@ -226,7 +230,7 @@ test('readers that divide the partitions read each row once, and a reader that w
     const record = (page: Parameters<typeof report.record>[0]) =>
       Effect.andThen(report.record(page), Deferred.succeed(recorded, undefined))
     yield* Effect.forkChild(orders.consume('status', 'dashboard', record, { limit: 3, wait: true }))
-    yield* orders.send('o-4', { _tag: 'CancelRequested' }, { requestId: 'x-o-4', sender: ada })
+    yield* orders.send('o-4', { _tag: 'CancelRequested' }, { requestId: 'x-o-4', sender: ada, keep: 'forever' })
     yield* Deferred.await(recorded)
     expect(yield* report.counts).toEqual({ AwaitingPayment: 3, Cancelled: 1 })
   }))))

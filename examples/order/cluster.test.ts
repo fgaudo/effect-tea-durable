@@ -70,16 +70,17 @@ test('a runner of Cluster creates, pays and reads the orders, each request throu
 
         for (const id of ['o-1', 'o-2']) {
           expect(
-            yield* orders.create(id, { order: { customer: 'ada', totalInCents: 1_000 } }, {
+            yield* orders.create(id, {
+              flags: { order: { customer: 'ada', totalInCents: 1_000 } },
               requestId: `c-${id}`,
               sender: ada,
             }),
           ).toEqual({ _tag: 'Created' })
         }
         const pay = { _tag: 'PayRequested', payment: 'card-1' } as const
-        expect(yield* orders.send('o-2', pay, { requestId: 'p-o-2', sender: ada })).toEqual({ _tag: 'Accepted' })
+        expect(yield* orders.send('o-2', pay, { requestId: 'p-o-2', sender: ada, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
         // A retry under the same request id is answered from what Cluster stored, and charges nothing again.
-        expect(yield* orders.send('o-2', pay, { requestId: 'p-o-2', sender: ada })).toEqual({ _tag: 'Accepted' })
+        expect(yield* orders.send('o-2', pay, { requestId: 'p-o-2', sender: ada, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
         yield* runtime.settled
 
         expect(yield* orders.read('o-1')).toMatchObject({ status: 'AwaitingPayment' })

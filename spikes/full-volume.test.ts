@@ -56,7 +56,7 @@ const sizes = (filename: string) => {
 }
 
 const sending = (handle: Effect.Success<ReturnType<typeof deployed>>) => (id: string, index: number) =>
-  handle.send(id, { _tag: 'Add', text: 'note' }, { requestId: `s-${id}-${index}`, sender }).pipe(
+  handle.send(id, { _tag: 'Add', text: 'note' }, { requestId: `s-${id}-${index}`, sender, keep: 'forever' }).pipe(
     Effect.timeout('5 seconds'),
     Effect.exit,
   )
@@ -73,7 +73,7 @@ const filling = (filename: string) =>
     console.log('journal mode:', mode?.journal_mode)
     const handle = yield* deployed(['stalled', 'current'])
     const sendOnce = sending(handle)
-    for (const id of ['n1', 'n2', 'n3']) yield* handle.create(id, {}, { requestId: `c-${id}`, sender })
+    for (const id of ['n1', 'n2', 'n3']) yield* handle.create(id, { flags: {}, requestId: `c-${id}`, sender })
     // `stalled` reads once and never acks, so it holds every row of its topic.
     yield* handle.fetch('projection', 'stalled', 1)
     let sent = 0

@@ -463,11 +463,15 @@ export const rent = (rides: Handle<TypesOf<typeof ride>>) => (request: RentReque
     // The ride needs the customer's email and the bike's rate, and a reply carries no data: both travel with the
     // creation. The bike refuses the rate if it has changed since the customer was shown it.
     yield* rides.create(id, {
-      customer: request.customer,
-      email: customer.email,
-      bike: request.bike,
-      centsPerMinute: request.centsPerMinute,
-    }, { requestId: request.requestId, sender: { _tag: 'Customer', id: request.customer } })
+      flags: {
+        customer: request.customer,
+        email: customer.email,
+        bike: request.bike,
+        centsPerMinute: request.centsPerMinute,
+      },
+      requestId: request.requestId,
+      sender: { _tag: 'Customer', id: request.customer },
+    })
     return { _tag: 'Rented', ride: id } as const
   })
 ```

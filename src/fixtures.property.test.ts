@@ -103,10 +103,10 @@ const rehearsed = (program: Program<Any>, { flags, sends }: Scenario) =>
 const ran = (program: Program<Any>, dialect: Dialect, { flags, creator, sends }: Scenario) =>
   Effect.scoped(Effect.gen(function*() {
     const entities = yield* (yield* launch()).deploy(program)
-    yield* entities.create('a', flags, { requestId: 'create', sender: creator })
+    yield* entities.create('a', { flags, requestId: 'create', sender: creator })
     const replies: Array<unknown> = []
     for (const [at, { message, sender }] of sends.entries()) {
-      replies.push(yield* entities.send('a', message, { requestId: named(sends)[at]!, sender }))
+      replies.push(yield* entities.send('a', message, { requestId: named(sends)[at]!, sender, keep: 'forever' }))
     }
     return { replies, projection: yield* entities.read('a') }
   })).pipe(

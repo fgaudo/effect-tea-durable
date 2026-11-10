@@ -423,7 +423,7 @@ describe('a role whose search_path is set by ALTER ROLE (decision 0215)', () => 
         const handle = yield* runtime.deploy(ranked)
         yield* Effect.forEach(
           ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
-          (id) => handle.create(id, null, { requestId: `create-${id}`, sender: null }),
+          (id) => handle.create(id, { requestId: `create-${id}`, sender: null }),
           { concurrency: 'unbounded' },
         )
         expect(yield* handle.count({})).toBe(8)

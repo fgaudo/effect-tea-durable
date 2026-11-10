@@ -52,6 +52,14 @@ export interface Pending<Work = unknown> {
 /** The parameter a key takes after its name, or nothing for a key without one (decision 0132). */
 type Parameter<T extends Types, K> = K extends keyof T['parameter'] ? [parameter: T['parameter'][K]] : []
 
+/**
+ * Who sends a rehearsal's message, then the request the test names, if any. A program whose sender is `null` may
+ * leave the sender out, as a caller of the runtime does (decision 0245).
+ */
+type SentBy<T extends Types> = [T['sender']] extends [null]
+  ? [sender?: null, request?: Readonly<{ requestId: string }>]
+  : [sender: T['sender'], request?: Readonly<{ requestId: string }>]
+
 /** The work under way under a key of `T`, as `pending` gives it. */
 type PendingOf<T extends Types> = Pending<Piece<T['operation'], T['internal']>>
 
@@ -65,14 +73,10 @@ interface Acts<T extends Types> {
    * Delivers an inbound message from a caller. Given a request id, it is a request the test names: a second send
    * under the same sender and request id is a retry, given the reply stored for the first and not applied again,
    * as the runtime answers it. The reply is kept for the whole rehearsal, a restart and a deploy included, as the
-   * runtime keeps one sent without `keep`. Without a request id, each send is a new request, whose reply no named
-   * request finds (decision 0200).
+   * runtime keeps one sent with `keep: 'forever'`. Without a request id, each send is a new request, whose reply no
+   * named request finds (decision 0200). A program whose sender is `null` may leave the sender out (decision 0245).
    */
-  readonly send: (
-    message: T['inbound'],
-    sender: T['sender'],
-    request?: Readonly<{ requestId: string }>,
-  ) => Effect.Effect<Machine.StoredReply<T['rejection']>>
+  readonly send: (message: T['inbound'], ...from: SentBy<T>) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /**
    * Delivers an inbound message from another entity's operation, as a new run of it (decision 0059). The entity
    * need not exist: the test answers for it.
@@ -577,9 +581,10 @@ const makeWorld = (at: DateTime.Utc) => {
         const json = encode(program.schemas.projection, program.project(entity.machine.stored.state), 'projection')
         return Schema.decodeUnknownSync(program.schemas.projection)(JSON.parse(JSON.stringify(json)))
       }),
-      send: (message, sender, given) =>
+      send: (message, ...[who, given]: SentBy<T>) =>
         Effect.suspend(() => {
           const program = programOf(entity)
+          const sender: T['sender'] = who === undefined ? null : who
           // The request's key encodes the sender, as the program's: a sender that does not encode is the caller's
           // defect, so it is checked first (decision 0040).
           encode(program.schemas.sender, sender, 'sender')

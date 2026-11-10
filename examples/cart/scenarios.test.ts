@@ -17,7 +17,7 @@ describe('cart', () => {
       cart,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 2 }, null)
+        yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 2 })
         const reserve = yield* rehearsal.pending('Line.reserve', 'mug')
         expect(reserve.work).toEqual({
           _tag: 'Line.Reserve',
@@ -29,7 +29,7 @@ describe('cart', () => {
           id: 'mug',
           message: { _tag: 'StockReserved', reservation: 'r-1' },
         })
-        expect(yield* rehearsal.send({ _tag: 'CheckoutRequested' }, null)).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'CheckoutRequested' })).toEqual(accepted)
         expect(yield* rehearsal.projection).toEqual({
           phase: 'CheckedOut',
           lines: [{ sku: 'mug', status: 'Sold', quantity: 2, canRemove: false }],
@@ -43,9 +43,9 @@ describe('cart', () => {
       cart,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 }, null)
+        yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 })
         const reserve = yield* rehearsal.pending('Line.reserve', 'mug')
-        yield* rehearsal.send({ _tag: 'CheckoutRequested' }, null)
+        yield* rehearsal.send({ _tag: 'CheckoutRequested' })
         // The reservation under way is the same work: the checkout did not start it anew.
         expect((yield* rehearsal.pending('Line.reserve', 'mug')).idempotencyKey).toBe(reserve.idempotencyKey)
         yield* rehearsal.answer(reserve, {
@@ -62,16 +62,16 @@ describe('cart', () => {
       cart,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 }, null)
+        yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 })
         // A line reserving its stock cannot be removed: only the reservation's answer leaves that state.
-        expect(yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }, null))
+        expect(yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }))
           .toMatchObject(rejected)
         yield* rehearsal.answer('Line.reserve', 'mug', {
           _tag: 'Line',
           id: 'mug',
           message: { _tag: 'StockReserved', reservation: 'r-1' },
         })
-        yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }, null)
+        yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } })
         expect((yield* rehearsal.state).lines['mug']?._tag).toBe('Releasing')
         yield* rehearsal.answer('Line.release', 'mug', {
           _tag: 'Line',
@@ -87,10 +87,10 @@ describe('cart', () => {
       cart,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }, null))
+        expect(yield* rehearsal.send({ _tag: 'Line', id: 'mug', message: { _tag: 'RemoveRequested' } }))
           .toMatchObject(rejected)
-        yield* rehearsal.send({ _tag: 'CheckoutRequested' }, null)
-        expect(yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 }, null)).toMatchObject(rejected)
+        yield* rehearsal.send({ _tag: 'CheckoutRequested' })
+        expect(yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 })).toMatchObject(rejected)
       }),
     )))
 
@@ -101,14 +101,14 @@ describe('cart', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         for (const quantity of [0, -1]) {
-          const exit = yield* Effect.exit(rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity }, null))
+          const exit = yield* Effect.exit(rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity }))
           // Refused as the message is sent, and not later by the work of a line made of it.
           const refusal = Exit.isFailure(exit) ? Cause.pretty(exit.cause) : 'accepted'
           expect(refusal).toContain('the inbound message does not encode: Expected a value greater than 0')
           expect((yield* rehearsal.state).lines).toEqual({})
         }
         // The refusal left the cart as it was: the same article with a unit is a line.
-        expect(yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 }, null)).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'ItemAdded', sku: 'mug', quantity: 1 })).toEqual(accepted)
         expect((yield* rehearsal.state).lines['mug']?._tag).toBe('Reserving')
       }),
     )))

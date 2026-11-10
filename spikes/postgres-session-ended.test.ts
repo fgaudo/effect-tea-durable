@@ -69,7 +69,7 @@ test.skipIf(server === undefined)(name, () =>
     yield* on(first)(createTables)
     const runtime = yield* on(first)(launch({}))
     const handle = yield* runtime.deploy(notes)
-    yield* handle.create('n', {}, { requestId: 'create', sender: null })
+    yield* handle.create('n', { flags: {}, requestId: 'create', sender: null })
     const before = yield* holders(watcher)
     console.log('sessions holding the lock before:', before.length)
     for (const pid of before) yield* watcher`SELECT pg_terminate_backend(${pid})`
@@ -78,16 +78,16 @@ test.skipIf(server === undefined)(name, () =>
       if (tries > 500) return yield* Effect.die('the lock was never given back')
       yield* Effect.sleep('10 millis')
     }
-    const sentByFirst = yield* Effect.exit(handle.send('n', { _tag: 'Add' }, { requestId: 'first', sender: null }))
+    const sentByFirst = yield* Effect.exit(handle.send('n', { _tag: 'Add' }, { requestId: 'first', sender: null, keep: 'forever' }))
     console.log('a send of the first runtime once its session ended:', shown(sentByFirst))
     const launched = yield* Effect.exit(on(second)(launch({})))
     console.log('a second launch while the first runs:', shown(Exit.map(launched, () => 'launched')))
     const other = Exit.isSuccess(launched) ? yield* launched.value.deploy(notes) : null
     const sentBySecond = other === null
       ? null
-      : yield* Effect.exit(other.send('n', { _tag: 'Add' }, { requestId: 'second', sender: null }))
+      : yield* Effect.exit(other.send('n', { _tag: 'Add' }, { requestId: 'second', sender: null, keep: 'forever' }))
     console.log('a send of the second runtime to the same entity:', sentBySecond && shown(sentBySecond))
-    const sentAgainByFirst = yield* Effect.exit(handle.send('n', { _tag: 'Add' }, { requestId: 'again', sender: null }))
+    const sentAgainByFirst = yield* Effect.exit(handle.send('n', { _tag: 'Add' }, { requestId: 'again', sender: null, keep: 'forever' }))
     console.log('a send of the first runtime after the second:', shown(sentAgainByFirst))
     const after = yield* holders(watcher)
     console.log('sessions holding the lock after:', after.length)

@@ -43,7 +43,7 @@ test('a role that may only read and write rows creates no table, runs migrations
     const counters = yield* runtime.deploy(counter)
     const sender = null
     const at = DateTime.makeUnsafe(0)
-    expect(yield* counters.create('c', { at }, { requestId: 'made', sender })).toEqual({ _tag: 'Created' })
-    expect(yield* counters.send('c', { _tag: 'Add' }, { requestId: 'added', sender })).toEqual({ _tag: 'Accepted' })
+    expect(yield* counters.create('c', { flags: { at }, requestId: 'made', sender })).toEqual({ _tag: 'Created' })
+    expect(yield* counters.send('c', { _tag: 'Add' }, { requestId: 'added', sender, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
     expect(yield* counters.read('c')).toBe(1)
   })).pipe(Effect.provide(PgliteClient.layer({})))))

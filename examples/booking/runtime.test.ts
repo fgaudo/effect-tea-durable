@@ -34,10 +34,10 @@ test('a booking holds its seats in the inventory, and confirms them', () =>
     const inventories = yield* runtime.deploy(inventory)
     const bookings = yield* runtime.deploy(booking)
 
-    expect(yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer }))
+    expect(yield* inventories.create('gig', { flags: { capacity: 10 }, requestId: 'c-gig', sender: organizer }))
       .toEqual({ _tag: 'Created' })
     expect(
-      yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann }),
+      yield* bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann }),
     ).toEqual({ _tag: 'Created' })
 
     // The booking's hold is an operation: it sends to the inventory and waits for its reply.
@@ -45,7 +45,7 @@ test('a booking holds its seats in the inventory, and confirms them', () =>
     expect(yield* bookings.read('b1')).toMatchObject({ status: 'Held', canConfirm: true })
     expect(yield* inventories.read('gig')).toMatchObject({ open: true, available: 7 })
 
-    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann }))
+    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann, keep: 'forever' }))
       .toEqual({ _tag: 'Accepted' })
     yield* runtime.settled
     expect(yield* bookings.read('b1')).toMatchObject({ status: 'Confirmed', canConfirm: false })
@@ -79,8 +79,8 @@ test('a booking of more seats than are left is cancelled with the inventory’s 
     const inventories = yield* runtime.deploy(inventory)
     const bookings = yield* runtime.deploy(booking)
 
-    yield* inventories.create('small', { capacity: 2 }, { requestId: 'c-small', sender: organizer })
-    yield* bookings.create('b2', { customer: 'ann', event: 'small', seats: 5 }, { requestId: 'c-b2', sender: ann })
+    yield* inventories.create('small', { flags: { capacity: 2 }, requestId: 'c-small', sender: organizer })
+    yield* bookings.create('b2', { flags: { customer: 'ann', event: 'small', seats: 5 }, requestId: 'c-b2', sender: ann })
     yield* runtime.settled
 
     expect(yield* bookings.read('b2')).toMatchObject({ status: 'Cancelled', canConfirm: false })
@@ -93,7 +93,7 @@ test('a booking for an event that does not exist is cancelled', () =>
     yield* runtime.deploy(inventory)
     const bookings = yield* runtime.deploy(booking)
 
-    yield* bookings.create('b3', { customer: 'ann', event: 'nowhere', seats: 1 }, { requestId: 'c-b3', sender: ann })
+    yield* bookings.create('b3', { flags: { customer: 'ann', event: 'nowhere', seats: 1 }, requestId: 'c-b3', sender: ann })
     yield* runtime.settled
 
     expect(yield* bookings.read('b3')).toMatchObject({ status: 'Cancelled' })
@@ -117,10 +117,10 @@ test('a booking whose hold sends a message the inventory cannot encode is suspen
     } as typeof booking
     const inventories = yield* runtime.deploy(inventory)
     const bookings = yield* runtime.deploy(halving)
-    yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
-    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    yield* inventories.create('gig', { flags: { capacity: 10 }, requestId: 'c-gig', sender: organizer })
+    yield* bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann })
     yield* runtime.settled
-    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann }))
+    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann, keep: 'forever' }))
       .toEqual({ _tag: 'Suspended' })
     expect(yield* inventories.read('gig')).toMatchObject({ available: 10 })
   }))))
@@ -148,8 +148,8 @@ test('an operation that sends two requests to one inventory has both applied, ea
     } as typeof booking
     const inventories = yield* runtime.deploy(inventory)
     const bookings = yield* runtime.deploy(undoing)
-    yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
-    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    yield* inventories.create('gig', { flags: { capacity: 10 }, requestId: 'c-gig', sender: organizer })
+    yield* bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann })
     yield* runtime.settled
     expect(yield* inventories.read('gig')).toMatchObject({ available: 10 })
   }))))
@@ -177,10 +177,10 @@ test('an operation that sends twice under one name to one inventory is suspended
     } as typeof booking
     const inventories = yield* runtime.deploy(inventory)
     const bookings = yield* runtime.deploy(twice)
-    yield* inventories.create('gig', { capacity: 10 }, { requestId: 'c-gig', sender: organizer })
-    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    yield* inventories.create('gig', { flags: { capacity: 10 }, requestId: 'c-gig', sender: organizer })
+    yield* bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann })
     yield* runtime.settled
-    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann }))
+    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann, keep: 'forever' }))
       .toEqual({ _tag: 'Suspended' })
     // The release reached no inventory.
     expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
@@ -207,7 +207,7 @@ test('an operation creates an entity, and sends it a message under the same name
     const runtime = yield* launch()
     const inventories = yield* runtime.deploy(inventory)
     const bookings = yield* runtime.deploy(opening(1))
-    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    yield* bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann })
     yield* runtime.settled
     expect(yield* inventories.read('gig')).toMatchObject({ available: 7 })
   }))))
@@ -217,9 +217,9 @@ test('an operation that creates twice under one name is suspended', () =>
     const runtime = yield* launch()
     const inventories = yield* runtime.deploy(inventory)
     const bookings = yield* runtime.deploy(opening(2))
-    yield* bookings.create('b1', { customer: 'ann', event: 'gig', seats: 3 }, { requestId: 'c-b1', sender: ann })
+    yield* bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann })
     yield* runtime.settled
-    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann }))
+    expect(yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r1', sender: ann, keep: 'forever' }))
       .toEqual({ _tag: 'Suspended' })
     // The first creation reached the inventory, and the hold did not.
     expect(yield* inventories.read('gig')).toMatchObject({ available: 10 })

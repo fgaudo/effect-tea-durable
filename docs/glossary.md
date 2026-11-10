@@ -125,7 +125,7 @@ Cluster's says so.
   or runs the operations, fires the timers or lets time pass, kills the process and deploys new versions.
   `rehearse` runs one entity, and `rehearse.together` a world.
 - **Reply.** The stored answer to a request, which a retry under the same request id reads. A caller's is kept for
-  the `keep` its boundary gave `send`, from the step that answers, and for ever without one. Another entity's is kept
+  the `keep` its boundary gave `send`, from the step that answers, or for ever where the `keep` is `'forever'`. Another entity's is kept
   while the work that asked is stored.
 - **Request.** What identifies an inbound message: a caller's sender and request id, or the run of an operation and the
   name it gave `send`. A request is applied once, whichever retry finds it while its reply is kept.

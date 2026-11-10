@@ -66,9 +66,9 @@ test('settled never returns while the waker rests from a reading another entity 
           const at = yield* DateTime.now
           const toy = yield* Effect.provide(runtime.deploy(timed), layer)
           // `timed` rings at 40 millis, and `later` at 50.
-          yield* toy.create('timed', { at }, { requestId: 'c-timed', sender: tester })
+          yield* toy.create('timed', { flags: { at }, requestId: 'c-timed', sender: tester })
           yield* adjusted(window, '10 millis')
-          yield* toy.create('later', { at }, { requestId: 'c-later', sender: tester })
+          yield* toy.create('later', { flags: { at }, requestId: 'c-later', sender: tester })
           yield* runtime.settled
           // Once the caller of `timed` is answered, `timed` has left, and the rest runs in order.
           const want = (entity: string) =>
@@ -76,6 +76,7 @@ test('settled never returns while the waker rests from a reading another entity 
               Effect.exit(toy.send(entity, { _tag: 'Want', key: 'a', on: false, nonce: `r-${entity}` }, {
                 requestId: `r-${entity}`,
                 sender: tester,
+                keep: 'forever',
               })).pipe(Effect.ensuring(Effect.sync(() => {
                 if (entity === 'timed') window.open = false
               }))),
@@ -118,7 +119,7 @@ describe('a timer and the wall clock (decision 0221)', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(distant), layer)
           const rings = DateTime.makeUnsafe(at + 3 * hour)
-          yield* toy.create(id, { at: rings }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at: rings }, requestId: 'creation', sender: tester })
           yield* runtime.settled
           // The host sleeps for three hours: the wall clock moves on, and the timer's sleep does not.
           host.wall.skew += 3 * hour
@@ -141,7 +142,7 @@ describe('a timer and the wall clock (decision 0221)', () => {
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(distant), layer)
           const rings = DateTime.makeUnsafe(at + 3 * hour)
-          yield* toy.create(id, { at: rings }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at: rings }, requestId: 'creation', sender: tester })
           yield* runtime.settled
           yield* host.adjust('5 millis')
           yield* runtime.settled
@@ -167,7 +168,7 @@ describe('a timer and the wall clock (decision 0221)', () => {
       yield* process({ observe, passivate: { millis: 24 * hour } }, (runtime) =>
         Effect.gen(function*() {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { at: DateTime.makeUnsafe(at) }, { requestId: 'creation', sender: tester })
+          yield* toy.create(id, { flags: { at: DateTime.makeUnsafe(at) }, requestId: 'creation', sender: tester })
           yield* runtime.settled
           // The toy's timer rings 40 milliseconds after its creation, and the clock is set back an hour before.
           host.wall.skew -= hour

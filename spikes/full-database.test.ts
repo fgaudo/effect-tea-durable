@@ -59,11 +59,11 @@ const filling = Effect.scoped(Effect.gen(function*() {
   const runtime = yield* launch({ log: { partitions: 4 } })
   const handle = yield* runtime.deploy(notes, { consumers: { projection: ['stalled', 'current'] } })
   const sendOnce = (id: string, index: number) =>
-    handle.send(id, { _tag: 'Add', text: 'note' }, { requestId: `s-${id}-${index}`, sender }).pipe(
+    handle.send(id, { _tag: 'Add', text: 'note' }, { requestId: `s-${id}-${index}`, sender, keep: 'forever' }).pipe(
       Effect.timeout('2 seconds'),
       Effect.exit,
     )
-  for (const id of ['n1', 'n2', 'n3']) yield* handle.create(id, {}, { requestId: `c-${id}`, sender })
+  for (const id of ['n1', 'n2', 'n3']) yield* handle.create(id, { flags: {}, requestId: `c-${id}`, sender })
   // `stalled` reads once and never acks, so it holds every row of its topic.
   yield* handle.fetch('projection', 'stalled', 1)
   const [counted] = yield* sql<{ page_count: number }>`PRAGMA page_count`
@@ -107,7 +107,7 @@ const freeing = Effect.scoped(Effect.gen(function*() {
   const runtime = yield* launch({ log: { partitions: 4 } })
   const handle = yield* runtime.deploy(notes, { consumers: { projection: ['current'] } })
   const sendOnce = (id: string, index: number) =>
-    handle.send(id, { _tag: 'Add', text: 'note' }, { requestId: `s-${id}-${index}`, sender }).pipe(
+    handle.send(id, { _tag: 'Add', text: 'note' }, { requestId: `s-${id}-${index}`, sender, keep: 'forever' }).pipe(
       Effect.timeout('2 seconds'),
       Effect.exit,
     )

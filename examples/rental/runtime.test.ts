@@ -35,7 +35,7 @@ const rental = Effect.gen(function*() {
   yield* sql`INSERT INTO customers (id, email) VALUES ('ann', 'ann@example.com')`
   const bikes = yield* runtime.deploy(bike)
   const rides = yield* Effect.provide(runtime.deploy(ride), mailer)
-  yield* bikes.create('bike-7', { centsPerMinute: 20 }, { requestId: 'add-bike-7', sender: operator })
+  yield* bikes.create('bike-7', { flags: { centsPerMinute: 20 }, requestId: 'add-bike-7', sender: operator })
   return { runtime, bikes, rides }
 })
 
@@ -65,7 +65,7 @@ test('a ride id drawn anew at each try creates a second ride, which the bike ref
     const flags = { customer: 'ann', email: 'ann@example.com', bike: 'bike-7', centsPerMinute: 20 }
     const sender = { _tag: 'Customer', id: 'ann' } as const
     for (const id of ['drawn-1', 'drawn-2']) {
-      expect(yield* rides.create(id, flags, { requestId: 'r-1', sender })).toEqual({ _tag: 'Created' })
+      expect(yield* rides.create(id, { flags, requestId: 'r-1', sender })).toEqual({ _tag: 'Created' })
     }
     yield* runtime.settled
     expect(yield* rides.count({})).toBe(2)
@@ -76,7 +76,7 @@ test('a rate changed after the customer was shown it refuses the ride', () =>
   database(Effect.gen(function*() {
     const { runtime, bikes, rides } = yield* rental
     const shown = yield* rateShown(bikes)
-    yield* bikes.send('bike-7', { _tag: 'RateSet', centsPerMinute: 25 }, { requestId: 'rate-1', sender: operator })
+    yield* bikes.send('bike-7', { _tag: 'RateSet', centsPerMinute: 25 }, { requestId: 'rate-1', sender: operator, keep: 'forever' })
     const rented = yield* rent(rides)({
       customer: 'ann',
       bike: 'bike-7',
@@ -138,11 +138,11 @@ test('a ride the first version suspends is inspected, and resumed by the fix', (
       yield* sql`INSERT INTO customers (id, email) VALUES ('ann', 'ann@example.com')`
       const bikes = yield* runtime.deploy(bike)
       const rides = yield* Effect.provide(runtime.deploy(forgetful), silent)
-      yield* bikes.create('bike-7', { centsPerMinute: 20 }, { requestId: 'add-bike-7', sender: operator })
+      yield* bikes.create('bike-7', { flags: { centsPerMinute: 20 }, requestId: 'add-bike-7', sender: operator })
       yield* rent(rides)(request)
       yield* Deferred.await(mailing)
       // The customer ends the ride while its email is under way: the step dies, and the caller has no reply yet.
-      expect(yield* rides.send(id, end, { requestId: 'end-1', sender: ann })).toEqual({ _tag: 'Suspended' })
+      expect(yield* rides.send(id, end, { requestId: 'end-1', sender: ann, keep: 'forever' })).toEqual({ _tag: 'Suspended' })
       const [suspension] = yield* rides.suspended
       expect(suspension).toMatchObject({ id, on: { _tag: 'Message', kind: 'Inbound' } })
       expect(suspension?.cause).toContain("the step dropped the operation under 'email' before its completion")
@@ -167,7 +167,7 @@ test('a ride the first version suspends is inspected, and resumed by the fix', (
       expect(yield* rides.inspect(id)).toMatchObject({ state: { _tag: 'Ended', email: 'Unsure' }, suspension: null })
       expect(yield* bikes.read('bike-7')).toMatchObject({ status: 'Docked', rides: 1 })
       // The customer's retry is answered from the reply the fix stored, and ends nothing twice.
-      expect(yield* rides.send(id, end, { requestId: 'end-1', sender: ann })).toEqual({ _tag: 'Accepted' })
+      expect(yield* rides.send(id, end, { requestId: 'end-1', sender: ann, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
     }))
   })))
 
@@ -178,7 +178,7 @@ test('a bike renamed by the launch keeps its state under its new name', () =>
     yield* Effect.scoped(Effect.gen(function*() {
       const runtime = yield* launch()
       const bikes = yield* runtime.deploy(bike)
-      yield* bikes.create('bike-7', { centsPerMinute: 20 }, { requestId: 'add-bike-7', sender: operator })
+      yield* bikes.create('bike-7', { flags: { centsPerMinute: 20 }, requestId: 'add-bike-7', sender: operator })
     }))
     yield* Effect.scoped(Effect.gen(function*() {
       const runtime = yield* launch({ renames: { Bike: 'Cycle' } })

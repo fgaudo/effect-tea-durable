@@ -123,12 +123,12 @@ const measure = (rooms: typeof whole | typeof counted | typeof topical, label: s
     const runtime = yield* launch()
     const entities = yield* runtime.deploy(rooms as typeof whole)
     const sender = { id: 'ada' }
-    yield* entities.create('r', { size }, { requestId: 'create', sender })
+    yield* entities.create('r', { flags: { size }, requestId: 'create', sender })
     yield* runtime.settled
     const before = yield* sql<{ bytes: number }>`SELECT coalesce(sum(length(projection)), 0) AS bytes FROM effecttea_publications`
     const started = performance.now()
     for (let step = 0; step < steps; step++) {
-      yield* entities.send('r', { _tag: 'Add', label: `added ${step}` }, { requestId: `add-${step}`, sender })
+      yield* entities.send('r', { _tag: 'Add', label: `added ${step}` }, { requestId: `add-${step}`, sender, keep: 'forever' })
     }
     yield* runtime.settled
     const elapsed = performance.now() - started
@@ -207,8 +207,8 @@ const alongside = (size: number) =>
     const large = yield* runtime.deploy(whole)
     const small = yield* runtime.deploy(counted)
     const sender = { id: 'ada' }
-    yield* large.create('large', { size }, { requestId: 'create-large', sender })
-    yield* small.create('small', { size: 10 }, { requestId: 'create-small', sender })
+    yield* large.create('large', { flags: { size }, requestId: 'create-large', sender })
+    yield* small.create('small', { flags: { size: 10 }, requestId: 'create-small', sender })
     yield* runtime.settled
     // The small entity steps for as long as the large one takes for its steps, so that its steps meet every
     // moment of the large one's: its encoding, outside the transaction, and its write, inside.
@@ -221,6 +221,7 @@ const alongside = (size: number) =>
           yield* small.send('small', { _tag: 'Add', label: 'x' }, {
             requestId: `${prefix}-${taken.length}`,
             sender,
+            keep: 'forever',
           })
           taken.push(performance.now() - started)
         }
@@ -234,7 +235,7 @@ const alongside = (size: number) =>
     let done = false
     yield* Effect.forkChild(Effect.forEach(
       Array.from({ length: steps }, (_, step) => step),
-      (step) => large.send('large', { _tag: 'Add', label: 'y' }, { requestId: `large-${step}`, sender }),
+      (step) => large.send('large', { _tag: 'Add', label: 'y' }, { requestId: `large-${step}`, sender, keep: 'forever' }),
       { discard: true },
     ).pipe(Effect.ensuring(Effect.sync(() => {
       done = true

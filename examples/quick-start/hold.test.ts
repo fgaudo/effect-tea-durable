@@ -13,7 +13,7 @@ test('a seat nobody confirms in time is released', () =>
     { flags: null, at: DateTime.makeUnsafe('2026-11-08T10:00:00Z') },
     Effect.fnUntraced(function*(rehearsal) {
       yield* rehearsal.fire('expiry')
-      expect(yield* rehearsal.send({ _tag: 'Confirm' }, null)).toMatchObject(rejected)
+      expect(yield* rehearsal.send({ _tag: 'Confirm' })).toMatchObject(rejected)
       expect(yield* rehearsal.projection).toEqual({ status: 'Released' })
     }),
   )))
@@ -23,8 +23,9 @@ test('a seat confirmed in time is confirmed once', () =>
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const runtime = yield* launch()
     const holds = yield* runtime.deploy(hold)
-    yield* holds.create('seat-12', null, { requestId: 'hold-1', sender: null })
-    const confirm = { requestId: 'confirm-1', sender: null }
+    yield* holds.create('seat-12', { requestId: 'hold-1' })
+    // The reply is kept a day, so a retry within it is answered as the first time.
+    const confirm = { requestId: 'confirm-1', keep: { millis: 86_400_000 } }
     expect(yield* holds.send('seat-12', { _tag: 'Confirm' }, confirm)).toEqual({ _tag: 'Accepted' })
     expect(yield* holds.send('seat-12', { _tag: 'Confirm' }, confirm)).toEqual({ _tag: 'Accepted' })
     expect(yield* holds.read('seat-12')).toEqual({ status: 'Confirmed' })
