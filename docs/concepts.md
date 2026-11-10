@@ -69,8 +69,9 @@ people:
   ([Reading](design.md#reading)).
 - **A consumer of the outbox**: `fetch`, `ack`, `consume`, `published`, `consumers`, `prune` and `forget`
   ([Publishing what happened](design.md#publishing-what-happened)).
-- **An operator**: `check`, `suspended`, `inspect`, `resume`, `discard`, `reindex` and `expire`
-  ([the operator's calls](guide/operator.md)).
+- **An operator**: `suspended`, `inspect`, `resume`, `discard`, `reindex` and `expire`
+  ([the operator's calls](guide/operator.md)). An operator also calls `check`, a function of the main entry and no
+  call of the handle, before a deploy.
 
 A test calls none of them. It calls `rehearse`, which runs the program without a database or a clock
 ([Testing](design.md#testing)).

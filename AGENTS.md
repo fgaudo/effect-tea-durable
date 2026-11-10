@@ -67,7 +67,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   lists an archived note under its path in `archive/`, and each release moves what has come to be covered since. `bun run links` checks every
   link of the `.md` files.
 - A note lists, in a section `What it rests on`, each premise its decision falls without, and says of each whether it
-  is tested (naming the test), documented, seen in a spike, read in a dependency's source, or only reasoned.
+  is tested (naming the test), documented, seen in a spike, read in a dependency's source, or only reasoned. A
+  rule that holds only by a margin, such as a time longer than an interval, lists the margin as a premise, with the
+  value it depends on. A note that changes another reads the premises of the note changed, and says of each whether
+  it still holds.
 - A premise about a dependency is looked up first in the documentation of the version pinned, for Effect its JSDoc
   in `node_modules/effect/src`: found, it is documented; not found, the note says so. A rule that loses data in
   silence if a behaviour not promised changes does not rest on it alone, where a guard of the library's is cheap;
@@ -145,6 +148,11 @@ This repository is a design and its pure core, not a library yet: read [`README.
   the code it runs, so a change that adds or moves a yield in the runtime or in `src/testing.ts` finds the pinned
   seeds again: for each, it takes out the fix the test's comment names, runs `bun run test:explore -t <test>` until
   a seed fails, and pins that seed, with the comment saying the form of the code it fails against.
+- A change that deletes rows of Cluster's, or moves the time they are deleted at, has a test with a second client,
+  on another runner, that waits for the request whose rows go. The runtime deletes those rows by statements of its
+  own, and a client of another runner reads its reply from them at an interval.
+- A decision that takes a value to its end, such as a time of 0 or of the moment itself, has a test at that value,
+  with every caller the rule is about.
 - The workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the checks on Linux on every push and
   pull request: `bun audit`, `bun run typecheck`, `bun run links`, and the audit and the build of the site. It runs
   `bun test` in four jobs at once, each with `--shard`, and a test of the workflow's form checks that the jobs run

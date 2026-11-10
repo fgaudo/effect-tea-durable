@@ -218,8 +218,8 @@ An operator runs these calls too, each from the handle of one program:
 | `forget` | Drops a consumer the deploy no longer declares, so that the next prune passes it. | [The outbox](outbox.md#pruning-and-a-consumer-that-holds-the-log) |
 | `reindex` | Writes the read model again, after a deploy that added or changed an index. | [Schemas that change](schemas.md#how-a-stored-row-is-read) |
 
-A step deletes its own entity's replies past their time, so `expire` frees the rows of the entities that take no
-step. The sweep is an option of `launch`. `sweep: { millis: 60_000 }` sweeps every minute, and
+A step that stores a reply deletes its own entity's replies past their time, so `expire` frees the rows of the
+entities that answer no message. The sweep is an option of `launch`. `sweep: { millis: 60_000 }` sweeps every minute, and
 `sweep: { millis: 300_000, prune: false }` expires and leaves the log to an operator's `prune`. `sweep: 'none'` runs
 no sweep. A sweep that fails logs a warning, and the next one runs at the next interval. On Cluster one runner
 sweeps each program. A sweep frees rows in the database, and SQLite gives no room back to the volume, so the file
