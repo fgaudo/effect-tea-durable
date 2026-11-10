@@ -13,6 +13,7 @@ import { SqlClient, Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
 import { InvariantDefect, isTimer, type Json, type Migration, noWork, operation, type Program, type Scalar } from './program.ts'
 import {
+  batch,
   type Comparison,
   createTables,
   type Criterion,
@@ -382,6 +383,33 @@ describe('how long a caller’s reply is kept (decision 0125)', () => {
         expect(yield* storage(asker, sql).expire(0)).toBe(0)
         expect(yield* storage(asker, sql).expire(600)).toBe(1)
       })))
+
+  // A batch is a transaction of its own, and the count is the sum of the batches (decision 0245).
+  test('expire deletes past a batch, counts every row, and on Cluster takes the ids of every batch', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        yield* sql`CREATE TABLE cluster_messages (request_id BIGINT NOT NULL)`
+        yield* sql`CREATE TABLE cluster_replies (request_id BIGINT NOT NULL)`
+        const store = storage(receiver, sql, undefined, true)
+        const many = Array.from({ length: 2 * batch + 1 }, (_, i) => until(`gone ${i}`, 500))
+        yield* store.write('r', created({ replies: [...many, until('kept', 900)] }), 0)
+        for (let i = 0; i < 2 * batch + 1; i++) {
+          const id = String(9_007_199_254_740_993 + 2 * i)
+          yield* sql`INSERT INTO cluster_messages (request_id) VALUES (${id})`
+          yield* sql`INSERT INTO cluster_replies (request_id) VALUES (${id})`
+          yield* store.keepGiven(id, 'r', 500)
+        }
+        yield* store.keepGiven('1', 'r', 900)
+        expect(yield* store.expire(600)).toBe(2 * batch + 1)
+        expect(yield* store.reply('r', caller('kept'), 600)).toEqual({ _tag: 'Accepted' })
+        const left = (table: string) =>
+          Effect.map(sql<{ count: number }>`SELECT count(*) AS count FROM ${sql(table)}`, (rows) => Number(rows[0]?.count))
+        expect(yield* left('effecttea_replies')).toBe(1)
+        expect(yield* left('effecttea_given_requests')).toBe(1)
+        expect(yield* left('cluster_messages')).toBe(0)
+        expect(yield* left('cluster_replies')).toBe(0)
+        expect(yield* store.expire(600)).toBe(0)
+      }).pipe(Effect.orDie), ['sqlite']))
 
   test('a message in the mailbox is loaded with the keep it was queued with', () =>
     database((sql) =>
@@ -1154,6 +1182,25 @@ describe('topics of the log (decision 0138)', () => {
         // A declare of a consumer stored already leaves its cursors where they are.
         yield* store.declare([{ topic: 'upper', consumer: 'c' }])
         expect(yield* store.consumers).toEqual([{ topic: 'upper', consumer: 'c', behind: 0, since: null, cursors: [] }])
+      })))
+
+  // A batch is a transaction of its own, and the count is the sum of the batches (decision 0245).
+  test('a prune drops past a batch, counts every row, and keeps what a cursor holds', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(topical, sql)
+        yield* store.declare([{ topic: 'upper', consumer: 'c' }])
+        yield* store.write('r', publishing(null, { upper: 'START', size: 5 }, ['upper', 'size']), 0)
+        for (let i = 0; i < 2 * batch; i++) {
+          yield* store.write('r', publishing(`m${i}`, { upper: `M${i}`, size: 2 }, ['upper', 'size']), 0)
+        }
+        const read = yield* store.fetch('upper', 'c', 2 * batch)
+        yield* store.ack('upper', 'c', read)
+        // `size` has no consumer, and goes whole; `upper` goes through the cursor, and its last row stays.
+        expect(yield* store.prune).toBe(2 * batch + 1 + 2 * batch)
+        expect((yield* store.fetch('upper', 'c', all)).map(({ value }) => value)).toEqual([`M${2 * batch - 1}`])
+        expect(yield* store.published('size', [], all)).toEqual([])
+        expect(yield* store.prune).toBe(0)
       })))
 
   test("a consumer's time is the step of its next row in each partition, the oldest of them, whatever the clock", () =>

@@ -420,6 +420,8 @@ const tables = Effect.gen(function*() {
     )
   `
   yield* sql`CREATE INDEX effecttea_given_requests_until ON effecttea_given_requests (name, id, until)`
+  // `expire` reads a program's ids past their time, of every entity (decision 0245).
+  yield* sql`CREATE INDEX effecttea_given_requests_expire ON effecttea_given_requests (name, until)`
 })
 
 /**

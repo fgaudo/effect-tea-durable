@@ -396,15 +396,36 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
       return characters
     }).pipe(Effect.orDie)
 
-  // One transaction, so that a crash leaves no request of Cluster's without its replies (decision 0171).
+  // Each batch is a transaction of its own, so that a sweep holds SQLite's one writer for a batch at a time
+  // (decision 0245). Cluster's rows under an id go with the id, in its batch's transaction, so that a crash leaves no
+  // request of Cluster's without its replies (decision 0171). A batch is read in the order of the times, by the
+  // index of each table by program and time.
   const expire = (at: number) =>
-    transaction(sql, Effect.gen(function*() {
-      const gone = yield* rows('effecttea_replies', Rows.id)(sql`
-        DELETE FROM effecttea_replies WHERE name = ${name} AND until IS NOT NULL AND until <= ${at} RETURNING id
-      `)
-      if (onCluster) yield* forgetUnder(sql, 'effecttea_given_requests', sql`name = ${name} AND until <= ${at}`)
-      return gone.length
-    })).pipe(Effect.orDie)
+    Effect.gen(function*() {
+      let count = 0
+      while (true) {
+        const [replies, given] = yield* transaction(sql, Effect.gen(function*() {
+          const gone = yield* rows('effecttea_replies', Rows.id)(sql`
+            DELETE FROM effecttea_replies
+            WHERE name = ${name} AND (id, request, version) IN (
+              SELECT id, request, version FROM effecttea_replies
+              WHERE name = ${name} AND until IS NOT NULL AND until <= ${at}
+              ORDER BY until LIMIT ${batch}
+            )
+            RETURNING id
+          `)
+          const given = onCluster
+            ? yield* forgetUnder(sql, 'effecttea_given_requests', sql`request_id IN (
+              SELECT request_id FROM effecttea_given_requests WHERE name = ${name} AND until <= ${at}
+              ORDER BY until, request_id LIMIT ${batch}
+            )`)
+            : 0
+          return [gone.length, given] as const
+        }))
+        count += replies
+        if (replies < batch && given < batch) return count
+      }
+    }).pipe(Effect.orDie)
 
   /** The entities of the program an operator has to resume: nothing of theirs is handled, and no timer of theirs fires. */
   const onHold = sql`(SELECT id FROM effecttea_entities WHERE name = ${name} AND suspended_on IS NOT NULL)`

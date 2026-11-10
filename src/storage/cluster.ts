@@ -23,8 +23,8 @@ const clusterReplies = 'cluster_replies'
 
 /**
  * Deletes Cluster's rows under the request ids of `table`, `effecttea_sent_requests` or `effecttea_given_requests`,
- * that `where` selects, then those ids. Every row under an id goes: the request, its replies and any envelope stored under it
- * (decisions 0169, 0171).
+ * that `where` selects, then those ids, and gives how many ids went. Every row under an id goes: the request, its
+ * replies and any envelope stored under it (decisions 0169, 0171).
  */
 export const forgetUnder = (
   sql: SqlClient.SqlClient,
@@ -35,7 +35,9 @@ export const forgetUnder = (
     const ids = sql`SELECT request_id FROM ${sql(table)} WHERE ${where}`
     yield* sql`DELETE FROM ${sql(clusterReplies)} WHERE request_id IN (${ids})`
     yield* sql`DELETE FROM ${sql(clusterMessages)} WHERE request_id IN (${ids})`
-    yield* sql`DELETE FROM ${sql(table)} WHERE ${where}`
+    // Only the length is read: a Cluster id may be past 2^53, which no row of the storage's decodes (decision 0157).
+    const gone = yield* sql`DELETE FROM ${sql(table)} WHERE ${where} RETURNING 1 AS gone`
+    return gone.length
   })
 
 export const forgetSent = (sql: SqlClient.SqlClient, where: Statement.Fragment) => forgetUnder(sql, 'effecttea_sent_requests', where)

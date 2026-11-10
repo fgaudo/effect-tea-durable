@@ -456,7 +456,9 @@ export interface Handle<T extends Types, C = {}> {
    * Drops what every consumer of a topic has read, in each partition through the lowest cursor there, and gives how
    * many rows went. A consumer that has acked nothing of a partition holds the whole partition of its topic. A
    * topic no consumer is stored for is dropped whole, since no reader that keeps cursors needs its rows: a reading
-   * with `published` has no say in a prune (decisions 0039, 0137, 0152).
+   * with `published` has no say in a prune (decisions 0039, 0137, 0152). The rows go in batches, each a transaction of
+   * its own, so the count is the sum of the batches, and a prune that fails keeps the batches it committed before
+   * (decision 0245).
    */
   readonly prune: Effect.Effect<number>
   /**
@@ -475,7 +477,8 @@ export interface Handle<T extends Types, C = {}> {
   /**
    * Deletes the callers' replies of the program past their time, and gives how many went. A reply past its time is
    * never read, so this frees only their rows: those of an entity that takes no step, since a step deletes its own
-   * entity's (decision 0125).
+   * entity's (decision 0125). The replies go in batches, each a transaction of its own, so the count is the sum of the
+   * batches, and an expire that fails keeps the batches it committed before (decision 0245).
    */
   readonly expire: Effect.Effect<number>
   /**

@@ -43,6 +43,7 @@ export {
 } from './storage/cluster.ts'
 export { type Due, type Inspection, type Suspension } from './storage/entities.ts'
 export { type Consumer, type Cursor, type Published } from './storage/log.ts'
+export { batch } from './storage/rows.ts'
 export {
   type After,
   type Comparison,
@@ -183,7 +184,10 @@ export interface Storage<T extends Types> {
    * the cursor stored there.
    */
   readonly ack: (topic: Topic<T>, consumer: string, through: ReadonlyArray<Cursor>) => Effect.Effect<void>
-  /** `Handle.prune`, as the storage keeps it: the cursors are read and the rows dropped in one transaction. */
+  /**
+   * `Handle.prune`, as the storage keeps it: in batches, each of which reads the cursors and drops its rows in one
+   * transaction (decision 0245).
+   */
   readonly prune: Effect.Effect<number>
   /**
    * Every consumer stored, with how many rows are past its cursors, by topic and name. Whether the deploy declares
@@ -192,7 +196,10 @@ export interface Storage<T extends Types> {
   readonly consumers: Effect.Effect<ReadonlyArray<Omit<Consumer, 'declared'>>>
   /** Drops a consumer and its cursors, so that the next prune passes what it never read (decision 0039). */
   readonly forget: (topic: Topic<T>, consumer: string) => Effect.Effect<void>
-  /** `Handle.expire`: deletes the callers' replies past their time at `at`, in milliseconds, and counts them. */
+  /**
+   * `Handle.expire`: deletes the callers' replies past their time at `at`, in milliseconds, in batches, and counts
+   * them (decision 0245).
+   */
   readonly expire: (at: number) => Effect.Effect<number>
   /** The suspended entities of the program, the longest suspended first (decision 0114). */
   readonly suspended: Effect.Effect<ReadonlyArray<Suspension>>

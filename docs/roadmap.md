@@ -22,8 +22,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   5. `spikes/full-volume.test.ts` checks a prune in batches on a full volume, in the CI's job; `design.md` and
      `glossary.md` say what holds; `bun run test:release` passes; the note is taken.
 
-  Part 1 is done: `bun test`, `bun run typecheck`, `bun run links` and the site's build pass. Part 2 is next, from
-  `prune` in `src/storage/log.ts`.
+  Parts 1 and 2 are done: `bun test`, `bun run typecheck`, `bun run links` and the site's build pass. Part 2 added
+  the index `effecttea_given_requests_expire`, by program and time. Part 3 is next, from where the client of a
+  creation reads its answer in `src/runtime/callers.ts`.
 
 ## Later
 

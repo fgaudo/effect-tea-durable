@@ -247,5 +247,8 @@ export const Rows = {
   })),
 } as const
 
-/** How many entities one reading gives as due: a reading that fills it is followed by another. */
+/**
+ * How many rows one reading gives, or one transaction of `prune` and `expire` deletes: one that fills it is followed by
+ * another (decision 0245).
+ */
 export const batch = 256

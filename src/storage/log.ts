@@ -222,13 +222,14 @@ export const logOf = <T extends Types>(held: Held<T>): Pick<
   // Each partition of a topic is dropped through the lowest cursor of the topic's consumers in it, and only where
   // every consumer of the topic has a cursor there, since one with none holds the partition from `0` (decision 0137).
   // A topic no consumer is stored for is dropped whole: every consumer is declared and stored at deploy, so no
-  // reader that keeps cursors needs its rows (decision 0152). The consumers and cursors are read and the rows
-  // dropped in one statement, since the two are one decision (decision 0039). A consumer is stored only by a deploy,
-  // before its handle exists, so none is stored in the middle of a prune (decision 0152). The trigger of the outbox
-  // drops each publication with the last row that names it, in the statement that drops the row. The transaction
-  // is a guard: it commits the rows and the publications together even if a trigger ran outside the statement that
-  // fired it (decision 0154).
-  const prune = transaction(sql, Effect.gen(function*() {
+  // reader that keeps cursors needs its rows (decision 0152). The rows go in batches, each a transaction of its own,
+  // so that a sweep holds SQLite's one writer for a batch at a time (decision 0245). Each batch reads the consumers and
+  // cursors and drops its rows in one statement, since the two are one decision (decision 0039). A cursor only rises
+  // and a consumer is stored only by a deploy, so a batch drops nothing that the cursors read by the batch before
+  // still hold (decision 0152). The trigger of the outbox drops each publication with the last row that names it, in
+  // the statement that drops the row. The transaction is a guard: it commits the rows and the publications together
+  // even if a trigger ran outside the statement that fired it (decision 0154).
+  const pruneBatch = transaction(sql, Effect.gen(function*() {
     const gone = yield* rows('effecttea_outbox', Rows.seq)(sql`
       WITH floors AS (
         SELECT topic, partition, min(seq) AS through FROM effecttea_cursors WHERE name = ${name}
@@ -238,16 +239,29 @@ export const logOf = <T extends Types>(held: Held<T>): Pick<
         )
       )
       DELETE FROM effecttea_outbox
-      WHERE name = ${name} AND (
-        NOT EXISTS (SELECT 1 FROM effecttea_consumers WHERE effecttea_consumers.name = ${name} AND effecttea_consumers.topic = effecttea_outbox.topic)
-        OR seq <= (
-          SELECT through FROM floors WHERE floors.topic = effecttea_outbox.topic AND floors.partition = effecttea_outbox.partition
+      WHERE position IN (
+        SELECT position FROM effecttea_outbox
+        WHERE name = ${name} AND (
+          NOT EXISTS (SELECT 1 FROM effecttea_consumers WHERE effecttea_consumers.name = ${name} AND effecttea_consumers.topic = effecttea_outbox.topic)
+          OR seq <= (
+            SELECT through FROM floors WHERE floors.topic = effecttea_outbox.topic AND floors.partition = effecttea_outbox.partition
+          )
         )
+        ORDER BY position LIMIT ${batch}
       )
       RETURNING seq
     `)
     return gone.length
-  })).pipe(Effect.orDie)
+  }))
+
+  const prune = Effect.gen(function*() {
+    let count = 0
+    while (true) {
+      const gone = yield* pruneBatch
+      count += gone
+      if (gone < batch) return count
+    }
+  }).pipe(Effect.orDie)
 
   const consumers = Effect.gen(function*() {
     const stored = yield* rows('effecttea_consumers', Rows.topical)(

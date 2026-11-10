@@ -49,7 +49,9 @@ A program that has no sender has the sender `null`, and every `create` and `send
 - **`prune` and `expire` delete in batches.** Each deletes at most a batch of rows in one transaction, and repeats
   until a batch deletes fewer. The count it gives is the sum of its batches. A batch keeps what decision 0039 and
   decision 0171 need: the cursors are read in the batch's transaction, and Cluster's rows under an id go with the id.
-  A short transaction holds SQLite's one writer for less time, so a sweep does not stall the steps.
+  A short transaction holds SQLite's one writer for less time, so a sweep does not stall the steps. A batch is 256
+  rows, the size of a page of a reading, and is read in the order of an index: the outbox by `position`, the replies
+  and `effecttea_given_requests` by program and time.
 - **On Cluster, a creation's rows go once its client has the answer.** The client keeps the Cluster id of a
   creation in `given_requests`, with the time it keeps it, as a `keep` of 0 does, and `expire` deletes the rows under
   it. A retry of the creation then reaches the door again, and the machine answers `Created` from the entity's row
@@ -64,7 +66,9 @@ A program that has no sender has the sender `null`, and every `create` and `send
 - That only the boundary knows how long its callers retry for: **only reasoned**, as decision 0125 says.
 - That a sweep frees what the steps leave and changes no answer, since no reply is read past its time and no row a
   stored consumer has not read is pruned: **tested**, by the tests of `expire` and `prune` in
-  [`src/storage.test.ts`](../../src/storage.test.ts). A test of the sweep is still to write.
+  [`src/storage.test.ts`](../../src/storage.test.ts), and past a batch by the tests `a prune drops past a batch,
+  counts every row, and keeps what a cursor holds` and `expire deletes past a batch, counts every row, and on Cluster
+  takes the ids of every batch`. A test of the sweep is still to write.
 - That a prune in batches needs less free room on a full volume than one prune: **not seen**. It depends on a
   checkpoint of the WAL between batches, which a reader can hold back. `spikes/full-volume.test.ts` is to check it
   before the design says it.
