@@ -3,6 +3,9 @@
 **Status:** accepted, 2026-11-07. Decides the [open question](../../open-questions.md#running) of bookkeeping in
 transactions, and takes the step of the roadmap that waited on it out. Keeps
 [decision 0068](0068-what-another-fiber-reads-changes-in-one-step.md) as it is.
+[Decision 0246](../0246-a-transaction-can-wait-for-the-time-and-the-bookkeeping-stays-in-steps.md) corrects its
+reason about the time: a transaction can wait for the time, through a fiber that writes a `TxRef` at the deadline.
+`settled` stays out of a transaction because such a wait costs more than it saves, and the spike waits for no release.
 
 ## Context
 
