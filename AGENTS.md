@@ -70,7 +70,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
   is tested (naming the test), documented, seen in a spike, read in a dependency's source, or only reasoned. A
   rule that holds only by a margin, such as a time longer than an interval, lists the margin as a premise, with the
   value it depends on. A note that changes another reads the premises of the note changed, and says of each whether
-  it still holds.
+  it still holds. A review of the notes already taken, for a premise a later note took away, follows
+  [`.claude/skills/premise-review/SKILL.md`](.claude/skills/premise-review/SKILL.md).
 - A premise about a dependency is looked up first in the documentation of the version pinned, for Effect its JSDoc
   in `node_modules/effect/src`: found, it is documented; not found, the note says so. A rule that loses data in
   silence if a behaviour not promised changes does not rest on it alone, where a guard of the library's is cheap;

@@ -79,6 +79,41 @@ with a requirement that no example has yet.
     database's clock instead of a runner's;
   - whether a client that missed its polls still waits for ever, or Cluster gives it a way to learn that its rows
     are gone.
+- **A drain across a deploy of a newer version on Cluster.** A planned stop waits for the at-most-once operations
+  under way, so that a deploy does not deliver `unknown`
+  ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)), and the drain
+  holds on Cluster, tested with two runners of one version
+  ([decision 0219](decisions/0219-a-drain-holds-when-an-interrupted-fiber-closes-its-scope.md)). A runner of a newer
+  version takes the shards of the older runners as it launches
+  ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+  The older runner then loses the shard before its scope closes: its entities crash, their operations are
+  interrupted, and the newer runner delivers `unknown`. A completion stepped during a drain after a newer launch
+  would die in the guard of the version too, which is read in the code and not tested. The test `FAILING: a rolling
+  deploy to a newer version drains the at-most-once operation under way on the older runner`, in the commit
+  `4f8ded8` of the branch `claude/premise-review-1f63ba`, expects `done` and gets `unknown`. Any move of a shard
+  interrupts an at-most-once operation, which
+  [decision 0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)
+  accepts. Whether a rolling deploy drains is not decided. It would be decided by:
+  - whether an older runner can keep a shard, and commit the completions of its at-most-once operations, while a
+    newer version is recorded, without two versions writing one entity;
+  - whether the procedure of a deploy stops the older runner, with its drain, before the newer one launches, and
+    what the entities of its shards wait meanwhile;
+  - whether the design says instead that a drain serves a stop, and not a deploy of a newer version on Cluster.
+- **The deletions of a reply on a pool of PostgreSQL.** A reply to another entity's operation is kept while the
+  work that asked holds ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
+  Two statements keep it: the receiver's step deletes the reply it stores where the asker's key is gone, and the
+  asker's step deletes the replies to the work that ends. They rely on transactions that come one after the other
+  ([decision 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). On a server of
+  PostgreSQL with a pool the steps of two entities run at once, at `READ COMMITTED`
+  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The receiver's step still sees the asker's
+  key, whose deletion is not committed, and the asker's step does not see the reply, whose insertion is not
+  committed. Both commit, and the reply stays for ever, since it has no time for `expire`. It is a row left, and no
+  wrong answer. It happens where work ends while its request is still handled, as an operation that times out its
+  own `send` does. It is only reasoned: no test runs it. It would be decided by:
+  - a test in [`src/postgres.test.ts`](../src/postgres.test.ts), on the CI's server, that holds the two steps at
+    their statements and finds the row;
+  - whether the receiver's step locks the asker's key as it reads it, or a sweep deletes the replies whose asker's
+    work is gone.
 - **A failure of the storage that passes.** Every call of a handle but `consume` turns a `SqlError` into a defect,
   with `Effect.orDie`, so a connection that drops for a second reaches a caller as a defect, the same as a bug. A
   boundary that would retry such a failure must catch every defect to find it, and the type of `send`,
