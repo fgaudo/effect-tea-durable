@@ -595,11 +595,13 @@ describe('the runtime on Cluster', () => {
 
   /**
    * Runs `run` on one runner over a SQLite file, whose runtime on Cluster deploys `tally`. `probe`, given the
-   * runner's client of the database, is told what the runtime does.
+   * runner's client of the database, is told what the runtime does. The runtime sweeps nothing unless `options`
+   * says, so that no sweep deletes a row a test reads (decision 0245).
    */
   const onRunner = async (
     run: Effect.Effect<void, unknown, Sharding.Sharding | SqlClient.SqlClient | Scope.Scope>,
     probe?: (sql: SqlClient.SqlClient) => (said: Said) => Effect.Effect<void>,
+    options: Options = { sweep: 'none' },
   ) => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
@@ -623,7 +625,9 @@ describe('the runtime on Cluster', () => {
       yield* sql`CREATE TABLE parent (id INTEGER PRIMARY KEY)`
       yield* sql`CREATE TABLE child (parent INTEGER REFERENCES parent (id) DEFERRABLE INITIALLY DEFERRED)`
       runnerSql = sql
-      const runtime = yield* (probe === undefined ? launch() : Effect.provideService(launch(), Probe, probe(sql)))
+      const runtime = yield* (probe === undefined
+        ? launch(options)
+        : Effect.provideService(launch(options), Probe, probe(sql)))
       handle = yield* runtime.deploy(tally)
       yield* run
     })
@@ -802,6 +806,30 @@ describe('the runtime on Cluster', () => {
       expect(yield* handle!.create('one', creating)).toEqual({ _tag: 'Created' })
       expect(yield* stateOf).toEqual({ n: 1, asking: false })
     })), 30_000)
+
+  // The sweep of a program is a singleton of Cluster, which the runner that holds its shard runs (decision 0245).
+  test('on Cluster the sweep runs as a singleton, and takes the replies and Cluster rows past their time', () =>
+    onRunner(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const sender = { user: 'u' }
+        const count = (table: string) =>
+          Effect.map(sql<{ count: number }>`SELECT count(*) AS count FROM ${sql(table)}`, (rows) => Number(rows[0]?.count))
+        yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
+        yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep: { millis: 10 } })
+        expect(yield* count('effecttea_given_requests')).toBeGreaterThan(0)
+        yield* eventually(
+          Effect.all([count('effecttea_replies'), count('effecttea_given_requests')]),
+          ([replies, given]) => replies === 0 && given === 0,
+        )
+        const [left] = yield* sql<{ held: number }>`
+          SELECT count(*) AS held FROM cluster_messages WHERE tag IN ('Create', 'Message')
+        `
+        expect(Number(left?.held)).toBe(0)
+      }),
+      undefined,
+      { sweep: { millis: 50 } },
+    ), 30_000)
 
   test('a caller’s message that does not encode is the caller’s defect, and reaches no door', () =>
     onRunner(Effect.gen(function*() {

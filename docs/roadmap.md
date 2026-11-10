@@ -20,12 +20,17 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   4. The sweep, an option of `launch` and a singleton of Cluster per program, with its tests; the shared launcher of
      the tests passes `sweep: 'none'`. It adds a fiber, so the pinned seeds of the explored tests are found again.
   5. `spikes/full-volume.test.ts` checks a prune in batches on a full volume, in the CI's job; `design.md` and
-     `glossary.md` say what holds; `bun run test:release` passes; the note is taken.
+     `glossary.md` say what holds, and so does the guide: `operator.md` no longer says the runtime caps nothing, and
+     `outbox.md` says a sweep drops whole a topic no consumer is stored for; `bun run test:release` passes; the
+     note is taken.
 
-  Parts 1 to 3 are done: `bun test`, `bun run typecheck`, `bun run links` and the site's build pass. Part 2 added
+  Parts 1 to 4 are done: `bun test`, `bun run typecheck`, `bun run links` and the site's build pass. Part 2 added
   the index `effecttea_given_requests_expire`, by program and time. Part 3 gave Cluster's `create` a `given`, as
-  `send` has, which a caller's creation calls with its time as a `keep` of 0. Part 4 is next, from `launch` in
-  `src/runtime.ts`. When the note is taken, the status lines of decisions 0125, 0171 and 0223 link it.
+  `send` has, which a caller's creation calls with its time as a `keep` of 0. Part 4 added `sweep` to `launch`, whose
+  singleton on Cluster is named `@fgaudo/effect-tea-persistent/<program>/sweep`. The shared launcher of the
+  runtime's tests and `onRunner` of `src/cluster.test.ts` pass `'none'`, and a sweep of `'none'` adds no yield, so the
+  pinned seeds were not moved and stay as they are. Part 5 is next, from `spikes/full-volume.test.ts`. When the note
+  is taken, the status lines of decisions 0125, 0171 and 0223 link it.
 
 ## Later
 

@@ -16,6 +16,7 @@
  * they share is in [`process.ts`](runtime/process.ts). A module outside the runtime imports this one alone
  * (decision 0241).
  */
+import * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
@@ -236,6 +237,35 @@ export interface Options {
    * tables whatever this says (decision 0191).
    */
   readonly tables?: 'create' | 'existing'
+  /**
+   * How often the runtime sweeps each program deployed: every `millis`, it runs `expire`, then `prune` unless `prune`
+   * is `false`. `millis` is a positive integer, 300 000 by default. `'none'` sweeps nothing, and leaves `expire` and
+   * `prune` to an operator. A sweep that fails logs a warning with its cause, and the next one runs at the next
+   * interval. A prune drops whole a topic no consumer is stored for, so a deployment that keeps the history of a topic
+   * declares its consumer before the topic's first step, or sweeps with `prune: false`. On Cluster one runner sweeps
+   * a program, the one that holds the sweep's singleton, by its own option (decision 0245).
+   */
+  readonly sweep?: Readonly<{ millis: number; prune?: false }> | 'none'
+}
+
+/**
+ * Sweeps `deployed` every `millis`, for ever: `expire`, then `prune` unless `prune` is `false`. A sweep that fails is
+ * logged with its cause, and the deployment goes on (decision 0245).
+ */
+const sweepOf = <T extends Types>(deployed: Deployment<T>, sweep: Readonly<{ millis: number; prune?: false }>) => {
+  const once = Effect.gen(function*() {
+    yield* deployed.storage.expire(DateTime.toEpochMillis(yield* DateTime.now))
+    if (sweep.prune !== false) yield* deployed.storage.prune
+  })
+  return Effect.forever(Effect.andThen(
+    Effect.sleep(`${sweep.millis} millis`),
+    Effect.catchCause(once, (cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.failCause(cause)
+        : Effect.logWarning('a sweep failed; the next one runs at the next interval', cause).pipe(
+          Effect.annotateLogs({ name: deployed.program.name }),
+        )),
+  ))
 }
 
 /**
@@ -938,6 +968,16 @@ export const launchWith = (
       const reason = `the ${what} is ${value} ${unit}, which is no non-negative integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
     }
+    // Only a sweep left out is the default: a `null` from JavaScript is refused, as a `keep` of `null` is.
+    const sweep = options.sweep === undefined ? { millis: 300_000 } : options.sweep
+    if (
+      sweep !== 'none' &&
+      !(typeof sweep === 'object' && sweep !== null && Number.isSafeInteger(sweep.millis) && sweep.millis > 0 &&
+        (sweep.prune === undefined || sweep.prune === false))
+    ) {
+      const reason = `the sweep is ${JSON.stringify(sweep)}, which is neither 'none' nor a positive integer of millis`
+      return yield* Effect.die(new InvariantDefect({ reason }))
+    }
     if (capacity !== 'unbounded' && !(Number.isSafeInteger(capacity) && capacity > 0)) {
       const reason = `the capacity is ${capacity}, which is no positive integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
@@ -1095,6 +1135,15 @@ export const launchWith = (
             uninterruptible: false,
           })
         }))
+        // The sweep frees what no reader needs, at its interval, and changes no answer (decision 0245). On Cluster
+        // it is a singleton, so that the runners do not contend for the same rows.
+        if (sweep !== 'none') {
+          if (cluster === null) yield* Effect.forkIn(untransacted(sql, sweepOf(deployed, sweep)), deployed.scope)
+          else {
+            const name = `@fgaudo/effect-tea-persistent/${program.name}/sweep`
+            yield* Scope.provide(cluster.singleton(name, untransacted(sql, sweepOf(deployed, sweep))), deployed.scope)
+          }
+        }
         const handle: Handle<T, C> = {
           partitions,
           create: (id, request) =>

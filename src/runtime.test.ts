@@ -230,6 +230,75 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // The sweep runs `expire`, then `prune`, at its interval, and a sweep that fails leaves the next (decision 0245).
+  test('the sweep expires and prunes at its interval, and one that fails is warned of and leaves the next', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const sql = yield* SqlClient.SqlClient
+      const warnings: Array<Readonly<Record<string, unknown>>> = []
+      const logger = Logger.make((options) => {
+        if (options.logLevel === 'Warn') warnings.push(options.fiber.getRef(References.CurrentLogAnnotations))
+      })
+      const counted = (table: string) =>
+        Effect.map(sql<{ count: number }>`SELECT count(*) AS count FROM ${sql(table)}`, (rows) => Number(rows[0]?.count))
+      const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+      yield* process({ sweep: { millis: 1_000 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
+          yield* toy.send(id, want, { requestId: 'r', sender: tester, keep: { millis: 10 } })
+          yield* runtime.settled
+          expect(yield* counted('effecttea_replies')).toBe(1)
+          expect(yield* counted('effecttea_outbox')).toBeGreaterThan(0)
+          // No consumer is stored for the program's topic, so a prune drops it whole (decision 0152).
+          yield* TestClock.adjust('999 millis')
+          expect(yield* counted('effecttea_replies')).toBe(1)
+          yield* TestClock.adjust('1 millis')
+          expect(yield* counted('effecttea_replies')).toBe(0)
+          expect(yield* counted('effecttea_outbox')).toBe(0)
+          // A sweep that fails is warned of, and the next one runs at the next interval.
+          yield* sql`ALTER TABLE effecttea_replies RENAME TO effecttea_replies_away`
+          yield* TestClock.adjust('1000 millis')
+          expect(warnings).toHaveLength(1)
+          expect(warnings[0]).toMatchObject({ name: program.name })
+          yield* sql`ALTER TABLE effecttea_replies_away RENAME TO effecttea_replies`
+          yield* toy.send(id, want, { requestId: 's', sender: tester, keep: { millis: 10 } })
+          yield* runtime.settled
+          expect(yield* counted('effecttea_replies')).toBe(1)
+          yield* TestClock.adjust('1000 millis')
+          expect(yield* counted('effecttea_replies')).toBe(0)
+          expect(warnings).toHaveLength(1)
+        })).pipe(Effect.provide(Logger.layer([logger])))
+    })))
+
+  test('a sweep with prune false only expires, and a sweep that is neither none nor a positive integer of millis dies', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const sql = yield* SqlClient.SqlClient
+      const counted = (table: string) =>
+        Effect.map(sql<{ count: number }>`SELECT count(*) AS count FROM ${sql(table)}`, (rows) => Number(rows[0]?.count))
+      yield* process({ sweep: { millis: 1_000, prune: false } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
+          const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+          yield* toy.send(id, want, { requestId: 'r', sender: tester, keep: { millis: 10 } })
+          yield* runtime.settled
+          const rows = yield* counted('effecttea_outbox')
+          yield* TestClock.adjust('1000 millis')
+          expect(yield* counted('effecttea_replies')).toBe(0)
+          expect(yield* counted('effecttea_outbox')).toBe(rows)
+        }))
+      for (const sweep of [{ millis: 0 }, { millis: 1.5 }, { millis: Infinity }, { millis: 10, prune: true }, 'never', null]) {
+        const exit = yield* Effect.exit(process({ sweep: sweep as never }, () => Effect.void))
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        expect(cause instanceof InvariantDefect && cause.reason)
+          .toBe(`the sweep is ${JSON.stringify(sweep)}, which is neither 'none' nor a positive integer of millis`)
+      }
+    })))
+
   test('a keep that is neither a whole number of millis nor forever is the caller’s defect, and reaches no entity', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()

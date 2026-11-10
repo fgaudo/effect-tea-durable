@@ -269,13 +269,15 @@ export type Hooks = Readonly<{
 
 /**
  * One process over the database: it ends when the body does, and everything running in it is interrupted. The
- * hooks are the runtime's probe, which it reads as it launches (decision 0073).
+ * hooks are the runtime's probe, which it reads as it launches (decision 0073). It sweeps nothing unless `sweep` is
+ * given, so that the sweep's fiber moves no schedule of the explored tests (decision 0245).
  */
 export const process = <A, E, R>(
-  { at, observe, unloaded, finalizers, ...options }: Options & Hooks,
+  { at, observe, unloaded, finalizers, ...given }: Options & Hooks,
   body: (runtime: Runtime) => Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R | SqlClient.SqlClient> =>
-  (finalizers === undefined
+): Effect.Effect<A, E, R | SqlClient.SqlClient> => {
+  const options: Options = { sweep: 'none', ...given }
+  return (finalizers === undefined
     ? Effect.scoped(Effect.flatMap(launch(options), body))
     : Effect.acquireUseRelease(
       Scope.make(finalizers),
@@ -293,6 +295,7 @@ export const process = <A, E, R>(
       }
     }),
   )
+}
 
 /**
  * Runs `effect` in a fiber of its own until it, and everything it sets going, waits: the clock's `adjust` waits for

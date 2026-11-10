@@ -39,10 +39,11 @@ A program that has no sender has the sender `null`, and every `create` and `send
 - **The runtime sweeps at an interval.** `launch` takes `sweep`, `{ millis, prune?: false }` or `'none'`, every
   300 000 ms by default. Each sweep runs `expire`, then `prune` unless `prune` is `false`, for every program
   deployed. A sweep that fails logs a warning with its cause, and the next one runs at the next interval. The
-  deployment goes on.
+  deployment goes on. The first sweep runs one interval after the deploy. A `sweep` that is neither `'none'` nor a
+  positive integer of millis with `prune` left out or `false` is the launcher's defect, `null` included.
 - **On Cluster, one runner sweeps a program.** The sweep of a program is a singleton of Cluster, so runners do not
   contend for the same rows. Where two runners give different `sweep` options, the singleton's holder sweeps by its
-  own.
+  own. The singleton is named `@fgaudo/effect-tea-persistent/<program>/sweep`.
 - **A topic no consumer is stored for keeps no rows under a sweep.** A prune drops such a topic whole
   ([decision 0152](archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). A deployment that wants the
   history of a topic declares its consumer before the topic's first step, or launches with `prune: false`.
@@ -68,7 +69,10 @@ A program that has no sender has the sender `null`, and every `create` and `send
   stored consumer has not read is pruned: **tested**, by the tests of `expire` and `prune` in
   [`src/storage.test.ts`](../../src/storage.test.ts), and past a batch by the tests `a prune drops past a batch,
   counts every row, and keeps what a cursor holds` and `expire deletes past a batch, counts every row, and on Cluster
-  takes the ids of every batch`. A test of the sweep is still to write.
+  takes the ids of every batch`. The sweep is tested in [`src/runtime.test.ts`](../../src/runtime.test.ts), by `the
+  sweep expires and prunes at its interval, and one that fails is warned of and leaves the next`, and on Cluster in
+  [`src/cluster.test.ts`](../../src/cluster.test.ts), by `on Cluster the sweep runs as a singleton, and takes the
+  replies and Cluster rows past their time`.
 - That a prune in batches needs less free room on a full volume than one prune: **not seen**. It depends on a
   checkpoint of the WAL between batches, which a reader can hold back. `spikes/full-volume.test.ts` is to check it
   before the design says it.
