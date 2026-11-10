@@ -93,10 +93,13 @@ export const check = (mutations: ReadonlyArray<Mutation>): ReadonlyArray<string>
     return mutated === text ? [`${mutation.id}: changes nothing`] : []
   })
 
-/** A copy of the repository for one worker: its sources copied, `node_modules` linked. */
+/**
+ * A copy of the repository for one worker: its sources copied, `node_modules` linked. The README and `docs/` are
+ * copied too, since the tests of `src/form.test.ts` compare their code with the examples (decisions 0196, 0203).
+ */
 const copy = (): string => {
   const at = mkdtempSync(join(tmpdir(), 'mutate-'))
-  for (const entry of [...copied, 'package.json', 'tsconfig.json', 'bun.lock']) {
+  for (const entry of [...copied, 'README.md', 'docs', 'package.json', 'tsconfig.json', 'bun.lock']) {
     cpSync(join(root, entry), join(at, entry), { recursive: true })
   }
   // A junction needs no privilege on Windows, and is a plain link elsewhere.
@@ -109,8 +112,9 @@ const spawned = async (at: string, command: ReadonlyArray<string>) => {
     cwd: at,
     stdout: 'pipe',
     stderr: 'pipe',
-    // A run that hangs past every test's own timeout is killed, and counts as failed.
-    timeout: 600_000,
+    // A run that hangs past every test's own timeout is killed, and counts as failed. The suite under
+    // `SCHEDULES=all` runs some sixteen minutes alone, and longer beside other workers, so the bound is an hour.
+    timeout: 3_600_000,
   })
   const [out, err] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()])
   return { passed: (await child.exited) === 0, output: `${err}${out}` }

@@ -134,6 +134,18 @@ with a requirement that no example has yet.
   - the boundaries of the examples, and which calls each uses;
   - whether a view is a type over one handle, or a value a deployment gives, so that a boundary cannot reach what
     it was not given.
+- **The prefix of the spans and the metrics.** The runtime names its spans, their attributes and its metrics with
+  `tea.`, as `tea.step` and `tea.mailbox.length`, which a scrape of Prometheus reads as `tea_mailbox_length`
+  ([decision 0220](decisions/0220-the-runtime-records-a-span-for-each-step-and-each-operation.md)). Decision 0220
+  gives as its reason that every object the runtime makes is named with `tea_`. That reason fell the same day:
+  [decision 0218](decisions/0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md) names the tables with
+  `effecttea_`, since `tea` is a word an application plausibly uses. A backend of metrics holds the series of every
+  service it scrapes, so a metric of an application about tea may share a name with the runtime's. Whether the spans
+  and the metrics are named with `effecttea.`, as the tables are, is not decided. A rename after the release changes
+  every dashboard and alert a deployment wrote. It would be decided by:
+  - whether the names of OpenTelemetry's attributes for a library are expected to carry the library's whole name, as
+    in its conventions for instrumentation libraries;
+  - whether a backend a deployment uses already holds a series named `tea_…`.
 
 ## The code
 
@@ -149,3 +161,15 @@ with a requirement that no example has yet.
   - whether a test of the form of `src/` can check that a module of the group is imported from outside only through
     its entry;
   - what the area of a commit's subject becomes for a module in a folder.
+- **A run of the mutations in two passes.** A review runs `scripts/mutate.ts` with `SCHEDULES=all`, and the suite
+  then runs some sixteen minutes, for the code unchanged and for each mutation that survives. Most mutations are
+  killed in seconds by a test that runs one schedule. The review of 0194 to 0224 ran the mutations on the seeds
+  `bun test` runs, then only the survivors under `SCHEDULES=all`
+  ([reviews](decisions/reviews.md#2026-11-10-0194-to-0224)). The seeds `bun test` runs of an explored test, one in
+  twenty from seed 0, are among the seeds of `SCHEDULES=all`, so a mutation killed in the first pass is killed under
+  every seed. Whether `scripts/mutate.ts` runs every review in these two passes, and gives one result, is not
+  decided. It would be decided by:
+  - whether the property tests that read `SCHEDULES`, in `src/fixtures.property.test.ts`,
+    `src/log.property.test.ts` and `src/rehearse.property.test.ts`, run as their first scenarios under
+    `SCHEDULES=all` the scenarios they run without it, from the same seed;
+  - whether any other test reads `SCHEDULES` for something other than how many cases it runs.

@@ -516,3 +516,38 @@ written for the code the review reads, and are not kept.
   and the advisory lock of `createTables` and its key apart from the hold's (0191), which hold only between two
   sessions of PostgreSQL, and PGlite runs one; the [open question](../open-questions.md#running) of many
   connections asks for that server.
+
+## 2026-11-10: 0194 to 0224
+
+- Tested since, where the note says only reasoned. That an advisory lock is the database's and not a schema's, and
+  that a pool gives every connection the role's `search_path` (0215), and that two runs of `createTables` at once on
+  PostgreSQL wait for each other (0216), are tested on a server by the tests of
+  [0222](0222-postgresql-with-many-connections.md) in `src/postgres.test.ts`. That no module of `src/` calls
+  `setTimeout` (0194) still holds, read again.
+- A premise no note wrote: on PostgreSQL the migrations run in `Migrator`'s transaction, at the level the role sets,
+  where 0222 says every transaction states its level. It holds at every level, since `Migrator` locks its table
+  before it reads the history. The note is
+  [0225](0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md), and the design says it.
+- An open question: the spans and the metrics are named with `tea.` (0220), for the reason that every object of the
+  runtime was named with `tea_` (0198), which 0218 changed to `effecttea_` the same day, since `tea` is a common
+  word. [The prefix of the spans and the metrics](../open-questions.md#the-surface) asks whether they follow.
+- Fixed: the index did not list 0207 among the notes that change
+  [0143](archive/0143-a-query-pages-after-the-last-row-it-gave.md). `scripts/mutate.ts` copied neither the README
+  nor `docs/`, which the tests of 0196 and 0203 read, so the suite failed on the code unchanged. It also killed a
+  run after ten minutes, where the suite under `SCHEDULES=all` runs sixteen, so the bound is an hour.
+- Then every rule of these notes that the code keeps was taken out, one at a time, with `scripts/mutate.ts`: of 50,
+  9 survived the seeds `bun test` runs, and those 9 ran again under `SCHEDULES=all`. The seeds of the first run are
+  among those of the second, so a mutation killed in the first is killed under every seed, and the result is the one
+  a single run under `SCHEDULES=all` gives. Six survived it, and none was uncertain.
+- Tested now, which no test was. A launch dies on a table of the application under the name of any table or index
+  the runtime makes, not only `effecttea_consumers` (0218). A rehearsal gives a request named later no reply of a send
+  drawn before it under the same id (0200). A step that writes nothing records no length of the mailbox (0220). Each
+  of the three mutations those tests are for now fails a test.
+- Three change nothing a test can see. The `BEGIN IMMEDIATE` that `createTables` asks of SQLite (0216), which the
+  driver begins with by default, as the review of 0191 found. A counter of suspensions updated by 0 for a step that
+  suspends nothing (0220). The drain's `emptied` made interruptible inside `timeoutOption` (0219), since the race
+  forks its sides interruptible whatever the finalizer is: the wait made interruptible whole fails the test of 0219.
+- Three are left to the CI's job `postgres`, as rules only a server of PostgreSQL reaches. The `READ COMMITTED` of a
+  step, the `REPEATABLE READ` of a reading of one snapshot, and the reading of a `BIGINT` given as a bigint (0222).
+  PGlite runs one session and gives a `BIGINT` as a number, and `src/postgres.test.ts` is skipped without
+  `POSTGRES_URL`.

@@ -1108,7 +1108,9 @@ is written once. A launch on a client of any other dialect is the launcher's def
 - On PostgreSQL every transaction the runtime begins states its level, whatever default the role or the database
   sets. A step and every other write begin at `READ COMMITTED`, where a step that draws its `seq` behind another of
   its partition waits for it, and a higher level would fail it. A reading of one snapshot begins at `REPEATABLE READ`
-  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)).
+  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The migrations run in `Migrator`'s
+  transaction, at the level the role sets. Any level holds, since `Migrator` locks its table before it reads the
+  history ([decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md)).
 - A step whose transaction PostgreSQL ends with a deadlock crashes its entity, as a write that fails does, and is not
   retried ([decision 0222](decisions/0222-postgresql-with-many-connections.md)).
 - A page of a query reads its ranges in one transaction, begun at `REPEATABLE READ` on PostgreSQL where the

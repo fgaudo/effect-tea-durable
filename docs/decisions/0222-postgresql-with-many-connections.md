@@ -5,6 +5,8 @@ open question of PostgreSQL with many connections, which
 [decision 0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) and
 [decision 0158](archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)
 left. Changes decision 0157, whose integers were read as a driver gives them up to 2^53.
+[Decision 0225](0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md) says that the transaction of
+the migrations is `Migrator`'s, and runs at the level the role sets, which holds since `Migrator` locks before it reads.
 
 ## Context
 
