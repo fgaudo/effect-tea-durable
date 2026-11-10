@@ -199,6 +199,9 @@ A part may hold children of its own, so a tree is as deep as a program needs.
   `forEach` over messages to children of one name by id puts the children back once, and not once per child, with
   the same step as one message after the other gives. A child that raises an event puts them back before its parent
   handles it ([decision 0155](decisions/archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md)).
+  One `andThen` after the other puts the children back once per message, since `andThen` gives its state at once.
+  A step that tells many children is therefore written with `forEach`, over the ids, or over the steps already made
+  with `(step) => step` ([decision 0240](decisions/0240-a-step-that-tells-many-children-is-written-with-foreach.md)).
 - **`onEvent`** has a handler for each child that raises events, and is required exactly when one does. A handler of
   children by id takes the id first.
 - **`project`** takes `children`, with each child's projection: `children.Line(state, id)`.

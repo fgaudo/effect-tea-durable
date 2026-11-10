@@ -3,6 +3,8 @@
 **Status:** accepted, 2026-11-06. Decided the open question of a message to every child by id. Changes
 [decision 0133](0133-an-entity-composes-children-as-effect-tea-does.md), under which a step that sends to each child
 in turn replaces the parent's state once per child.
+[Decision 0240](../0240-a-step-that-tells-many-children-is-written-with-foreach.md) keeps `andThen` a step taken at
+once, and has the guide say to write a step that tells many children with `forEach`.
 
 ## Context
 
