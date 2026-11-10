@@ -99,6 +99,29 @@ with a requirement that no example has yet.
   - whether the procedure of a deploy stops the older runner, with its drain, before the newer one launches, and
     what the entities of its shards wait meanwhile;
   - whether the design says instead that a drain serves a stop, and not a deploy of a newer version on Cluster.
+- **A door that changes between two releases of the library.** The door of a program on Cluster is a set of RPCs
+  whose payloads are the same at every version of the program
+  ([decision 0085](decisions/archive/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)), so a
+  newer version of a program reaches an older runner's step, whose guard dies
+  ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+  A release of the library that adds an RPC to the door, as `Resumed` was added
+  ([decision 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)),
+  or changes a payload, is not caught by that guard. A runner of the older release that still holds a shard, before
+  the next health check or after it starts again, is given the newer request by Cluster before any step runs. Cluster
+  answers a payload it cannot decode with a defect and stores it, as
+  [`spikes/cluster-older-runner-answers-a-newer-request.test.ts`](../spikes/cluster-older-runner-answers-a-newer-request.test.ts)
+  sees, so the request is lost in silence. An RPC the older runner does not know fails in Cluster's code, as the
+  description of [Effect-TS/effect#10270](https://github.com/Effect-TS/effect/pull/10270) says; no spike runs it.
+  That pull request would have left such a request in storage for a runner that decodes it. It was closed without a
+  merge on 2026-11-05, and Effect's maintainers are weighing a way to version deploys, with no release holding one
+  yet. Whether a rolling deploy across two releases of the library is safe is not decided. It waits for a release of
+  Effect, or for the first release of the library, after which a change of the door's form is itself the change
+  that breaks a rolling deploy. It would be decided by:
+  - a release of Effect whose Cluster leaves for another runner a request it cannot decode, or versions its deploys,
+    found by `scripts/compare-docs.ts` at a move of Effect's version;
+  - a door of one RPC whose payload names the kind of request as text, so that Cluster decodes every request, and an
+    older runner's step dies on a kind it does not know, which saves no reply;
+  - a sentence of the design that excludes a rolling deploy across two releases of the library that change the door.
 - **The deletions of a reply on a pool of PostgreSQL.** A reply to another entity's operation is kept while the
   work that asked holds ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
   Two statements keep it: the receiver's step deletes the reply it stores where the asker's key is gone, and the
