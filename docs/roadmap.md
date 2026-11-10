@@ -5,11 +5,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **A faster run of the checks.** `bun test` takes about four minutes on the maintainer's machine, running one seed
-  in twenty of the explored tests, and the CI runs the suite in one job. The step divides the files of the tests
-  among jobs that run at once, and keeps `bun test` on one machine as it is. It also weighs what dominates the time,
-  the explored tests or the tests on SQLite files, before it divides anything. A division keeps every test in some
-  job, and a test of the workflow's form checks it.
+None: the next step is the first of Later, unless the maintainer picks another.
 
 ## Later
 

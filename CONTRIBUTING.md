@@ -13,7 +13,9 @@ bun test
 bun run links
 ```
 
-`bun test` runs one seed in twenty of the tests that explore where fibers yield. `bun run test:release` runs every
+`bun test` runs one seed in twenty of the tests that explore where fibers yield. `bun run test:parallel` runs the
+same tests in eight processes at once, in less than half the time, for a quicker run while a change is under way. A
+commit passes `bun test`. `bun run test:release` runs every
 seed, and a step of the roadmap that changes the runtime passes it. `bun run test:explore` runs the explored tests
 from random seeds until one fails. [`AGENTS.md`](AGENTS.md) says when each one is run.
 

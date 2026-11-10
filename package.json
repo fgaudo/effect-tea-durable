@@ -15,6 +15,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "test:parallel": "bun test --parallel=8",
     "test:release": "SCHEDULES=all bun test",
     "test:postgres": "bun test src/storage.test.ts src/runtime.test.ts src/runtime/ src/dialects.test.ts src/postgres.test.ts spikes/postgres-session-ended.test.ts",
     "test:explore": "bun scripts/explore.ts",
