@@ -91,6 +91,9 @@ test.skipIf(server === undefined)(name, () =>
     console.log('a send of the first runtime after the second:', shown(sentAgainByFirst))
     const after = yield* holders(watcher)
     console.log('sessions holding the lock after:', after.length)
+    // Three sends were accepted after the creation: a stored count below three is a step one runtime overwrote.
+    const stored = yield* handle.read('n')
+    console.log('the stored projection after three accepted sends:', JSON.stringify(stored))
     expect(before.length).toBe(1)
     // Nothing tells the first runtime: it still answers, though it no longer holds the database.
     expect(sentByFirst).toEqual(Exit.succeed({ _tag: 'Accepted' }))
