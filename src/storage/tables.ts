@@ -434,10 +434,11 @@ const tables = Effect.gen(function*() {
     )
   `
   yield* sql`CREATE INDEX effecttea_sent_requests_sender ON effecttea_sent_requests (sender_name, sender_id)`
-  // On Cluster: the Cluster request id of each caller's message sent with `keep`, under its entity, kept by the
-  // caller's client once Cluster has given it its answer, with the time the client counts the reply kept until. A
-  // step that deletes its entity's replies past their time deletes Cluster's rows under the ids past theirs, and so
-  // does `Handle.expire` (decision 0171).
+  // On Cluster: the Cluster request id of each caller's creation and message sent with `keep`, under its entity, kept
+  // by the caller's client once Cluster has given it its answer, with the time the client keeps Cluster's rows until:
+  // the reply's, or a least time for every client's poll where that is later (decision 0248). A step that deletes its
+  // entity's replies past their time deletes Cluster's rows under the ids past theirs, and so does `Handle.expire`
+  // (decision 0171).
   yield* sql`
     CREATE TABLE effecttea_given_requests (
       request_id ${integer} PRIMARY KEY,

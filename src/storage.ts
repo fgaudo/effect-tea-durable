@@ -245,9 +245,10 @@ export interface Storage<T extends Types> {
    */
   readonly forgetPending: Effect.Effect<void>
   /**
-   * On Cluster: keeps the Cluster request id `requestId` of a caller's message to the entity `id`, once its client
-   * was given the answer, until the time `until`, in milliseconds. Past it, a step of the entity that answers a caller
-   * and `expire` delete Cluster's rows under the id. An id already kept is not kept again (decision 0171).
+   * On Cluster: keeps the Cluster request id `requestId` of a caller's creation or message to the entity `id`, once
+   * its client was given the answer, until the time `until`, in milliseconds. Past it, a step of the entity that
+   * answers a caller and `expire` delete Cluster's rows under the id. An id already kept is not kept again
+   * (decision 0171).
    */
   readonly keepGiven: (requestId: string, id: string, until: number) => Effect.Effect<void>
 }

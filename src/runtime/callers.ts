@@ -216,12 +216,16 @@ export const create = <T extends Types>(
     if (p.cluster !== null) {
       const version = versionOf(deployed.program)
       const sent = { id, version, request: requested, message: JSON.stringify(written) }
-      // A caller's creation keeps its Cluster id as a `keep` of 0 does, so that `expire` deletes Cluster's rows of it
-      // once its client has the answer. A retry after reaches the door again, and the machine answers it from the
-      // entity's row (decisions 0017, 0245). An operation's go with its work.
+      // A caller's creation keeps its Cluster id for the least time Cluster's client gives, as a `keep` of 0 does, so
+      // that a step or `expire` deletes Cluster's rows of it once every client of the request has read the answer. A
+      // retry after reaches the door again, and the machine answers it from the entity's row (decisions 0017, 0245,
+      // 0248). An operation's go with its work.
       const given = request._tag === 'Caller'
-        ? (requestId: string) =>
-          Effect.flatMap(DateTime.now, (now) => deployed.storage.keepGiven(requestId, id, DateTime.toEpochMillis(now)))
+        ? (requestId: string, least: number) =>
+          Effect.flatMap(
+            DateTime.now,
+            (now) => deployed.storage.keepGiven(requestId, id, DateTime.toEpochMillis(now) + least),
+          )
         : undefined
       return yield* p.cluster.create(deployed.program, sent, keptFor(p, deployed, request), given)
     }
@@ -306,12 +310,14 @@ export const send = <T extends Types>(
       const kept = keptFor(p, deployed, request)
       if (keep === undefined) return yield* p.cluster.send(deployed.program, sent, kept)
       // A caller's Cluster rows go once its client has the answer and the reply's time is past, counted from
-      // the client's clock, which reads after the step's (decision 0171). An operation's go with its work.
+      // the client's clock, which reads after the step's (decision 0171). A `keep` below the least time Cluster's
+      // client gives is raised to it, so that every client of the request reads the answer first (decision 0248).
+      // An operation's go with its work.
       const given = request._tag === 'Caller'
-        ? (requestId: string) =>
+        ? (requestId: string, least: number) =>
           Effect.flatMap(
             DateTime.now,
-            (now) => deployed.storage.keepGiven(requestId, id, DateTime.toEpochMillis(now) + keep),
+            (now) => deployed.storage.keepGiven(requestId, id, DateTime.toEpochMillis(now) + Math.max(keep, least)),
           )
         : undefined
       return yield* p.cluster.send(deployed.program, { ...sent, keep }, kept, given)

@@ -68,6 +68,17 @@ with a requirement that no example has yet.
   commit check it ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). It would be decided by:
   - what a check costs a step: a statement of the reserved connection, or a reading of `pg_locks`, against a fence
     that a commit checks anyway.
+- **The margin of a caller's rows on Cluster, once runners have clocks of their own.** Cluster's rows of a caller's
+  request are kept for two polls of replies and a second after its client has the answer, so that every other client
+  of the request reads its reply first
+  ([decision 0248](decisions/0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md)). The second covers
+  the clocks of the runners, which share one clock while Cluster runs on one machine. Whether the margin holds once
+  runners run on machines of their own is not decided. It waits for the step on Cluster across machines on
+  PostgreSQL in the [roadmap](roadmap.md). It would be decided by:
+  - how far the clocks of two runners may differ, and whether the time a row is kept until is read from the
+    database's clock instead of a runner's;
+  - whether a client that missed its polls still waits for ever, or Cluster gives it a way to learn that its rows
+    are gone.
 - **A failure of the storage that passes.** Every call of a handle but `consume` turns a `SqlError` into a defect,
   with `Effect.orDie`, so a connection that drops for a second reaches a caller as a defect, the same as a bug. A
   boundary that would retry such a failure must catch every defect to find it, and the type of `send`,

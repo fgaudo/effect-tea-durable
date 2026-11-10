@@ -14,6 +14,7 @@ export {
   type Consumers,
   type Handle,
   type Inspected,
+  type Keep,
   launch,
   type Operated,
   type Options,

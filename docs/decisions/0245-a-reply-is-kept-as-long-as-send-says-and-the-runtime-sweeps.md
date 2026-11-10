@@ -5,7 +5,10 @@
 alternative of a fiber that sweeps is taken. Changes
 [decision 0171](archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md) for a
 creation's rows on Cluster, and [decision 0223](0223-a-disk-that-is-really-full.md) for a prune in batches. Decides the
-open question A request without a sender.
+open question A request without a sender. Changed by
+[decision 0248](0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md): a creation's client keeps its
+Cluster id for at least two of Cluster's polls of replies and a second, so that another client of the request reads
+the answer first.
 
 ## Context
 

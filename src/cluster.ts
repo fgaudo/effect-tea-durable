@@ -328,24 +328,31 @@ export const onCluster: Effect.Effect<
      */
     const failureSaved = (latest: Reply.Encoded) => latest._tag === 'WithExit' && latest.exit._tag === 'Failure'
     /**
+     * The least time, in millis from the answer, that Cluster's rows of a caller's request are kept: two polls of
+     * replies and a second. Another client of the same request, on another runner, reads the reply from Cluster's
+     * table only at its poll, and a deletion before that read leaves it waiting for ever. The second poll covers a
+     * read that failed, and the second the read itself and the clocks of the runners (decision 0248).
+     */
+    const least = 2 * Duration.toMillis(config.entityReplyPollInterval) + 1_000
+    /**
      * Gives the answer of `call`, the request `sent` of the RPC `tag` to the program `name`, and calls `given` first
-     * with the request's Cluster id, where it is given. Kept once the answer is given, and not before: a client on
-     * another runner reads its reply from Cluster's table, and a deletion past the reply's time would otherwise take a
-     * reply it has not read (decisions 0171, 0245). The id is read and kept without interruption, so that a caller
-     * that stops waiting after its answer came keeps it all the same.
+     * with the request's Cluster id and `least`, where it is given. Kept once the answer is given, and not before: a
+     * client on another runner reads its reply from Cluster's table, and a deletion past the reply's time would
+     * otherwise take a reply it has not read (decisions 0171, 0248). The id is read and kept without interruption, so
+     * that a caller that stops waiting after its answer came keeps it all the same.
      */
     const keptGiven = <A>(
       name: string,
       tag: Delivered['_tag'],
       sent: Omit<Delivered, '_tag'>,
       call: Effect.Effect<A, unknown>,
-      given: ((requestId: string) => Effect.Effect<void>) | undefined,
+      given: ((requestId: string, least: number) => Effect.Effect<void>) | undefined,
     ): Effect.Effect<A> =>
       (given === undefined ? call : Effect.uninterruptibleMask((restore) =>
         Effect.tap(restore(call), () =>
           Effect.flatMap(
             messages.requestIdForPrimaryKey({ address: addressOf(name, sent.id), tag, id: primaryKey(sent) }),
-            Option.match({ onNone: () => Effect.void, onSome: (requestId) => given(String(requestId)) }),
+            Option.match({ onNone: () => Effect.void, onSome: (requestId) => given(String(requestId), least) }),
           ))
       )).pipe(Effect.orDie)
     /**

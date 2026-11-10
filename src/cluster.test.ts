@@ -644,6 +644,11 @@ describe('the runtime on Cluster', () => {
   }
   const eventually = <A>(read: Effect.Effect<A, unknown, SqlClient.SqlClient>, done: (a: A) => boolean) =>
     Effect.repeat(read, { schedule: Schedule.spaced('25 millis'), until: done }).pipe(Effect.timeout('15 seconds'))
+  /**
+   * Past the least time Cluster's rows of a caller's request are kept once its client has the answer: two polls of
+   * replies, 200 ms by default, and a second (decision 0248).
+   */
+  const least = Duration.millis(2 * 200 + 1_000 + 50)
 
   test('a door creates, answers each message as the machine does, and stores the state with the reply', () =>
     onRunner(Effect.gen(function*() {
@@ -760,10 +765,11 @@ describe('the runtime on Cluster', () => {
       expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep: zero }))
         .toEqual({ _tag: 'Accepted' })
       expect(yield* rowsOf('m1')).toBe(2)
-      // The creation's client kept its id as a keep of 0 does, and the step of m1 took it (decision 0245).
+      // The creation's client and m1's kept their ids for the least time, two polls of replies of 200 ms and a
+      // second, and the step of m1 took neither (decision 0248).
       const [kept] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_given_requests`
-      expect(Number(kept?.held)).toBe(1)
-      yield* Effect.sleep('5 millis')
+      expect(Number(kept?.held)).toBe(2)
+      yield* Effect.sleep(least)
       // The next step that answers a caller takes the rows of m1, and keeps those of m2, whose client keeps its id.
       yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender, keep: { millis: 60_000 } })
       const gone = yield* sql`SELECT 1 FROM cluster_replies WHERE request_id NOT IN (SELECT request_id FROM cluster_messages)`
@@ -775,7 +781,7 @@ describe('the runtime on Cluster', () => {
       // `expire` takes the rows of a request past its time, without a step.
       expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm3', sender, keep: zero }))
         .toEqual({ _tag: 'Accepted' })
-      yield* Effect.sleep('5 millis')
+      yield* Effect.sleep(least)
       yield* handle!.expire
       expect(yield* rowsOf('m3')).toBe(0)
       expect(yield* rowsOf('m2')).toBe(2)
@@ -783,8 +789,8 @@ describe('the runtime on Cluster', () => {
       expect(Number(held?.held)).toBe(1)
     })), 30_000)
 
-  // A creation's rows go as a keep of 0's do, and a retry after is answered from the entity's row (decisions 0017,
-  // 0245).
+  // A creation's rows go as a keep of 0's do, past the least time, and a retry after is answered from the entity's
+  // row (decisions 0017, 0245, 0248).
   test('a caller’s creation leaves its Cluster rows to expire, and a retry after is answered Created', () =>
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
@@ -799,7 +805,9 @@ describe('the runtime on Cluster', () => {
       expect(yield* handle!.create('one', creating)).toEqual({ _tag: 'Created' })
       expect(Number((yield* created)[0]?.held)).toBe(2)
       yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep: 'forever' })
-      yield* Effect.sleep('5 millis')
+      // The step of m1 leaves the creation's rows, kept for the least time.
+      expect(Number((yield* created)[0]?.held)).toBe(2)
+      yield* Effect.sleep(least)
       yield* handle!.expire
       expect(Number((yield* created)[0]?.held)).toBe(0)
       // The retry reaches the door again, and `init` does not run again: the state keeps what the message did.
@@ -1604,6 +1612,45 @@ describe('the shards of a runner on Cluster', () => {
             WHERE request_id NOT IN (SELECT request_id FROM cluster_messages)
           `)).toBe(0)
         }), {}, Duration.millis(300)), 30_000)
+  }
+
+  // A second client of a caller's request, on another runner, reads the reply from Cluster's table at its poll. The
+  // second runner's storage withholds every answer from its client until a later step of the entity has run, which
+  // deletes Cluster's rows of a request past its time. Without the floor on that time, the rows go before the second
+  // client reads them, and it waits for ever (decision 0248).
+  for (const by of ['create', 'send'] as const) {
+    test(`a second client of a caller's request on another runner is answered after a later step, by ${by}`, () => {
+      let withholding = true
+      const answers = (reply: Reply.Reply<any>) => withholding && reply._tag === 'WithExit'
+      return onFile((start) =>
+        Effect.gen(function*() {
+          const first = yield* start(1)
+          const second = yield* start(2, undefined, answers)
+          yield* until(
+            Effect.sync(() => [first.count(), second.count()] as const),
+            ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+          )
+          const who = Array.from({ length: 64 }, (_, i) => `z${i}`).find((id) => first.holds(id))!
+          const sender = { user: 'u' }
+          const creating = { flags: { who }, requestId: 'c', sender }
+          const poking = { requestId: 'p', sender, keep: { millis: 0 } }
+          if (by === 'send') yield* first.bell.create(who, creating)
+          const asked = by === 'create'
+            ? Effect.asVoid(second.bell.create(who, creating))
+            : Effect.asVoid(second.bell.send(who, { _tag: 'Poke' }, poking))
+          const late = yield* Effect.forkChild(asked)
+          yield* until(stateOf(who), (state) => by === 'create' ? state !== undefined : state?.n === 1)
+          // The first client is given the answer Cluster saved, and keeps the request's id.
+          yield* by === 'create'
+            ? Effect.asVoid(first.bell.create(who, creating))
+            : Effect.asVoid(first.bell.send(who, { _tag: 'Poke' }, poking))
+          // A later step that stores a reply deletes Cluster's rows of the requests past their time.
+          yield* first.bell.send(who, { _tag: 'Poke' }, { requestId: 'q', sender, keep: 'forever' })
+          withholding = false
+          expect(Option.isSome(yield* Fiber.join(late).pipe(Effect.timeoutOption('6 seconds')))).toBe(true)
+          expect((yield* stateOf(who))?.n).toBe(by === 'create' ? 1 : 2)
+        }))
+    }, 30_000)
   }
 
   test('a consumer that waits is woken by a commit of another runner, within its poll', () =>

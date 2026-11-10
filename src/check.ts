@@ -73,7 +73,7 @@ export const check = <T extends Types>(
       const reason = `the check is given a limit of ${limit}, which is no non-negative integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
     }
-    const renames = yield* Effect.sync(() => renamesOf(options.renames ?? {}))
+    const renames = yield* Effect.sync(() => renamesOf(options.renames))
     const renamedTo = renames.find(([from]) => from === program.name)?.[1]
     if (renamedTo !== undefined) {
       const reason = `the program '${program.name}' is checked, and the launch renames it to '${renamedTo}'`

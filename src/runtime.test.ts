@@ -299,6 +299,71 @@ describe('the runtime on SQLite', () => {
       }
     })))
 
+  // Only an option left out, or its field left out, is the default: a `null` from JavaScript is refused, before
+  // anything is deployed (decision 0208).
+  test('an option or a field of it given null is the launcher’s defect, and one left out is the default', () =>
+    database(Effect.gen(function*() {
+      const reasonOf = (exit: Exit.Exit<unknown>) => {
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        return cause instanceof InvariantDefect ? cause.reason : null
+      }
+      const fields = [
+        ['retry', 'millis', 'the retry is null millis, which is no non-negative integer'],
+        ['passivate', 'millis', 'the passivation is null millis, which is no non-negative integer'],
+        ['capacity', 'entities', 'the capacity is null, which is no positive integer'],
+        ['drain', 'millis', 'the drain is null millis, which is no non-negative integer'],
+        ['warn', 'characters', 'the warning is null characters, which is no non-negative integer'],
+        ['callers', 'messages', "the callers' messages are null, which is no positive integer"],
+        ['log', 'partitions', 'the log has null partitions, which is no positive integer'],
+      ] as const
+      for (const [option, field, reason] of fields) {
+        const nulled = { [option]: { [field]: null } } as Options
+        expect(reasonOf(yield* Effect.exit(process(nulled, () => Effect.void)))).toBe(reason)
+        const none = { [option]: null } as unknown as Options
+        expect(reasonOf(yield* Effect.exit(process(none, () => Effect.void))))
+          .toBe(`the option ${option} is null, which is no object`)
+        // An option given with its field left out launches with the default.
+        yield* process({ [option]: {} } as Options, () => Effect.void)
+      }
+      const renamed = { renames: null } as unknown as Options
+      expect(reasonOf(yield* Effect.exit(process(renamed, () => Effect.void))))
+        .toBe('the option renames is null, which is no object')
+    })))
+
+  // A call from JavaScript may leave out a request or what a reading asks. The call returns its effect, and the effect
+  // dies with the caller's defect, as for a limit left out (decisions 0053, 0141).
+  test('a request or a reading left out is the caller’s defect, in the effect and not at the call', () =>
+    database(Effect.gen(function*() {
+      const reasonOf = (exit: Exit.Exit<unknown>) => {
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        return cause instanceof InvariantDefect ? cause.reason : null
+      }
+      const { layer } = yield* hands()
+      const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          for (const left of [undefined, null]) {
+            const calls = [
+              ['request of create', () => toy.create(id, left as never)],
+              ['request of send', () => toy.send(id, want, left as never)],
+              ['query', () => toy.query(left as never)],
+              ['count', () => toy.count(left as never)],
+              ['sum', () => toy.sum(left as never)],
+              ['count by', () => toy.countBy(left as never)],
+            ] as const
+            for (const [what, call] of calls) {
+              const effect: Effect.Effect<unknown> = call()
+              expect(reasonOf(yield* Effect.exit(effect))).toBe(`the ${what} is ${left}, which is no object`)
+            }
+            // The cursors of `published` are a list, and one left out is refused the same way.
+            expect(reasonOf(yield* Effect.exit(toy.published('projection', left as never, 1))))
+              .toBe(`the cursors are ${left}, which are no list`)
+          }
+          expect(yield* toy.read(id)).toBeNull()
+        }))
+    })))
+
   test('a keep that is neither a whole number of millis nor forever is the caller’s defect, and reaches no entity', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()

@@ -168,7 +168,11 @@ export const Probe = Context.Reference<(said: Said) => Effect.Effect<void>>('@fg
   defaultValue: () => () => Effect.void,
 })
 
-/** The options of `launch`, each with a default: a launch with none runs on one process with the tables it creates. */
+/**
+ * The options of `launch`, each with a default: a launch with none runs on one process with the tables it creates.
+ * Only an option left out, or a field of it left out, takes the default. An option or a field given `null` is the
+ * launcher's defect, as any value an option does not take is (decision 0208).
+ */
 export interface Options {
   /**
    * How long a `send` or a `create` from another entity waits before sending again to a receiver that crashed on
@@ -271,11 +275,18 @@ const sweepOf = <T extends Types>(deployed: Deployment<T>, sweep: Readonly<{ mil
 }
 
 /**
- * The renames of a launch as pairs, or the launcher's defect where they cannot run as written (decision 0156). Two
- * names renamed to one are not refused here: the storage refuses a move onto a name that holds an entity already
- * (decision 0176).
+ * The renames of a launch as pairs, none where they are left out, or the launcher's defect where they cannot run as
+ * written (decision 0156). Renames given `null` from JavaScript are no renames left out, and are refused
+ * (decision 0208). Two names renamed to one are not refused here: the storage refuses a move onto a name that holds
+ * an entity already (decision 0176).
  */
-export const renamesOf = (renames: Readonly<Record<string, string>>): ReadonlyArray<readonly [string, string]> => {
+export const renamesOf = (
+  renames: Readonly<Record<string, string>> | undefined,
+): ReadonlyArray<readonly [string, string]> => {
+  if (renames === undefined) return []
+  if (typeof renames !== 'object' || renames === null) {
+    throw new InvariantDefect({ reason: `the option renames is ${String(renames)}, which is no object` })
+  }
   const pairs = Object.entries(renames)
   for (const [from, to] of pairs) {
     const reason = typeof to !== 'string' || from === '' || to === ''
@@ -337,7 +348,9 @@ export interface Handle<T extends Types, C = {}> {
    * message is offered or stored: the caller retries later, under the same request id or another (decision 0147).
    * On Cluster a caller is never answered `Full`, and its message waits for the entity. There, until a step of the
    * entity or `expire` deletes Cluster's rows of a reply past its time, a retry after `keep` is given the reply
-   * Cluster saved, and a message kept `'forever'` keeps Cluster's rows for ever (decisions 0165, 0171).
+   * Cluster saved, and a message kept `'forever'` keeps Cluster's rows for ever (decisions 0165, 0171). Cluster's
+   * rows are kept for at least two of Cluster's polls of replies and a second, whatever the `keep`, so that another
+   * client of the request on another runner reads the answer first (decision 0248).
    */
   readonly send: (
     id: string,
@@ -494,8 +507,8 @@ export interface Handle<T extends Types, C = {}> {
   readonly forget: (topic: Topic<T>, consumer: string) => Effect.Effect<void>
   /**
    * Deletes the callers' replies of the program past their time, and gives how many went. A reply past its time is
-   * never read, so this frees only their rows: those of an entity that takes no step, since a step deletes its own
-   * entity's (decision 0125). The replies go in batches, each a transaction of its own, so the count is the sum of the
+   * never read, so this frees only their rows: those of an entity that answers no message, since a step that stores a
+   * reply deletes its own entity's (decision 0125). The replies go in batches, each a transaction of its own, so the count is the sum of the
    * batches, and an expire that fails keeps the batches it committed before (decision 0245).
    */
   readonly expire: Effect.Effect<number>
@@ -637,25 +650,26 @@ export interface OnCluster {
    * before that reset, and it gives whether the asker's work still holds. Where the work has ended, the client neither
    * resets nor gives the failure, and waits until it is interrupted (decisions 0092, 0170). `given` is a caller's:
    * the client calls it with the request's Cluster id once Cluster has given it the answer, before it gives the
-   * answer (decision 0245).
+   * answer. It is given too `least`, the least time in millis that Cluster's rows of the request are kept from then,
+   * so that another client of the request reads the reply first (decision 0248).
    */
   readonly create: <T extends Types>(
     program: Program<T>,
     sent: Omit<Delivered, '_tag' | 'keep'>,
     kept?: (requestId: string) => Effect.Effect<boolean>,
-    given?: (requestId: string) => Effect.Effect<void>,
+    given?: (requestId: string, least: number) => Effect.Effect<void>,
   ) => Effect.Effect<Creation<T['rejection']>>
   /**
    * A message, sent through the program's door by Cluster's client. An answer `Suspended` or `NotFound` is no reply:
    * Cluster's row of it is reset, and the message sent again, whose answer is given (decisions 0085, 0165). A failure
-   * Cluster saved, and `kept`, are as for `create`. `given` is a caller's message's with `keep`: the client calls it
-   * with the request's Cluster id once Cluster has given it the answer, before it gives the answer (decision 0171).
+   * Cluster saved, and `kept`, are as for `create`. `given` is a caller's message's with `keep`, and is called as for
+   * `create` (decisions 0171, 0248).
    */
   readonly send: <T extends Types>(
     program: Program<T>,
     sent: Omit<Delivered, '_tag'>,
     kept?: (requestId: string) => Effect.Effect<boolean>,
-    given?: (requestId: string) => Effect.Effect<void>,
+    given?: (requestId: string, least: number) => Effect.Effect<void>,
   ) => Effect.Effect<Reply<T['rejection']> | Readonly<{ _tag: 'Suspended' }>>
   /**
    * An operator's `Resume` or `Discard`, sent through the program's door by Cluster's client, from whatever runner
@@ -686,6 +700,19 @@ const counted = <A, E = never, R = never>(
     }
     return effect
   })
+
+/**
+ * Runs `effect` with the argument a caller gave, a request or what a reading asks, once it is an object: an argument
+ * left out, or `null`, is the caller's defect, given in the effect, and nothing is read or stored for it. The types
+ * do not hold a call from JavaScript, and a read of a field of no object would throw where the call is made, outside
+ * the effect (decisions 0053, 0141).
+ */
+const argued = <O, A>(what: string, argument: O, effect: (argument: O) => Effect.Effect<A>): Effect.Effect<A> =>
+  Effect.suspend(() =>
+    typeof argument === 'object' && argument !== null
+      ? effect(argument)
+      : Effect.die(new InvariantDefect({ reason: `the ${what} is ${String(argument)}, which is no object` }))
+  )
 
 /**
  * Runs `effect` with the millis of a `keep` the caller gave, or `undefined` for `'forever'`, once it is one of the
@@ -749,6 +776,10 @@ const cursored = <A>(
   effect: Effect.Effect<A>,
 ): Effect.Effect<A> =>
   Effect.suspend(() => {
+    // Cursors left out, which the types do not hold, are refused as a request left out is (decision 0053).
+    if (!Array.isArray(cursors)) {
+      return Effect.die(new InvariantDefect({ reason: `the cursors are ${String(cursors)}, which are no list` }))
+    }
     for (const { partition, seq } of cursors) {
       if (!(Number.isSafeInteger(partition) && partition >= 1 && partition <= partitions)) {
         const reason = `the partition is ${partition}, which is no integer from 1 to ${partitions}`
@@ -854,6 +885,22 @@ const enlisted = <T extends Types, A, E = never, R = never>(
   })
 
 /**
+ * The field `field` of the launch's option `name`, or `fallback` where the option or its field is left out. Only what
+ * is left out is the default: a field given `null` from JavaScript is given as it is, for the option's check to
+ * refuse, and an option that is no object, `null` included, is the launcher's defect here. The types do not hold a
+ * call from JavaScript (decision 0208).
+ */
+const optionOf = <A>(options: Options, name: keyof Options, field: string, fallback: A): A => {
+  const option: unknown = options[name]
+  if (option === undefined) return fallback
+  if (typeof option !== 'object' || option === null) {
+    throw new InvariantDefect({ reason: `the option ${name} is ${String(option)}, which is no object` })
+  }
+  const value = (option as Readonly<Record<string, unknown>>)[field]
+  return value === undefined ? fallback : value as A
+}
+
+/**
  * The runtime of one process, on the database of the client it is given, which it holds until the scope closes. The
  * launch creates the tables where they are missing, unless `tables` says they exist (decision 0191).
  */
@@ -876,7 +923,9 @@ export const launchWith = (
     const scope = yield* Scope.fork(yield* Effect.scope, 'sequential')
     // On Cluster a partition of the log is the shard of its entity, so the log has as many partitions as Cluster has
     // shards per group (decision 0162).
-    const partitions = options.log?.partitions ?? cluster?.shards ?? defaultPartitions
+    const partitions = yield* Effect.sync(() =>
+      optionOf(options, 'log', 'partitions', cluster?.shards ?? defaultPartitions)
+    )
     if (!(Number.isSafeInteger(partitions) && partitions >= 1)) {
       const reason = `the log has ${partitions} partitions, which is no positive integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
@@ -890,7 +939,7 @@ export const launchWith = (
       const reason = `the log has ${partitions} partitions, and Cluster ${cluster.shards} shards per group`
       return yield* Effect.die(new InvariantDefect({ reason }))
     }
-    const renames = new Map(yield* Effect.sync(() => renamesOf(options.renames ?? {})))
+    const renames = new Map(yield* Effect.sync(() => renamesOf(options.renames)))
     // One runtime holds the database, before anything of this one runs, and lets it go after everything of it has
     // stopped: the scope ends what it was given last first (decision 0080).
     if (cluster === null) yield* Scope.provide(hold, scope)
@@ -929,12 +978,14 @@ export const launchWith = (
       )
     }
     const probe = yield* Probe
-    const retry = options.retry?.millis ?? 10
-    const passivate = options.passivate?.millis ?? 30_000
-    const capacity = options.capacity?.entities ?? 10_000
-    const drain = options.drain?.millis
-    const threshold = options.warn?.characters ?? 262_144
-    const bound = options.callers?.messages ?? 4096
+    const { retry, passivate, capacity, drain, threshold, bound } = yield* Effect.sync(() => ({
+      retry: optionOf(options, 'retry', 'millis', 10),
+      passivate: optionOf(options, 'passivate', 'millis', 30_000),
+      capacity: optionOf<number | 'unbounded'>(options, 'capacity', 'entities', 10_000),
+      drain: optionOf<number | undefined>(options, 'drain', 'millis', undefined),
+      threshold: optionOf(options, 'warn', 'characters', 262_144),
+      bound: optionOf(options, 'callers', 'messages', 4096),
+    }))
     if (!(Number.isSafeInteger(bound) && bound > 0)) {
       const reason = `the callers' messages are ${bound}, which is no positive integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
@@ -1134,37 +1185,41 @@ export const launchWith = (
         }
         const handle: Handle<T, C> = {
           partitions,
-          create: (id, request) =>
-            texted(
-              id,
-              requested(
-                request.requestId,
-                admitted(faulted(
-                  create(p, deployed, id, flagsOf<T>(request), {
-                    _tag: 'Caller',
-                    sender: senderOf<T>(request),
-                    id: request.requestId,
-                  }),
-                )),
-              ),
-            ),
-          send: (id, message, request) =>
-            texted(id, requested(request.requestId, kept(request.keep, (keep) =>
-              admitted(faulted(
-                send(p,
-                  deployed,
-                  id,
-                  message,
-                  { _tag: 'Caller', sender: senderOf<T>(request), id: request.requestId },
-                  keep,
+          create: (id, given) =>
+            argued('request of create', given, (request) =>
+              texted(
+                id,
+                requested(
+                  request.requestId,
+                  admitted(faulted(
+                    create(p, deployed, id, flagsOf<T>(request), {
+                      _tag: 'Caller',
+                      sender: senderOf<T>(request),
+                      id: request.requestId,
+                    }),
+                  )),
                 ),
-              )))
-            )),
+              )),
+          send: (id, message, given) =>
+            argued('request of send', given, (request) =>
+              texted(id, requested(request.requestId, kept(request.keep, (keep) =>
+                admitted(faulted(
+                  send(p,
+                    deployed,
+                    id,
+                    message,
+                    { _tag: 'Caller', sender: senderOf<T>(request), id: request.requestId },
+                    keep,
+                  ),
+                )))
+              ))),
           read: (id) => texted(id, deployed.storage.projected(id)),
-          query: (query) => counted({ limit: query.limit }, deployed.storage.query(query)),
-          count: deployed.storage.count,
-          sum: deployed.storage.sum,
-          countBy: (asked) => counted({ limit: asked.limit }, deployed.storage.countBy(asked)),
+          query: (given) =>
+            argued('query', given, (query) => counted({ limit: query.limit }, deployed.storage.query(query))),
+          count: (given) => argued('count', given, deployed.storage.count),
+          sum: (given) => argued('sum', given, deployed.storage.sum),
+          countBy: (given) =>
+            argued('count by', given, (asked) => counted({ limit: asked.limit }, deployed.storage.countBy(asked))),
           reindex: deployed.storage.reindex,
           published: (topic, after, limit) =>
             topical(

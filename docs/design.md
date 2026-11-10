@@ -912,7 +912,8 @@ and a wait are non-negative integers. The limit is required, of `fetch` and `pub
 reading holds a whole topic in one array; a caller that wants more reads again, past the last row it was given
 ([decision 0141](decisions/archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md)). Anything else is its
 caller's defect, which stores nothing
-([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). The log is kept for its
+([decision 0053](decisions/archive/0053-what-a-handle-is-given-is-checked.md)). So is a request or a query left
+out: a call of the handle returns its effect, and the effect dies with the defect. The log is kept for its
 consumers and is not an archive: a program whose past must stay readable keeps it where callers read it, in the
 state or in entities of its own.
 `consume(topic, consumer, handler, { limit })` runs the loop of a consumer: it reads a page with `fetch`, runs
@@ -1204,7 +1205,8 @@ is written once. A launch on a client of any other dialect is the launcher's def
 An entity with nothing to do is unloaded, and the earliest of its stored timers wakes it
 ([decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)); how long it stays loaded is an option of the
 runtime. A launch checks each of its options, and one that is no number of the kind it names is the launcher's
-defect. `retry`, `passivate` and `warn` are non-negative integers, since a time becomes the text of a duration, and
+defect. Only an option left out, or a field of it left out, takes the default, and a `null` is refused.
+`retry`, `passivate` and `warn` are non-negative integers, since a time becomes the text of a duration, and
 Effect reads no `Infinity millis` and no `NaN millis`
 ([decision 0208](decisions/0208-a-launch-checks-every-option.md)). A timer fires once its time has come on the
 wall clock, and never before. A host suspended while a timer sleeps delays it by an hour at most once the host runs
@@ -1482,9 +1484,13 @@ A runner learns of another runner's commit from the file: while a reading of the
 - A caller's client keeps its message's id once it has the answer, and Cluster's rows go once the message's `keep`
   is past, by a step of the entity or by `Handle.expire`
   ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
-  A message sent with `keep: 'forever'` keeps its rows for ever. A creation's client keeps its id with the time it
-  has the answer, as a `keep` of 0 does, so its rows go at the next `expire`, and a retry after is answered `Created`
-  from the entity's row ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)).
+  A message sent with `keep: 'forever'` keeps its rows for ever. A creation's client keeps its id as a `keep` of 0
+  does, and a retry after its rows go is answered `Created` from the entity's row
+  ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)).
+- A caller's client keeps the id for at least two of Cluster's polls of replies and a second, 1.4 s by default,
+  whatever the `keep`, a creation's included. Another client of the same request, on another runner, reads the reply
+  from Cluster's table only at its poll, and would wait for ever once the rows are gone
+  ([decision 0248](decisions/0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md)).
 - A reply Cluster saves of its own after its request's rows are gone is left
   ([decision 0173](decisions/archive/0173-on-cluster-a-reply-cluster-saves-after-its-request-is-gone-is-left.md)).
 
