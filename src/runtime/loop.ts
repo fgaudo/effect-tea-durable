@@ -15,7 +15,7 @@ import * as Semaphore from 'effect/Semaphore'
 import type * as Tracer from 'effect/Tracer'
 import { answer, entities, wake } from './callers.ts'
 import { applyOnCluster } from './doors.ts'
-import * as Machine from './machine.ts'
+import * as Machine from '../machine.ts'
 import {
   addressOf,
   at,
@@ -41,9 +41,9 @@ import {
   under,
   untransacted,
 } from './process.ts'
-import { type Address, Entities, isTimer, runnerOf, type Types } from './program.ts'
+import { type Address, Entities, isTimer, runnerOf, type Types } from '../program.ts'
 import { tell } from './readings.ts'
-import { transaction } from './storage.ts'
+import { transaction } from '../storage.ts'
 
 /**
  * Offers an event to a loaded entity, counted until its step is done (decision 0063), and the entity is the most

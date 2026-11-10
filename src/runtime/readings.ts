@@ -7,7 +7,7 @@ import * as Clock from 'effect/Clock'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import type * as Latch from 'effect/Latch'
-import type * as Machine from './machine.ts'
+import type * as Machine from '../machine.ts'
 import type { Process } from './process.ts'
 
 /** The readings of `fetch` that wait, of every program of the runtime (decision 0142). */

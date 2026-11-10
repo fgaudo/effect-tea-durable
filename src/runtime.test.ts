@@ -5442,8 +5442,10 @@ test('the library reads the time and sleeps through Effect alone, which a test m
       .map((pattern) => pattern.source)
       .join('|'),
   )
-  const sources = readdirSync(import.meta.dir).filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
-  expect(sources).toContain('runtime.ts')
+  // Every module of `src/` and of its folders, where the runtime's modules lie (decision 0241).
+  const sources = readdirSync(import.meta.dir, { recursive: true, encoding: 'utf8' })
+    .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
+  expect(sources).toContain(join('runtime', 'loop.ts'))
   const found = sources.flatMap((file) =>
     readFileSync(join(import.meta.dir, file), 'utf8')
       .split('\n')

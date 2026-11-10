@@ -1,6 +1,6 @@
 /**
  * What the runtime of one process holds while it runs, which its modules share: the deployments, the callers waiting,
- * each entity's lock, and the counts `settled` waits for. `launchWith`, in [`runtime.ts`](runtime.ts), makes one
+ * each entity's lock, and the counts `settled` waits for. `launchWith`, in [`runtime.ts`](../runtime.ts), makes one
  * `Process` for each launch, and each function of the runtime's modules that reads or changes it is given it first.
  */
 import * as Context from 'effect/Context'
@@ -15,11 +15,11 @@ import type * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import type { SqlClient } from 'effect/sql'
 import type * as Tracer from 'effect/Tracer'
-import * as Machine from './machine.ts'
-import type { Address, Creation, Entities, Key, Program, Types } from './program.ts'
+import * as Machine from '../machine.ts'
+import type { Address, Creation, Entities, Key, Program, Types } from '../program.ts'
 import type { Readings } from './readings.ts'
-import type { Answer, OnCluster, Operated, Point, Said, Waiting } from './runtime.ts'
-import type { Storage } from './storage.ts'
+import type { Answer, OnCluster, Operated, Point, Said, Waiting } from '../runtime.ts'
+import type { Storage } from '../storage.ts'
 
 /** What the runtime of one process holds while it runs, made once by `launchWith` and read by the runtime's modules. */
 export interface Process {

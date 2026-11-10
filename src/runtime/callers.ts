@@ -10,7 +10,7 @@ import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as MutableList from 'effect/MutableList'
 import { activate, crash, detached, enter, fresh, loop, offer, perform, warnOfSize, withEntity } from './loop.ts'
-import * as Machine from './machine.ts'
+import * as Machine from '../machine.ts'
 import {
   addressOf,
   at,
@@ -40,10 +40,10 @@ import {
   type Request,
   type Types,
   versionOf,
-} from './program.ts'
+} from '../program.ts'
 import { tell } from './readings.ts'
-import { transaction } from './storage.ts'
-import type { Answer, Operated, Waiting } from './runtime.ts'
+import { transaction } from '../storage.ts'
+import type { Answer, Operated, Waiting } from '../runtime.ts'
 
 /**
  * A defect that is its caller's, not the receiver's: a message or flags that do not encode, a creation that

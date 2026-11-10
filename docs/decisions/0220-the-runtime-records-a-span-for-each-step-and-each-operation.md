@@ -90,7 +90,7 @@ names, and an application provides them, so the runtime imports none of them.
   `a step that suspends its entity says where and is counted, and the mailbox and operations are metrics`.
 - That a message offered on one process is handled by its own `Receive`, so that no `Handle` serves a caller's
   request there: **only reasoned**, from `receive` in [`src/machine.ts`](../../src/machine.ts) and the loop of
-  [`src/loop.ts`](../../src/loop.ts). A message that finds the mailbox empty is handled as it arrives
+  [`src/runtime/loop.ts`](../../src/runtime/loop.ts). A message that finds the mailbox empty is handled as it arrives
   ([decision 0074](archive/0074-a-message-that-finds-the-mailbox-empty-is-handled-as-it-arrives.md)). The loop
   handles the mailbox to its end before it takes an event, and a suspended entity answers `Suspended` and queues
   nothing. A `Handle` of a caller's message is left only after a restart, where the caller's span is not held.

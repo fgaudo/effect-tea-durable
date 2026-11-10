@@ -27,7 +27,7 @@ says that its time has passed.
   runs again.
 - **The waker sleeps an hour at most too.** After its sleep, its round reads the wall clock and the stored timers
   again, as after a poke, and activates the entities whose time has come.
-- **The bound is `reread`, an hour, in [`src/process.ts`](../../src/process.ts)**, the same for the waker and for a
+- **The bound is `reread`, an hour, in [`src/runtime/process.ts`](../../src/runtime/process.ts)**, the same for the waker and for a
   loaded entity, and no option. A reading of the stored timers each hour for each deployment, and a wake each hour
   for each timer armed, cost nothing beside the steps of a process. An hour late is what a timer of days or months
   bears. A program that cannot bear it asks for a shorter bound, or for an option.

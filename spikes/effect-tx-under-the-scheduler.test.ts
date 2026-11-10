@@ -48,7 +48,7 @@ test("a commit wakes a body waiting on txRetry through the scheduler's dispatche
 })
 
 /**
- * `awaitResumption` of `src/callers.ts`, written as a count of resumptions in a `TxRef`. The sender reads the count,
+ * `awaitResumption` of `src/runtime/callers.ts`, written as a count of resumptions in a `TxRef`. The sender reads the count,
  * sends, and on `Suspended` waits with `txRetry` while the count is the one it read. The resumer lifts the suspension
  * and counts a resumption. `readFirst` reads the count before the send, as the runtime registers its wait before the
  * send (decisions 0023 and 0063); otherwise the sender reads it after the answer. A sender answered `Suspended` says

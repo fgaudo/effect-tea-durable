@@ -66,10 +66,11 @@ bun run build
 [`src/program.ts`](src/program.ts) is the one place a program is declared, with its types and the migrations of
 its schemas. [`src/machine.ts`](src/machine.ts) is the runtime's semantics as a pure state machine, which `rehearse`
 runs and property tests check. The runtime interprets the machine over Effect's `SqlClient`, in
-[`src/runtime.ts`](src/runtime.ts) and the modules it is divided into, and stores in [`src/storage.ts`](src/storage.ts).
-It unloads an entity that has nothing to do, and wakes it from its stored timers.
+[`src/runtime.ts`](src/runtime.ts) and the modules it is divided into, in [`src/runtime/`](src/runtime), and stores in
+[`src/storage.ts`](src/storage.ts). It unloads an entity that has nothing to do, and wakes it from its stored timers.
 [`src/runtime.test.ts`](src/runtime.test.ts) tests it by dying at each point of the design's crash table, and
-comparing where it ends with the machine. Each module is built on the one above it:
+comparing where it ends with the machine. A folder of `src/` beside a module of its name is a group, which a module
+outside the group imports through that module alone. Each module is built on the one above it:
 
 ```mermaid
 flowchart TB
@@ -79,12 +80,12 @@ flowchart TB
   testing["testing.ts: the checks of a program's migrations and projections,<br/>and the scheduler that moves where the fibers of a test yield"]
   subgraph runtime["the runtime"]
     launch["runtime.ts: launch and deploy, a deployment's handle,<br/>settled and the planned stop"]
-    callers["callers.ts: create, send, resume and discard,<br/>and the Entities an operation sends with"]
-    loop["loop.ts: an entity's loop, under its own lock:<br/>its steps, fibers, timers, passivation and crash"]
-    doors["doors.ts: on Cluster, the step of a door, settled by the count of steps,<br/>and a singleton per shard that activates and crashes its entities"]
-    waker["waker.ts: the waker of the stored timers"]
-    readings["readings.ts: the readings of the log that wait for a commit"]
-    process["process.ts: what the runtime of one process holds,<br/>which its modules share"]
+    callers["runtime/callers.ts: create, send, resume and discard,<br/>and the Entities an operation sends with"]
+    loop["runtime/loop.ts: an entity's loop, under its own lock:<br/>its steps, fibers, timers, passivation and crash"]
+    doors["runtime/doors.ts: on Cluster, the step of a door, settled by the count of steps,<br/>and a singleton per shard that activates and crashes its entities"]
+    waker["runtime/waker.ts: the waker of the stored timers"]
+    readings["runtime/readings.ts: the readings of the log that wait for a commit"]
+    process["runtime/process.ts: what the runtime of one process holds,<br/>which its modules share"]
   end
   cluster["cluster.ts: on Effect Cluster, the Sharding of a runner,<br/>built once its versions are recorded, its RunnerHealth,<br/>the door of each program, which steps at the newest version,<br/>the client every request is sent through,<br/>and launch, the runtime of a runner"]
   storage["storage.ts: the tables, each named with effecttea_: entities, entity_keys,<br/>mailbox, replies, projections, publications, outbox, log, heads,<br/>consumers, cursors and migrations; on Cluster, versions, runner_versions,<br/>waiting, sent_requests and given_requests"]

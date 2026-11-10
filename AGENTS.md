@@ -10,8 +10,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A commit message stays short: a subject line of at most 72 characters in the imperative, and a body only
   where the diff cannot say it, four lines at most. Why a change was taken belongs in `docs/`, not in the message.
 - A commit's subject starts with the module or area it changes, then a concrete action:
-  `runtime: interrupt children when a run ends, without yielding`. The area is a module of `src/` without its
-  extension, or `docs`, `examples`, `spikes` or `scripts`. A commit across several names the one it is about.
+  `runtime: interrupt children when a run ends, without yielding`. The area is a module's path under `src/` without
+  its extension, as `runtime/loop` for a module in a folder, or `docs`, `examples`, `spikes` or `scripts`. A commit
+  across several modules of a group names the group, as `runtime`, and a commit across several areas names the one
+  it is about.
 - Prose states its conclusion first, one sentence per idea, without chains of subordinate clauses. This holds for
   `.md` files, comments and commit bodies.
 - Every document and comment is written for a person who reads it for the first time, with no note at hand, and
@@ -115,8 +117,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   every unstable module the library depends on can change under it within the major.
 - [`src/machine.ts`](src/machine.ts) is the runtime's semantics. A rule it adds or changes is a decision, and
   [`src/machine.test.ts`](src/machine.test.ts) has a test that fails without it.
-- The runtime is [`src/runtime.ts`](src/runtime.ts) and the modules it is divided into: `process.ts`, `loop.ts`,
-  `callers.ts`, `doors.ts`, `waker.ts` and `readings.ts` of `src/`. A change to the runtime that adds or moves a
+- The runtime is [`src/runtime.ts`](src/runtime.ts) and the modules it is divided into, in
+  [`src/runtime/`](src/runtime): `process.ts`, `loop.ts`, `callers.ts`, `doors.ts`, `waker.ts` and `readings.ts`. A
+  module outside the runtime imports `src/runtime.ts` alone, as a test of the form of `src/` checks
+  ([decision 0241](docs/decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md)). A change to the runtime that adds or moves a
   wait, a lock, a fork, or state another fiber reads has a test in [`src/runtime.test.ts`](src/runtime.test.ts)
   that fails or hangs without it, run against the code before the change. The scheduler of the tests, in [`src/testing.ts`](src/testing.ts), is how a
   test moves the points where fibers yield. Where the interleaving cannot be reached, the decision says why, and why
