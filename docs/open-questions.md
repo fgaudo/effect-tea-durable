@@ -104,15 +104,6 @@ with a requirement that no example has yet.
     program does have a sender;
   - what the runtime's housekeeping changes of what a program passes to `send`, since both change the same
     signature.
-- **A chain of `andThen` over many children.** `forEach` tells a run of messages to children by id and puts them
-  back once ([decision 0155](decisions/archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md)). A
-  program that writes the same step as one `andThen` after the other copies the record of children once per child:
-  the spike [`many-children`](../spikes/many-children.test.ts) sees 111 ms at 1 000 children, against 4 ms by
-  `forEach`. Nothing tells the author of the program, whose step is right and slow. Whether the guide and the doc
-  comment of `andThen` say so, or `andThen` joins a run of messages to children as `forEach` does, is not decided.
-  It waits for a program that tells many children one message at a time. It would be decided by:
-  - whether `andThen` can find the run without changing the step it gives, as `forEach` does;
-  - whether a program has a reason to chain the messages by hand, where `forEach` would not serve.
 - **A retry that outlives the process.** A failure the provider may recover from is retried inside the runner, with
   `Effect.retry` and a schedule that ends, under the same key (the guide's operations). A crash or a passivation
   starts that schedule again from its first attempt, and an operation that waits between tries keeps its entity

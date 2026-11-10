@@ -773,11 +773,11 @@ const tallies = Optic.id<Tallies>().key('tallies').compose(
 )
 
 /**
- * A parent of tallies by id that tells them a list of messages, in one `forEach` or one `andThen` after the other,
- * with steps of its own among them. Its handler drops a tally that asks, and pokes the tally `x` behind the back of
+ * A parent of tallies by id that tells them a list of messages, in one `forEach`, in one `forEach` over the steps
+ * made first, or in one `andThen` after the other, with steps of its own among them. Its handler drops a tally that asks, and pokes the tally `x` behind the back of
  * the messages still to be told, so that a run told at once must read the children again after an event.
  */
-const talliesOf = (telling: 'forEach' | 'andThen') =>
+const talliesOf = (telling: 'forEach' | 'steps' | 'andThen') =>
   part({
     state: Tallies,
     flags: Schema.Null,
@@ -797,9 +797,10 @@ const talliesOf = (telling: 'forEach' | 'andThen') =>
         told._tag === 'Own'
           ? (state: Tallies) => ({ ...state, own: state.own + 1 })
           : children.Tally.update(told.id, told.message)
-      return telling === 'forEach'
-        ? forEach(state, message.told, next)
-        : message.told.reduce((step: Step<Tallies, string>, told) => andThen(step, next(told)), state)
+      if (telling === 'forEach') return forEach(state, message.told, next)
+      // A chain the program made itself, told through `forEach` with the identity (decision 0240).
+      if (telling === 'steps') return forEach(state, message.told.map(next), (step) => step)
+      return message.told.reduce((step: Step<Tallies, string>, told) => andThen(step, next(told)), state)
     },
     work: () => noWork,
     operations: {},
@@ -839,12 +840,14 @@ test('a forEach of messages to children by id gives the step the messages told o
     heard: fc.constant([]),
   })
   const atOnce = talliesOf('forEach')
+  const asSteps = talliesOf('steps')
   const inTurn = talliesOf('andThen')
   fc.assert(
     fc.property(start, fc.array(told, { maxLength: 12 }), (state, list) => {
       const broadcast = { _tag: 'Broadcast', told: list } as const
-      expect(outcome(() => atOnce.update(broadcast, meta)(state)))
-        .toEqual(outcome(() => inTurn.update(broadcast, meta)(state)))
+      const expected = outcome(() => inTurn.update(broadcast, meta)(state))
+      expect(outcome(() => atOnce.update(broadcast, meta)(state))).toEqual(expected)
+      expect(outcome(() => asSteps.update(broadcast, meta)(state))).toEqual(expected)
     }),
     { numRuns: 2_000 },
   )
@@ -857,12 +860,13 @@ test('a forEach of messages to children by id that raise no event puts the child
     heard: [],
   }
   const told = Object.keys(start.tallies).map((id) => ({ _tag: 'Tell', id, message: { _tag: 'Add', by: 1 } }) as const)
-  const count = (telling: 'forEach' | 'andThen') => {
+  const count = (telling: 'forEach' | 'steps' | 'andThen') => {
     replacements = 0
     const step = talliesOf(telling).update({ _tag: 'Broadcast', told }, meta)(start) as Tallies
     expect(Object.values(step.tallies).every(({ n }) => n === 1)).toBe(true)
     return replacements
   }
   expect(count('forEach')).toBe(1)
+  expect(count('steps')).toBe(1)
   expect(count('andThen')).toBe(50)
 })

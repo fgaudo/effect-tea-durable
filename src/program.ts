@@ -839,7 +839,10 @@ export const raise = <Event>(event: Event) => <State>(state: State): Raised<Stat
 
 /**
  * A step followed by another, made from its state: the state is the second's, and the events are both steps', in
- * order. Taking a step's state by hand to make the next one would drop its events. It is dual, for `pipe`.
+ * order. Taking a step's state by hand to make the next one would drop its events. It is dual, for `pipe`. It takes
+ * the second step at once, so a chain of messages to children by id puts the children back once per message, a copy
+ * of the record of children each time. A step that tells many children is written with `forEach`, over the ids or
+ * over the steps already made, which puts them back once (decision 0240).
  */
 export const andThen: {
   <State, Event2 = never>(
