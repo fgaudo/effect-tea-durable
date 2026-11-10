@@ -88,9 +88,9 @@ with a requirement that no example has yet.
   ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
   The older runner then loses the shard before its scope closes: its entities crash, their operations are
   interrupted, and the newer runner delivers `unknown`. A completion stepped during a drain after a newer launch
-  would die in the guard of the version too, which is read in the code and not tested. The test `FAILING: a rolling
-  deploy to a newer version drains the at-most-once operation under way on the older runner`, in the commit
-  `4f8ded8` of the branch `claude/premise-review-1f63ba`, expects `done` and gets `unknown`. Any move of a shard
+  would die in the guard of the version too, which is read in the code and not tested. The test `a rolling deploy to
+  a newer version drains the at-most-once operation under way on the older runner`, a todo of
+  [`src/cluster.test.ts`](../src/cluster.test.ts) that `bun test --todo` runs, expects `done` and gets `unknown`. Any move of a shard
   interrupts an at-most-once operation, which
   [decision 0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)
   accepts. Whether a rolling deploy drains is not decided. It would be decided by:

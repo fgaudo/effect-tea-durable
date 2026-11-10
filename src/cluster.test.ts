@@ -445,6 +445,61 @@ describe('two runners on one file', () => {
         ])
       ), 30_000)
 
+  // A todo: `bun test --todo` runs it, and it fails until the open question of a drain across a deploy is decided.
+  // A drain is there so that a deploy delivers no `unknown` for an at-most-once operation under way
+  // (decisions 0119, 0219). On Cluster a deploy of a newer version launches its runner while the older one runs, and
+  // that launch takes the older runner's shards at once (decision 0159): its entities crash and their operations are
+  // interrupted before the older runner's scope closes, and a completion stepped in the drain would die on the check
+  // of the newest version (decision 0175). So the drain of decision 0219 holds between runners of one version alone.
+  test.todo('a rolling deploy to a newer version drains the at-most-once operation under way on the older runner', () => {
+    let started = false
+    let release = false
+    const mailing = (version: number): Program<T> => ({
+      ...at('Toy', version),
+      operations: {
+        Ask: operation.atMostOnce(
+          () =>
+            Effect.gen(function*() {
+              started = true
+              yield* Effect.repeat(Effect.sleep('20 millis'), { until: () => release })
+              return 'done'
+            }),
+          () => 'unknown',
+        ),
+      },
+    })
+    return onFile((start) =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: null, id })
+        const last = sql<{ state: string }>`SELECT state FROM effecttea_entities WHERE id = 'one'`.pipe(
+          Effect.map(([row]) => row === undefined ? undefined : (JSON.parse(row.state) as T['state']).last),
+        )
+        const stopping = yield* Scope.make()
+        const older = yield* Scope.provide(
+          start(1, [mailing(1)], undefined, { drain: { millis: 10_000 }, sweep: 'none' }),
+          stopping,
+        )
+        yield* until(older, (n) => n === shardsPerGroup)
+        const clientOf = yield* Effect.provide(doorOf('Toy').client, older.context)
+        yield* clientOf('one').Create({ version: 1, request: caller('c1'), message: 'null' })
+        yield* clientOf('one').Message({ version: 1, request: caller('m1'), message: '"wait"' })
+        yield* Effect.repeat(Effect.sync(() => started), { schedule: Schedule.spaced('25 millis'), until: (ran) => ran })
+        // The deploy: the newer runner launches, then the older one is stopped, and drains.
+        const newer = yield* start(2, [mailing(2)], undefined, { sweep: 'none' })
+        const stopped = yield* Effect.forkChild(Scope.close(stopping, Exit.void))
+        yield* Effect.sleep('300 millis')
+        release = true
+        yield* Fiber.join(stopped)
+        yield* until(newer, (n) => n === shardsPerGroup)
+        const ended = yield* Effect.repeat(last, {
+          schedule: Schedule.spaced('50 millis'),
+          until: (state) => state === 'done' || state === 'unknown',
+        }).pipe(Effect.timeout('15 seconds'))
+        expect(ended).toBe('done')
+      })).finally(() => void warningsAndErrors())
+  }, 60_000)
+
   test('a rename stops the runners of the old name, and its door delivers what Cluster saved under it (decision 0176)', () =>
     onFile((start) =>
       Effect.gen(function*() {
