@@ -10,7 +10,7 @@ import { hold } from './hold.ts'
 test('a seat nobody confirms in time is released', () =>
   Effect.runPromise(rehearse(
     hold,
-    { flags: null, at: DateTime.makeUnsafe('2026-11-08T10:00:00Z') },
+    { at: DateTime.makeUnsafe('2026-11-08T10:00:00Z') },
     Effect.fnUntraced(function*(rehearsal) {
       yield* rehearsal.fire('expiry')
       expect(yield* rehearsal.send({ _tag: 'Confirm' })).toMatchObject(rejected)

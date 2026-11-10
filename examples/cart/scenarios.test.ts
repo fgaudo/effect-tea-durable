@@ -9,7 +9,7 @@ import * as Exit from 'effect/Exit'
 import { accepted, rehearse, rejected } from '@fgaudo/effect-tea-persistent/testing'
 import { cart } from './cart.ts'
 
-const start = { flags: null, at: DateTime.makeUnsafe('2026-11-05T10:00:00Z') }
+const start = { at: DateTime.makeUnsafe('2026-11-05T10:00:00Z') }
 
 describe('cart', () => {
   test('a line reserves its stock, and is sold at checkout', () =>

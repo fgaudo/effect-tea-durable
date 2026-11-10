@@ -54,7 +54,7 @@ describe('subscription', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
-        yield* rehearsal.send({ _tag: 'CreditGranted', amountInCents: 2_000 }, support)
+        yield* rehearsal.send({ _tag: 'CreditGranted', amountInCents: 2_000 }, { sender: support })
         const first = yield* rehearsal.pending('renewal')
         expect(yield* rehearsal.fire(first)).toBe('Delivered')
         // The state stayed `Active`, with the same key: the timer fired, so the key is new work.
@@ -71,7 +71,7 @@ describe('subscription', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
-        yield* rehearsal.send({ _tag: 'PlanChangeRequested', plan: { name: 'Pro', priceInCents: 1_900 } }, ada)
+        yield* rehearsal.send({ _tag: 'PlanChangeRequested', plan: { name: 'Pro', priceInCents: 1_900 } }, { sender: ada })
         expect((yield* rehearsal.projection).plan.name).toBe('Basic')
         yield* rehearsal.fire('renewal')
         expect(yield* rehearsal.projection).toMatchObject({ plan: { name: 'Pro' }, nextPlan: null })
@@ -99,7 +99,7 @@ describe('subscription', () => {
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer('charge', { _tag: 'ChargeDeclined' })
         const retry = yield* rehearsal.pending('retry')
-        expect(yield* rehearsal.send({ _tag: 'PaymentMethodUpdated', payment: 'card-2' }, ada)).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'PaymentMethodUpdated', payment: 'card-2' }, { sender: ada })).toEqual(accepted)
         expect(yield* rehearsal.fire(retry)).toBe('Dropped')
         yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
         expect((yield* rehearsal.state)._tag).toBe('Active')
@@ -114,7 +114,7 @@ describe('subscription', () => {
       Effect.fnUntraced(function*(rehearsal) {
         const before = yield* rehearsal.pending('charge')
         expect(before.work).toMatchObject({ _tag: 'Charge', payment: 'card-1', totalInCents: 900 })
-        expect(yield* rehearsal.send({ _tag: 'PaymentMethodUpdated', payment: 'card-2' }, ada)).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'PaymentMethodUpdated', payment: 'card-2' }, { sender: ada })).toEqual(accepted)
         yield* rehearsal.restart
         expect(yield* rehearsal.pending('charge')).toEqual(before)
         expect(yield* rehearsal.projection).toMatchObject({ status: 'Charging' })
@@ -126,7 +126,7 @@ describe('subscription', () => {
       subscription,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { sender: ada })).toEqual(accepted)
         yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded' })
         // The period is paid: the subscription ends with it.
         expect(yield* rehearsal.projection).toMatchObject({ status: 'Active', canResume: true })
@@ -154,7 +154,7 @@ describe('subscription', () => {
       subscription,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.send({ _tag: 'CreditGranted', amountInCents: 2_000 }, ada)).toMatchObject(rejected)
+        expect(yield* rehearsal.send({ _tag: 'CreditGranted', amountInCents: 2_000 }, { sender: ada })).toMatchObject(rejected)
       }),
     )))
 })

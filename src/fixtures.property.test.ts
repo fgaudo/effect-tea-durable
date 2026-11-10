@@ -93,7 +93,7 @@ const rehearsed = (program: Program<Any>, { flags, sends }: Scenario) =>
       Effect.gen(function*() {
         for (const [at, { message, sender, requestId }] of sends.entries()) {
           const request = requestId === null ? undefined : { requestId: named(sends)[at]! }
-          replies.push(yield* entity.send(message, sender, request))
+          replies.push(yield* entity.send(message, { sender, ...request }))
         }
         projection = yield* entity.projection
       }))

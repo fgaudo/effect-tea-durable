@@ -571,11 +571,11 @@ test('a program whose child raises events and that handles none does not compile
 test("a child's operation runs as the parent's, and its answer reaches the child", () =>
   Effect.runPromise(rehearse(
     order,
-    { flags: null, at },
+    { at },
     Effect.fnUntraced(function*(rehearsal) {
-      yield* rehearsal.send({ _tag: 'LineAdded', id: 'a' }, null)
-      yield* rehearsal.send({ _tag: 'Line', id: 'a', message: { _tag: 'Added', quantity: 2 } }, null)
-      expect(yield* rehearsal.send({ _tag: 'Line', id: 'a', message: { _tag: 'ChargeRequested' } }, null)).toEqual(
+      yield* rehearsal.send({ _tag: 'LineAdded', id: 'a' })
+      yield* rehearsal.send({ _tag: 'Line', id: 'a', message: { _tag: 'Added', quantity: 2 } })
+      expect(yield* rehearsal.send({ _tag: 'Line', id: 'a', message: { _tag: 'ChargeRequested' } })).toEqual(
         accepted,
       )
       const charge = yield* rehearsal.pending('Line.charge', 'a')
@@ -588,14 +588,14 @@ test("a child's operation runs as the parent's, and its answer reaches the child
 test('a child by id removed and added again does not get the answer of its earlier run (decision 0004)', () =>
   Effect.runPromise(rehearse(
     order,
-    { flags: null, at },
+    { at },
     Effect.fnUntraced(function*(rehearsal) {
-      yield* rehearsal.send({ _tag: 'LineAdded', id: 'a' }, null)
-      yield* rehearsal.send({ _tag: 'Line', id: 'a', message: { _tag: 'ReminderSet', who: 'ann' } }, null)
+      yield* rehearsal.send({ _tag: 'LineAdded', id: 'a' })
+      yield* rehearsal.send({ _tag: 'Line', id: 'a', message: { _tag: 'ReminderSet', who: 'ann' } })
       const earlier = yield* rehearsal.pending('Line.reminder', ['a', 'ann'])
-      yield* rehearsal.send({ _tag: 'LineRemoved', id: 'a' }, null)
-      yield* rehearsal.send({ _tag: 'LineAdded', id: 'a' }, null)
-      yield* rehearsal.send({ _tag: 'Line', id: 'a', message: { _tag: 'ReminderSet', who: 'ann' } }, null)
+      yield* rehearsal.send({ _tag: 'LineRemoved', id: 'a' })
+      yield* rehearsal.send({ _tag: 'LineAdded', id: 'a' })
+      yield* rehearsal.send({ _tag: 'Line', id: 'a', message: { _tag: 'ReminderSet', who: 'ann' } })
       expect(yield* rehearsal.fire(earlier)).toBe('Dropped')
       expect(yield* rehearsal.fire('Line.reminder', ['a', 'ann'])).toBe('Delivered')
       expect((yield* rehearsal.state).lines['a']!.reminders).toEqual([])

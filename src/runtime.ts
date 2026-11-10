@@ -39,6 +39,7 @@ import {
   checkProgram,
   type Creation,
   Entities,
+  type FlagsOf,
   idFault,
   requestIdFault,
   InvariantDefect,
@@ -48,6 +49,7 @@ import {
   type Reply,
   type Request,
   type Piece,
+  type SenderOf,
   type Topic,
   topicsOf,
   type Types,
@@ -306,20 +308,6 @@ export type ConsumerOf<C, Name extends string> = Name extends keyof C
  * (decisions 0125, 0245).
  */
 export type Keep = Readonly<{ millis: number }> | 'forever'
-
-/**
- * The sender of a caller's request, as the program's schema writes it. A program whose sender is `null` takes none,
- * and a request may leave it out (decision 0245).
- */
-export type SenderOf<T extends Types> = [T['sender']] extends [null] ? Readonly<{ sender?: null }>
-  : Readonly<{ sender: T['sender'] }>
-
-/**
- * The flags of a creation, as the program's schema writes them. A program whose flags are `null` takes none, and a
- * request may leave them out (decision 0245).
- */
-export type FlagsOf<T extends Types> = [T['flags']] extends [null] ? Readonly<{ flags?: null }>
-  : Readonly<{ flags: T['flags'] }>
 
 /** What a caller does with one program's entities, deployed with the consumers `C`. */
 export interface Handle<T extends Types, C = {}> {

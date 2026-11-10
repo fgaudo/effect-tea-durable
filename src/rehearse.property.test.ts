@@ -78,7 +78,7 @@ const rehearsed = ({ balance, sends }: Scenario) =>
       Effect.gen(function*() {
         for (const [at, { message, role, requestId }] of sends.entries()) {
           const request = requestId === undefined ? undefined : { requestId: named(sends)[at]! }
-          replies.push(yield* entity.send(message, { role }, request))
+          replies.push(yield* entity.send(message, { sender: { role }, ...request }))
         }
         projection = yield* entity.projection
       }))

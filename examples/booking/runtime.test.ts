@@ -194,7 +194,7 @@ const opening = (creations: number) => ({
     ...booking.operations,
     Hold: operation.atLeastOnce((op: { event: string; seats: number }) =>
       Effect.gen(function*() {
-        for (let made = 0; made < creations; made++) yield* create(inventory, op.event, { capacity: 10 }, 'hold')
+        for (let made = 0; made < creations; made++) yield* create(inventory, op.event, 'hold', { capacity: 10 })
         yield* send(inventory, op.event, { _tag: 'HoldRequested', seats: op.seats }, 'hold')
         return { _tag: 'SeatsHeld' } as const
       })

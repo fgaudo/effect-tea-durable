@@ -250,7 +250,7 @@ describe('two entities that talk', () => {
             ...booking.operations,
             Hold: operation.atLeastOnce((op: { event: string; seats: number }) =>
               Effect.gen(function*() {
-                yield* create(inventory, op.event, frozen({ capacity: 10 }), 'hold')
+                yield* create(inventory, op.event, 'hold', frozen({ capacity: 10 }))
                 yield* send(inventory, op.event, frozen({ _tag: 'HoldRequested', seats: op.seats } as const), 'hold')
                 return { _tag: 'SeatsHeld' } as const
               })

@@ -1066,7 +1066,7 @@ describe('the shards of a runner on Cluster', () => {
       // Creates the entity `to`, which is there already, and pokes it: what each answered is the entity's state.
       Relay: operation(({ to }) =>
         Effect.gen(function*() {
-          const created = yield* createFrom(bell, to, { who: to }, 'make')
+          const created = yield* createFrom(bell, to, 'make', { who: to })
           const poked = yield* sendFrom(bell, to, { _tag: 'Poke' }, 'poke')
           return { _tag: 'Relayed', what: `${created._tag}/${poked._tag}` } as const
         })),
@@ -1076,7 +1076,7 @@ describe('the shards of a runner on Cluster', () => {
         Effect.as(
           Effect.timeoutOption(
             by === 'create'
-              ? Effect.asVoid(createFrom(ghost, to, {}, 'haunt'))
+              ? Effect.asVoid(createFrom(ghost, to, 'haunt', {}))
               : Effect.asVoid(sendFrom(ghost, to, { _tag: 'Add' }, 'haunt')),
             '2 seconds',
           ),

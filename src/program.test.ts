@@ -487,18 +487,18 @@ test('a reference is the name of its program, which the compiler checks, and typ
       Effect.sync(() => received.push([receiver.name, isProgram(receiver)])).pipe(
         Effect.as({ _tag: 'Rejected', reason: 'TooFew' } as const),
       ),
-    create: (receiver) =>
+    create: (receiver, _id, _name, ..._flags) =>
       Effect.sync(() => received.push([receiver.name, isProgram(receiver)])).pipe(Effect.as({ _tag: 'Created' } as const)),
   })
   const sending = Effect.gen(function*() {
     const reply = yield* send(Hall, 'hall-1', 'Sell', 'sell')
     // The reasons are the program's, as `send(hall, …)` gives them.
     const reason: 'TooFew' | null = reply._tag === 'Rejected' ? reply.reason : null
-    const created = yield* create(Hall, 'hall-2', { seats: 3 }, 'hall')
+    const created = yield* create(Hall, 'hall-2', 'hall', { seats: 3 })
     // @ts-expect-error the message is one of the program's inbound messages
     yield* send(Hall, 'hall-1', 'Buy', 'buy')
     // @ts-expect-error the flags are the program's
-    yield* create(Hall, 'hall-3', { rows: 3 }, 'hall')
+    yield* create(Hall, 'hall-3', 'hall', { rows: 3 })
     yield* send(hall, 'hall-1', 'Sell', 'again')
     return [reason, created._tag] as const
   })

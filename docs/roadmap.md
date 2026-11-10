@@ -10,7 +10,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   maintainer chose on 2026-11-10. Its parts, in order:
   1. `send` requires `keep`, `{ millis }` or `'forever'`, `create` takes its flags in the request, and a request
      leaves out a sender and flags that are `null`, in
-     `src/runtime.ts`, `src/rehearse.ts`, the examples, the fixtures, the guide and the tests.
+     `src/runtime.ts`, `src/rehearse.ts`, the examples, the fixtures, the guide and the tests. An argument that may
+     be left out comes last: the rehearsal's `send` takes its sender in the request, the start of `rehearse` and
+     `world.create` leave out flags that are `null`, and an operation's `create` takes its flags last.
   2. `prune` and `expire` delete in batches, in `src/storage/log.ts` and `src/storage/entities.ts`. Each batch is a
      transaction of its own, so the count each gives is a sum, and the doc comments of `Handle.prune` and
      `Handle.expire` say so. The part checks that the replies and `given_requests` have an index by program and time,

@@ -483,6 +483,26 @@ export type Types = Readonly<{
   topics?: Readonly<Record<string, Json>> | undefined
 }>
 
+/**
+ * The sender of a caller's request, as the program's schema writes it. A program whose sender is `null` takes none,
+ * and a request may leave it out (decision 0245).
+ */
+export type SenderOf<T extends Types> = [T['sender']] extends [null] ? Readonly<{ sender?: null }>
+  : Readonly<{ sender: T['sender'] }>
+
+/**
+ * The flags of a creation, as the program's schema writes them. A program whose flags are `null` takes none, and a
+ * request may leave them out (decision 0245).
+ */
+export type FlagsOf<T extends Types> = [T['flags']] extends [null] ? Readonly<{ flags?: null }>
+  : Readonly<{ flags: T['flags'] }>
+
+/**
+ * The flags of a creation as the last argument of a call, left out where the program's flags are `null`: an
+ * argument that may be left out comes last (decision 0245).
+ */
+export type Flagged<T extends Types> = [T['flags']] extends [null] ? [flags?: null] : [flags: T['flags']]
+
 /** The topics `T` declares, each with the type of its value, or `never` where it declares none (decision 0140). */
 type DeclaredTopics<T extends Types> = T extends Readonly<{ topics: infer Topics extends Readonly<Record<string, Json>> }>
   ? Topics
@@ -1815,8 +1835,8 @@ export class Entities extends Context.Service<Entities, {
   readonly create: <T extends Types>(
     program: Receiver<T>,
     id: string,
-    flags: T['flags'],
     name: string,
+    ...flags: Flagged<T>
   ) => Effect.Effect<Creation<T['rejection']>>
 }>()('@fgaudo/effect-tea-persistent/Entities') {}
 
@@ -1839,12 +1859,13 @@ export const send = <T extends Types>(
 /**
  * Creates an entity from an operation, under the run of the operation and `name`, as `send` sends. A creation is
  * stored apart from messages, so the same operation may then send the entity a message under the same name
- * (decisions 0017, 0050, 0060).
+ * (decisions 0017, 0050, 0060). The flags come last, and are left out where the program's flags are `null`
+ * (decision 0245).
  */
 export const create = <T extends Types>(
   program: Receiver<T>,
   id: string,
-  flags: T['flags'],
   name: string,
+  ...flags: Flagged<T>
 ): Effect.Effect<Creation<T['rejection']>, never, Entities> =>
-  Effect.flatMap(Effect.service(Entities), (entities) => entities.create(program, id, flags, name))
+  Effect.flatMap(Effect.service(Entities), (entities) => entities.create(program, id, name, ...flags))

@@ -21,10 +21,10 @@ describe('order', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded', charge: 'ch-1' })
         yield* rehearsal.answer('tell-warehouse', { _tag: 'WarehouseTold' })
-        expect(yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse)).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, { sender: warehouse })).toEqual(accepted)
         yield* rehearsal.answer('email-shipment', { _tag: 'ShipmentEmailed' })
         expect(yield* rehearsal.state).toMatchObject({ _tag: 'Shipped', email: 'Sent' })
       }),
@@ -36,7 +36,7 @@ describe('order', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         const deadline = yield* rehearsal.pending('payment-deadline')
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         // The timer left the state with the charge: its firing is dropped.
         expect(yield* rehearsal.fire(deadline)).toBe('Dropped')
         yield* rehearsal.answer('charge', { _tag: 'ChargeDeclined' })
@@ -50,10 +50,10 @@ describe('order', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         const first = yield* rehearsal.pending('charge')
         yield* rehearsal.answer(first, { _tag: 'ChargeDeclined' })
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-2' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-2' }, { sender: ada })
         const second = yield* rehearsal.pending('charge')
         expect(second.idempotencyKey).not.toBe(first.idempotencyKey)
         expect(yield* rehearsal.answer(first, { _tag: 'ChargeSucceeded', charge: 'ch-1' })).toBe('Dropped')
@@ -66,7 +66,7 @@ describe('order', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         const before = yield* rehearsal.pending('charge')
         yield* rehearsal.restart
         const after = yield* rehearsal.pending('charge')
@@ -81,10 +81,10 @@ describe('order', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded', charge: 'ch-1' })
         yield* rehearsal.answer('tell-warehouse', { _tag: 'WarehouseTold' })
-        yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse)
+        yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, { sender: warehouse })
         yield* rehearsal.restart
         expect(yield* rehearsal.state).toMatchObject({ _tag: 'Shipped', email: 'Unsure' })
       }),
@@ -95,12 +95,12 @@ describe('order', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded', charge: 'ch-1' })
         yield* rehearsal.answer('tell-warehouse', { _tag: 'WarehouseTold' })
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { sender: ada })).toEqual(accepted)
         // The warehouse hands the parcel over only on an accepted report.
-        expect(yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse))
+        expect(yield* rehearsal.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, { sender: warehouse }))
           .toMatchObject(rejected)
         yield* rehearsal.answer('refund', { _tag: 'RefundCompleted' })
         expect(yield* rehearsal.state).toMatchObject({ _tag: 'Cancelled', reason: 'Refunded' })
@@ -112,9 +112,9 @@ describe('order', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         expect((yield* rehearsal.projection).canCancel).toBe(false)
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ada)).toMatchObject(rejected)
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { sender: ada })).toMatchObject(rejected)
       }),
     )))
 
@@ -123,9 +123,9 @@ describe('order', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { _tag: 'Customer', id: 'eve' }))
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { sender: { _tag: 'Customer', id: 'eve' } }))
           .toMatchObject(rejected)
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, warehouse)).toMatchObject(rejected)
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { sender: warehouse })).toMatchObject(rejected)
       }),
     )))
 })

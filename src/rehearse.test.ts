@@ -69,7 +69,7 @@ describe('a deploy', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         const before = yield* rehearsal.pending('charge')
         yield* rehearsal.deploy(patient)
         const after = yield* rehearsal.pending('charge')
@@ -102,7 +102,7 @@ describe('a deploy', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         yield* rehearsal.deploy(greedy)
       }),
     ))
@@ -122,7 +122,7 @@ describe('a deploy', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.deploy(strict)
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
       }),
     ))
     const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
@@ -134,7 +134,7 @@ describe('a deploy', () => {
       order,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         yield* rehearsal.answer('charge', { _tag: 'ChargeSucceeded', charge: 'ch-1' })
         yield* rehearsal.deploy(greedy)
         expect((yield* rehearsal.projection).status).toBe('Paid')
@@ -154,7 +154,7 @@ describe('a program that cannot run as written', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         acted.push('ran')
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
       }),
     )
 
@@ -216,13 +216,13 @@ describe('a rehearsal', () => {
       clocked,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         const charge = yield* rehearsal.pending('charge')
         yield* rehearsal.answer(charge, { _tag: 'ChargeDeclined' })
         const deadline = yield* rehearsal.pending('payment-deadline')
         expect(isTimer(deadline.work)).toBe(true)
         yield* rehearsal.fire(deadline)
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-2' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-2' }, { sender: ada })
         const due = isTimer(deadline.work) ? deadline.work.at : placedAt
         expect(DateTime.isGreaterThan(due, placedAt)).toBe(true)
         expect(seen.map(DateTime.formatIso)).toEqual([placedAt, placedAt, due, due].map(DateTime.formatIso))
@@ -281,7 +281,7 @@ describe('a rehearsal', () => {
         const late = yield* rehearsal.pending('late')
         expect(yield* rehearsal.fire(late)).toBe('Delivered')
         expect(yield* rehearsal.fire(early)).toBe('Delivered')
-        yield* rehearsal.send({ _tag: 'Ping' }, { _tag: 'Tester' })
+        yield* rehearsal.send({ _tag: 'Ping' }, { sender: { _tag: 'Tester' } })
         expect((yield* rehearsal.state).seen.map(DateTime.formatIso))
           .toEqual([dueOf.late, dueOf.late, dueOf.late].map(DateTime.formatIso))
       }),
@@ -310,7 +310,7 @@ describe('a rehearsal', () => {
       insistent,
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         yield* rehearsal.answer('charge', { _tag: 'ChargeDeclined' })
       }),
     ))
@@ -329,7 +329,7 @@ describe('a rehearsal', () => {
       },
       start,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* rehearsal.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         const first = yield* rehearsal.pending('charge')
         expect(yield* rehearsal.answer(first, { _tag: 'ChargeDeclined' })).toBe('Delivered')
         const second = yield* rehearsal.pending('charge')
@@ -362,7 +362,7 @@ describe("a rehearsal's request ids", () => {
   })
   const north = { _tag: 'Turnstile', id: 'north' } as const
   const south = { _tag: 'Turnstile', id: 'south' } as const
-  const opened = { flags: null, at: placedAt }
+  const opened = { at: placedAt }
   const entered = { _tag: 'Entered' } as const
 
   test('answers a retry under the same request id from the stored reply, and applies the message once', () =>
@@ -370,11 +370,11 @@ describe("a rehearsal's request ids", () => {
       door,
       opened,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Opened' }, north)
-        expect(yield* rehearsal.send(entered, north, { requestId: 'entry-1' })).toEqual({ _tag: 'Accepted' })
-        expect(yield* rehearsal.send(entered, north, { requestId: 'entry-1' })).toEqual({ _tag: 'Accepted' })
+        yield* rehearsal.send({ _tag: 'Opened' }, { sender: north })
+        expect(yield* rehearsal.send(entered, { sender: north, requestId: 'entry-1' })).toEqual({ _tag: 'Accepted' })
+        expect(yield* rehearsal.send(entered, { sender: north, requestId: 'entry-1' })).toEqual({ _tag: 'Accepted' })
         expect(yield* rehearsal.projection).toEqual({ entries: 1 })
-        yield* rehearsal.send(entered, north, { requestId: 'entry-2' })
+        yield* rehearsal.send(entered, { sender: north, requestId: 'entry-2' })
         expect(yield* rehearsal.projection).toEqual({ entries: 2 })
       }),
     )))
@@ -385,7 +385,7 @@ describe("a rehearsal's request ids", () => {
       door,
       opened,
       Effect.fnUntraced(function*(rehearsal) {
-        const exit = yield* Effect.exit(rehearsal.send(entered, north, { requestId: 'entry\u0000' }))
+        const exit = yield* Effect.exit(rehearsal.send(entered, { sender: north, requestId: 'entry\u0000' }))
         const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
         expect(cause instanceof InvariantDefect && cause.reason)
           .toBe('the request id is "entry\\u0000", which is no text a database holds')
@@ -397,10 +397,10 @@ describe("a rehearsal's request ids", () => {
       door,
       opened,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.send(entered, north, { requestId: 'entry-1' }))
+        expect(yield* rehearsal.send(entered, { sender: north, requestId: 'entry-1' }))
           .toEqual({ _tag: 'Rejected', reason: 'Closed' })
-        yield* rehearsal.send({ _tag: 'Opened' }, north)
-        expect(yield* rehearsal.send(entered, north, { requestId: 'entry-1' }))
+        yield* rehearsal.send({ _tag: 'Opened' }, { sender: north })
+        expect(yield* rehearsal.send(entered, { sender: north, requestId: 'entry-1' }))
           .toEqual({ _tag: 'Rejected', reason: 'Closed' })
         expect(yield* rehearsal.projection).toEqual({ entries: 0 })
       }),
@@ -411,12 +411,12 @@ describe("a rehearsal's request ids", () => {
       door,
       opened,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Opened' }, north)
-        yield* rehearsal.send(entered, north, { requestId: 'entry-1' })
+        yield* rehearsal.send({ _tag: 'Opened' }, { sender: north })
+        yield* rehearsal.send(entered, { sender: north, requestId: 'entry-1' })
         yield* rehearsal.restart
-        yield* rehearsal.send(entered, north, { requestId: 'entry-1' })
+        yield* rehearsal.send(entered, { sender: north, requestId: 'entry-1' })
         yield* rehearsal.deploy(door)
-        yield* rehearsal.send(entered, north, { requestId: 'entry-1' })
+        yield* rehearsal.send(entered, { sender: north, requestId: 'entry-1' })
         expect(yield* rehearsal.projection).toEqual({ entries: 1 })
       }),
     )))
@@ -427,9 +427,9 @@ describe("a rehearsal's request ids", () => {
       door,
       opened,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Opened' }, north)
-        yield* rehearsal.send(entered, north, { requestId: 'entry-1' })
-        yield* rehearsal.send(entered, south, { requestId: 'entry-1' })
+        yield* rehearsal.send({ _tag: 'Opened' }, { sender: north })
+        yield* rehearsal.send(entered, { sender: north, requestId: 'entry-1' })
+        yield* rehearsal.send(entered, { sender: south, requestId: 'entry-1' })
         expect(yield* rehearsal.projection).toEqual({ entries: 2 })
       }),
     )))
@@ -439,10 +439,10 @@ describe("a rehearsal's request ids", () => {
       door,
       opened,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Opened' }, north, { requestId: 'request-2' })
-        yield* rehearsal.send(entered, north, { requestId: 'request-3' })
-        yield* rehearsal.send(entered, north)
-        yield* rehearsal.send(entered, north)
+        yield* rehearsal.send({ _tag: 'Opened' }, { sender: north, requestId: 'request-2' })
+        yield* rehearsal.send(entered, { sender: north, requestId: 'request-3' })
+        yield* rehearsal.send(entered, { sender: north })
+        yield* rehearsal.send(entered, { sender: north })
         expect(yield* rehearsal.projection).toEqual({ entries: 3 })
       }),
     )))
@@ -454,11 +454,11 @@ describe("a rehearsal's request ids", () => {
       door,
       opened,
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Opened' }, north)
-        yield* rehearsal.send(entered, north)
-        yield* rehearsal.send(entered, north)
+        yield* rehearsal.send({ _tag: 'Opened' }, { sender: north })
+        yield* rehearsal.send(entered, { sender: north })
+        yield* rehearsal.send(entered, { sender: north })
         for (const requestId of ['request-1', 'request-2', 'request-3', 'request-4']) {
-          yield* rehearsal.send(entered, north, { requestId })
+          yield* rehearsal.send(entered, { sender: north, requestId })
         }
         expect(yield* rehearsal.projection).toEqual({ entries: 6 })
       }),
@@ -468,10 +468,10 @@ describe("a rehearsal's request ids", () => {
     Effect.runPromise(rehearse.together(
       placedAt,
       Effect.fnUntraced(function*(world) {
-        const member = yield* world.create(door, 'door-1', null)
-        yield* member.send({ _tag: 'Opened' }, north)
-        yield* member.send(entered, north, { requestId: 'entry-1' })
-        yield* member.send(entered, north, { requestId: 'entry-1' })
+        const member = yield* world.create(door, 'door-1')
+        yield* member.send({ _tag: 'Opened' }, { sender: north })
+        yield* member.send(entered, { sender: north, requestId: 'entry-1' })
+        yield* member.send(entered, { sender: north, requestId: 'entry-1' })
         expect(yield* member.projection).toEqual({ entries: 1 })
       }),
     )))
@@ -483,7 +483,7 @@ describe("a rehearsal's request ids", () => {
         door,
         opened,
         Effect.fnUntraced(function*(rehearsal) {
-          yield* rehearsal.send(entered, { _tag: 'Turnstile', id: 7 } as unknown as typeof north, request)
+          yield* rehearsal.send(entered, { sender: { _tag: 'Turnstile', id: 7 } as unknown as typeof north, ...request })
         }),
       ))
       const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
@@ -531,7 +531,7 @@ describe('a world', () => {
       const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
       const held = yield* world.create(mailing, 'booking-1', flags)
       expect(yield* held.run('hold')).toBe('Delivered')
-      yield* held.send({ _tag: 'ConfirmRequested' }, { _tag: 'Customer', id: 'ada' })
+      yield* held.send({ _tag: 'ConfirmRequested' }, { sender: { _tag: 'Customer', id: 'ada' } })
       expect(yield* held.answer('confirm', { _tag: 'SeatsConfirmed' })).toBe('Delivered')
       expect((yield* held.state)._tag).toBe('Confirmed')
       expect((yield* seats.projection).available).toBe(2)
@@ -549,7 +549,7 @@ describe('a world', () => {
         yield* world.create(inventory, 'concert-1', { capacity: 4 })
         const held = yield* world.create(mailing, 'booking-1', flags)
         yield* held.run('hold')
-        yield* held.send({ _tag: 'ConfirmRequested' }, { _tag: 'Customer', id: 'ada' })
+        yield* held.send({ _tag: 'ConfirmRequested' }, { sender: { _tag: 'Customer', id: 'ada' } })
         yield* held.run('confirm')
       }),
     ).pipe(Effect.provide(Layer.mock(Receipts, {}))))
@@ -626,7 +626,7 @@ describe('a world', () => {
   test('creates an entity from a run, and answers the run sent again after a crash as the first', () => {
     const creating = holdingBy(operation.atLeastOnce(({ event, seats }) =>
       Effect.gen(function*() {
-        const created = yield* create(inventory, event, { capacity: 4 }, 'inventory')
+        const created = yield* create(inventory, event, 'inventory', { capacity: 4 })
         if (created._tag !== 'Created') return yield* Effect.die('the inventory was there already')
         const reply = yield* send(inventory, event, { _tag: 'HoldRequested', seats }, 'hold')
         return reply._tag === 'Accepted' ? { _tag: 'SeatsHeld' } as const : yield* Effect.die('no hold')
@@ -650,7 +650,7 @@ describe('a world', () => {
     const Inventory = reference<typeof inventory>('Inventory')
     const creating = holdingBy(operation.atLeastOnce(({ event, seats }) =>
       Effect.gen(function*() {
-        const created = yield* create(Inventory, event, { capacity: 4 }, 'inventory')
+        const created = yield* create(Inventory, event, 'inventory', { capacity: 4 })
         if (created._tag !== 'Created') return yield* Effect.die('the inventory was there already')
         const reply = yield* send(Inventory, event, { _tag: 'HoldRequested', seats }, 'hold')
         return reply._tag === 'Accepted' ? { _tag: 'SeatsHeld' } as const : yield* Effect.die('no hold')
@@ -683,7 +683,7 @@ describe('a world', () => {
     const closed = { ...inventory, init: () => rejectWith('SalesClosed' as const) }
     const creating = holdingBy(operation.atLeastOnce(({ event }) =>
       Effect.gen(function*() {
-        const created = yield* create(closed, event, { capacity: 4 }, 'inventory')
+        const created = yield* create(closed, event, 'inventory', { capacity: 4 })
         expect(created).toEqual({ _tag: 'Rejected', reason: 'SalesClosed' })
         return { _tag: 'SeatsUnavailable', reason: 'SalesClosed' } as const
       })
@@ -725,7 +725,7 @@ describe('a world', () => {
         ]
         const before: Array<string> = []
         for (const one of placed) {
-          yield* one.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+          yield* one.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
           before.push((yield* one.pending('charge')).idempotencyKey)
         }
         yield* world.restart
@@ -746,10 +746,10 @@ describe('a world', () => {
         yield* held.run('hold')
         const deadline = yield* held.pending('deadline')
         const shipped = yield* world.create(order, 'order-1', start.flags)
-        yield* shipped.send({ _tag: 'PayRequested', payment: 'card-1' }, ada)
+        yield* shipped.send({ _tag: 'PayRequested', payment: 'card-1' }, { sender: ada })
         yield* shipped.answer('charge', { _tag: 'ChargeSucceeded', charge: 'ch-1' })
         yield* shipped.answer('tell-warehouse', { _tag: 'WarehouseTold' })
-        yield* shipped.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, warehouse)
+        yield* shipped.send({ _tag: 'ShipmentReported', tracking: 'tr-1' }, { sender: warehouse })
         yield* world.deploy(tacit)
         // The order's at-most-once email delivers its `unknown` message: the order was restarted.
         expect(yield* shipped.state).toMatchObject({ _tag: 'Shipped', email: 'Unsure' })
@@ -800,10 +800,10 @@ describe('a rehearsal of keys with a parameter', () => {
   test('gives the work under each parameter, and answers it alone', () =>
     Effect.runPromise(rehearse(
       lines,
-      { flags: null, at: placedAt },
+      { at: placedAt },
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send('+a', null)
-        yield* rehearsal.send('+b', null)
+        yield* rehearsal.send('+a')
+        yield* rehearsal.send('+b')
         const a = yield* rehearsal.pending('charge', 'a')
         expect(a.key).toEqual({ name: 'charge', parameter: 'a' })
         expect(a.work).toEqual({ _tag: 'Charge', line: 'a' })
@@ -847,8 +847,8 @@ describe('a rehearsal by a key', () => {
       lines,
       { flags: null, at: placedAt },
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send('+a', null)
-        yield* rehearsal.send('+b', null)
+        yield* rehearsal.send('+a')
+        yield* rehearsal.send('+b')
         expect(yield* rehearsal.underWay('charge', 'a')).toEqual(yield* rehearsal.pending('charge', 'a'))
         expect(yield* rehearsal.answer('charge', 'a', 'charged a')).toBe('Delivered')
         expect(yield* rehearsal.underWay('charge', 'a')).toBeNull()
@@ -971,11 +971,11 @@ describe('time that passes', () => {
       meter('Meter'),
       { flags: {}, at: placedAt },
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Ping' }, tester)
+        yield* rehearsal.send({ _tag: 'Ping' }, { sender: tester })
         yield* rehearsal.advance('3 hours')
-        yield* rehearsal.send({ _tag: 'Ping' }, tester)
+        yield* rehearsal.send({ _tag: 'Ping' }, { sender: tester })
         yield* rehearsal.advance(0)
-        yield* rehearsal.send({ _tag: 'Ping' }, tester)
+        yield* rehearsal.send({ _tag: 'Ping' }, { sender: tester })
         expect((yield* rehearsal.state).seen).toEqual([
           seenAs('Ping', placedAt),
           seenAs('Ping', hours(3)),
@@ -989,13 +989,13 @@ describe('time that passes', () => {
       meter('Meter'),
       { flags: {}, at: placedAt },
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Arm', key: 'b', at: hours(2), every: null, next: null }, tester)
-        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 30 * 60 * 1000, next: null }, tester)
+        yield* rehearsal.send({ _tag: 'Arm', key: 'b', at: hours(2), every: null, next: null }, { sender: tester })
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 30 * 60 * 1000, next: null }, { sender: tester })
         // Within two hours, `a` fires at 1h, 1h30 and 2h. `b` fires at 2h before `a` does, since `a` came back at
         // 2h after `b` was armed.
         yield* rehearsal.advance('2 hours')
         expect(yield* rehearsal.underWay('b')).toBeNull()
-        yield* rehearsal.send({ _tag: 'Ping' }, tester)
+        yield* rehearsal.send({ _tag: 'Ping' }, { sender: tester })
         expect((yield* rehearsal.state).seen.slice(2)).toEqual([
           seenAs('a', hours(1)),
           seenAs('a', hours(1.5)),
@@ -1012,7 +1012,7 @@ describe('time that passes', () => {
       meter('Meter'),
       { flags: {}, at: hours(1) },
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: placedAt, every: null, next: null }, tester)
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: placedAt, every: null, next: null }, { sender: tester })
         yield* rehearsal.advance(0)
         expect((yield* rehearsal.state).seen).toEqual([seenAs('a', hours(1)), seenAs('a', hours(1))])
       }),
@@ -1035,7 +1035,7 @@ describe('time that passes', () => {
       meter('Meter'),
       { flags: {}, at: placedAt },
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 0, next: null }, tester)
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 0, next: null }, { sender: tester })
         yield* rehearsal.advance('1 day')
       }),
     ))
@@ -1050,7 +1050,7 @@ describe('time that passes', () => {
       meter('Meter'),
       { flags: {}, at: placedAt },
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 0, next: 'b' }, tester)
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 0, next: 'b' }, { sender: tester })
         yield* rehearsal.advance('1 day')
       }),
     ))
@@ -1065,7 +1065,7 @@ describe('time that passes', () => {
       meter('Meter'),
       { flags: {}, at: placedAt },
       Effect.fnUntraced(function*(rehearsal) {
-        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 60 * 60 * 1000, next: 'b' }, tester)
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: hours(1), every: 60 * 60 * 1000, next: 'b' }, { sender: tester })
         yield* rehearsal.advance('3 hours')
         expect((yield* rehearsal.state).seen.slice(1)).toEqual([
           seenAs('a', hours(1)),
@@ -1082,10 +1082,10 @@ describe('time that passes', () => {
       Effect.fnUntraced(function*(world) {
         const one = yield* world.create(meter('One'), 'one', {})
         const other = yield* world.create(meter('Other'), 'other', {})
-        yield* other.send({ _tag: 'Arm', key: 'a', at: hours(1), every: null, next: null }, tester)
-        yield* one.send({ _tag: 'Arm', key: 'a', at: hours(2), every: null, next: null }, tester)
+        yield* other.send({ _tag: 'Arm', key: 'a', at: hours(1), every: null, next: null }, { sender: tester })
+        yield* one.send({ _tag: 'Arm', key: 'a', at: hours(2), every: null, next: null }, { sender: tester })
         yield* world.advance('90 minutes')
-        yield* one.send({ _tag: 'Ping' }, tester)
+        yield* one.send({ _tag: 'Ping' }, { sender: tester })
         expect((yield* other.state).seen.slice(1)).toEqual([seenAs('a', hours(1))])
         expect((yield* one.state).seen.slice(1)).toEqual([seenAs('Ping', hours(1.5))])
         yield* world.advance('1 hour')
@@ -1112,8 +1112,8 @@ describe('time that passes', () => {
       Effect.fnUntraced(function*(world) {
         const first = yield* world.create(logged('First'), 'first', {})
         const second = yield* world.create(logged('Second'), 'second', {})
-        yield* second.send({ _tag: 'Arm', key: 'a', at: hours(1), every: null, next: null }, tester)
-        yield* first.send({ _tag: 'Arm', key: 'a', at: hours(1), every: null, next: null }, tester)
+        yield* second.send({ _tag: 'Arm', key: 'a', at: hours(1), every: null, next: null }, { sender: tester })
+        yield* first.send({ _tag: 'Arm', key: 'a', at: hours(1), every: null, next: null }, { sender: tester })
         yield* world.advance('1 hour')
         expect(fired).toEqual(['First', 'Second'])
       }),

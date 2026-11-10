@@ -30,12 +30,24 @@ A program that has no sender has the sender `null`, and every `create` and `send
   for, so a default would be a guess. A default of a day would apply a retry after a day a second time, in silence.
   `'forever'` keeps the reply as a `send` without `keep` did. A `keep` that is neither is the caller's defect, and
   reaches no entity (decision 0053). On Cluster, `'forever'` keeps Cluster's rows of the request for ever too.
+- **An argument that may be left out comes last.** A call's last argument, or an object that is its last argument,
+  holds what a caller may leave out. An argument left out in the middle of a call would need a second signature,
+  and TypeScript allows no optional parameter before a required one. Effect's own calls end with their options
+  too. The rules below apply it.
 - **A request leaves out a sender that is `null`.** Where the program's sender is `null`, the request of `create`
-  and of `send` takes no `sender`, and the rehearsal's `send` takes none. A program with a sender still passes it.
+  and of `send` takes no `sender`. A program with a sender still passes it.
 - **`create` takes its flags in the request, and leaves out flags that are `null`.** `create(id, flags, request)`
-  becomes `create(id, { flags, requestId, sender })`. A flags argument between the id and the request could not be
-  left out without a second signature, so the flags move into the request, where they are left out as the sender
-  is. A program with flags still passes them. The rehearsal's own flags, given to `rehearse`, are not changed.
+  becomes `create(id, { flags, requestId, sender })`, so the flags are left out as the sender is. A program with
+  flags still passes them.
+- **The rehearsal's `send` takes its sender in the request.** `send(message, sender, request?)` becomes
+  `send(message, { sender, requestId? })`, as the runtime's `send` takes its request. A program whose sender is
+  `null` leaves the sender out, and then the request whole, as `send(message)`.
+- **The rehearsal's flags come last, and are left out where they are `null`.** The start of `rehearse` is
+  `{ at, flags }`, whose `flags` a program with flags `null` leaves out. `world.create(program, id, flags)` keeps the
+  flags last, and leaves them out the same way.
+- **An operation's `create` takes its flags last.** `create(receiver, id, flags, name)` becomes
+  `create(receiver, id, name, flags)`, and so does `Entities.create`. The flags are left out where the receiver's
+  flags are `null`. `send(receiver, id, message, name)` is not changed, since its message is never left out.
 - **The runtime sweeps at an interval.** `launch` takes `sweep`, `{ millis, prune?: false }` or `'none'`, every
   300 000 ms by default. Each sweep runs `expire`, then `prune` unless `prune` is `false`, for every program
   deployed. A sweep that fails logs a warning with its cause, and the next one runs at the next interval. The
@@ -88,6 +100,11 @@ A program that has no sender has the sender `null`, and every `create` and `send
 
 - **`create`'s flags left positional, and written `null`.** Fable 5.2, asked by the maintainer, advised it while
   the signature stays as it was; the maintainer chose to move the flags into the request instead.
+- **The rehearsal's sender left positional, left out only where it is `null`.** A test that names a request id
+  would still write `null` before it, so a program without a sender would not leave the sender out.
+- **An operation's `create` left as it was.** No operation creates an entity of a program whose flags are `null`
+  today, so no call writes `null`. The maintainer chose to apply the rule to every call before the first release,
+  since a later change breaks every program that creates from an operation.
 - **A default `keep` of a day.** It ends the growth without a change to every call, but a late retry is applied
   twice without the boundary having chosen it.
 - **A sweep left off by default.** A deployment whose operator does not know of it grows as before.
@@ -99,7 +116,8 @@ A program that has no sender has the sender `null`, and every `create` and `send
 ## Consequences
 
 - Every `send` of the examples, the guide and the tests gives `keep`, and every `create` gives its flags in the
-  request. The quick start and the examples of a program without a sender or flags leave them out.
+  request. Every rehearsal's `send` gives its sender in the request, and every operation's `create` gives its flags
+  last. The quick start and the examples of a program without a sender or flags leave them out.
 - `launch` gains `sweep`. The shared launcher of the runtime's tests passes `'none'`, except in the tests of the
   sweep, so that the sweep's fiber moves no schedule of the explored tests.
 - SQLite gives no room back to the volume once rows are deleted: a sweep bounds the growth of the file and shrinks

@@ -17,11 +17,14 @@ import {
   type Key,
   isTimer,
   isProgram,
+  type Flagged,
+  type FlagsOf,
   type Program,
   type Receiver,
   type Reply,
   type Request,
   runnerOf,
+  type SenderOf,
   type Types,
 } from './program.ts'
 
@@ -53,12 +56,12 @@ export interface Pending<Work = unknown> {
 type Parameter<T extends Types, K> = K extends keyof T['parameter'] ? [parameter: T['parameter'][K]] : []
 
 /**
- * Who sends a rehearsal's message, then the request the test names, if any. A program whose sender is `null` may
- * leave the sender out, as a caller of the runtime does (decision 0245).
+ * The request of a rehearsal's message: who sends it, and the request id the test names, if any. A program whose
+ * sender is `null` may leave the sender out, and then the request whole, as a caller of the runtime does: an
+ * argument that may be left out comes last (decision 0245).
  */
-type SentBy<T extends Types> = [T['sender']] extends [null]
-  ? [sender?: null, request?: Readonly<{ requestId: string }>]
-  : [sender: T['sender'], request?: Readonly<{ requestId: string }>]
+type SentBy<T extends Types> = [T['sender']] extends [null] ? [request?: Readonly<{ requestId?: string }> & SenderOf<T>]
+  : [request: Readonly<{ requestId?: string }> & SenderOf<T>]
 
 /** The work under way under a key of `T`, as `pending` gives it. */
 type PendingOf<T extends Types> = Pending<Piece<T['operation'], T['internal']>>
@@ -74,9 +77,10 @@ interface Acts<T extends Types> {
    * under the same sender and request id is a retry, given the reply stored for the first and not applied again,
    * as the runtime answers it. The reply is kept for the whole rehearsal, a restart and a deploy included, as the
    * runtime keeps one sent with `keep: 'forever'`. Without a request id, each send is a new request, whose reply no
-   * named request finds (decision 0200). A program whose sender is `null` may leave the sender out (decision 0245).
+   * named request finds (decision 0200). A program whose sender is `null` may leave the sender out, and the request
+   * with it (decision 0245).
    */
-  readonly send: (message: T['inbound'], ...from: SentBy<T>) => Effect.Effect<Machine.StoredReply<T['rejection']>>
+  readonly send: (message: T['inbound'], ...request: SentBy<T>) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /**
    * Delivers an inbound message from another entity's operation, as a new run of it (decision 0059). The entity
    * need not exist: the test answers for it.
@@ -168,9 +172,10 @@ export interface World {
    * Creates an entity of `program`, which the world runs under its name from then on. It fails the test when the
    * world runs another program under that name, as a second deploy of a name fails in the runtime (decision 0075).
    * It fails the test too when the program's `init` rejects the flags: a test of a rejection calls `init` itself,
-   * which is pure, or creates from a runner, whose `create` is answered `Rejected` (decision 0182).
+   * which is pure, or creates from a runner, whose `create` is answered `Rejected` (decision 0182). The flags come
+   * last, and are left out where the program's flags are `null` (decision 0245).
    */
-  readonly create: <T extends Types>(program: Program<T>, id: string, flags: T['flags']) => Effect.Effect<Member<T>>
+  readonly create: <T extends Types>(program: Program<T>, id: string, ...flags: Flagged<T>) => Effect.Effect<Member<T>>
   /** The process dies after the last commit, and every entity is activated again from what was stored. */
   readonly restart: Effect.Effect<void>
   /**
@@ -467,7 +472,7 @@ const makeWorld = (at: DateTime.Utc) => {
             ? Effect.succeed<Reply<R['rejection']>>({ _tag: 'NotFound' })
             : receive(receiver, message, request)
         }),
-      create: <R extends Types>(program: Receiver<R>, id: string, flags: R['flags'], name: string) =>
+      create: <R extends Types>(program: Receiver<R>, id: string, name: string, ...[given]: Flagged<R>) =>
         Effect.flatMap(named('creation', program as unknown as Receiver<Types>, id, name), (request) =>
           Effect.suspend((): Effect.Effect<Creation<R['rejection']>> => {
             const existing = entities.get(addressKey({ name: program.name, id })) as Entity<R> | undefined
@@ -475,7 +480,8 @@ const makeWorld = (at: DateTime.Utc) => {
               // A creation that cannot be stored is the creator's defect, as in the runtime (decision 0049). One
               // `init` rejects creates nothing, and its reply is not stored (decision 0182).
               return Effect.map(
-                Effect.flatMap(deployedAs(program), (deployed) => born(deployed, id, flags, request)),
+                Effect.flatMap(deployedAs(program), (deployed) =>
+                  born(deployed, id, given === undefined ? null : given, request)),
                 (born): Creation<R['rejection']> => born._tag === 'Rejected' ? born : { _tag: 'Created' },
               )
             }
@@ -581,14 +587,14 @@ const makeWorld = (at: DateTime.Utc) => {
         const json = encode(program.schemas.projection, program.project(entity.machine.stored.state), 'projection')
         return Schema.decodeUnknownSync(program.schemas.projection)(JSON.parse(JSON.stringify(json)))
       }),
-      send: (message, ...[who, given]: SentBy<T>) =>
+      send: (message, ...[given]: SentBy<T>) =>
         Effect.suspend(() => {
           const program = programOf(entity)
-          const sender: T['sender'] = who === undefined ? null : who
+          const sender: T['sender'] = given?.sender === undefined ? null : given.sender
           // The request's key encodes the sender, as the program's: a sender that does not encode is the caller's
           // defect, so it is checked first (decision 0040).
           encode(program.schemas.sender, sender, 'sender')
-          if (given !== undefined) {
+          if (given?.requestId !== undefined) {
             // A rehearsal refuses the request ids the runtime refuses (decision 0204).
             const fault = requestIdFault(given.requestId)
             if (fault !== undefined) return invariant(fault)
@@ -626,7 +632,7 @@ const makeWorld = (at: DateTime.Utc) => {
   }
 
   const world: World = {
-    create: (program, id, flags) =>
+    create: (program, id, ...[flags]) =>
       Effect.suspend(() => {
         // A runner's `create` reaches the program by name, as in the runtime. The test names the program itself, so
         // another one under that name is the test's mistake, and is not run in silence.
@@ -638,7 +644,8 @@ const makeWorld = (at: DateTime.Utc) => {
             return Effect.die(`${program.name} '${id}' exists in the world already`)
           }
           // No one retries the test's creation, so it is the entity's own request: no sender is needed.
-          return Effect.flatMap(born(deployed, id, flags, { _tag: 'Self', id: 'creation' }), (entity) =>
+          const given = flags === undefined ? null : flags
+          return Effect.flatMap(born(deployed, id, given, { _tag: 'Self', id: 'creation' }), (entity) =>
             entity._tag === 'Rejected'
               ? Effect.die(`the init of ${program.name} rejected the flags of '${id}'`)
               : Effect.succeed(memberOf(entity.entity)))
@@ -668,13 +675,14 @@ const makeWorld = (at: DateTime.Utc) => {
  */
 const rehearseOne = <T extends Types, E>(
   program: Program<T>,
-  start: Readonly<{ flags: T['flags']; at: DateTime.Utc }>,
+  start: Readonly<{ at: DateTime.Utc }> & FlagsOf<T>,
   scenario: (rehearsal: Rehearsal<T>) => Effect.Effect<void, E>,
 ): Effect.Effect<void, E> =>
   // A program the runtime would refuse is refused here too, before the scenario runs (decision 0054).
   Effect.andThen(Effect.sync(() => checkProgram(program)), () => {
     const world = makeWorld(start.at)
-    return Effect.flatMap(world.create(program, 'rehearsal', start.flags), ({ run: _, ...acts }) =>
+    const flags = (start.flags === undefined ? null : start.flags) as T['flags']
+    return Effect.flatMap(world.create(program, 'rehearsal', ...[flags] as Flagged<T>), ({ run: _, ...acts }) =>
       scenario({
         ...acts,
         restart: world.restart,
@@ -698,7 +706,7 @@ const together = <E, R>(at: DateTime.Utc, scenario: (world: World) => Effect.Eff
 
 /**
  * Runs a scenario of one entity of `program`, created from `start.flags` at `start.at`, without a database or a
- * clock. The scenario is given a `Rehearsal`, and the test answers the entity's operations, fires its timers and
+ * clock. A program whose flags are `null` may leave `start.flags` out (decision 0245). The scenario is given a `Rehearsal`, and the test answers the entity's operations, fires its timers and
  * restarts the process. `rehearse.together(at, scenario)` runs several entities in one world instead, where a
  * runner's requests reach the other entities.
  */

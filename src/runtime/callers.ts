@@ -30,6 +30,7 @@ import {
 import {
   type Address,
   type Creation,
+  type Flagged,
   encode,
   Entities,
   idFault,
@@ -419,10 +420,10 @@ export const entities = (p: Process, entity: Address, key: Key, incarnation: num
           ).pipe(Effect.ensuring(forget)))
         return faulted(Effect.repeat(attempt, { until: (reply) => reply !== null }))
       }),
-    create: <T extends Types>(program: Receiver<T>, id: string, flags: T['flags'], name: string) =>
+    create: <T extends Types>(program: Receiver<T>, id: string, name: string, ...[flags]: Flagged<T>) =>
       Effect.flatMap(named('creation', program, id, name), ({ deployed, request }) => {
         const attempt = Effect.tap(
-          unlessCrashed(create(p, deployed, id, flags, request), null),
+          unlessCrashed(create(p, deployed, id, flags === undefined ? null : flags, request), null),
           (creation) => creation === null ? Effect.sleep(`${p.retry} millis`) : Effect.void,
         )
         return faulted(Effect.repeat(attempt, { until: (creation) => creation !== null }))

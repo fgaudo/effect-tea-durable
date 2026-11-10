@@ -530,7 +530,7 @@ test('a cancellation is free for two minutes, and refused once the timer has fir
       })
       yield* rehearsal.advance({ minutes: 2 })
       expect(yield* rehearsal.projection).toMatchObject({ canCancel: false, cancellableUntil: null })
-      expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ann)).toMatchObject(rejected)
+      expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { sender: ann })).toMatchObject(rejected)
     }),
   )))
 ```
@@ -548,10 +548,10 @@ sender and request id is a retry, answered from the stored reply and not applied
 
 ```ts
 yield* rehearsal.answer('unlock', { _tag: 'Unlocked' })
-const end = { requestId: 'end-1' }
-expect(yield* rehearsal.send({ _tag: 'EndRequested' }, ann, end)).toEqual(accepted)
+const end = { sender: ann, requestId: 'end-1' }
+expect(yield* rehearsal.send({ _tag: 'EndRequested' }, end)).toEqual(accepted)
 // The phone never got the answer, and sends the end again: the ride ended once, and is told so again.
-expect(yield* rehearsal.send({ _tag: 'EndRequested' }, ann, end)).toEqual(accepted)
+expect(yield* rehearsal.send({ _tag: 'EndRequested' }, end)).toEqual(accepted)
 ```
 
 Sent under a new request id, the same end is a new request, and the ride, docking already, rejects it. So a caller

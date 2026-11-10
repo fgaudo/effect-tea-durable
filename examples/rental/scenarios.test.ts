@@ -29,7 +29,7 @@ describe('ride', () => {
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer('unlock', { _tag: 'Unlocked' })
         yield* rehearsal.advance({ minutes: 10, seconds: 30 })
-        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, ann)).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, { sender: ann })).toEqual(accepted)
         yield* rehearsal.answer('dock', { _tag: 'Docked' })
         expect(yield* rehearsal.projection).toMatchObject({ status: 'Ended', costInCents: 11 * 20 })
       }),
@@ -42,7 +42,7 @@ describe('ride', () => {
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer('unlock', { _tag: 'UnlockRefused', reason: 'RateChanged' })
         expect(yield* rehearsal.state).toMatchObject({ _tag: 'Refused', reason: 'RateChanged' })
-        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, ann)).toMatchObject(rejected)
+        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, { sender: ann })).toMatchObject(rejected)
       }),
     )))
 
@@ -59,7 +59,7 @@ describe('ride', () => {
         })
         yield* rehearsal.advance({ minutes: 2 })
         expect(yield* rehearsal.projection).toMatchObject({ canCancel: false, cancellableUntil: null })
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ann)).toMatchObject(rejected)
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { sender: ann })).toMatchObject(rejected)
       }),
     )))
 
@@ -70,7 +70,7 @@ describe('ride', () => {
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer('unlock', { _tag: 'Unlocked' })
         yield* rehearsal.advance({ minutes: 1 })
-        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, ann)).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'CancelRequested' }, { sender: ann })).toEqual(accepted)
         yield* rehearsal.answer('dock', { _tag: 'Docked' })
         expect(yield* rehearsal.projection).toMatchObject({ status: 'Ended', costInCents: 0 })
       }),
@@ -83,11 +83,11 @@ describe('ride', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer('unlock', { _tag: 'Unlocked' })
-        const end = { requestId: 'end-1' }
-        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, ann, end)).toEqual(accepted)
+        const end = { sender: ann, requestId: 'end-1' }
+        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, end)).toEqual(accepted)
         // The phone never got the answer, and sends the end again: the ride ended once, and is told so again.
-        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, ann, end)).toEqual(accepted)
-        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, ann, { requestId: 'end-2' })).toMatchObject(rejected)
+        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, end)).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, { sender: ann, requestId: 'end-2' })).toMatchObject(rejected)
         expect((yield* rehearsal.state)._tag).toBe('Docking')
       }),
     )))
@@ -98,7 +98,7 @@ describe('ride', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer('unlock', { _tag: 'Unlocked' })
-        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, { _tag: 'Customer', id: 'bob' }))
+        expect(yield* rehearsal.send({ _tag: 'EndRequested' }, { sender: { _tag: 'Customer', id: 'bob' } }))
           .toMatchObject(rejected)
       }),
     )))
@@ -111,7 +111,7 @@ describe('ride', () => {
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer('unlock', { _tag: 'Unlocked' })
         const email = yield* rehearsal.pending('email')
-        yield* rehearsal.send({ _tag: 'EndRequested' }, ann)
+        yield* rehearsal.send({ _tag: 'EndRequested' }, { sender: ann })
         yield* rehearsal.answer('dock', { _tag: 'Docked' })
         expect((yield* rehearsal.pending('email')).idempotencyKey).toBe(email.idempotencyKey)
         expect(yield* rehearsal.answer(email, { _tag: 'StartEmailed' })).toBe('Delivered')
@@ -132,7 +132,7 @@ describe('ride', () => {
       start,
       Effect.fnUntraced(function*(rehearsal) {
         yield* rehearsal.answer('unlock', { _tag: 'Unlocked' })
-        yield* rehearsal.send({ _tag: 'EndRequested' }, ann)
+        yield* rehearsal.send({ _tag: 'EndRequested' }, { sender: ann })
       }),
     ))
     expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : null).toMatchObject({
@@ -165,7 +165,7 @@ describe('bike', () => {
       bike,
       docked,
       Effect.fnUntraced(function*(rehearsal) {
-        expect(yield* rehearsal.send({ _tag: 'RateSet', centsPerMinute: 25 }, { _tag: 'Operator' })).toEqual(accepted)
+        expect(yield* rehearsal.send({ _tag: 'RateSet', centsPerMinute: 25 }, { sender: { _tag: 'Operator' } })).toEqual(accepted)
         expect(yield* rehearsal.sendFrom({ _tag: 'UnlockRequested', centsPerMinute: 20 }, rideOne))
           .toEqual({ _tag: 'Rejected', reason: 'RateChanged' })
         expect(yield* rehearsal.sendFrom({ _tag: 'UnlockRequested', centsPerMinute: 25 }, rideOne)).toEqual(accepted)
@@ -200,7 +200,7 @@ describe('ride and bike together', () => {
         yield* annRide.run('unlock')
         // A ride is counted when it docks, so the ride under way is not counted yet.
         expect(yield* bike7.projection).toMatchObject({ status: 'Ridden', rides: 0, canUnlock: false })
-        yield* annRide.send({ _tag: 'EndRequested' }, ann)
+        yield* annRide.send({ _tag: 'EndRequested' }, { sender: ann })
         yield* annRide.run('dock')
         expect(yield* bike7.projection).toMatchObject({ status: 'Docked', rides: 1, canUnlock: true })
         expect((yield* annRide.state)._tag).toBe('Ended')
@@ -212,7 +212,7 @@ describe('ride and bike together', () => {
       at,
       Effect.fnUntraced(function*(world) {
         const bike7 = yield* world.create(bike, 'bike-7', { centsPerMinute: 20 })
-        yield* bike7.send({ _tag: 'RateSet', centsPerMinute: 25 }, { _tag: 'Operator' })
+        yield* bike7.send({ _tag: 'RateSet', centsPerMinute: 25 }, { sender: { _tag: 'Operator' } })
         const annRide = yield* world.create(ride, 'ride-1', flags)
         yield* annRide.run('unlock')
         expect(yield* annRide.state).toMatchObject({ _tag: 'Refused', reason: 'RateChanged' })

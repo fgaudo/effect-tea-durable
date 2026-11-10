@@ -411,7 +411,9 @@ impossible, so that no program has to remember attempt numbers.
 
 ### Entities that talk
 
-An entity sends a message to another from an operation, with `send` and a name for the request. The runtime gives
+An entity sends a message to another from an operation, with `send(receiver, id, message, name)`, and creates one
+with `create(receiver, id, name, flags)`, whose flags come last and are left out where the receiver's flags are
+`null` ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)). The runtime gives
 each run of an operation its own `Entities`, so the request is that run's — its entity, key and incarnation — under
 the name, whatever the operation's delivery, and no operation can send under another's
 ([decision 0060](decisions/archive/0060-send-and-create-take-no-key.md)): an operation that sends twice under one name to
@@ -987,12 +989,12 @@ handles the mailbox to its end after each act of the test. Time stands at the st
 time when it fires, and forward by a duration with `advance`. The test decides when each operation answers, when
 time passes, and when the process dies:
 
-- `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity. Given a
-  request id, `send(message, sender, { requestId })` is a request the test names: a second send under the same
-  sender and request id is a retry, given the stored reply and not applied again, and the reply is kept through a
-  restart and a deploy. Without one, each send is a new request
+- `send` delivers an inbound message, and returns the reply; `sendFrom` delivers one from another entity. The
+  request comes last, as `send(message, { sender, requestId })`. Given a request id, it is a request the test
+  names: a second send under the same sender and request id is a retry, given the stored reply and not applied
+  again, and the reply is kept through a restart and a deploy. Without one, each send is a new request
   ([decision 0200](decisions/0200-a-rehearsal-sends-under-a-request-id-the-test-names.md)). A program whose sender is
-  `null` may leave the sender out, as `send(message)`
+  `null` may leave the sender out, and the request with it, as `send(message)`
   ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md));
 - `pending(key)` finds the work under way under one of the program's keys, with its idempotency key and its
   value, which a test asserts as it asserts a command in effect-tea. A key with a parameter takes it too:
@@ -1040,7 +1042,9 @@ machine, with one time and one process for all of them
 
 - `world.create(program, id, flags)` creates an entity, and gives a member of the world: the surface of `rehearse`
   without `restart` and `deploy`, and with `run`. A world runs one program under each name, as a process does, so a
-  creation by another program under a name the world runs fails the test;
+  creation by another program under a name the world runs fails the test. The flags come last, and a program whose
+  flags are `null` leaves them out, as the start of `rehearse` does
+  ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md));
 - `run(pending)` runs the operation's runner, with `Entities` provided by the world and the other services by the
   scenario, and completes the operation with its message, as `answer` does. A run asks for every service of its
   program's runners, since a key may hold any of the program's operations. A test provides a service it does not
