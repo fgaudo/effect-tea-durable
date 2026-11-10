@@ -1,6 +1,6 @@
 # 0242. The CI deals the files of the tests among four jobs, by Bun's own shards, and `bun test` stays one run
 
-**Status:** proposed, 2026-11-10, for the step A faster run of the checks of [`docs/roadmap.md`](../roadmap.md).
+**Status:** accepted, 2026-11-10, with the step A faster run of the checks, which it was made for.
 
 ## Context
 
@@ -34,9 +34,11 @@ PGlite. Under 24 workers at once it took 6.2 s, past Bun's default timeout of 5 
   the other checks runs the audit, the type check, the links and the site, and no test. Bun deals the files to the
   shards in turn, in the order of their paths. On the times measured, the four shards take 84 s, 77 s, 61 s and
   44 s, where one job took 266 s. Each job runs its files alone on its runner, as the one job ran them all, so
-  that no test runs under a load it did not run under before.
+  that no test runs under a load it did not run under before. On GitHub's runners the job of the tests had taken
+  4 min 8 s, and the run on the branch took 1 min 56 s for its slowest job of four. The runners are slower than the
+  maintainer's machine, so a job's time there is not the one measured here.
 - **The release's run, `bun run test:release`, is dealt among four jobs the same way.** It ran some sixteen minutes
-  in one job.
+  in one job. On the branch, its four jobs took 7 min 29 s at the slowest and 1 min 33 s at the quickest.
 - **A test of the workflow's form keeps every test in some job.** `the jobs of the tests run every shard of their
   division, and the job of the other checks runs no test`, in [`src/form.test.ts`](../../src/form.test.ts), reads
   `ci.yml`. It fails when a job's matrix of shards is not 1 to `n`, or when its command names a count other than
@@ -80,4 +82,4 @@ PGlite. Under 24 workers at once it took 6.2 s, past Bun's default timeout of 5 
   [`spikes/bun-before-all-of-an-imported-module.test.ts`](../../spikes/bun-before-all-of-an-imported-module.test.ts)
   tests it in both modes.
 - Splitting the tests among jobs changes no test's result, since each job runs its files in one process as before.
-  This is only reasoned. The run on the branch checks it.
+  This is reasoned, and the runs of the workflow on the branch, of the tests and of the release, passed.
