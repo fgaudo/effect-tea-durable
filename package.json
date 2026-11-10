@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:release": "SCHEDULES=all bun test",
-    "test:postgres": "bun test src/storage.test.ts src/runtime.test.ts src/dialects.test.ts src/postgres.test.ts",
+    "test:postgres": "bun test src/storage.test.ts src/runtime.test.ts src/dialects.test.ts src/postgres.test.ts spikes/postgres-session-ended.test.ts",
     "test:explore": "bun scripts/explore.ts",
     "links": "bun scripts/check-links.ts"
   },

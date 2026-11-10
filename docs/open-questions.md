@@ -58,13 +58,14 @@ with a requirement that no example has yet.
   ([decision 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). The lock goes with its
   session, as PostgreSQL documents. A server that ends the session, by `idle_session_timeout`, a restart or a broken
   connection, gives the lock back while the runtime still runs, and nothing tells the runtime. A second runtime may
-  then launch on the database, and the two would load the same entities
-  ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). Whether the runtime checks its hold,
-  and how often, is not decided. It waits for the step on Cluster across machines on PostgreSQL in the
-  [roadmap](roadmap.md), whose fence would make every commit check it
-  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). It would be decided by:
-  - a test on a server that ends the reserved connection with `pg_terminate_backend`, and sees a second launch
-    succeed while the first runs;
+  then launch on the database, and the two load the same entities
+  ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)).
+  [`spikes/postgres-session-ended.test.ts`](../spikes/postgres-session-ended.test.ts) sees it on a server: once
+  `pg_terminate_backend` ends the reserved session, the first runtime still answers `Accepted`, a second launches,
+  and three sends accepted by the two leave a count of two, since the first steps from the state it holds in memory
+  and writes over the second's step. Whether the runtime checks its hold, and how often, is not decided. It waits
+  for the step on Cluster across machines on PostgreSQL in the [roadmap](roadmap.md), whose fence would make every
+  commit check it ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). It would be decided by:
   - what a check costs a step: a statement of the reserved connection, or a reading of `pg_locks`, against a fence
     that a commit checks anyway.
 - **A fiber that outlives its transaction.** A fiber forked inside a transaction keeps the transaction's connection
