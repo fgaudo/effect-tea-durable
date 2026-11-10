@@ -24,7 +24,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   `src/runtime/`, and makes `bun run test:explore` and `bun run test:postgres` run the files the tests move to. It
   begins in [`src/runtime.test.ts`](../src/runtime.test.ts), with the helpers its tests share, and in
   [`scripts/explore.ts`](../scripts/explore.ts), which names that file alone. `bun run test:release` passed on
-  `main` before the step, and passes again once the third part is done.
+  `main` before the step and after the second part, and passes again once the third part is done.
 
 ## Later
 
