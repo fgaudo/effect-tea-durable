@@ -11,6 +11,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   the explored tests or the tests on SQLite files, before it divides anything. A division keeps every test in some
   job, and a test of the workflow's form checks it.
 
+  The first part is done, in
+  [decision 0242](decisions/0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md). Neither kind of test
+  dominates the time, and Bun 1.4.2 deals the files among jobs itself, with `--shard`. The CI runs `bun test` and
+  `bun run test:release` in four jobs each, and a test of the workflow's form and a spike check the division. The
+  part next is the run of [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on the branch
+  `claude/faster-checks`, once the maintainer pushes it. It passes with every job green, and gives the time of the
+  slowest job. The run of the release's jobs, by hand, passes too. Then the commit that takes the step out of this
+  file accepts the note, with the times the run gave.
+
 ## Later
 
 - **The runtime's housekeeping**, once a release of Effect holds the retention of completed requests of Cluster.

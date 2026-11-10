@@ -416,6 +416,29 @@ describe('the form of the examples', () => {
   })
 })
 
+describe('the form of the workflow', () => {
+  // The CI deals the files of `bun test` among jobs. A job left out of the matrix, or a count of shards that the
+  // command and the matrix give apart, leaves files that no job runs (decision 0242).
+  test('the jobs of the tests run every shard of their division, and the job of the other checks runs no test', () => {
+    type Step = { run?: string }
+    type Job = { strategy?: { matrix?: { shard?: ReadonlyArray<number> } }; steps: ReadonlyArray<Step> }
+    const workflow = Bun.YAML.parse(
+      readFileSync(join(import.meta.dir, '..', '.github', 'workflows', 'ci.yml'), 'utf8'),
+    ) as { jobs: Record<string, Job> }
+    const divided = (name: string, command: string) => {
+      const job = workflow.jobs[name]!
+      const shards = job.strategy?.matrix?.shard ?? []
+      expect(shards.length).toBeGreaterThan(1)
+      expect(shards).toEqual(shards.map((_, at) => at + 1))
+      expect(job.steps.flatMap((step) => step.run?.startsWith(command) ? [step.run] : []))
+        .toEqual([`${command} --shard=\${{ matrix.shard }}/${shards.length}`])
+    }
+    divided('test', 'bun test')
+    divided('release', 'bun run test:release')
+    expect(workflow.jobs['check']!.steps.filter((step) => step.run?.includes('test'))).toEqual([])
+  })
+})
+
 describe('the check of the form', () => {
   test('a module of the platform is found through a module imported, and one named in a comment is not', () => {
     const files: Record<string, string> = {
