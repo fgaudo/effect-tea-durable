@@ -830,6 +830,30 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     of the step of bugs, and a test that passes makes the premise tested. A premise that no test reaches yet is an
     open question. Each area then reads, of its notes, the premises the inventory calls chosen, and the four it
     counts as checked by a test of a neighbouring case.
+  - The second reading lists its pairs by the code too. `bun scripts/premise-pairs.ts` found, on 2026-11-12, 2,517
+    pairs of notes that a comment of one declaration of `src/` cites together and that no note links. Of them, 260
+    are of declarations that cite five notes at most, and the rest of declarations that cite up to forty, as the
+    machine's. So each session of an area adds only the pairs of its own notes, by `--note`, as the skill's brief
+    says. A pair of a declaration of many notes is left to the readings of one shared state below.
+  - After the areas of the second reading, the review reads each shared state of the code once, by the skill's
+    section A reading of one shared state, in this order. A state of more than thirty notes is divided before its
+    session starts, as an area is, and `bun scripts/premise-pairs.ts --tables` gives each table's places and notes.
+    1. The tables of Cluster's requests: `effecttea_sent_requests`, `effecttea_given_requests`, `cluster_messages`
+       and `cluster_replies`, where the bug of 0248 was.
+    2. The tables of replies: `effecttea_replies`, `effecttea_answers` and `effecttea_waiting`.
+    3. The tables of an entity: `effecttea_entities`, `effecttea_entity_keys` and `effecttea_mailbox`.
+    4. The tables of versions: `effecttea_versions` and `effecttea_runner_versions`.
+    5. The tables of projections and of the log: `effecttea_projections`, `effecttea_log` and `effecttea_heads`.
+    6. The table `effecttea_publications`.
+    7. The tables of the outbox: `effecttea_outbox`, `effecttea_consumers` and `effecttea_cursors`.
+    8. The locks of the process, `locks` of `src/runtime/process.ts`.
+    9. A deployment's entities and shards: `loaded`, `shards` and `waker`, of `src/runtime.ts` and
+       `src/runtime/waker.ts`.
+    10. A loaded entity's state, of `src/runtime/loop.ts`: its queue of events, `operations`, `timers`, `callers`
+        and `links`.
+    11. The process's maps of callers and deploys: `messages`, `creations`, `operators`, `undeployed`,
+        `resumptions` and `recent`.
+    12. The readings of commits: `commits` and `waiting` of `src/runtime/readings.ts`.
   - The first session's report is not kept, so what it ruled out is not written here. The reports of the second,
     third and fourth sessions are recorded whole in this step, in the step of bugs and in
     [the open questions](open-questions.md).
