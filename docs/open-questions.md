@@ -601,6 +601,10 @@ with a requirement that no example has yet.
   spike, saw a connection opened `readonly` refused alike, and saw the holding connection copy the file whole, by
   `serialize`, which `export` of `SqliteClient` of `@effect/sql-sqlite-bun` calls, and by `VACUUM INTO`. It would be
   decided by:
+  - whether the hold of SQLite moves to a file of its own beside the database, attached by the runtime's connection
+    in the exclusive locking mode, so that the database stays in the normal mode and any reader reads it. Raw
+    `bun:sqlite` on Bun 1.4.4 on Windows, by hand, saw readers read one snapshot beside the holder, a second holder
+    refused, and the hold taken again after the holder was killed. Linux and Effect's `SqliteClient` are not run;
   - whether a note narrows 0247 and the design to a stopped version or a copy of the file, or the old runtime gives
     the check through its handle;
   - a run on a server of PostgreSQL under a role of rows alone, which reads `effecttea_migrations` by name.
