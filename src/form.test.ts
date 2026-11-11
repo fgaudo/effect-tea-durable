@@ -565,15 +565,17 @@ type Pinned = Readonly<{ id: string; test: string; name: string }>
 
 /**
  * The explored tests that pin a seed or a deviation and have no pin, and the pins that name no test that pins one,
- * given the text of each file of the tests by its path from the root (decision 0254). A test is a call of `test` at
- * the start of a line, and it pins one where its body holds `pinned: [` followed by a value.
+ * given the text of each file of the tests by its path from the root (decision 0254). A test is a call of `test` that
+ * begins a line after its indentation, inside a `describe` too. It is explored where a line of its body begins with
+ * a call of `explored`, so that the samples of a test of this check, written in strings, are not read as tests. It
+ * pins one where its body holds `pinned: [` followed by a value.
  */
 export const pinsUnmatched = (texts: ReadonlyMap<string, string>, pins: ReadonlyArray<Pinned>): ReadonlyArray<string> => {
   const pinning = [...texts].flatMap(([file, text]) =>
-    text.split(/^(?=test\()/m).flatMap((body) => {
-      const quoted = /^test\((?:'([^']*)'|"([^"]*)"|`([^`]*)`)/.exec(body)
+    text.split(/^(?=[ \t]*test\()/m).flatMap((body) => {
+      const quoted = /^[ \t]*test\((?:'([^']*)'|"([^"]*)"|`([^`]*)`)/.exec(body)
       const name = quoted?.[1] ?? quoted?.[2] ?? quoted?.[3]
-      return name !== undefined && /\bexplored\(/.test(body) && /\bpinned: \[\s*[^\]\s]/.test(body)
+      return name !== undefined && /^[ \t]*explored\(/m.test(body) && /\bpinned: \[\s*[^\]\s]/.test(body)
         ? [{ file, name }]
         : []
     })
@@ -746,15 +748,25 @@ describe('the check of the form', () => {
         "test('four', () => {",
         '  // pinned: [7], in a comment of a test that explores nothing',
         '})',
+        "describe('five', () => {",
+        "  test('six', () => {",
+        '    explored(() => run, ended, { pinned: [0] })',
+        '  })',
+        '})',
       ].join('\n')],
     ])
-    expect(pinsUnmatched(texts, [])).toEqual(['src/a.test.ts: one: no pin', "src/a.test.ts: three's: no pin"])
+    expect(pinsUnmatched(texts, [])).toEqual([
+      'src/a.test.ts: one: no pin',
+      "src/a.test.ts: three's: no pin",
+      'src/a.test.ts: six: no pin',
+    ])
     expect(pinsUnmatched(texts, [
       { id: '1', test: 'src/a.test.ts', name: 'one' },
       { id: '2', test: 'src/a.test.ts', name: 'two' },
       { id: '3', test: 'src/b.test.ts', name: "three's" },
     ])).toEqual([
       "src/a.test.ts: three's: no pin",
+      'src/a.test.ts: six: no pin',
       '2: no test of src/a.test.ts pins under that name',
       '3: no test of src/b.test.ts pins under that name',
     ])

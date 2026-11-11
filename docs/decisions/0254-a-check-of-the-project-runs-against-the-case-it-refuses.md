@@ -145,6 +145,9 @@ that fails is pinned. The tests pinned so far, each with its pin in `src/runtime
   the watcher's version read anew as a wait begins.
 - `scripts/pins.ts` matched a test's name from its start, and Bun matches the names of the enclosing `describe`s
   before it. So a pin of a test inside a `describe` ran no test. The pattern now lets the name follow a space.
+- `pinsUnmatched` of `src/form.test.ts` read a test only at the start of a line, so a test inside a `describe` that
+  pinned a seed needed no pin. It now reads a test after its indentation, and an explored test where a line begins
+  with `explored(`, so that its own samples, in strings, are no tests. A sample inside a `describe` holds it.
 
 ## What it rests on
 
