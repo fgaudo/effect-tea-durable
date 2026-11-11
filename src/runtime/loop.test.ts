@@ -541,7 +541,7 @@ describe('passivation', () => {
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
             // Each activation holds its caller's event before the other can tell it to leave (decision 0079). With
-            // the caller's event offered after the lock of the activation is let go, seed 91, pinned, fails. `bun
+            // the caller's event offered after the lock of the activation is let go, seed 239610329, pinned, fails. `bun
             // run test:pins` runs it against that form, the pin `0079 an activation` of `src/runtime.test_pins.ts`
             // (decision 0254).
             return yield* together([
@@ -549,7 +549,7 @@ describe('passivation', () => {
               toy.send('u-2', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' }),
             ])
           }))
-      }), [{ _tag: 'Accepted' }, { _tag: 'Accepted' }], { pinned: [91] })
+      }), [{ _tag: 'Accepted' }, { _tag: 'Accepted' }], { pinned: [239610329] })
   }, 60_000)
 
   test('a caller interrupted anywhere as it activates its entity leaves the process able to settle', () => {
