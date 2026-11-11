@@ -86,7 +86,7 @@ docs/decisions/reviews.md of the branch.
 - Run the reviewer's failing tests yourself before you tell the maintainer of a finding. A report is the
   reviewer's, and no proof.
 - Run each test again on the last commit of `main` where the reviewer's branch was cut before it.
-- Every finding is a bug of the step of [`docs/roadmap.md`](../../../docs/roadmap.md) that follows the review,
+- Every finding is a bug of the step of bugs of [`docs/roadmap.md`](../../../docs/roadmap.md), fixed by family,
   marked reproduced or reasoned. A bug reproduced names the branch, the commit and the tests, and where the fix
   begins. Its fix is a note that changes the earlier one, with the test, taken as `AGENTS.md` says.
 - A suspect the reviewer noticed and did not check is a bug of the same step, marked not checked.

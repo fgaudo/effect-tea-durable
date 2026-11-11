@@ -152,6 +152,20 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A change that deletes rows of Cluster's, or moves the time they are deleted at, has a test with a second client,
   on another runner, that waits for the request whose rows go. The runtime deletes those rows by statements of its
   own, and a client of another runner reads its reply from them at an interval.
+- A test of the library is of one of four kinds, and a test of none of them is not added. A test of the machine's
+  semantics lies in `src/machine.test.ts`, one for each rule a note decides. A test of invariants runs histories
+  that fast-check generates, of messages, crashes, deploys and timers, on the rehearsal and on the runtime under the
+  scheduler, and checks the promises of the design on each. A test of a rule of concurrency runs the runtime under
+  the scheduler of `src/testing.ts`, with its pinned seeds. A test of a contract runs one set of requests alike on
+  each storage and on Cluster. A bug found is held by a case of one of the four: a rule of the machine, an
+  invariant, a rule of concurrency or a contract. It gets a scenario of its own only where none of the four can
+  hold it. Until the test of invariants exists, a step of [`docs/roadmap.md`](docs/roadmap.md), a bug that an
+  invariant would hold gets a test of the kind nearest to it. Spikes and the checks of form, as the links, the
+  guide's code and the form of `src/`, are no tests of the library's correctness, and are kept apart from the four.
+- `bun test` runs within two minutes on one machine, and no test of it runs over two seconds. A test that would
+  run longer reads `SCHEDULES` for how many cases it runs, as the explored tests do, so that `bun test` runs a
+  sample and `bun run test:release` runs them all. `bun test --reporter=junit --reporter-outfile=<file>` gives each
+  test's time. A step of the roadmap brings the suite within this budget, which it does not hold yet.
 - A decision that takes a value to its end, such as a time of 0 or of the moment itself, has a test at that value,
   with every caller the rule is about.
 - The workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the checks on Linux on every push and

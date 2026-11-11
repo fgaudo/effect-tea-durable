@@ -13,7 +13,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   otherwise than the design says, which no test of its note met. So the review reads every pair of notes of
   [the index](decisions/README.md) before the release, by the procedure of
   [`.claude/skills/premise-review/SKILL.md`](../.claude/skills/premise-review/SKILL.md), one area at a time. What it
-  finds is a bug of the next step, and an open question where it is only reasoned.
+  finds is a bug of the step of bugs, and an open question where it is only reasoned.
   - Done, in a session of 2026-11-11, both notes read whole with the code: 0171, 0125, 0090, 0169, 0170, 0173 and
     0182 against 0245; 0156 against 0176; 0119 against 0219; 0064 against 0247; 0167 against 0092; 0157 against
     0222. Its findings are decision 0249 and two open questions, the drain above and the deletions of a reply on a
@@ -26,14 +26,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     named like a child with a tag typed `string`. A third case it noticed and did not reach, a retry in a rehearsal
     after a deploy that changes how the sender is written, is an open question too.
   - Done, in a third session of 2026-11-11, both notes read whole with the code: the section Operations and timers,
-    with 0119 against 0011, 0128 and 0113. Its finding is the first bug of the next step, a droppable operation a
+    with 0119 against 0011, 0128 and 0113. Its finding is the first bug of the step of bugs, a droppable operation a
     new program delivers at most once. Two suspects it noticed and did not check are open questions of running. Read by the code
     and the later note only, so to read whole: 0058 against 0018, and 0067 against 0056. Not reached there: 0064 and
     0114 against 0041 and 0044, and the later notes that cite the section, 0022, 0029, 0035, 0047, 0049, 0060, 0075,
     0077, 0131, 0142, 0156, 0162, 0180, 0183 and 0193.
   - Done, in a fourth session of 2026-11-11, both notes read whole with the code: the sections Creation and
     Defects, with 0064 and 0114 against 0041 and 0044, and 0046 against 0160 and 0182. Its findings are bugs 9 to
-    12 of the next step, the last two suspects it noticed and did not check, and each is an open question too. Read by their
+    12 of the step of bugs, the last two suspects it noticed and did not check, and each is an open question too. Read by their
     decisions only: 0038, 0053, 0079, 0130, 0206, 0062, 0109, 0175, 0166, 0177 and 0186. Not reached there, the later
     notes that cite the two sections: 0021, 0048, 0071, 0092, 0122 and 0125.
   - The first session read pairs, not sections. So every section of the index the sessions above did not name is
@@ -71,7 +71,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     and 0186, of the fourth. It also reads the later notes of an area already read that cite an area read before
     it, which no area of the list holds: 0035, 0049 and 0180 against the section Operations and timers.
   - The first session's report is not kept, so what it ruled out is not written here. The reports of the second,
-    third and fourth sessions are recorded whole in this step, in the bugs of the next step and in
+    third and fourth sessions are recorded whole in this step, in the step of bugs and in
     [the open questions](open-questions.md).
   - The step begins with the skill's brief, given the first area of the list that does not start with `Done`, which
     `bun scripts/premise-coverage.ts` names. A session that ends an area writes `Done, ` before the area's name in
@@ -79,16 +79,43 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     bullet here of what it read, what it found and what it did not reach. The step leaves this file once the last session is done.
   - The reviewers' branches are local to the maintainer's machine, and pushed nowhere:
     `claude/premise-review-machine-c1a99e`, `claude/premise-review-operations-d2dda3` and
-    `claude/premise-review-creation-03f15d`. A bug of the next step names the commit of its failing test on one of
+    `claude/premise-review-creation-03f15d`. A bug of the step of bugs names the commit of its failing test on one of
     them. A session elsewhere writes that test again from the bug's sequence and the report in
     [`reviews.md`](decisions/reviews.md).
 
-- **The bugs the premise review found, to verify and fix.** Each bug below is a rule of a note whose premise a
+- **The suite within its budget.** `AGENTS.md` asks that `bun test` run within two minutes on one machine, and that
+  no test of it run over two seconds. On 2026-11-11 it ran 779 tests in 289 seconds. The 561 tests under a tenth of
+  a second took 5 seconds together, and the 20 slowest took 157. The slowest, `a deploy interrupted anywhere keeps
+  its name and its waker, or stops what it started` in `src/runtime.test.ts`, took 44 seconds alone. The files
+  `src/cluster.test.ts`, `src/runtime.test.ts`, `src/storage.test.ts` and `src/runtime/loop.test.ts` took two thirds
+  of the time, and the spikes about 30 seconds. The step measures each test with `bun test --reporter=junit
+  --reporter-outfile=<file>`. Each test over two seconds runs a sample of its cases under `bun test`, read from
+  `SCHEDULES`, and all of them under `bun run test:release`, so that no rule loses its test. The step also decides
+  whether the spikes leave `bun test` for a run of their own, in the CI and at each move of Effect's or Bun's
+  version, which changes the rule of `AGENTS.md` that `bun test` runs them, the workflow's shards and the test of
+  the workflow's form. It is done once `bun test` holds the budget, and `AGENTS.md` no longer says it does not.
+
+- **The bugs the premise review found, fixed by family.** Each bug below is a rule of a note whose premise a
   later note took away. A bug reproduced has a test that fails, and its fix begins where the bug says. A bug only
   reasoned is verified first, by a test that fails or by a reading that rules it out, and the
   [open question](open-questions.md) that holds it says what would decide it. A fix is a note that changes the
   earlier one, taken with its test, renamed without `FAILING:` or out of `todo`. A bug verified false leaves this
   list, and its open question says why. The review of the step before adds each bug it finds here.
+  The step starts once the review is done, so that the bugs are counted whole. It groups them by what they have in
+  common, and a family gets one rule, kept in one place of the code, instead of a fix for each bug. Each bug's test
+  passes under the rule, as the proof that the rule holds the case. A bug of no family gets a fix of its own. The
+  families of 2026-11-11, which the rest of the review may change:
+  - A, a newer version against what an older one stored or runs: bugs 1, 5 and 7, and the door of the next step.
+    Its rule is the step What a deploy may change of a program, against what is stored, below.
+  - B, an answer an operation acts on and that a run after a crash is not given again: bug 9, and its half of
+    `NotFound`. Its rule would be that every answer an operation acts on is kept while its work holds, in
+    `src/runtime/callers.ts`, where every answer passes.
+  - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10, 11 and 12, as decisions 0248 and 0249
+    were. Its rule would be that the tests of the runtime run alike on one process and on Cluster, as tests of a
+    contract.
+  - D, a rule that holds only of one transaction at a time: bug 3. Its rule would be that a test of rows of two
+    entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their statements.
+  - Of no family yet: bugs 4, 6 and 8.
   1. **Reproduced: a droppable operation that a new program delivers at most once never runs.** A deploy that
      declares a `Droppable` operation stored under a key as `operation.atMostOnce` keeps its incarnation
      ([decision 0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)), since the
@@ -184,7 +211,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   is a choice of the design, which the [open question](open-questions.md#running) A door that changes between two
   releases of the library lists.
 
-- **What a deploy may change of a program, against what is stored.** Four of the bugs the premise review found have
+- **What a deploy may change of a program, against what is stored.** This step is the rule of family A of the step
+  of bugs above. Four of the bugs the premise review found have
   one form: a deploy of a newer version changes a piece of the program, while what is stored was written by the
   older version. They are the delivery of an operation (bug 1), the way the sender is written (bug 5), a droppable
   operation a resume drops (bug 7), and the door (the step above). The review reads one pair of notes at a time, so
@@ -195,7 +223,34 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   a newer version and of an older one. Each case gets a test that shows it holds, or a sentence that says why it
   holds and cites the note that decides it. A case that fails is a bug of this step, fixed by a note with its test,
   as the bugs above. The cases the steps above already hold cite them. The table is written in `docs/`, so that a
-  piece a later note adds to a program adds its row.
+  piece a later note adds to a program adds its row. The code that keeps the table is one place, where an
+  activation by a program compares each piece stored with the program: the same, changed in a way the table
+  allows, which it converts, or changed otherwise, which suspends the entity with a defect that names the piece.
+
+- **A test of invariants over generated histories.** It is the second kind of test of `AGENTS.md`, which the library
+  does not have yet. fast-check generates histories of commands: a message under a new request id or a retried one,
+  an operation that completes or fails, time that passes, a crash and a restart, a deploy of a variant of the
+  program, a resume and a discard. The variants of a deploy change one piece of a program at a time, as the table
+  of the step above lists them. A program of the test holds an operation of each delivery, a timer and a child, and
+  records outside the machine each operation that starts. After each history the test checks the promises of the
+  design as invariants. A message under a request id is applied at most once, and a retry is given the same reply.
+  An at-least-once operation that talks only to entities acts once. An at-most-once operation is given `unknown`
+  only where it started. No operation counts as running that never started. After a deploy an entity is active
+  under the new program, or suspended with a defect. Every request is answered within a number of steps of the
+  scheduler, so that a wait for ever fails the test. The histories run in two layers.
+  - On the rehearsal, many and quick, for the logic of the machine, of a deploy and of a crash.
+  - On the runtime under the scheduler of `src/testing.ts`, fewer, with commands at once: two callers, a completion
+    while an entity unloads, a crash during a step, a sweep while a caller waits. Its strategies are those of the
+    tests of concurrency, `prioritized` and `explore`, which stay.
+  [`src/rehearse.property.test.ts`](../src/rehearse.property.test.ts), which compares the rehearsal and the runtime
+  over generated messages, is where it begins. A failing history is shrunk by fast-check, and its shortest form is
+  pinned as a case. On Cluster and on PostgreSQL with a pool, the invariants run once the rules of families C and D
+  give the tests of a contract.
+
+- **The tests pruned by the mutations.** Once the test of invariants exists, `scripts/mutate.ts` takes out each
+  rule the notes decide, one at a time. A test of a scenario that fails only where a test of the four kinds of
+  `AGENTS.md` fails too, under every mutation, goes, and its rule is said by the test that stays. A test that alone
+  fails under a mutation stays. The step keeps the suite within its budget as the tests of the bugs come in.
 
 ## Later
 
