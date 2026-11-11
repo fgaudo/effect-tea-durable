@@ -21,6 +21,9 @@ that changes another.
 2. The reviewer did not write the notes it reads, as for any review of `AGENTS.md`. Start it as a session in a
    worktree of its own, so that its failing tests stay off `main`, or as a subagent where the maintainer asks for
    one. Commit what the review must see first: a worktree is cut from the last commit, and holds nothing after it.
+   Several reviewers may run at once, one area or one last session each, four to six at a time so that the tests
+   of each run on a machine not too loaded. The desktop app starts a session only in a turn the maintainer's own
+   message began, so the next ones wait for the maintainer's word once a reviewer's report has come in.
 3. Give it one area at a time, of thirty notes at most. A review asked for more stops before its end, and its
    report then says what it did not reach. A section of the index longer than that is divided, in the roadmap's
    step, before its session starts.
@@ -79,12 +82,84 @@ Your last message says the branch, the commit and the findings in a few lines, a
 docs/decisions/reviews.md of the branch.
 ```
 
+## A last session's brief
+
+A reviewer of an area reads the notes of other areas in part, where they meet a note of its own. Each such note is
+listed in the roadmap's step, by the area it is read against, and a last session reads the pairs whole. Start a last
+session with this brief, with its four places filled in from the step's list of last sessions:
+
+```text
+You are a reviewer of the premise review of this repository, in one of its last sessions: you read pairs of notes
+that earlier reviewers read only in part. Follow this brief exactly.
+
+Read AGENTS.md first: it says how notes, premises (`What it rests on`), tests and spikes work, and its rules bind
+you. The notes are in docs/decisions/ and docs/decisions/archive/, indexed in docs/decisions/README.md, which lists
+for each note the notes that changed it. The step "A review of every note that changes another" of docs/roadmap.md
+says where the review stands.
+
+THE KIND OF BUG: a later note changes, extends or reuses an earlier note's rule, and takes away a condition the
+earlier rule needs, written or unwritten. It often does so by taking a value to its end (0, the moment itself,
+'forever', none, unbounded), by adding a second actor (another runner, another caller, a sweep, an operator, a
+deploy of a newer version), or by moving when something is deleted or read. Decision 0248 is one found and fixed:
+read it as the example, and do not report it again.
+
+WHAT TO READ: the notes <the session's notes>, each against the notes it meets of <the area, with its notes>. The
+review of that area, the section <its heading> of docs/decisions/reviews.md, read these notes in part or not at
+all, as its table says. Read that report first, with what it ruled out, and the reviews of the areas that hold your
+notes.
+
+ALREADY FOUND, not to report again: every bug of the step "The bugs the premise review found, fixed by family" of
+docs/roadmap.md, and the open questions of docs/open-questions.md. Read that step before you start.
+
+HOW:
+1. List the pairs before you read any: for each note of your list, the notes it meets of the area, found by the
+   report's table, the index and `grep -wE '0NNN'` of each note in both directions. A pair is a note that changes
+   another, applies its rule "as" another does, or cites it as its reason. Write them as the table of your report,
+   one row a pair, before step 2.
+2. For each pair, read both notes whole, the earlier note's `What it rests on`, and the code that keeps the rule in
+   src/. Write down every condition the earlier rule needs to be safe, the unwritten ones too: a time longer than an
+   interval, a count below a bound, an order of two commits, one actor at a time. Then ask whether the later note
+   still gives each condition, in every case it opens.
+3. A suspect is a finding only once you have tried to confirm it: a test that fails, written beside the module it
+   tests with the helpers of src/runtime.test_shared.ts or of src/cluster.test.ts (its `onFile`, `start` and
+   `withholding` make two runners on one file deterministic), or a precise reading of the code and of the
+   dependency's source in node_modules/effect/src that shows the sequence. Run only the tests you need. Where no
+   PostgreSQL server runs, a test of src/postgres.test.ts is written, said not run, and its finding is only
+   reasoned.
+
+RULES: fix nothing, write no decision note, and change no file of docs/ or src/ other than tests that reproduce a
+finding and your report. Name each such test `FAILING: …`. Write your report as a section at the end of
+docs/decisions/reviews.md, headed `## <date>: premise review of the pairs against <the area>`. Commit the tests and
+the report on your branch, and push nothing. Other reviewers may run at the same time in other worktrees: do not
+touch main or their branches.
+
+YOUR REPORT, the deliverable, in this order:
+- The table of step 1: each pair, what binds it (changes, applies as, cites as its reason), and how you read it:
+  both whole with the code, or in part (say which part). Every note of your list is read whole, with its code: one
+  not read so is a gap your last message names.
+- Each finding, with the two notes, the premise that fell, the sequence that breaks, the files and lines, and whether
+  it is reproduced, naming the test and the commit, or only reasoned, and where a fix could begin.
+- The suspects you ruled out, each with its reason in a line.
+- Every suspect you noticed and did not check, with the sequence you suspect. Check each before you list it, where a
+  test or a reading can: a suspect left unchecked says why.
+- The notes you did not read whole, and why.
+Your last message says the branch, the commit and the findings in a few lines, and that the report is in
+docs/decisions/reviews.md of the branch.
+```
+
 ## What to do with the report
 
 - Read the report from the branch, `git show <branch>:docs/decisions/reviews.md`, not from the last message alone,
   which says less.
+- Read the report's table before its findings. A note of the brief's list read in part, or a later note the brief
+  gave and the report does not say it read against the areas it cites, is a gap: send the reviewer back to read it,
+  on the same branch, before you record the report. On 2026-11-11 three of eighteen reviewers were sent back, and
+  two of them found a bug more.
 - Run the reviewer's failing tests yourself before you tell the maintainer of a finding. A report is the
-  reviewer's, and no proof.
+  reviewer's, and no proof. A test that fails by an error of its own setup, and not at its assertion, proves
+  nothing: read the line it stops at. A finding measured without a test, as a mutation that `bun test` does not
+  kill, is measured again on `main` the same way.
+- Two reviewers may find one bug. It is one bug of the step, with both tests.
 - Run each test again on the last commit of `main` where the reviewer's branch was cut before it.
 - Every finding is a bug of the step of bugs of [`docs/roadmap.md`](../../../docs/roadmap.md), fixed by family,
   marked reproduced or reasoned. A bug reproduced names the branch, the commit and the tests, and where the fix

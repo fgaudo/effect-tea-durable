@@ -2,10 +2,15 @@
 // `.claude/skills/premise-review/SKILL.md` asks after each review. It reads the step's text, not a format of its own:
 // a section of the index named in a bullet that starts `Done` is read; the numbered areas after `The areas left` are
 // still to read, unless one starts `Done`; the bullet that starts `Each area also reads` lists the later notes not reached.
+// It also reads each table of `docs/decisions/reviews.md`: a note a review read in part must be in a list of a last
+// session, the bullets that start `A last session reads whole` and `Each of the twelve sessions`, or read whole by
+// another review. It names the first last session, of the bullet that starts `The last sessions are these`, that
+// does not start `Done`.
 // Run: `bun scripts/premise-coverage.ts`. It exits 1 with each gap it finds.
 
 const index = await Bun.file(new URL('../docs/decisions/README.md', import.meta.url)).text()
 const roadmap = await Bun.file(new URL('../docs/roadmap.md', import.meta.url)).text()
+const reviews = await Bun.file(new URL('../docs/decisions/reviews.md', import.meta.url)).text()
 
 const sections = new Map<string, Set<number>>()
 let section = ''
@@ -83,11 +88,50 @@ for (const note of notesOf(reached ?? '')) {
   if (!toRead.has(note)) errors.push(`${text(note)} is a later note not reached whose area is read: give it to the last session`)
 }
 
+// A note a review read in part, by the last cell of a row of its table, which says how the note was read.
+const listed = new Set<number>()
+for (const bullet of bullets) {
+  if (bullet.startsWith('A last session reads whole') || bullet.startsWith('Each of the twelve sessions')) {
+    for (const note of notesOf(bullet)) listed.add(note)
+  }
+}
+const readWholeBy = new Map<number, Set<string>>()
+const readInPart = new Map<string, Set<number>>()
+for (const review of reviews.split(/\n## /).slice(1).filter((review) => /premise review of/.test(review))) {
+  const title = review.split('\n')[0]!
+  for (const line of review.split('\n')) {
+    const cells = line.split('|').slice(1, -1).map((cell) => cell.trim())
+    if (cells.length < 3 || !/\d{4}/.test(cells[0]!)) continue
+    const whole = /^(both )?whole/i.test(cells.at(-1)!)
+    for (const note of notesOf(cells[0]!)) {
+      if (whole) readWholeBy.set(note, (readWholeBy.get(note) ?? new Set()).add(title))
+      else readInPart.set(title, (readInPart.get(title) ?? new Set()).add(note))
+    }
+  }
+}
+for (const [title, notes] of readInPart) {
+  for (const note of notes) {
+    const byAnother = [...(readWholeBy.get(note) ?? [])].some((other) => other !== title)
+    if (!listed.has(note) && !byAnother) {
+      errors.push(`${text(note)}, read in part by the review ${title}, is in no list of a last session`)
+    }
+  }
+}
+
+const lastBullet = bullets.find((bullet) => bullet.startsWith('The last sessions are these'))
+// An item starts with its number and a capital, so that `against area 2.` ends an item and starts none.
+const lastSessions = (lastBullet ?? '').split(/ \d{1,2}\. (?=[A-Z])/).slice(1)
+const lastLeft = lastSessions.filter((session) => !session.startsWith('Done'))
+
 const spread = [...sections].map(([name, notes]) => `${name}: ${[...notes].filter((note) => read.has(note)).length}/${notes.size}`)
 console.log(`read, by section: ${spread.join('; ')}`)
 const left = areaTexts.filter((area) => !area.startsWith('Done'))
 console.log(`${read.size} notes read, ${toRead.size} in ${left.length} areas left, of ${all.size}`)
 if (left.length > 0) console.log(`next area: ${left[0]!.split(':')[0]}`)
+if (lastBullet !== undefined) {
+  console.log(`${lastSessions.length - lastLeft.length} of ${lastSessions.length} last sessions done`)
+  if (left.length === 0 && lastLeft.length > 0) console.log(`next last session: ${lastLeft[0]!.replace(/\.$/, '')}`)
+}
 if (errors.length > 0) {
   for (const error of errors) console.error(error)
   process.exit(1)

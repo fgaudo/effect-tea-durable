@@ -107,19 +107,34 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     - against area 10: 0010, 0021, 0045, 0047, 0048, 0063, 0065, 0074, 0075, 0125, 0165, 0185, 0210, 0212 and 0245.
     - against area 12: 0003, 0028, 0030, 0038, 0039, 0057, 0064, 0073, 0075, 0081, 0084, 0104, 0125, 0132, 0136,
       0138, 0141, 0143, 0152, 0153, 0156, 0157, 0176, 0185, 0191, 0198, 0211, 0215, 0221, 0245 and 0247.
-  - The last sessions are these, each given the notes of the area it reads them against, and each of thirty notes to
-    read at most. The bullet that begins `A last session reads whole` is two: the pairs of the first session, and the
-    rest. A list above of thirty notes or fewer is one. A longer list, of area 1, 3, 4, 6 or 12, is two: its notes
-    before 0100, and the rest. Two lists that hold thirty notes together may be one, so the lists against areas 8
-    and 9 are one session, and the last sessions are seventeen.
+  - The last sessions are these seventeen, each of thirty notes to read at most, by the section A last session's
+    brief of [`.claude/skills/premise-review/SKILL.md`](../.claude/skills/premise-review/SKILL.md). Each is given its
+    notes, from the bullet that holds them above, and the notes of the area it reads them against. A list of more
+    than thirty notes is two sessions, its notes before 0100 and the rest. A session that ends one writes `Done, `
+    before it, and `bun scripts/premise-coverage.ts` names the first that does not start with `Done`.
+    1. Done, the first session's pairs, of the bullet that begins `A last session reads whole`.
+    2. Done, the third and fourth sessions' pairs, with 0035, 0049 and 0180, of the same bullet.
+    3. Done, against area 1, the notes before 0100.
+    4. Done, against area 1, the notes from 0100.
+    5. Done, against area 2.
+    6. Done, against area 3, the notes before 0100.
+    7. Against area 3, the notes from 0100.
+    8. Against area 4, the notes before 0100.
+    9. Against area 4, the notes from 0100.
+    10. Against area 5.
+    11. Against area 6, the notes before 0100.
+    12. Against area 6, the notes from 0100.
+    13. Against area 7.
+    14. Against areas 8 and 9, the two lists together.
+    15. Against area 10.
+    16. Against area 12, the notes before 0100.
+    17. Against area 12, the notes from 0100.
   - Done, in six of the last sessions of 2026-11-11 run at once: both parts of the bullet that begins `A last
     session reads whole`, the lists against areas 1 and 2, and the notes before 0100 of the list against area 3.
     Each read every note of its list whole with the code. The session against area 2 read 21 notes in part, and
     read them whole when it was sent back. Their findings are bugs 54 to 64 of the step of bugs, seven reproduced
     and four only reasoned, and bug 65, noticed by two sessions. Two sessions found one bug, 62. The six reports are
-    recorded whole in [`reviews.md`](decisions/reviews.md). Eleven last sessions are left: the notes from 0100 of the
-    list against area 3, both parts of the lists against areas 4 and 6, the lists against areas 5, 7 and 10, the
-    lists against areas 8 and 9 together, and both parts of the list against area 12.
+    recorded whole in [`reviews.md`](decisions/reviews.md).
   - Once the last sessions are done, a sample decides whether the whole review is read a second time. The sessions
     sent back to their area on 2026-11-11 found bugs 19 and 20 on a second pass, so a pass does not find all a
     reading of pairs can find. A session that read none of the reports reads two areas again by the skill's brief,
@@ -131,10 +146,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - The first session's report is not kept, so what it ruled out is not written here. The reports of the second,
     third and fourth sessions are recorded whole in this step, in the step of bugs and in
     [the open questions](open-questions.md).
-  - The step begins with the skill's brief, given the first area of the list that does not start with `Done`, which
-    `bun scripts/premise-coverage.ts` names. A session that ends an area writes `Done, ` before the area's name in
-    the list, keeps its notes there, takes out of the list of notes not reached those it read whole, and adds a
-    bullet here of what it read, what it found and what it did not reach. The step leaves this file once the sample is done.
+  - Every area of the list is `Done`, so the step goes on with the first last session that is not, by the skill's
+    section A last session's brief. A session that records a review writes `Done, ` before what it read, and adds a
+    bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
+    reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
+    a last session and read whole by no other review. The step leaves this file once the sample is done.
   - The reviewers' branches are local to the maintainer's machine, and pushed nowhere:
     `claude/premise-review-machine-c1a99e`, `claude/premise-review-operations-d2dda3`,
     `claude/premise-review-creation-03f15d`, `claude/premise-review-messages-975dd7`,
