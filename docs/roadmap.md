@@ -20,7 +20,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     pool of PostgreSQL.
   - Read by the code and the later note only, so to read whole: 0039, 0137, 0152, 0029, 0068, 0076, 0078, 0151,
     0159, 0174, 0175, 0161 to 0163, 0172, 0021 and 0065.
-  - Next, the sections of the index not read at all: the machine and the program; operations and timers; creation
+  - Done, in a second session of 2026-11-11, both notes read whole with the code: the section The machine and the
+    program, 0002 to 0202 against the notes that change them, 0065 against 0013 among them. It reproduced nothing.
+    Its findings, only reasoned, are two open questions: request ids under a sender of `null`, and an own message
+    named like a child with a tag typed `string`. Not reached there: a retry in a rehearsal after a `deploy` that
+    changes how the sender encodes, since the rehearsal keys a reply by the request's text.
+  - Next, the sections of the index not read at all: operations and timers; creation
     and defects; the queries and their pages, 0141 to 0150, 0207 and 0209; the tables and migrations, 0191 to 0218
     and 0225; the rehearsal and testing, 0131, 0183 to 0189, 0200 and 0211; the scheduler of the tests, 0104, 0115,
     0117 and 0244; and what enters the library. The step begins with the skill's brief, given the first of these

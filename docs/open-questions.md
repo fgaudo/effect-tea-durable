@@ -173,7 +173,32 @@ with a requirement that no example has yet.
   - whether a helper can add its attempts and its timer to a program's state and keys without hiding them from
     `update`, `work` and the rehearsal.
 
+- **Request ids under a sender of `null`.** A caller's request id is stored under its sender
+  ([decision 0048](decisions/archive/0048-a-callers-request-belongs-to-its-sender.md)), and decision 0124 keeps
+  callers apart because a sender as fine as an identity keeps their ids apart.
+  [Decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md) makes a sender left out a
+  `Schema.Null`, so every caller of such a program shares one space of request ids. A caller that sends an id another
+  caller used gets that caller's stored reply, and its own message is never applied, with nothing reported. Neither
+  `docs/design.md` nor the guide says so. Whether the guide requires such a program's ids to be unique across its
+  callers, or the boundary always gives a sender, is not decided. The premise review of 2026-11-11 found it by
+  reading, and no test holds it. It waits for a program whose callers do not identify themselves. It would be
+  decided by:
+  - whether a boundary that takes callers it cannot tell apart is a case the library serves at all;
+  - whether a sender left out should still be required where the program takes inbound messages.
+
 ## The surface
+
+- **An own message named like a child, with a tag typed `string`.** A parent's own message that takes the name of a
+  child is refused by the compiler alone (`Checks` in `src/program.ts`), since `update` routes a message whose `_tag`
+  is a child's name to that child
+  ([decision 0133](decisions/archive/0133-an-entity-composes-children-as-effect-tea-does.md)). An own message whose
+  schema types `_tag` as `string` passes the check, as a list of keys typed `string[]` did before
+  [decision 0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md) refused it. Such a message,
+  tagged with a child's name at run time, goes to the child. Whether the compiler refuses an own `_tag` typed
+  `string` beside children, as 0199 does for keys, is not decided. The premise review of 2026-11-11 found it by
+  reading, and no test holds it. It waits for the release, since it changes what compiles. It would be decided by:
+  - whether an own message with a `_tag` that is not a literal has a use in a program with children;
+  - whether a test of types can show the declaration compiles today.
 
 - **A handle divided by who uses it.** A handle gives more than twenty calls in one interface: a caller's `create`,
   `send` and `read`, the queries, the log's `published`, `fetch`, `ack` and `consume`, and an operator's `suspended`,
