@@ -358,6 +358,70 @@ describe('two runners on one file', () => {
         expect(Math.max(...seen)).toBe(0)
       })), 30_000)
 
+  // Decision 0039 lets a consumer go by `forget`, and rests on one process knowing the consumers: no ack of a name
+  // follows its forget, since a deploy that forgets a name no longer declares it (decision 0152). On Cluster an older
+  // runner still declares the name during a rolling deploy, and its ack stores a cursor with no consumer. The prune
+  // then counts more cursors than consumers in that partition, and never drops its rows again. Found by the premise
+  // review of 2026-11-11.
+  test('FAILING: an ack of an older runner after a newer one forgot its consumer leaves the prune of the partition', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
+    const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
+    const startWith = <const C extends Readonly<{ projection: ReadonlyArray<string> }>>(
+      port: number,
+      program: Program<T>,
+      consumers: C,
+    ) =>
+      Effect.gen(function*() {
+        const context = yield* Layer.build(
+          sharding([program]).pipe(
+            Layer.provideMerge(Runners.layerNoop),
+            Layer.provideMerge(SqlMessageStorage.layer),
+            Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
+            Layer.provideMerge(ShardingConfig.layer({
+              runnerAddress: Option.some(RunnerAddress.make('localhost', port)),
+              shardsPerGroup,
+              refreshAssignmentsInterval: Duration.millis(50),
+              runnerHealthCheckInterval: Duration.millis(50),
+              shardLockRefreshInterval: Duration.millis(100),
+              shardLockExpiration: Duration.seconds(3),
+              entityMessagePollInterval: Duration.millis(100),
+            })),
+            Layer.provideMerge(SqliteClient.layer({ filename: join(directory, 'store.db') })),
+            Layer.provide(Digest.layerWebCrypto),
+          ),
+        ).pipe(Effect.orDie)
+        const runtime = yield* Effect.provide(launch(), context)
+        const handle = yield* Effect.provide(runtime.deploy(program, { consumers: consumers }), context)
+        const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
+        return { handle, count: () => shards.filter((shard) => held.hasShardId(shard)).length }
+      })
+    try {
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const older = yield* startWith(1, at('Toy', 1), { projection: ['queue', 'audit'] })
+        yield* until(older.count, (n) => n === shardsPerGroup)
+        expect(yield* older.handle.create('one', { requestId: 'c-one' })).toMatchObject({ _tag: 'Created' })
+        // The older runner's reader of `queue` reads the creation's row. A newer version launches without `queue`, and
+        // its operator forgets it.
+        const page = yield* older.handle.fetch('projection', 'queue', 10)
+        expect(page.length).toBe(1)
+        const newer = yield* startWith(2, at('Toy', 2), { projection: ['audit'] })
+        yield* until(newer.count, (n) => n === shardsPerGroup)
+        yield* newer.handle.forget('projection', 'queue')
+        yield* older.handle.ack('projection', 'queue', page)
+        // `audit`, the one consumer stored, reads the row and acks it: nothing holds the row any more.
+        const read = yield* newer.handle.fetch('projection', 'audit', 10)
+        yield* newer.handle.ack('projection', 'audit', read)
+        expect((yield* newer.handle.consumers).map(({ consumer }) => consumer)).toEqual(['audit'])
+        const pruned = yield* newer.handle.prune
+        // The newer deploy warns of `queue`, stored and not declared, before the forget.
+        logged.splice(0)
+        expect(pruned).toBe(1)
+      })).pipe(Effect.provide([store, collected])) as Effect.Effect<void, unknown>)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 30_000)
+
   test('a runner launched older than the newest dies, and the newer keeps every shard', () =>
     onFile((start) =>
       Effect.gen(function*() {

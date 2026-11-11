@@ -341,6 +341,38 @@ describe('a page of the read model (decisions 0157, 0158)', () => {
     }))
 })
 
+describe('a reindex beside a step (decision 0070)', () => {
+  // Decision 0070 writes a row of `reindex` only over the state it was computed from, in one statement. On a pool at
+  // `READ COMMITTED` the statement's check reads its snapshot, and its `ON CONFLICT DO UPDATE` waits for the step's
+  // lock on the row and then writes over what the step committed (decision 0222). Found by the premise review of
+  // 2026-11-11.
+  onServer('FAILING: a reindex beside a step on a pool leaves the row the step wrote', (_, sql) =>
+    Effect.gen(function*() {
+      yield* on(sql)(createTables)
+      const store = storage(ranked, sql)
+      yield* store.indexed
+      yield* transaction(sql, store.write('a', created(), 0))
+      const wrote = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const stepped = written({
+        entity: { state: { last: 'one' }, creation },
+        shown: { projection: JSON.stringify('one'), indexes: { rank: 'one' } },
+      })
+      const step = yield* Effect.forkChild(transaction(
+        sql,
+        Effect.andThen(store.write('a', stepped, 0), Effect.andThen(Deferred.succeed(wrote, undefined), Deferred.await(release))),
+      ))
+      yield* Deferred.await(wrote)
+      // The reindex reads the state the step has not committed yet, and computes the row of `start`.
+      const reindexing = yield* Effect.forkChild(store.reindex)
+      yield* Effect.raceFirst(waitingOnLocks(sql, 1), Effect.asVoid(Fiber.await(reindexing)))
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(step)
+      yield* Fiber.join(reindexing)
+      expect(yield* store.projected('a')).toBe('one')
+    }))
+})
+
 describe('a database held by one runtime (decisions 0080, 0157)', () => {
   onServer('a runtime holds the database with a session advisory lock, which it gives back as its scope closes', (url, sql) =>
     Effect.gen(function*() {
