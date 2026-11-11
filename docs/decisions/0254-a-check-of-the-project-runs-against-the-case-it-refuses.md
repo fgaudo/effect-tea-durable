@@ -121,6 +121,13 @@ then bug 52 test by test, then bug 83.
     `named` of `src/runtime.test_shared.ts` now puts the seed, or the deviation, before the message of the failure.
   - `AGENTS.md` said `SEED=<seed> bun test` runs that seed first. It runs the pinned seeds first, and now says so.
 
+- Bug 83 is ruled out by a reading, on 2026-11-11. `src/fixtures.property.test.ts` draws a send's request id from
+  `r-1`, `r-2`, `r-3` and `null`. The runtime is given `new-<at>` for a send drawn `null`, distinct for each send.
+  The rehearsal is given no id for such a send, and draws `request-<k>`, distinct for each draw, skipping any id the
+  test named (`send` of `src/rehearse.ts`). No id of one of the three sets can be an id of another, so the runtime and
+  the rehearsal take the same sends for retries. The bug leaves the roadmap as verified false when the family is
+  taken.
+
 The next part is bug 52, test by test. Each of the explored tests whose comment names an interleaving and that pins
 no seed gets a pin: the mutation its comment names, then `bun run test:explore -t <test>` on the mutation until a seed
 fails, then the seed pinned. There are 25 calls of `explored` in `src/runtime.test.ts` and `src/runtime/`, and two
