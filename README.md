@@ -235,6 +235,7 @@ Each example is a program with its scenarios as tests. If an example reads badly
 | [`cart`](examples/cart)                      | a cart whose lines reserve their stock      | children by id, each with work of its own                                                                                     |
 | [`booking`](examples/booking)                | a booking that holds seats of an event      | two entities that talk, rehearsed together and run on the runtime                                                             |
 | [`rental`](examples/rental)                  | bikes rented by the minute                  | the guide's running example: a value sent with the request and refused once changed, an id derived from the request id, an email carried into the end, a window a timer closes, a table of the application, a migration, a ride suspended and resumed by a fix |
+| [`stream`](examples/stream)                  | meters fed by a stream of readings          | a boundary that acknowledges an item once its answer is stored, an offset kept in the state, a meter suspended and fixed while the feed waits |
 | [`server`](examples/server)                  | the orders served over HTTP                 | a runner of Effect Cluster as a process, killed during a charge and started again; two runners on one file                   |
 
 ## Status

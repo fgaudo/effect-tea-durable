@@ -381,6 +381,17 @@ and sends each item as an inbound message, under a request id it derives from th
 item sent again after a crash gets the stored reply. `update` rejects an item the state does not want
 ([decision 0127](decisions/archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md)).
 
+The boundary acknowledges an item to its source once `send` answers `Accepted` or `Rejected`, since every other
+answer stores nothing of the item. After `Suspended` or `Full` it sends the same item again, under the same request
+id, after a wait. After `NotFound` it creates the entity and sends again, or drops the item on purpose and logs it.
+After `Reused` it stops without acknowledging, and an operator decides. A source gives an item again after a crash
+between the answer and the acknowledgement, which may come after the `keep`. So the entity keeps the offset of the
+last item applied and rejects an item at or before it, or the boundary gives a `keep` of `'forever'`. A discard does
+not get a stream past an item the entity dies on, since the item sent again is a new request: the boundary skips it,
+or a fix applies or rejects it. An entity that stays suspended holds the items after its own
+([decision 0272](decisions/0272-a-boundary-acknowledges-an-item-once-its-answer-is-stored.md)).
+[`examples/stream`](../examples/stream) is such a boundary.
+
 A kept key keeps its work only if the work is the same as it is stored: an operation that encodes to the JSON of
 the one under way, a timer at the same time whose message encodes alike. A property a schema does not declare is
 not stored, and makes no difference: what a step compares is what a crash compares

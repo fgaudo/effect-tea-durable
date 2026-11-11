@@ -1601,6 +1601,10 @@ describe('discarding', () => {
     expect(discarded.machine.stored.suspension).toBeNull()
     expect(discarded.machine.stored.mailbox).toEqual([])
     expect(discarded.machine.replies).toEqual(new Map())
+    // With no reply stored, the caller's retry is a new message, and the entity dies on it again: a boundary that
+    // sends again until it is answered gets past it only by skipping it (decision 0272).
+    const again = handled(discarded.machine, { _tag: 'Receive', request: by('r'), message: 'go' })
+    expect(again.machine.stored.suspension).not.toBeNull()
   })
 
   // The operation sends the same request again at the resumption, which a discard that stored nothing would let it

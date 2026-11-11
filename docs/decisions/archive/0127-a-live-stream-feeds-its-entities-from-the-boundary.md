@@ -1,6 +1,8 @@
 # 0127. A live stream feeds its entities from the boundary
 
-**Status:** accepted, 2026-11-04. Decides the open question on live streams.
+**Status:** accepted, 2026-11-04. Decides the open question on live streams. Changed by
+[decision 0272](../0272-a-boundary-acknowledges-an-item-once-its-answer-is-stored.md): the boundary acknowledges an
+item once `send` answers `Accepted` or `Rejected`, not on any answer.
 
 ## Context
 

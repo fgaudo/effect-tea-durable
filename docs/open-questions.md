@@ -658,14 +658,14 @@ with a requirement that no example has yet.
   unmigrated. A projection that holds `-0` is then checked as no caller reads it. It is bug 38 of the
   [roadmap](roadmap.md), not checked. It would be decided by:
   - a case of `src/testing.test.ts` whose projection holds `-0`, and one whose sender a migration changes.
-- **What a boundary acknowledges.** A boundary that reads a stream acknowledges an item to its source once `send`
-  is answered ([decision 0127](decisions/archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md)). Three
-  answers store nothing: `Suspended` ([decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)),
-  `Full` ([decision 0147](decisions/archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)) and
-  `NotFound`. An item answered so is lost, with nothing reported. It is bug 60 of the [roadmap](roadmap.md),
-  reasoned. It would be decided by:
-  - a note that changes 0127: a boundary acknowledges an item once it is answered with a reply, and sends it again
-    under the same request id after `Suspended` or `Full`.
+- **A source that gives each item once.** A boundary acknowledges an item once its answer is stored, and the source
+  gives the item again until then
+  ([decision 0272](decisions/0272-a-boundary-acknowledges-an-item-once-its-answer-is-stored.md)). A source that keeps
+  nothing, as a socket, gives no item again, so an item in flight at a crash of the boundary is lost whatever the
+  boundary does. The decision leaves this source out. It would be decided by:
+  - a program fed by such a source, and what its domain loses with an item;
+  - whether the boundary writes each item to a table of its own before it sends it, and reads that table as the
+    source, at the cost of a write for each item.
 
 ## The surface
 

@@ -49,8 +49,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0270](decisions/0270-a-childs-name-is-never-an-own-tag.md), which the maintainer chose on 2026-11-12
     after an opinion of a Fable 5.2 agent, and bug 22 by
     [decision 0271](decisions/0271-every-fork-of-the-runtime-says-it-is-interruptible.md), which the maintainer chose on 2026-11-12
-    after an opinion of a Fable 5.2 agent. The part next is bug 60, the next of the bugs reasoned, confirmed by the
-    notes: its fix is proposed to the maintainer before any code.
+    after an opinion of a Fable 5.2 agent, and bug 60 by
+    [decision 0272](decisions/0272-a-boundary-acknowledges-an-item-once-its-answer-is-stored.md), which the maintainer
+    chose on 2026-11-12 after an opinion of a Fable 5.2 agent. The part next is bug 64, the next of the bugs reasoned,
+    which needs a release of Effect whose hash differs: it is verified first, or left with its open question, and
+    its fix is proposed to the maintainer before any code.
     Decisions 0269 and 0271 change the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
     taken, and the tests of decision 0269 of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of
     PostgreSQL of the push of `main` that takes it.
@@ -391,14 +394,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       Cluster rows to go once its time is past`, in `src/cluster.test.ts`, on `claude/premise-pairs-messages-2-a90d4b`
       at `d602b35`. The fix begins at `keptGiven` of `src/cluster.ts`. The
       [open question](open-questions.md#running) The rows of operators' events on Cluster.
-  60. **Confirmed: a boundary that acknowledges an item once `send` is answered may lose it.**
-      [Decision 0127](decisions/archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md) acknowledges an
-      item on any answer, and `Suspended` ([decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)),
-      `Full` ([decision 0147](decisions/archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)) and
-      `NotFound` store nothing. The source never gives the item again. Nothing of `src/` holds it. The fix is a note
-      that changes 0127, and the paragraph on streams of `docs/design.md`. The
-      [open question](open-questions.md#programs) What a boundary acknowledges.
-      Confirmed by the notes: decision 0023 answers a message to a suspended entity `Suspended` and queues nothing, and the tests of `Full` and `NotFound` show they store nothing.
+  60. **Fixed by [decision 0272](decisions/0272-a-boundary-acknowledges-an-item-once-its-answer-is-stored.md)**, whose boundary acknowledges an item once `send` answers `Accepted` or `Rejected`.
   61. **Fixed by [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)**, whose waker activates an entity a crash took out.
   62. **Reproduced: on Cluster, a caller of an older version is given a rejection's reason as the newer version wrote
       it, and reads it through its own schema.** A reason is read through the migrations from the version that wrote

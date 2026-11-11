@@ -137,7 +137,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md) | Nothing waits for an operation under the permit | [0067](archive/0067-each-entity-is-held-by-its-own-lock.md) |
 | [0123](archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md) | An idempotent runner may be given the digest of its key, as its delivery | [0192](0192-the-digest-of-a-key-is-computed-by-the-machine.md) |
 | [0192](0192-the-digest-of-a-key-is-computed-by-the-machine.md) | The digest of an idempotency key is computed by the machine, and `src/program.ts` reaches no module of Node | [0193](0193-the-public-surface-is-four-entries.md) |
-| [0127](archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md) | A live stream is no work of a program: the boundary reads it, and sends each item |  |
+| [0127](archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md) | A live stream is no work of a program: the boundary reads it, and sends each item | [0272](0272-a-boundary-acknowledges-an-item-once-its-answer-is-stored.md) |
+| [0272](0272-a-boundary-acknowledges-an-item-once-its-answer-is-stored.md) | A boundary acknowledges an item once `send` answers `Accepted` or `Rejected`, sends it again after `Suspended` or `Full`, and stops at `Reused` |  |
 | [0128](archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md) | An operation that acts on nothing may be dropped or changed while it runs | [0129](archive/0129-a-droppable-runner-that-sends-does-not-compile.md) |
 | [0129](archive/0129-a-droppable-runner-that-sends-does-not-compile.md) | A droppable runner whose services hold `Entities` does not compile |  |
 | [0130](archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md) | A runner retries, the state counts the attempts, and a rehearsal fails on an operation that loops |  |
