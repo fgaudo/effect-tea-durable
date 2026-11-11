@@ -438,37 +438,97 @@ describe('the form of the examples', () => {
   })
 })
 
-describe('the form of the workflow', () => {
-  // The CI deals the files of `bun test` among jobs. A job left out of the matrix, or a count of shards that the
-  // command and the matrix give apart, leaves files that no job runs (decision 0242).
-  test('the jobs of the tests run every shard of their division, and the job of the other checks runs no test', () => {
-    type Step = { run?: string }
-    type Job = { strategy?: { matrix?: { shard?: ReadonlyArray<number> } }; steps: ReadonlyArray<Step> }
-    const workflow = Bun.YAML.parse(
-      readFileSync(join(import.meta.dir, '..', '.github', 'workflows', 'ci.yml'), 'utf8'),
-    ) as { jobs: Record<string, Job> }
-    const divided = (name: string, command: string) => {
-      const job = workflow.jobs[name]!
-      const shards = job.strategy?.matrix?.shard ?? []
-      expect(shards.length).toBeGreaterThan(1)
-      expect(shards).toEqual(shards.map((_, at) => at + 1))
-      expect(job.steps.flatMap((step) => step.run?.startsWith(command) ? [step.run] : []))
-        .toEqual([`${command} --shard=\${{ matrix.shard }}/${shards.length}`])
+/**
+ * The keys the check of the workflow reads, at each level. A key not listed may make a job run nothing, or ignore
+ * its failure, as `if`, `continue-on-error` or a matrix's `exclude` do, so the check refuses it (decision 0254).
+ */
+const keysRead = {
+  workflow: ['name', 'on', 'jobs'],
+  job: ['runs-on', 'timeout-minutes', 'strategy', 'services', 'steps'],
+  strategy: ['fail-fast', 'matrix'],
+  matrix: ['shard'],
+  step: ['name', 'uses', 'with', 'run', 'env', 'working-directory'],
+} as const
+
+/** The `if` a job may have: the release's, which runs it when the workflow is run by hand. */
+const conditions: Readonly<Record<string, string>> = { release: "github.event_name == 'workflow_dispatch'" }
+
+type Workflow = Readonly<Record<string, unknown>>
+
+/**
+ * What the workflow `ci.yml` does not keep, given as parsed (decisions 0242, 0250, 0254). It runs on every push and
+ * pull request, and by hand. The jobs `test` and `release` run `bun test` and `bun run test:release`, each divided by
+ * its matrix into every shard. The jobs `spikes`, `slow` and `postgres` run `bun run test:spikes`,
+ * `bun run test:slow`, and `bun run test:postgres` with the spike of the full volume. The job `check` runs no test.
+ * Every key the workflow holds is one of `keysRead`, and a job's `if` is the one `conditions` gives it.
+ */
+export const workflowRefused = (workflow: Workflow): ReadonlyArray<string> => {
+  const found: Array<string> = []
+  const object = (value: unknown): Readonly<Record<string, unknown>> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  const keys = (at: string, value: unknown, allowed: ReadonlyArray<string>) => {
+    for (const key of Object.keys(object(value))) if (!allowed.includes(key)) found.push(`${at}: ${key}`)
+  }
+  keys('workflow', workflow, keysRead.workflow)
+  const on = object(workflow['on'])
+  const triggers = Object.keys(on).sort()
+  if (triggers.join() !== 'pull_request,push,workflow_dispatch') found.push(`on: ${triggers.join(', ')}`)
+  for (const trigger of triggers) if (on[trigger] !== null) found.push(`on.${trigger}: filtered`)
+  const jobs = object(workflow['jobs'])
+  const steps = (name: string): ReadonlyArray<Readonly<Record<string, unknown>>> => {
+    const listed = object(jobs[name])['steps']
+    return Array.isArray(listed) ? listed.map(object) : []
+  }
+  const runs = (name: string) => steps(name).flatMap((step) => typeof step['run'] === 'string' ? [step['run']] : [])
+  for (const [name, job] of Object.entries(jobs)) {
+    const { if: condition, ...rest } = object(job)
+    if (condition !== undefined && condition !== conditions[name]) found.push(`${name}: if ${String(condition)}`)
+    keys(name, rest, keysRead.job)
+    const strategy = object(rest['strategy'])
+    keys(`${name}.strategy`, strategy, keysRead.strategy)
+    keys(`${name}.strategy.matrix`, strategy['matrix'], keysRead.matrix)
+    steps(name).forEach((step, at) => keys(`${name}.steps[${at}]`, step, keysRead.step))
+  }
+  for (const name of [...Object.keys(conditions), 'test', 'check', 'spikes', 'slow', 'postgres']) {
+    if (!(name in jobs)) found.push(`${name}: missing`)
+  }
+  const divided = (name: string, command: string) => {
+    const shard = object(object(object(jobs[name])['strategy'])['matrix'])['shard']
+    const shards = Array.isArray(shard) ? shard : []
+    if (shards.length < 2 || shards.some((value, at) => value !== at + 1)) {
+      found.push(`${name}: shards ${JSON.stringify(shard)}`)
     }
-    divided('test', 'bun test')
-    divided('release', 'bun run test:release')
-    expect(workflow.jobs['check']!.steps.filter((step) => step.run?.includes('test'))).toEqual([])
+    const commands = runs(name).filter((run) => run.startsWith(command))
+    const expected = `${command} --shard=\${{ matrix.shard }}/${shards.length}`
+    if (commands.length !== 1 || commands[0] !== expected) found.push(`${name}: runs ${JSON.stringify(commands)}`)
+  }
+  divided('test', 'bun test')
+  divided('release', 'bun run test:release')
+  const ran = (name: string, commands: ReadonlyArray<string>) => {
+    for (const command of commands) if (!runs(name).includes(command)) found.push(`${name}: does not run ${command}`)
+  }
+  ran('spikes', ['bun run test:spikes'])
+  ran('slow', ['bun run test:slow'])
+  ran('postgres', ['bun run test:postgres', "bun test '--path-ignore-patterns=node_modules/**' ./spikes/full-volume.test.ts"])
+  for (const run of runs('check')) if (run.includes('test')) found.push(`check: runs ${run}`)
+  return found
+}
+
+const workflowOfTheRepository = () =>
+  Bun.YAML.parse(readFileSync(join(import.meta.dir, '..', '.github', 'workflows', 'ci.yml'), 'utf8')) as Workflow
+
+describe('the form of the workflow', () => {
+  // The CI deals the files of `bun test` among jobs, and jobs of their own run the spikes, the tests on a clock that
+  // is real and the tests on PostgreSQL. A key the check does not read may make a job run nothing or ignore its
+  // failure, so the check refuses it (decisions 0242, 0250, 0254).
+  test('every job of the workflow runs its tests, every shard of a division among them, with no key the check does not read', () => {
+    expect(workflowRefused(workflowOfTheRepository())).toEqual([])
   })
 
   // `bun test` runs no spike, and skips the tests over two seconds on a clock that is real, so jobs of their own run
   // them (decision 0250).
-  test('a job runs every spike, and one every test on a clock that is real, which bun test leaves out', () => {
+  test('the scripts the jobs run take every spike, and every test on a clock that is real, which bun test leaves out', () => {
     const root = join(import.meta.dir, '..')
-    const workflow = Bun.YAML.parse(readFileSync(join(root, '.github', 'workflows', 'ci.yml'), 'utf8')) as {
-      jobs: Record<string, { steps: ReadonlyArray<{ run?: string }> }>
-    }
-    expect(workflow.jobs['spikes']!.steps.map((step) => step.run)).toContain('bun run test:spikes')
-    expect(workflow.jobs['slow']!.steps.map((step) => step.run)).toContain('bun run test:slow')
     const scripts = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> })
       .scripts
     expect(scripts['test:spikes']).toBe("bun test '--path-ignore-patterns=node_modules/**' ./spikes")
@@ -567,6 +627,32 @@ describe('the check of the form', () => {
     } finally {
       rmSync(folder, { recursive: true, force: true })
     }
+  })
+
+  test('a job of the workflow that may run nothing, ignore its failure or leave a shard out is found', () => {
+    const changed = (change: (workflow: any) => void) => {
+      const workflow = structuredClone(workflowOfTheRepository()) as any
+      change(workflow)
+      return workflowRefused(workflow)
+    }
+    expect(changed(() => {})).toEqual([])
+    expect(changed((w) => w.jobs.test.if = 'false')).toEqual(['test: if false'])
+    expect(changed((w) => w.jobs.release.if = 'false')).toEqual(['release: if false'])
+    expect(changed((w) => w.jobs.slow['continue-on-error'] = true)).toEqual(['slow: continue-on-error'])
+    expect(changed((w) => w.jobs.test.strategy.matrix.exclude = [{ shard: 4 }])).toEqual(['test.strategy.matrix: exclude'])
+    expect(changed((w) => w.jobs.release.strategy.matrix.include = [{ shard: 5 }]))
+      .toEqual(['release.strategy.matrix: include'])
+    expect(changed((w) => w.jobs.postgres.steps.at(-1).if = 'false')).toEqual(['postgres.steps[5]: if'])
+    expect(changed((w) => w.jobs.spikes.steps.at(-1)['continue-on-error'] = true)).toEqual(['spikes.steps[3]: continue-on-error'])
+    expect(changed((w) => w.on.push = { branches: ['main'] })).toEqual(['on.push: filtered'])
+    expect(changed((w) => delete w.on.pull_request)).toEqual(['on: push, workflow_dispatch'])
+    expect(changed((w) => w.jobs.test.strategy.matrix.shard = [1, 2, 3, 5])).toEqual(['test: shards [1,2,3,5]'])
+    expect(changed((w) => w.jobs.test.steps.at(-1).run = 'bun test --shard=${{ matrix.shard }}/3'))
+      .toEqual(['test: runs ["bun test --shard=${{ matrix.shard }}/3"]'])
+    expect(changed((w) => w.jobs.spikes.steps.at(-1).run = 'bun run test:spikes || true'))
+      .toEqual(['spikes: does not run bun run test:spikes'])
+    expect(changed((w) => delete w.jobs.slow)).toEqual(['slow: missing', 'slow: does not run bun run test:slow'])
+    expect(changed((w) => w.jobs.check.steps.push({ run: 'bun test' }))).toEqual(['check: runs bun test'])
   })
 
   test('a fork not given untransacted is found, in each of its forms', () => {

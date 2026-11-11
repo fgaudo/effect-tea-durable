@@ -74,7 +74,14 @@ then bug 52 test by test, then bug 83.
   and fails if Bun's patterns change. Both fail on a pattern without `_test` and `_spec`. The test of the branch
   `claude/premise-review-project-17a123` asked of `ofTheTests` what no pattern can give, and is replaced by these.
 
-The next part is bug 47, at `divided` of `src/form.test.ts`.
+- Bug 47 is done, wider than the roadmap says. `workflowRefused` of `src/form.test.ts` reads the whole of `ci.yml`
+  through `keysRead`, the keys it allows for the workflow, a job, a strategy, a matrix and a step. It refuses any
+  other key, a job's `if` other than the release's, a trigger missing or filtered, a division that leaves a shard
+  out, and a job of the spikes, of the slow tests or of PostgreSQL that does not run its script. The test
+  `a job of the workflow that may run nothing, ignore its failure or leave a shard out is found` gives it a sample of
+  each case, made from the workflow of the repository.
+
+The next part is bug 88, a check of `package.json` in `src/form.test.ts`, `AGENTS.md` and `scripts/compare-docs.ts`.
 
 ## What it rests on
 
