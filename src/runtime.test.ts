@@ -2660,7 +2660,7 @@ describe('publishing what happened', () => {
   // A call that runs a step or waits for one would wait, within a transaction, for the connection the transaction
   // holds (decision 0256). Each is refused before it runs, and the transaction is the caller's own.
   test('a deploy, a create, a send, a resume, a discard and a fetch that waits are refused within a transaction', () =>
-    database(Effect.gen(function*() {
+    onBoth(Effect.gen(function*() {
       const reasonOf = (exit: Exit.Exit<unknown, unknown>) => {
         const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
         return cause instanceof InvariantDefect ? cause.reason : null
@@ -2692,6 +2692,28 @@ describe('publishing what happened', () => {
             .toEqual({ _tag: 'Accepted' })
         }))
     })))
+
+  // A transaction of another client holds a connection the runtime's steps do not use, so a call within it is not
+  // refused, and its step commits apart from that transaction (decision 0256).
+  test('a create and a send within a transaction of another client are answered', () =>
+    onBoth(Effect.scoped(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const other = Context.get(
+        yield* Layer.build(Layer.orDie(SqliteClient.layer({ filename: ':memory:' }))),
+        SqlClient.SqlClient,
+      )
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
+          const message = { _tag: 'Want', key: 't', on: false, nonce: 'off' } as const
+          const answers = yield* other.withTransaction(Effect.all([
+            toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }),
+            toy.send(id, message, { requestId: 'off', sender: tester, keep: 'forever' }),
+          ]))
+          expect(answers).toEqual([{ _tag: 'Created' }, { _tag: 'Accepted' }])
+        }))
+    }))))
 
   // The handler of `consume` runs in the page's transaction, which holds SQLite's one connection (decision 0184). A
   // creation there would commit on a connection of its own, which the handler holds while it waits for the creation

@@ -45,19 +45,25 @@ handler.
 
 - That each call is refused within a caller's transaction, before it runs, and that the runtime goes on: **tested** by
   `a deploy, a create, a send, a resume, a discard and a fetch that waits are refused within a transaction`, in
-  `src/runtime.test.ts`, on SQLite, PGlite, and the CI's server of PostgreSQL. It fails against the code before the
-  change.
+  `src/runtime.test.ts`. It runs with `onBoth`, on SQLite and PGlite, and on the server where `POSTGRES_URL` names
+  one. It fails against the code before the change.
 - That a handler of `consume` that creates an entity fails its reader, leaves its page unread, and holds no step:
   **tested** by `a handler of consume that creates an entity is refused, and holds no step of the runtime`, in
   `src/runtime.test.ts`. It fails against the code before the change, where the reader never ends.
+- That on a pool of PostgreSQL the refusal keeps the pool from being held whole by transactions that wait for a step,
+  which is bug 81: **tested** by `creates within transactions that hold every connection of the pool are refused, and
+  the runtime goes on`, in `src/postgres.test.ts`. It holds in a transaction every connection the runtime's advisory
+  lock leaves, and calls `create` in each. It runs in the job of the CI that runs `bun run test:postgres`, since no
+  server runs on the maintainer's machine, so it first runs on the push of this note. That it fails against the code
+  before the change, where each create would wait for ever, is **not run**: a run on a branch with the refusal of
+  `create` taken out would check it.
+- That a call within a transaction of another client is answered, since that transaction holds a connection the
+  runtime's steps do not use: **tested** by `a create and a send within a transaction of another client are
+  answered`, in `src/runtime.test.ts`, on both dialects with a client of SQLite of its own, and by `a create within a
+  transaction of another pool on the same database is answered`, in `src/postgres.test.ts`, on the server with a
+  second pool on the runtime's database.
 - That a call can tell it runs within a transaction of the client: **read** in `node_modules/effect/src/sql/SqlClient.ts`,
   as decision 0184 read it. Its premise holds: `transactionService` is still the client's service of its open
   transaction.
-- That the premises of decision 0184 still hold: **read**. The store and the cursors still commit together, the
-  reader's refusal is kept, now through `outside`, and its test passes.
-- That on a pool of PostgreSQL the refusal keeps every connection from being held by a handler that waits for a step:
-  **only reasoned**. The refusal reads the caller's transaction, whatever the dialect, so a handler holds its
-  connection only for its own statements. Bug 81 was never run, and no test fills a pool.
-- That a call made on another client than the runtime's, within a transaction of that client, does not wait for the
-  runtime's connection: **only reasoned**. The transaction holds a connection of the other client, which a step does
-  not use, and the refusal does not see it.
+- That the premises of decision 0184 still hold: **read**, and **tested** by its tests, which pass. The store and the
+  cursors still commit together, and the reader's refusal is kept, now through `outside`.

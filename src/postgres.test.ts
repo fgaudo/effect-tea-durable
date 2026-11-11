@@ -431,6 +431,51 @@ describe('a role whose search_path is set by ALTER ROLE (decision 0215)', () => 
     }))
 })
 
+describe('a call that waits for a step, within a transaction of a pool (decision 0256)', () => {
+  // The runtime reserves one connection for its advisory lock, and each transaction below holds another, so no
+  // connection of the pool is left for a step. A create that waited for its step there would wait for ever, which is
+  // bug 81 of the roadmap: so each is refused, and once the transactions end a create is answered.
+  onServer('creates within transactions that hold every connection of the pool are refused, and the runtime goes on', (url) =>
+    Effect.gen(function*() {
+      const transactions = 2
+      const owned = yield* connect(url, { maxConnections: transactions + 1 })
+      const runtime = yield* on(owned)(launch({}))
+      const handle = yield* runtime.deploy(ranked)
+      const all = yield* Deferred.make<void>()
+      let entered = 0
+      const exits = yield* Effect.forEach(
+        Array.from({ length: transactions }, (_, index) => index),
+        (index) =>
+          Effect.exit(owned.withTransaction(Effect.gen(function*() {
+            yield* owned`SELECT 1`
+            if (++entered === transactions) yield* Deferred.succeed(all, undefined)
+            yield* Deferred.await(all)
+            return yield* handle.create(`held-${index}`, { requestId: `held-${index}`, sender: null })
+          }))),
+        { concurrency: 'unbounded' },
+      )
+      expect(exits.map(reasonOf)).toEqual(
+        Array.from({ length: transactions }, () => 'create runs within a transaction of the client of the runtime'),
+      )
+      expect(yield* handle.create('free', { requestId: 'free', sender: null })).toEqual({ _tag: 'Created' })
+      expect(yield* handle.count({})).toBe(1)
+    }))
+
+  // A transaction of another pool on the same database holds a connection the runtime's steps do not use, so a call
+  // within it is answered.
+  onServer('a create within a transaction of another pool on the same database is answered', (url) =>
+    Effect.gen(function*() {
+      const owned = yield* connect(url)
+      const other = yield* connect(url)
+      const runtime = yield* on(owned)(launch({}))
+      const handle = yield* runtime.deploy(ranked)
+      expect(yield* other.withTransaction(Effect.andThen(
+        other`SELECT 1`,
+        handle.create('other', { requestId: 'other', sender: null }),
+      ))).toEqual({ _tag: 'Created' })
+    }))
+})
+
 describe('the migrations of createTables (decision 0216)', () => {
   onServer('a second run waits on the lock of effecttea_migrations until the first commits, and runs none', (url, sql) =>
     Effect.gen(function*() {

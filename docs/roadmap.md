@@ -33,7 +33,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     then 41, 44, 72, 42 and 87; then the bugs reasoned, 4, 6, 8, 22, 60 and 64, and the bugs noticed, 31, 37, 38,
     40, 50, 51, 65, 67 and 79, each verified first. Bug 86 is fixed by
     [decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md), and bugs 26 and
-    81 by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md). The part
+    81 by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md). Its tests on a
+    server run first in the CI, and the test of bug 81 has not run against the code before 0256. The part
     next is bug 75, whose fix begins at `waking` of `src/runtime/waker.ts`.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
@@ -628,7 +629,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       first, or at `prune` of `src/storage/log.ts`, by an advisory lock of the program. The
       [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
       snapshot.
-  81. **Fixed by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md)**, whose refusal holds on a pool too, which is only reasoned.
+  81. **Fixed by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md)**, whose refusal holds on a pool too, as a test on the CI's server checks.
   82. **Reproduced: a world's `sendFrom` may forge a member's request, and the member's own send is answered from
       it.** A reply is keyed by the sender's address, key, incarnation and name, since no one else sends under that
       address ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). A world gives its members
