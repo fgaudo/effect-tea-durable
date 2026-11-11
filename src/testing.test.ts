@@ -14,6 +14,7 @@ import * as Schema from 'effect/Schema'
 import { TestClock } from 'effect/testing'
 import { order, type Sender as OrderSender, type State as OrderState } from './fixtures/order.ts'
 import { type Json, type Migration, noWork, operation, type Program } from './program.ts'
+import { program as declareProgram, reject as rejectStep } from './program.ts'
 import {
   deviated,
   everySchedule,
@@ -625,4 +626,34 @@ describe('projectionViolations (decision 0213)', () => {
       { _tag: 'Missing', message: { _tag: 'ShipmentReported', tracking: 'track-1' }, sender: warehouse },
     ])
   })
+})
+
+// Bug 38 of the roadmap: `projectionViolations` gives `allows` the projection as `project` returns it. A caller
+// reads it from its JSON, where `-0` is `0` (decision 0211), so a check of the value `project` returns passes where
+// the caller's reading breaks the agreement.
+test.failing('projectionViolations gives allows the projection as a caller reads it, where -0 is 0', () => {
+  const at = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
+  const signed = declareProgram({
+    state: Schema.Struct({ x: Schema.Number }),
+    flags: Schema.Null,
+    inbound: Schema.TaggedStruct('Act', {}),
+    internal: Schema.Never,
+    operation: Schema.Never,
+    rejection: Schema.Never,
+    projection: Schema.Struct({ x: Schema.Number }),
+  })({
+    name: 'Signed',
+    keys: [],
+    init: () => ({ x: -0 }),
+    update: () => (state) => (Object.is(state.x, -0) ? state : rejectStep),
+    work: () => noWork,
+    operations: {},
+    project: (state) => state,
+    indexes: {},
+  })
+  const check = projectionViolations(signed, { Act: (projection) => Object.is(projection.x, -0) })
+  // A caller reads `{ x: 0 }`, is not allowed to act, and `update` accepts the message: a `Missing`.
+  expect(check({ x: -0 }, [{ message: { _tag: 'Act' }, sender: null }], at)).toEqual([
+    { _tag: 'Missing', message: { _tag: 'Act' }, sender: null },
+  ])
 })

@@ -870,3 +870,38 @@ test('a forEach of messages to children by id that raise no event puts the child
   expect(count('steps')).toBe(1)
   expect(count('andThen')).toBe(50)
 })
+
+// Bug 8 of the roadmap: an own message whose `_tag` is typed `string` passes `Checks`, so the compiler accepts it
+// beside a child, and `update` routes such a message, tagged with the child's name, to the child.
+test.failing("an own message whose tag is typed string, sent with a child's name, reaches the parent's update", () => {
+  const seen: Array<string> = []
+  const loose = program({
+    state: Order,
+    flags: Schema.Null,
+    inbound: Schema.Struct({ _tag: Schema.String, id: Schema.String, message: Schema.Struct({ _tag: Schema.String, quantity: Schema.Int }) }),
+    internal: Schema.Never,
+    operation: Schema.Never,
+    rejection: Schema.Never,
+    sender: Schema.Null,
+    projection: Schema.Null,
+  })({
+    name: 'Loose',
+    keys: [],
+    children: { Line: each(line, { id: Schema.String, at: lines }) },
+    init: () => ({ lines: { a: line.init(null, at) }, charged: 0 }),
+    update: (message) => (state) => {
+      seen.push(message._tag)
+      return state
+    },
+    work: () => noWork,
+    operations: {},
+    project: () => null,
+    indexes: {},
+    onEvent: { Line: () => (state: Order) => state },
+  })
+  const state = loose.init(null, at) as Order
+  const next = loose.update({ _tag: 'Line', id: 'a', message: { _tag: 'Added', quantity: 3 } }, meta as never)(state)
+  // The parent declared the message as its own, so its own `update` should be the one to read it.
+  expect(seen).toEqual(['Line'])
+  expect(next).toBe(state)
+})

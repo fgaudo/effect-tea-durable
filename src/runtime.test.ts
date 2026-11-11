@@ -29,6 +29,7 @@ import {
   defect,
   type Address,
   type Entities,
+  type IdempotencyKey,
   InvariantDefect,
   type Json,
   noWork,
@@ -1288,6 +1289,70 @@ describe('a planned stop', () => {
 
   const unknown = (published: ReadonlyArray<Library.Published<T>>) =>
     published.filter((row) => row.message !== null && row.message._tag === 'Unknown').map((row) => row.message)
+
+  // Bug 6 of the roadmap, ruled out: a step in the drain that gives a droppable operation a new incarnation does not
+  // start it, and the next activation starts it, as an operation stored with no completion. Only an at-most-once
+  // operation's completion steps in the drain, since a caller waits for its end, so `b`'s completion changes `a`.
+  test('a droppable operation that a step of the drain changes runs at the next activation', () =>
+    database(Effect.gen(function*() {
+      const flipped = (state: { readonly applied: ReadonlyArray<string> }) => state.applied.includes('flip')
+      const dropping: Program<T> = {
+        ...program,
+        name: 'Dropping',
+        init: (_flags, at) => ({ want: ['a', 'b', 'c'], applied: [], since: at, rings: at }),
+        update: (message, meta) => (state) =>
+          message._tag === 'Done' && message.key === 'b'
+            ? { ...state, want: state.want.filter((key) => key !== 'b'), applied: [...state.applied, 'flip'] }
+            : program.update(message, meta)(state),
+        work: (state) =>
+          Object.fromEntries(state.want.map((key) => [
+            key,
+            key === 'a'
+              ? (flipped(state) ? { _tag: 'C', key: 'a' } as const : { _tag: 'A' } as const)
+              : { _tag: 'B', key } as const,
+          ])),
+        operations: {
+          ...program.operations,
+          A: operation.droppable(() => acts('a', null)),
+          C: operation.droppable(({ key }) => acts(key, 'changed' as IdempotencyKey)),
+        },
+      }
+      const acted: Array<string> = []
+      const gates = { b: Deferred.makeUnsafe<void>(), c: Deferred.makeUnsafe<void>() }
+      const layer = (first: boolean) => Layer.succeed(
+        Hands,
+        Hands.of({
+          act: (key, idempotencyKey) =>
+            Effect.andThen(
+              Effect.sync(() => acted.push(idempotencyKey === null ? key : `${key}:${idempotencyKey}`)),
+              key === 'b' || key === 'c' ? Deferred.await(gates[key]) : first ? Effect.never : Effect.void,
+            ),
+        }),
+      )
+      const at = yield* DateTime.now
+      const created = yield* Deferred.make<void>()
+      const stopping = yield* Effect.forkChild(process({ drain: { millis: 100 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(dropping), layer(true))
+          yield* ran(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
+          yield* Deferred.succeed(created, undefined)
+        })))
+      yield* Deferred.await(created)
+      yield* TestClock.adjust('1 millis')
+      yield* Deferred.succeed(gates.b, undefined)
+      yield* TestClock.adjust('1 millis')
+      yield* TestClock.adjust('1 millis')
+      yield* Deferred.succeed(gates.c, undefined)
+      yield* Fiber.join(stopping)
+      expect(acted.filter((act) => act === 'a:changed')).toEqual([])
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          yield* Effect.provide(runtime.deploy(dropping), layer(false))
+          yield* runtime.settled
+        }))
+      // The changed operation was never started, so the next activation starts it once.
+      expect(acted.filter((act) => act === 'a:changed')).toEqual(['a:changed'])
+    })))
 
   test('an at-most-once operation under way ends, and the others run again at the next activation', () =>
     database(Effect.gen(function*() {
@@ -3530,6 +3595,122 @@ describe('what the runtime cannot finish', () => {
           expect(yield* settles(runtime, 100)).toBe(false)
           expect([yield* toy.read('w-1'), yield* toy.read('w-2')]).toEqual([0, 0])
         })))
+    })))
+
+  // Bug 31 of the roadmap: a crash forks the stop of its operations and gives the lock back (decision 0056), so the
+  // next activation records an at-most-once operation's `unknown` while the old fiber still runs its finalizer, which
+  // acts. The program's answer to `unknown` may then act beside it.
+  test.failing('an at-most-once operation a crash stops delivers its unknown once its finalizer has run', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const released = yield* Deferred.make<void>()
+      const stopping = yield* Deferred.make<void>()
+      let finalized = false
+      // `b`'s hands never come back, and act in a finalizer that ends only once the test lets it.
+      const layer = Layer.succeed(
+        Hands,
+        Hands.of({
+          act: (key) =>
+            key !== 'b' ? Effect.never : Effect.never.pipe(
+              Effect.onInterrupt(() =>
+                Deferred.succeed(stopping, undefined).pipe(
+                  Effect.andThen(Deferred.await(released)),
+                  Effect.andThen(Effect.sync(() => {
+                    finalized = true
+                  })),
+                )
+              ),
+            ),
+        }),
+      )
+      let dies = true
+      const finalizedWhenKnown = yield* process({
+        observe: (entity, event) => {
+          if (entity.id !== 'slow' || event._tag !== 'Receive' || !dies) return Effect.void
+          dies = false
+          return Effect.die('the runtime failed')
+        },
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('slow', { flags: { at }, requestId: 'c-slow', sender: tester })
+          const failed = yield* Effect.exit(toy.send('slow', want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }))
+          expect(Exit.isFailure(failed)).toBe(true)
+          yield* Deferred.await(stopping)
+          // The next caller loads the entity again, and its activation records `b`'s `unknown`.
+          yield* toy.send('slow', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' })
+          for (let turn = 0; turn < 1_000; turn++) {
+            const inspected = yield* toy.inspect('slow')
+            if (inspected !== null && !inspected.state.want.includes('b')) return finalized
+            yield* Effect.yieldNow
+          }
+          return 'unknown never handled'
+        }).pipe(Effect.ensuring(Deferred.succeed(released, undefined))))
+      expect(finalizedWhenKnown).toBe(true)
+    })))
+
+  // Bug 65 of the roadmap: a crash does not wait for the stop of its operations (decision 0056), and the receiver
+  // deletes the reply of a request once the work that sent it ends (decision 0021). So an at-least-once operation
+  // that sends from a region it holds uninterruptible, after the operation's new run ended the work, has the
+  // receiver apply the request twice.
+  test.failing('a send of an operation a crash could not interrupt, after its new run ended the work, is applied once', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const gate = yield* Deferred.make<void>()
+      const oldSent = yield* Deferred.make<void>()
+      const inRegion = yield* Deferred.make<void>()
+      let runs = 0
+      const sent = send(program, id, { _tag: 'Want', key: 'a', on: false, nonce: 'sent' }, 'want')
+      const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
+        ...sending,
+        operations: {
+          ...sending.operations,
+          C: operation.atLeastOnce(({ key }) =>
+            ++runs === 1
+              ? Effect.uninterruptible(
+                Deferred.succeed(inRegion, undefined).pipe(
+                  Effect.andThen(Deferred.await(gate)),
+                  Effect.andThen(sent),
+                  Effect.andThen(Deferred.succeed(oldSent, undefined)),
+                ),
+              ).pipe(Effect.as(done(key)))
+              : Effect.as(sent, done(key))
+          ),
+        },
+      }
+      const { layer } = yield* hands()
+      let dies = true
+      yield* process({
+        observe: (entity, event) => {
+          if (entity.id !== 'sender' || event._tag !== 'Receive' || !dies) return Effect.void
+          dies = false
+          return Effect.die('the runtime failed')
+        },
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* ran(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
+          const from = yield* runtime.deploy(sender)
+          yield* from.create('sender', { flags: { at }, requestId: 'creation', sender: tester })
+          yield* Deferred.await(inRegion)
+          const poke = (nonce: string) =>
+            from.send('sender', { _tag: 'Want', key: 't', on: false, nonce }, { requestId: nonce, sender: tester, keep: 'forever' })
+          // The crash cannot interrupt `c`'s first run, which waits in its region.
+          expect(Exit.isFailure(yield* Effect.exit(poke('p-1')))).toBe(true)
+          // The next caller loads the sender again, and `c` runs again, sends, and ends the work.
+          yield* poke('p-2')
+          for (let turn = 0; turn < 1_000; turn++) {
+            const inspected = yield* from.inspect('sender')
+            if (inspected !== null && !inspected.state.want.includes('c')) break
+            yield* Effect.yieldNow
+          }
+          yield* Deferred.succeed(gate, undefined)
+          yield* Deferred.await(oldSent)
+          yield* runtime.settled
+          const received = yield* toy.inspect(id)
+          expect(runs).toBe(2)
+          expect(received?.state.applied.filter((nonce) => nonce === 'sent')).toEqual(['sent'])
+        }))
     })))
 
   test('a crash does not wait for its operations to stop: nothing waits for them under its entity’s lock', () =>
