@@ -26,9 +26,21 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     The cases of a crash's retry not run yet, and An operation's kept answer on Cluster across a crash, and under two
     runs at once.
   - The next part is family G, the last whose rule is this step's. Families A, C and D take their rules from later
-    steps of this roadmap. Its rule is proposed to the maintainer first, as the next item says. The rule proposed on
-    2026-11-11, not chosen yet, runs each check of the form, of the CI and of the explored tests against the case it
-    refuses, and leaves bugs 48 and 83 to fixes of their own.
+    steps of this roadmap. Its rule is proposed to the maintainer first, as the next item says. Three rules were
+    proposed on 2026-11-11, and the maintainer has chosen none yet:
+    - Each check of the form, of the CI and of the explored tests is run against the case it refuses. A check of
+      `src/form.test.ts` gets a sample of the case it refuses beside it, which holds bugs 46, 47 and 88. An explored
+      test whose comment names an interleaving keeps a pinned seed that finds it, which holds bugs 43 and 52, from
+      seed 661. The property of the fixtures lists them by reading `src/fixtures/`, which holds bug 53. Bugs 48 and
+      83 get fixes of their own. This rule was the one recommended.
+    - [`scripts/mutate.ts`](../scripts/mutate.ts) takes out the checks of the project too, as the workflow, the
+      scripts of `package.json` and the guard of `holding`. It is more uniform, but runs only in a review, and not at
+      every `bun test`.
+    - A fix of its own for each bug, with no rule of the family.
+  - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
+    `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
+    on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
+    hand has not run yet. A family fixed after `07cb3fb` runs both again.
   - A family's rule is proposed to the maintainer before any code, with the alternatives, and the code waits for the
     maintainer's choice. The maintainer may ask for the opinion of a subagent first, as a Fable 5.2 agent gave for F
     and E.
@@ -76,8 +88,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   3. **Reasoned: a reply to another entity's operation stays for ever on a pool of PostgreSQL.** The two statements
      that delete it see each other's rows only once committed, and two steps on a pool run at once
      ([decisions 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md),
-     [0222](decisions/0222-postgresql-with-many-connections.md)). It is a row left, and no wrong answer. Verified by
-     a test of `src/postgres.test.ts` on the CI's server: the [open question](open-questions.md#running) The
+     [0222](decisions/0222-postgresql-with-many-connections.md)). It is a row left, and no wrong answer. An answer
+     kept for an operation in `effecttea_answers` is kept and deleted by the same two statements, and may stay the
+     same way ([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)).
+     Verified by a test of `src/postgres.test.ts` on the CI's server: the [open question](open-questions.md#running) The
      deletions of a reply on a pool of PostgreSQL.
   4. **Reasoned: callers of a program whose sender is `null` share their request ids.** A caller that sends an id
      another caller used gets that caller's reply, and its own message is never applied, with nothing reported
