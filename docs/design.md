@@ -1498,8 +1498,8 @@ them to finish, and only a crash of the process stops them halfway
 ([decision 0079](decisions/archive/0079-what-a-caller-sets-going-is-finished-without-it.md)). What runs detached is
 counted until it ends, however it ends, by a fiber forked with it
 ([decision 0110](decisions/archive/0110-detached-work-is-counted-until-it-ends-however-it-ends.md)); a fiber forked from
-a region that cannot be interrupted says it is interruptible, whatever Effect's default
-([decision 0112](decisions/archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md)).
+the runtime says it is interruptible, wherever it is forked and whatever Effect's default, so that its scope stops it
+([decision 0271](decisions/0271-every-fork-of-the-runtime-says-it-is-interruptible.md)).
 Bookkeeping another fiber reads changes in one synchronous step, never across a yield: a fiber is held only while
 it has not ended, and an entity leaves the process in one step
 ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). That bookkeeping stays in
@@ -1508,7 +1508,8 @@ I/O or on the time, which no transaction waits for, and an entity's lock stays a
 in order ([decision 0177](decisions/archive/0177-the-runtimes-bookkeeping-stays-in-synchronous-steps.md)). An idle entity's wait
 ends with an item a sleep puts in the entity's queue, and nothing races its take, so an event offered as the wait
 runs out is not lost ([decision 0116](decisions/archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md)).
-Every fork of the runtime runs without the transaction of the fiber that forks it, and a count another fiber reads
+Every fork of the runtime runs without the transaction of the fiber that forks it, through `forkApart` or
+`forkChildApart`, which also make it interruptible, and a count another fiber reads
 is raised and lowered by one `Effect.acquireUseRelease`, unless a comment says why two fibers raise and lower it. A
 test of the suite reads the code and fails on any other form
 ([decision 0164](decisions/archive/0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md)).

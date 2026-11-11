@@ -32,7 +32,7 @@ import { create, faulted, operate, send, wake } from './runtime/callers.ts'
 import { current, doorStep, serving, singletonsOf } from './runtime/doors.ts'
 import { loads, stop } from './runtime/loop.ts'
 import * as Machine from './machine.ts'
-import { type Deployment, forgetUse, type Process, untransacted } from './runtime/process.ts'
+import { type Deployment, forgetUse, forkApart, type Process, untransacted } from './runtime/process.ts'
 import {
   type Address,
   type Key,
@@ -1065,8 +1065,9 @@ const started = (
       // version read anew whenever a wait begins would already count that commit, and the reading would wait out
       // its time. A launch that cannot read it keeps -1, which no version is, so the first reading wakes once.
       let seen = yield* read(-1)
-      yield* Effect.forkIn(
-        untransacted(sql, Effect.forever(Effect.gen(function*() {
+      yield* forkApart(
+        sql,
+        Effect.forever(Effect.gen(function*() {
           yield* readings.waiting.await
           const now = yield* read(seen)
           if (now !== seen) {
@@ -1074,7 +1075,7 @@ const started = (
             tellAll(readings)
           }
           yield* Effect.sleep(`${millis} millis`)
-        }))),
+        })),
         running,
       )
     }
@@ -1229,16 +1230,13 @@ const started = (
           }
         }
         // Registered with its waker in one step: a deployment others can reach always has its timers woken. The
-        // waker is not forked uninterruptible with the step, so the scope that closes it stops it (decisions 0078,
-        // 0112).
+        // waker is forked interruptible all the same, so the scope that closes it stops it (decisions 0078, 0271).
         yield* Effect.uninterruptible(Effect.gen(function*() {
           p.deployments.set(program.name, deployed as unknown as Deployment<never>)
           const awaited = p.undeployed.get(program.name)
           p.undeployed.delete(program.name)
           if (awaited !== undefined) Deferred.doneUnsafe(awaited, Effect.void)
-          deployed.waking = yield* Effect.forkIn(untransacted(sql, waking(p, deployed)), deployed.scope, {
-            uninterruptible: false,
-          })
+          deployed.waking = yield* forkApart(sql, waking(p, deployed), deployed.scope)
           // A deployment registered during the drain wakes no timer, as the drain stops the waker of the others
           // (decision 0261). A drain that began before the fork is found here, and one that begins after finds it.
           if (p.draining) yield* Fiber.interrupt(deployed.waking)
@@ -1246,7 +1244,7 @@ const started = (
         // The sweep frees what no reader needs, at its interval, and changes no answer (decision 0245). On Cluster
         // it is a singleton, so that the runners do not contend for the same rows.
         if (sweep !== 'none') {
-          if (cluster === null) yield* Effect.forkIn(untransacted(sql, sweepOf(deployed, sweep)), deployed.scope)
+          if (cluster === null) yield* forkApart(sql, sweepOf(deployed, sweep), deployed.scope)
           else {
             const name = `@fgaudo/effect-tea-persistent/${program.name}/sweep`
             yield* Scope.provide(cluster.singleton(name, untransacted(sql, sweepOf(deployed, sweep))), deployed.scope)

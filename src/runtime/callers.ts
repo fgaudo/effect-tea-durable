@@ -25,6 +25,7 @@ import {
   spanHere,
   told,
   traced,
+  forkApart,
   untransacted,
 } from './process.ts'
 import {
@@ -285,7 +286,7 @@ export const create = <T extends Types>(
         return { _tag: 'Made', loaded } as const
       }))
       if (made._tag === 'Rejected') return made.reply
-      yield* Effect.forkIn(untransacted(p.sql, loop(p, deployed, made.loaded)), deployed.scope)
+      yield* forkApart(p.sql, loop(p, deployed, made.loaded), deployed.scope)
       return { _tag: 'Created' } as const
     })))
     // An entity already there answers through the machine, and its caller waits for that answer.

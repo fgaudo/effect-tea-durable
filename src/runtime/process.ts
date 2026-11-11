@@ -119,6 +119,19 @@ export interface Process {
 export const untransacted = <A, E>(sql: SqlClient.SqlClient, effect: Effect.Effect<A, E>) =>
   Effect.updateContext(effect, (services: Context.Context<never>) => Context.omit(sql.transactionService)(services))
 
+/**
+ * Forks `effect` in `scope`, `untransacted`, as a fiber that can be interrupted. Every fork of the runtime is one
+ * of `forkApart` and `forkChildApart`, so that the scope closing stops the fiber wherever the fork stands, even in
+ * a region that cannot be interrupted (decision 0271). The option says it rather than Effect's default, which its
+ * documentation does not promise, and adds no step to the fiber.
+ */
+export const forkApart = <A, E>(sql: SqlClient.SqlClient, effect: Effect.Effect<A, E>, scope: Scope.Scope) =>
+  Effect.forkIn(untransacted(sql, effect), scope, { uninterruptible: false })
+
+/** Forks `effect` as a child of the forking fiber, `untransacted`, as a fiber that can be interrupted (decision 0271). */
+export const forkChildApart = <A, E>(sql: SqlClient.SqlClient, effect: Effect.Effect<A, E>) =>
+  Effect.forkChild(untransacted(sql, effect), { uninterruptible: false })
+
 /** What a `Resume` or a `Discard` did, read off the machine before and after it (decision 0114). */
 export const operated = <T extends Types>(
   event: 'Resume' | 'Discard',

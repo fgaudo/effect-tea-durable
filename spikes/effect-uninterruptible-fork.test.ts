@@ -1,5 +1,5 @@
 /**
- * What decisions 0078 and 0079 say of interruption, at `effect` 4.1.3. A region made `uninterruptible` runs to its
+ * What decisions 0078, 0079 and 0271 say of interruption, at `effect` 4.1.3. A region made `uninterruptible` runs to its
  * end when its fiber is interrupted inside it, and the fiber stops at the region's end, before the next step: a
  * deploy registers its deployment and starts its waker whole, and `detached` counts a fork with the fork. A fiber
  * forked inside such a region is interruptible, so the scope it is forked in still stops it: the waker, and what
@@ -47,6 +47,21 @@ test('a fiber forked inside an uninterruptible region is interruptible, and its 
     )
     yield* Deferred.await(started)
     // A child that inherited the region would never stop, and the close would wait for it for ever.
+    yield* Scope.close(scope, Exit.void)
+    expect(Exit.hasInterrupts(yield* Fiber.await(child))).toBe(true)
+  })))
+
+// The option every fork of the runtime passes (decision 0271): the fiber is interruptible whatever the default is.
+test('a fiber forked with uninterruptible false inside an uninterruptible region is stopped by its scope', () =>
+  Effect.runPromise(Effect.gen(function*() {
+    const scope = yield* Scope.make()
+    const started = yield* Deferred.make<void>()
+    const child = yield* Effect.uninterruptible(
+      Effect.forkIn(Effect.andThen(Deferred.succeed(started, undefined), Effect.never), scope, {
+        uninterruptible: false,
+      }),
+    )
+    yield* Deferred.await(started)
     yield* Scope.close(scope, Exit.void)
     expect(Exit.hasInterrupts(yield* Fiber.await(child))).toBe(true)
   })))

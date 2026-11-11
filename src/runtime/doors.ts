@@ -27,6 +27,7 @@ import {
   type Stepped,
   told,
   traced,
+  forkApart,
   untransacted,
 } from './process.ts'
 import { type Address, InvariantDefect, type Request, type Types } from '../program.ts'
@@ -244,7 +245,7 @@ export const finishIn = <T extends Types>(
     const loads = deployed.loaded.get(entity.id) !== held
     if (loads) {
       if (!(yield* entersHeld(p, deployed, held))) return yield* new Unheld({ id: entity.id })
-      yield* Effect.forkIn(untransacted(p.sql, loop(p, deployed, held)), deployed.scope)
+      yield* forkApart(p.sql, loop(p, deployed, held), deployed.scope)
     }
     if (stepped.steps === held.steps) {
       // Nothing was written, so nothing can roll back: the machine is the entity's at once (decision 0092).

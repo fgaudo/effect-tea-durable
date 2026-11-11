@@ -47,10 +47,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md), which the maintainer chose
     on 2026-11-11 after two opinions of a Fable 5.2 agent, and bug 8 by
     [decision 0270](decisions/0270-a-childs-name-is-never-an-own-tag.md), which the maintainer chose on 2026-11-12
-    after an opinion of a Fable 5.2 agent. The part next is bug 22, the next of the bugs reasoned, confirmed by a
-    reading: its fix is proposed to the maintainer before any code.
-    Decision 0269 changes the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
-    taken, and its tests of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of
+    after an opinion of a Fable 5.2 agent, and bug 22 by
+    [decision 0271](decisions/0271-every-fork-of-the-runtime-says-it-is-interruptible.md), which the maintainer chose on 2026-11-12
+    after an opinion of a Fable 5.2 agent. The part next is bug 60, the next of the bugs reasoned, confirmed by the
+    notes: its fix is proposed to the maintainer before any code.
+    Decisions 0269 and 0271 change the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
+    taken, and the tests of decision 0269 of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of
     PostgreSQL of the push of `main` that takes it.
     The spikes of decision 0267, `spikes/sqlite-hold-file.test.ts` and `spikes/full-volume.test.ts`, passed on Linux
     in the jobs of the CI of the push of `25a4530`. The test of decision
@@ -203,14 +205,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       store an operation that never starts, which is only reasoned. The fix begins at `doorStep` of
       `src/runtime/doors.ts`, or at `drained` of `src/runtime.ts`. The [open question](open-questions.md#running) A
       caller's request through the door during a drain.
-  22. **Confirmed: three forks inside the uninterruptible activation on Cluster do not say they are
-      interruptible.** [Decision 0112](decisions/archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md)
-      asks it of every such fork, and the forks of `finishIn` of `src/runtime/doors.ts`, and of `forkHeld` and
-      `drop` of `src/runtime/loop.ts`, run inside the region that
-      [decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)
-      made. Nothing fails at Effect's pinned version. The fix is the option at the three forks, or a check of
-      `src/form.test.ts`. The [open question](open-questions.md#running) The forks of an uninterruptible activation.
-      Confirmed by a reading: `activateOnCluster` reaches the three forks through `finishIn` and `perform` inside `Effect.uninterruptible`, with no option. Effect's internal default is `false` at the pinned version, and its JSDoc does not promise it.
+  22. **Fixed by [decision 0271](decisions/0271-every-fork-of-the-runtime-says-it-is-interruptible.md)**, whose every fork of `src/` says it is interruptible, as a test of the form reads.
   23. **Reproduced: on Cluster, an ack of an older runner after a newer one forgot its consumer leaves a cursor that
       stops the prune of the partition.** `ack` does not check that its consumer is stored
       ([decisions 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md),

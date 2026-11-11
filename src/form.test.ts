@@ -3,7 +3,8 @@
  * of `src/` and of its folders that is not a test, with its comments, strings, regular expressions and the text of its
  * templates taken out:
  * - every fork of Effect is given, as its effect, a call of `untransacted`, which takes out the transaction of the
- *   fiber that forks it (decision 0161);
+ *   fiber that forks it (decision 0161), and `{ uninterruptible: false }` as its options, so that the scope stops
+ *   the fiber wherever the fork stands (decision 0271);
  * - `src/program.ts`, which a browser imports for a program's schemas, reaches no module of Node or of Bun, through
  *   the modules of `src/` and of Effect that it imports (decision 0192), nor does `src/index.program.ts`, the entry
  *   a browser imports it through (decision 0193);
@@ -17,7 +18,8 @@
  *   `<module>.test_<role>.ts`, which the other rules do not read (decision 0241);
  * - `bun test` runs no file only tests import, so no role ends in `_test` or `_spec` (decision 0254).
  *
- * A fork that must keep the transaction is preceded by a line comment that says `Keeps the transaction:` and why. A
+ * A fork that must keep the transaction is preceded by a line comment that says `Keeps the transaction:` and why,
+ * and still passes the option, which no comment excuses. A
  * count that one fiber raises and another lowers is preceded, at each raise and lowering, by a line comment that says
  * `Raised and lowered by two fibers:` and why. It is a test, so that `bun test` runs it, and a mutation that writes
  * the other form of a rule is killed by the suite in `scripts/mutate.ts`, which copies `src/`.
@@ -157,18 +159,28 @@ const marked = (text: string, at: number, marker: string) => {
 const forkMarker = 'Keeps the transaction:'
 const countMarker = 'Raised and lowered by two fibers:'
 
-/** The forks of `text` that are not given a call of `untransacted` and do not say why, one line each. */
-export const forksKeepingTheTransaction = (text: string): ReadonlyArray<string> => {
+/**
+ * The forks of `text` not given a call of `untransacted` that do not say why, and the forks not given
+ * `{ uninterruptible: false }` as their options, one line each.
+ */
+export const forksAmiss = (text: string): ReadonlyArray<string> => {
   const code = codeOf(text)
   const found: Array<string> = []
   // A name of a fork is read wherever it stands: called, passed as a value, or imported under another name.
   for (const match of code.matchAll(/\b(forkChild|forkIn|forkScoped|forkDetach)\b/g)) {
     const at = match.index
-    if (marked(text, at, forkMarker)) continue
     const called = code.slice(Math.max(0, at - 'Effect.'.length), at) === 'Effect.' && code[at + match[0].length] === '('
-    const effect = called ? callAt(code, at, at + match[0].length).args[0] : undefined
-    if (effect !== undefined && /^untransacted\s*\(/.test(code.slice(effect[0], effect[1]).trim())) continue
-    found.push(`${lineOf(text, at)}: ${match[0]} without untransacted`)
+    const args = called ? callAt(code, at, at + match[0].length).args : []
+    const [effect] = args
+    const given = effect !== undefined && /^untransacted\s*\(/.test(code.slice(effect[0], effect[1]).trim())
+    if (!given && !marked(text, at, forkMarker)) found.push(`${lineOf(text, at)}: ${match[0]} without untransacted`)
+    // The options are written out where the fork stands: a spread or a name that holds them is refused, since the
+    // check would have to follow it. `forkIn` takes its scope before them.
+    const options = args[match[0] === 'forkIn' ? 2 : 1]
+    const written = options === undefined ? '' : code.slice(options[0], options[1]).replace(/\s+/g, ' ').trim()
+    if (!/^\{ ?uninterruptible: false,? ?\}$/.test(written)) {
+      found.push(`${lineOf(text, at)}: ${match[0]} without { uninterruptible: false }`)
+    }
   }
   // What forks with services the check does not follow: a set of fibers, or a run given a context.
   for (
@@ -305,10 +317,10 @@ const each = (check: (text: string) => ReadonlyArray<string>) =>
   modules.flatMap((file) => check(readFileSync(join(import.meta.dir, file), 'utf8')).map((line) => `${file}:${line}`))
 
 describe('the form of src', () => {
-  test('every fork of src runs without the transaction of the fiber that forks it', () => {
+  test('every fork of src runs without the transaction of the fiber that forks it, and can be interrupted', () => {
     expect(modules).toContain('runtime.ts')
     expect(modules).toContain('runtime/loop.ts')
-    expect(each(forksKeepingTheTransaction)).toEqual([])
+    expect(each(forksAmiss)).toEqual([])
   })
 
   test('every count of src is raised and lowered by one Effect.acquireUseRelease', () => {
@@ -878,31 +890,60 @@ describe('the check of the form', () => {
   })
 
   test('a fork not given untransacted is found, in each of its forms', () => {
+    const interruptible = '{ uninterruptible: false }'
     const text = [
-      'const a = Effect.forkIn(loop, scope)',
+      `const a = Effect.forkIn(loop, scope, ${interruptible})`,
       'const b = loop.pipe(Effect.forkChild)',
-      'const c = Effect.forkDetach(Effect.ensuring(untransacted(loop), done))',
+      `const c = Effect.forkDetach(Effect.ensuring(untransacted(loop), done), ${interruptible})`,
       'import { forkScoped as f } from "effect/Effect"',
       'const d = FiberSet.run(set, loop)',
     ].join('\n')
-    expect(forksKeepingTheTransaction(text)).toEqual([
+    expect(forksAmiss(text)).toEqual([
       '1: forkIn without untransacted',
       '2: forkChild without untransacted',
+      '2: forkChild without { uninterruptible: false }',
       '3: forkDetach without untransacted',
       '4: forkScoped without untransacted',
+      '4: forkScoped without { uninterruptible: false }',
       '5: FiberSet, which the check does not read',
     ])
   })
 
-  test('a fork given untransacted, one that says why it keeps the transaction, and one in a comment pass', () => {
+  test('a fork not given { uninterruptible: false } is found, whatever its options say instead', () => {
+    const text = [
+      'const a = Effect.forkIn(untransacted(loop), scope)',
+      'const b = Effect.forkChild(untransacted(loop))',
+      'const c = Effect.forkIn(untransacted(loop), scope, { uninterruptible: "inherit" })',
+      'const d = Effect.forkChild(untransacted(loop), { uninterruptible: true })',
+      'const e = Effect.forkIn(untransacted(loop), scope, options)',
+      'const f = Effect.forkScoped(untransacted(loop), { ...options })',
+      'const g = Effect.forkDetach(untransacted(loop), { startImmediately: true, uninterruptible: false })',
+      '// Keeps the transaction: its statements are the step\'s own.',
+      'const h = Effect.forkChild(loop)',
+    ].join('\n')
+    expect(forksAmiss(text)).toEqual([
+      '1: forkIn without { uninterruptible: false }',
+      '2: forkChild without { uninterruptible: false }',
+      '3: forkIn without { uninterruptible: false }',
+      '4: forkChild without { uninterruptible: false }',
+      '5: forkIn without { uninterruptible: false }',
+      '6: forkScoped without { uninterruptible: false }',
+      '7: forkDetach without { uninterruptible: false }',
+      '9: forkChild without { uninterruptible: false }',
+    ])
+  })
+
+  test('a fork given untransacted and the option, one that says why it keeps the transaction, and one in a comment pass', () => {
     const text = [
       'const a = Effect.forkIn(untransacted(Effect.ensuring(loop, done)), scope, { uninterruptible: false })',
       '// Keeps the transaction: its statements are the step\'s own.',
-      'const b = Effect.forkChild(loop)',
+      'const b = Effect.forkChild(loop, {',
+      '  uninterruptible: false,',
+      '})',
       '// Effect.forkIn(loop, scope)',
-      'const c = "Effect.forkIn(loop, scope)" + `${Effect.forkIn(untransacted(loop), scope)} Effect.forkIn(x)`',
+      'const c = "Effect.forkIn(loop, scope)" + `${Effect.forkIn(untransacted(loop), scope, { uninterruptible: false })} Effect.forkIn(x)`',
     ].join('\n')
-    expect(forksKeepingTheTransaction(text)).toEqual([])
+    expect(forksAmiss(text)).toEqual([])
   })
 
   test('a count lowered by an ensuring, or raised and lowered by two calls, is found', () => {

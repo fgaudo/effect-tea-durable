@@ -40,6 +40,8 @@ import {
   told,
   traced,
   under,
+  forkApart,
+  forkChildApart,
   untransacted,
 } from './process.ts'
 import { type Address, Entities, isTimer, runnerOf, type Types } from '../program.ts'
@@ -132,7 +134,7 @@ export const drop = (p: Process, held: Map<string, Fiber.Fiber<void>>, id: strin
     const fiber = held.get(id)
     if (fiber === undefined) return Effect.void
     held.delete(id)
-    return Effect.asVoid(Effect.forkIn(untransacted(p.sql, Fiber.interrupt(fiber)), scope))
+    return Effect.asVoid(forkApart(p.sql, Fiber.interrupt(fiber), scope))
   })
 
 export const stopAll = <T extends Types>(loaded: Loaded<T>) =>
@@ -156,15 +158,16 @@ export const forkHeld = (
 ) =>
   Effect.gen(function*() {
     let done = false
-    const fiber = yield* Effect.forkIn(
-      untransacted(p.sql, Effect.ensuring(
+    const fiber = yield* forkApart(
+      p.sql,
+      Effect.ensuring(
         effect,
         Effect.sync(() => {
           done = true
           held.delete(id)
           end(p)
         }),
-      )),
+      ),
       scope,
     )
     if (!done) held.set(id, fiber)
@@ -543,9 +546,9 @@ export const crash = <T extends Types>(
     // and the activation reads what is (decision 0252). The mark is set before `leave` wakes the waker.
     if (retried) mark(deployed.waker, id, DateTime.toEpochMillis(yield* DateTime.now) + p.retry, { works: true })
     // Its stored timers are the waker's again. A crash may run where the step that died cannot be interrupted, as
-    // a creation's `onError` does: the fork's option keeps it stoppable by the scope (decision 0112).
+    // a creation's `onError` does: `forkApart` keeps it stoppable by the scope (decision 0271).
     yield* leave(p, deployed, loaded)
-    yield* Effect.forkIn(untransacted(p.sql, stopAll(loaded)), deployed.scope, { uninterruptible: false })
+    yield* forkApart(p.sql, stopAll(loaded), deployed.scope)
     const address = addressOf({ name, id })
     const fail = <A>(waiting: Callers<A>) =>
       Effect.gen(function*() {
@@ -612,7 +615,7 @@ export const steps = <T extends Types>(p: Process, deployed: Deployment<T>, load
       Queue.take(loaded.events),
       (taken) => taken._tag === 'Passivate' && taken.wait !== wait ? take : Effect.succeed(taken),
     )
-    return Effect.flatMap(Effect.forkChild(untransacted(p.sql, runsOut)), (sleep) =>
+    return Effect.flatMap(forkChildApart(p.sql, runsOut), (sleep) =>
       Effect.flatMap(take, (taken) => Effect.as(Fiber.interrupt(sleep), taken))).pipe(
       Effect.flatMap((taken) => {
         // The wait ran out, or the entity was told to leave: it is unloaded if it has nothing to do.
@@ -685,7 +688,7 @@ export const activate = <T extends Types>(p: Process, deployed: Deployment<T>, s
     yield* apply(p, deployed, loaded, { _tag: 'Restart' }).pipe(
       Effect.onError((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : crash(p, deployed, loaded, cause)),
     )
-    yield* Effect.forkIn(untransacted(p.sql, loop(p, deployed, loaded)), deployed.scope)
+    yield* forkApart(p.sql, loop(p, deployed, loaded), deployed.scope)
     return loaded
   })
 
@@ -694,7 +697,7 @@ export const activate = <T extends Types>(p: Process, deployed: Deployment<T>, s
  * effect sets going is finished all the same: an activation, a creation and its work. Only the process's crash
  * stops it halfway, as the crash table says (decision 0079). It is counted from the step that forks it to its
  * end, so that the process is not settled while it runs. The step is uninterruptible, and the fibers it forks
- * are not, so the scope still stops them: their option says so, rather than Effect's default (decision 0112).
+ * are not, since `forkApart` forks them interruptible, so the scope still stops them (decision 0271).
  * The count is given back by a fiber of the process's scope that waits for it, since one the deployment's
  * scope stops before its first step runs no finalizer of its own (decision 0110).
  */
@@ -705,18 +708,18 @@ export const detached = <T extends Types, A, E>(p: Process, deployed: Deployment
       // process's scope lowers it once the effect ends, since a fiber stopped before its first step runs no
       // finalizer (decision 0110).
       p.detachments += 1
-      const fiber = yield* Effect.forkIn(untransacted(p.sql, effect), deployed.scope, { uninterruptible: false })
-      yield* Effect.forkIn(
-        untransacted(p.sql, Effect.andThen(
+      const fiber = yield* forkApart(p.sql, effect, deployed.scope)
+      yield* forkApart(
+        p.sql,
+        Effect.andThen(
           Fiber.await(fiber),
           Effect.sync(() => {
             // Raised and lowered by two fibers: raised by the caller of `detached`, lowered here once the effect ends.
             p.detachments -= 1
             end(p)
           }),
-        )),
+        ),
         p.running,
-        { uninterruptible: false },
       )
       return fiber
     })),

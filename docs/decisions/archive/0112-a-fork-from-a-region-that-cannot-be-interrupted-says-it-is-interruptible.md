@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-11-01. Changes what [decision 0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)
 and [decision 0079](0079-what-a-caller-sets-going-is-finished-without-it.md) rest on: the fibers they fork from a region
-that cannot be interrupted are interruptible by the option of the fork, not by Effect's default.
+that cannot be interrupted are interruptible by the option of the fork, not by Effect's default. Changed by
+[decision 0271](../0271-every-fork-of-the-runtime-says-it-is-interruptible.md): every fork of `src/` passes the option, wherever it stands, as a test of the form
+of `src/` reads.
 
 ## Context
 

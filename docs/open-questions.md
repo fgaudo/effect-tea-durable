@@ -440,15 +440,6 @@ with a requirement that no example has yet.
     shard, or whether `drained` counts a door's step from its start;
   - a reading of Cluster's teardown in `entityManager.ts`, for the order of the loops and the door;
   - a test of a runtime and `Sharding` built in one parallel scope.
-- **The forks of an uninterruptible activation.** Every fork from a region that cannot be interrupted says it is
-  interruptible
-  ([decision 0112](decisions/archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md)),
-  since Effect's default may change. The forks of `finishIn`, `forkHeld` and `drop` run inside the activation on
-  Cluster, which
-  [decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)
-  made uninterruptible, and pass no option. Nothing fails at the pinned version. It is bug 22 of the
-  [roadmap](roadmap.md). It would be decided by:
-  - a check of `src/form.test.ts` that every fork of `src/` passes the option, or a reading of each fork's region.
 - **An operation still stopping beside its `unknown`.** A crash forks the stop of its operations and gives the lock
   back ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)). The next
   activation records an at-most-once operation's `unknown` while the old fiber may still run a region that cannot be
