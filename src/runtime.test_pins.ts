@@ -26,6 +26,19 @@ export type Pin = Readonly<{
 
 export const pins: ReadonlyArray<Pin> = [
   {
+    id: '0063 a sender registers for the resumption before it sends',
+    file: 'src/runtime/callers.ts',
+    edits: [
+      [
+        '        const attempt = Effect.flatMap(awaitResumption(p, { name: program.name, id }, waiting), ({ resumed, forget }) =>\n          Effect.flatMap(\n            unlessCrashed(send(p, deployed, id, message, request), null),',
+        '        const attempt = Effect.flatMap(unlessCrashed(send(p, deployed, id, message, request), null), (sent) =>\n          Effect.flatMap(awaitResumption(p, { name: program.name, id }, waiting), ({ resumed, forget }) =>\n          Effect.flatMap(\n            Effect.succeed(sent),',
+      ],
+      ['          ).pipe(Effect.ensuring(forget)))\n', '          ).pipe(Effect.ensuring(forget))))\n'],
+    ],
+    test: 'src/runtime/callers.test.ts',
+    name: 'a sender answered Suspended is woken by the resumption, under prioritized schedules from its arrival',
+  },
+  {
     id: '0067 a lock is dropped by its last user only',
     file: 'src/runtime/process.ts',
     edits: [['        if (lock.users === 0) p.locks.delete(address)', '        p.locks.delete(address)']],

@@ -131,7 +131,11 @@ then bug 52 test by test, then bug 83.
 The next part is bug 52, test by test. Each of the explored tests whose comment names an interleaving and that pins
 no seed gets a pin: the mutation its comment names, then `bun run test:explore -t <test>` on the mutation until a seed
 fails, then the seed pinned. There are 25 calls of `explored` in `src/runtime.test.ts` and `src/runtime/`, and two
-pin a seed.
+pinned a seed when the part began. A seed is looked for under `SCHEDULES=all` from seed 0, so that the first seed
+that fails is pinned. The tests pinned so far, each with its pin in `src/runtime.test_pins.ts`:
+
+- `a sender answered Suspended is woken by the resumption`, of `src/runtime/callers.test.ts`: seed 29, against the
+  registration of decision 0063 moved after the send.
 
 ## What it rests on
 
