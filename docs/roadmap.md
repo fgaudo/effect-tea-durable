@@ -15,8 +15,25 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   reading reads the code as the fixes leave it. A bug the second reading adds to a family is fixed by the family's
   rule where the rule holds it, and by a fix of its own otherwise. It groups them by what they have in
   common, and a family gets one rule, kept in one place of the code, instead of a fix for each bug. Each bug's test
-  passes under the rule, as the proof that the rule holds the case. A bug of no family gets a fix of its own. The
-  families of 2026-11-11, which the second reading of the review may change:
+  passes under the rule, as the proof that the rule holds the case. A bug of no family gets a fix of its own.
+
+  How the step goes on:
+  - The parts done are families F and E. Family F is decided by
+    [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), and family E by
+    [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md). What each left
+    unverified is an [open question](open-questions.md#running): A sender and Cluster's round at the least retry,
+    and The cases of a crash's retry not run yet.
+  - The next part is a family the maintainer picks among B and G. Families A, C and D take their rules from later
+    steps of this roadmap. A review on 2026-11-11 put B after E, since bug 9 is independent of the others.
+  - A family's rule is proposed to the maintainer before any code, with the alternatives, and the code waits for the
+    maintainer's choice. The maintainer may ask for the opinion of a subagent first, as a Fable 5.2 agent gave for F
+    and E.
+  - A bug fixed stays in the list below as one line, `Fixed by` its note. Markdown numbers an ordered list by its
+    place, so a bug taken out would shift the number of every bug after it, and the documents cite bugs by number.
+  - A bug's test is taken from the branch its entry names, applied to `main`, and renamed without `FAILING:`. A
+    commit of such a branch may hold the test of a bug of another family, which stays on its branch.
+
+  The families of 2026-11-11, which the second reading of the review may change:
   - A, a newer version against what an older one stored or runs: bugs 1, 5, 7, 15, 16, 28 to 30, 56, 62, 68, 76 and 77, and the door
     of the next step. A rename is such a change. Its rule is the step What a deploy may change of a program, against
     what is stored, below.
