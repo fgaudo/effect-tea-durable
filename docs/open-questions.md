@@ -56,8 +56,10 @@ with a requirement that no example has yet.
   process that holds the database ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). On
   Cluster each runner declares its own. A forget on a runner that does not declare a consumer drops another runner's
   consumer and its rows, which is bug 24 of the [roadmap](roadmap.md). An ack of a runner after another forgot the
-  consumer writes a cursor no consumer owns, and the partition is never pruned again, which is bug 23. A runner that
-  does not declare another's consumer also warns of it as of one to forget. It would be decided by:
+  consumer writes a cursor no consumer owns, and the partition is never pruned again, which is bug 23. Where the
+  stored consumer has no cursor in the partition, that cursor stands for it, and the prune drops a row the stored
+  consumer has not read, which is bug 55. A runner that does not declare another's consumer also warns of it as of
+  one to forget. It would be decided by:
   - whether the runners record the consumers they declare, as they record their versions, and `forget` refuses a
     consumer any running deployment declares;
   - whether `ack` writes a cursor only for a stored consumer, or `pruneBatch` counts only theirs.
@@ -253,14 +255,26 @@ with a requirement that no example has yet.
   exist, so `suspended` lists nothing, and only Cluster's log of restarts shows it. The sender's entity stays busy,
   and is never unloaded. An operator cannot see what waits. Neither 0160 nor
   [decision 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)
-  says what holds of 0046's rule on Cluster. The premise review of 2026-11-11 reasoned it. It would be decided by:
+  says what holds of 0046's rule on Cluster. The premise review of 2026-11-11 reasoned it, as bug 10 of the
+  [roadmap](roadmap.md). Cluster replays the creation first at each restart of the door, so another creator of the
+  id, whose flags `init` accepts, waits for ever behind it, where one process answers it `Created`, which is bug 58,
+  reproduced. A message to the id waits the same way. It would be decided by:
   - a test of `src/cluster.test.ts` where an operation creates an entity whose `init` dies, which would hang today;
-  - whether an operator is meant to see such a creation, and through which call.
+  - whether an operator is meant to see such a creation, and through which call;
+  - whether the door answers such a creation with an answer the creator's client resets, as for `Rejected`, or the
+    runtime stores the defect in its own tables and frees the id.
 - **The rows of operators' events on Cluster.** An operator resumes and discards through the door's client on
   Cluster ([decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
   The premise review of 2026-11-11 noticed that Cluster's rows of those requests may never be deleted, and did not
-  check it. It would be decided by a test that resumes an entity on Cluster and reads Cluster's tables after
-  `expire`.
+  check it, which is bug 11 of the [roadmap](roadmap.md). A caller's rows are deleted only under an id its client
+  keeps, once it is given the answer
+  ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
+  So a caller that stops waiting, as an HTTP boundary's timeout does, keeps its rows for ever, and a retry under its
+  request id is answered from Cluster's saved reply past its `keep`, which is bug 59, reproduced. It would be
+  decided by:
+  - a test that resumes an entity on Cluster and reads Cluster's tables after `expire`;
+  - whether a client keeps the id when its caller is interrupted, with a deletion that spares a request Cluster has
+    not marked processed, or the guide says such rows stay.
 - **A cause holding U+0000 in Cluster's tables.** A defect's cause is written as text every database holds, with U+0000
   escaped ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)), in the
   runtime's tables. A door that dies on such a cause may hand it to Cluster, which stores it in its own tables
@@ -315,15 +329,19 @@ with a requirement that no example has yet.
   shard's singleton does
   ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)),
   and a lease its runner renews never moves the shard. So an operation under way, or a message in the mailbox,
-  waits in silence. They are bugs 14 and 18 of the [roadmap](roadmap.md). Bug 33, the waker's map of failed
-  entities on a shard that moves, is of the same code. It would be decided by:
+  waits in silence. They are bugs 14 and 18 of the [roadmap](roadmap.md). On Cluster an entity may also be
+  unloaded between a door's step and its commit, since the step lets the lock go before Cluster commits, and the
+  operation the step stored never runs, which is bug 61, reproduced. Bug 33, the waker's map of failed entities on a
+  shard that moves, is of the same code. It would be decided by:
   - whether every crash that leaves work stored gives the entity to the waker's retry of
     [decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), or whether the waker
     reads the entities with work as well as the timers;
   - a test of each crash of a loop's step on Cluster that no move of the shard follows: a `guard` that refuses, a
     `COMMIT` that fails, and a row another runner wrote;
   - a test of the message left in the mailbox, on one process and on Cluster;
-  - a test of bug 33, whose shard moves while the waker waits to retry an entity.
+  - a test of bug 33, whose shard moves while the waker waits to retry an entity;
+  - for bug 61, whether `unload` refuses an entity whose machine is not committed, and a test of its `Evict`, its
+    resumption and its `tell`.
 - **A name a rename left.** A launch renames a program and keeps the keys of its old name
   ([decision 0156](decisions/archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). On one process
   nothing keeps a later launch from taking the old name again, and its entities then draw the keys the renamed
@@ -429,7 +447,60 @@ with a requirement that no example has yet.
   of the [roadmap](roadmap.md), not checked. It would be decided by:
   - a test, under the scheduler of `src/testing.ts`, of an operation whose finalizer acts after the crash;
   - whether the activation waits for the stop of the operations a crash forked.
-
+- **Cluster's bound of resident entities.** On Cluster the runtime's capacity is meant to be the only bound of the
+  entities a runner holds ([decision 0151](decisions/archive/0151-a-process-holds-ten-thousand-entities-by-default.md)).
+  The runtime builds `Sharding.layer` on the launcher's `ShardingConfig`, whose `maxResidentEntities` is 10 000 by
+  default, and `ShardingConfig.layerFromEnv` cannot give `'unbounded'`. A door outlives its entity until Cluster's
+  reaper finds it, so a burst of callers past the bound waits up to a minute. It is bug 54 of the
+  [roadmap](roadmap.md), reproduced. It would be decided by:
+  - whether `sharding` gives `Sharding.layer` an unbounded `maxResidentEntities`, or a launch dies on a config that
+    holds a bound;
+  - a test under a passivation of 0, where the reaper still checks every 5 s.
+- **What a newer version answers an older one on Cluster.** A value is read through the migrations from the version
+  that wrote it ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)), so a reader is
+  never older than the writer. On Cluster a rolling deploy breaks that both ways. A door of the newer version
+  answers a caller of the older one with a text that carries no version, and the caller reads a rejection's reason
+  through its own schema
+  ([decision 0085](decisions/archive/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)), which is
+  bug 62, reproduced. A door of the newer version reads the flags of a creation an older caller wrote, which no
+  migration reads ([decision 0049](decisions/archive/0049-flags-are-checked-by-their-schema.md)), which is bug 56,
+  reasoned. They are of the [roadmap](roadmap.md). It would be decided by:
+  - whether an answer carries the version that wrote it, and a client refuses a version its program does not have;
+  - whether a program declares a migration of its flags, or a deploy on Cluster may not change their schema while
+    a creation waits;
+  - the step What a deploy may change of a program, against what is stored, of the [roadmap](roadmap.md).
+- **A send after the work it belongs to ended.** A reply to another entity is deleted once the work that asked ends,
+  since no one asks again ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
+  Two actors may still send under that work. On Cluster, a runner that lost its lease without giving it up may run an
+  operation the next holder ran and ended
+  ([decision 0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)), which is
+  bug 57, reasoned. On one process, a crashed entity's operation that sends from a region it holds uninterruptible
+  may send after the new run ended the work
+  ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)), which is bug 65, not
+  checked. Either way the receiver applies the request twice. They are of the [roadmap](roadmap.md). It would be
+  decided by:
+  - whether a receiver refuses a request whose asker's work no longer holds, by the asker's key row it already reads;
+  - a test of bug 65 with an operation that sends from an uninterruptible finalizer;
+  - a helper of `src/cluster.test.ts` that keeps a runner's operation running after another runner took its shard.
+- **Who an operator sees waiting on Cluster.** `suspended` lists, for each suspended entity, the operations that
+  wait for its resumption, and on Cluster it is meant to read the rows of `effecttea_waiting`
+  ([decision 0114](decisions/archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)). An
+  operator may act from any runner
+  ([decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)),
+  and the code reads the registrations of the runner called alone. It is bug 63 of the [roadmap](roadmap.md),
+  reproduced. It would be decided by:
+  - whether `suspended` and `inspect` read the rows of `effecttea_waiting` on Cluster, which hold less than a
+    `Waiting`, or a note narrows 0114 to the runner called.
+- **A hash of Effect that moves the shards.** An entity's partition is stored, so that a change of `Hash.string`
+  moves nothing ([decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md)). On Cluster the
+  partition is the shard
+  ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)),
+  which Cluster computes from the id at each delivery. A release of Effect that changes the hash leaves an entity
+  under a partition no round of its shard reads, and it is dropped with no log. A test of `src/storage.test.ts`
+  fails at such a move. It is bug 64 of the [roadmap](roadmap.md), reasoned. It would be decided by:
+  - what the rule of `AGENTS.md` for a move of Effect's version does when that test fails;
+  - whether a launch on Cluster checks that the stored partitions of a sample of entities are the shards Cluster
+    gives their ids.
 
 ## Programs
 
@@ -487,7 +558,14 @@ with a requirement that no example has yet.
   unmigrated. A projection that holds `-0` is then checked as no caller reads it. It is bug 38 of the
   [roadmap](roadmap.md), not checked. It would be decided by:
   - a case of `src/testing.test.ts` whose projection holds `-0`, and one whose sender a migration changes.
-
+- **What a boundary acknowledges.** A boundary that reads a stream acknowledges an item to its source once `send`
+  is answered ([decision 0127](decisions/archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md)). Three
+  answers store nothing: `Suspended` ([decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)),
+  `Full` ([decision 0147](decisions/archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)) and
+  `NotFound`. An item answered so is lost, with nothing reported. It is bug 60 of the [roadmap](roadmap.md),
+  reasoned. It would be decided by:
+  - a note that changes 0127: a boundary acknowledges an item once it is answered with a reply, and sends it again
+    under the same request id after `Suspended` or `Full`.
 
 ## The surface
 
