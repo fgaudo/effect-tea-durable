@@ -2451,3 +2451,131 @@ table says. Each cites the area's note for a rule it applies as written: a datab
 checked, a program checked where it enters, or the package's name. 0064, 0132, 0136 and 0141 change a note of the
 area, and were not read, since the status lines of 0053 and 0054 say what each changed, and the code that keeps it
 was read. Every note of the area itself was read whole, with its code, and so was 0193 against the notes it cites.
+
+## 2026-11-11: premise review of the pairs the first session read in part
+
+The notes are 0039, 0137, 0152, 0029, 0068, 0076, 0078, 0151, 0159, 0174, 0175, 0161 to 0163, 0172 and 0021, each
+read whole with its code against the later notes 0245, 0176, 0219, 0247, 0092 and 0222 where it meets them. The two
+failing tests are on the branch `claude/premise-pairs-first-ee0216`, commit `dd63071`, cut from `main` at `e6d3808`,
+in `src/cluster.test.ts`, describe `two runners on one file`. Run: `bun test src/cluster.test.ts -t "FAILING"`.
+
+### The pairs
+
+A pair was found by the index and by `grep -wE` of each note in both directions. Five notes of the list meet none of
+the six later notes by a citation: 0137, 0068, 0174, 0163 and 0021. Each was paired by the rule it shares with one
+of them, as the table says, and read whole all the same.
+
+| Earlier note | Later note | What binds them | How it was read |
+| --- | --- | --- | --- |
+| 0039 | 0245 | 0245 cites it as its reason: a batch of `prune` reads the cursors in its transaction | both whole, with `pruneBatch`, `ack`, `forget` and `declare` of `src/storage/log.ts` |
+| 0152 | 0245 | 0245 applies its prune of a topic no consumer holds, now at the sweep's interval | both whole, with the same code and `deploy` of `src/runtime.ts` |
+| 0137 | 0245, 0222 | no citation: the batches read the outbox by `position` across partitions, and 0222 runs two writers of a partition | 0137 whole; 0245 and 0222 whole; `pruneBatch` and the draw of the head in `src/storage/entities.ts` |
+| 0021 | 0245 | no citation: 0245 changes 0125, which changes 0021, and `expire` deletes replies by time | both whole, with `expire` and the deletions of a step in `src/storage/entities.ts`, and `until` in `src/machine.ts:1152` |
+| 0029 | 0092 | 0092 changes it on Cluster: a door steps outside the loop's queue | both whole, with `register` of `src/cluster.ts` and the loop's wait in `src/runtime/loop.ts` |
+| 0076 | 0092 | 0092 changes it: the capacity stays the runtime's, and Cluster's bound is left unbounded | both whole, with the option `capacity` of `src/runtime.ts` and `sharding` of `src/cluster.ts` |
+| 0078 | 0092 | 0092 changes it: what is spare stays the runtime's | both whole, with the same code |
+| 0092 | 0151 | 0151 cites 0092 as its reason: on Cluster `maxResidentEntities` is left unbounded | both whole, with `sharding` of `src/cluster.ts`, and `maxResidentEntities` in `Sharding.ts` and `ShardingConfig.ts` of Effect |
+| 0068 | 0092 | no citation: 0092 adds a second fiber that steps an entity, the door's | both whole, with `leave` and `forkHeld` |
+| 0092 | 0159, 0161, 0162, 0172, 0175 | each cites 0092 and says how one of its rules holds | 0092 and each later note whole; `doorStep`, `serving` and `activating` of `src/runtime/doors.ts`, and the drain and the deployments' scopes of `src/runtime.ts` |
+| 0159 | 0176 | 0176 changes it: a renamed name is outranked as an older version is | both whole, with `register` of `src/cluster.ts` and the renames of `launchWith` |
+| 0175 | 0176 | 0176 changes it: the check of every step refuses a renamed name | both whole, with the same code |
+| 0174 | 0176 | no citation: 0176 registers a door under each former name, which no `sharding` names | both whole, with `sharding` and `register` of `src/cluster.ts` |
+| 0159 | 0247 | 0247 cites it as its reason: the check launches nothing, since a launch outranks the older runners | both whole, with `src/check.ts` read for what it writes |
+| 0175 | 0219 | 0219 cites it as its reason: a completion committed in the drain passes the lease check | both whole, with the drain of `src/runtime.ts:1398` and the scopes of the deployments |
+| 0163 | 0222 | no citation: 0222 runs a pool, where a runner's readings no longer go through one connection | both whole, with `others` of `src/cluster.ts` |
+
+### Finding 1, reproduced: 0151 against 0092, Cluster's bound of resident entities
+
+- The premise that fell: 0092 leaves Cluster's `maxResidentEntities` unbounded. A door outlives the runtime's entity
+  by up to `maxIdleTime` and the reaper's period, so a bound of Cluster's would refuse entities the runtime has room
+  for. 0151 rests on it, and says that on Cluster the runtime's capacity is the only bound. No code makes it so.
+  `sharding` of `src/cluster.ts:85` builds `Sharding.layer` on the launcher's `ShardingConfig` as given. Its default
+  is 10 000 (`ShardingConfig.ts:251` of Effect), counted over every entity type of the runner (`Sharding.ts:817-835`).
+  `ShardingConfig.layerFromEnv`, which `examples/server/main.ts:33` uses, reads `maxResidentEntities` as an integer
+  above 0 (`ShardingConfig.ts:375`), so it cannot give `'unbounded'`. The guide and `docs/cluster.md` say that the
+  bound is left unbounded, and do not tell the launcher to set it.
+- The sequence: a runner holds as many doors as its bound, each idle and not yet reaped. The runtime holds the same
+  entities, far below its own capacity. A caller's creation of another entity reaches its door, and Cluster cannot
+  spawn the door: `entityManager.ts:254-257` fails with `MailboxFull`, and a persisted message waits in storage
+  until a slot frees. Only the reaper frees one, once a door is idle for `maxIdleTime`, the runtime's passivation, 30
+  s by default, checked every 5 to 30 s. So a burst of callers to more than 10 000 entities within one passivation
+  waits up to a minute past the bound, on every runner, and so do `Resumed` and an operation's sends.
+- Reproduced by `FAILING: a runner whose ShardingConfig keeps Cluster's bound of resident entities answers a caller
+  past it`, commit `dd63071`. A bound of 2 stands for the default of 10 000, under a passivation of 20 s. Two
+  creations are answered, and the third is not answered within 5 s. With `maxResidentEntities: 'unbounded'` the same
+  test passes, and the third is answered at once. No message is lost: the request is answered once a door is reaped.
+- Where a fix could begin: `sharding` of `src/cluster.ts`, which could give `Sharding.layer` the launcher's
+  `ShardingConfig` with `maxResidentEntities: 'unbounded'`. Or `launch` could die where the config holds a bound. It
+  is of family C of the step of bugs: a rule of one process that holds otherwise on Cluster.
+
+### Finding 2, reproduced: a consequence of bug 23, a prune that drops rows a stored consumer has not read
+
+- Bug 23 records that an older runner's ack after a newer runner's forget leaves a cursor with no consumer, and that
+  the partition is then never pruned again. That holds where the stored consumer has a cursor in the partition.
+  Where it has none, the prune drops rows that the stored consumer has not read. The rule that falls is 0039's: the
+  runtime never drops a row a stored consumer has not read. With it falls 0137's: a consumer with no cursor in a
+  partition holds the partition from `0`. `pruneBatch` of `src/storage/log.ts:237-241` reads 0137's rule as a count of
+  the partition's cursors equal to the count of the topic's consumers, and takes the lowest cursor as the floor. A
+  cursor whose consumer is not stored then stands for a stored consumer that has none. 0245's sweep runs the prune
+  at its interval, with no operator who could read `consumers` first, and `consumers` shows nothing wrong anyway.
+- The sequence: the older runner deploys `Toy` with `queue` and `audit`, and creates `one`. Its reader of `queue`
+  fetches the row. A newer version launches with `audit` alone, and its operator forgets `queue`. The older reader
+  acks its page, which writes a cursor of `queue` with no consumer (`src/storage/log.ts:208`). `audit` has read
+  nothing, and `consumers` says that it is one row behind. The prune counts one cursor and one consumer in the
+  partition, and drops the row through the cursor of `queue`. The next fetch of `audit` is empty, and `audit` never
+  learns of the row.
+- Reproduced by `FAILING: an ack of an older runner after a forget drops no row the stored consumer has not read`,
+  commit `dd63071`. The prune gives 1 where 0 is expected. Without the older runner's ack the test passes.
+- Where a fix could begin: as for bug 23. `ack` of `src/storage/log.ts` could write a cursor only where its consumer
+  is stored, or `pruneBatch` could count the cursors of stored consumers alone. The second fix holds this case
+  whatever writes the cursor, and the first only while no other path writes a cursor without its consumer. Bug 23's
+  test and this one hold the two halves together.
+
+### Suspects ruled out
+
+- 0039 against 0245's batches: each batch reads the consumers and the cursors again, a cursor only rises, and a
+  consumer is stored only by a deploy. So a later batch drops nothing that an earlier batch's reading still held.
+- 0152 against 0245's sweep, for a consumer declared by a later deploy: the topic is pruned whole until the deploy
+  stores the consumer. 0245 says so, and asks for the consumer before the topic's first step.
+- 0137 against 0245, for batches read by `position` across partitions: the `LIMIT` applies to the rows that may go,
+  selected first. So a batch that fills is followed by another, and a batch with fewer rows ends only when none is
+  left.
+- 0137 against 0222, for the order of a partition under two writers: the head's row is locked by its `UPSERT` until
+  the commit, so the second writer draws its `seq` and its `position` after the first commits. 0222 tests it.
+- 0021 against 0245's `expire`: a reply to an entity is written with `until` null (`src/machine.ts:1152`), since an
+  operation's send takes no `keep`. `expire` and a step delete only replies with a time. So a reply to an entity
+  still goes only with its sender's work.
+- 0029 against 0092, an entity unloaded under a door: a door's step takes the entity's lock inside its transaction,
+  and the unload takes the same lock. A door's step that writes nothing offers no `Settle`, so it does not restart
+  the passivation's wait. That costs a load at the next request, and loses nothing.
+- 0076 and 0078 against 0092: an entity with a door's machine not settled is not spare (0161), and the door's
+  `maxIdleTime` is the runtime's passivation (`src/cluster.ts:440`). The capacity unloads only the runtime's entity,
+  and its door loads the entity again.
+- 0068 against 0092's second fiber: the finalizer of a shard lost marks the shard and reads the entities held in one
+  step, and the door checks the mark again as the entity enters (0162).
+- 0162's deployments' scopes against 0219's drain: each deployment's scope is forked from `running`, which closes
+  after the drain (`src/runtime.ts:951-953` and `:1099`). So no singleton lets its shard go before the drain ends.
+- 0175 against 0219: Cluster keeps refreshing the lease while the runtime's scope drains, so a completion stepped in
+  the drain passes `guard`. A rolling deploy, a door's step during the drain and a parallel scope are bugs 2, 21, 34
+  and 35.
+- 0159, 0174 and 0175 against 0176: a door of a former name steps the entity under the new name, whose version and
+  mark `guard` reads. A rename and an older runner's step serialize on SQLite's write lock, and the older runner's
+  steps after the rename die. The cases left are bugs 16, 27, 29 and 30.
+- 0159 against 0247: `check` records no version, so the older runners keep their shards. `check` does not refuse a
+  program older than the newest recorded, but a row of a newer version fails its reading as `Load`, so the row is
+  not given as checked.
+- 0163 against 0222: the runtime on Cluster runs on SQLite alone (0084), and the case of PostgreSQL is bug 39.
+  Another runner's sweep moves `data_version` too, which wakes a reading once more and loses nothing.
+- 0172 and 0161 against 0092: both rest on one connection per runner, which holds on SQLite. A pool would break it,
+  and both notes say that the rule is read again with PostgreSQL.
+
+### Noticed, not checked
+
+- Finding 1 under a passivation of 0: the door's `maxIdleTime` is then 0, and Cluster's reaper still checks at most
+  every 5 s. A door may then outlive the runtime's entity by those 5 s, so that a burst meets the bound sooner. It
+  was not run, since finding 1 holds without it.
+
+### Not read whole
+
+Every note of the list was read whole with its code, and so were the six later notes. `src/check.ts` was read only
+for what it writes, and `examples/server` only at its `ShardingConfig`.
