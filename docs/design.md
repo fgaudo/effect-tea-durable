@@ -1177,8 +1177,7 @@ server of PostgreSQL. A file of SQLite is held by a file of its own beside it, n
 transaction that writes no row takes the hold file's lock, so that a launch on a full volume takes it. The database
 itself stays in the normal locking mode, so another connection reads it while the runtime runs, and the end of the
 process gives the hold back however it ends
-([decisions 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md),
-[0268](decisions/0268-the-hold-of-a-file-of-sqlite-writes-no-row.md)). A database of
+([decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)). A database of
 PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. A database of
 PGlite is held in the process by its client. Its data directory is held too, while the client a runtime launched on
 is open, so a launch on another client over the directory dies

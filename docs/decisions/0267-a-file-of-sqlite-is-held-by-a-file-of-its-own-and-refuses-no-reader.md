@@ -5,8 +5,7 @@
 [decision 0080](archive/0080-a-database-is-held-by-one-runtime.md): a file of SQLite is no longer held in the exclusive
 locking mode, and another connection reads it while a runtime runs. It makes
 [decision 0247](0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md) hold on SQLite as on
-PostgreSQL. The hold file is taken by an exclusive transaction that writes no row, so that a launch on a full volume
-takes it, since [decision 0268](0268-the-hold-of-a-file-of-sqlite-writes-no-row.md).
+PostgreSQL.
 
 ## Context
 
@@ -18,6 +17,12 @@ WAL mode that mode keeps every other connection from opening the file, one opene
 the new process died with `database is locked`, after the busy timeout, which blocks the event loop under
 `bun:sqlite`. The hold refused readers on one backend and not on the other.
 
+A hold that takes no room on the disk is kept too. A launch runs on a full volume, so that an operator forgets a
+consumer and prunes its rows there ([decision 0223](0223-a-disk-that-is-really-full.md)). A write of a file in
+SQLite's rollback journal copies the page it changes to the journal first, and the journal grows. A first form of this
+decision wrote a row to the hold file, and `spikes/full-volume.test.ts` failed under it, in the job of PostgreSQL of
+the push of `fcd7ce4`: a second process on the full volume died with `database or disk is full` as it launched.
+
 ## Decision
 
 - **The hold refuses a second runtime, and refuses no reader, on SQLite as on a server of PostgreSQL.** A connection
@@ -26,10 +31,15 @@ the new process died with `database is locked`, after the busy timeout, which bl
   so a check of it runs in the process that holds it, or once that process has stopped.
 - **A file of SQLite is held by a file of its own beside it.** The hold file is named by the database's path, as
   `pragma_database_list` gives it, and `-effecttea-hold`. The runtime's connection attaches the hold file as
-  `effecttea_hold`, sets the exclusive locking mode on it alone, and writes a row to it. That write takes the hold
-  file's exclusive lock, and the mode keeps it until the hold file is detached or the connection closes. A second
-  runtime's write to the hold file fails, and its launch dies with `the database is held by another runtime`. The
-  database itself stays in the normal locking mode.
+  `effecttea_hold`, sets the exclusive locking mode on it alone, then runs `BEGIN EXCLUSIVE` and `COMMIT`, with no
+  statement between. The transaction takes the hold file's exclusive lock, and the mode keeps it until the hold file
+  is detached or the connection closes. A second runtime's `BEGIN EXCLUSIVE` on the hold file fails, and its launch
+  dies with `the database is held by another runtime`. The database itself stays in the normal locking mode.
+- **A hold writes no row, so that a launch on a full volume takes it.** The first hold of a database writes the hold
+  file once: SQLite writes the first page of the new file, and a journal of a few hundred bytes beside it. A later hold
+  writes no file of the hold's.
+- **The hold file keeps SQLite's default journal**, so that its first page is written whole or not at all if the
+  process dies while it writes.
 - **The runtime gives the hold back by detaching the hold file**, once everything of it has stopped, as decision
   0080 lets the hold go. The end of the process gives it back however the process ends, since the operating system
   ends the process's locks. The hold file stays on disk, since a runtime that deleted it could delete it under
@@ -45,11 +55,19 @@ the new process died with `database is locked`, after the busy timeout, which bl
   holder one snapshot per transaction, that the database stays in the normal locking mode, and that a holder killed or
   a hold file detached gives the hold back: **seen** in the spike
   [`spikes/sqlite-hold-file.test.ts`](../../spikes/sqlite-hold-file.test.ts), whose holder is another process, at
-  `@effect/sql-sqlite-bun` 4.1.3 on Bun 1.4.4. It passed on Windows on the maintainer's machine, and the job of the
-  spikes of the CI runs it on Linux on the push of `main` that takes this note.
+  `@effect/sql-sqlite-bun` 4.1.3 on Bun 1.4.4. The spike also sees that a hold taken again changes neither the size
+  nor the time of a file of the hold's, and it fails on a hold that writes a row. It passed on Windows on the
+  maintainer's machine, and on Linux in the job of the spikes of the CI, on the push of `25a4530`.
+- That a second process launches on a full volume, after a first process held its database: **seen** in
+  [`spikes/full-volume.test.ts`](../../spikes/full-volume.test.ts), which the job of PostgreSQL of the CI runs on a
+  volume of 32 MB. It passed on the push of `25a4530`, and failed on the push of `fcd7ce4`, under a hold that wrote a
+  row.
+- That `SqlClient.BeginTransaction` replaces the statement that begins a transaction: **documented** in the JSDoc of
+  `BeginTransaction`, in `node_modules/effect/src/sql/SqlClient.ts`. The runtime's `transaction` gives it on SQLite.
 - That a runtime refuses a second runtime on another client of its file, that a reader opened `readonly` reads the
   rows it committed, and that the hold is given back when the runtime ends: **tested** by `a runtime holds its
-  database file against another runtime, and a reader reads it beside the runtime`, in
+  database file against another runtime, and a reader reads it beside the runtime`, whose other holder begins an
+  exclusive transaction as the runtime does, in
   [`src/runtime.test.ts`](../../src/runtime.test.ts). `a launch refused by a file another runtime holds gives the
   file back` tests that a launch refused gives back what it held.
 - That a check from a client of its own reads a file the old version holds: **tested** by `a check from a client of
@@ -71,6 +89,12 @@ the new process died with `database is locked`, after the busy timeout, which bl
   keeps the difference between backends.
 - **A row in a table naming the runtime that holds the database.** Decision 0080 rejects it: a process killed leaves
   the row behind.
+- **A row written to the hold file.** The write needs room for its journal, so a launch on a full volume dies.
+- **A hold file in the WAL mode, taken by a reading.** A reading writes no page. After a holder was killed, a new
+  holder opened the WAL's shared memory, and a third process took the hold beside it, in a script run by hand on Bun
+  1.4.4.
+- **The journal of the hold file kept in memory.** A later hold writes nothing either way. A first page torn by a
+  crash would leave a hold file that SQLite cannot open, and every launch would die on it.
 - **A lock of the file by the operating system, with no SQLite.** No module of `node_modules/effect/src` locks a file,
   and Bun gives no lock that the end of the process gives back.
 
@@ -78,8 +102,8 @@ the new process died with `database is locked`, after the busy timeout, which bl
 
 - [`src/storage/tables.ts`](../../src/storage/tables.ts) holds a file of SQLite by the hold file, and the defect of a
   launch refused is `the database is held by another runtime`.
-- A database of SQLite has a file `<path>-effecttea-hold` beside it once a runtime has launched on it, with SQLite's
-  journal of that file at times.
+- A database of SQLite has a file `<path>-effecttea-hold` beside it once a runtime has launched on it, and the hold
+  file's journal, `<path>-effecttea-hold-journal`.
 - The design says that the check on SQLite reads through a client opened `readonly`.
 - A second name of the database's file, by a symbolic or a hard link, names a second hold file. The decision leaves
   that case out, and it is an [open question](../open-questions.md#running).

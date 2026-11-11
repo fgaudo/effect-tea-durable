@@ -46,10 +46,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md). The part
     next is bug 4, reproduced by a `test.failing` of `src/rehearse.test.ts`, proposed to the maintainer before any
     code.
-    The spike of decision 0267, `spikes/sqlite-hold-file.test.ts`, passed on Linux in the job of the spikes of the
-    push of `fcd7ce4`. That push failed `spikes/full-volume.test.ts` in the job of PostgreSQL, since the hold wrote a
-    row, and [decision 0268](decisions/0268-the-hold-of-a-file-of-sqlite-writes-no-row.md) takes the hold with no
-    row. Both spikes run on Linux again on the push of `main` that takes 0268. The test of decision
+    The spikes of decision 0267, `spikes/sqlite-hold-file.test.ts` and `spikes/full-volume.test.ts`, passed on Linux
+    in the jobs of the CI of the push of `25a4530`. The test of decision
     0264 on PostgreSQL passed in the job of PostgreSQL of the push of `af8c5d5`. Decision 0265 changes the statements
     of the table `effecttea_waiting`, so its tests run on PostgreSQL first in that job, on the push of `main` that
     takes it.

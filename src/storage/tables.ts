@@ -85,10 +85,10 @@ const advisoryKey = 7_465_616
  * is held in this process, claimed in one synchronous step. A file of SQLite is held by a file of its own beside it,
  * named by the database's path and `-effecttea-hold`. The runtime's connection attaches the hold file in SQLite's
  * exclusive locking mode and begins and commits an exclusive transaction that writes no row, so that no other
- * connection takes it, and the end of the process gives it back, however it ends (decision 0268). The database itself stays in the normal locking mode, so another connection reads it. A
- * database of SQLite in memory is held by its client alone, since no other connection opens it. A database of
- * PostgreSQL is held by a session advisory lock, on a connection reserved until the scope ends, and the end of the
- * session gives it back. PGlite runs every statement on one session, which would take the lock again. So in this
+ * connection takes it, and the end of the process gives it back, however it ends. The database itself stays in the
+ * normal locking mode, so another connection reads it. A database of SQLite in memory is held by its client alone,
+ * since no other connection opens it. A database of PostgreSQL is held by a session advisory lock, on a connection
+ * reserved until the scope ends, and the end of the session gives it back. PGlite runs every statement on one session, which would take the lock again. So in this
  * process alone, the client holds it, and the client's data directory is held while the client is open. A database
  * another runtime holds is the launcher's defect. So is a data directory of PGlite another process has open
  * (decision 0255).
@@ -126,7 +126,7 @@ export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope>
   if (main === undefined || main.file === '') return
   // The mode is the attached file's alone. In that mode the exclusive lock an exclusive transaction takes is kept
   // until the file is detached or the connection closed. The transaction writes no row, so that a launch on a full
-  // volume takes the hold, where a write would need room for its journal (decisions 0223, 0268).
+  // volume takes the hold, where a write would need room for its journal (decisions 0223, 0267).
   const take = Effect.gen(function*() {
     yield* sql`ATTACH DATABASE ${`${main.file}-effecttea-hold`} AS effecttea_hold`
     yield* sql`PRAGMA effecttea_hold.locking_mode = EXCLUSIVE`

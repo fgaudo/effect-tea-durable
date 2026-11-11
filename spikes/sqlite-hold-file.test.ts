@@ -1,6 +1,6 @@
 /**
  * What a hold of a file of SQLite by a file of its own beside it keeps, at `@effect/sql-sqlite-bun` 4.1.3 on a file
- * in WAL mode (decisions 0267, 0268). The holder is another process, which attaches the hold file in the exclusive
+ * in WAL mode (decision 0267). The holder is another process, which attaches the hold file in the exclusive
  * locking mode and begins and commits an exclusive transaction that writes no row. The database stays in the normal
  * locking mode. A client opened `readonly` reads it beside the holder, one snapshot per transaction. A second holder is
  * refused at once under a busy timeout of 0. A holder killed gives the hold back, and so does a holder that detaches
