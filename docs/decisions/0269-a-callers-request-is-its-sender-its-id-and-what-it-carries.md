@@ -65,12 +65,30 @@ is the scope. The check is what this decision adds.
   ids unique across its callers, as a UUID each or an id derived from what the boundary knows of the caller. Two of
   its callers that send the same message under the same id are one request, since nothing tells them apart. Two that
   send different messages under the same id are told so by `Reused`.
-- **An operation's request is still found by its run and the name it gave, and is not compared.** A run of an
-  operation after a crash builds its messages again, and may build one otherwise, from a service it reads again. The
-  first message the receiver applied stands, and the run is given its reply
-  ([decision 0253](0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)). An operation that
-  sends twice under one name in one run already dies
-  ([decision 0047](archive/0047-a-request-of-an-operation-has-a-name.md)).
+- **An operation's request is still found by its run and the name it gave, and what it carries is not compared.**
+  The runtime makes an operation's request from the operation's entity, key, incarnation and name, so two intents
+  never share it. The one way two sends could share it, a name sent under twice to one entity in one run, is already
+  the operation's defect ([decision 0047](archive/0047-a-request-of-an-operation-has-a-name.md)). A second message
+  under an operation's request is therefore the same intent built again, by a run after a crash or after a deploy.
+  Decision 0047 rejected this check for that reason: a message built from the clock differs after a restart, and its
+  retry would be taken for a defect.
+- **No answer to an operation fits a mismatch.** `Reused` would be an answer that only a crash gives, which every
+  operation would handle. A defect would suspend the sender, and a resume would run the operation again into the same
+  mismatch. A deploy that changes an operation's code under an incarnation it keeps
+  ([decision 0022](archive/0022-a-new-program-keeps-what-work-started-with.md)) would suspend every entity whose work
+  is under way.
+- **An operation's reply answers the first message the receiver was given under that request.** A run after a crash
+  that builds another message is given the first one's reply, `Accepted`, `Rejected` or `Created`, and the receiver
+  holds the first message or the first flags alone
+  ([decision 0253](0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)). An operation
+  whose completion reports what it sent builds the message from its stored operation value and the replies it was
+  given, never from what it reads again, so that the completion says what the receiver holds. The design says so where
+  it says what an operation sends. The rule concerns an idempotent operation and an at-least-once one only. An
+  at-most-once operation never runs again ([decision 0011](archive/0011-an-operation-declares-what-a-crash-does.md)),
+  and a droppable one acts on nothing ([decision 0128](archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)).
+- **An operation's request holds no message on Cluster or in a reply's row.** Cluster's primary key of a door's
+  requests holds the message's text for a caller's request alone, and a reply to an operation's request keeps no text
+  of what it carried.
 
 ## What it rests on
 
@@ -87,6 +105,14 @@ is the scope. The check is what this decision adds.
   stored: to be **tested** by a test of `src/runtime.test.ts` on each storage, which stores a reply at version 1,
   deploys a version 2 whose migration changes the message's form, and retries. The same test of `src/rehearse.ts`
   decides bug 5, since a rehearsal keys its replies by the request's text.
+- That a run of an operation after a crash which sends another message under the same name is given the first
+  message's reply, and that the receiver's state holds the first message alone: to be **tested** on the runtime and in
+  a rehearsal's world, once with the first message handled and once with it still queued in the receiver's mailbox.
+  The same test with a creation checks that a run which creates with other flags is given `Created`, and that the
+  entity holds the first flags.
+- That Cluster gives an operation's request the reply it saved, or delivers it to the door, which answers it from the
+  stored reply, once the primary key holds no message for it: to be **tested** by the test of `src/cluster.test.ts`
+  above, with an operation's request beside the caller's.
 - That a boundary which decodes the same request off the wire under the new version gets the message the migration
   writes: **chosen** by the note. The library cannot check a boundary, and a boundary that decodes otherwise breaks a
   retry across a deploy whatever this decision says.
@@ -107,8 +133,11 @@ is the scope. The check is what this decision adds.
   and the check would hold within a version only.
 - **`Reused` as the caller's defect.** A defect is the code's, and a caller outside the library makes this one, as a
   request with a sender its schema refuses is a defect only because the boundary wrote the sender.
-- **The check on an operation's requests too.** A run after a crash that builds its message otherwise would be
-  answered `Reused`, and every operation would handle an answer that only a crash gives.
+- **The check on an operation's requests too.** An operation's request never holds two intents, so the check would
+  find only a run after a crash or a deploy that built its message otherwise. The operation would be answered
+  `Reused`, which every operation would handle, or would die, and a resume would run it into the same mismatch.
+  Across versions the check would also need the receiver's migration of `inbound` and the sender's new code to agree,
+  which the library cannot check.
 
 ## Consequences
 
@@ -119,11 +148,16 @@ is the scope. The check is what this decision adds.
   first migration changes. [`src/storage/entities.ts`](../../src/storage/entities.ts) compares it, on every backend.
 - [`src/runtime/doors.ts`](../../src/runtime/doors.ts) and [`src/runtime/callers.ts`](../../src/runtime/callers.ts)
   wait for the reply of a request and its message.
-- [`src/cluster.ts`](../../src/cluster.ts) puts the message's text in the primary key of a door's requests.
+- [`src/cluster.ts`](../../src/cluster.ts) puts the message's text in the primary key of a caller's request to a
+  door, and keeps the primary key of an operation's request as it is.
 - [`src/rehearse.ts`](../../src/rehearse.ts) keeps what a named request carried, and gives `Reused`.
 - `Answer` and the caller's `Creation` of a `Handle` hold `Reused`. An operation's `send` and `create` never give it.
 - `docs/design.md`, under Inbound messages and the rehearsal's `send`, and `docs/glossary.md`, under Request, say the
-  rule. `examples/server` answers `Reused` with 422.
+  rule. `docs/design.md`, under Entities that talk, says that an operation's reply answers the first message under
+  its request, and that an operation builds what it reports from its stored value and its replies.
+  `examples/server` answers `Reused` with 422.
+- Whether a rehearsal's crash should fail a test when the run after it sends another message under a name is an
+  [open question](../open-questions.md#programs). The decision leaves it out.
 - The `test.failing` `a program with no sender` of `src/rehearse.test.ts` becomes two tests: a second message under a
   used id is answered `Reused` and the total stays 1, and the same message under a used id is a retry.
   `src/machine.test.ts` has a rule for a queued and a stored request, and a contract test runs the requests alike on

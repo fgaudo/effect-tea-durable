@@ -635,6 +635,15 @@ with a requirement that no example has yet.
   [Decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md), `proposed`, decides
   it once taken: a request that carries another message under a used id is answered `Reused`.
 
+- **A rehearsal's crash and an operation that sends another message after it.** A run of an operation after a crash
+  that sends another message under a name it used is given the first message's reply, and the receiver holds the
+  first message alone ([decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md)).
+  An operation that reports what it sent in its completion then says what the receiver does not hold, with nothing
+  reported. A rehearsal runs the operation again at a crash, so a test is where this is found at the least cost. A
+  rehearsal that failed the test would refuse what the runtime allows. It would be decided by:
+  - whether the maintainer wants a rehearsal to be stricter than the runtime on what it can see;
+  - whether a program has a use for a message rebuilt otherwise after a crash, as one built from the clock.
+
 - **A retry in a rehearsal after a deploy that changes how the sender is written.** A rehearsal keeps the reply of a
   request the test named for the whole rehearsal, a deploy included
   ([decision 0200](decisions/0200-a-rehearsal-sends-under-a-request-id-the-test-names.md)). It stores the reply under

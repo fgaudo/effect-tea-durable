@@ -48,10 +48,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md), `proposed`, which
     the maintainer chose on 2026-11-11 after the opinion of a Fable 5.2 agent: a caller's request carries its message
     or flags, and a reused id with another one is answered `Reused`, on every sender. No code of it is written yet.
-    The part next is the tests of the three premises its note says are to be tested, before any other code: first
-    the encoding of one value to one text, in `src/machine.test.ts`, then Cluster's primary key, in
-    `src/cluster.test.ts`, then a retry across a deploy that migrates `inbound`, in `src/runtime.test.ts`. A premise
-    that fails changes the note before the code.
+    On the maintainer's ask, a second opinion of Fable 5.2 kept an operation's requests out of the check, for the
+    reason decision 0047 gives, and the note says what an operation's reply then answers. The part next is the tests
+    of the premises its note says are to be tested, before any other code: first the encoding of one value to one
+    text, in `src/machine.test.ts`, then Cluster's primary key for a caller's request and an operation's, in
+    `src/cluster.test.ts`, then a retry across a deploy that migrates `inbound`, in `src/runtime.test.ts`, then a run
+    after a crash that sends another message or creates with other flags under a name it used. A premise that fails
+    changes the note before the code.
     The spikes of decision 0267, `spikes/sqlite-hold-file.test.ts` and `spikes/full-volume.test.ts`, passed on Linux
     in the jobs of the CI of the push of `25a4530`. The test of decision
     0264 on PostgreSQL passed in the job of PostgreSQL of the push of `af8c5d5`. Decision 0265 changes the statements
