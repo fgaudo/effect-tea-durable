@@ -7,6 +7,12 @@ A review takes out the rules its notes decide, one at a time, with [`scripts/mut
 which runs the tests and the compiler against each mutation it is given, and checks nothing else. The mutations are
 written for the code the review reads, and are not kept.
 
+A premise review, as [`.claude/skills/premise-review/SKILL.md`](../../.claude/skills/premise-review/SKILL.md) has it
+made, is a section here too, headed `premise review of` its area. It is the reviewer's report, whole, with what it
+ruled out. It is not the review of fifteen notes that `AGENTS.md` asks for. The report of the first premise review,
+of 2026-11-11 on Cluster and the runtime's callers, was not kept; the roadmap's step of the review says what it
+read.
+
 ## 2026-10-31: 0080 to 0091, and 0092 (proposed)
 
 - 0095: a `defectRetryPolicy` that gives up does not end Cluster's retry; 0096: Cluster stores a defect no step gave
@@ -551,3 +557,203 @@ written for the code the review reads, and are not kept.
   step, the `REPEATABLE READ` of a reading of one snapshot, and the reading of a `BIGINT` given as a bigint (0222).
   PGlite runs one session and gives a `BIGINT` as a number, and `src/postgres.test.ts` is skipped without
   `POSTGRES_URL`.
+
+## 2026-11-11: premise review of The machine and the program
+
+The reviewer's report, whole, as its session wrote it. Its branch, `claude/premise-review-machine-c1a99e`, holds no
+commit, since it reproduced nothing.
+
+No finding was reproduced, so no test and no commit. Two findings are only reasoned; both are design questions.
+
+### Pairs read
+Both notes read whole, with the code:
+- 0013 against 0065. Code: src/runtime/loop.ts:376-395 (the reply is read just before the step, in the entity's
+  loop) and src/machine.ts.
+- 0014 against 0023, 0041, 0044, 0124 and 0187. Code: machine.ts handle (960-1035), resume and discard (1037-1060),
+  activate and reconcile (730-800), rehearse.ts advance (360-430).
+- 0003 against 0195. 0035 against 0180. 0180 against 0197 and 0202. 0197 against 0199.
+- 0033 and 0037 against 0132. 0132 against 0136 and 0197. Code: machine.ts renew (660-690), keyText and keyBy
+  (95-110), storage/rows.ts keyRow (88-110), storage/entities.ts (345-395).
+- 0133 against 0155. Code: program.ts checkNames (1275-1282), assemble and routing (1440-1475).
+- 0064 against 0075, and 0057 and 0031 against the notes that apply them (0133, 0202).
+Skipped, as briefed: 0064 against 0247.
+
+### Findings, only reasoned
+1. **0180 against 0124 and 0048.** 0180 makes `sender` left out default to `Schema.Null`. 0124 and 0048 keep a
+   caller's request ids under its sender, and 0124 rests on "a sender as fine as an identity keeps request ids
+   apart". When every sender is `null`, all callers of the program share one space of request ids. The boundary
+   cannot separate them, because the type admits no sender. Two callers that reuse an id, or one that guesses
+   another's id, get the first caller's stored reply, and the second message is never applied. The design
+   (docs/design.md:252) says a null sender takes no sender, and says nothing of the shared space. This is a design
+   question: should the docs require ids unique across all callers, such as a UUID, or should the boundary give a
+   sender?
+2. **0133's rule against an own message named like a child, which 0199 does not cover.** The rule is kept only by
+   the types (program.ts:1133, `Extract<TagOf<Own>, Names<C>>`). 0199 found that a widened type empties such a
+   check, and closed that gap for keys only. An own message schema whose `_tag` is `string` makes the Extract
+   `never`, so the declaration compiles. At run time, routing (program.ts:1453) then sends an own message tagged
+   with a child's name to that child. Low severity, because a `_tag` typed `string` is rare. Not tested.
+
+### Suspects ruled out
+- 0065 against 0013: the reply is read in the entity's loop just before the step. A sweep that deletes it in
+  between still leaves the reply given, and only the entity's own steps write its replies.
+- 0065's "rehearse sends each request once" no longer holds. Decision 0200 covers it: a rehearsal keeps the
+  replies of named requests for the whole rehearsal.
+- 0132: replies to an asker are matched on its key and its incarnation (storage/entities.ts:368-385), so a key
+  that comes back keeps no stale reply.
+- 0041 and 0044 with reconcile: when a fix changes a timer, the queued firing is dropped and a new timer fires at
+  once. A non-droppable operation cannot change at activation.
+- A step cannot drop an operation whose completion is still queued: handle checks against all stored work
+  (machine.ts:990-1005).
+- 0057's cached projection is keyed by program (machine.ts:248-262), so a deploy does not compare across programs.
+- 0187: the guard against a timer that fires twice at one time is checked for timers armed in the past and for
+  `advance(0)`. Time never goes back (firesAt = max(now, at)).
+- 0136: the order of a parameter's fields is the same everywhere, since keyText and keyRow both use
+  JSON.stringify of one ordered object.
+- 0064 and 0075 on Cluster with two versions: decision 0159 covers it, and so do the open questions on rolling
+  deploys.
+- 0133's names with a `.`: a leaf part's key with a `.` cannot collide, because child names are unique and have
+  no `.`.
+
+### Not reached
+- The rehearsal's request key after a `deploy` that changes the sender's encoding. In the runtime a request is
+  found by its request id and migrated (0065). The rehearsal keys a reply by the request's text, so a retry after
+  such a deploy may not find its reply.
+
+## 2026-11-11: premise review of Operations and timers
+
+The reviewer's report, whole, as its session wrote it.
+
+Branch `claude/premise-review-operations-d2dda3`, commit `d612640`. One finding reproduced.
+
+### Finding 1, reproduced: 0128 against 0011
+- Test: `FAILING: a droppable operation a new program delivers at most once starts, since it acted on nothing`,
+  in `src/machine.test.ts` (describe `a new program`). Run: `bun test src/machine.test.ts -t FAILING`.
+- 0128 lets a new program deliver a droppable operation otherwise, and keeps its incarnation, "since the
+  incarnation stopped has acted on nothing". 0011's activation rule records `unknown` for an at-most-once
+  operation whose stored incarnation it finds with no completion, since it "may have started". The rule rests on an
+  unwritten premise: the stored incarnation was delivered at most once. 0128 takes it away.
+- Sequence: entity holds a `Droppable` operation under `charge`, incarnation 1. A deploy declares it
+  `operation.atMostOnce`. `reconcile` (src/machine.ts:737-752) skips the droppable key, so no defect. `renew`
+  (src/machine.ts:666-689) keeps incarnation 1, delivery now `AtMostOnce`. `activate` (src/machine.ts:784, 791-795)
+  sees `started && mayHaveRun && AtMostOnce`, and records `unknown` ('?') instead of starting the operation.
+- Effect: the program is told the at-most-once act may have happened when the runtime knows it never ran. A program
+  that answers `unknown` by not acting again (an email marked unsure) never acts. No data is written wrong, but the
+  operation is lost. `rehearse`'s restart uses the same machine, so a rehearsal shows the same.
+- Where a fix begins: `activate` reads the delivery stored before `reconcile` (machine.stored.keys[text].delivery)
+  and delivers `unknown` only when that was `AtMostOnce`; or 0128's rule gives a new incarnation in this case.
+
+### Pairs read
+Both notes whole, with the code (machine.ts reconcile/activate/handle/renew, runtime/loop.ts start/perform/arm):
+0005-0128, 0008-0041, 0008-0130, 0011-0018, 0011-0119, 0011-0123, 0011-0128, 0018-0058 (0058 not reread whole;
+code isSame), 0041-0044, 0045-0063, 0046-0063, 0046-0147, 0056-0067 (0067 by its status in 0056 only), 0123-0192,
+0128-0129, 0119 against 0128 and 0113. Later notes citing them: 0090 (cites 0005), 0133 (cites 0005), 0092 (0056 on
+a shard that leaves), 0113, 0147, 0178 by their decision sections. Not read: 0064, 0114 against 0041/0044 (by
+brief, partly reviewed earlier), 0193, 0022, 0029, 0035, 0047, 0049, 0060, 0075, 0077, 0131, 0142, 0156, 0162, 0180,
+0183, 0187 (0187 read by the previous review), 0219 (drain on Cluster is already an open question).
+
+### Ruled out
+- 0090's "nothing sends under a key once its work ended" (from 0005) against 0128: a droppable operation sends to no
+  entity (0128, 0129), so a dropped one still stopping sends nothing.
+- 0092's forked interruption on a shard that leaves, against 0090: a send started before the interruption and
+  delivered after the work ended takes 0090's pending-id path, which 0090 already describes.
+- 0119 against 0128 and 0123: the drain stops every delivery but `AtMostOnce` (loop.ts:222), so droppable and digest
+  operations are stopped and run again, as 0128 says.
+- 0119 against 0113: a suspended entity's at-most-once operation is drained, and its completion recorded behind the
+  message it died on.
+- 0119 against 0045, 0063, 0046: an at-most-once operation that waits for a deploy, a resumption or a crashed
+  receiver during a drain ends in `unknown` after `millis`, which 0119 allows.
+- 0128 against 0005 in a step: the Disarmed output precedes the Started of the new incarnation (machine.ts:998-1022),
+  and a late completion is dropped by `record`'s incarnation check.
+- 0128 against 0133: a child may leave with a droppable operation under way, as a key may.
+- 0056 against 0128 and 0113: an entity with a droppable or a suspended entity's operation is busy, so an unload
+  still stops only timers.
+
+### Noticed, not checked
+- 0128 with 0113 at a resume where the program could drop a kept droppable: in one process the program cannot
+  change (0075), so not reachable; on Cluster the older runner's entities crash first. Not checked further.
+- A drain step that changes a droppable (new incarnation) does not start it (draining), and the machine counts it
+  running; harmless, since the process ends. Not tested.
+
+## 2026-11-11: premise review of Creation and Defects
+
+The reviewer's report, whole, as its session wrote it.
+
+Branch `claude/premise-review-creation-03f15d`, commit `38fb0a2`. One finding reproduced, one only reasoned.
+
+### Finding 1, reproduced: 0182 (and 0010) against 0009 and 0060
+- Test: `FAILING: an at-least-once operation run again after a crash acts once, though init rejected its creation`,
+  in `src/runtime.test.ts` (describe `what the runtime cannot finish`). Run: `bun test src/runtime.test.ts -t FAILING`.
+  It fails: `toy-1` applied `['Rejected', 'AlreadyExists']`.
+- The premise that fell: 0009 and 0060 say an operation that talks only to entities acts exactly once, because a
+  run after a crash gets the stored replies (design.md:675 says the same). Nobody wrote down the premise under it:
+  every answer an operation acts on is stored. 0182 stores no reply for a creation `init` rejects
+  (callers.ts:253-255, machine.ts:840-845). So the run after a crash runs `init` again, and can get another answer.
+  0182 says this for a caller's retry ("unless the rule reads the time, or a deploy changed the program"). It does
+  not say it for an operation that branches on the answer.
+- Sequence: entity `sender`'s at-least-once operation C creates `g` of `Gate`, and `init` rejects its flags. C sends
+  `toy-1` `Rejected` under the name `refund`. The process dies before C's completion is recorded. Another creator
+  creates `g`. At the next activation C runs again. Its creation gets `AlreadyExists`, and it sends under the name
+  `confirm`. Both messages are applied. The same happens with `Created` when `init` reads the time, or after a
+  deploy changes `init`.
+- The same premise already fell, before 0182, for `NotFound`, which is not stored either (0010). A message to an
+  entity that does not exist yet is answered `NotFound`, and the run after a crash, once the entity exists, gets
+  `Accepted`. No test covers that case. A fix covers both, or the design states that an operation must not
+  branch on an answer that is not stored.
+- Where a fix begins: a design choice. Either store the creation's `Rejected` and `NotFound` under the operation's
+  request while its work holds (0021), or narrow the promise in design.md and 0009 to operations whose acts do not
+  depend on an answer that is not stored.
+
+### Finding 2, only reasoned: 0160 against 0046 and 0114
+- 0046 says that a creation `init` dies on is the sending operation's own defect, so it suspends the sender. 0124 says
+  the creator is given the defect. On Cluster, 0160 makes a creation the program dies on die in the door
+  (doors.ts:315), and Cluster delivers it again without end. An operation's `create` goes through the door's
+  client (callers.ts:216-230, 0167), and so waits for ever. The sender is not suspended. The receiver does not exist.
+  So `suspended` (0114) lists nothing, and only Cluster's log of restarts shows it. The sender's entity stays busy
+  and is never unloaded. Neither 0160 nor 0167 says what holds of 0046 on Cluster.
+- Not tested. A test would deploy, in `src/cluster.test.ts`, a program whose `init` throws, have an operation create
+  it, and expect the sender suspended. It hangs today. It belongs with the open question on how long a sender waits
+  before someone is told.
+
+### Pairs read
+Both notes read whole, with the code (machine.ts start/Create/activate/reconcile/handle/resume/discard/record/died;
+callers.ts create; loop.ts start/perform/crash/unload/nothingToDo; doors.ts create step; process.ts operated;
+rehearse.ts entitiesOf/born):
+0012 against 0049, 0060, 0124, 0182. 0017 against 0047, 0060. 0049 against 0182. 0050 against 0060 and 0182.
+0124 against 0182 and 0160. 0006 against 0046, 0061, 0113, 0114. 0042 against 0056, 0067, 0077. 0113 against 0042 and
+0056. 0114 against 0041, 0044 and 0185. 0064 against 0041 and 0044. 0205 against 0157. 0046 against 0160 and 0182.
+0009/0060 against 0182 and 0010.
+By their decision sections only: the later notes that cite these: 0038, 0053, 0079, 0130, 0206, 0062, 0109, 0175,
+0166, 0177, 0186.
+
+### Suspects ruled out
+- 0182 in a rehearsal: a rehearsal stores no reply for a creation `init` rejects either (rehearse.ts:476-486). It
+  answers as the runtime does.
+- 0017's `Created` on a retry after a rename (0156): the rename rewrites the stored `creation` request
+  (storage/tables.ts:528-532).
+- 0064 against 0041 and 0044: a fix that changes a timer gives it a new incarnation. The firing the entity died on is
+  then dropped, and the timer is armed again, which is what the fix intends. A fix that changes an operation, or its
+  delivery, under a completion is refused by `reconcile` and gives `StillSuspended`. A droppable one is dropped, as
+  0128 allows.
+- 0114 against 0041 and 0044: `discard` answers `NotDiscarded` exactly when the suspension is not on `Message`, or the
+  head is internal (machine.ts:1057, process.ts:124).
+- Two operators who discard at once can drop the next message: 0114 accepts this in its own words.
+- 0042, 0056 and 0113: an operation of a crashed entity offers its completion to the old `Loaded`, which nothing reads
+  (loop.ts:240). A suspended entity's operations are not kept across a `Restart`.
+- 0185's `load` outside a transaction, on Cluster: the door loads inside Cluster's transaction (doors.ts:218).
+- 0205 against the read model on PostgreSQL: an index string that holds U+0000 is already the program's defect
+  (0157, the machine's test at machine.test.ts:1333), so `indexes::jsonb` never meets one.
+- 0061: `activate` and `handle` catch only the machine's `Defect` (machine.ts:68-71). Anything else leaves the step.
+- 0182's reason that does not encode, sent by an operation: it is a defect at creation, so it suspends the sender, as
+  0046 says of a creation `init` dies on.
+
+### Noticed, not checked
+- 0166: Cluster keeps the rows of every operator's event, and nothing seen deletes them, so they may grow without end.
+  Not read against 0245's `expire`.
+- 0205 on Cluster: a door's defect, or a failure Cluster saves (0168), may carry program data with U+0000 into
+  Cluster's own tables. That only matters once Cluster runs on PostgreSQL.
+- The `NotFound` half of finding 1 has no test of its own. The test of finding 1 can be written again with a `send`
+  to an entity created between the two runs.
+
+### Not reached
+None of the notes the brief named. Of the later notes, 0021, 0048, 0071, 0085, 0092, 0122, 0125, 0245, 0248 and 0249
+were not read against these areas. The brief or the roadmap already cover 0085, 0245, 0248 and 0249.

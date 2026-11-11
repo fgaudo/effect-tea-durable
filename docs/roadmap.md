@@ -37,29 +37,32 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     decisions only: 0038, 0053, 0079, 0130, 0206, 0062, 0109, 0175, 0166, 0177 and 0186. Not reached there, the later
     notes that cite the two sections: 0021, 0048, 0071, 0092, 0122 and 0125.
   - The first session read pairs, not sections. So every section of the index the sessions above did not name is
-    still to read whole, the pairs listed above included. The areas left, one session each, in this order, with
-    every note of [the index](decisions/README.md) in one of them:
+    still to read whole, the pairs listed above included. The areas left, one session each, in this order, each
+    of thirty notes at most, with every note of [the index](decisions/README.md) in one of them:
     1. Messages, requests and replies, without the rehearsal: 0004, 0009, 0010, 0015, 0021, 0023, 0047, 0048, 0059,
        0060, 0065, 0069, 0124, 0125 and 0245.
     2. Effect Cluster: 0081, 0084, 0085, 0090 to 0092, 0159 to 0163, 0165 to 0176, 0178, 0248 and 0249.
     3. Versions and deploys: 0020, 0022, 0036, 0043, 0051, 0058, 0075, 0100, 0102, 0126, 0156 and 0247.
-    4. The runtime, without the scheduler of the tests: 0028, 0029, 0063, 0066 to 0068, 0071, 0073, 0074, 0076 to
-       0079, 0101, 0103, 0109 to 0112, 0116, 0119, 0120, 0134, 0147, 0164, 0177, 0194, 0219 to 0221, 0243 and 0246.
-    5. Schemas and projections, of the section Schemas, storage and projections: 0025 to 0027, 0030, 0032, 0038 to
-       0040, 0062, 0070, 0072, 0098, 0121, 0122, 0135, 0137 to 0140, 0151 to 0155, 0157, 0158, 0184, 0206, 0210,
-       0213 to 0215 and 0240.
-    6. The queries and their pages, of the same section: 0141 to 0146, 0148 to 0150, 0207 and 0209.
-    7. The tables and migrations, of the same section: 0191, 0198, 0216 to 0218 and 0222 to 0225.
-    8. The rehearsal and testing, of the section Messages, requests and replies: 0131, 0183, 0186 to 0190, 0200,
-       0201 and 0211.
-    9. The scheduler of the tests, of the section The runtime: 0104, 0115, 0117 and 0244.
-    10. The project and what enters the library: 0007, 0019, 0052 to 0055, 0080, 0099, 0179, 0193, 0195, 0196,
+    4. The runtime, without the scheduler of the tests, a first part: 0028, 0029, 0063, 0066 to 0068,
+       0071, 0073, 0074 and 0076 to 0079.
+    5. The runtime, without the scheduler of the tests, a second part: 0101, 0103, 0109 to 0112, 0116,
+       0119, 0120, 0134, 0147, 0164, 0177, 0194, 0219 to 0221, 0243 and 0246.
+    6. Schemas and projections, of the section Schemas, storage and projections, a first part: 0025 to 0027,
+       0030, 0032, 0038 to 0040, 0062, 0070, 0072 and 0098.
+    7. Schemas and projections, of the same section, a second part: 0121, 0122, 0135, 0137 to 0140, 0151 to
+       0155, 0157, 0158, 0184, 0206, 0210, 0213 to 0215 and 0240.
+    8. The queries and their pages, of the same section: 0141 to 0146, 0148 to 0150, 0207 and 0209.
+    9. The tables and migrations, of the same section: 0191, 0198, 0216 to 0218 and 0222 to 0225.
+    10. The rehearsal and testing, of the section Messages, requests and replies: 0131, 0183, 0186 to 0190, 0200,
+        0201 and 0211.
+    11. The scheduler of the tests, of the section The runtime: 0104, 0115, 0117 and 0244.
+    12. The project and what enters the library: 0007, 0019, 0052 to 0055, 0080, 0099, 0179, 0193, 0195, 0196,
         0203, 0204, 0208, 0212, 0241 and 0242.
   - Each area also reads, against the notes of the areas already read, every later note of its own that cites
     them. The sessions above did not reach these, and each is read in the area that holds it: 0021, 0022, 0029,
     0047, 0048, 0060, 0071, 0075, 0077, 0085, 0092, 0122, 0125, 0131, 0142, 0156, 0162, 0183, 0187, 0193 and 0219.
-    The second session read, of the later notes that cite its section, only 0133 and 0202, so the rule holds of its
-    section as of the others.
+  - The rule above holds of the section The machine and the program too: of the later notes that cite it, the second
+    session read only those of the section itself.
   - A last session reads whole the pairs the sessions above read by the code and the later note only, or by a
     note's decision only, where an area of the list has not read them since: 0039, 0137, 0152, 0029, 0068, 0076,
     0078, 0151, 0159, 0174, 0175, 0161 to 0163, 0172 and 0021, of the first session; 0058 against 0018, 0067
