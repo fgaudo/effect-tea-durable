@@ -2454,45 +2454,45 @@ was read. Every note of the area itself was read whole, with its code, and so wa
 
 ## 2026-11-11: premise review of the pairs against Effect Cluster
 
-Branch `claude/premise-pairs-cluster-32dc2e`, cut from `main` at `e6d3808`. Test commits `7deee20` and `31b01e8`, both
-in `src/cluster.test.ts`. Two findings, both reproduced, and one only reasoned. The notes are the 29 that the review
-of Effect Cluster read in part or not at all, each against the notes of that area it meets.
+Branch `claude/premise-pairs-cluster-32dc2e`, cut from `main` at `e6d3808`. Test commits `7deee20`, `31b01e8` and
+`902fce1`, all in `src/cluster.test.ts`. Three findings are reproduced, and one is only reasoned. The notes are the 29
+that the review of Effect Cluster read in part or not at all, each read against the notes of that area it meets.
 
 ### The pairs read
 
-"Whole" means both notes read whole, with the code that keeps the rule. "In part" says which part of the earlier
-note was read. The Cluster note of a pair was read whole unless the row says otherwise.
+"Whole" means both notes were read whole, with the code that keeps the rule. Every note of the list was read whole,
+and so was every Cluster note a pair of the list meets.
 
 | Earlier note | Cluster note | What binds them | How it was read |
 | --- | --- | --- | --- |
 | 0015 | 0085 | 0085 says how 0015 holds on Cluster | whole, with `doorOf` and `sentNow` |
 | 0021 | 0085, 0090 | 0090 corrects 0021's consequence, and 0085 keeps the replies as 0021 does | whole, with `keepSent` and `forgetPending` |
 | 0023 | 0085, 0092 | 0085 says how 0023 holds, and 0092 answers `Suspended` on the way | whole, with the mailbox loop of `doorStep` |
-| 0029 | 0092, 0161 | 0092 keeps 0029's passivation for doors, and 0161 decides the pending machine that keeps an entity from leaving | whole, with `steps`, `unload`, `nothingToDo`, `holding`, `finishIn` and `settle` |
+| 0029 | 0092, 0161, 0172 | 0092 keeps 0029's passivation for doors, 0161 decides the pending machine that keeps an entity from leaving, and 0172 names the takers of the lock outside a transaction | whole, with `steps`, `unload`, `nothingToDo`, `holding`, `finishIn` and `settle` |
 | 0036 | 0085 | 0085 cites it for messages stored before a deploy | whole |
 | 0048 | 0085 | 0085 keys a request by the sender as 0048 writes it | whole |
-| 0059 | 0085 | 0085 keys a request by its `requestKey` | in part: the decision |
-| 0063 | 0085, 0090, 0092, 0162, 0163, 0167, 0172 | 0092 changes its waits on Cluster, 0163 narrows it, and 0167 wakes a sender by `Resumed` | whole, with `entities` of `src/runtime/callers.ts`; 0162, 0167 and 0172 in part, at the passages that cite it |
-| 0065 | 0085 | 0085 cites it as its reason | in part: the decision, with the reply read in `doorStep` |
-| 0069 | 0085 | 0085 cites it as its reason | in part: the decision, with `answerCodec` and the door's encoding in `src/cluster.ts` |
-| 0071 | 0081, 0092, 0162 | 0092 and 0162 apply it to each shard | in part: the decision, with `activating`; 0081 not read |
-| 0074 | 0081, 0085, 0092 | 0081 changes it | in part: the decision; 0081 not read |
-| 0076, 0078 | 0092 | 0092 keeps them for doors | in part: the decisions, with `admit`, `spare` and `unload` |
-| 0079 | 0092 | 0092 changes it for an activation | in part: the decision, with `activateOnCluster` |
+| 0059 | 0085 | 0085 keys a request by its `requestKey` | whole |
+| 0063 | 0085, 0090, 0092, 0162, 0163, 0167, 0172 | 0092 changes its waits on Cluster, 0163 narrows it, 0167 wakes a sender by `Resumed`, and 0172 reads its registration again | whole, with `entities` of `src/runtime/callers.ts` |
+| 0065 | 0085 | 0085 cites it as its reason | whole, with the reply read in `doorStep` |
+| 0069 | 0085 | 0085 cites it as its reason | whole, with `answerCodec` and the door's encoding in `src/cluster.ts` |
+| 0071 | 0081, 0092, 0162 | 0081 says Cluster reads its own mailbox, and 0092 and 0162 apply 0071 to each shard | whole, with `activating` and `interruptedWithin` |
+| 0074 | 0081, 0085, 0092 | 0081 changes it | whole |
+| 0076, 0078 | 0092 | 0092 keeps them for doors | whole, with `admit`, `spare` and `unload` |
+| 0079 | 0092, 0172 | 0092 changes it for an activation | whole, with `activateOnCluster` |
 | 0100 | 0090 | 0100 cites 0090 as its reason | whole |
-| 0114 | 0092, 0166 | 0166 applies it through the door | the passages on Cluster only; 0166 not read |
-| 0125 | 0085, 0090, 0165 | 0165 changes it on Cluster | the passages on Cluster only |
-| 0137 | 0162 | 0162 decides that its partition is the shard | in part: the decision and its premises, with `interruptedWithin` and `singletonsOf` |
-| 0142 | 0163 | 0163 narrows it | in part: the decision and its premises, with `tell` in `settle` |
-| 0147 | 0165 | 0165 drops its bound on Cluster | in part: the decision and its premises |
-| 0151 | 0092 | 0151 cites 0092 | the passages on Cluster only |
-| 0156 | 0167, 0169, 0171, 0174, 0176 | 0176 changes it | the passages on Cluster only, with `renamed` of `src/storage/tables.ts`; the Cluster notes not read |
-| 0164 | 0161, 0163 | 0164 extends 0161 | the passages on Cluster only |
-| 0182 | 0085, 0165, 0169, 0249 | 0182 cites them as its reason, and 0249 changes its reset | in part: its rules on Cluster, with `creationCodec`; 0249 at its decision and premises |
-| 0185 | 0161 | 0185 cites 0161 | the passages on Cluster only |
-| 0215 | 0175 | 0215 cites 0175 | the passages on Cluster only; 0175 not read |
-| 0219 | 0175 | 0219 cites 0175 | the passages on Cluster only; 0175 not read |
-| 0247 | 0159 | 0247 cites 0159 | the passages on Cluster only; 0159 at its passages on callers |
+| 0114 | 0092, 0166, 0167 | 0092 writes the rows of the waiting senders, which 0114 says `suspended` reads on Cluster, and 0166 applies 0114 through the door | whole, with `suspended` of `src/runtime.ts` and `waitingFor` of `src/runtime/callers.ts` |
+| 0125 | 0085, 0090, 0165, 0171, 0248 | 0165 changes it on Cluster | whole |
+| 0137 | 0162 | 0162 decides that its partition is the shard | whole, with `interruptedWithin` and `singletonsOf` |
+| 0142 | 0163 | 0163 narrows it | whole, with `tell` in `settle` |
+| 0147 | 0165 | 0165 drops its bound on Cluster | whole |
+| 0151 | 0092 | 0151 cites 0092 | whole |
+| 0156 | 0167, 0169, 0171, 0174, 0176 | 0176 changes it, and 0167, 0169 and 0171 rely on its moves | whole, with `renamed` of `src/storage/tables.ts` |
+| 0164 | 0161, 0163 | 0164 extends 0161 | whole, with the readers of `pending` |
+| 0182 | 0085, 0165, 0169, 0249 | 0182 cites them as its reason, and 0249 changes its reset | whole, with `creationCodec` |
+| 0185 | 0161 | 0185 cites 0161 | whole |
+| 0215 | 0175 | 0215 cites 0175 | whole |
+| 0219 | 0175 | 0219 cites 0175 | whole |
+| 0247 | 0159 | 0247 cites 0159 | whole |
 
 ### Finding 1, reproduced: 0029 against 0092 and 0161
 
@@ -2502,15 +2502,17 @@ note was read. The Cluster note of a pair was read whole unless the row says oth
   stored state is `asking`, `Ask` never runs, and the state stays `{ n: 0, asking: true }`.
 - The premise that fell: 0029 says that an entity is never unloaded under a caller, since finding it and offering its
   event is one hold of its lock. On one process the caller's event is in the queue before the lock is let go, so the
-  unload finds it pending. 0092 and 0161 move a door's step into Cluster's transaction. The step takes the lock inside
-  the transaction, and lets it go when the handler returns. Cluster commits after that, and only then does
-  `afterCommit` offer the `Settle` that makes the entity busy (doors.ts:255). Between the two, `loaded.uncommitted` is
-  set and nothing is pending.
+  unload finds it pending. 0079 says the same in the alternative it rejects: between an activation and its caller's
+  event, the entity holds no event, and a process could unload it. 0092 and 0161 move a door's step into Cluster's
+  transaction. The step takes the lock inside the transaction, and lets it go when the handler returns. Cluster
+  commits after that, and only then does `afterCommit` offer the `Settle` that makes the entity busy (doors.ts:255).
+  Between the two, `loaded.uncommitted` is set and nothing is pending.
 - 0161 says that an entity whose machine is not settled does not leave the process. The loop checks it once, outside
   the lock, when it takes its `Passivate` or `Evict` (loop.ts:613). `unload` then reads `nothingToDo` or `spare` from
   the held machine, under the lock, and neither reads `uncommitted` (loop.ts:434-459, 490-493). 0161's premise says
   that only a lost callback or a rollback leaves an entity spare with an uncommitted machine. It missed this window,
-  where the commit succeeds.
+  where the commit succeeds. 0172 says that the takers of the lock outside a transaction "unload the entity or crash
+  it, load nothing", and so counts the unload as harmless.
 - Sequence: the entity `one` is loaded and idle, and its loop's wait runs out. The loop takes `Passivate`, finds no
   uncommitted machine, and waits for the lock, which a door's step of `Ask` holds. The door's step writes
   `asking: true`, sets `uncommitted`, and returns. The lock goes to the loop. Cluster saves the reply and commits.
@@ -2524,10 +2526,10 @@ note was read. The Cluster note of a pair was read whole unless the row says oth
   and the test passed. In a deployment a fiber yields there whenever it reaches Effect's budget of operations, so the
   window opens for a share of the door's steps that meet a passivation or an eviction. A control run, with the yield
   and a passivation of a minute, passes.
-- The same window drops more than the operation. The `tell` of the step's rows to the readings of this runner runs in
-  `settle` (doors.ts:76), so a reader of `consume` with `wait` on this runner waits out its time. A door's step that
-  resumes the entity is dropped the same way, by the branch of `nothingToDo` for a suspended entity: the resumption is
-  committed, and the entity is not loaded again until a message comes. Neither variant was run.
+- The `tell` of the step's rows is lost with it, confirmed by reading. `tell` runs only in `settle` for a door's step
+  (doors.ts:76), and the test shows that the `Settle` is never applied. A reader of `consume` with `wait` on this
+  runner is then woken by nothing, since `PRAGMA data_version` does not move at the runner's own commits (decision
+  0163), and waits out its time.
 - It is of family E of the step of bugs, an entity left with work stored that nothing loads again, by a third path
   beside bugs 14 and 18.
 - Where a fix could begin: `unload` of `src/runtime/loop.ts:484`, which could refuse, under the lock, to unload an
@@ -2537,6 +2539,8 @@ note was read. The Cluster note of a pair was read whole unless the row says oth
 
 ### Finding 2, reproduced: 0069 and 0100 against 0085
 
+- It is one bug with the one another session of this round found, a reason written by the newer runner and read by an
+  older caller's schema. This report keeps its own test and its sequence.
 - Test: `FAILING: a caller of the older runner is given a reason the newer runner wrote, read as its version reads
   it`, in `src/cluster.test.ts` (describe `two runners on one file`), commit `31b01e8`. Run:
   `bun test src/cluster.test.ts -t "FAILING: a caller of the older runner"`. It fails: the reason's two fields come
@@ -2546,7 +2550,8 @@ note was read. The Cluster note of a pair was read whole unless the row says oth
   never share a key. The answer saved under that key is written by the door, at the door's version. The door encodes
   it with its own program's `answerCodec` or `creationCodec` (src/cluster.ts:213-246, 422-423). The caller's client
   decodes it with the caller's program (src/cluster.ts:454, 471). The text carries no version. So the key's version
-  and the answer's version differ whenever a runner of one version answers a caller of another.
+  and the answer's version differ whenever a runner of one version answers a caller of another. 0159 says the older
+  runners "run on, serve no shard, and can be stopped at leisure", so their callers send all the while.
 - Sequence: a runner of `Toy` version 1 holds every shard, and creates `one`. A runner of version 2 launches, and
   takes every shard (decision 0159). Version 2's migration of `rejection` swaps the two fields of the reason. A caller
   of the older runner sends a message under version 1, which the newer runner's door rejects. The older client decodes
@@ -2561,14 +2566,40 @@ note was read. The Cluster note of a pair was read whole unless the row says oth
 - Where a fix could begin: `answerCodec` and `creationCodec` of `src/cluster.ts:213`, and their decoding in `create`
   and `send` of `onCluster`.
 
-### Finding 3, only reasoned: 0137 against 0162
+### Finding 3, reproduced: 0114 against 0092, 0166 and 0167
+
+- Test: `FAILING: an operator on any runner sees the operation of another runner that waits for a resumption`, in
+  `src/cluster.test.ts` (describe `the shards of a runner on Cluster`), commit `902fce1`. Run:
+  `bun test src/cluster.test.ts -t "FAILING: an operator on any runner"`. It fails: the first runner lists the
+  waiting sender, and the second runner lists none.
+- The premise that fell: 0114 lists, for each suspended entity, the operations of other entities that wait for its
+  resumption. On one process it reads the registrations of the process, which are whole once it is settled. It says
+  that on Cluster the waiting senders are the rows 0092 writes, and that `suspended` reads them there. 0167 writes
+  those rows, in `effecttea_waiting`. 0166 lets an operator resume or discard an entity from any runner, and has the
+  operator read `suspended` before sending another event. The code reads the registrations of the runner called
+  alone: `suspended` and `inspect` give `waitingFor(p, …)` (src/runtime.ts:1316, 1335; src/runtime/callers.ts:60), and
+  nothing reads `effecttea_waiting` but the step that resumes (src/storage/cluster.ts:187). 0185 says "the senders
+  waiting in this process", as the code does, and 0114 says otherwise.
+- Sequence: runner 1 holds the sender `r0`, and runner 2 the receiver. The receiver dies on `Break`. `r0` runs `Relay`
+  to it, is answered `Suspended`, and waits on runner 1, and its row is written. An operator calls `suspended` on
+  runner 2, and is told that nobody waits for the receiver. 0114's rule that "the list says who waits", which is what
+  a deployment that wants an alarm reads, does not hold there.
+- No reply is lost: a resumption still tells the sender by `Resumed`. What is wrong is what an operator is shown.
+- It is of family C of the step of bugs, a rule of one process that holds otherwise on Cluster.
+- Where a fix could begin: `suspended` and `inspect` of `src/runtime.ts:1313` on Cluster, which could read the rows of
+  `effecttea_waiting`, or 0114's sentence, which a note could narrow to the runner called. The rows hold the sender's
+  entity and not its key and incarnation, so a reading of them gives less than a `Waiting`.
+
+### Finding 4, only reasoned: 0137 against 0162
 
 - The premise that fell: 0137 stores an entity's partition and never computes it again, so that a change of
-  `Hash.string` in a later release of Effect breaks no order. 0162 makes the partition the shard, and keeps that
-  sentence: "a hash that changes in a later release moves no stored partition". On Cluster the stored partition must
-  still be the shard Cluster computes now. The waker and the shard's round read entities by the stored partition
-  (`interruptedWithin`, src/storage/entities.ts:485). `loadable` and `losing` compute the shard from the id
-  (loop.ts:109-113, doors.ts:516).
+  `Hash.string` in a later release of Effect breaks no order. Its own alternatives reject a partition computed from
+  the id at each step, since a change of the hash would then move an entity. 0162 makes the partition the shard, and
+  keeps the sentence "a hash that changes in a later release moves no stored partition". On Cluster the shard is
+  computed from the id at every delivery, so the stored partition must still be the shard Cluster computes now. The
+  waker and the shard's round read entities by the stored partition (`interruptedWithin`,
+  src/storage/entities.ts:485). `loadable` and `losing` compute the shard from the id (loop.ts:109-113,
+  doors.ts:516).
 - Sequence: a release of Effect changes Cluster's hash and `Hash.string` alike. The deploy's check in `singletonsOf`
   compares the two hashes of now, so it passes (doors.ts:430-447). An entity created before the move has a stored
   partition `p`, and is routed to another shard `s`. The round of `s` does not read it. The round and the waker of `p`
@@ -2586,40 +2617,64 @@ note was read. The Cluster note of a pair was read whole unless the row says oth
   answered `Suspended` and stays in the stored mailbox. A retry after the resumption is answered from the reply the
   resumption stored, so the message is applied once, as 0023 has it. 0085's consequence that such messages "are not
   kept" is wider than the code, which loses nothing.
-- 0156 against 0167, 0169 and 0171: a rename moves `effecttea_sent_requests`, `effecttea_given_requests` and
+- 0156 against 0167, 0169, 0171 and 0176: a rename moves `effecttea_sent_requests`, `effecttea_given_requests` and
   `effecttea_waiting` with the replies (src/storage/tables.ts:613-618), so no kept id and no waiting sender stays
-  under the old name. Bug 27 holds the case of a process of the old code.
+  under the old name. 0156's premise that nothing runs under the old name while the rows move does not hold on
+  Cluster, and 0176's mark, read by the check of every step, replaces it. Bugs 15, 16 and 27 to 30 hold the rest.
 - 0063 against 0092 and 0168: an operation whose receiver's program its own runner deploys, and the shard's holder
   does not, is sent again every `retry`, 10 ms by default, with a keep and a reset each time, once the registration
   window is past. It writes on the file's one writer for as long as the holder lacks the program. 0168's premise, that
   such a failure passes with time or is the operator's to fix, accepts it. A program no runner deploys still waits on
   its signal in `deployedAs`, as 0063 has it.
-- 0076 against 0092: a door's step that writes nothing offers no event, so it does not make the entity the most
-  recently used, and an entity used through its door alone may be evicted first. An eviction writes nothing and loses
-  nothing.
+- 0125 against 0165, 0171 and 0248: 0125 says that when the rows go never changes what a caller is answered. On
+  Cluster a retry after `keep` is answered from Cluster's saved reply until a step or `expire` deletes the rows, so it
+  does. 0248 accepts it: the promise of `send` is a message applied once within `keep`, which still holds.
+- 0076 and 0151 against 0092: a door's step that writes nothing offers no event, so it does not make the entity the
+  most recently used, and an entity used through its door alone may be evicted first. An eviction writes nothing,
+  and loses nothing but by finding 1's window.
 - 0147 against 0165: Cluster's mailbox bounds a burst, and a caller is never answered `Full`. Nothing is lost.
 - 0065 against 0085 and 0092: a door's step reads the reply inside its transaction, after `settle`, on the runner's
   one connection, so what it reads is what the steps before committed, as 0065 asks of the loop.
+- 0069 against 0085, for the swap of senders 0069 closed: Cluster keys by the version and the text, so a second
+  caller whose request a migration gave the first one's text is a new request to Cluster, and the step reads the
+  runtime's replies as on one process.
+- 0071 against 0081 and 0162: the shard's round reads the mailbox with the work, as a process does as it starts. That
+  the round runs only when the shard is gained is bug 14's.
 - 0079 against 0092: a door's activation runs in the handler's fiber, which Cluster interrupts only when the shard
   leaves. The transaction then rolls back, and the entity enters the process only in `finishIn`, so no half-loaded
-  entity stays.
+  entity stays. Cluster's commit and its callbacks run under `uninterruptibleMask` (`requestWriteOptions` of
+  `cluster/internal/entityManager.ts`).
+- 0164 against 0161: the `Settle` that finding 1 offers to an ended loop leaves its `pending` raised, and nothing reads
+  it, since the readers of `pending` read the entities a deployment holds.
 - 0215 against 0175: the lease check reads `cluster_locks` unqualified, by the `search_path` that Cluster's tables
   follow too, and the runtime on Cluster runs on SQLite alone (decision 0084).
+- 0219 against 0175: the drain ends before `Sharding` is released, so a completion committed in it passes the lease
+  check, and the next runner's round reads it from the mailbox. Bugs 21, 34 and 35 hold the drain's other cases.
+- 0247 against 0159: `check` writes nothing and reads the stored rows alone, so an older runner that still runs, or a
+  door's machine not committed yet, changes only what a moment's reading finds, as 0247 says.
 - 0100 against 0090: a rejection's reason in the runtime's table goes with the asker's work on Cluster as on one
   process. What crosses versions is Cluster's saved text, which is finding 2.
 
 ### Noticed, not checked
 
 - Finding 1 for an `Evict`: `admit` marks an entity spare outside its lock, and `unload` reads `spare` under the lock
-  without `uncommitted` (loop.ts:97, 492). The window is the same. A test would differ from finding 1's only by a
-  capacity, so it was not written.
-- Finding 1 for a door's step that resumes the entity, and for the `tell` of its rows: reasoned from `nothingToDo`
-  and `settle`, as finding 1 says, and not run.
+  without `uncommitted` (loop.ts:97, 492), so the code is the same as for a passivation. It is not reached cheaply.
+  `admit` runs in another entity's transaction, which holds the runner's one connection, so the door's step of the
+  evicted entity can hold its lock only once that transaction has ended, and before the evicted entity's loop takes
+  its `Evict`. A test would need to hold that loop between the offer and the take, which no helper of
+  `src/cluster.test.ts` does. The suspected sequence: entity `two` enters past the capacity and tells `one` to leave,
+  a door's step of `one` begins before `one`'s loop runs, the loop takes `Evict` and waits for the lock, and the
+  window of finding 1 follows.
+- Finding 1 for a door's step that resumes or discards: the held machine is suspended, and `nothingToDo` is true for
+  a suspended entity whose operations have ended (loop.ts:439). So an unload in the window drops the resumption's
+  machine. Something is lost only where the resumption leaves work: the head message, handled by a fixed program,
+  starting an operation, or completions recorded behind the head while suspended (decision 0113). Neither program of
+  `src/cluster.test.ts` can reach it cheaply: `Tally`'s operation ends at once, and `Bell`'s waits until it is
+  interrupted. The sequence suspected: `one` suspended, with a completion behind the message it died on, a `Discard`
+  through the door in the window, and the completion left in the mailbox of an entity nothing loads.
 
 ### Not read whole, and why
 
-- The notes the table marks "in part" or "the passages on Cluster only": 0059, 0065, 0069, 0071, 0074, 0076, 0078,
-  0079, 0114, 0125, 0137, 0142, 0147, 0151, 0156, 0164, 0182, 0185, 0215, 0219 and 0247. The session spent its time on
-  the two findings, and read each of these at its decision and premises, or where it speaks of Cluster.
-- The Cluster notes 0081, 0159, 0162, 0166, 0167, 0169, 0171, 0172, 0174, 0175 and 0176, read only at the passages
-  that cite a note of the list, or not at all.
+- None of the list. Of 0162, the passages on the shard of an entity and on the order of a partition were read whole,
+  with the code of `serving`, `activating`, `losing` and `singletonsOf`, and its passages on the waker were read in
+  the code alone.
