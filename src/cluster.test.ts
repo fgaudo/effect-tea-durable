@@ -500,6 +500,73 @@ describe('two runners on one file', () => {
       })).finally(() => void warningsAndErrors())
   }, 60_000)
 
+  // A premise review found it: decision 0119 takes no caller's message during the drain, and holds it with the guard
+  // of a handle's `send`. Decision 0219 opened the drain on Cluster, where a caller of any runner reaches the door's
+  // step, which no guard holds. So a message the drain takes starts an at-most-once operation, which a drain that
+  // outlasts `millis` stops, and the next runner delivers it `unknown`, where the caller would have retried after the
+  // restart.
+  test('FAILING: a caller’s message through the door during a drain is not taken, and starts no at-most-once operation', () => {
+    let runs = 0
+    const released = new Set<number>()
+    const mailing: Program<T> = {
+      ...at('Toy', 1),
+      operations: {
+        Ask: operation.atMostOnce(
+          () =>
+            Effect.gen(function*() {
+              const n = runs++
+              yield* Effect.repeat(Effect.sleep('20 millis'), { until: () => released.has(n) })
+              return 'done'
+            }),
+          () => 'unknown',
+        ),
+      },
+    }
+    return onFile((start) =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: null, id })
+        const last = (id: string) =>
+          sql<{ state: string }>`SELECT state FROM effecttea_entities WHERE id = ${id}`.pipe(
+            Effect.map(([row]) => row === undefined ? undefined : (JSON.parse(row.state) as T['state']).last),
+          )
+        const stopping = yield* Scope.make()
+        const older = yield* Scope.provide(
+          start(1, [mailing], undefined, { drain: { millis: 1_500 }, sweep: 'none' }),
+          stopping,
+        )
+        yield* until(older, (n) => n === shardsPerGroup)
+        const clientOf = yield* Effect.provide(doorOf('Toy').client, older.context)
+        yield* clientOf('one').Create({ version: 1, request: caller('c1'), message: 'null' })
+        yield* clientOf('two').Create({ version: 1, request: caller('c2'), message: 'null' })
+        yield* clientOf('one').Message({ version: 1, request: caller('m1'), message: '"wait"' })
+        yield* Effect.repeat(Effect.sync(() => runs), { schedule: Schedule.spaced('25 millis'), until: (n) => n === 1 })
+        // The planned stop: the drain waits for the operation of `one`.
+        const stopped = yield* Effect.forkChild(Scope.close(stopping, Exit.void))
+        yield* Effect.sleep('200 millis')
+        // A caller sends during the drain, as one on another runner does, through Cluster's client of the door.
+        yield* Effect.forkChild(
+          Effect.ignore(clientOf('two').Message({ version: 1, request: caller('m2'), message: '"wait"' })),
+        )
+        yield* Effect.sleep('300 millis')
+        const takenInDrain = runs
+        released.add(0)
+        yield* Fiber.join(stopped)
+        // The next runner of the same version takes the shards, and activates what the drain left.
+        const newer = yield* start(2, [mailing], undefined, { sweep: 'none' })
+        yield* until(newer, (n) => n === shardsPerGroup)
+        const ended = yield* Effect.repeat(last('two'), {
+          schedule: Schedule.spaced('50 millis'),
+          until: (state) => state === 'unknown' || state === 'done',
+          times: 40,
+        })
+        released.add(1)
+        released.add(2)
+        // The drain took one operation's run, `one`'s, and the message to `two` was delivered no `unknown`.
+        expect([takenInDrain, ended === 'unknown']).toEqual([1, false])
+      })).finally(() => void warningsAndErrors())
+  }, 60_000)
+
   test('a rename stops the runners of the old name, and its door delivers what Cluster saved under it (decision 0176)', () =>
     onFile((start) =>
       Effect.gen(function*() {

@@ -757,3 +757,132 @@ By their decision sections only: the later notes that cite these: 0038, 0053, 00
 ### Not reached
 None of the notes the brief named. Of the later notes, 0021, 0048, 0071, 0085, 0092, 0122, 0125, 0245, 0248 and 0249
 were not read against these areas. The brief or the roadmap already cover 0085, 0245, 0248 and 0249.
+
+## 2026-11-11: premise review of The runtime, without the scheduler of the tests, a second part
+
+The notes of the area: 0101, 0103, 0109 to 0112, 0116, 0119, 0120, 0134, 0147, 0164, 0177, 0194, 0219 to 0221, 0243
+and 0246. Also 0219 against the notes of the areas already read that it cites. The reviewer did not write these
+notes. One finding is reproduced, and one is only reasoned.
+
+### The notes read
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0101 | of the area | whole, with the tests' use of `TestClock` |
+| 0103 | of the area | whole, with every read of a clock in `src/` |
+| 0109 | of the area | whole, with `unload` and `quiet` |
+| 0110 | of the area | whole, with `detached` |
+| 0111 | of the area | whole; replaced by 0116, whose code was read |
+| 0112 | of the area | whole, with every fork of `src/` and `forkUnsafe` of Effect 4.1.3 |
+| 0116 | of the area | whole, with `steps` of `loop.ts` |
+| 0119 | of the area | whole, with the drain, `admitted`, `start` and `arm` |
+| 0120 | of the area | whole, with `launchWith` |
+| 0134 | of the area | whole, with `steps` |
+| 0147 | of the area | whole, with the permits of `loop.ts` and `callers.ts` |
+| 0164 | of the area | whole, with the forks and counts of `src/` |
+| 0177 | of the area | whole |
+| 0194 | of the area | whole, with `arm` and `waking` |
+| 0219 | of the area | whole, with the drain, `doors.ts` and `registerEntity` of Effect's `Sharding.ts` |
+| 0220 | of the area | whole, with `start` and `traced` |
+| 0221 | of the area | whole, with `arm` and `waking` |
+| 0243 | of the area | whole |
+| 0246 | of the area | whole |
+| 0104 | changes 0101; cites 0109, 0110 | in part: the passages that cite the area |
+| 0117 | changes 0116; cites 0134 | in part: the passages that cite the area |
+| 0165 | changes 0147 | whole, with the client of `cluster.ts` |
+| 0224 | changes 0220 | in part: context and decision |
+| 0011 | cites 0119 | in part: the status line |
+| 0019 | cites 0116 | in part: the passage that cites it |
+| 0028 | cites 0134 | in part: the status line |
+| 0029 | cites 0111, 0116, 0194 | in part: the status line |
+| 0046 | cites 0147 | in part: the status line |
+| 0066 | cites 0101, 0103 | in part: the status line |
+| 0074 | cites 0147 | in part: the status line |
+| 0076 | cites 0109 | in part: the status line |
+| 0078 | cites 0103, 0112 | in part: the status line |
+| 0079 | cites 0110, 0112 | in part: the status line, and `detached` |
+| 0080 | cites 0120 | in part: status, context and decision |
+| 0115 | cites 0116 | in part: the passages that cite it |
+| 0128 | cites 0119 | in part: the consequences |
+| 0135 | cites 0134 | in part: the passages that cite it |
+| 0142 | cites 0119, 0120 | in part: decision and premises |
+| 0151 | cites 0147 | in part: the decision |
+| 0161 | cites 0164 | in part: the status line, and `settle` of `doors.ts` |
+| 0162 | not in the list; read for finding 2 | in part: its decision on an activation |
+| 0184 | cites 0164 | in part: the passage that cites it, and the reader of `consume` |
+| 0192 | cites 0164 | in part: the passage that cites it |
+| 0225 | cites 0194 to 0224 as their review | in part: the status line |
+
+### Finding 1, reproduced: 0219 against 0119
+- Decision 0119 says that during the drain the runtime takes no caller's message, creation, resume or discard. The
+  guard is `admitted`, around the handle's `create`, `send`, `resume` and `discard` (src/runtime.ts:1053-1054). So on
+  one process no caller's message starts an at-most-once operation that a drain past `millis` then stops. The caller
+  is interrupted, and its retry after the restart is applied there.
+- Decision 0219 opened the drain on Cluster. There a second actor reaches the entity: a caller on any runner,
+  through Cluster's client of the door. The door's step, `doorStep` (src/runtime/doors.ts:282), runs in Cluster's
+  handler. No guard of the drain holds it. `drained` (src/runtime.ts:1378) does not count it until the loop settles
+  it. Decisions 0165 and 0166 put a creation, a resume and a discard through the door too, so those are taken alike.
+- The sequence: a runner launched with `drain` is stopped while an at-most-once operation of `one` runs. During the
+  drain a caller sends `two` a message through the door, and the draining runner steps it. The step starts the
+  at-most-once operation of `two`, since `start` starts one in a drain (src/runtime/loop.ts:220-224). The operation
+  outlasts `millis`, and the scope closes. The next runner then delivers `unknown` for it. On one process the same
+  message would have waited, been interrupted, and been applied after the restart, with no `unknown`.
+- Reproduced by `FAILING: a caller’s message through the door during a drain is not taken, and starts no at-most-once
+  operation`, in src/cluster.test.ts, in the commit that adds this report. It sees two runs of the operation where
+  the drain had one, and the state `unknown` for `two`. It failed in both of two runs.
+- It is not bug 2 of the roadmap: both runners here are of one version, and no deploy of a newer one takes the shards.
+- A related window is only reasoned. A door's step that commits after the drain looked is not counted until its
+  `Settle` is offered. The drain can end then, and the at-most-once operation the step stored is never started.
+- Where a fix could begin: the door's step for a request of a caller or an operator during a drain. It could die
+  there, so that Cluster delivers the request again to the runner that takes the shard. Or `drained` could count a
+  door's step from its start. Either is a choice of the design for decision 0119 on Cluster.
+
+### Finding 2, only reasoned: 0162 against 0112
+- Decision 0112 has every fork from a region that cannot be interrupted pass `{ uninterruptible: false }`. Its premise
+  is that Effect's default may change, as it did between Effect 3 and Effect 4. It says that a fork added later
+  passes the option too. A fiber that cannot be interrupted holds its scope's closing for as long as it runs, and a
+  loop runs until its entity leaves.
+- Decision 0162 made an activation on Cluster uninterruptible: `activateOnCluster` (src/runtime/doors.ts:410). Inside
+  it, `finishIn` forks the entity's loop without the option (src/runtime/doors.ts:243). Where the `Restart` wrote
+  nothing, `perform` runs inside the region too. Its forks, `forkHeld` (src/runtime/loop.ts:158) and `drop`
+  (src/runtime/loop.ts:134), pass no option either.
+- At Effect 4.1.3 a fork is interruptible by default (`forkUnsafe` in `internal/effect.ts`, lines 5619 to 5622), so
+  nothing fails at the pinned version. A release that gave a fork the region's interruptibility would make the loop
+  and the operations of every entity activated on Cluster uninterruptible. The deployment's scope would then never
+  close, and the runner would never stop. No test can fail at the pinned version, as decision 0112 says of its own
+  forks.
+- Where a fix could begin: the option at those three forks, or a check in `src/form.test.ts` that every fork passes it.
+
+### Suspects ruled out
+- The waker races `Queue.take` of its poke against a sleep (src/runtime/waker.ts:65), the race in which decision 0116
+  found an item lost. A poke lost there is lost before the round's next reading, which reads the storage anyway.
+- Decision 0164 says each fiber that Effect forks inside a combinator is joined before the combinator ends. Decision
+  0219 reads that a race does not wait for its loser. No race of `src/` runs inside a step's transaction, and the
+  losers of `waited` and of the drain wait only on a `Deferred` or a sleep.
+- Decision 0103 says the runtime reads the time only through Effect's `Clock`. Only the check of a shard's lease reads
+  the database's clock (src/storage/cluster.ts:144-145), by which Cluster measures its leases.
+- Decision 0147 against the drain: a caller held by `admitted` takes no permit, since the guard stands outside
+  `send`. An at-most-once operation that meets a full receiver in the drain sends again after `retry`, within
+  `millis`.
+- Decision 0109 against the drain: `drained` does not read `leaving`. An entity unloads only when it runs no
+  operation, so an unload stops no at-most-once operation the drain waits for.
+- Decision 0110 against the drain: the fiber that gives the count back is in `running`, which closes after the drain.
+- Decision 0221 against the capacity and `settled`: `spare` and `quiet` read the wall clock as the timers do, so a
+  clock set back makes no timer due early in either.
+- Decision 0134 against 0116: a `Passivate` of an earlier wait left in the queue makes the loop yield once, and is
+  passed over.
+- Decision 0142 against the drain: a reading that waits ends with `closing`, which is completed after the drain.
+
+### Noticed, not checked
+- Decision 0219 on Cluster rests on the caller's scope releasing the runtime before `Sharding`. Decision 0120 made
+  the drain hold whatever the caller's strategy is, on one process. An application that builds the runtime and
+  `Sharding` in one parallel scope would let the shards go during the drain. A completion would then die on the
+  check of the lease (decision 0175). No test builds them so.
+- After the drain, `running` closes the deployment's scope. That scope interrupts the loops first, and closes the
+  registration of the door last. A door's step that runs between the two can commit a step whose `Settle` no loop
+  takes. Whether Cluster's teardown interrupts that step first was not read in `entityManager.ts`.
+
+### Not read whole
+- The notes that only cite the area, and 0104, 0117 and 0224, were read in the passages that cite the area. 0104,
+  0115 and 0117 are notes of the scheduler of the tests, which this area leaves out. 0162 was read in its decision on
+  an activation alone, for finding 2. Every note of the area itself was read whole, with its code.
