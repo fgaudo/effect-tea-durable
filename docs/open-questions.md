@@ -186,6 +186,21 @@ with a requirement that no example has yet.
   - whether a boundary that takes callers it cannot tell apart is a case the library serves at all;
   - whether a sender left out should still be required where the program takes inbound messages.
 
+- **A retry in a rehearsal after a deploy that changes how the sender is written.** A rehearsal keeps the reply of a
+  request the test named for the whole rehearsal, a deploy included
+  ([decision 0200](decisions/0200-a-rehearsal-sends-under-a-request-id-the-test-names.md)). It stores the reply under
+  `Machine.requestKey`, the request's text with the sender as the deployed program's schema writes it
+  (`src/rehearse.ts`). A deploy whose `sender` schema writes the same sender otherwise changes that text, so a retry
+  under the same request id may not find its reply, and the rehearsal applies the message again. The set of named
+  requests is keyed by the same text. The runtime finds a caller's request by its id and migrates it
+  ([decision 0065](decisions/archive/0065-the-machine-holds-no-replies.md)), so it answers the retry from the stored
+  reply. The premise review of 2026-11-11 noticed the case and did not reach it, so it is neither reproduced nor ruled
+  out. It would be decided by:
+  - a test of `src/rehearse.ts` that sends under a request id, deploys a version whose `sender` schema writes the
+    sender otherwise, and retries under the same id;
+  - whether the runtime, read in `src/storage/` and `src/runtime/callers.ts`, does find the request by its id across
+    such a deploy, as the review read.
+
 ## The surface
 
 - **An own message named like a child, with a tag typed `string`.** A parent's own message that takes the name of a
