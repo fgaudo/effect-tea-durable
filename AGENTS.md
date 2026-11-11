@@ -148,11 +148,19 @@ This repository is a design and its pure core, not a library yet: read [`README.
   as `{ decision, choice }`. `bun test` and the release start from seed 0, so that each of their runs
   replays the same schedules. `bun run test:explore` looks for the bugs those schedules miss: it runs every seed of
   the explored tests from a random first seed, again and again, until a run fails or it is stopped. A failure names
-  its seed, and `SEED=<seed> bun test` runs that seed first. Once the bug a seed found is fixed, the seed is listed
-  under `pinned` in its test, so that every run of the tests runs it. A seed draws its schedule from the yields of
-  the code it runs, so a change that adds or moves a yield in the runtime or in `src/testing.ts` finds the pinned
-  seeds again: for each, it takes out the fix the test's comment names, runs `bun run test:explore -t <test>` until
-  a seed fails, and pins that seed, with the comment saying the form of the code it fails against.
+  its seed, and `SEED=<seed> bun test` runs the test's pinned seeds, then that seed and the seeds after it. Once the
+  bug a seed found is fixed, the seed is listed under `pinned` in its test, so that every run of the tests runs it.
+  An explored test whose comment names an interleaving pins a seed that finds it, and
+  [`src/runtime.test_pins.ts`](src/runtime.test_pins.ts) holds, for each such test, the mutation that takes its
+  rule out. `bun run test:pins` runs each test under its pinned seeds alone, under `SCHEDULES=pinned`, and fails
+  unless the test passes on the code and fails on the mutation, and a test of `src/form.test.ts` checks that every
+  test with a seed pinned has its pin
+  ([decision 0254](docs/decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)). A seed draws its
+  schedule from the yields of the code it runs, so a change that adds or moves a yield in the runtime or in
+  `src/testing.ts` may lose a pinned seed's interleaving, and `bun run test:pins` says which. For each, the change
+  makes the pin's mutation, runs `bun run test:explore -t <test>` until a seed fails, and pins that seed, with the
+  comment saying the form of the code it fails against. An interleaving that no seed of 2,000 finds is held by a
+  deviation under `bound` 1, by a greater depth, or goes in `docs/open-questions.md` as a rule no test holds.
 - A change that deletes rows of Cluster's, or moves the time they are deleted at, has a test with a second client,
   on another runner, that waits for the request whose rows go. The runtime deletes those rows by statements of its
   own, and a client of another runner reads its reply from them at an interval.
@@ -181,8 +189,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   `bun test` in four jobs at once, each with `--shard`, and a test of the workflow's form checks that the jobs run
   every shard ([decision 0242](docs/decisions/0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md)).
   `bun test` on one machine stays one run. `bun run test:parallel` runs the suite under eight workers, for a quicker
-  run while a change is under way, and a commit passes `bun test`. A job runs `bun run test:spikes`, and another
-  `bun run test:slow`, and a test of the workflow's form checks both. Another job runs `bun run test:postgres` against a container of
+  run while a change is under way, and a commit passes `bun test`. A job runs `bun run test:spikes`, another
+  `bun run test:slow`, and another `bun run test:pins`, and a test of the workflow's form checks them, reading every
+  key of the workflow. Another job runs `bun run test:postgres` against a container of
   PostgreSQL, and `spikes/full-volume.test.ts` on a volume of fixed size it mounts. A change of the storage, of a transaction of the
   runtime or of a statement passes that job too, run on the branch, since PGlite runs one session and hides what a
   pool does. Run by hand from the repository's Actions, the workflow also runs `bun run test:release`, in four jobs

@@ -116,7 +116,7 @@ export const check = (mutations: ReadonlyArray<Mutation>): ReadonlyArray<string>
  * so is `.github`, whose workflow a test of the same file reads (decision 0242). `bunfig.toml` keeps the spikes out
  * of `bun test` (decision 0250).
  */
-const copy = (): string => {
+export const copy = (): string => {
   const at = mkdtempSync(join(tmpdir(), 'mutate-'))
   for (const entry of [...copied, 'README.md', 'docs', '.github', 'bunfig.toml', 'package.json', 'tsconfig.json', 'bun.lock']) {
     cpSync(join(root, entry), join(at, entry), { recursive: true })

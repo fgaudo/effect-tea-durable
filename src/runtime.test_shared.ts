@@ -325,9 +325,10 @@ export type Window = { open: boolean }
 /**
  * The share of its seeds, or of its deviations under `bound` 1, a test under `explored` runs. The release's run,
  * `bun run test:release`, runs them all; any other run of the tests runs one in twenty, so that the suite holds its
- * budget (decision 0250).
+ * budget (decision 0250). Under `SCHEDULES=pinned` it runs none, and the test runs its pinned seeds or deviations
+ * alone, as `bun run test:pins` needs to know that a pinned one finds what it was pinned for (decision 0254).
  */
-export const share = Bun.env['SCHEDULES'] === 'all' ? 1 : 1 / 20
+export const share = Bun.env['SCHEDULES'] === 'all' ? 1 : Bun.env['SCHEDULES'] === 'pinned' ? 0 : 1 / 20
 
 /**
  * A test of one case that runs over two seconds, which `bun test` cannot sample: its clock is real, or its case is
@@ -345,6 +346,19 @@ export const first = (() => {
   if (!Number.isSafeInteger(seed)) throw new Error(`SEED is not an integer: ${Bun.env['SEED']}`)
   return seed
 })()
+
+/**
+ * Runs `check`, and puts `what` before the message of its failure. The diff of `expect` leaves out what is equal, so
+ * a failure of an explored test would not name the seed or the deviation that replays it.
+ */
+const named = (what: string, check: () => void) => {
+  try {
+    check()
+  } catch (error) {
+    if (error instanceof Error) error.message = `${what}: ${error.message}`
+    throw error
+  }
+}
 
 /**
  * Runs `test` over a database of its own under `runs` prioritized schedules at `depth`, as `share` cuts them, with
@@ -391,10 +405,10 @@ export const explored = <A>(
       Array.from({ length: choices - 1 }, (_, at): Deviation => ({ decision, choice: at + 1 }))
     )
     // Sampled over the deviations, not over the decisions, so that a decision of many choices is not left out whole.
-    const every = Math.round(1 / share)
+    const every = share === 0 ? Infinity : Math.round(1 / share)
     const held = (pinned ?? []) as ReadonlyArray<Deviation>
     const chosen = deviations.filter(({ decision, choice }, at) =>
-      at % every === 0 || held.some((pin) => pin.decision === decision && pin.choice === choice)
+      (every !== Infinity && at % every === 0) || held.some((pin) => pin.decision === decision && pin.choice === choice)
     )
     for (const { decision, choice } of chosen) {
       let at = -1
@@ -402,7 +416,7 @@ export const explored = <A>(
         pick: () => window.open && ++at === decision ? choice : 0,
         preempt: () => window.open && ++at === decision,
       }, 'inline')
-      expect({ decision, choice, ended: ends(run) }).toEqual({ decision, choice, ended })
+      named(`deviation { decision: ${decision}, choice: ${choice} }`, () => expect(ends(run)).toEqual(ended))
     }
     return
   }
@@ -410,7 +424,7 @@ export const explored = <A>(
   scheduled(scenario, { pick: () => 0, preempt: () => (window.open && (steps += 1), false) }, 'inline')
   for (const seed of seeds({ first, count: Math.ceil(runs * share), pinned: pinned as ReadonlyArray<number> })) {
     const run = scheduled(scenario, within(prioritized(seed, depth, steps)), 'inline')
-    expect({ seed, ended: ends(run) }).toEqual({ seed, ended })
+    named(`seed ${seed}`, () => expect(ends(run)).toEqual(ended))
   }
 }
 

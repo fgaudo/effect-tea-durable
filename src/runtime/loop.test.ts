@@ -1303,8 +1303,8 @@ test('settled never returns between a crash and the activation its due timer bri
   // `settled` that looked between two steps would find the entity neither held nor known to the waker, with its timer
   // due. The message's commit waits at a gate while the timer comes due, then dies once the window is open. A leave
   // split in two steps, the entity taken out of the process in one and the waker poked in the next, returns early at
-  // seed 1031955209, pinned, under the spans and the timers' sleeps of decisions 0220 and 0221, at Effect 4.1.3 and
-  // the scheduler of decision 0244.
+  // seed 44, pinned. `bun run test:pins` runs it against that form, the pin `0068` of `src/runtime.test_pins.ts`
+  // (decision 0254).
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -1342,7 +1342,7 @@ test('settled never returns between a crash and the activation its due timer bri
           yield* runtime.settled
           return { early, restarted }
         }))
-    }), { early: false, restarted: true }, { open: false, pinned: [1031955209] })
+    }), { early: false, restarted: true }, { open: false, pinned: [44] })
 }, 60_000)
 
 describe('what the runtime tells a tracer (decision 0220)', () => {

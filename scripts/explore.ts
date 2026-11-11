@@ -1,7 +1,7 @@
 /**
  * Runs every seed of the explored tests from a random first seed, again and again, until a run fails or the script is
  * stopped. `bun test` and the release start from seed 0 and replay the same schedules each time; this tries new ones.
- * Each round prints its first seed. A failure names the seed that failed, which `SEED=<seed>` runs first.
+ * Each round prints its first seed. A failure names the seed that failed, which `SEED=<seed>` runs after the pinned ones.
  *
  * Usage: `bun run test:explore [arguments of bun test]`, such as `-t <test>`. It runs the tests of the runtime, where the
  * explored tests are: `src/runtime.test.ts` and the test files of `src/runtime/` (decision 0241). Ctrl+C stops the

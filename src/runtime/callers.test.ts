@@ -314,7 +314,8 @@ test('a sender answered Suspended is woken by the resumption, under prioritized 
 test('callers of an unloaded entity build one machine for it, under prioritized schedules from their arrival', () => {
   // Decision 0067: an entity's lock is dropped by its last user only. One dropped while a caller waits for it lets a
   // new taker hold a lock of its own beside that caller, and both load the entity: two machines, two `Restart`s.
-  // With the lock dropped by any user, 67 seeds of 2,000 build two.
+  // With the lock dropped by any user, seed 661, pinned, builds two. `bun run test:pins` runs it against that form, the
+  // pin `0067` of `src/runtime.test_pins.ts` (decision 0254).
   // The schedules are explored from the callers' arrival on.
   explored((window) =>
     Effect.gen(function*() {
@@ -335,5 +336,5 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
           yield* runtime.settled
           return { unloaded: [...entities], restarts: events.filter((event) => event._tag === 'Restart').length }
         }))
-    }), { unloaded: [id], restarts: 1 }, { open: false })
+    }), { unloaded: [id], restarts: 1 }, { open: false, pinned: [661] })
 }, 60_000)

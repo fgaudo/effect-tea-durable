@@ -27,6 +27,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, posix, relative, sep } from 'node:path'
 import type { Returned } from './index.program.ts'
+import { pins } from './runtime.test_pins.ts'
 
 /** `text` with what is not code as spaces: comments, strings, regular expressions, and the text of templates. */
 export const codeOf = (text: string): string => {
@@ -459,7 +460,8 @@ type Workflow = Readonly<Record<string, unknown>>
  * What the workflow `ci.yml` does not keep, given as parsed (decisions 0242, 0250, 0254). It runs on every push and
  * pull request, and by hand. The jobs `test` and `release` run `bun test` and `bun run test:release`, each divided by
  * its matrix into every shard. The jobs `spikes`, `slow` and `postgres` run `bun run test:spikes`,
- * `bun run test:slow`, and `bun run test:postgres` with the spike of the full volume. The job `check` runs no test.
+ * `bun run test:slow`, and `bun run test:postgres` with the spike of the full volume, and the job `pins` runs
+ * `bun run test:pins`. The job `check` runs no test.
  * Every key the workflow holds is one of `keysRead`, and a job's `if` is the one `conditions` gives it.
  */
 export const workflowRefused = (workflow: Workflow): ReadonlyArray<string> => {
@@ -489,7 +491,7 @@ export const workflowRefused = (workflow: Workflow): ReadonlyArray<string> => {
     keys(`${name}.strategy.matrix`, strategy['matrix'], keysRead.matrix)
     steps(name).forEach((step, at) => keys(`${name}.steps[${at}]`, step, keysRead.step))
   }
-  for (const name of [...Object.keys(conditions), 'test', 'check', 'spikes', 'slow', 'postgres']) {
+  for (const name of [...Object.keys(conditions), 'test', 'check', 'spikes', 'slow', 'pins', 'postgres']) {
     if (!(name in jobs)) found.push(`${name}: missing`)
   }
   const divided = (name: string, command: string) => {
@@ -509,6 +511,7 @@ export const workflowRefused = (workflow: Workflow): ReadonlyArray<string> => {
   }
   ran('spikes', ['bun run test:spikes'])
   ran('slow', ['bun run test:slow'])
+  ran('pins', ['bun run test:pins'])
   ran('postgres', ['bun run test:postgres', "bun test '--path-ignore-patterns=node_modules/**' ./spikes/full-volume.test.ts"])
   for (const run of runs('check')) if (run.includes('test')) found.push(`check: runs ${run}`)
   return found
@@ -557,6 +560,32 @@ export const postgresMissed = (texts: ReadonlyMap<string, string>, command: stri
   return [...texts.keys()].filter((file) => runByBunTest(file) && reached(file) && !runs(file)).sort()
 }
 
+/** A pin of `src/runtime.test_pins.ts`, as the check of the pins reads it. */
+type Pinned = Readonly<{ id: string; test: string; name: string }>
+
+/**
+ * The explored tests that pin a seed or a deviation and have no pin, and the pins that name no test that pins one,
+ * given the text of each file of the tests by its path from the root (decision 0254). A test is a call of `test` at
+ * the start of a line, and it pins one where its body holds `pinned: [` followed by a value.
+ */
+export const pinsUnmatched = (texts: ReadonlyMap<string, string>, pins: ReadonlyArray<Pinned>): ReadonlyArray<string> => {
+  const pinning = [...texts].flatMap(([file, text]) =>
+    text.split(/^(?=test\()/m).flatMap((body) => {
+      const quoted = /^test\((?:'([^']*)'|"([^"]*)"|`([^`]*)`)/.exec(body)
+      const name = quoted?.[1] ?? quoted?.[2] ?? quoted?.[3]
+      return name !== undefined && /\bexplored\(/.test(body) && /\bpinned: \[\s*[^\]\s]/.test(body)
+        ? [{ file, name }]
+        : []
+    })
+  )
+  return [
+    ...pinning.filter(({ file, name }) => !pins.some((pin) => pin.test === file && pin.name === name))
+      .map(({ file, name }) => `${file}: ${name}: no pin`),
+    ...pins.filter((pin) => !pinning.some(({ file, name }) => pin.test === file && pin.name === name))
+      .map((pin) => `${pin.id}: no test of ${pin.test} pins under that name`),
+  ]
+}
+
 const workflowOfTheRepository = () =>
   Bun.YAML.parse(readFileSync(join(import.meta.dir, '..', '.github', 'workflows', 'ci.yml'), 'utf8')) as Workflow
 
@@ -582,6 +611,14 @@ describe('the form of the workflow', () => {
       .scripts
     expect(texts.has('src/storage.test_databases.ts')).toBe(true)
     expect(postgresMissed(texts, scripts['test:postgres']!)).toEqual([])
+  })
+
+  test('every explored test that pins a seed has a pin that runs it against its rule, and every pin such a test', () => {
+    const root = join(import.meta.dir, '..')
+    const texts = new Map(filesOfSrc.filter((file) => file.endsWith('.test.ts'))
+      .map((file) => [`src/${file}`, readFileSync(join(root, 'src', file), 'utf8')] as const))
+    expect(pins.length).toBeGreaterThan(1)
+    expect(pinsUnmatched(texts, pins)).toEqual([])
   })
 
   test('every package of Effect is pinned at the version of effect', () => {
@@ -692,6 +729,35 @@ describe('the check of the form', () => {
     } finally {
       rmSync(folder, { recursive: true, force: true })
     }
+  })
+
+  test('an explored test that pins a seed with no pin, and a pin with no such test, are found', () => {
+    const texts = new Map([
+      ['src/a.test.ts', [
+        "test('one', () => {",
+        '  explored(() => run, ended, { open: false, pinned: [661] })',
+        '})',
+        "test('two', () => {",
+        '  explored(() => run, ended, { pinned: [] })',
+        '})',
+        'test("three\'s", () => {',
+        '  explored(() => run, ended, { bound: 1, pinned: [{ decision: 3, choice: 1 }] })',
+        '})',
+        "test('four', () => {",
+        '  // pinned: [7], in a comment of a test that explores nothing',
+        '})',
+      ].join('\n')],
+    ])
+    expect(pinsUnmatched(texts, [])).toEqual(['src/a.test.ts: one: no pin', "src/a.test.ts: three's: no pin"])
+    expect(pinsUnmatched(texts, [
+      { id: '1', test: 'src/a.test.ts', name: 'one' },
+      { id: '2', test: 'src/a.test.ts', name: 'two' },
+      { id: '3', test: 'src/b.test.ts', name: "three's" },
+    ])).toEqual([
+      "src/a.test.ts: three's: no pin",
+      '2: no test of src/a.test.ts pins under that name',
+      '3: no test of src/b.test.ts pins under that name',
+    ])
   })
 
   test('a file of the tests that reaches the databases and that the run does not take is found', () => {

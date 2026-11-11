@@ -396,7 +396,8 @@ export const holding = (p: Process, entity: Address) =>
       Effect.sync(() => {
         lock.users -= 1
         // Dropped by its last user only: one dropped while others wait would let a new taker hold it beside
-        // them. `callers of an unloaded entity build one machine for it`, in the tests, reaches it (decision 0104).
+        // them. `callers of an unloaded entity build one machine for it`, in the tests, reaches it at a seed pinned
+        // against this line taken out (decision 0254).
         if (lock.users === 0) p.locks.delete(address)
       }),
   )

@@ -102,7 +102,29 @@ then bug 52 test by test, then bug 83.
   samples. The four files have not run on a server yet, since the maintainer's machine has none. The job `postgres`
   of the next push runs them first, and a failure there is a bug this family found, added to the roadmap.
 
-The next part is the job of the pinned seeds, with bug 43.
+- The job of the pinned seeds is done, with bug 43. `src/runtime.test_pins.ts` lists a pin for each explored test
+  with a seed pinned: the mutation that takes its rule out, the test's file and its name. `bun run test:pins`, which
+  `scripts/pins.ts` is, runs each test under `SCHEDULES=pinned`, where `share` of `src/runtime.test_shared.ts` is 0 and
+  a test runs its pinned seeds or deviations alone. The test must pass on the code and fail on the mutation. The job
+  `pins` of `ci.yml` runs it, and `workflowRefused` asks for that job. The test `every explored test that pins a seed
+  has a pin that runs it against its rule, and every pin such a test`, of `src/form.test.ts`, runs `pinsUnmatched`,
+  and `an explored test that pins a seed with no pin, and a pin with no such test, are found` gives it its samples.
+  - Bug 43: seed 661 is pinned in `callers of an unloaded entity build one machine for it`. With `if (lock.users ===
+    0)` taken out of `holding` in `src/runtime/process.ts`, seed 661 alone fails the test, and `bun test` without it
+    passed, on 2026-11-11 at `854f5c8`. The test's comment no longer gives a count of seeds.
+  - The one seed pinned before, 1031955209 in `settled never returns between a crash and the activation its due timer
+    brings`, no longer found its interleaving: with `leave` of `src/runtime/loop.ts` split in two steps, the test
+    passed under that seed alone. So bug 52 held of the one pin it could be checked on. Under `SCHEDULES=all`, seed 44
+    fails on that form, and is pinned in its place.
+  - An explored test's failure did not name its seed, though `AGENTS.md` and `scripts/explore.ts` said it did. The
+    seed was a field of the object `expect` compared, and the diff of `expect` leaves out a field equal on both sides.
+    `named` of `src/runtime.test_shared.ts` now puts the seed, or the deviation, before the message of the failure.
+  - `AGENTS.md` said `SEED=<seed> bun test` runs that seed first. It runs the pinned seeds first, and now says so.
+
+The next part is bug 52, test by test. Each of the explored tests whose comment names an interleaving and that pins
+no seed gets a pin: the mutation its comment names, then `bun run test:explore -t <test>` on the mutation until a seed
+fails, then the seed pinned. There are 25 calls of `explored` in `src/runtime.test.ts` and `src/runtime/`, and two
+pin a seed.
 
 ## What it rests on
 
