@@ -81,7 +81,15 @@ then bug 52 test by test, then bug 83.
   `a job of the workflow that may run nothing, ignore its failure or leave a shard out is found` gives it a sample of
   each case, made from the workflow of the repository.
 
-The next part is bug 88, a check of `package.json` in `src/form.test.ts`, `AGENTS.md` and `scripts/compare-docs.ts`.
+- Bug 88 is done. `effectPackagesApart` of `src/form.test.ts` refuses an `@effect/` package at a version other than
+  `effect`'s, and `effect` at a range. The test `every package of Effect is pinned at the version of effect` runs it
+  on `package.json`, and `a package of Effect at a version other than effect’s is found, and effect at a range` gives
+  it its samples. `AGENTS.md` says a move pins every `@effect/` package. `scripts/compare-docs.ts` compares the JSDoc
+  of `make` and `layer` of both drivers, and compares whole the sources a premise of decisions 0157 and 0222 was read
+  in: `PgTypes.ts` and `internal/sqlError.ts` of `@effect/sql-pg`, and `PgliteClient.ts`. Its run from 4.1.3 to
+  4.1.3 printed every line `same`, on 2026-11-11.
+
+The next part is bug 53, at the imports of the fixtures in `src/fixtures.property.test.ts`.
 
 ## What it rests on
 

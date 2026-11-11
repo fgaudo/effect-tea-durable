@@ -514,6 +514,22 @@ export const workflowRefused = (workflow: Workflow): ReadonlyArray<string> => {
   return found
 }
 
+type Manifest = Readonly<Partial<Record<'dependencies' | 'devDependencies' | 'peerDependencies', Readonly<Record<string, string>>>>>
+
+/**
+ * The packages of Effect that a manifest gives at a version other than `effect`'s, as `name@range`. A move of Effect's
+ * version moves `effect` and every `@effect/` package together, since a driver left behind keeps the premises of the
+ * version the move leaves (decision 0254).
+ */
+export const effectPackagesApart = (manifest: Manifest): ReadonlyArray<string> => {
+  const all = [manifest.peerDependencies, manifest.dependencies, manifest.devDependencies]
+    .flatMap((section) => Object.entries(section ?? {}))
+  const version = all.find(([name]) => name === 'effect')?.[1]
+  if (version === undefined || !/^\d+\.\d+\.\d+$/.test(version)) return [`effect@${version}`]
+  return all.filter(([name, range]) => (name === 'effect' || name.startsWith('@effect/')) && range !== version)
+    .map(([name, range]) => `${name}@${range}`)
+}
+
 const workflowOfTheRepository = () =>
   Bun.YAML.parse(readFileSync(join(import.meta.dir, '..', '.github', 'workflows', 'ci.yml'), 'utf8')) as Workflow
 
@@ -523,6 +539,12 @@ describe('the form of the workflow', () => {
   // failure, so the check refuses it (decisions 0242, 0250, 0254).
   test('every job of the workflow runs its tests, every shard of a division among them, with no key the check does not read', () => {
     expect(workflowRefused(workflowOfTheRepository())).toEqual([])
+  })
+
+  test('every package of Effect is pinned at the version of effect', () => {
+    const manifest = JSON.parse(readFileSync(join(import.meta.dir, '..', 'package.json'), 'utf8')) as Manifest
+    expect(Object.keys(manifest.devDependencies ?? {})).toContain('@effect/sql-pg')
+    expect(effectPackagesApart(manifest)).toEqual([])
   })
 
   // `bun test` runs no spike, and skips the tests over two seconds on a clock that is real, so jobs of their own run
@@ -627,6 +649,17 @@ describe('the check of the form', () => {
     } finally {
       rmSync(folder, { recursive: true, force: true })
     }
+  })
+
+  test('a package of Effect at a version other than effect’s is found, and effect at a range', () => {
+    const devDependencies = { 'effect': '4.1.3', '@effect/sql-pg': '4.1.3', '@electric-sql/pglite': '0.5.15' }
+    expect(effectPackagesApart({ devDependencies })).toEqual([])
+    expect(effectPackagesApart({ devDependencies: { ...devDependencies, '@effect/sql-pglite': '4.1.2' } }))
+      .toEqual(['@effect/sql-pglite@4.1.2'])
+    expect(effectPackagesApart({ devDependencies, dependencies: { '@effect/sql-pg': '^4.1.3' } }))
+      .toEqual(['@effect/sql-pg@^4.1.3'])
+    expect(effectPackagesApart({ devDependencies: { ...devDependencies, effect: '^4.1.3' } })).toEqual(['effect@^4.1.3'])
+    expect(effectPackagesApart({})).toEqual(['effect@undefined'])
   })
 
   test('a job of the workflow that may run nothing, ignore its failure or leave a shard out is found', () => {

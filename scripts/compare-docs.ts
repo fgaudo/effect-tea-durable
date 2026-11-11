@@ -14,7 +14,7 @@
  * has a stable or untagged API follow strict semantic versioning, an `unstable` one break only in a minor, and an
  * `experimental` one in a patch; it requires a tag on every module and importable export since Effect-TS/effect#8770.
  *
- * Each release of `effect` and `@effect/sql-sqlite-bun` is packed from npm into a temporary folder. A declaration is
+ * Each release of `effect`, `@effect/sql-sqlite-bun`, `@effect/sql-pg` and `@effect/sql-pglite` is packed from npm into a temporary folder. A declaration is
  * found by its name, at the top of its file or as a member, and all its distinct JSDoc comments are compared in order:
  * an overload with a comment of its own, or a member of the same name, is one more comment. One line per declaration
  * is printed, tab separated: the file, the name, and `same`, `changed`, `added` or `removed`; any but `same` is followed
@@ -27,13 +27,15 @@
  * Then the sources of Cluster that say how its rows are written and read are compared whole, code included: a
  * release that changes them may not read what an older one stored (`AGENTS.md`). Each is printed on a line of its
  * own, first `storage`, then the file and its status, followed by the lines that differ. A change does not fail the
- * run: its note says what it changes, and the spike of the fixtures runs it.
+ * run: its note says what it changes, and the spike of the fixtures runs it. Then the sources of the drivers of
+ * PostgreSQL that a premise was read in are compared whole in the same way, each on a line that starts with `driver`
+ * (decision 0254).
  */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-type Package = 'effect' | '@effect/sql-sqlite-bun'
+type Package = 'effect' | '@effect/sql-sqlite-bun' | '@effect/sql-pg' | '@effect/sql-pglite'
 
 /**
  * Why a declaration is listed: `unstable`, marked so by Effect; `undocumented`, stable but not promising what a
@@ -93,6 +95,22 @@ const declarations: ReadonlyArray<Declaration> = [
   // holds the write lock for its duration (decisions 0080 and 0092).
   ['@effect/sql-sqlite-bun', 'SqliteClient.ts', 'make', 'unstable'],
   ['@effect/sql-sqlite-bun', 'SqliteClient.ts', 'layer', 'unstable'],
+  // The client of a server of PostgreSQL, with a pool, and how it begins a transaction (decision 0222).
+  ['@effect/sql-pg', 'PgClient.ts', 'make', 'unstable'],
+  ['@effect/sql-pg', 'PgClient.ts', 'layer', 'unstable'],
+  // The client of PGlite, which runs one statement at a time (decision 0157).
+  ['@effect/sql-pglite', 'PgliteClient.ts', 'make', 'unstable'],
+  ['@effect/sql-pglite', 'PgliteClient.ts', 'layer', 'unstable'],
+]
+
+/** The sources of the drivers of PostgreSQL that a premise was read in, compared whole, code included. */
+const drivers: ReadonlyArray<readonly [pkg: Package, file: string]> = [
+  // The codec of `int8`, which gives a `BIGINT` as a bigint (decision 0222).
+  ['@effect/sql-pg', 'PgTypes.ts'],
+  // `40P01` as `DeadlockError` and `40001` as `SerializationError` (decision 0222).
+  ['@effect/sql-pg', 'internal/sqlError.ts'],
+  // The client, which takes one statement at a time (decision 0157).
+  ['@effect/sql-pglite', 'PgliteClient.ts'],
 ]
 
 /** The sources of Cluster, under `effect`'s `src/`, that say how its rows are written and read. */
@@ -245,8 +263,11 @@ try {
       }
     }
   }
-  for (const file of storage) {
-    const lines = (version: string) => read(join(sources.get(`effect@${version}`)!, file))?.replaceAll('\r\n', '\n')
+  for (const [label, pkg, file] of [
+    ...storage.map((file) => ['storage', 'effect', file] as const),
+    ...drivers.map(([pkg, file]) => ['driver', pkg, file] as const),
+  ]) {
+    const lines = (version: string) => read(join(sources.get(`${pkg}@${version}`)!, file))?.replaceAll('\r\n', '\n')
     const before = lines(oldVersion)
     const after = lines(newVersion)
     const status = before === undefined && after === undefined
@@ -259,7 +280,7 @@ try {
       ? 'same'
       : 'changed'
     if (status === 'missing') wrong++
-    console.log(['storage', file, status].join('\t'))
+    console.log([label, pkg === 'effect' ? file : `${pkg}/${file}`, status].join('\t'))
     if (status !== 'same' && status !== 'missing') {
       const split = (text: string | undefined) => text === undefined ? [] : text.split('\n')
       for (const line of diff(split(before), split(after))) if (!line.startsWith('  ')) console.log(`\t${line}`)
