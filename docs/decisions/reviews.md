@@ -2451,3 +2451,164 @@ table says. Each cites the area's note for a rule it applies as written: a datab
 checked, a program checked where it enters, or the package's name. 0064, 0132, 0136 and 0141 change a note of the
 area, and were not read, since the status lines of 0053 and 0054 say what each changed, and the code that keeps it
 was read. Every note of the area itself was read whole, with its code, and so was 0193 against the notes it cites.
+
+## 2026-11-11: premise review of the pairs against Messages, requests and replies, a second part
+
+The reviewer's report, as its session wrote it. Branch `claude/premise-pairs-messages-2-a90d4b`, cut from `main` at
+`e6d3808`. It reads the notes 0100 to 0214 of the list against area 1, each against the notes of the area it meets.
+Three findings. Two are reproduced by tests of `src/cluster.test.ts` at commit `d602b35`. One is only reasoned,
+since no code of the library keeps the rule it is about.
+
+### The pairs read
+
+Each pair was found by the table of the area's report, by the index, and by `grep -wE` of each note in both
+directions. Every note of the list, and every note of the area it meets, was read whole.
+
+| Later note | Note of the area | What binds them | How it was read |
+| --- | --- | --- | --- |
+| 0100 | 0021 | cites 0021 as its reason: a reply to an entity goes with the work that asked | both whole, with the code: the deletions of replies in `write` of `src/storage/entities.ts`, `holds` of `src/machine.ts` |
+| 0123 | 0015 | changes 0015: a second form of the idempotency key | both whole, with the code: `digestOf`, `givenKey` and `idempotencyKeyOf` of `src/machine.ts`, `named` of `src/runtime/callers.ts` |
+| 0126 | 0125 | cites 0125 as its reason: a caller's reply kept for a time left the migrations to be read again | both whole, with the code: `migrationViolations` of `src/testing.ts`, `reply` and `replyOf` of `src/storage/entities.ts` |
+| 0127 | 0048, 0125 | applies a caller's retry (0048) within its `keep` (0125) to the items of a stream | the three whole, and 0023 whole for finding 3, with the code: `receive` of `src/machine.ts`, `send` of `src/runtime/callers.ts`. No code keeps 0127 |
+| 0129 | 0060 | cites 0060 as a reason the runtime keeps its check | both whole, with the code: `named` of `src/runtime/callers.ts` |
+| 0133 | 0004 | applies incarnations to a child by id that comes back | both whole, with the code: the composed keys of `src/program.ts` (`work`, `keys`), `holds` and `givenKey` of `src/machine.ts` |
+| 0133 | 0009 | cites 0009 as its reason: entities agree only through messages | both whole, with the same code and `entities` of `src/runtime/callers.ts` |
+| 0141 | 0125 | cites 0125 for a `keep` left out | both whole, with the code: `kept` of `src/runtime.ts` |
+| 0152 | 0245 | 0245 cites 0152 for the prune of a topic no consumer holds, and runs that prune in a sweep | both whole, with the code: `expire` of `src/storage/entities.ts`, and the sweep's fork in `src/runtime.ts` as the area's report read it |
+| 0156 | 0059 | cites 0059: a request names its sender's address in its JSON | both whole, with the code: `givenKey`, and the request's text as `reply` reads it |
+| 0157 | 0065 | changes 0065: a caller's request that a version before stored is found by `request_id` | both whole, with the code: `reply`, `replyOf` and the upsert of `write` in `src/storage/entities.ts` |
+| 0160 | 0124 | changes how 0124 holds on Cluster: a creator is not given a defect at creation | both whole, with the code: `doorStep` of `src/runtime/doors.ts`, `create` of `src/runtime/callers.ts`, the door's registration in `src/cluster.ts`, and `entityManager.ts` of Effect |
+| 0165 | 0125 | changes how 0125 holds on Cluster: a caller's `keep` is in the door's payload | both whole, with the code: `primaryKey` and `keptGiven` of `src/cluster.ts`, `send` of `src/runtime/callers.ts` |
+| 0171 | 0245 | 0245 changes 0171, for a creation's rows and for an `expire` in batches | both whole, with 0248 and 0249, and with the code: `keptGiven` of `src/cluster.ts`, `forgetUnder` of `src/storage/cluster.ts`, `expire` and `write` of `src/storage/entities.ts` |
+| 0178 | 0124 | applies 0124: the example's boundary takes the sender from `Authorization` | both whole, with the code: `examples/server/server.ts` |
+| 0214 | 0065 | cites 0065: a retry is answered from storage | both whole, with the code: `replied` of `src/machine.ts`, `replyOf` of `src/storage/entities.ts` |
+
+### Finding 1, reproduced: 0160 against 0124, a creation the program dies on blocks every later request to its id on Cluster
+
+- The premise that fell: 0124 says that a defect at creation is given to its creator and stores nothing. Unwritten,
+  the rule needs the defect to stay with its request. Another creator of the same id, whose flags `init` accepts,
+  creates the entity, and a message to the id is answered `NotFound`. On one process this holds: `create` of
+  `src/runtime/callers.ts` finds no entity loaded or stored, and starts the machine with the second creator's flags.
+  0160 has the door die on such a creation, so that Cluster delivers it again without end. Cluster runs a door's
+  requests one at a time, since the runtime registers the door with no `concurrency` (`src/cluster.ts:440`), and the
+  default is 1 (`node_modules/effect/src/cluster/internal/entityManager.ts:365`). At each restart Cluster replays every
+  request the entity holds, in the order it took them, before it admits new work (`replay`, lines 323-333). The
+  creation is first, and dies again. The restart's backoff is reset only when a request completes, so it grows to
+  ten seconds (lines 300-305 and 999-1002).
+- The sequence: a caller creates the entity `one` with flags `init` dies on. The door dies, and Cluster restarts it.
+  A second caller creates `one` under another request id, with flags `init` accepts. Its request is queued behind
+  the first creation. Each restart replays the first creation, which dies, so the second creation is never handled.
+  Its caller waits for ever, where on one process it is answered `Created`. A caller's message to `one`, answered
+  `NotFound` on one process, waits behind the creation the same way. That case is reasoned from the same reading,
+  and not run. An operator sees nothing of it, as bug 10 says of an operation's creation.
+- The test: `FAILING: on Cluster a creation the program dies on leaves another creator of its id to create the
+  entity`, in `src/cluster.test.ts`, describe `the runtime on Cluster`, at commit `d602b35`. It sends the creation
+  `init` dies on, then a second creation through the handle, and waits eight seconds, past several restarts. It
+  expects `Created`, and gets no answer. Run it with
+  `bun test src/cluster.test.ts -t "a creation the program dies on leaves another creator"`.
+- It belongs to family C of the step of bugs, beside bug 10, and joins the open question A creation that `init`
+  dies on, on Cluster.
+- Where a fix could begin: at the creation of `doorStep` in `src/runtime/doors.ts:312-315`, where the door dies. The
+  fix is a choice of the design. The door could answer such a creation with an answer Cluster saves and the
+  creator's client resets, as it does for `Rejected` (decision 0182), with a backoff of the client's. Or the runtime
+  could store the defect in its own tables, so that the door answers the creator and frees the id. 0160 refused to
+  give the defect as a reply, since Cluster would save it for ever, and refused a reset, for its loop with no backoff.
+
+### Finding 2, reproduced: 0245 against 0171, a caller that stops waiting keeps its Cluster rows for ever
+
+- The premise that fell: 0245 lets a sweep free what the steps leave, so that the replies of a deployment no longer
+  grow without bound. The guide on Cluster says that once a message's `keep` is past, the next step or the sweep
+  deletes its rows (`docs/guide/cluster.md:196-199`). The step and `expire` delete Cluster's rows only under the ids
+  `effecttea_given_requests` holds (decision 0171, `src/storage/entities.ts:398-405, 462-466`). A caller's client
+  keeps the id only once it is given the answer (`keptGiven`, `src/cluster.ts:348-361`). 0171 says, among its
+  consequences, that a caller interrupted before its answer keeps its rows in Cluster's tables for ever. 0245 changes
+  0171 and says nothing of that case, and `docs/open-questions.md` does not hold it.
+- The sequence: a caller sends with a `keep` and a timeout, as an HTTP boundary does. The timeout ends its wait
+  before the step answers, and the message is handled all the same (decision 0091). The client keeps no id. The
+  runtime's reply goes once its `keep` is past, but no later step, `expire` or sweep deletes the rows of the request
+  in `cluster_messages` and `cluster_replies`. Every caller that times out and does not retry under the same request
+  id adds rows that stay. A retry of that request id within its version is then answered from the reply Cluster
+  saved, for ever, where 0125 says that a retry past `keep` is applied again.
+- The test: `FAILING: a caller that stops waiting leaves its Cluster rows to go once its time is past`, in
+  `src/cluster.test.ts`, describe `the runtime on Cluster`, at commit `d602b35`. A probe holds each step of a message
+  300 ms before its commit, and the caller's send times out at 50 ms. The test then runs a later step and `expire`,
+  past the least time of decision 0248. The rows of the later message go. The row of the message whose caller
+  stopped waiting stays. Run it with `bun test src/cluster.test.ts -t "a caller that stops waiting"`.
+- It belongs to family C of the step of bugs.
+- Where a fix could begin: in `keptGiven` of `src/cluster.ts`, which could keep the id when its caller is
+  interrupted too. That needs care. A request whose caller stopped waiting may still wait in Cluster's table, and a
+  step that deleted its rows past the client's time would delete a message no step has handled. So `forgetUnder`
+  would also have to spare a request that Cluster has not marked processed. Otherwise the guide and the design say
+  that such rows stay until a later release of Cluster frees them, as 0171 says.
+
+### Finding 3, only reasoned: 0127 against 0023 and 0147, a boundary that acknowledges an item once `send` is answered may lose it
+
+- The premise that fell: 0127 has the boundary acknowledge an item to its source only once `send` is answered, and
+  says that an item sent again after a crash gets the stored reply. Its premise is that every answer of `send` stores
+  the item. Two answers store nothing. `Suspended` answers a message that arrives at a suspended entity without
+  queuing it, and its caller is to retry under the same request id (decision 0023, `src/machine.ts:899-902`).
+  `Full`, which decision 0147 added after 0127, offers and stores nothing of the message
+  (`docs/design.md:629-631`). `NotFound` stores nothing either.
+- The sequence: a boundary reads an item from a feed, and sends it to an entity that is suspended. The item is
+  answered `Suspended`, which is an answer, so the boundary acknowledges the item, as 0127 and
+  `docs/design.md:358-361` say. The source never gives the item again, and the entity, once resumed, never receives
+  it. Nothing reports the loss.
+- Not reproduced: 0127 changes nothing in `src/`, and the library cannot check what a boundary acknowledges. No
+  example reads a stream.
+- Where a fix could begin: a note that changes 0127, and the paragraph on streams of `docs/design.md`. The boundary
+  acknowledges an item once it is answered with a reply, `Accepted` or `Rejected`, and sends it again under the same
+  request id after `Suspended` or `Full`. What it does after `NotFound` is its protocol's.
+
+### Suspects ruled out
+
+- 0100 against 0021: 0100's premise that a caller's reply is kept for ever fell by 0125 and 0245. Its conclusion
+  holds, since 0126 keeps every migration, and a reply of any version is read through them (`upReason` and
+  `upRequest` in `replyOf`). 0100's status line names neither 0125 nor 0245.
+- 0123 against 0015: the digest is a function of the readable key, which holds the name, the id, the key and the
+  incarnation, so two keys 0015 keeps apart stay apart. An operation's request to an entity is its tagged request
+  (0059), not its key, so the digest changes no request. A rename keeps `keyedAs`, and bug 15 is the case it misses.
+- 0126 against 0125: no migration is ever dropped, so no reply a version before wrote becomes unreadable, whatever
+  its `keep`.
+- 0127 against 0048 and 0125: a boundary that sends an item again within `keep` gets the stored reply. One that sends
+  it again past `keep` has it applied again, which 0125 leaves to the boundary's window.
+- 0129 against 0060: an `Entities` kept from another run passes the type and the runtime's check, since that run's
+  `Entities` is not droppable. 0129 says so, and promises no check of it.
+- 0133 against 0004: a child by id removed and added back in a later step finds its keys without a row. Its keys
+  take new incarnations from the entity's one counter (0132), and an answer of the earlier run is dropped. A child
+  removed and added back in one step keeps the work that encodes alike, so an answer it gets is for that same work.
+- 0133 against 0009: a child's keys are `<child>.<key>`, with the child's id, or with the id and the parameter as a
+  pair (`src/program.ts:1520-1528`). So two children's operations send under two requests. A receiver sees the
+  parent's address, which it authorizes as any entity's.
+- 0141 against 0125: 0141's sentence that a `keep` left out is none is stale since 0245, and `kept` refuses a `keep`
+  left out (`src/runtime.ts:718-727`). 0141's status line does not name 0245.
+- 0152 against 0245: a consumer is stored by a deploy before that program's sweep is forked, and a batch reads the
+  cursors in its own transaction. A consumer declared later holds its topic from its deploy, as 0152 says, and as
+  0245 repeats for a topic with no consumer.
+- 0156 against 0059: the rename rewrites the `entity` of every request's text, and its guard checks that the text is
+  the one the runtime writes for the new name. So a sender that sends again keys its request as it is stored.
+- 0157 against 0065: the second reading, by `request_id`, is made for a caller's request only, and `replyOf`
+  compares each row once migrated. So a row of another sender under the same request id is not taken
+  (`src/storage/entities.ts:192-227`).
+- 0165 against 0125: the door's primary key is the version and the request (`src/cluster.ts:129`). So a retry after a
+  deploy reaches the door, and the machine answers it from its reply, found by `request_id`. Two clients of one
+  request with two `keep`s are given the first one's time, on Cluster as on one process.
+- 0171 against 0245, the batches: `forgetUnder` runs three statements, each with the batch's subquery. On SQLite the
+  batch's transaction holds the one writer, and no statement before the last deletes from
+  `effecttea_given_requests`, so the three statements read the same ids.
+- 0178 against 0124: the request id comes from `Idempotency-Key` and the sender from `Authorization`, so the ids are
+  kept apart per identity. `Suspended` is answered 409, which an HTTP client does not retry as transient.
+- 0214 against 0065: the machine reads the reason back at the program's version (`replied`, `src/machine.ts:81-84`).
+  A retry reads it through the migrations of the version that wrote it, which gives the same reason at the same
+  version.
+- 0160 against 0124, a retry after a fix: the creation is replayed on the newer runner with the version in its
+  payload, and read through the migrations of that version (`deliveredCreation`).
+
+### Noticed, not checked
+
+- A caller's message to an id whose creation the door dies on waits for ever on Cluster, where one process answers
+  `NotFound`. It follows from the same reading as finding 1, whose test runs only the second creation.
+
+### Notes not read whole, and why
+
+None. Every note of the list, and every note of area 1 it meets, was read whole, with the code that keeps its rule.
+0147 was read by the paragraph of `docs/design.md` that states it, for finding 3, since it is no note of the list.
