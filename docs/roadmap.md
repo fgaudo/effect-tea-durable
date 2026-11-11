@@ -908,8 +908,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
     reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
     a last session and read whole by no other review.
-  - The reviewers' branches are local to the maintainer's machine, and pushed nowhere:
-    `claude/premise-review-machine-c1a99e`, `claude/premise-review-operations-d2dda3`,
+  - The reviewers' branches are local to the maintainer's machine, and pushed nowhere. The branch of the review of
+    the machine, which held no commit, was deleted on 2026-11-11:
+    `claude/premise-review-operations-d2dda3`,
     `claude/premise-review-creation-03f15d`, `claude/premise-review-messages-975dd7`,
     `claude/premise-review-cluster-3063df`, `claude/premise-review-versions-36a283`,
     `claude/premise-review-runtime-1-b0a258`, `claude/premise-review-runtime-2-157489`,
