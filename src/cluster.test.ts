@@ -735,6 +735,22 @@ describe('the runtime on Cluster', () => {
       expect(yield* send({ _tag: 'Add', n: 1 }, 'm3', 'none')).toBe('{"_tag":"NotFound"}')
     })), 30_000)
 
+  // The premise review of the pairs against The runtime, a second part: decision 0135 warns of a step past the
+  // threshold, and on one process a creation and a message warn. On Cluster those steps are a door's (decision
+  // 0161), whose writes in `stepIn` and in the creation of `doorStep` give no length to `warnOfSize`.
+  test('FAILING: on Cluster a door step that writes past the threshold warns once per activation, as on one process', () =>
+    onRunner(
+      Effect.gen(function*() {
+        const sender = { user: 'u' }
+        expect(yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+        const add = { _tag: 'Add', n: 2 } as const
+        expect(yield* handle!.send('one', add, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
+        expect(warningsAndErrors()).toEqual(['a step wrote a large state; the program may split it into entities'])
+      }),
+      undefined,
+      { sweep: 'none', warn: { characters: 1 } },
+    ), 30_000)
+
   test('a caller creates and sends through the door, and a retry is answered as the first time', () =>
     onRunner(Effect.gen(function*() {
       const sender = { user: 'u' }

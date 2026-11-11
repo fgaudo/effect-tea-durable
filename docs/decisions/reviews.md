@@ -3344,3 +3344,133 @@ the area's report, by the index, and by `grep -w` of each number in both directi
 ### Not read whole
 
 None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.
+
+## 2026-11-11: premise review of the pairs against The runtime, a second part
+
+Read by a session that wrote none of these notes, on the branch `claude/premise-pairs-runtime-2-4e02ac`, cut from
+`main` at `fcd2494` and moved forward to `743881f` before the reading. It reads the notes 0011, 0028, 0029, 0046,
+0066, 0074, 0076, 0078, 0079, 0128, 0135, 0142, 0151, 0161, 0162, 0184 and 0192 against the notes of area 5 they
+meet. The review of The runtime, without the scheduler of the tests, a second part read these notes in part or not at
+all. One finding is reproduced.
+
+### The pairs
+
+The pairs were found by the table of the area's report, by the index, and by `grep -w` of each number in both
+directions. Every note of the list and every note of the area it meets was read whole, and so were 0220, 0221, 0243
+and 0246, which change or extend a note of a pair. The code read whole: `src/runtime/loop.ts`, `process.ts`,
+`waker.ts`, `doors.ts`, `callers.ts` and `readings.ts`, and `launchWith` of `src/runtime.ts`, with its drain,
+`quiet`, `drained` and the handle.
+
+| Pair | What binds it | How it was read |
+| --- | --- | --- |
+| 0011 and 0119 | 0119 decides the drain 0011 asks for | both whole, with the drain's finalizer, `admitted` and `drained` of `src/runtime.ts`, and `start` of `loop.ts` |
+| 0128 and 0119 | 0128 cites 0119 for a droppable operation in a planned stop | both whole, with `start`, `drop` and the drain's stop of `rerun` |
+| 0028 and 0134 | 0134 changes 0028's loop | both whole, with `steps` of `loop.ts` |
+| 0135 and 0134 | 0135 cites 0134 as its reason that a busy entity holds the others one step | both whole, with `warnOfSize`, `steps`, and every write of a step in `loop.ts`, `callers.ts` and `doors.ts` |
+| 0029 and 0103 | 0103 tests 0029's timers due in `settled` | both whole, with `quiet` and `waking` |
+| 0029 and 0111, 0116 | 0111 and then 0116 change 0029's wait | all whole, with `steps`, `nothingToDo` and `unload` |
+| 0029 and 0194, 0221 | 0194 adds to 0029's timers, and 0221 changes 0194 | all whole, with `arm`, `waking` and `due` of `src/storage/entities.ts` |
+| 0046 and 0147 | 0147 changes 0046's sender | both whole, with `entities`, `send` and `unlessCrashed` of `callers.ts` |
+| 0066 and 0101, 0103 | 0101 corrects 0066, and 0103 adds to it | all whole, with every read of a clock in `src/` |
+| 0074 and 0147 | 0147 changes 0074's burst | both whole, with `send` and `steps` |
+| 0074 and 0220 | 0220 cites 0074 as its reason that a `Receive` serves its caller | both whole, with `linkOf` and `steps` |
+| 0076 and 0109 | 0109 adds to 0076's `settled` | both whole, with `admit`, `spare`, `unload` and `quiet` |
+| 0076 and 0101, 0103, 0119, 0147 | each cites 0076 | all whole |
+| 0078 and 0103, 0101 | 0103 corrects 0078, and 0101 cites it | all whole, with `spare` and `admit` |
+| 0078 and 0112 | 0112 changes what 0078 rests on | both whole, with the deploy's registration and the fork of its waker |
+| 0079 and 0110, 0112 | 0110 corrects 0079, and 0112 changes what it rests on | all whole, with `detached`, `activate`, `crash` and `withEntity` |
+| 0079 and 0103, 0119 | each cites 0079 | all whole, with the drain's count of `detachments` |
+| 0142 and 0119, 0120 | 0142 cites both as its reason that a wait ends after the drain | all whole, with `waited` of `readings.ts` and the order of the finalizers of `launchWith` |
+| 0177 and 0142 | 0177 cites 0142, and 0246 corrects 0177 | all whole |
+| 0151 and 0147 | 0151 cites 0147 for what a busy entity holds | both whole |
+| 0161 and 0164 | 0164 changes 0161's forks | both whole, with `untransacted`, `settle`, `finishIn`, `doorStep` and `applyOnCluster` |
+| 0161 and 0243 | 0243 adds to 0164 what Effect does with a fork it misses | both whole |
+| 0184 and 0164 | 0184 cites 0164 for a reader that tells its transaction | both whole, with `consume` of `src/runtime.ts` and `waited` |
+| 0192 and 0164 | 0192 keeps a rule by a check of the code, as 0164 does | both whole; the walk of imports in `src/form.test.ts` not read, since the pair shares only the method of a check |
+| 0162 and 0112 | 0112's rule holds of every fork of 0162's uninterruptible activation | both whole, with `activateOnCluster` and `finishIn` |
+| 0162 and 0219, 0110, 0109 | 0219 opens the drain on Cluster over 0162's shards, whose rounds are counted as detached work | all whole, with `serving`, `activating` and `losing` |
+
+### Finding 1, reproduced: on Cluster a door's step never warns of a large state (0135, 0161)
+
+- Decision 0135 has the runtime warn of a step that writes more than `warn.characters`, once per activation. The
+  warning is how an operator finds the entity that holds the others, since a step holds the thread for as long as
+  its write takes. It rests on a premise no note wrote: every step that writes gives the length `write` returns to
+  `warnOfSize`. On one process the premise holds. The loop's steps warn at `src/runtime/loop.ts:404`, and a creation
+  at `src/runtime/callers.ts:265`.
+- Decision 0161 made the steps of a request on Cluster a door's step, written in Cluster's transaction: the
+  `Restart` of an entity the door loads, a creation, a message's arrival and each `Handle` up to its answer. Since
+  decision 0165 every caller's message and creation on Cluster takes that path. `stepIn` writes at
+  `src/runtime/doors.ts:189`, and the creation of `doorStep` writes at `src/runtime/doors.ts:321`. Both drop the
+  length, and neither `finishIn` nor `settle` warns. Only `applyOnCluster`, which steps the entity's own events,
+  warns, at `src/runtime/doors.ts:141`.
+- The sequence: a runner launched with `warn: { characters: 1 }` deploys a program, and a caller creates an entity
+  and sends it a message. Both steps write past the threshold, and nothing is logged. So a program whose state grows
+  with its callers' messages never warns on Cluster, where on one process it warns at the first such step. The
+  completion of an operation of the same entity does warn on Cluster: a check run in the session saw it, and is not
+  kept.
+- Reproduced by `FAILING: on Cluster a door step that writes past the threshold warns once per activation, as on one
+  process`, in `src/cluster.test.ts`, in the commit of this report. It failed in its one run, with no warning logged.
+- It is a case of family C of the step of bugs: a rule of one process that holds otherwise on Cluster.
+- Where a fix could begin: `stepIn` and the creation of `doorStep` keep the length each write returns, in the
+  transitions of `Stepping`. Then `finishIn`, for a step that wrote nothing, and `settle`, once the count proves the
+  commit, give it to `warnOfSize` on the entity's `Loaded`. Whether a step that rolls back may warn is a choice of
+  the fix, since 0135 warns of what a step writes, and a step rolled back wrote it too.
+
+### Suspects ruled out
+
+- 0119 against 0011: every step of a drain on one process that stores an at-most-once operation starts it, in
+  `start` at `src/runtime/loop.ts:222`, and `drained` counts it from `forkHeld`. A step stores one without starting it
+  only in a crash of the entity, which is a crash, and in the door's step on Cluster, which is bug 21.
+- 0119 against 0128: the drain stops the operations of `rerun`, droppable ones among them, by `stop`. `stop` waits for
+  each operation's finalizers, one after the other, before the drain's timeout begins (`src/runtime.ts:1401-1408`).
+  So a droppable runner's slow finalizer lengthens the drain past `millis`, though 0128 has the entity wait for no
+  such finalizer. The at-most-once operations run on meanwhile and gain the time, and nothing is stored or delivered
+  otherwise. A finalizer that never ends would hold the closing of the deployment's scope in any case.
+- 0128 against 0119: a droppable operation is not started in the drain, and is stopped at once with the others that
+  run again. It runs again at the next activation, as 0128's consequences say. A step of the drain that changes one
+  is bug 6.
+- 0116 against 0029: an item offered without raising `pending` is an `Evict`, a `Passivate`, or the `Settle` that
+  `losing` and a door's crash offer to a loop whose entity has left. `nothingToDo` reads `pending`, so no event
+  offered under the lock is lost to an unload. The `Settle` of a crash leaves `pending` at -1 on a `Loaded` that no
+  map holds, and neither `quiet` nor `drained` reads it.
+- 0194 and 0221 against 0029: the waker reads a timer due by the wall clock, and fires none early. A loaded entity
+  whose timer's sleep runs up to an hour past a clock set forward is unloaded by its passivation, and the waker then
+  fires the timer at once.
+- 0221 against 0078: `spare` reads `at > now` on the wall clock that the timer reads after each sleep, so a clock
+  set back or forward leaves the two in agreement.
+- 0103 and 0066 against the code: no module of `src/` reads `Date.now` or sets a timer of the host. `waited` reads
+  `Clock.currentTimeMillis`, which `ahead` moves as it moves `DateTime.now`.
+- 0147 against 0046: a sender given `Full` and a sender whose receiver crashed both send again under the same request
+  after `retry`, and `Full` stores nothing of the message. A `retry` of 0 is bug 32.
+- 0220 against 0074: a `Receive` on one process always meets an empty mailbox or a suspension. The loop handles the
+  mailbox before it takes an event, and `activate` applies the `Restart` before it forks the loop that handles a
+  message the crash left.
+- 0147 against 0074: a caller whose permit is taken has offered its event in the same uninterruptible region, and a
+  crash fails every caller registered, so no caller waits on the semaphore of a `Loaded` that left.
+- 0109 and 0076 against 0162: an entity of a shard lost crashes, and `leave` takes it out of `recent`, so it holds no
+  place under the capacity. `entersHeld` admits an entity as `enter` does.
+- 0110 and 0079 against 0119 on Cluster: the round of a shard gained is counted in `detachments`, which `drained`
+  waits for, and an activation in the drain starts its at-most-once operations alone.
+- 0119 and 0120 against 0142: `closing` is completed by a finalizer that runs between the drain and the closing of
+  `running`, in the runtime's own sequential scope, whatever its caller's strategy is.
+- 0164 against 0161: what `settle` performs inside the door's transaction forks through `untransacted`, in `start`,
+  `drop` and `arm`. A timer stopped inline there waits only for its sleep.
+- 0164 against 0184: a reader of `consume` refuses a transaction in its services, and no fork of the runtime keeps
+  one. So a reader the runtime forks is never refused, and a reader a caller runs in its transaction always is.
+- 0147 against 0151: what a busy entity holds is bounded per entity on one process. On Cluster a caller's message
+  waits in Cluster's table (decision 0165), and the bound of resident entities is bug 54.
+- 0134 against 0028 and 0135: the loop's yield stands after `warnOfSize`, and a step under the threshold yields
+  nowhere.
+- 0112 against 0162 is bug 22, and 0219 against 0162 is bugs 21, 34 and 35.
+- 0177 and 0246 against 0142: nothing of 0142's wait changes, since both keep its `Deferred` of a topic.
+
+### Noticed, not checked
+
+- The warning of a full entity, 0147's, has no counterpart on Cluster, where no caller is answered `Full`
+  (decision 0165). A burst on Cluster waits in Cluster's table, and nothing names the entity it waits for. That is
+  what 0165 decides. It was not weighed against 0135's reason for a warning: an operator who sees every entity slow
+  down has nothing that names the one that holds them. It is a question of the design, which no test decides.
+
+### Not read whole
+
+None of the list, and none of the area. `src/form.test.ts` was not read, as the table says of 0192.
