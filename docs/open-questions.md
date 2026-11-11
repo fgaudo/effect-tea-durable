@@ -597,7 +597,10 @@ with a requirement that no example has yet.
 - **A check beside the old version on SQLite.** `check` takes no lock, so that it runs on a database the old version
   holds ([decision 0247](decisions/0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)). A file
   of SQLite is held in the exclusive locking mode, so a check from a process of its own dies with `database is
-  locked`. It is bug 87 of the [roadmap](roadmap.md), reproduced. It would be decided by:
+  locked`. It is bug 87 of the [roadmap](roadmap.md), reproduced. A script run by hand on Bun 1.4.4, not yet a
+  spike, saw a connection opened `readonly` refused alike, and saw the holding connection copy the file whole, by
+  `serialize`, which `export` of `SqliteClient` of `@effect/sql-sqlite-bun` calls, and by `VACUUM INTO`. It would be
+  decided by:
   - whether a note narrows 0247 and the design to a stopped version or a copy of the file, or the old runtime gives
     the check through its handle;
   - a run on a server of PostgreSQL under a role of rows alone, which reads `effecttea_migrations` by name.
