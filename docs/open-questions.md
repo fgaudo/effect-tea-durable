@@ -164,7 +164,10 @@ with a requirement that no example has yet.
   - how far the clocks of two runners may differ, and whether the time a row is kept until is read from the
     database's clock instead of a runner's;
   - whether a client that missed its polls still waits for ever, or Cluster gives it a way to learn that its rows
-    are gone.
+    are gone;
+  - whether the least time takes the longest poll of replies of the runners on the file, since a second client on a
+    runner that polls more slowly than the runner that keeps the id waits for ever, which is bug 89 of the
+    [roadmap](roadmap.md), reproduced.
   - the same of a reply's `until`, which the clock of the runner that steps writes, and the clock of the runner
     that holds the shard at a retry reads, as the premise review of Messages, requests and replies found
     ([`reviews.md`](decisions/reviews.md)).
@@ -291,7 +294,10 @@ with a requirement that no example has yet.
   decided by:
   - a test that resumes an entity on Cluster and reads Cluster's tables after `expire`;
   - whether a client keeps the id when its caller is interrupted, with a deletion that spares a request Cluster has
-    not marked processed, or the guide says such rows stay.
+    not marked processed, or the guide says such rows stay;
+  - for bug 91, reasoned by a reading, whether a second client's `reset` drops only a keep whose answer it read
+    ([decision 0249](decisions/0249-on-cluster-a-reset-drops-the-id-a-callers-client-kept.md)), since it may drop the
+    keep of the first client's reply and, interrupted then, leave the rows for ever.
 - **A cause holding U+0000 in Cluster's tables.** A defect's cause is written as text every database holds, with U+0000
   escaped ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)), in the
   runtime's tables. A door that dies on such a cause may hand it to Cluster, which stores it in its own tables
@@ -521,7 +527,9 @@ with a requirement that no example has yet.
   decided by:
   - whether a receiver refuses a request whose asker's work no longer holds, by the asker's key row it already reads;
   - a test of bug 65 with an operation that sends from an uninterruptible finalizer;
-  - a helper of `src/cluster.test.ts` that keeps a runner's operation running after another runner took its shard.
+  - a helper of `src/cluster.test.ts` that keeps a runner's operation running after another runner took its shard;
+  - for bug 90, reasoned, whether a door loads an entity of a shard whose singleton has not started, since no
+    finalizer then crashes it, and its operations run beside the next holder's.
 - **Who an operator sees waiting.** `suspended` lists, for each suspended entity, the operations that
   wait for its resumption, and on Cluster it is meant to read the rows of `effecttea_waiting`
   ([decision 0114](decisions/archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)). An

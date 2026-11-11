@@ -4800,3 +4800,209 @@ Every note of the list was read whole, and so was every note of the area it meet
 ### Not read whole
 
 None. Every note of the list, and every note of the area it meets, was read whole with the code that keeps the rule.
+
+## 2026-11-11: premise review of a sample, Effect Cluster and The scheduler of the tests, read again
+
+This is a blind reading of two areas, for the sample that decides whether the whole review is read a second time.
+The reviewer read none of the earlier reports, nor the roadmap's step of bugs, nor `docs/open-questions.md`. The
+bugs of decisions 0248 and 0249 were already found, and are not reported again. A first version of this report left
+33 notes unread or read in part. They were read in a second pass, at the coordinating session's request, with the
+code the first table named as not read, and the section was rewritten in place.
+
+### The notes listed
+
+The list holds the notes of the two areas and the notes the index lists as changing one of them. It also holds every
+note that `grep -rlwE` finds in `docs/decisions` citing a note of the areas or cited by one, with `reviews.md` left
+out.
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0081 | of area 2 | whole, with the code of the door's step (`src/runtime/doors.ts`) |
+| 0084 | of area 2 | whole, with `guard` of `src/cluster.ts` |
+| 0085 | of area 2 | whole, with `reset` and `send` of `src/cluster.ts` |
+| 0090 | of area 2 | whole, with `forgetUnder` and the deletions of `src/storage/entities.ts` |
+| 0091 | of area 2 | whole, with the annotations of `doorOf` in `src/cluster.ts` |
+| 0092 | of area 2 | whole, with `losing`, `serving` and `activateOnCluster` of `src/runtime/doors.ts` |
+| 0159 | of area 2 | whole, with `recordVersions`, `standingOf` and `outranked` of `src/storage/cluster.ts` |
+| 0160 | of area 2 | whole, with the creation in `doorStep` |
+| 0161 | of area 2 | whole, with `settle`, `applyOnCluster`, `loadIn`, `finishIn`, and the loop's settling before an unload in `src/runtime/loop.ts` |
+| 0162 | of area 2 | whole, with `serving`, `activating`, `losing`, `loadable` and `entersHeld` |
+| 0163 | of area 2 | whole, with `waited` of `src/runtime/readings.ts` and the watcher in `launchWith` of `src/runtime.ts` |
+| 0165 | of area 2 | whole, with `send` and `reset` of `src/cluster.ts` |
+| 0166 | of area 2 | whole, with the operator's branch of `doorStep` |
+| 0167 | of area 2 | whole, with `resume` of `src/cluster.ts` and `waiters` of `src/storage/cluster.ts` |
+| 0168 | of area 2 | whole, with `resettingSavedFailure` |
+| 0169 | of area 2 | whole, with `keepSent`, `pendSent` and `forgetPending` |
+| 0170 | of area 2 | whole, with `resettingSavedFailure` and `kept` |
+| 0171 | of area 2 | whole, with `keptGiven`, `keepGiven`, the step's deletion and `expire` |
+| 0172 | of area 2 | whole, with its test of a `Resumed` delivered before the answer `Suspended`, in `src/cluster.test.ts` |
+| 0173 | of area 2 | whole, with the deletion of the work's rows |
+| 0174 | of area 2 | whole, with the check of the recorded versions in the deploy of `src/runtime.ts` |
+| 0175 | of area 2 | whole, with `guard`, `leased` and the calls of `guard` in `src/runtime/doors.ts` |
+| 0176 | of area 2 | whole, with `sentNow`, `current` and `renamed` of `src/storage/tables.ts` |
+| 0178 | of area 2 | whole, with the settings of `examples/server/server.test.ts` |
+| 0248 | of area 2 | whole, with `least` and `keptGiven` of `src/cluster.ts`, and `cluster/Runners.ts` of Effect |
+| 0249 | of area 2 | whole, with `reset` and `forgetGiven` |
+| 0104 | of area 11 | whole, with `controlled` of `src/testing.ts` |
+| 0115 | of area 11 | whole, with `leastBudget` |
+| 0117 | of area 11 | whole, with `nested` in `controlled` |
+| 0244 | of area 11 | whole, with `step` of `controlled`, and `runLoop`, `evaluate` and `yieldNow` of Effect 4.1.3 |
+| 0164 | changes 0161 | whole, with `untransacted` at the forks of `finishIn` and the watcher |
+| 0198 | changes 0161 and 0176 | whole; the names of the tables read in the statements above |
+| 0245 | changes 0171 | whole, with `expire` in batches of `src/storage/entities.ts` |
+| 0007 | cites 0081 | whole |
+| 0021 | cites 0090 | whole, with the deletion of a reply as its asker's work ends |
+| 0063 | cites 0163 | whole |
+| 0066 | cites 0104 | whole |
+| 0068 | cites 0104 | whole |
+| 0074 | cites 0081 | whole |
+| 0079 | cites 0092 | whole |
+| 0080 | cites 0084 | whole |
+| 0100 | cites 0090 | whole |
+| 0101 | cites 0104 | whole |
+| 0109 | cites 0104 | whole |
+| 0110 | cites 0104 | whole |
+| 0112 | cites 0104 | whole |
+| 0114 | cites 0092 | whole |
+| 0116 | cites 0115 and 0117 | whole, with the loop's wait in `src/runtime/loop.ts` |
+| 0125 | cites 0085, 0090 and 0165 | whole |
+| 0134 | cites 0117 | whole |
+| 0142 | cites 0163 | whole, with `waited` |
+| 0147 | cites 0165 | whole |
+| 0151 | cites 0092 | whole |
+| 0156 | cites 0176 | whole, with `renamed` |
+| 0177 | cites 0104 | whole |
+| 0182 | cites 0085, 0165 and 0169 | whole, with `create` of `src/cluster.ts` |
+| 0185 | cites 0161 | whole |
+| 0190 | cites 0165 | whole |
+| 0193 | cites 0174 | whole |
+| 0195 | cites 0162 | whole |
+| 0215 | cites 0175 | whole |
+| 0219 | cites 0175 | whole |
+| 0247 | cites 0159 | whole |
+
+### Findings
+
+- **A second client on a runner with a longer poll of replies waits for ever.** The two notes are decisions 0171
+  and 0248.
+  - The premise. Decision 0171's deletion of a caller's rows is safe only while no client still reads Cluster's rows
+    of the request. Decision 0248 restores that premise for a second client of the request by keeping the rows for
+    a least time, `2 × entityReplyPollInterval + 1 000` ms. The interval in that least time is the one of the runner
+    whose client keeps the id: see `least` in `src/cluster.ts:340`, which `keptGiven` at `src/cluster.ts:348`
+    gives. A second client reads replies at the interval of its own runner. So the premise that fell is that every
+    runner on the file polls replies at the keeping runner's interval. Decision 0248 says that a runner launched with
+    another poll moves the least time with it, which holds of the keeping runner alone.
+  - The sequence. Runner 1 holds the entity and polls replies every 200 ms. Runner 2 polls every 5 s. Runner 2's
+    client sends a message with a `keep` of 0, and runner 1 steps it. Runner 1's client sends the same request, is
+    answered at once from the reply Cluster saved, and keeps the id for 1.4 s. A step of the entity 1.6 s later
+    stores a reply, and deletes Cluster's rows under the id (`src/storage/entities.ts:403`). Runner 2 reads at its
+    poll of 5 s, finds no reply, and waits for ever. `expire` deletes the rows the same way
+    (`src/storage/entities.ts:462`), and so does the sweep of decision 0245, which runs `expire` on whichever runner
+    holds its singleton. A process with no runner address, a client of the cluster alone, has a `ShardingConfig` of
+    its own too.
+  - The test. **Reproduced** by `FAILING: a second client on a runner with a longer poll of replies is answered
+    after a later step` in `src/cluster.test.ts`, added by commit `e5188e5`. The test failed in three runs of
+    three. With the default poll on both runners, it passed in three runs of four, and the cause of the one failure
+    was not looked into. With the poll of 5 s and without the later step, it passed, and the client was answered at
+    its poll.
+  - Where a fix could begin. The least time could come from the longest poll of the runners on the file. `sharding`
+    could record each runner's `entityReplyPollInterval` with its versions, for instance. The guide would then say
+    that a process that is a client alone polls no slower than the runners.
+- **An operation's message is applied twice when a fiber of a runner that lost its shard sends after the work
+  ended.** The two notes are decisions 0090 and 0092.
+  - The premise. Decision 0090 deletes an operation's replies and Cluster's rows with the work that sent them. It
+    is safe because nothing sends under a key once its work ended: an operation leaves only through its
+    completion, so its fiber is done before the work ends. Decision 0092 takes that away. It names a runner frozen
+    past its lease, or cut off from the file, whose operations run on while the next holder starts them again. It
+    holds that their steps commit nothing and that only their effects on the world may run twice. But an
+    operation's `send` is no step of its runner. It is a request through Cluster, and the receiver's runner steps it.
+  - The sequence. Entity A's at-least-once operation sends a message to entity B under one request id. Runner 1
+    holds A and freezes before the operation sends. Runner 2 takes A's shard once the lease expires, activates A,
+    and runs the operation again. Its send is stepped by B, which keeps the request's Cluster id under A's work.
+    The operation completes, and A's step ends the work. That step deletes B's reply to the request
+    (`src/storage/entities.ts:382`) and Cluster's rows under the kept id (`src/storage/entities.ts:390`). Runner 1
+    wakes, and its operation's fiber sends the same request before the runner's next refresh runs the shard's
+    finalizer. Cluster finds no row under the primary key, so the request is a new one. B's door step keeps the id
+    as pending, since A's work has ended (`keepSent` in `src/storage/cluster.ts:208`, called at
+    `src/runtime/doors.ts:347`). It then steps the arrival, finds no reply under the request, and applies the
+    message a second time. `send` of `src/cluster.ts:470` reads nothing of the asker's work, and only the reset of a
+    saved failure does (decision 0170).
+  - A second way in. The door of decision 0162 may load an entity of a shard Cluster acquired and released before
+    the shard's singleton started. No finalizer crashes that entity, and the operations its settled steps start run
+    beside those of the next holder, with the same sequence after.
+  - The check. **Reasoned** from the code and the notes, not reproduced. A test would freeze a runner's operation
+    before its send while keeping its finalizer from running: hold the operation's fiber on a gate in an
+    uninterruptible region, let a second runner take the shard and complete the work, then open the gate, and count
+    the receiver's applications of the message.
+  - Where a fix could begin. The door's step could refuse, with no step of the receiver, a request whose asker's
+    work has ended, where `keepSent` finds it ended: nothing waits for that answer (decision 0090). It would answer
+    as a step of an ended work does today, and keep the id pending.
+
+### Suspects ruled out
+
+- **0244 and 0104, a budget of 1.** At Effect 4.1.3 a budget of 1 lets fibers on. Under it a fiber that a
+  `Deferred` resumes inline yields at its first step, which the scheduler never preempts under `inline`. A test of
+  a waiter whose continuation runs in its first step found that `everySchedule` under `inline` still reaches the
+  order a budget of 1 gives. It reaches the order by a preemption at the waiter's second step. The test passed, so
+  it was not kept, and it was tried on that one program only.
+- **0244, a cancelled yield's task.** When the task of a cancelled yield starts, `step` sets `running` to the fiber
+  that yielded. The test clock's tracker can resume, inline in that task, the fiber that moved the clock. That fiber
+  is then counted as one on another's stack, and is asked of preemption with no task ready. This only adds orders
+  to explore, and a test moves the clock with its window closed.
+- **0244 and 0104, a run resumed from an automatic yield.** Effect first asks such a run at its third step, since
+  `runLoop` counts the resumption as one step and skips the check at the next. `step` sets `running` to the fiber as
+  its task starts. So the run that `evaluate` makes again to interrupt the fiber's children is still let through.
+- **0134 and 0244, the loop's `yieldNow`.** The yield of decision 0134 is no automatic yield, so its run is asked at
+  its first step. Under `queued` it then yields once more as a resumption, and under `inline` it runs on. Either
+  way it is an order the scheduler already reaches.
+- **0175 and 0160, the guard of a creation.** Decision 0175 says the check runs "after it finds the entity stored",
+  so a creation might skip it. `doorStep` calls `guard` first, before the creation (`src/runtime/doors.ts:292`).
+- **0178 and 0175, the example's lease.** The example's lease of 3 s is shorter than Cluster's default refresh of
+  10 s. Effect refreshes the lease at a third of its expiration where that is shorter, by `effectiveInterval` in
+  `cluster/internal/shardLock.ts`.
+- **0161 and 0081, a commit of the loop that fails.** The loop's step sets the machine and the count in memory
+  before its commit. After a commit that fails, a door's step could run before the crash. `settle` then finds that
+  the stored count differs from the count held, and loads the entity again.
+- **0161 and 0175, the guard before the settling.** `applyOnCluster` and `doorStep` run `guard` before `settle`. So
+  a runner whose lease is gone performs nothing a door's step left uncommitted, and the next holder starts it from
+  what is stored.
+- **0163, the watcher.** The version is read on the runner's one connection, and so waits for the transaction
+  under way. A reading takes its topic's signal before its page, and `tellAll` completes every signal taken. So a
+  commit of another runner between a page and a wait moves the version from the one kept, and wakes the reading.
+- **0248, a retry near the end of the least time.** A retry on another runner of a request already answered needs
+  no poll. Cluster answers a duplicate whose last reply is a `WithExit` at once, from what `saveRequest` gives
+  (`cluster/Runners.ts` at 4.1.3).
+- **0167 and 0169, the rows of `Resumed`.** The rows of a `Resumed` go with its pending id at the next step. A
+  `Resumed` is sent with `discard`, so no client reads its reply.
+- **0170 and 0169, a work that ends between the keep and the reset.** The step that ends the work deletes the rows
+  first. The reset then finds no request, and a client that finds the work ended waits until it is interrupted.
+- **0159 and 0174, a runner launched again at its address.** `recordVersions` replaces the versions recorded under
+  the runner's address in its own transaction, so `outranked` reads what the runner runs now.
+- **0219 and 0175, the drain on Cluster.** The drain ends before `Sharding` is released, so the completions it steps
+  pass the lease check.
+
+### Suspects checked by reading, that lose nothing
+
+- **0249 and 0248, a second client's reset drops a keep of a reply.** `reset` reads the request's latest answer,
+  then deletes the kept id (`src/cluster.ts:306` to `318`). A second client may read `Suspended` there. The first
+  client's retry may then be answered and keep the id, and the second client's `forgetGiven` then deletes that keep.
+  Decision 0249 says that an id whose answer is a reply is never dropped. The second client's `sharding.reset` then
+  changes nothing, since it expects a reply that is no longer the latest. Its send is answered from the saved reply,
+  and `keptGiven` keeps the id again. So only a second client interrupted during that send leaves Cluster's rows for
+  ever. Nothing is lost.
+- **0176 and 0171, a client of the old code after a rename.** A process with no runner address may deploy any
+  program (decision 0174), so a client of the old code runs after a rename. Its client keeps given ids under the old
+  name. `renamed` in `src/storage/tables.ts` moves `effecttea_given_requests` only when the old name still holds a
+  row of the tables it names, and none of those tables is `effecttea_given_requests`. A step deletes given ids under
+  its own name alone, and `expire` under its program's. So the rows of those requests stay in Cluster's tables, and
+  nothing is lost.
+
+### Suspects noticed and not checked
+
+- **0162, the cost of an entity no finalizer crashes.** The second way into the second finding above. What it costs
+  the world of an at-least-once operation beside the next holder's run, apart from the messages it sends, was not
+  checked.
+
+### Notes not read whole
+
+- None. Every note of the table was read whole, and with the code the table names.

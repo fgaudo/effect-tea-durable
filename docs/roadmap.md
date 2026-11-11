@@ -157,14 +157,37 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     bug, reproduced or of family C or D, that the step of bugs does not hold. Otherwise what a reading of pairs
     misses, a rule that three notes or a whole flow keep together, is left to the steps What a deploy may change of
     a program, The tests of a contract on every backend and A test of invariants over generated histories, below.
+  - Done, the sample, in a session of 2026-11-11 that read none of the reports, on
+    `claude/quizzical-franklin-e9c4d2`, cut at `fcd2494`, whose `src/` is main's. Its first pass read the notes of
+    the two areas alone, and it read the 33 notes that change or cite them whole when it was sent back. It found
+    bug 89, reproduced, which the step did not hold. It found bug 57 again, with a second way in that is bug 90, and
+    bug 27 again. Bug 91 is a reading that loses nothing. Its report is recorded whole in
+    [`reviews.md`](decisions/reviews.md). So by the rule above the whole review is read a second time: a pass of a
+    reading of pairs missed a reproduced bug in the area that had found the most. The second reading reads the twelve
+    areas of the list again, by the skill's section The reviewer's brief, each by a session that read none of the
+    reports, then the pairs each of its sessions read in part, as the last sessions did. What it finds is a bug of the
+    step of bugs, from 92 on. The step leaves this file once the second reading is done. Its areas, by the numbers
+    of the list above, each marked `Done, ` here once its session is recorded:
+    1. Area 1, Messages, requests and replies.
+    2. Area 2, Effect Cluster, whose sample above may stand for it if the maintainer says so.
+    3. Area 3, Versions and deploys.
+    4. Area 4, The runtime, a first part.
+    5. Area 5, The runtime, a second part.
+    6. Area 6, Schemas and projections, a first part.
+    7. Area 7, Schemas and projections, a second part.
+    8. Area 8, The queries and their pages.
+    9. Area 9, The tables and migrations.
+    10. Area 10, The rehearsal and testing.
+    11. Area 11, The scheduler of the tests, whose sample above may stand for it if the maintainer says so.
+    12. Area 12, The project and what enters the library.
   - The first session's report is not kept, so what it ruled out is not written here. The reports of the second,
     third and fourth sessions are recorded whole in this step, in the step of bugs and in
     [the open questions](open-questions.md).
-  - Every area of the list and every last session is `Done`, so the step goes on with the sample above. A session
-    that records a review writes `Done, ` before what it read, and adds a
+  - Every area of the list, every last session and the sample are `Done`, so the step goes on with the second
+    reading the sample decided, from area 1 of the list. A session that records a review writes `Done, ` before what it read, and adds a
     bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
     reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
-    a last session and read whole by no other review. The step leaves this file once the sample is done.
+    a last session and read whole by no other review.
   - The reviewers' branches are local to the maintainer's machine, and pushed nowhere:
     `claude/premise-review-machine-c1a99e`, `claude/premise-review-operations-d2dda3`,
     `claude/premise-review-creation-03f15d`, `claude/premise-review-messages-975dd7`,
@@ -181,7 +204,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     `claude/premise-pairs-runtime-2-4e02ac`, `claude/premise-pairs-schemas-1-1-f736ec` and
     `claude/dazzling-darwin-f09ea9`, cut at `743881f`, and `claude/premise-pairs-schemas-2-5e31db`,
     `claude/premise-pairs-queries-tables-b4f457`, `claude/premise-pairs-rehearsal-996d6c`,
-    `claude/premise-pairs-project-1-5b0c65` and `claude/gallant-almeida-c81283`, cut at `9fd90aa`. A bug of the step of bugs names the commit of its failing test on one of
+    `claude/premise-pairs-project-1-5b0c65` and `claude/gallant-almeida-c81283`, cut at `9fd90aa`, and the sample's
+    `claude/quizzical-franklin-e9c4d2`, cut at `fcd2494`. A bug of the step of bugs names the commit of its failing test on one of
     them. A session elsewhere writes that test again from the bug's sequence and the report in
     [`reviews.md`](decisions/reviews.md).
 
@@ -214,7 +238,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     `NotFound`. Its rule would be that every answer an operation acts on is kept while its work holds, in
     `src/runtime/callers.ts`, where every answer passes.
   - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39,
-    54, 55, 57 to 59, 63, 70, 73, 74, 77, 84 and 85, as decisions 0248 and 0249 were. Its rule is the step The tests of a contract on every backend, below: the
+    54, 55, 57 to 59, 63, 70, 73, 74, 77, 84, 85 and 89 to 91, as decisions 0248 and 0249 were. Its rule is the step The tests of a contract on every backend, below: the
     tests of the runtime run alike on one process and on Cluster.
   - D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78 and 80. Its rule is the same step: a test of
     rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their statements.
@@ -996,6 +1020,43 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       packages are at 4.1.3 today, so nothing is wrong yet. The fix begins at `AGENTS.md` and
       `scripts/compare-docs.ts`, with a test of the form of `package.json` that every `@effect/` package is at the
       version of `effect`. The [open question](open-questions.md#running) The checks that hold less than their note.
+  89. **Reproduced: on Cluster, a second client on a runner that polls replies more slowly than the runner that keeps
+      the id waits for ever.** A caller's rows go once its client has the answer and its time is past
+      ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)),
+      and they are kept for `2 × entityReplyPollInterval + 1 000` ms so that every other client reads its reply first
+      ([decision 0248](decisions/0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md)). The interval is
+      that of the runner whose client keeps the id, at `least` and `keptGiven` of `src/cluster.ts`, and a second client
+      reads at the interval of its own runner. So a client on a runner that polls every 5 s, beside a runner that polls
+      every 200 ms, finds the rows gone after a later step, `expire` or the sweep, and waits for ever. A process that is
+      a client alone has a `ShardingConfig` of its own too. The test `FAILING: a second client on a runner with a
+      longer poll of replies is answered after a later step`, in `src/cluster.test.ts`, on
+      `claude/quizzical-franklin-e9c4d2` at `e5188e5`, failed in every run, two of them here, each in about 15 s, past
+      the budget of `AGENTS.md`. The sample found it, and the step did not hold it. The fix begins at `least`, which
+      would take the longest poll of the runners on the file, recorded by `sharding` with each runner's versions. The
+      [open question](open-questions.md#running) The margin of a caller's rows on Cluster, once runners have
+      clocks of their own.
+  90. **Reasoned: on Cluster, a door may load an entity of a shard acquired and released before its singleton
+      starts, and no finalizer crashes it.** A shard lost crashes the entities its runner holds
+      ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)),
+      by the finalizer of the shard's singleton. An entity a door loads before the singleton starts has none, so the
+      operations its settled steps start run beside those of the next holder, and their sends after the work ended
+      are applied twice by the receiver, as bug 57 says
+      ([decision 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). Decision 0162's consequences name
+      the case and leave it to the lease check. What else it costs the world of an at-least-once operation was not
+      checked. A test would hold a shard's singleton from starting while a door loads the entity, and release the
+      shard. The fix begins at `serving` of `src/runtime/doors.ts`, or at the door, which would load no entity of a
+      shard whose singleton has not started. The [open question](open-questions.md#running) A send after the work it
+      belongs to ended.
+  91. **Reasoned by a reading: on Cluster, a second client's reset may drop the keep of an id whose answer is a
+      reply, and a second client interrupted then leaves Cluster's rows for ever.** An id whose answer is a reply is
+      never dropped ([decision 0249](decisions/0249-on-cluster-a-reset-drops-the-id-a-callers-client-kept.md)), and the
+      rows of a request are kept for every client's poll
+      ([decision 0248](decisions/0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md)). `reset` of
+      `src/cluster.ts` reads the request's latest answer, then deletes the kept id. A second client may read
+      `Suspended` there while the first client's retry is answered and kept, and its `forgetGiven` then drops that
+      keep. Its own send keeps the id again once answered, so only a second client interrupted in that send leaves the
+      rows for ever, as bug 59 does. Nothing is lost. The [open question](open-questions.md#running) The rows of
+      operators' events on Cluster.
 
 - **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds
   an RPC to the door of a program on Cluster, or changes a payload, is not caught by the guard of the version
