@@ -684,11 +684,14 @@ with a requirement that no example has yet.
   ([decision 0133](decisions/archive/0133-an-entity-composes-children-as-effect-tea-does.md)). An own message whose
   schema types `_tag` as `string` passes the check, as a list of keys typed `string[]` did before
   [decision 0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md) refused it. Such a message,
-  tagged with a child's name at run time, goes to the child. Whether the compiler refuses an own `_tag` typed
-  `string` beside children, as 0199 does for keys, is not decided. The premise review of 2026-11-11 found it by
-  reading, and no test holds it. It waits for the release, since it changes what compiles. It would be decided by:
-  - whether an own message with a `_tag` that is not a literal has a use in a program with children;
-  - whether a test of types can show the declaration compiles today.
+  tagged with a child's name at run time, goes to the child. The composed schemas lose data the same way. Each is a
+  union whose own member stands first, and `Schema.Union` of Effect 4.1.3 takes its first member that fits. So an
+  own member with a tag typed `string`, or with no tag, encodes a child's wrapper without its fields. That holds for
+  the messages, the internal messages, the operations and the reasons, and the compiler does not check the reasons
+  at all. Five `test.failing` of `src/composition.test.ts` reproduce it, and bug 8 of the roadmap is its fix. It
+  would be decided by:
+  - a rule that keeps each own member and each child's wrapper apart, in the types and in the composed schemas;
+  - what that rule refuses of a program that compiles today.
 
 - **A handle divided by who uses it.** A handle gives more than twenty calls in one interface: a caller's `create`,
   `send` and `read`, the queries, the log's `published`, `fetch`, `ack` and `consume`, and an operator's `suspended`,

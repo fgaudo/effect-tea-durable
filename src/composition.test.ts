@@ -905,3 +905,60 @@ test.failing("an own message whose tag is typed string, sent with a child's name
   expect(seen).toEqual(['Line'])
   expect(next).toBe(state)
 })
+
+/**
+ * A parent beside the child `Line` with own schemas as wide as `own` gives, declared untyped since only what its
+ * composed schemas encode is tested here.
+ */
+const wide = (own: Readonly<Record<string, Schema.Codec<unknown, never>>>) =>
+  (program as unknown as (schemas: unknown) => (declaration: unknown) => { schemas: typeof order.schemas })({
+    state: Order,
+    flags: Schema.Null,
+    inbound: Schema.Never,
+    internal: Schema.Never,
+    operation: Schema.Never,
+    rejection: Schema.Never,
+    sender: Schema.Null,
+    projection: Schema.Null,
+    ...own,
+  })({
+    name: 'Wide',
+    keys: [],
+    children: { Line: each(line, { id: Schema.String, at: lines }) },
+    init: () => ({ lines: {}, charged: 0 }),
+    update: () => () => reject,
+    work: () => noWork,
+    operations: {},
+    project: () => null,
+    indexes: {},
+    onEvent: { Line: () => (state: Order) => state },
+  })
+
+const encodes = (schema: Schema.Codec<unknown, unknown>, value: unknown) => Schema.encodeUnknownSync(schema)(value)
+
+// Bug 8 of the roadmap, as it reaches the composed schemas: a union takes its first member that fits, and the own
+// member stands first, so an own member with a tag typed `string`, or with no tag, takes a child's wrapper and drops
+// the fields the wrapper adds.
+test.failing("a child's message keeps its wrapper beside an own message whose tag is typed string", () => {
+  const message = { _tag: 'Line', id: 'a', message: { _tag: 'Added', quantity: 1 } }
+  const inbound = wide({ inbound: Schema.Struct({ _tag: Schema.String }) as never }).schemas.inbound
+  expect(encodes(inbound, message)).toEqual(message)
+})
+
+test.failing("a child's internal message keeps its wrapper beside an own message with no tag", () => {
+  const message = { _tag: 'Line', id: 'a', message: { _tag: 'Charged', charge: 'c' } }
+  const internal = wide({ internal: Schema.Struct({ id: Schema.String }) as never }).schemas.internal
+  expect(encodes(internal, message)).toEqual(message)
+})
+
+test.failing("a child's reason keeps its wrapper beside an own reason named like the child", () => {
+  const reason = { _tag: 'Line', id: 'a', reason: 'Empty' }
+  const rejection = wide({ rejection: Schema.TaggedStruct('Line', {}) as never }).schemas.rejection
+  expect(encodes(rejection, reason)).toEqual(reason)
+})
+
+test.failing("a child's operation keeps its wrapper beside an own operation whose tag is typed string", () => {
+  const lifted = { _tag: 'Line.Charge', id: 'a', operation: { _tag: 'Charge', quantity: 1 } }
+  const operation = wide({ operation: Schema.Struct({ _tag: Schema.String }) as never }).schemas.operation
+  expect(encodes(operation, lifted)).toEqual(lifted)
+})

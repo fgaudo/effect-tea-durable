@@ -134,11 +134,16 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      [open question](open-questions.md#running) A resume whose program drops a droppable operation kept while
      suspended.
   8. **Reproduced: an own message whose `_tag` is typed `string` may take a child's name, and is then routed to the
-      Reproduced by `an own message whose tag is typed string, sent with a child's name, reaches the parent's update`, a `test.failing` of `src/composition.test.ts`: the declaration compiles, and the message goes to the child.
      child.** Only the compiler refuses an own message named like a child, and a tag that is not a literal passes
      its check ([decisions 0133](decisions/archive/0133-an-entity-composes-children-as-effect-tea-does.md),
-     [0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md)). Verified by a test of types: the
-     [open question](open-questions.md#the-surface) An own message named like a child, with a tag typed `string`.
+     [0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md)). The composed schemas lose data
+     too. Each is a union whose own member stands first, and a union takes its first member that fits. So an own
+     member with a tag typed `string`, or with no tag, takes a child's wrapper and drops its fields, in the
+     messages, the internal messages and the operations alike. The compiler does not check the reasons at all, so
+     an own reason named like a child takes the child's wrapped reason. Reproduced by five `test.failing` of
+     `src/composition.test.ts`, from `an own message whose tag is typed string, sent with a child's name, reaches
+     the parent's update` on. The [open question](open-questions.md#the-surface) An own message named like a child,
+     with a tag typed `string`, holds the case.
   9. **Fixed by [decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)**, which keeps an operation's `Rejected` of `init` and its `NotFound` for its work.
   10. **Reasoned: on Cluster, a creation that `init` dies on, sent by an operation, waits for ever and no operator
       sees it.** On one process the sender is suspended
