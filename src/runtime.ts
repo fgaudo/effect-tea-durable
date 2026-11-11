@@ -937,6 +937,81 @@ const optionOf = <A>(options: Options, name: keyof Options, field: string, fallb
 export const launch = (options: Options = {}): Effect.Effect<Runtime, never, SqlClient.SqlClient | Scope.Scope> =>
   launchWith(options, null)
 
+/** The options of a launch once checked, each read with its default. */
+type Checked = Readonly<{
+  partitions: number
+  renames: Map<string, string>
+  retry: number
+  passivate: number
+  capacity: number | 'unbounded'
+  drain: number | undefined
+  threshold: number
+  bound: number
+  sweep: 'none' | Readonly<{ millis: number; prune?: false }>
+}>
+
+/**
+ * The options of a launch, checked. An option that cannot run as written throws the launcher's defect. The checks
+ * read only the options, so that a launch refused for one dies before it holds or stores anything (decision 0264).
+ */
+const checkedOptions = (options: Options, cluster: OnCluster | null): Checked => {
+  const refuse = (reason: string): never => {
+    throw new InvariantDefect({ reason })
+  }
+  // On Cluster a partition of the log is the shard of its entity, so the log has as many partitions as Cluster has
+  // shards per group (decision 0162).
+  const partitions = optionOf(options, 'log', 'partitions', cluster?.shards ?? defaultPartitions)
+  if (!(Number.isSafeInteger(partitions) && partitions >= 1)) {
+    refuse(`the log has ${partitions} partitions, which is no positive integer`)
+  }
+  if (options.tables !== undefined && options.tables !== 'create' && options.tables !== 'existing') {
+    refuse(`the launch is given the tables ${JSON.stringify(options.tables)}, which is neither 'create' nor 'existing'`)
+  }
+  if (cluster !== null && partitions !== cluster.shards) {
+    refuse(`the log has ${partitions} partitions, and Cluster ${cluster.shards} shards per group`)
+  }
+  const renames = new Map(renamesOf(options.renames))
+  const retry = optionOf(options, 'retry', 'millis', 10)
+  const passivate = optionOf(options, 'passivate', 'millis', 30_000)
+  const capacity = optionOf<number | 'unbounded'>(options, 'capacity', 'entities', 10_000)
+  const drain = optionOf<number | undefined>(options, 'drain', 'millis', undefined)
+  const threshold = optionOf(options, 'warn', 'characters', 262_144)
+  const bound = optionOf(options, 'callers', 'messages', 4096)
+  if (!(Number.isSafeInteger(bound) && bound > 0)) {
+    refuse(`the callers' messages are ${bound}, which is no positive integer`)
+  }
+  if (drain !== undefined && !(Number.isSafeInteger(drain) && drain >= 0)) {
+    refuse(`the drain is ${drain} millis, which is no non-negative integer`)
+  }
+  // A time becomes the text of a duration, which Effect does not read as `Infinity millis` or `NaN millis`: the
+  // sleep of an entity's wait, or of an operation that sends again, would die (decision 0208). A retry or a
+  // passivation of 0 is refused too: the waker, a sender, Cluster's round and an entity's wait sleep on it, and
+  // each would try again at once, for ever (decision 0251).
+  for (
+    const [what, value, unit, least] of [
+      ['retry', retry, 'millis', 1],
+      ['passivation', passivate, 'millis', 1],
+      ['warning', threshold, 'characters', 0],
+    ] as const
+  ) {
+    if (Number.isSafeInteger(value) && value >= least) continue
+    refuse(`the ${what} is ${value} ${unit}, which is no ${least === 0 ? 'non-negative' : 'positive'} integer`)
+  }
+  // Only a sweep left out is the default: a `null` from JavaScript is refused, as a `keep` of `null` is.
+  const sweep = options.sweep === undefined ? { millis: 300_000 } : options.sweep
+  if (
+    sweep !== 'none' &&
+    !(typeof sweep === 'object' && sweep !== null && Number.isSafeInteger(sweep.millis) && sweep.millis > 0 &&
+      (sweep.prune === undefined || sweep.prune === false))
+  ) {
+    refuse(`the sweep is ${JSON.stringify(sweep)}, which is neither 'none' nor a positive integer of millis`)
+  }
+  if (capacity !== 'unbounded' && !(Number.isSafeInteger(capacity) && capacity > 0)) {
+    refuse(`the capacity is ${capacity}, which is no positive integer`)
+  }
+  return { partitions, renames, retry, passivate, capacity, drain, threshold, bound, sweep }
+}
+
 /**
  * The runtime of one process, where `cluster` is null, or of a runner of Effect Cluster, whose programs are served by
  * their doors (decisions 0081, 0092, 0161). On Cluster the runners share the database, which no runtime holds alone:
@@ -947,29 +1022,29 @@ export const launchWith = (
   cluster: OnCluster | null,
 ): Effect.Effect<Runtime, never, SqlClient.SqlClient | Scope.Scope> =>
   Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
+    const checked = yield* Effect.sync(() => checkedOptions(options, cluster))
     // The runtime's own scope, sequential whatever its caller's: a parallel scope would run the drain, the closing of
     // `running` and the release of the database at once (decision 0120).
     const scope = yield* Scope.fork(yield* Effect.scope, 'sequential')
-    // On Cluster a partition of the log is the shard of its entity, so the log has as many partitions as Cluster has
-    // shards per group (decision 0162).
-    const partitions = yield* Effect.sync(() =>
-      optionOf(options, 'log', 'partitions', cluster?.shards ?? defaultPartitions)
+    // A launch that dies or is interrupted after the hold closes its own scope, which gives the database back and
+    // stops what the launch forked. Left to the launcher's scope, the database would stay held until that scope
+    // closes, and a launch again in it would be refused (decision 0264).
+    return yield* Effect.onExit(
+      started(options, cluster, checked, scope),
+      (exit) => Exit.isSuccess(exit) ? Effect.void : Scope.close(scope, exit),
     )
-    if (!(Number.isSafeInteger(partitions) && partitions >= 1)) {
-      const reason = `the log has ${partitions} partitions, which is no positive integer`
-      return yield* Effect.die(new InvariantDefect({ reason }))
-    }
-    if (options.tables !== undefined && options.tables !== 'create' && options.tables !== 'existing') {
-      const given = JSON.stringify(options.tables)
-      const reason = `the launch is given the tables ${given}, which is neither 'create' nor 'existing'`
-      return yield* Effect.die(new InvariantDefect({ reason }))
-    }
-    if (cluster !== null && partitions !== cluster.shards) {
-      const reason = `the log has ${partitions} partitions, and Cluster ${cluster.shards} shards per group`
-      return yield* Effect.die(new InvariantDefect({ reason }))
-    }
-    const renames = new Map(yield* Effect.sync(() => renamesOf(options.renames)))
+  })
+
+/** The launch of `launchWith`, once its options are checked, in the runtime's own scope. */
+const started = (
+  options: Options,
+  cluster: OnCluster | null,
+  checked: Checked,
+  scope: Scope.Closeable,
+): Effect.Effect<Runtime, never, SqlClient.SqlClient> =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const { partitions, renames, retry, passivate, capacity, drain, threshold, bound, sweep } = checked
     // One runtime holds the database, before anything of this one runs, and lets it go after everything of it has
     // stopped: the scope ends what it was given last first (decision 0080).
     if (cluster === null) yield* Scope.provide(hold, scope)
@@ -1008,51 +1083,6 @@ export const launchWith = (
       )
     }
     const probe = yield* Probe
-    const { retry, passivate, capacity, drain, threshold, bound } = yield* Effect.sync(() => ({
-      retry: optionOf(options, 'retry', 'millis', 10),
-      passivate: optionOf(options, 'passivate', 'millis', 30_000),
-      capacity: optionOf<number | 'unbounded'>(options, 'capacity', 'entities', 10_000),
-      drain: optionOf<number | undefined>(options, 'drain', 'millis', undefined),
-      threshold: optionOf(options, 'warn', 'characters', 262_144),
-      bound: optionOf(options, 'callers', 'messages', 4096),
-    }))
-    if (!(Number.isSafeInteger(bound) && bound > 0)) {
-      const reason = `the callers' messages are ${bound}, which is no positive integer`
-      return yield* Effect.die(new InvariantDefect({ reason }))
-    }
-    if (drain !== undefined && !(Number.isSafeInteger(drain) && drain >= 0)) {
-      const reason = `the drain is ${drain} millis, which is no non-negative integer`
-      return yield* Effect.die(new InvariantDefect({ reason }))
-    }
-    // A time becomes the text of a duration, which Effect does not read as `Infinity millis` or `NaN millis`: the
-    // sleep of an entity's wait, or of an operation that sends again, would die (decision 0208). A retry or a
-    // passivation of 0 is refused too: the waker, a sender, Cluster's round and an entity's wait sleep on it, and
-    // each would try again at once, for ever (decision 0251).
-    for (
-      const [what, value, unit, least] of [
-        ['retry', retry, 'millis', 1],
-        ['passivation', passivate, 'millis', 1],
-        ['warning', threshold, 'characters', 0],
-      ] as const
-    ) {
-      if (Number.isSafeInteger(value) && value >= least) continue
-      const reason = `the ${what} is ${value} ${unit}, which is no ${least === 0 ? 'non-negative' : 'positive'} integer`
-      return yield* Effect.die(new InvariantDefect({ reason }))
-    }
-    // Only a sweep left out is the default: a `null` from JavaScript is refused, as a `keep` of `null` is.
-    const sweep = options.sweep === undefined ? { millis: 300_000 } : options.sweep
-    if (
-      sweep !== 'none' &&
-      !(typeof sweep === 'object' && sweep !== null && Number.isSafeInteger(sweep.millis) && sweep.millis > 0 &&
-        (sweep.prune === undefined || sweep.prune === false))
-    ) {
-      const reason = `the sweep is ${JSON.stringify(sweep)}, which is neither 'none' nor a positive integer of millis`
-      return yield* Effect.die(new InvariantDefect({ reason }))
-    }
-    if (capacity !== 'unbounded' && !(Number.isSafeInteger(capacity) && capacity > 0)) {
-      const reason = `the capacity is ${capacity}, which is no positive integer`
-      return yield* Effect.die(new InvariantDefect({ reason }))
-    }
     const p: Process = {
       sql,
       cluster,

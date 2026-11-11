@@ -15,7 +15,7 @@ import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
-import type * as Scope from 'effect/Scope'
+import * as Scope from 'effect/Scope'
 import { SqlClient, SqlError, Statement } from 'effect/sql'
 import type * as Machine from './machine.ts'
 import { InvariantDefect, noWork, operation, type Program, type Scalar } from './program.ts'
@@ -357,6 +357,22 @@ describe('a database held by one runtime (decisions 0080, 0157)', () => {
         SELECT objid FROM pg_locks
         WHERE locktype = 'advisory' AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
       `).toEqual([])
+    }))
+
+  // The refused launch has reserved a connection and claimed its client: both are given back with the launch's own
+  // scope, and not with the scope its launcher gave (decision 0264).
+  onServer('a launch refused by another runtime’s lock gives the database back, in the scope its launcher gave', (url, sql) =>
+    Effect.gen(function*() {
+      yield* on(sql)(createTables)
+      const other = yield* connect(url)
+      const first = yield* Scope.make()
+      yield* Scope.provide(on(sql)(launch({})), first)
+      yield* Effect.scoped(Effect.gen(function*() {
+        expect(reasonOf(yield* Effect.exit(on(other)(launch({}))))).toBe(held)
+        yield* Scope.close(first, Exit.void)
+        const again = yield* Effect.exit(on(other)(launch({})))
+        expect(Exit.isSuccess(again) ? 'launched' : reasonOf(again)).toBe('launched')
+      }))
     }))
 
   onServer('two runtimes in two schemas of one database refuse each other', (url, sql) =>

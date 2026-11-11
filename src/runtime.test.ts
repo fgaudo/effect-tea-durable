@@ -4386,3 +4386,95 @@ describe('renaming a program (decision 0156)', () => {
       yield* process({ renames: { Toy: 'Plaything', Game: 'Plaything' } }, () => Effect.void)
     })))
 })
+
+describe('a launch that dies holds nothing in the scope its launcher gave (decision 0264)', () => {
+  const reasonOf = (exit: Exit.Exit<unknown>) => {
+    const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+    return cause instanceof InvariantDefect ? cause.reason : null
+  }
+  const renamedProgram: Program<T> = { ...program, name: 'Plaything' }
+  /** The launch `given` dies with `reason`, and a launch of `next` in the same scope runs. */
+  const diesThenLaunches = (given: Options, reason: string, next: Options = {}) =>
+    Effect.scoped(Effect.gen(function*() {
+      expect(reasonOf(yield* Effect.exit(launch({ sweep: 'none', ...given })))).toBe(reason)
+      const again = yield* Effect.exit(launch({ sweep: 'none', ...next }))
+      expect(Exit.isSuccess(again) ? 'launched' : reasonOf(again)).toBe('launched')
+    }))
+
+  // Every option is checked before the hold, so a launch refused for one moves no rename either.
+  test('a launch refused for an option holds nothing and moves no rename', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
+          yield* ran(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
+        }))
+      const sql = yield* SqlClient.SqlClient
+      const refused = [
+        [{ callers: { messages: 0 } }, "the callers' messages are 0, which is no positive integer"],
+        [{ drain: { millis: -1 } }, 'the drain is -1 millis, which is no non-negative integer'],
+        [{ retry: { millis: NaN } }, 'the retry is NaN millis, which is no positive integer'],
+        [{ passivate: { millis: 0 } }, 'the passivation is 0 millis, which is no positive integer'],
+        [{ warn: { characters: -1 } }, 'the warning is -1 characters, which is no non-negative integer'],
+        [{ sweep: { millis: 0 } }, `the sweep is {"millis":0}, which is neither 'none' nor a positive integer of millis`],
+        [{ capacity: { entities: 0 } }, 'the capacity is 0, which is no positive integer'],
+      ] as const
+      for (const [option, reason] of refused) {
+        yield* diesThenLaunches({ ...option, renames: { Toy: 'Plaything' } } as Options, reason)
+        expect(yield* storage(program, sql).load(id)).not.toBeNull()
+      }
+    })))
+
+  // A file another client has open refuses the hold after this client is claimed, and on PostgreSQL a lock another
+  // session holds refuses it after a connection is reserved: both are given back with the launch's scope.
+  test('a launch refused by a file another client has open gives the file back', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-'))
+    const filename = join(directory, 'store.db')
+    const client = (scope: Scope.Scope) =>
+      Effect.map(
+        Scope.provide(Layer.build(SqliteClient.layer({ filename, busyTimeout: 0 })), scope),
+        (context) => Context.get(context, SqlClient.SqlClient),
+      )
+    const on = (sql: SqlClient.SqlClient) => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Effect.provideService(effect, SqlClient.SqlClient, sql)
+    return Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const firstScope = yield* Scope.make()
+      const first = yield* client(firstScope)
+      yield* on(first)(createTables)
+      const second = yield* client(yield* Effect.scope)
+      yield* Effect.scoped(Effect.gen(function*() {
+        expect(reasonOf(yield* Effect.exit(on(second)(launch({ sweep: 'none' })))))
+          .toBe('the database is held by another runtime, or open to another connection')
+        yield* Scope.close(firstScope, Exit.void)
+        const again = yield* Effect.exit(on(second)(launch({ sweep: 'none' })))
+        expect(Exit.isSuccess(again) ? 'launched' : reasonOf(again)).toBe('launched')
+      }))
+    })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
+  })
+
+  test('a launch that dies for the partitions stored gives the database back', () =>
+    database(Effect.gen(function*() {
+      yield* process({ log: { partitions: 12 } }, () => Effect.void)
+      yield* diesThenLaunches({}, 'the log has 12 partitions, and the runtime is launched with 300', {
+        log: { partitions: 12 },
+      })
+    })))
+
+  test('a launch that dies for a rename onto a name that holds an entity gives the database back', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const plaything = yield* Effect.provide(runtime.deploy(renamedProgram), layer)
+          yield* ran(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
+          yield* ran(plaything.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
+        }))
+      yield* diesThenLaunches(
+        { renames: { Toy: 'Plaything' } },
+        "the launch renames 'Toy' to 'Plaything', which holds an entity, a head of the log or a consumer already",
+      )
+    })))
+})

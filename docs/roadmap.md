@@ -39,9 +39,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     by [decision 0260](decisions/0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md), and bug 66 by
     [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md), and bug 82 by
     [decision 0262](decisions/0262-a-sendfrom-stands-for-a-run-no-entity-draws.md), and bug 41 by
-    [decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md). The part next is bug 44,
-    proposed to the maintainer before any code. Decisions 0259 and 0263 change a reading of the storage, so the job
-    of PostgreSQL of `ci.yml` runs on their branch before they are on `main`.
+    [decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md), and bug 44 by
+    [decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md). The part next is bug 72, proposed to the maintainer before any code. Decisions 0259 and 0263
+    change a reading of the storage, and decision 0264 the hold of PostgreSQL, so the job of PostgreSQL of `ci.yml`
+    runs on their branch before they are on `main`. The maintainer chose on 2026-11-11 to put decision 0264 on
+    `main` before that job ran, so its test `a launch refused by another runtime’s lock gives the database back, in
+    the scope its launcher gave`, of `src/postgres.test.ts`, runs first in the job of the push of `main`.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
@@ -315,17 +318,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       a choice of what a rehearsal of a downtime is: the [open question](open-questions.md#programs) A rehearsal of a
       downtime.
   43. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, which pins seed 661 and runs it against the lock dropped by any user.
-  44. **Reproduced: a launch refused for an option still holds the database, and has already moved its renames.**
-      [Decision 0208](decisions/0208-a-launch-checks-every-option.md) says a launch refused for an option dies before
-      anything is held or stored. The hold ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)),
-      the tables ([decision 0191](decisions/0191-a-launch-creates-the-tables.md)) and the renames
-      ([decision 0156](decisions/archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)) run before
-      the checks of `retry`, `passivate`, `warn`, `drain`, `capacity`, `callers` and `sweep`, in a scope that closes
-      only with the launcher's. The test `FAILING: a launch refused for its retry holds nothing and moves no rename,
-      in the scope its launcher gave`, in `src/runtime.test.ts`, on `claude/premise-review-project-17a123` at
-      `1c8da79`. The other options were read, and not run. The fix begins at `launchWith` of `src/runtime.ts`, which
-      checks every option before the hold. The [open question](open-questions.md#running) A launch that dies after
-      the hold.
+  44. **Fixed by [decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md)**, which checks every option before the hold, and closes the scope of a launch that dies.
   45. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
   46. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose check refuses a file only tests import whose name `bun test` runs.
   47. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose check of the workflow reads every key of a job, and refuses one it does not read.

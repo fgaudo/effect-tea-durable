@@ -3,6 +3,8 @@
 **Status:** accepted, 2026-11-09, with the step A launch checks every option of the [roadmap](../roadmap.md).
 Changed by [decision 0251](0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), which refuses a `retry` and
 a `passivate` of 0.
+Changed by [decision 0264](0264-a-launch-that-dies-gives-back-what-it-held.md), which checks every option before the
+database is held, and gives back what a launch that dies held.
 Changes [decision 0054](archive/0054-a-program-is-checked-where-it-enters.md), whose program and launch are checked
 where they enter.
 

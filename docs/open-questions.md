@@ -405,14 +405,19 @@ with a requirement that no example has yet.
   and a shard's round on Cluster that fails, rest at it too. It would be decided by:
   - a test of a sender at a retry of 1 ms, with a receiver that crashes at every attempt or answers `Full`;
   - a test of a round at a retry of 1 ms, with two runners and a row no version reads.
-- **A launch that dies after the hold.** A launch refused for an option dies, as
-  [decision 0208](decisions/0208-a-launch-checks-every-option.md) says, before anything is held or stored. Its hold
-  ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), its tables and its renames run
-  before the checks of most options, in a scope that closes only with the launcher's. So a launcher that tries
-  again in the same scope finds the database held, and the renames already moved. It is bug 44 of the
-  [roadmap](roadmap.md), reproduced for `retry`. It would be decided by:
-  - whether `launchWith` checks every option before the hold, or closes its own scope when it dies after it;
-  - a test of each option checked after the hold, in a scope the launcher gives.
+- **What a launch that dies for a rename has stored.** A launch creates the tables and stores the partitions of
+  the log before it moves its renames, and the three are not one transaction
+  ([decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md)). So a first launch on a new
+  database that dies for a rename leaves the tables and the number of partitions stored. A launch again with another
+  number of partitions is then refused. It would be decided by:
+  - whether a launcher expects the first launch refused to leave the database as it was, or the partitions stored;
+  - a test of a first launch that dies for a rename, followed by a launch with another number of partitions.
+- **A launch interrupted on Cluster after it forked the reader of the version.** A launch that is interrupted closes
+  its own scope, which stops the reader it forked
+  ([decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md)). That rests on the JSDoc of
+  `Effect.onExit`, and no test interrupts a launch on Cluster at that point. It would be decided by:
+  - a test under the scheduler of `src/testing.ts` that interrupts a launch on Cluster after the fork, and checks
+    that no fiber reads the version afterwards.
 - **A resume to a sender no runner deploys.** On Cluster a step that resumes an entity sends `Resumed` to each
   waiting sender from its transaction
   ([decision 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)).

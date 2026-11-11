@@ -249,8 +249,9 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0052](archive/0052-what-crosses-the-library-is-never-mutated.md) | What crosses the library is never mutated |  |
 | [0053](archive/0053-what-a-handle-is-given-is-checked.md) | What a handle is given is checked | [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0179](0179-an-id-is-not-empty.md), [0204](0204-a-request-id-is-text-a-database-holds.md), [0207](0207-a-criterion-is-a-scalar-both-dialects-compare-alike.md) |
 | [0054](archive/0054-a-program-is-checked-where-it-enters.md) | A program is checked where it enters | [0064](archive/0064-the-program-is-not-the-machines-state.md), [0132](archive/0132-a-key-may-take-a-parameter.md), [0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md), [0208](0208-a-launch-checks-every-option.md) |
-| [0208](0208-a-launch-checks-every-option.md) | A launch checks every option, `retry`, `passivate` and `warn` among them | [0251](0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md) |
+| [0208](0208-a-launch-checks-every-option.md) | A launch checks every option, `retry`, `passivate` and `warn` among them | [0251](0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), [0264](0264-a-launch-that-dies-gives-back-what-it-held.md) |
 | [0251](0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md) | A `retry` and a `passivate` are a millisecond at least, and a launch refuses 0 |  |
+| [0264](0264-a-launch-that-dies-gives-back-what-it-held.md) | A launch checks every option before the hold, and a launch that dies gives back what it held |  |
 
 ## The runtime
 
