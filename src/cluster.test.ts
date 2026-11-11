@@ -1491,6 +1491,45 @@ describe('the shards of a runner on Cluster', () => {
     }
   }, 60_000)
 
+  // A premise review found it (decisions 0175 and 0042): a step of the loop refused under a lease that expired, and
+  // that no runner took, crashes its entity and stops its operations. Cluster's refresh renews a lease that names
+  // its runner, expired or not, so the shard never moves and its singleton's round never runs again. An entity with
+  // no timer and no message is then never activated, and its work never runs again while the runner runs.
+  test('FAILING: an entity a step crashed under an expired lease that the runner renews runs its work again', () =>
+    onFile(
+      (start) =>
+        Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          const runner = yield* start(1)
+          yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
+          yield* create(runner, 'one')
+          yield* send(runner, 'one', { _tag: 'Ask' }, 'm1')
+          yield* until(Effect.sync(() => seen), (lines) => lines.includes('one started on 1'))
+          // `Haunt` creates an entity of `Ghost`, which no runner deploys, and completes after two seconds: its
+          // completion is a step of the loop, which runs while the lease below has expired.
+          yield* send(runner, 'one', { _tag: 'Haunt', to: 'nobody', by: 'create' }, 'm2')
+          const held = runner.context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
+          const shard = held.getShardId(EntityId.make('one'), 'default').toString()
+          // As after a pause of the runner, or a step of the clock, longer than the expiration: no runner takes it.
+          yield* sql.unsafe(
+            `UPDATE cluster_locks SET acquired_at = datetime(CURRENT_TIMESTAMP, '-120 seconds') WHERE shard_id = '${shard}'`,
+          )
+          yield* until(Effect.sync(() => seen), (lines) => lines.includes('one interrupted on 1'))
+          // The completion of `Haunt` was refused, and wrote nothing.
+          expect(yield* stateOf('one')).toMatchObject({ asking: true, haunt: { to: 'nobody', by: 'create' } })
+          // What Cluster's next refresh writes of a lease that names its runner.
+          yield* sql.unsafe(`UPDATE cluster_locks SET acquired_at = CURRENT_TIMESTAMP WHERE shard_id = '${shard}'`)
+          answers = true
+          yield* Effect.sleep('4 seconds')
+          expect(runner.holds('one')).toBe(true)
+          expect(seen.filter((line) => line === 'one started on 1').length).toBe(2)
+          expect(yield* stateOf('one')).toMatchObject({ asking: false, n: 100 })
+        }),
+      { passivate: { millis: 60_000 } },
+      Duration.minutes(1),
+      { refresh: Duration.seconds(30), expiration: Duration.seconds(60) },
+    ), 60_000)
+
   test('an entity left with work is activated by the runner that gains its shard', () =>
     onFile((start) =>
       Effect.gen(function*() {
