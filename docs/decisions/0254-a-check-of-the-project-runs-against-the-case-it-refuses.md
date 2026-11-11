@@ -99,8 +99,8 @@ then bug 52 test by test, then bug 83.
   does not run, by the filters of Bun's documentation. The test `the job of PostgreSQL runs every file of the tests
   that reaches the databases` found the four files the agent named. `test:postgres` now runs them, and the test
   `a file of the tests that reaches the databases and that the run does not take is found` gives the check its
-  samples. The four files have not run on a server yet, since the maintainer's machine has none. The job `postgres`
-  of the next push runs them first, and a failure there is a bug this family found, added to the roadmap.
+  samples. The four files passed on the CI's server in the job `postgres` of the push of `ad78239`, on
+  2026-11-11, where the job `pins` passed too.
 
 - The job of the pinned seeds is done, with bug 43. `src/runtime.test_pins.ts` lists a pin for each explored test
   with a seed pinned: the mutation that takes its rule out, the test's file and its name. `bun run test:pins`, which
