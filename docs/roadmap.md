@@ -52,15 +52,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     7. Done, Schemas and projections, of the same section, a second part: 0121, 0122, 0135, 0137 to 0140, 0151 to
        0155, 0157, 0158, 0184, 0206, 0210, 0213 to 0215 and 0240.
     8. Done, The queries and their pages, of the same section: 0141 to 0146, 0148 to 0150, 0207 and 0209.
-    9. The tables and migrations, of the same section: 0191, 0198, 0216 to 0218 and 0222 to 0225.
-    10. The rehearsal and testing, of the section Messages, requests and replies: 0131, 0183, 0186 to 0190, 0200,
+    9. Done, The tables and migrations, of the same section: 0191, 0198, 0216 to 0218 and 0222 to 0225.
+    10. Done, The rehearsal and testing, of the section Messages, requests and replies: 0131, 0183, 0186 to 0190, 0200,
         0201 and 0211.
-    11. The scheduler of the tests, of the section The runtime: 0104, 0115, 0117 and 0244.
-    12. The project and what enters the library: 0007, 0019, 0052 to 0055, 0080, 0099, 0179, 0193, 0195, 0196,
+    11. Done, The scheduler of the tests, of the section The runtime: 0104, 0115, 0117 and 0244.
+    12. Done, The project and what enters the library: 0007, 0019, 0052 to 0055, 0080, 0099, 0179, 0193, 0195, 0196,
         0203, 0204, 0208, 0212, 0241 and 0242.
   - Each area also reads, against the notes of the areas already read, every later note of its own that cites
-    them. The sessions above did not reach these, and each is read in the area that holds it: 0131, 0183, 0187 and
-    0193.
+    them. The sessions below read every such note in the area that holds it, and none is left.
   - The rule above holds of the section The machine and the program too: of the later notes that cite it, the second
     session read only those of the section itself.
   - A last session reads whole the pairs the sessions above read by the code and the later note only, or by a
@@ -78,10 +77,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     noticed are bugs 27 to 40, the first reasoned by a reading and the others not checked, and each finding whose fix is a choice and each suspect is an
     [open question](open-questions.md) too. The eight reports are recorded whole in
     [`reviews.md`](decisions/reviews.md).
-  - Each of those sessions read a note of another area in part or not at all where the note changes, cites or is
-    changed by a note of its own area. A last session reads each such note whole, with the code, against the notes of
-    the report's area it meets, as its table says. A note of areas 9 to 12 is read there instead. The notes, by the
-    report's area:
+  - Done, in four sessions of 2026-11-11 run at once, areas 9 to 12 of the list, each of its notes read whole with
+    the code, and 0131, 0183, 0187 and 0193 against the notes they cite. Their findings are bugs 41 to 48 of the step
+    of bugs: six reproduced, one of them measured by mutations and checked again on `main`, and two only reasoned.
+    The suspects they noticed are bugs 49 to 53, not checked. The four reports are recorded whole in
+    [`reviews.md`](decisions/reviews.md).
+  - Each of the twelve sessions of 2026-11-11 read a note of another area in part or not at all where the note
+    changes, cites or is changed by a note of its own area. A last session reads each such note whole, with the
+    code, against the notes of the report's area it meets, as the report's table says. The notes, by the report's
+    area:
     - against area 1: 0008, 0011, 0013, 0014, 0020, 0022, 0027, 0028, 0036, 0038, 0040, 0045, 0049, 0053, 0075,
       0085, 0090, 0092, 0100, 0123, 0126, 0127, 0129, 0133, 0141, 0152, 0156, 0157, 0160, 0165, 0171, 0178 and 0214.
     - against area 2: 0015, 0021, 0023, 0029, 0036, 0048, 0059, 0063, 0065, 0069, 0071, 0074, 0076, 0078, 0079,
@@ -99,8 +103,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     - against area 7: 0026, 0032, 0038 to 0040, 0061, 0065, 0072, 0076, 0132, 0133, 0142, 0147 to 0150, 0156, 0162,
       0185, 0205, 0207, 0209 and 0247.
     - against area 8: 0032, 0039, 0157, 0164, 0177 and 0247.
-  - The lists of the two bullets above are divided, before the first last session starts, into sessions of thirty
-    notes at most, each with the notes of the areas it reads them against.
+    - against area 9: 0055, 0145, 0152, 0154, 0157, 0158, 0161, 0176, 0220, 0245 and 0247.
+    - against area 10: 0010, 0021, 0045, 0047, 0048, 0063, 0065, 0074, 0075, 0125, 0165, 0185, 0210, 0212 and 0245.
+    - against area 12: 0003, 0028, 0030, 0038, 0039, 0057, 0064, 0073, 0075, 0081, 0084, 0104, 0125, 0132, 0136,
+      0138, 0141, 0143, 0152, 0153, 0156, 0157, 0176, 0185, 0191, 0198, 0211, 0215, 0221, 0245 and 0247.
+  - The last sessions are these, each given the notes of the area it reads them against, and each of thirty notes to
+    read at most. The bullet that begins `A last session reads whole` is two: the pairs of the first session, and the
+    rest. A list above of thirty notes or fewer is one. A longer list, of area 1, 3, 4, 6 or 12, is two: its notes
+    before 0100, and the rest. That is eighteen sessions, and two lists that hold thirty notes together may be one.
+    A session that ends one writes `Done, ` before it here, in the bullet that holds it.
   - Once the last sessions are done, a sample decides whether the whole review is read a second time. The sessions
     sent back to their area on 2026-11-11 found bugs 19 and 20 on a second pass, so a pass does not find all a
     reading of pairs can find. A session that read none of the reports reads two areas again by the skill's brief,
@@ -122,7 +133,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     `claude/premise-review-cluster-3063df`, `claude/premise-review-versions-36a283`,
     `claude/premise-review-runtime-1-b0a258`, `claude/premise-review-runtime-2-157489`,
     `claude/premise-review-schemas-1-0ccf33`, `claude/premise-review-schemas-2-b06280` and
-    `claude/premise-review-queries-ea6b5a`, each cut from `main` at `fcd2494` from the fourth on. A bug of the step of bugs names the commit of its failing test on one of
+    `claude/premise-review-queries-ea6b5a`, cut from `main` at `fcd2494`, and
+    `claude/premise-review-tables-28f779`, `claude/premise-review-rehearsal-cdcc14`,
+    `claude/premise-review-scheduler-8df79e` and `claude/premise-review-project-17a123`, cut at `a746214`. A bug of the step of bugs names the commit of its failing test on one of
     them. A session elsewhere writes that test again from the bug's sequence and the report in
     [`reviews.md`](decisions/reviews.md).
 
@@ -157,7 +170,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36 and
     39, as decisions 0248 and 0249 were. Its rule is the step The tests of a contract on every backend, below: the
     tests of the runtime run alike on one process and on Cluster.
-  - D, a rule that holds only of one transaction at a time: bugs 3, 13 and 25. Its rule is the same step: a test of
+  - D, a rule that holds only of one transaction at a time: bugs 3, 13, 25 and 49. Its rule is the same step: a test of
     rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their statements.
     Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does not read
     again on the row it then writes.
@@ -166,8 +179,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     of [decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), in `crash` of
     `src/runtime/loop.ts`, on one process and on Cluster.
   - F, a value that [decision 0208](decisions/0208-a-launch-checks-every-option.md) allows, taken to its end: bugs
-    17 and 32, under a `retry` of 0. Its rule is a least time of a retry, or a launch that refuses 0.
-  - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38 and 40.
+    17 and 32, under a `retry` of 0, and 45, under a `passivate` of 0. Its rule is a least time of a wait the
+    runtime sleeps, or a launch that refuses 0.
+  - G, a check of the project that holds less than its note says: bugs 43, 46 to 48, 52 and 53. A check passes on
+    the case its rule forbids, or a test no longer reaches the case it was written for. Its rule would be that each
+    check of the form, of the CI and of the explored tests is run against the case it refuses, as
+    [`scripts/mutate.ts`](../scripts/mutate.ts) does for the rules of the runtime.
+  - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50 and 51.
   1. **Reproduced: a droppable operation that a new program delivers at most once never runs.** A deploy that
      declares a `Droppable` operation stored under a key as `operation.atMostOnce` keeps its incarnation
      ([decision 0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)), since the
@@ -444,6 +462,96 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       on SQLite and accepted on PostgreSQL.**
       ([decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md)). The
       [open question](open-questions.md#storage-and-reading) A sum at the edge of the largest double.
+  41. **Reproduced: under the default `search_path`, a schema of the role's name, made after the tables, moves the
+      runtime onto empty tables.** [Decision 0217](decisions/0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md)
+      names the history in `current_schema()`, which under `"$user", public` changes once a schema of the role's
+      name exists. The next launch makes a new set of tables there, and every stored entity, reply and cursor is left
+      behind, with no error ([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)).
+      The test `FAILING: on PostgreSQL a schema of the role’s name made after the tables leaves the runtime on the
+      tables it made`, in `src/storage.test.ts`, on PGlite, on `claude/premise-review-tables-28f779` at `0a019a9`. The
+      fix begins at `schemaOf` and `migrationsTable` of `src/storage/tables.ts`, and is a choice of the design: the
+      [open question](open-questions.md#storage-and-reading) The schema a launch finds its tables in.
+  42. **Reproduced: a rehearsal refuses a repeating timer that catches up, which the runtime runs.**
+      [Decision 0130](decisions/archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md) checks no timer,
+      since a timer in the past is how a repeating timer catches up after a downtime.
+      [Decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md) cites it, and fails a key whose timer
+      fires twice at one time, which every firing of a catch-up does. The test `FAILING: a renewal created after the
+      periods it bills fires once for each, as the runtime does (decisions 0130, 0187)`, in `src/rehearse.test.ts`, on
+      `claude/premise-review-rehearsal-cdcc14` at `abd8d29`. The fix begins at `advance` of `src/rehearse.ts`, and is
+      a choice of what a rehearsal of a downtime is: the [open question](open-questions.md#programs) A rehearsal of a
+      downtime.
+  43. **Measured: `bun test` no longer holds the rule that a lock is dropped by its last user only.** The interleaving
+      that [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) reaches for
+      [decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md) is found by 6 seeds of 2,000 at
+      `a746214`, all past the 100 that `bun test` runs, where 0104 counted 67. So 2,000 runs miss it with a
+      probability near e^-6, not e^-25. Measured by taking `if (lock.users === 0)` out of `holding` in
+      `src/runtime/process.ts`: `bun test` passes, and `SEED=661` fails `callers of an unloaded entity build one
+      machine for it`, checked again on `main`. No test is committed. The fix begins by pinning seed 661 in that test,
+      and by correcting the counts of the two tests' comments. The [open question](open-questions.md#running) The
+      margin of the explored tests.
+  44. **Reproduced: a launch refused for an option still holds the database, and has already moved its renames.**
+      [Decision 0208](decisions/0208-a-launch-checks-every-option.md) says a launch refused for an option dies before
+      anything is held or stored. The hold ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)),
+      the tables ([decision 0191](decisions/0191-a-launch-creates-the-tables.md)) and the renames
+      ([decision 0156](decisions/archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)) run before
+      the checks of `retry`, `passivate`, `warn`, `drain`, `capacity`, `callers` and `sweep`, in a scope that closes
+      only with the launcher's. The test `FAILING: a launch refused for its retry holds nothing and moves no rename,
+      in the scope its launcher gave`, in `src/runtime.test.ts`, on `claude/premise-review-project-17a123` at
+      `1c8da79`. The other options were read, and not run. The fix begins at `launchWith` of `src/runtime.ts`, which
+      checks every option before the hold. The [open question](open-questions.md#running) A launch that dies after
+      the hold.
+  45. **Reproduced: under a passivation of no time, an entity whose operation runs spins its loop.** Effect's sleep of
+      0 is one yield, so the wait of
+      [decision 0116](decisions/archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) ends at once, and the
+      unload that [decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md) refuses is tried again for as
+      long as the operation runs ([decision 0208](decisions/0208-a-launch-checks-every-option.md)). The test `FAILING:
+      under a passivation of no time, an entity whose operation runs waits without spinning`, in
+      `src/runtime/loop.test.ts`, on `claude/premise-review-project-17a123` at `3ac56e3`. It runs some two seconds,
+      past the budget of `AGENTS.md`, since it measures the processor's time. The fix begins at the loop's wait of
+      `src/runtime/loop.ts`. The [open question](open-questions.md#running) A retry of no time.
+  46. **Reproduced: `bun test` runs a file only tests import whose role ends in `_test` or `_spec`.**
+      [Decision 0241](decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md) says
+      `bun test` runs no file named `<module>.test_<role>.ts`, and tried the role `x` alone. No file of the repository
+      has such a role today. The test `FAILING: bun test runs no file that ofTheTests reads as a file only tests
+      import`, in `src/form.test.ts`, on `claude/premise-review-project-17a123` at `a18c520`. The fix begins at
+      `ofTheTests` of `src/form.test.ts`. The [open question](open-questions.md#running) The checks that hold less
+      than their note.
+  47. **Reasoned: the test of the workflow's form passes on a job of the tests that runs nothing, or whose failure is
+      ignored.** It reads only the matrix's `shard` and the steps' `run`, so `if: false`, `continue-on-error: true` or
+      an `exclude` of one shard pass it
+      ([decision 0242](decisions/0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md)). The fix begins at
+      `divided` of `src/form.test.ts`. The [open question](open-questions.md#running) The checks that hold less than
+      their note.
+  48. **Reasoned: the property of the fixtures runs on PGlite alone.** [Decision
+      0212](decisions/0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md) checks the
+      runtime on SQLite and on PostgreSQL, and `bun run test:postgres` lists its files by name, without
+      `src/fixtures.property.test.ts` or the cases of `src/cluster.test.ts` on `pg`. Since
+      [decision 0222](decisions/0222-postgresql-with-many-connections.md) found what PGlite hides, the property's
+      values never reach a server. The fix begins at the script `test:postgres` of `package.json`. The
+      [open question](open-questions.md#running) The checks that hold less than their note.
+  49. **Noticed, not checked: on a pool of PostgreSQL, the sweep's batch and a step that deletes its entity's replies
+      may deadlock.** The two deletes take the same rows in two orders, which
+      [decision 0222](decisions/0222-postgresql-with-many-connections.md) did not count among its cycles
+      ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)). Where
+      PostgreSQL ends the step's transaction, the entity crashes. The
+      [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its snapshot.
+  50. **Noticed, not checked: on a full volume, the room an operator frees may be taken by the steps the callers
+      retry, before the forget and the prune run.** The spike of
+      [decision 0223](decisions/0223-a-disk-that-is-really-full.md) ran no step beside the prune. It needs the CI's
+      volume. The [open question](open-questions.md#storage-and-reading) A full volume beside the steps.
+  51. **Noticed, not checked: `createTables` called by an operator inside a transaction of their own, at `REPEATABLE
+      READ` with a query before it, locks after its snapshot.**
+      [Decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md) rests on the
+      lock coming first, and the JSDoc of `createTables` does not say so. It needs a server. The
+      [open question](open-questions.md#storage-and-reading) The migrations inside an operator's transaction.
+  52. **Noticed, not checked: the other interleavings found by a seed that is not pinned may have lost their margin,
+      as bug 43's did.** ([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)).
+      The review counted the seeds of 0063, 0067, 0110 and 0116 alone. The
+      [open question](open-questions.md#running) The margin of the explored tests.
+  53. **Noticed, not checked: a fixture added to `src/fixtures/` gets no property, and nothing says so.**
+      `src/fixtures.property.test.ts` imports the three fixtures by name
+      ([decision 0212](decisions/0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md)). The
+      [open question](open-questions.md#running) The checks that hold less than their note.
 
 - **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds
   an RPC to the door of a program on Cluster, or changes a payload, is not caught by the guard of the version

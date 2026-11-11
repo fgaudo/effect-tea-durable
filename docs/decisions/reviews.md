@@ -1924,3 +1924,530 @@ The reviewer's report, on the branch `claude/premise-review-queries-ea6b5a`. One
 0032, 0039 and 0053 were read only for what the area's notes change in them. 0157, 0164, 0177, 0198, 0222 and 0247
 were read only in the passages that cite the area's notes. Every note of the area itself was read whole, with its
 code.
+
+## 2026-11-11: premise review of The tables and migrations
+
+A session that did not write the notes read the area by the procedure of
+[`premise-review`](../../.claude/skills/premise-review/SKILL.md). The branch is
+`claude/premise-review-tables-28f779`, cut from `main` at `a746214`.
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0191 | of the area | whole, with `createTables` of `storage/tables.ts` and `launch` of `runtime.ts` |
+| 0198 | of the area | whole, with the statements of `tables` in `storage/tables.ts` |
+| 0216 | of the area | whole, with `createTables` and `Migrator.make` of `effect/src/sql/Migrator.ts` at 4.1.3 |
+| 0217 | of the area | whole, with `schemaOf`, `migrationsTable` and `tablesMade` of `storage/tables.ts` |
+| 0218 | of the area | whole, with `tables`, and `indexed` of `storage/projections.ts` |
+| 0222 | of the area | whole, with `transaction` of `storage/tables.ts`, `snapshot` of `storage/held.ts` and the replies of `write` in `storage/entities.ts` |
+| 0223 | of the area | whole, with the sweep's passages of 0245 |
+| 0224 | of the area | whole, with `consumers` of `storage/log.ts` |
+| 0225 | of the area | whole, with `run` of `Migrator.ts` |
+| 0055 | changed by 0191 | in part: the status line |
+| 0145 | changed by 0198 | in part: the status line |
+| 0152 | changed by 0223 | in part: the status line |
+| 0154 | changed by 0224 | in part: the status line, with the trigger of `storage/tables.ts` |
+| 0157 | changed by 0222 | in part: the status line |
+| 0158 | changed by 0191 and 0198 | in part: the status line |
+| 0161 | changed by 0198 | in part: the status line |
+| 0176 | changed by 0198 | in part: the status line |
+| 0215 | changed by 0216 and 0217 | whole, with the tests of the `search_path` in `src/storage.test.ts` |
+| 0220 | changed by 0224, cites 0198 | in part: the passages that cite them |
+| 0245 | changes 0223 | in part: the passages on the sweep and on 0223, with `expire` of `storage/entities.ts` |
+| 0247 | cites 0217 | in part: the passage that cites it |
+
+### Finding 1, reproduced: under the default `search_path`, a schema of the role's name moves the runtime onto empty tables (0215, 0217)
+
+- The two notes. [Decision 0215](0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md) resolves every
+  table through the `search_path`. [Decision 0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md)
+  names `effecttea_migrations` in the schema `current_schema()` gives, so that the tables are made in the first schema
+  even where a schema further on holds them.
+- The premise that fell. Under 0215 alone, `Migrator` found the history anywhere on the `search_path`, and every table
+  was found where it was made. A database's tables stayed the runtime's whatever schema later came in front of them.
+  0217 rests on a premise no note wrote: the first schema of the `search_path` changes only where the launcher means
+  the runtime to move. Under the default `"$user", public`, the first schema changes by itself once a schema of the
+  role's name is made.
+- The sequence. A runtime's role `app` launches with the default `search_path`, and no schema `app` exists. Its tables
+  are made in `public`, and entities are stored. An operator or the application then runs `CREATE SCHEMA
+  AUTHORIZATION app`, for tables of its own. At the next launch `current_schema()` is `app`. `createTables` finds no
+  history in `app`, runs `0001_tables` there, and the runtime reads and writes the new tables, empty, with no error.
+  Every stored entity, reply and cursor is left in `public`. A caller's retry finds no reply and is applied again,
+  and a `create` of an entity that exists succeeds. The same holds of the tables' owner under `tables: 'existing'`.
+  Once a schema of the owner's name exists, the operator's `createTables` makes a new set in that schema, and a later
+  migration would go there rather than to the tables the runtime reads.
+- Files and lines. `schemaOf` and `migrationsTable` at `src/storage/tables.ts:142-147`, read by `createTables` at
+  `src/storage/tables.ts:125`.
+- Reproduced by `FAILING: on PostgreSQL a schema of the role’s name made after the tables leaves the runtime on the
+  tables it made`, in `src/storage.test.ts`, on PGlite, in the commit of this report on the branch. It fails on the
+  code of `main`, and passes with the history given unnamed, as before 0217.
+- Where a fix could begin. `createTables` could die where a schema further on the `search_path` holds
+  `effecttea_migrations` and the first does not, since a launch cannot tell a move from a mistake there. Or the launch
+  could be given its schema by name. Either is a choice of the design, which changes 0217's rejection of the
+  alternative "the promise holds only where no schema further on holds the tables".
+
+### Suspects ruled out
+
+- Two launches at once on SQLite, under 0218's first migration without `IF NOT EXISTS`: `Migrator` makes its history
+  with `IF NOT EXISTS` outside the transaction, and the second waits on `BEGIN IMMEDIATE`, then finds `0001` recorded.
+- Two launches at once on PostgreSQL, under 0218: `ensureMigrationsTable` looks for the table again when its creation
+  fails, and the second launch's `LOCK TABLE` waits for the first's commit (`Migrator.ts:172-187` and `:265-269`).
+- 0225 under `REPEATABLE READ`: `LOCK TABLE` is the first statement of `run`, and takes no snapshot.
+- 0218's launch that dies on a name taken: `Migrator` writes its records in the transaction of the migrations, so the
+  rollback takes them, and the history is left empty, as the test of 0218 sees.
+- 0198 against 0145, 0158, 0161 and 0176: each check of a column or an index for a database made before went with the
+  rename of the tables, and no database holds the tables under `effecttea_` without them.
+- 0222's levels: every transaction of `src/` but `Migrator`'s is begun by `transaction` or `snapshot`, which state
+  their level on PostgreSQL. `hold` begins empty transactions on SQLite alone.
+- 0224 against 0154: `consumers` joins each partition's next row with its publication, which 0154's trigger keeps
+  while a row names it, and a step writes both in one transaction.
+- 0247's `tablesMade` under finding 1: it reads the history of the new first schema, which holds none, and dies. It is
+  loud, not silent.
+- 0223 against 0245's sweep: a batch that fails on a full volume rolls back, the sweep warns and runs at its next
+  interval, and the operator's procedure stands, as 0245 saw in the spike.
+- An index of a read model made with `IF NOT EXISTS` (0218): a later release that changes the expression of an index
+  under the same name would keep the old index, so a query reads slowly and not wrongly. No release exists.
+
+### Noticed, not checked
+
+- **0245's sweep against 0222's premise on deadlocks, on a pool.** 0222 says two steps meet in a cycle only through
+  the replies of two entities that answer each other. 0245 adds a sweep whose batch deletes replies in the order of
+  their times, beside a step that deletes its entity's replies past their time (`src/storage/entities.ts:402`) or a
+  reply its asker no longer holds (`:370`). Two deletes of several rows over the same rows, in two orders, may
+  deadlock. Where PostgreSQL ends the step's transaction, the entity crashes. The orders are the planner's, and no
+  server runs here, so it was not checked. A test of `src/postgres.test.ts` would hold the two statements at their
+  rows.
+- **0223's procedure against steps that run beside it.** Room an operator frees on a full volume may be taken first by
+  the steps the callers retry, before the forget and the prune run. The spike ran no step beside the prune. It needs
+  the CI's volume.
+- **`createTables` called by an operator inside a transaction of their own**, at `REPEATABLE READ` with a query
+  before it. `Migrator`'s transaction is then a savepoint, and its `LOCK TABLE` comes after the snapshot, against
+  0225's premise. Nothing of the runtime calls it so, and its JSDoc does not say a caller must not. It needs a server.
+
+### Not read whole
+
+0055, 0145, 0152, 0154, 0157, 0158, 0161, 0176, 0220, 0245 and 0247 were read only in their status lines or in the
+passages that cite the area's notes. Each is an earlier note whose rule a note of the area retires or extends, or a
+later note that only cites one, and the code that keeps the rule was read where a note of the area changes it. Every
+note of the area itself was read whole, with its code.
+
+## 2026-11-11: premise review of The rehearsal and testing
+
+The reviewer's report, on the branch `claude/premise-review-rehearsal-cdcc14`, cut from `main` at `a746214`. One
+finding is reproduced, by the test `FAILING: a renewal created after the periods it bills fires once for each, as the
+runtime does (decisions 0130, 0187)` in `src/rehearse.test.ts`, commit `abd8d29`.
+
+### The notes read
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0131 | of the area, and a later note against 0009, 0021, 0047, 0063, 0065, 0074, 0075 and 0130 | whole, with the code (`makeWorld`, `keep`, `apply`, `receive`, `entitiesOf`, `born`, `run` and `world.deploy` of `src/rehearse.ts`) |
+| 0183 | of the area, changes 0131, and a later note against 0045 | whole, with the code (`deployedAs` of `src/rehearse.ts`; `reference`, `TypesOf` and `isProgram` of `src/program.ts`) |
+| 0186 | of the area, changes 0131 | whole, with the code (`given`, `underWay` and `pending` of `src/rehearse.ts`) |
+| 0187 | of the area, changes 0131 and 0014, and a later note against 0014 and 0130 | whole, with the code (`advance`, `dueBy` and `fireOf` of `src/rehearse.ts`; `Fire` and `Restart` of `src/machine.ts`) |
+| 0188 | of the area | whole, with the code (`TypesOf` of `src/program.ts`) |
+| 0189 | of the area, changes 0131 | whole, with the code (`Outside` of `src/rehearse.ts`) |
+| 0190 | of the area | whole, with the code (the map of `examples/server/server.ts`) |
+| 0200 | of the area, changes 0131 | whole, with the code (`send`, `named` and `keep` of `src/rehearse.ts`) |
+| 0201 | of the area, changes 0010 | whole, with the code (`rejectWith` of `src/program.ts`) |
+| 0211 | of the area, changes 0131 | whole, with the code (`projection` of `src/rehearse.ts`) |
+| 0009 | changed by 0131, which cites it | whole, with the code of `entitiesOf` |
+| 0014 | changed by 0187, which cites it | whole, with the code of `Fire` and `Restart` in `src/machine.ts` |
+| 0010 | changed by 0201 | in part: its status line and its decision |
+| 0130 | cited by 0131 and 0187 | whole, with the code of `complete` in `src/rehearse.ts` |
+| 0021 | cited by 0131 | in part: its status line, context and decision; it has no `What it rests on` |
+| 0045 | cited by 0183 | in part: its status line, context and decision; it has no `What it rests on` |
+| 0047 | cited by 0131 | in part: its status line, context and decision; it has no `What it rests on` |
+| 0063 | cited by 0131 | in part: its status line, context and decision; it has no `What it rests on` |
+| 0065 | cited by 0131 and 0200 | in part: its status line, context and decision; it has no `What it rests on` |
+| 0074 | cited by 0131 | in part: its status line, context and decision; it has no `What it rests on` |
+| 0075 | cited by 0131 | in part: its status line, context and decision; it has no `What it rests on` |
+| 0048 | cited by 0200 | in part: its decision |
+| 0125 | cited by 0200 | in part: its status line, context, decision and `What it rests on` |
+| 0245 | changes the rehearsal's `send` of 0200, though its status line does not say so | in part: its status line, context and decision |
+| 0185 | cited by 0186 | in part: its decision and `What it rests on` |
+| 0165 | cited by 0190 | in part: its decision and `What it rests on` |
+| 0210 | cited by 0211 | in part: everything before its alternatives |
+| 0212 | cites 0211, and is cited by it | in part: its decision and `What it rests on` |
+| 0214 | cites 0211, and is cited by it | whole, with the code of `src/machine.ts`, lines 78 to 85 |
+
+### Finding 1, reproduced: a repeating timer that catches up fails its rehearsal (0130, 0187)
+
+- **The two notes.** [Decision 0130](archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md) makes a
+  rehearsal fail on an operation that its own completion returns the same. It does not check a timer. Its reason is
+  that a timer at a time already past is how a repeating timer catches up after a downtime: a subscription stopped
+  for three months renews three times in a row, and the runtime runs that catch-up. So a rehearsal cannot tell a
+  loop of a timer from a catch-up. [Decision 0187](0187-a-rehearsal-moves-time-by-a-duration.md) cites 0130 as its
+  reason, and makes a rehearsal fail on a key whose timer fires twice at one time, within one `advance`.
+- **The premise that fell.** 0130's check is safe only because no program the runtime runs as designed fails it. A
+  catch-up fires one key at a time already reached, again and again, until the timer comes after the time. Time
+  stands still in a rehearsal while timers fire, so every firing of a catch-up is at one time. 0187 refuses "a
+  program that fires one key twice at one time and then stops", and a catch-up is such a program. 0130's status
+  line does not name 0187.
+- **The sequence.** A program arms its renewal at the end of the periods paid, from its own last time, as
+  `examples/subscription` arms `renewal` at `paidUntil(account)`. A rehearsal starts after three periods have
+  passed, so the first renewal is due already. `advance(0)` fires it at the time reached, and the step arms the next
+  renewal, also in the past. The second firing at the same time fails the test with "fires twice ... and time would
+  never pass". The runtime renews three times and stops. A temporary test on SQLite ran the same program, created
+  with the test's clock three hours on: the projection read `1`, `2` and `3` after three ticks of a millisecond, and
+  stayed `3`. That test was deleted, since the brief allows only failing tests.
+- **Where.** `advance` of `src/rehearse.ts`, lines 409 to 433, with its set `fired`.
+- **Reproduced** by `FAILING: a renewal created after the periods it bills fires once for each, as the runtime does
+  (decisions 0130, 0187)` in `src/rehearse.test.ts`, commit `abd8d29`. It fails with the message of the check.
+- **Where a fix could begin.** The check could fail only on a key armed again at the time it was due at, or at an
+  earlier one, and not at the time reached. A timer whose due time moves forward at each firing would then pass,
+  though it is still in the past. A timer armed again at its own time, and two timers that arm each other at one
+  time, would still fail. A timer that moves forward by an ever smaller step would loop for ever, as 0187 says of a
+  chain of keys. A
+  rehearsal reaches a timer in the past only by a start after it, by `fire` of a later timer, or by a deploy that
+  arms one there, so the fix is also a choice of what a rehearsal of a downtime is.
+
+### Suspects ruled out
+
+- 0183 against 0045: a world answers `NotFound` to a send through a reference to a program it does not run, where
+  the runtime waits for the program's deploy. A world holds no entity of that program, so the runtime gives the same
+  `NotFound` once the program is deployed, and 0183 decides that answer explicitly.
+- 0183 against 0131: a runner's `create` through a reference to a program the world does not run fails the test,
+  where the runtime waits for ever. A test that fails tells what a test that hangs would.
+- 0200 against 0245: 0200 says a rehearsal keeps a reply "as the runtime keeps a reply sent without keep", and since
+  0245 no `send` is without `keep`. The code's comment now says `keep: 'forever'`, and 0200 already says a retry past
+  a reply's time is tested on the runtime. Only 0200's sentence is out of date, and 0200's status line does not name
+  0245.
+- 0200 against 0048: a named request and a drawn one under the same text are kept apart in both orders, as the
+  tests `gives a send without a request id no reply of a named request, whatever id it draws` and `gives a named
+  request no reply of a send drawn before it, whatever id that send drew` hold. The set `named` belongs to the
+  world, so a named request makes a drawn id of another entity skip its text too, which changes no answer.
+- 0131 against 0021: the world deletes a reply to an operation once `written.ended` names the work that asked, as
+  the machine gives it to the storage. A run after a crash keeps its incarnation, so its replies stay, as `a hold the
+  process died on is sent again, and given its stored reply` tests.
+- 0131 against 0063: a suspended receiver is never reached, since `apply` dies on a suspension. A test that catches
+  that defect with `Effect.exit` and goes on finds the receiver dying again at the next send, which gives no answer
+  the runtime would not give.
+- 0131 against 0074: every mailbox is handled to its end inside the act, and a step never sends, so no act reaches
+  a receiver whose mailbox holds a message.
+- 0131 against 0075: a world runs one program under each name, and `world.deploy` restarts every entity, as a new
+  process does. A runner's `create` with a program of another version reaches the one the world runs, by its name.
+- 0187 against 0014: a firing of a timer due later moves time to it, and a timer due earlier fired afterwards keeps
+  the time, as `keeps its time when a timer due earlier fires after one due later` tests. Time never goes back.
+- 0187 against 0186: an act by a key reads the program's keys when it runs, so a key after a deploy is read under the
+  program deployed.
+- 0211 against 0214: the machine itself gives a rejection's reason as a caller reads it, so the rehearsal's `send`
+  and a runner's `create` give it as the runtime does.
+- 0211 against 0210, of the state: a rehearsal's `restart` keeps the state in memory (`Restart` of
+  `src/machine.ts`), where the runtime reads it back from JSON. So a state holding `-0` is `-0` after a restart in a
+  rehearsal and `0` in the runtime. 0210 decides that no program means to tell them apart, and `encode` refuses
+  every other value that JSON does not give back as it is.
+- 0189, 0190 and 0201 rest on no premise of an earlier note: 0189 on the types of Effect and on `Layer.mock`, 0190
+  on the example's own protocol and on 0165, and 0201 on TypeScript's `const` type parameters.
+
+### Noticed, not checked
+
+- None. Each suspect noticed was checked by a test or by a reading.
+
+### Not read whole
+
+0010, 0048, 0125, 0165, 0185, 0210, 0212 and 0245 were read only in the parts the area's notes rest on or change,
+as the table says. 0021, 0045, 0047, 0063, 0065, 0074 and 0075 were read in their status lines, contexts and
+decisions. None of them has a section `What it rests on`, and their alternatives and consequences were not read.
+Every note of the area itself was read whole, with its code, and so were 0131, 0183 and 0187 against the notes they
+cite.
+
+## 2026-11-11: premise review of The scheduler of the tests
+
+The notes of the area: 0104, 0115, 0117 and 0244. Read with the code of `controlled`, `prioritized`, `everySchedule`
+and `prioritizedSchedules` in `src/testing.ts`, `explored`, `together` and `adjusted` in
+`src/runtime.test_shared.ts`, and the source of the pinned Effect 4.1.3: `runLoop`, `evaluate` and `yieldNow` of
+`FiberImpl` in `internal/effect.ts`, `MixedScheduler.shouldYield` in `Scheduler.ts`, and `TrackingScheduler`, `run`
+and `wake` in `testing/TestClock.ts`.
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0104 | of the area | whole, with the code |
+| 0115 | of the area; changes 0104 | whole, with the code |
+| 0117 | of the area; changes 0104 and 0115 | whole, with the code |
+| 0244 | of the area; changes 0104 and 0115 | whole, with the code and Effect's run loop |
+| 0066 | cites 0104 | whole |
+| 0068 | cites 0104 | whole |
+| 0101 | cites 0104 | whole, with `run` of `TestClock.ts` |
+| 0109 | cites 0104 | whole |
+| 0110 | cites 0104 | whole, with `detached` of `src/runtime/loop.ts` |
+| 0112 | cites 0104 | whole |
+| 0116 | cites 0115 and 0117 | whole, with the wait of `src/runtime/loop.ts` |
+| 0134 | cites 0117 | whole |
+| 0172 | cites 0104 | whole |
+| 0177 | cites 0104 | whole |
+
+No later note outside the area was given to this area. No note but the area's changes one of its notes.
+
+### Findings
+
+- **Measured, by mutations: the rule of 0067 that 0104's second interleaving holds is no longer held by `bun test`,
+  and the margin 0104 rests on fell.** 0104 says a run of PCT finds the lock dropped while others wait near 1 in 20,
+  and that 2,000 runs miss either interleaving with a probability below e^-25. The test's comment says 67 seeds of
+  2,000 build two machines. 0117 asks more decisions of every run, and 0134 and 0244 move every schedule again. None of
+  them counted the seeds again, since neither interleaving has a seed pinned. On 2026-11-11 at `a746214`, with
+  `if (lock.users === 0)` taken out of `holding` in `src/runtime/process.ts:380`, 6 seeds of 2,000 fail `callers of an
+  unloaded entity build one machine for it` in `src/runtime/callers.test.ts:314`: 661, 747, 1350, 1618, 1914 and
+  1953. One seed of 2,000 fails `two callers of an entity not loaded build one machine for it` in
+  `src/runtime/loop.test.ts:774`. So `bun test`, which runs seeds 0 to 99, passes with the rule taken out. Only
+  `bun run test:release` holds the rule, and 2,000 runs now miss it with a probability near e^-6, not e^-25. The
+  first interleaving holds still: with the registration of `send` in `src/runtime/callers.ts:417` moved after the
+  answer, 17 seeds of 2,000 fail, the first at seed 60, where the test's comment says 27. The premise that fell is
+  0104's `What a test of 2,000 runs misses`, a margin no later note listed. It was measured by mutations run by hand,
+  with `explored` changed to print each failing seed, and no test is committed: a test cannot hold how many seeds kill
+  a mutation. A fix could begin by pinning seed 661 in the test of `src/runtime/callers.test.ts`, as `AGENTS.md`
+  asks of a seed that found a bug, and by correcting the counts the two comments give. A fix of the margin itself is
+  a choice of the design: a window of the test that holds only the two callers, or a rule that a change of the
+  scheduler or of the runtime's yields counts again the seeds of the interleavings that 0104 names.
+
+### Suspects ruled out
+
+- 0244's premise that a cancelled yield's task runs no fiber, against `TrackingScheduler` of the test clock. The
+  wrapper of a tracked task runs the task, then calls `onIdle`, which resumes the fiber that moves the clock inline in
+  the same task. Since 0244, `step` has set `entering` false and named the cancelled yield's fiber as the one let run
+  last. So the clock's fiber is taken for a fiber on another's stack, and is asked of preemption with no task ready.
+  Its yield gives back only to the wrapper, which ends the task, so the order of the run does not change. Only a
+  decision is added. This review also corrects 0117's reasoned premise: such a run begins on the wrapper's stack and
+  not on a fiber's. The order is the same.
+- The first-step branch of `yields` in `src/testing.ts:274` that lets a fiber through by `letThrough`. At 4.1.3 a
+  fiber is not asked at the step it resumes from its yield, so `step` lets it through, as 0244 says. Another task
+  could run such a fiber first only by interrupting it inline before any other fiber asks. Every task of Effect that
+  names no fiber starts a fiber first: a fork, the wake of a `Queue`, a `Semaphore` or a `Latch`, or the test clock's
+  wrapper. Under `inline` resumptions the branch decides nothing.
+- A yield cancelled in its own run by an interruption deferred while the fiber ran. `runLoop` then goes on with its
+  local `yielding` true, and asks `shouldYield` no more in that run. Effect's own scheduler is not asked there
+  either, so no order Effect gives is lost.
+- `fiber.currentOpCount === 1` as the first step of a run. Effect counts each step and each call of `succeedWith`, so
+  the count only grows within a run. It is 1 at the first question of a run that is not resumed from an automatic
+  yield, and 3 or more in a run that is.
+- 0244's rule against 0117's fibers on another's stack. A fiber that the resumed fiber starts inline at the step it
+  resumes, unasked, is still taken for a nested one, since `step` names the resumed fiber as the one let run last.
+- 0244's preemption at the second step against 0116. The wait of an entity no longer races its take, and
+  `an entity whose wait runs out as an event arrives waits again from the event` still fails at seed 9 once the
+  `Passivate` of an earlier wait is no longer passed over (`src/runtime/loop.ts:600`). `bun test` runs seed 9.
+- 0110's count against the schedules that 0244 moved. With the count given back by an `ensuring` in the detached
+  fiber, `a deploy interrupted anywhere keeps its name and its waker, or stops what it started` fails under `bun
+  test`.
+- The pinned seed 1031955209 of `src/runtime/loop.test.ts`, against 0244. Its comment says it was found at Effect
+  4.1.3 under the scheduler of 0244.
+- 0101 and 0066 against 0244. `run` of the test clock still waits for a fiber of its own that yields once, at 4.1.3.
+  The tests move the clock with the window closed, so a run of `explored` goes in order there.
+- 0112, 0172 and 0177 cite 0104 as the way their rules are tested, and rest on no rule of the scheduler that the
+  area's notes changed.
+
+### Suspects not checked
+
+- The other interleavings found by a seed that is not pinned, among the explored tests, may have lost their margin as
+  the lock did. Each would be checked as above: its rule taken out, and its failing seeds counted under
+  `SCHEDULES=all`. This review checked 0063, 0067, 0110 and 0116 alone. `scripts/mutate.ts` gives the first pass of
+  each rule, which says which rules `bun test` no longer holds.
+
+### Not read whole
+
+Every note of the table was read whole. 0068, 0109, 0112, 0172 and 0177 were read without all of their code, since
+they cite the area's notes only for how their rules are tested.
+
+## 2026-11-11: premise review of The project and what enters the library
+
+The reviewer's report, on the branch `claude/premise-review-project-17a123`, cut from `main` at `a746214`. Three
+findings are reproduced, each by a test named `FAILING:` on the branch, at commits `1c8da79`, `3ac56e3` and
+`a18c520`. Two findings are gaps of a check, and are only reasoned.
+
+### The notes read
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0007 | of the area | whole |
+| 0019 | of the area | whole, with `package.json` |
+| 0052 | of the area | whole; it holds no code of its own |
+| 0053 | of the area | whole, with `idFault` and `requestIdFault` of `src/program.ts` |
+| 0054 | of the area | whole, with `checkProgram` of `src/program.ts` and each place that calls it |
+| 0055 | of the area | whole, with the four entries |
+| 0080 | of the area | whole, with `hold` of `src/storage/tables.ts` and `launchWith` of `src/runtime.ts` |
+| 0099 | of the area | whole, with `package.json` |
+| 0179 | of the area | whole, with `idFault`, and `due` and `entities` of `src/storage/entities.ts` |
+| 0193 | of the area, and a later note against 0052, 0055, 0073, 0174 and 0192 | whole, with the four entries and the tests of `src/form.test.ts` |
+| 0195 | of the area | whole, with `package.json` and the key of `Recorded` |
+| 0196 | of the area | whole, with its test in `src/form.test.ts` |
+| 0203 | of the area | whole, with its test, and a count of the guide's parts |
+| 0204 | of the area | whole, with `requestIdFault`, `expire`, and `primaryKey` of `src/cluster.ts` |
+| 0208 | of the area | whole, with `optionOf` and `launchWith` of `src/runtime.ts`, the loop's wait of `src/runtime/loop.ts`, and `sleepMillis` of Effect |
+| 0212 | of the area | whole, with the imports of `src/fixtures.property.test.ts` |
+| 0241 | of the area | whole, with `groupsCrossed`, `testsImported` and `ofTheTests` of `src/form.test.ts`, and the imports of `src/runtime/` and `src/storage/` |
+| 0242 | of the area | whole, with `ci.yml`, the test of its form and the spike of the shards |
+| 0073 | cited by 0193 | in part: its context and its decision |
+| 0174 | cited by 0193 | whole, with `sharding` and `Recorded` of `src/cluster.ts` |
+| 0192 | cited by 0193 | whole, with the test of `src/form.test.ts` it names |
+| 0120 | changes 0080 | whole, with `launchWith` |
+| 0191 | changes 0055, and cites 0080 | in part: its context, its decision and its first premise |
+| 0084 | changes 0080 | in part: the lines that cite 0080 |
+| 0081 | changes 0007 | in part: the lines that cite 0007 |
+| 0157 | changes 0007, and cites 0019, 0080 and 0179 | in part: the lines that cite them |
+| 0221 | cites 0208 | in part: its decision and the alternative that cites 0208 |
+| 0185 | cites 0179 | in part: its decision and its premises |
+| 0211 | cites 0212 | in part: its context and its decision |
+| 0215 | cites 0080 | in part: the lines on the advisory lock |
+| 0064 | changes 0054 | not at all; the status line of 0054 says what it changed, and `checkProgram` was read |
+| 0132 | changes 0054 | not at all, for the same reason |
+| 0136 | changes 0054 | not at all, for the same reason |
+| 0141 | changes 0053 | not at all; the status line of 0053 says what it changed |
+| 0207 | changes 0053 | not at all; the review of area 8 read it whole against 0053 |
+| 0003 | cites 0195 | not at all |
+| 0028 | cites 0007 and 0019 | not at all |
+| 0030 | cites 0007 | not at all |
+| 0038 | cites 0007 | not at all |
+| 0039 | cites 0195 | not at all |
+| 0057 | cites 0052 | not at all |
+| 0075 | cites 0054 | not at all |
+| 0104 | cites 0080 | not at all |
+| 0125 | cites 0053 | not at all |
+| 0138 | cites 0053 and 0054 | not at all |
+| 0142 | cites 0053 and 0080 | not at all; the review of area 8 read it whole against 0080 |
+| 0143 | cites 0053 | not at all |
+| 0152 | cites 0053, 0054 and 0080 | not at all |
+| 0153 | cites 0053 and 0080 | not at all |
+| 0156 | cites 0080 | not at all; the rename at the launch was read in `launchWith` |
+| 0176 | cites 0080 | not at all |
+| 0198 | cites 0080 and 0195 | not at all |
+| 0245 | cites 0053 and 0196 | not at all |
+| 0247 | cites 0054 and 0080 | not at all |
+
+### Findings
+
+#### 1. A launch refused for an option still holds the database, and has already moved its renames
+
+- **The notes.** [Decision 0208](0208-a-launch-checks-every-option.md) checks `retry`, `passivate` and `warn`. It
+  says the launch then dies "before anything is held or stored, as for the other options". The hold of
+  [decision 0080](archive/0080-a-database-is-held-by-one-runtime.md), the tables of
+  [decision 0191](0191-a-launch-creates-the-tables.md) and the renames of
+  [decision 0156](archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md) all run before those checks.
+- **The premise that fell.** 0208 rests on the checks of the options running first in the launch. They never did
+  for `drain`, `capacity`, `callers` and `sweep` either. Only the partitions, `tables` and the form of `renames` are
+  checked before the hold.
+- **The sequence.** A launcher calls `launch({ retry: { millis: NaN }, renames: { Toy: 'Plaything' } })` in a scope.
+  It catches the defect, and launches again in the same scope. `launchWith` forks a scope from the caller's
+  (`src/runtime.ts:923`), and holds the database in it (`src/runtime.ts:945`). It then creates the tables, records
+  the partitions, and moves the entities of `Toy` to `Plaything` (`src/runtime.ts:946` to `950`). Only then does it check the retry
+  (`src/runtime.ts:997` to `1009`), and die. The forked scope closes only with the caller's scope. So the second
+  launch dies with "the database is held by another runtime, or open to another connection". The entities are
+  already under `Plaything`. An operator who reads that the launch died before anything was stored may drop the
+  rename from the next launch, and then finds no entity under `Toy`.
+- **Reproduced** by `FAILING: a launch refused for its retry holds nothing and moves no rename, in the scope its
+  launcher gave` in `src/runtime.test.ts`, commit `1c8da79`. It gets `moved: true` and the refusal of the second
+  launch. The test of 0208 in `src/runtime/loop.test.ts` passes, since its helper `process` closes a scope around
+  each launch.
+- **Where a fix could begin.** `launchWith` reads and checks every option before `Scope.provide(hold, scope)`, as it
+  does for the partitions. A second way: the launch closes its own scope when it dies after the hold.
+
+#### 2. Under a passivation of no time, an entity whose operation runs spins its loop
+
+- **The notes.** 0208 makes zero a value of `passivate`: "a passivation of no time unloads an entity as soon as it
+  has nothing to do". The loop's wait of [decision 0116](archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md)
+  ends with an item of its queue, which the sleep of the passivation offers. The rule of
+  [decision 0029](archive/0029-an-idle-entity-is-unloaded.md) keeps an entity with work under way loaded. Both rest
+  on a wait that lasts.
+- **The premise that fell.** The wait's sleep lasts the passivation. Effect's `sleepMillis` returns `yieldNow` for
+  a time of 0 (`node_modules/effect/src/internal/effect.ts:6418`). So under a passivation of 0 the wait ends at once.
+- **The sequence.** An entity has an operation under way, so `nothingToDo` is false (`src/runtime/loop.ts:436`).
+  The wait's sleep yields and offers `Passivate` (`src/runtime/loop.ts:593` to `597`). The loop takes it and calls
+  `unload`, which takes the entity's lock and refuses. The loop then waits again (`src/runtime/loop.ts:623`). This
+  repeats for as long as the operation runs. An operation of hours keeps one fiber busy for hours, and a process of
+  many such entities keeps the processor busy.
+- **Reproduced** by `FAILING: under a passivation of no time, an entity whose operation runs waits without
+  spinning` in `src/runtime/loop.test.ts`, commit `3ac56e3`. Over a real wait of one second, the process used some
+  1 200 ms of the processor under a passivation of 0, in each of three runs. Under one of 5 ms it used under 400 ms.
+  The test runs some 2.5 s, past the budget of `AGENTS.md`, since it measures time that is real.
+- **Where a fix could begin.** The loop's wait starts no sleep while `nothingToDo` is false, and waits on the queue
+  alone. A second way: the launch refuses a passivation of 0. It belongs to family F of the step of bugs, beside
+  bugs 17 and 32.
+
+#### 3. `bun test` runs a file of the tests whose role ends in `_test` or `_spec`
+
+- **The note.** [Decision 0241](0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md) says
+  that `bun test` runs no file named `<module>.test_<role>.ts`, "since its name does not end in `.test.ts`".
+  `ofTheTests` of `src/form.test.ts` reads every such name as a file of the tests, whatever its role.
+- **The premise that fell.** Bun runs a file whose name ends in `_test` or `_spec` too. The note's experiment tried
+  the role `x` alone.
+- **The sequence.** A file only tests import, named `src/loop.test_spec.ts`, is run by `bun test` as a file of tests.
+  Its top-level code and its hooks then run in a file of their own, as the `beforeAll` of
+  `src/storage.test_databases.ts` would. The checks of the form pass on it.
+- **Reproduced** at Bun 1.4.4 by `FAILING: bun test runs no file that ofTheTests reads as a file only tests import`
+  in `src/form.test.ts`, commit `a18c520`. Bun ran `a.test_spec.ts` and `a.test_test.ts`. No file of the repository
+  has such a role today.
+- **Where a fix could begin.** `ofTheTests` refuses a role that ends in `test` or `spec`, or `AGENTS.md` names the
+  roles allowed.
+
+#### 4. The test of the workflow's form passes on a job of the tests that runs nothing, or whose failure is ignored
+
+- **The note.** [Decision 0242](0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md) says that a test of the
+  workflow's form keeps every test in some job.
+- **The sequence.** The test `the jobs of the tests run every shard of their division, and the job of the other
+  checks runs no test` reads only the matrix's `shard` and the steps' `run`, in `divided` of `src/form.test.ts`. A
+  job `test` given `if: false`, given `continue-on-error: true`, or given a matrix with an `exclude` of one shard
+  passes it. Every file of the shard left out is then run by no job, or fails while the workflow is green.
+- **Only reasoned**, by a reading of `divided`. The test reads `ci.yml` itself, so no case can be given to it
+  without changing the workflow.
+- **Where a fix could begin.** `divided` refuses `if`, `continue-on-error` and `exclude` on a job of the tests. The
+  `if` of the release's job on `workflow_dispatch` is the one exception.
+
+#### 5. The property of 0212 runs on PGlite alone, and the job on PostgreSQL does not run it
+
+- **The notes.** [Decision 0212](0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md)
+  checks that the runtime "on SQLite and on PostgreSQL" answers as the rehearsal does. The later
+  [decision 0222](0222-postgresql-with-many-connections.md) found that PGlite hides what a server does: the first run
+  on a server found every `BIGINT` given back as a bigint. Its job, `bun run test:postgres`, lists its files by name.
+  `src/fixtures.property.test.ts` is not among them, nor are the cases of `src/cluster.test.ts` on `pg`.
+- **The premise that fell.** 0212 rests on its PostgreSQL being the one a deployment runs on. Since 0222, the
+  property's PostgreSQL is PGlite alone, and the values `Arbitrary.schema` derives never reach a server.
+- **Only reasoned**, by a reading of `package.json` and `ci.yml`. No server ran here. No check says that a file of
+  tests that runs on `pg` is among the files of `test:postgres`.
+- **Where a fix could begin.** `test:postgres` runs every file that imports `src/storage.test_databases.ts`, or a
+  test of the form checks its list.
+
+### Suspects ruled out
+
+- 0208 at its upper end, a time past 2^31 ms. Effect's `sleepMillis` chains sleeps of at most 2^31 − 1 ms
+  (`node_modules/effect/src/internal/effect.ts:6421`), so a long retry or passivation is slept whole.
+- 0208's `warn` of 0. It warns of every write, once per activation, and changes no step.
+- 0179's premise that no entity holds the id `''`, against Cluster. Every id enters by a handle, by `Entities` or by
+  a world, and Cluster's door is reached only through a handle's client.
+- 0179's paging from `''` under a collation of PostgreSQL. A deterministic collation breaks ties by bytes, so every
+  id that is not empty is past `''`.
+- 0204's empty request id on Cluster. Cluster keys a caller's request by `${version}/${request}`, where `request` is
+  the JSON of the whole request (`src/cluster.ts:129`), which is never empty.
+- 0204's premise that nothing pages by a request id. `expire` deletes the request ids of `effecttea_given_requests`
+  in batches with a `LIMIT`, and keeps no cursor (`src/storage/entities.ts:463`).
+- 0054's refusal of a key declared twice, against the list of keys of 0197. `keysOf` refuses a name listed twice
+  (`src/program.ts:1634`).
+- 0054's check where a program enters, against `sharding` of 0174, which records each program's name and version
+  before any check. A name that `checkProgram` refuses leaves one row in `runner_versions`. The deploy then dies on
+  the check, and no newer version of that name outranks the runner. So only a row is left.
+- 0193's `Recorded`, exported as a type alone. A launcher could still provide the `Recorded` of `sharding` beside a
+  `Sharding` of its own, or a service under the same key. Both need a deliberate override or a cast, which the types
+  do not hold.
+- 0193's `Probe`, kept out of the entries, against 0073. A `Context.Reference` is found by its key, so a user who
+  writes the key could provide a probe. It needs the key, which no document gives.
+- 0193's test that `src/index.ts` reaches no module of Cluster. It reads only `src/`, but no module of `src/` other
+  than `src/cluster.ts` imports a package outside `effect/`.
+- 0241's rule that a module of a group imports its entry for types alone. `src/runtime/` imports `../runtime.ts`
+  only by `import type`, and `src/storage/` never imports `../storage.ts`.
+- 0203's premise that a part found in an example is run by a test. Every file of `examples/` is imported by a test,
+  and `examples/server/main.ts` is spawned by `examples/server/server.test.ts`.
+- 0203's parts of one line. Six of the 85 parts of the guide are punctuation alone, as `})`, and are found in any
+  file. A part of punctuation cannot show a change of the API.
+- 0080's hold on PostgreSQL, lost with its session while the runtime runs. It is an open question already, seen by
+  `spikes/postgres-session-ended.test.ts`.
+
+### Noticed, not checked
+
+- **0212's list of fixtures.** `src/fixtures.property.test.ts` imports the three fixtures by name. 0212 says that a
+  fixture added to `src/fixtures/` is added to the property, and nothing checks it. So a fourth fixture would pass
+  with no property. Nothing loses data, so no test was written.
+- **0208's other options.** Finding 1 was reproduced with `retry`. A reading of `src/runtime.ts:981` to `1023` shows
+  `drain`, `capacity`, `callers` and `sweep` checked after the hold too. No test of them ran in a shared scope.
+
+### Not read whole
+
+The notes that only cite a note of the area were not read, or were read only at the lines that cite it, as the
+table says. Each cites the area's note for a rule it applies as written: a database held by one runtime, an id
+checked, a program checked where it enters, or the package's name. 0064, 0132, 0136 and 0141 change a note of the
+area, and were not read, since the status lines of 0053 and 0054 say what each changed, and the code that keeps it
+was read. Every note of the area itself was read whole, with its code, and so was 0193 against the notes it cites.

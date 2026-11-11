@@ -94,6 +94,28 @@ with a requirement that no example has yet.
   magnitudes is just under `Number.MAX_VALUE` might be refused on SQLite and accepted on PostgreSQL. It is bug 40 of
   the [roadmap](roadmap.md), not checked. It would be decided by:
   - a case of `src/dialects.test.ts` with such rows.
+- **The schema a launch finds its tables in.** The runtime's tables are found through the `search_path`
+  ([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)), and the history
+  of the migrations is named in `current_schema()`
+  ([decision 0217](decisions/0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md)). Under the default
+  `"$user", public`, the first schema changes once a schema of the role's name is made. The next launch then makes a
+  new set of tables there, and runs on them empty, with every entity, reply and cursor left behind and no error. It
+  is bug 41 of the [roadmap](roadmap.md), reproduced on PGlite. It would be decided by:
+  - whether `createTables` dies where a schema further on the `search_path` holds the history and the first does not;
+  - or whether a launch is given its schema by name.
+- **The migrations inside an operator's transaction.** The migrations lock their table before they read
+  ([decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md)). An operator who
+  calls `createTables` inside a transaction of their own, at `REPEATABLE READ` with a query before it, makes the
+  migrations' transaction a savepoint, whose lock comes after the snapshot. Nothing of the runtime calls it so, and
+  the JSDoc of `createTables` does not say a caller must not. It is bug 51 of the [roadmap](roadmap.md), not
+  checked. It would be decided by:
+  - a test of `src/postgres.test.ts` on the CI's server;
+  - whether `createTables` refuses a transaction it is given, or its JSDoc names the rule.
+- **A full volume beside the steps.** An operator frees room on a full volume, then forgets a consumer and prunes
+  ([decision 0223](decisions/0223-a-disk-that-is-really-full.md)). The spike of 0223 ran no step beside the
+  procedure, so the room freed may be taken first by the steps that callers retry. It is bug 50 of the
+  [roadmap](roadmap.md), not checked. It would be decided by:
+  - a run of `spikes/full-volume.test.ts` on the CI's volume, with steps beside the procedure.
 
 
 ## Running
@@ -282,7 +304,9 @@ with a requirement that no example has yet.
   - the tests run against the CI's server, from the reviewers' branches;
   - a reading of every statement of `src/storage/` whose guard stands in a subquery or in an `INSERT … SELECT`, for
     the same form;
-  - whether a fix keeps the guard in the outer `WHERE`, or locks the rows first with `FOR UPDATE`.
+  - whether a fix keeps the guard in the outer `WHERE`, or locks the rows first with `FOR UPDATE`;
+  - for bug 49, not checked, a test that holds the sweep's batch and a step's deletion of its entity's replies at
+    their rows, and sees whether PostgreSQL ends one of them as a deadlock.
 - **An entity a crash leaves with work stored.** A crash takes an entity out of its process with its work stored
   ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). On one process
   only a caller, a timer or the next start loads it again
@@ -318,9 +342,46 @@ with a requirement that no example has yet.
   waker tries an entity it cannot activate again at once, for ever, and the process never settles
   ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)), which is bug 17 of
   the [roadmap](roadmap.md). A sender whose receiver crashes at every attempt, or answers `Full`, sends again with
-  no wait, which is bug 32, not checked. It would be decided by:
-  - whether a retry has a least time of its own, or a launch refuses 0;
+  no wait, which is bug 32, not checked. A `passivate` of 0 is the same: Effect's sleep of 0 is one yield, so an
+  entity whose operation runs ends its wait at once and tries to unload again for as long as the operation runs,
+  which is bug 45, reproduced. It would be decided by:
+  - whether a wait the runtime sleeps has a least time of its own, or a launch refuses 0, or the loop's wait sleeps
+    only while the entity has nothing to do;
   - a test of bug 32 with a receiver that crashes at every attempt.
+- **A launch that dies after the hold.** A launch refused for an option dies, as
+  [decision 0208](decisions/0208-a-launch-checks-every-option.md) says, before anything is held or stored. Its hold
+  ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), its tables and its renames run
+  before the checks of most options, in a scope that closes only with the launcher's. So a launcher that tries
+  again in the same scope finds the database held, and the renames already moved. It is bug 44 of the
+  [roadmap](roadmap.md), reproduced for `retry`. It would be decided by:
+  - whether `launchWith` checks every option before the hold, or closes its own scope when it dies after it;
+  - a test of each option checked after the hold, in a scope the launcher gives.
+- **The margin of the explored tests.** A test under `explored` holds a rule only by the seeds it runs, and a change
+  of the runtime's yields or of the scheduler moves every schedule
+  ([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)). An interleaving found by
+  no pinned seed can then lose its seeds in silence. The lock of
+  [decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md) did: 6 seeds of 2,000 find it at
+  `a746214`, none among the 100 of `bun test`, which is bug 43 of the [roadmap](roadmap.md). The other interleavings
+  not pinned are bug 52, not checked. It would be decided by:
+  - the first pass of [`scripts/mutate.ts`](../scripts/mutate.ts) on each rule an explored test holds, which names
+    the rules `bun test` no longer holds;
+  - whether `AGENTS.md` asks a seed pinned for each interleaving a decision names, and not only for a bug a seed
+    found;
+  - whether a change of the scheduler or of the yields counts again the seeds of those interleavings.
+- **The checks that hold less than their note.** A check of the form or of the CI says what it keeps, and a case
+  it does not read passes it. `bun test` runs a file of a role that ends in `_test` or `_spec`, which the check of
+  [decision 0241](decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md) reads as a
+  file only tests import, which is bug 46, reproduced. The test of the workflow's form passes a job of the tests
+  given `if`, `continue-on-error` or an `exclude`
+  ([decision 0242](decisions/0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md)), which is bug 47. The
+  property of the fixtures never reaches the CI's server, since `test:postgres` lists its files by name
+  ([decision 0212](decisions/0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md)), which
+  is bug 48, and a fixture added gets no property, which is bug 53. They are of the [roadmap](roadmap.md). It would
+  be decided by:
+  - whether each check is run, in a test of its own, against the case it refuses, as `scripts/mutate.ts` does for
+    the runtime's rules;
+  - whether `test:postgres` runs every file that imports `src/storage.test_databases.ts`, and the property every
+    fixture of `src/fixtures/`.
 - **A discard of a message an operation sent.** An operator discards the message an entity died on, and no reply is
   stored ([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)). An operation's `send` waits for the
   resumption and sends the same request again
@@ -410,6 +471,16 @@ with a requirement that no example has yet.
     sender otherwise, and retries under the same id;
   - whether the runtime, read in `src/storage/` and `src/runtime/callers.ts`, does find the request by its id across
     such a deploy, as the review read.
+- **A rehearsal of a downtime.** A repeating timer catches up after a downtime by firing at a time already past,
+  again and again, and the runtime runs that
+  ([decision 0130](decisions/archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md)). A rehearsal fails a
+  key whose timer fires twice at one time ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)),
+  and time stands still while its timers fire, so every catch-up fails it. It is bug 42 of the
+  [roadmap](roadmap.md), reproduced. It would be decided by:
+  - whether the check fails only on a key armed again at the time it was due, or earlier, so that a timer whose due
+    time moves forward at each firing passes;
+  - what a rehearsal of a downtime is: a start after the timers, a `fire` of a later timer, or a deploy that arms one
+    in the past.
 - **What a test of a projection gives `allows`.** `projectionViolations` checks a projection's `allows` with the
   sender ([decision 0213](decisions/0213-a-projections-allows-is-given-the-sender.md)). It gives `allows` the
   projection as `project` returns it, not as a caller reads it from its JSON, and gives `update` the sender
