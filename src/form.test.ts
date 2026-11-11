@@ -14,7 +14,8 @@
  * - a module of a group, a folder of `src/` beside a module of its name, is imported only by that module and by the
  *   files of the folder (decision 0241);
  * - a module imports no file of the tests: a test, named `.test.ts`, or a file only tests import, named
- *   `<module>.test_<role>.ts`, which the other rules do not read (decision 0241).
+ *   `<module>.test_<role>.ts`, which the other rules do not read (decision 0241);
+ * - `bun test` runs no file only tests import, so no role ends in `_test` or `_spec` (decision 0254).
  *
  * A fork that must keep the transaction is preceded by a line comment that says `Keeps the transaction:` and why. A
  * count that one fiber raises and another lowers is preceded, at each raise and lowering, by a line comment that says
@@ -22,7 +23,8 @@
  * the other form of a rule is killed by the suite in `scripts/mutate.ts`, which copies `src/`.
  */
 import { describe, expect, test } from 'bun:test'
-import { readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { isAbsolute, join, posix, relative, sep } from 'node:path'
 import type { Returned } from './index.program.ts'
 
@@ -273,6 +275,19 @@ export const groupsCrossed = (files: ReadonlyMap<string, string>): ReadonlyArray
 /** Whether `file` is one of the tests: a test, or a file only tests import (decision 0241). */
 export const ofTheTests = (file: string): boolean => /\.test(_\w+)?\.ts$/.test(file)
 
+/**
+ * Whether `bun test` runs `file`, by the patterns of Bun's documentation at the version pinned, in
+ * `node_modules/bun-types/docs/test/discovery.mdx`.
+ */
+export const runByBunTest = (file: string): boolean => /(\.|_)(test|spec)\.(js|jsx|ts|tsx|mjs|cjs|mts|cts)$/.test(file)
+
+/**
+ * The files only tests import, named `<module>.test_<role>.ts`, that `bun test` runs as tests, since their role ends
+ * in `_test` or `_spec` (decisions 0241, 0254).
+ */
+export const sharedFilesRun = (files: ReadonlyArray<string>): ReadonlyArray<string> =>
+  files.filter((file) => /\.test_\w+\.ts$/.test(file) && runByBunTest(file))
+
 /** The imports of a file of the tests by a module, as `file: specifier`, given the text of each file by its path. */
 export const testsImported = (texts: ReadonlyMap<string, string>): ReadonlyArray<string> =>
   [...texts].filter(([file]) => !ofTheTests(file)).flatMap(([file, text]) =>
@@ -343,6 +358,13 @@ describe('the form of src', () => {
     const texts = new Map(filesOfSrc.map((file) => [file, readFileSync(join(import.meta.dir, file), 'utf8')]))
     expect(groupsCrossed(texts)).toEqual([])
   })
+  test('bun test runs no file of src or of the examples that only tests import', () => {
+    const examples = readdirSync(join(import.meta.dir, '..', 'examples'), { recursive: true, encoding: 'utf8' })
+      .map((file) => `examples/${file.replaceAll(sep, '/')}`)
+    expect(filesOfSrc).toContain('runtime.test_shared.ts')
+    expect(sharedFilesRun([...filesOfSrc, ...examples])).toEqual([])
+  })
+
   test('no module of src imports a file of the tests', () => {
     expect(filesOfSrc).toContain('runtime.test_shared.ts')
     expect(modules).not.toContain('runtime.test_shared.ts')
@@ -502,6 +524,49 @@ describe('the check of the form', () => {
       ['testing.ts', "import { v } from './testing/scheduler.ts'"],
     ])
     expect(testsImported(texts)).toEqual(['loop.ts: ./loop.test_shared.ts', 'storage/tables.ts: ../storage.test.ts'])
+  })
+
+  test('a file only tests import whose role ends in _test or _spec is found, and one of another role passes', () => {
+    expect(sharedFilesRun([
+      'loop.test_shared.ts',
+      'loop.test_spec.ts',
+      'loop.test_a_test.ts',
+      'loop.test_databases.ts',
+      'loop.test.ts',
+      'loop.spec.ts',
+    ])).toEqual(['loop.test_spec.ts', 'loop.test_a_test.ts'])
+  })
+
+  // The patterns of `runByBunTest` are documented, and a test runs them by Bun as well, since the check of a file
+  // only tests import holds only as long as they are Bun's.
+  test('bun test runs the files that runByBunTest names, and no other', () => {
+    const folder = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-roles-'))
+    try {
+      const files = [
+        'a.test.ts',
+        'a.test_shared.ts',
+        'a.test_databases.ts',
+        'a.test_spec.ts',
+        'a.test_test.ts',
+        'a_test.ts',
+        'a.spec.ts',
+        'a_spec.ts',
+        'a.ts',
+      ]
+      for (const file of files) {
+        writeFileSync(join(folder, file), `import { test } from 'bun:test'\ntest('${file}', () => {})\n`)
+      }
+      const report = join(folder, 'report.xml')
+      Bun.spawnSync(['bun', 'test', '--reporter=junit', `--reporter-outfile=${report}`], {
+        cwd: folder,
+        stdout: 'ignore',
+        stderr: 'ignore',
+      })
+      const ran = [...readFileSync(report, 'utf8').matchAll(/<testsuite name="([^"]+\.ts)"/g)].map(([, file]) => file!)
+      expect(ran.sort()).toEqual(files.filter(runByBunTest).sort())
+    } finally {
+      rmSync(folder, { recursive: true, force: true })
+    }
   })
 
   test('a fork not given untransacted is found, in each of its forms', () => {

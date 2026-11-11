@@ -64,8 +64,17 @@ The rule has two parts that `bun test` runs, and one part that a job of the CI r
 
 ## What is done
 
-Nothing yet. The parts go in this order: bug 46, bug 47, bug 88, bug 53, bug 48, then the job of the pinned seeds
-with bug 43, then bug 52 test by test, then bug 83.
+The parts go in this order: bug 46, bug 47, bug 88, bug 53, bug 48, then the job of the pinned seeds with bug 43,
+then bug 52 test by test, then bug 83.
+
+- Bug 46 is done. `sharedFilesRun` of `src/form.test.ts` refuses a file only tests import whose name `bun test` runs,
+  and `bun test runs no file of src or of the examples that only tests import` runs it on the repository. The test
+  `a file only tests import whose role ends in _test or _spec is found, and one of another role passes` gives it its
+  samples. The test `bun test runs the files that runByBunTest names, and no other` runs Bun on a folder of samples,
+  and fails if Bun's patterns change. Both fail on a pattern without `_test` and `_spec`. The test of the branch
+  `claude/premise-review-project-17a123` asked of `ofTheTests` what no pattern can give, and is replaced by these.
+
+The next part is bug 47, at `divided` of `src/form.test.ts`.
 
 ## What it rests on
 
