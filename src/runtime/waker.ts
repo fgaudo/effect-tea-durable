@@ -8,7 +8,7 @@ import * as Effect from 'effect/Effect'
 import * as Queue from 'effect/Queue'
 import { activateOnCluster } from './doors.ts'
 import { loads } from './loop.ts'
-import { type Deployment, end, type Process, reread } from './process.ts'
+import { type Deployment, end, mark, type Process, reread } from './process.ts'
 import type { Types } from '../program.ts'
 
 /**
@@ -16,7 +16,8 @@ import type { Types } from '../program.ts'
  * due, and activates the entities whose time has come: arming a timer already due fires it. Then it sleeps
  * until the next, an hour at most (decision 0221), or until an entity is unloaded and brings an earlier one. An
  * activation that fails crashes its entity alone, which is tried again after `retry`, as a receiver that crashed is
- * sent to again (decisions 0046, 0077).
+ * sent to again (decisions 0046, 0077). An entity a crash took out of the process is activated after `retry` too,
+ * since its stored work may hold no timer, and nothing else in this process would load it (decision 0252).
  */
 export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => {
   const { waker } = deployed
@@ -25,25 +26,34 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
   return Effect.forever(Effect.gen(function*() {
     const now = DateTime.toEpochMillis(yield* DateTime.now)
     let next = Infinity
-    for (const [id, at] of waker.failed) {
-      if (at <= now) waker.failed.delete(id)
-      else next = Math.min(next, at)
+    // A crash's mark whose time has come is activated whatever its timers, once: the reading leaves it out.
+    const worked: Array<string> = []
+    for (const [id, { at, works }] of waker.failed) {
+      if (at > now) next = Math.min(next, at)
+      else {
+        waker.failed.delete(id)
+        if (works && !deployed.loaded.has(id)) worked.push(id)
+      }
     }
+    // A crash's mark leaves the entity in the readings: a timer due before the mark activates it then.
+    const hidden = [...waker.failed].flatMap(([id, { hides }]) => hides ? [id] : [])
     const due = yield* deployed.storage.due(
       now,
-      [...deployed.loaded.keys(), ...waker.failed.keys()],
+      [...deployed.loaded.keys(), ...hidden, ...worked],
       p.cluster === null ? undefined : held(deployed),
     )
     next = Math.min(next, due.next ?? Infinity)
     waker.next = next === Infinity ? null : next
     // The entities just activated are this process's, and the reading of the next round leaves them out, as
     // it leaves out the ones that failed until their time.
-    if (due.ready.length > 0) {
-      for (const id of due.ready) {
+    const ready = [...worked, ...due.ready]
+    if (ready.length > 0) {
+      for (const id of ready) {
         const activation = p.cluster === null ? loads(p, deployed, id) : activateOnCluster(p, deployed, id)
         yield* activation.pipe(Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.sync(() => {
-            waker.failed.set(id, now + p.retry)
+            // An activation of a crash's mark that fails is still the crash's: it is activated at its next time.
+            mark(waker, id, now + p.retry, { hides: true, works: worked.includes(id) })
           })
         ))
       }

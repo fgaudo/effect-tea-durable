@@ -1094,6 +1094,87 @@ describe('the runtime on Cluster', () => {
           }).pipe(Effect.orDie),
     ).then(() => expect(warningsAndErrors()).toEqual([restarted('Failed to execute statement')]))
   }, 30_000)
+
+  // The door's step holds the entity's lock inside Cluster's transaction and lets it go before the commit, and its
+  // `Settle` is offered only by `afterCommit`. A passivation whose unload waited for the lock runs in that window,
+  // and the held machine is idle: the unload is refused while a door's step is uncommitted (decision 0252).
+  test('an entity whose passivation waits on a door step that starts an operation runs the operation', () => {
+    let unloadedWhileAsking = 0
+    return onRunner(
+      Effect.gen(function*() {
+        yield* create(0, 'c1')
+        expect(yield* send({ _tag: 'Ask' }, 'm1')).toBe('{"_tag":"Accepted"}')
+        const state = yield* Effect.repeat(stateOf, {
+          schedule: Schedule.spaced('25 millis'),
+          until: (state) => state?.n === 100,
+        }).pipe(Effect.timeout('1500 millis'), Effect.exit)
+        // The step committed `asking`, and the entity left the process with nothing running for it.
+        expect({ unloadedWhileAsking, asked, state: yield* stateOf }).toEqual({
+          unloadedWhileAsking: 0,
+          asked: 1,
+          state: { n: 100, asking: false },
+        })
+        expect(Exit.isSuccess(state)).toBe(true)
+      }),
+      // The door's step of `Ask` waits past the passivation before it writes, holding the entity's lock, so that the
+      // loop's unload is waiting for the lock when the door lets it go.
+      (sql) => (said) =>
+        said._tag === 'Unloaded'
+          ? Effect.map(Effect.provideService(stateOf, SqlClient.SqlClient, sql), (state) => {
+            if (state?.asking === true) unloadedWhileAsking++
+          }).pipe(Effect.orDie)
+          : said._tag === 'Reached' && said.point === 'BeforeCommit' && said.event._tag === 'Receive'
+          ? Effect.sleep('600 millis')
+          : Effect.void,
+      { sweep: 'none', passivate: { millis: 300 } },
+      // Cluster saves the reply in the door's transaction, after the handler has let the lock go, and before the
+      // commit runs `afterCommit`. A fiber yields there whenever it reaches Effect's budget of operations; the yield
+      // is made here at once.
+      Layer.effect(
+        MessageStorage.MessageStorage,
+        Effect.map(Effect.service(MessageStorage.MessageStorage), (storage) =>
+          MessageStorage.MessageStorage.of({
+            ...storage,
+            saveReply: (reply) => Effect.andThen(Effect.yieldNow, storage.saveReply(reply)),
+          })),
+      ).pipe(Layer.provide(SqlMessageStorage.layer)),
+    )
+  }, 30_000)
+
+  // An activation on Cluster runs in the door's transaction, and enters the entity before the commit (decisions
+  // 0079, 0092). A commit that fails leaves the entity held at its stored machine, whose `Restart` the rollback
+  // dropped. The next step finds it unsettled, crashes it and loads it again, so its `Restart` runs (decision 0252).
+  test('a door step that loads an entity and whose commit fails leaves the entity to run its stored operation', () => {
+    let phase: 'ask' | 'crash' | 'load' | 'done' = 'ask'
+    return onRunner(
+      Effect.gen(function*() {
+        yield* create(0, 'c1')
+        phase = 'crash'
+        // `Ask` runs once, and its completion's commit fails: the entity crashes with the operation stored.
+        expect(yield* send({ _tag: 'Ask' }, 'm1')).toBe('{"_tag":"Accepted"}')
+        yield* eventually(Effect.sync(() => phase), (now) => now === 'load')
+        expect(asked).toBe(1)
+        // The door loads the entity, whose `Restart` starts `Ask` again, and the step's commit fails once.
+        expect(yield* send({ _tag: 'Add', n: 1 }, 'm2')).toBe('{"_tag":"Accepted"}')
+        expect(phase as string).toBe('done')
+        const state = yield* eventually(stateOf, (state) => state?.n === 101).pipe(
+          Effect.timeoutOption('5 seconds'),
+          Effect.andThen(stateOf),
+        )
+        expect({ state, asked }).toEqual({ state: { n: 101, asking: false }, asked: 2 })
+      }),
+      (sql) => (said) => {
+        if (said._tag !== 'Reached' || said.point !== 'BeforeCommit') return Effect.void
+        const breaks = (phase === 'crash' && said.event._tag === 'Complete') ||
+          (phase === 'load' && said.event._tag === 'Receive')
+        if (!breaks) return Effect.void
+        phase = phase === 'crash' ? 'load' : 'done'
+        return sql`INSERT INTO child (parent) VALUES (1)`.pipe(Effect.asVoid, Effect.orDie)
+      },
+      // The waker would load the crashed entity again after `retry`, before the door of m2 does.
+      { sweep: 'none', retry: { millis: 3_600_000 } },
+    ).then(() => expect(warningsAndErrors()).toEqual([restarted('Failed to execute statement')]))
+  }, 30_000)
 })
 
 describe('the shards of a runner on Cluster', () => {
@@ -1491,6 +1572,45 @@ describe('the shards of a runner on Cluster', () => {
       ])
     }
   }, 60_000)
+
+  // A step of the loop refused under a lease that expired, and that no runner took, crashes its entity and stops its
+  // operations (decision 0175). Cluster's refresh renews a lease that names its runner, so the shard never moves and
+  // its round never runs again. The crash marks the entity, and the waker activates it once the lease is renewed
+  // (decision 0252).
+  test('an entity a step crashed under an expired lease that the runner renews runs its work again', () =>
+    onFile(
+      (start) =>
+        Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          const runner = yield* start(1)
+          yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
+          yield* create(runner, 'one')
+          yield* send(runner, 'one', { _tag: 'Ask' }, 'm1')
+          yield* until(Effect.sync(() => seen), (lines) => lines.includes('one started on 1'))
+          // `Haunt` creates an entity of `Ghost`, which no runner deploys, and completes after two seconds: its
+          // completion is a step of the loop, which runs while the lease below has expired.
+          yield* send(runner, 'one', { _tag: 'Haunt', to: 'nobody', by: 'create' }, 'm2')
+          const held = runner.context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
+          const shard = held.getShardId(EntityId.make('one'), 'default').toString()
+          // As after a pause of the runner, or a step of the clock, longer than the expiration: no runner takes it.
+          yield* sql.unsafe(
+            `UPDATE cluster_locks SET acquired_at = datetime(CURRENT_TIMESTAMP, '-120 seconds') WHERE shard_id = '${shard}'`,
+          )
+          yield* until(Effect.sync(() => seen), (lines) => lines.includes('one interrupted on 1'))
+          // The completion of `Haunt` was refused, and wrote nothing.
+          expect(yield* stateOf('one')).toMatchObject({ asking: true, haunt: { to: 'nobody', by: 'create' } })
+          // What Cluster's next refresh writes of a lease that names its runner.
+          yield* sql.unsafe(`UPDATE cluster_locks SET acquired_at = CURRENT_TIMESTAMP WHERE shard_id = '${shard}'`)
+          answers = true
+          yield* Effect.sleep('4 seconds')
+          expect(runner.holds('one')).toBe(true)
+          expect(seen.filter((line) => line === 'one started on 1').length).toBe(2)
+          expect(yield* stateOf('one')).toMatchObject({ asking: false, n: 100 })
+        }),
+      { passivate: { millis: 60_000 } },
+      Duration.minutes(1),
+      { refresh: Duration.seconds(30), expiration: Duration.seconds(60) },
+    ), 60_000)
 
   test('an entity left with work is activated by the runner that gains its shard', () =>
     onFile((start) =>

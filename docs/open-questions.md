@@ -365,31 +365,16 @@ with a requirement that no example has yet.
     ([decision 0154](decisions/archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). Whether the trigger locks the
     publication's row first, or a prune takes an advisory lock of the program, and its test of a server, written and
     not run.
-- **An entity a crash leaves with work stored.** A crash takes an entity out of its process with its work stored
-  ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). On one process
-  only a caller, a timer or the next start loads it again
-  ([decisions 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md),
-  [0071](decisions/archive/0071-a-process-starts-the-entities-with-a-message.md)). On Cluster only the round of a
-  shard's singleton does
-  ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)),
-  and a lease its runner renews never moves the shard. So an operation under way, or a message in the mailbox,
-  waits in silence. They are bugs 14 and 18 of the [roadmap](roadmap.md). On Cluster an entity may also be
-  unloaded between a door's step and its commit, since the step lets the lock go before Cluster commits, and the
-  operation the step stored never runs, which is bug 61, reproduced. A door's step that loads an entity and whose
-  `COMMIT` fails leaves the entity loaded with a machine that never ran its `Restart`, so its stored operation never
-  starts and the entity is never unloaded, which is bug 69, reproduced. Bug 33, the waker's map of failed entities on
-  a shard that moves, is of the same code. It would be decided by:
-  - whether every crash that leaves work stored gives the entity to the waker's retry of
-    [decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), or whether the waker
-    reads the entities with work as well as the timers;
-  - a test of each crash of a loop's step on Cluster that no move of the shard follows: a `guard` that refuses, a
-    `COMMIT` that fails, and a row another runner wrote;
-  - a test of the message left in the mailbox, on one process and on Cluster;
-  - a test of bug 33, whose shard moves while the waker waits to retry an entity;
-  - for bug 61, whether `unload` refuses an entity whose machine is not committed, and a test of its `Evict`, its
-    resumption and its `tell`;
-  - for bug 69, whether `finishIn` enters an entity it loaded only once its commit is known, and a test of the same
-    failed commit through `activateOnCluster`, from the waker and from a shard's round.
+- **The cases of a crash's retry not run yet.** The waker activates an entity a crash took out after `retry`, a
+  door's step that loaded an entity and rolled back leaves it unsettled, and an entity is not unloaded while a
+  door's step is uncommitted ([decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)). Tests hold a failed write on one process, an expired lease
+  on Cluster, a load whose commit fails through a door, and a passivation in a door's window. The waker's map of
+  marks on a shard that moves is bug 33 of the [roadmap](roadmap.md). It would be decided by:
+  - a test of a message left in the mailbox by a crash, on one process and on Cluster;
+  - a test of a crash of a loop's step on Cluster by a `COMMIT` that fails, and by a row another runner wrote;
+  - a test of a load whose commit fails through `activateOnCluster`, from the waker and from a shard's round;
+  - a test of an `Evict`, a resumption and a `tell` in a door's window before its commit;
+  - a test of bug 33, whose shard moves while the waker waits to retry an entity.
 - **A name a rename left.** A launch renames a program and keeps the keys of its old name
   ([decision 0156](decisions/archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). On one process
   nothing keeps a later launch from taking the old name again, and its entities then draw the keys the renamed

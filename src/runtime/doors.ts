@@ -58,8 +58,8 @@ export class Unheld extends Data.TaggedError('Unheld')<Readonly<{ id: string }>>
  * from it (decision 0161). The runner's one connection runs one transaction at a time, so no other step of the
  * entity runs meanwhile. A count that is the uncommitted machine's means its door's step committed: the machine
  * is the entity's, and what its events set going is performed now, before any later step ends that work. A count
- * that is the held machine's means the door's step rolled back, and its machine is dropped. Any other count is a
- * row this runner did not write, and gives false.
+ * that is the held machine's means the door's step rolled back, and its machine is dropped. A step that loaded the
+ * entity and rolled back gives false. Any other count is a row this runner did not write, and gives false too.
  */
 export const settle = <T extends Types>(p: Process, deployed: Deployment<T>, loaded: Loaded<T>) =>
   Effect.gen(function*() {
@@ -80,6 +80,9 @@ export const settle = <T extends Types>(p: Process, deployed: Deployment<T>, loa
       }
       return true
     }
+    // A step that loaded the entity and did not commit leaves the machine held without its `Restart`, so nothing it
+    // stored would run: the entity is not settled, and crashes, and is loaded again (decision 0252).
+    if (uncommitted !== null && uncommitted.loads) return false
     return stored === loaded.steps
   })
 
@@ -238,7 +241,8 @@ export const finishIn = <T extends Types>(
 ): Effect.Effect<void, Unheld> =>
   Effect.gen(function*() {
     const held = stepped.loaded!
-    if (deployed.loaded.get(entity.id) !== held) {
+    const loads = deployed.loaded.get(entity.id) !== held
+    if (loads) {
       if (!(yield* entersHeld(p, deployed, held))) return yield* new Unheld({ id: entity.id })
       yield* Effect.forkIn(untransacted(p.sql, loop(p, deployed, held)), deployed.scope)
     }
@@ -251,7 +255,7 @@ export const finishIn = <T extends Types>(
         yield* perform(p, deployed, held, entity, event, outputs, span)
       }
     } else {
-      held.uncommitted = { machine: stepped.machine!, steps: stepped.steps, transitions: stepped.transitions }
+      held.uncommitted = { machine: stepped.machine!, steps: stepped.steps, transitions: stepped.transitions, loads }
       yield* p.sql.afterCommit(offer(p, held, { _tag: 'Settle' }))
     }
   })
@@ -521,7 +525,8 @@ export const losing = <T extends Types>(p: Process, on: OnCluster, deployed: Dep
       yield* holding(p, { name, id })(Effect.suspend(() =>
         deployed.loaded.get(id) === loaded
           ? Effect.andThen(
-            crash(p, deployed, loaded, Cause.die(left)),
+            // The shard's new runner loads it, so the waker here does not try it again (decision 0252).
+            crash(p, deployed, loaded, Cause.die(left), false),
             // The loop is woken, finds the entity gone, and ends.
             Effect.sync(() => Queue.offerUnsafe(loaded.events, { _tag: 'Settle' })),
           )

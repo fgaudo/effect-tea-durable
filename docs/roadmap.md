@@ -30,11 +30,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their statements.
     Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does not read
     again on the row it then writes.
-  - E, an entity a crash leaves with work stored, which nothing loads again: bugs 14, 18, 61 and 69, three on Cluster
-    and one on one process. Bug 61 is no crash: an unload between a door's step and its commit. Bug 69 is a door's
-    step whose commit fails, which leaves the entity loaded with its operation never started. Its rule would be that a crash which leaves work stored gives the entity to the waker's retry
-    of [decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), in `crash` of
-    `src/runtime/loop.ts`, on one process and on Cluster.
   - G, a check of the project that holds less than its note says: bugs 43, 46 to 48, 52, 53, 83 and 88. A check passes on
     the case its rule forbids, or a test no longer reaches the case it was written for. Its rule would be that each
     check of the form, of the CI and of the explored tests is run against the case it refuses, as
@@ -133,18 +128,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       runs only on a server, and has not run. The fix begins in `expire` of `src/storage/entities.ts`, which keeps
       the time in the outer `WHERE`. The [open question](open-questions.md#running) A statement whose condition
       PostgreSQL reads from its snapshot.
-  14. **Reproduced: on Cluster, an entity a step crashed under an expired lease that its runner renews never runs
-      its work again.** A step that `guard` refuses crashes its entity
-      ([decision 0175](decisions/archive/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md)),
-      and only the shard's round loads an entity with work and no timer again
-      ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
-      Cluster renews a lease that names its runner, so the shard never moves, and the round never runs again
-      ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). The test
-      `FAILING: an entity a step crashed under an expired lease that the runner renews runs its work again`, in
-      `src/cluster.test.ts`, on `claude/premise-review-cluster-3063df` at `3b1752e`. A `COMMIT` that fails, and a
-      row another runner wrote, may crash an entity the same way, and were not run. The fix begins at `crash` of
-      `src/runtime/loop.ts`, or at `activating` of `src/runtime/doors.ts`. The
-      [open question](open-questions.md#running) An entity a crash leaves with work stored.
+  14. **Fixed by [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)**, whose waker activates an entity a crash took out.
   15. **Reproduced: an entity created under a name a rename left draws the idempotency keys of the renamed entity
       of the same id.** A renamed entity keeps the keys of its old name
       ([decision 0156](decisions/archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)), and on one
@@ -162,15 +146,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       `claude/premise-review-versions-36a283` at `cbb1ca7`. The fix begins in `mark` of `src/storage/tables.ts`. The
       [open question](open-questions.md#running) A name a rename left.
   17. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
-  18. **Reproduced: an entity a crash unloads with an operation or a message and no timer is never loaded again in
-      its process until a caller comes.** The waker reads timers alone
-      ([decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)), and a crash leaves the work stored
-      ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). The test
-      `FAILING: an entity a failed write crashes runs its operation again with no caller coming`, in
-      `src/runtime/loop.test.ts`, on `claude/premise-review-runtime-1-b0a258` at `ac905d8`. The case of a message
-      left in the mailbox is only reasoned, and so is the case on Cluster. The fix begins at `crash` of
-      `src/runtime/loop.ts`. The [open question](open-questions.md#running) An entity a crash leaves with work
-      stored.
+  18. **Fixed by [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)**, whose waker activates an entity a crash took out.
   19. **Reproduced: a discard does not get an entity past a message an operation sent.** An operator's discard
       stores no reply ([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)), and an operation's
       `send` waits for the resumption and sends the same request again
@@ -267,13 +243,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   31. **Noticed, not checked: a crash records an at-most-once operation's `unknown` while the operation's fiber may
       still run a region that acts.** The crash forks the stop and does not wait for it
       ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)), so the program's
-      answer to `unknown` may act beside the old fiber. The [open question](open-questions.md#running) An operation
-      still stopping beside its `unknown`.
+      answer to `unknown` may act beside the old fiber. Since
+      [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md) the waker
+      activates the entity again `retry` after the crash, with no caller coming, so the window is reached more
+      often. The [open question](open-questions.md#running) An operation still stopping beside its `unknown`.
   32. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
   33. **Noticed, not checked: on Cluster, the waker's map of entities it failed to activate may outlive a move of
       the shard to another runner.**
       ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)). The
-      [open question](open-questions.md#running) An entity a crash leaves with work stored.
+      [open question](open-questions.md#running) The cases of a crash's retry not run yet.
   34. **Noticed, not checked: on Cluster, an application that builds the runtime and `Sharding` in one parallel
       scope lets the shards go during the drain, and a completion then dies on the check of the lease.**
       ([decisions 0120](decisions/archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md),
@@ -456,18 +434,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       `NotFound` store nothing. The source never gives the item again. Nothing of `src/` holds it. The fix is a note
       that changes 0127, and the paragraph on streams of `docs/design.md`. The
       [open question](open-questions.md#programs) What a boundary acknowledges.
-  61. **Reproduced: on Cluster, an entity may be unloaded between a door's step and its commit, and the operation the
-      step stored never runs.** The door's step lets the lock go before Cluster commits, and `unload` reads neither
-      `uncommitted` nor the `Settle` to come
-      ([decisions 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md),
-      [0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md),
-      [0161](decisions/archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
-      An at-most-once operation is later given `unknown`, though it never ran. The same window drops the `tell` of
-      the step's rows and a resumption's work, and an `Evict` meets it too, which were not run. The test `FAILING: an
-      entity whose passivation waits on a door step that starts an operation runs the operation`, in
-      `src/cluster.test.ts`, on `claude/premise-pairs-cluster-32dc2e` at `7deee20`. The fix begins at `unload` of
-      `src/runtime/loop.ts`, or at `finishIn` of `src/runtime/doors.ts`. The
-      [open question](open-questions.md#running) An entity a crash leaves with work stored.
+  61. **Fixed by [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)**, whose waker activates an entity a crash took out.
   62. **Reproduced: on Cluster, a caller of an older version is given a rejection's reason as the newer version wrote
       it, and reads it through its own schema.** A reason is read through the migrations from the version that wrote
       it ([decisions 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md),
@@ -547,22 +514,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       its version, or at the launch, which would refuse a program of the newest version whose digest differs from a
       runner's still registered. The [open question](open-questions.md#running) Two programs of one version on
       Cluster.
-  69. **Reproduced: on Cluster, a door's step that loads an entity and whose commit fails leaves the entity loaded
-      without its `Restart`, and its stored operation never runs.** An activation is done or leaves nothing loaded
-      ([decision 0079](decisions/archive/0079-what-a-caller-sets-going-is-finished-without-it.md)). On Cluster the
-      activation is in the door's transaction
-      ([decision 0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)),
-      and the entity is entered before Cluster commits
-      ([decision 0161](decisions/archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
-      Once the `COMMIT` fails, the next step's `settle` drops the uncommitted machine with the `Started` of its
-      `Restart`, and steps the message from a machine with nothing running. The operation stays stored and never
-      starts, and `nothingToDo` never unloads the entity. The test `FAILING: a door step that loads an entity and
-      whose commit fails leaves the entity to run its stored operation`, in `src/cluster.test.ts`, on
-      `claude/premise-pairs-runtime-1-1-eb56fb` at `876ea90`. The same through `activateOnCluster`, from the waker
-      and a shard's round, is only reasoned. The fix begins at `finishIn` of `src/runtime/doors.ts`, which would
-      enter an entity it loaded only once its commit is known, or at `settle`, which would crash an entity whose held
-      machine was never restarted. The [open question](open-questions.md#running) An entity a crash leaves with
-      work stored.
+  69. **Fixed by [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)**, whose waker activates an entity a crash took out.
   70. **Reproduced: on Cluster, a deploy that fails after its door is registered leaves every later deploy of its
       name a closed door.** A failed deploy gives its name back
       ([decisions 0075](decisions/archive/0075-a-name-is-deployed-once-in-a-process.md),

@@ -28,6 +28,7 @@ import {
   holding,
   linkKey,
   type Loaded,
+  mark,
   observe,
   operated,
   type Passivate,
@@ -434,6 +435,9 @@ export const applyInProcess = <T extends Types>(
 export const nothingToDo = <T extends Types>(loaded: Loaded<T>) => {
   const { stored } = loaded.machine
   if (loaded.applying || loaded.pending > 0 || loaded.operations.size > 0) return false
+  // On Cluster, a door's step not known to be committed may have stored work the machine held does not show yet.
+  // An entity unloaded then would leave that work to nothing in this process (decision 0252).
+  if (loaded.uncommitted !== null) return false
   // A suspended entity whose operations have ended handles nothing, and comes back suspended, with the message
   // it died on and the completions behind it (decisions 0006, 0113).
   if (stored.suspension !== null) return true
@@ -519,16 +523,21 @@ export const unload = <T extends Types>(
  * retry. What is stored is what its next activation starts from, as after a crash of the process. Called
  * where the entity's lock is held, so that no caller is between finding the entity and offering its event
  * (decisions 0042, 0067). The interruption of its work is forked: it waits for the operations' finalizers,
- * and nothing else waits for them under the lock (decision 0056).
+ * and nothing else waits for them under the lock (decision 0056). The waker activates the entity again after
+ * `retry`, unless the entity leaves for another runner (decision 0252).
  */
 export const crash = <T extends Types>(
   p: Process,
   deployed: Deployment<T>,
   loaded: Loaded<T>,
   cause: Cause.Cause<never>,
+  retried: boolean = true,
 ) =>
   Effect.gen(function*() {
     const { name, id } = loaded.machine.stored
+    // Every crash is marked, whatever the machine held shows: on Cluster it may be a step ahead of what is stored,
+    // and the activation reads what is (decision 0252). The mark is set before `leave` wakes the waker.
+    if (retried) mark(deployed.waker, id, DateTime.toEpochMillis(yield* DateTime.now) + p.retry, { works: true })
     // Its stored timers are the waker's again. A crash may run where the step that died cannot be interrupted, as
     // a creation's `onError` does: the fork's option keeps it stoppable by the scope (decision 0112).
     yield* leave(p, deployed, loaded)

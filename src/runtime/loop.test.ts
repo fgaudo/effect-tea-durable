@@ -19,7 +19,7 @@ import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import * as Tracer from 'effect/Tracer'
 import * as Machine from '../machine.ts'
-import { InvariantDefect } from '../program.ts'
+import { InvariantDefect, type Program } from '../program.ts'
 import * as Library from '../index.ts'
 import { type Answer, type Options, type Point } from '../runtime.ts'
 import { storage } from '../storage.ts'
@@ -1476,3 +1476,44 @@ describe('what the runtime tells a tracer (decision 0220)', () => {
       expect(value(snapshots, 'tea.mailbox.length')).toMatchObject({ count: 5, min: 0, max: 4, sum: 10 })
     })))
 })
+
+test('an entity a failed write crashes runs its operation again with no caller coming', () =>
+  database(Effect.gen(function*() {
+    // A crash of the entity alone (decision 0042) unloads it with its operation stored and its fiber stopped, and no
+    // timer is stored. The waker reads timers alone (decision 0029), so the crash marks the entity, and the waker
+    // activates it again after `retry` (decision 0252).
+    const { acted, layer } = yield* hands({ holds: true })
+    const working: Program<T> = {
+      ...program,
+      name: 'Working',
+      init: (_flags, at) => ({ want: ['c'], applied: [], since: at, rings: at }),
+    }
+    let dies = true
+    yield* process({
+      // The message's write fails once, as a database that refused it.
+      at: (point, _entity, event) =>
+        point === 'BeforeCommit' && received(event) === 'r-1' && dies
+          ? Effect.suspend(() => {
+            dies = false
+            return Effect.die('the runtime failed')
+          })
+          : Effect.void,
+    }, (runtime) =>
+      Effect.gen(function*() {
+        const at = yield* DateTime.now
+        const toy = yield* Effect.provide(runtime.deploy(working), layer)
+        yield* ran(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
+        // The at-least-once operation under `c` has acted, and holds.
+        expect(acted).toEqual(['c'])
+        const sent = yield* ran(Effect.exit(
+          toy.send(id, { _tag: 'Want', key: 'c', on: true, nonce: 'n-1' }, { requestId: 'r-1', sender: tester, keep: 'forever' }),
+        ))
+        expect(Exit.isFailure(sent)).toBe(true)
+        // The entity crashed and left, and its operation was stopped: the process is settled, with work stored.
+        yield* runtime.settled
+        // The operation run again holds for ever, so the process is never settled again: the test waits for its act.
+        yield* TestClock.adjust('1 hour')
+        yield* Effect.repeat(Effect.yieldNow, { until: () => acted.length === 2, times: 10_000 })
+        expect(acted).toEqual(['c', 'c'])
+      }))
+  })))

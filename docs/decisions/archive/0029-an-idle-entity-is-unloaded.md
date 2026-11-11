@@ -13,7 +13,7 @@ entity's wait wraps its take alone, which is what Effect promises an event offer
 by [decision 0113](0113-a-suspended-entitys-operations-run-to-their-end.md): its operations run to their end, and
 it is unloaded once they have ended. The wait ends with an item of the entity's queue, and nothing races its take, by
 [decision 0116](0116-an-entitys-wait-ends-with-an-item-of-its-queue.md). What a timer months away rests on, a sleep
-longer than the host's timer, is added by [decision 0194](../0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md).
+longer than the host's timer, is added by [decision 0194](../0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md). [decision 0252](../0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md) keeps an entity whose door's step is not known to be committed from being unloaded.
 
 ## Context
 

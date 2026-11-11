@@ -246,6 +246,8 @@ export type Uncommitted<T extends Types> = Readonly<{
   machine: Machine.Machine<T>
   steps: number
   transitions: ReadonlyArray<Stepped<T>>
+  /** The step loaded the entity, so the machine held is the stored one, whose `Restart` the step ran. */
+  loads: boolean
 }>
 
 /** An event a door's step stepped, what it wrote, and what it set going. */
@@ -321,10 +323,28 @@ export interface Waker {
   /** An entity was unloaded, and its timers may be due before the one the fiber sleeps for. */
   readonly poke: Queue.Queue<void>
   /**
-   * The entities whose activation failed, by the time each is tried again: left out of the readings until then, so
-   * that an entity the fiber cannot load neither stops it nor keeps it from sleeping (decision 0077).
+   * The entities the fiber tries again, by the time each is tried (decisions 0077, 0252). One whose activation
+   * failed is left out of the readings until then, so that an entity the fiber cannot load neither stops it nor
+   * keeps it from sleeping. One a crash took out of the process is activated at its time, timers or none.
    */
-  readonly failed: Map<string, number>
+  readonly failed: Map<string, Mark>
+}
+
+/**
+ * When an entity is tried again, whether the readings leave it out until then, and whether it is activated then
+ * whatever its timers: an activation that failed hides it, and a crash works it (decision 0252). One entity has
+ * one mark, so that an activation of the waker that crashes is tried once.
+ */
+export type Mark = Readonly<{ at: number; hides: boolean; works: boolean }>
+
+/** Marks `id` to be tried again at `at`, keeping what an earlier mark of it says (decision 0252). */
+export const mark = (waker: Waker, id: string, at: number, set: Readonly<{ hides?: boolean; works?: boolean }>) => {
+  const was = waker.failed.get(id)
+  waker.failed.set(id, {
+    at,
+    hides: (set.hides ?? false) || (was?.hides ?? false),
+    works: (set.works ?? false) || (was?.works ?? false),
+  })
 }
 
 export interface Deployment<T extends Types> {
