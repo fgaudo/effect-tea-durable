@@ -15,8 +15,11 @@ import { parseArgs } from 'node:util'
 import { type Pin, pins } from '../src/runtime.test_pins.ts'
 import { check, copy, environment } from './mutate.ts'
 
-/** A pattern of `bun test -t` that matches the name whole, and no other. */
-const exactly = (name: string) => `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
+/**
+ * A pattern of `bun test -t` that matches the name whole. Bun matches the full name, the names of the enclosing
+ * `describe`s and the test's joined by spaces, so the name may follow a space.
+ */
+const exactly = (name: string) => `(^| )${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
 
 /** Runs the pin's test under its pinned schedules alone, and gives whether it passed, and how many tests ran. */
 const tested = async (at: string, pin: Pin) => {

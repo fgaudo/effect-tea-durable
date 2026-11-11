@@ -161,7 +161,9 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
   test('a reading interrupted as it begins its wait leaves the watcher still, under every schedule of one deviation', () => {
     // The count of the readings that wait is raised before the wait and lowered by its finalizer. A fiber may yield
     // between the two, and an interruption there would leave the count raised: the watcher would read the version
-    // at every interval for ever, though no reading waits.
+    // at every interval for ever, though no reading waits. With the count raised before an `ensuring`, outside one
+    // acquisition, the deviation at decision 637, pinned, fails. `bun run test:pins` runs it against that form, the
+    // pin `0163 a reading's count` of `src/runtime.test_pins.ts` (decision 0254).
     explored((window) =>
       Effect.scoped(twoRunners((reader, _commit, reads) =>
         Effect.gen(function*() {
@@ -173,13 +175,15 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
           const before = reads()
           yield* TestClock.adjust('1 second')
           return reads() - before
-        }), 200, false)), 0, { open: false, bound: 1 })
+        }), 200, false)), 0, { open: false, bound: 1, pinned: [{ decision: 637, choice: 1 }] })
   }, 60_000)
 
   test('a reading is woken by a commit of another runner between its page and its wait, under prioritized schedules', () => {
     // The watcher keeps the version it last read while no reading waits. A watcher that read a new version as a wait
     // began would count a commit made after the page as seen, and the reading would never be woken: the clock never
-    // moves here. A first reading waits and is woken before, so that the second wait is not the first.
+    // moves here. A first reading waits and is woken before, so that the second wait is not the first. With the
+    // version read anew as a wait begins, seed 0, pinned, fails. `bun run test:pins` runs it against that form, the
+    // pin `0163 the watcher's version` of `src/runtime.test_pins.ts` (decision 0254).
     explored(() =>
       Effect.scoped(twoRunners((reader, commit) =>
         Effect.gen(function*() {
@@ -193,6 +197,6 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
             commit('m2'),
           ])
           return (read as ReadonlyArray<Readonly<{ value: number }>>).map(({ value }) => value)
-        }), 0, true)), [2])
+        }), 0, true)), [2], { pinned: [0] })
   }, 60_000)
 })

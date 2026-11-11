@@ -71,4 +71,28 @@ export const pins: ReadonlyArray<Pin> = [
     test: 'src/runtime/waker.test.ts',
     name: 'settled never returns while the waker rests from a reading another entity left during, under bounded schedules',
   },
+  {
+    id: '0163 a reading\'s count is raised and lowered in one acquisition',
+    file: 'src/runtime/readings.ts',
+    edits: [
+      [
+        '      yield* Effect.acquireUseRelease(\n',
+        '      yield* ((acquire: Effect.Effect<void>, use: () => Effect.Effect<unknown>, release: () => Effect.Effect<void>) =>\n        Effect.andThen(acquire, Effect.ensuring(use(), release())))(\n',
+      ],
+    ],
+    test: 'src/runtime/readings.test.ts',
+    name: 'a reading interrupted as it begins its wait leaves the watcher still, under every schedule of one deviation',
+  },
+  {
+    id: '0163 the watcher\'s version is kept while no reading waits',
+    file: 'src/runtime.ts',
+    edits: [
+      [
+        '          yield* readings.waiting.await\n',
+        '          if (readings.count === 0) {\n            yield* readings.waiting.await\n            seen = yield* read(seen)\n          }\n',
+      ],
+    ],
+    test: 'src/runtime/readings.test.ts',
+    name: 'a reading is woken by a commit of another runner between its page and its wait, under prioritized schedules',
+  },
 ]

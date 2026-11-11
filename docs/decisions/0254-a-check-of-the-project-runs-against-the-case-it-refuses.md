@@ -139,6 +139,12 @@ that fails is pinned. The tests pinned so far, each with its pin in `src/runtime
 - `settled never returns while the waker rests from a reading another entity left during`, of
   `src/runtime/waker.test.ts`: the deviation `{ decision: 182, choice: 1 }`, against the look for a poke and the
   clearing of the waker's flag of decision 0068 split in two steps.
+- `a reading interrupted as it begins its wait leaves the watcher still`, of `src/runtime/readings.test.ts`: the
+  deviation `{ decision: 637, choice: 1 }`, against the count of decision 0163 raised before an `ensuring`.
+- `a reading is woken by a commit of another runner between its page and its wait`, of the same file: seed 0, against
+  the watcher's version read anew as a wait begins.
+- `scripts/pins.ts` matched a test's name from its start, and Bun matches the names of the enclosing `describe`s
+  before it. So a pin of a test inside a `describe` ran no test. The pattern now lets the name follow a space.
 
 ## What it rests on
 
