@@ -33,8 +33,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     then 41, 44, 72, 42 and 87; then the bugs reasoned, 4, 6, 8, 22, 60 and 64, and the bugs noticed, 31, 37, 38,
     40, 50, 51, 65, 67 and 79, each verified first. Bug 86 is fixed by
     [decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md), and bugs 26 and
-    81 by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md). Its tests on a
-    server run first in the CI, and the test of bug 81 has not run against the code before 0256. The part
+    81 by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md). The part
     next is bug 75, whose fix begins at `waking` of `src/runtime/waker.ts`.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
@@ -893,6 +892,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     10. Area 10, The rehearsal and testing.
     11. Done, by the sample above: area 11, The scheduler of the tests.
     12. Area 12, The project and what enters the library.
+  - The second reading starts from the inventory of the premises only reasoned, the section of 2026-11-11 at the
+    end of [`reviews.md`](decisions/reviews.md). It sorts 125 premises of 85 notes against the rule of `AGENTS.md`
+    that no premise of what code does is only reasoned. Before area 1, the six cases it finds left out and in no
+    open question go in [the open questions](open-questions.md). Each of the 36 premises of what code does that it
+    finds checked by nothing gets the test its row names, the seven of risk high first. A test that fails is a bug
+    of the step of bugs, and a test that passes makes the premise tested. A premise that no test reaches yet is an
+    open question. Each area then reads, of its notes, the premises the inventory calls chosen, and the four it
+    counts as checked by a test of a neighbouring case.
   - The first session's report is not kept, so what it ruled out is not written here. The reports of the second,
     third and fourth sessions are recorded whole in this step, in the step of bugs and in
     [the open questions](open-questions.md).

@@ -46,7 +46,8 @@ handler.
 - That each call is refused within a caller's transaction, before it runs, and that the runtime goes on: **tested** by
   `a deploy, a create, a send, a resume, a discard and a fetch that waits are refused within a transaction`, in
   `src/runtime.test.ts`. It runs with `onBoth`, on SQLite and PGlite, and on the server where `POSTGRES_URL` names
-  one. It fails against the code before the change.
+  one. It fails against the code before the change. On the server it passed on `main` in run 43070135997, and timed
+  out on the branch without the refusal of `create`, in run 43070141467.
 - That a handler of `consume` that creates an entity fails its reader, leaves its page unread, and holds no step:
   **tested** by `a handler of consume that creates an entity is refused, and holds no step of the runtime`, in
   `src/runtime.test.ts`. It fails against the code before the change, where the reader never ends.
@@ -54,14 +55,18 @@ handler.
   which is bug 81: **tested** by `creates within transactions that hold every connection of the pool are refused, and
   the runtime goes on`, in `src/postgres.test.ts`. It holds in a transaction every connection the runtime's advisory
   lock leaves, and calls `create` in each. It runs in the job of the CI that runs `bun run test:postgres`, since no
-  server runs on the maintainer's machine, so it first runs on the push of this note. That it fails against the code
-  before the change, where each create would wait for ever, is **not run**: a run on a branch with the refusal of
-  `create` taken out would check it.
+  server runs on the maintainer's machine. It passed on `main` at `1ab1424`, in run 43070135997. On the branch
+  `claude/mutation-0256-create`, with the refusal of `create` taken out, it waited past its 60 seconds, in run
+  43070141467, as bug 81 says.
 - That a call within a transaction of another client is answered, since that transaction holds a connection the
   runtime's steps do not use: **tested** by `a create and a send within a transaction of another client are
   answered`, in `src/runtime.test.ts`, on both dialects with a client of SQLite of its own, and by `a create within a
   transaction of another pool on the same database is answered`, in `src/postgres.test.ts`, on the server with a
-  second pool on the runtime's database.
+  second pool on the runtime's database. Both passed on `main` in run 43070135997.
+- That the explored tests keep their pinned interleavings, though `outside` adds a step before each call it guards:
+  **tested** by `bun run test:pins`. The step moved four schedules, and the tests now pin seed 162 for decision 0079,
+  seed 140 for decision 0116, the deviation at decision 373 for decision 0147 and the one at decision 640 for decision
+  0163, each found by the pin's mutation over every seed from 0.
 - That a call can tell it runs within a transaction of the client: **read** in `node_modules/effect/src/sql/SqlClient.ts`,
   as decision 0184 read it. Its premise holds: `transactionService` is still the client's service of its open
   transaction.

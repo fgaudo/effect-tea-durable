@@ -5006,3 +5006,161 @@ out.
 ### Notes not read whole
 
 - None. Every note of the table was read whole, and with the code the table names.
+
+## 2026-11-11: inventory of the premises only reasoned, against the rule of `AGENTS.md`
+
+`AGENTS.md`, under Notes, now says that no premise of what code does is only reasoned. This inventory sorts every
+premise that a note taken before that rule says is reasoned, so that the second reading of the premise review, a
+step of the [roadmap](../roadmap.md), starts from it. A subagent sorted the 125 premises of 85 notes, read from
+their sections `What it rests on`. It changed no file. The session that recorded it checked a sample of its rows
+against the notes and the tests: 0092, 0161, 0167 and 0172.
+
+- `chosen`, 36: a judgment that no test can make fall. Nothing is to do.
+- `left-out`, 9: a case that the decision leaves out. Three are open questions already, of 0248 and 0126. Six are
+  not: 0192, 0123 twice, 0125, 0129 and 0172's two loaders on a pool of PostgreSQL. Each goes in
+  [`docs/open-questions.md`](../open-questions.md).
+- `behaviour`, 80: a claim about what code does. Four are of a rule that a later note replaced: 0191 by 0216, a
+  premise of 0194 by 0221, one of 0092 by 0161, and 0101 by 0104. Forty-two are checked since, by a later test or
+  an open question. Thirty-six are of a rule still kept and checked by nothing: 7 of risk high, 7 medium and 22 low.
+- The seven of risk high are 0092's `Resumed` to every sender that waits, 0161's lock never held across a wait for
+  the connection, 0161's door step that reads no machine between its commit and its assignments, 0162's entity
+  that enters before the mark or finds it, 0167's two premises on `Resumed`, and 0172's takers outside a
+  transaction. Each row says the test that would decide it.
+- Four rows count as checked by a test of a neighbouring case: 0221, 0092's count of steps, 0131 and 0171. The
+  second reading reads those tests against the premise.
+- A premise that is chosen may still be touched by a bug: 0127's acknowledgement of a boundary once `send` is
+  answered is chosen, and bug 60 says that even it may lose an item.
+
+### The premises, one row each
+
+`live`, `already` and `risk` hold for `behaviour` alone. The last column is the check for `behaviour`, and the open
+question for `left-out`.
+
+
+| note | premise | group | live | already | risk | check / open question |
+|------|---------|-------|------|---------|------|------------------------|
+| 0181 | A `const` message is assignable to the schema's ReadonlyArray type | behaviour | live | yes: `a timer needs no type parameter… (decision 0181)` in src/program.test.ts, by `bun run typecheck` | low | — |
+| 0182 | A caller retries a creation with the flags it first sent | chosen | — | — | — | a retry with other flags is the caller's mistake |
+| 0184 | A commit wakes a wait with no time limit as it wakes a timed one | behaviour | live | yes: open question A reader with no time that misses a commit (bugs 37, 39) | high | — |
+| 0185 | The waiting senders are the ones `suspended` lists | behaviour | live | yes: open question Who an operator sees waiting (bugs 63, 72) | low | — |
+| 0191 | The transaction's advisory lock orders concurrent `createTables` on PostgreSQL | behaviour | superseded by 0216 | yes: the two tests of the migrations in src/postgres.test.ts (0222) | medium | — |
+| 0192 | The machine runs only where `node:crypto` is; no browser rehearsal | left-out | — | — | — | no |
+| 0194 | The runtime sleeps by `Effect.sleep` alone, no host timer | behaviour | live | yes: `the library reads the time and sleeps through Effect alone, which a test moves` in src/runtime.test.ts | medium | — |
+| 0194 | A timer fires at the time it stores | behaviour | superseded by 0221 | yes: `the waker fires a stored timer within an hour of a suspended host’s return` in src/runtime/waker.test.ts | medium | — |
+| 0195 | `effect/persistence` is not read as what the library is built on | chosen | — | — | — | a reading of the name |
+| 0198 | An application names no table of its own with `tea_` | chosen | — | — | — | the caller's mistake; the prefix is `effecttea_` since 0218 |
+| 0203 | A part found in a file of `examples/` is run by a test | behaviour | live | no | low | a check in src/form.test.ts that every non-test file of an example is imported by a test file of it |
+| 0207 | A lone surrogate compares otherwise on each dialect | behaviour | live | no (spikes/sqlite-column-values.test.ts reads it back as U+FFFD; no comparison) | low | a spike comparing a lone surrogate against its U+FFFD form on SQLite and PGlite, in spikes/pglite-dialect.test.ts |
+| 0215 | PL/pgSQL resolves a name of a function's body by the call's `search_path` | behaviour | live | no | medium | a test in src/postgres.test.ts that deletes through `effecttea_outbox_drops_its_publication` under another `search_path` |
+| 0215 | An advisory lock is the database's, not a schema's | behaviour | live | yes: the two tests of the hold in src/postgres.test.ts (0222) | high | — |
+| 0215 | A pool gives every connection the role's `search_path` | behaviour | live | yes: `every connection of the pool finds the tables…` in src/postgres.test.ts (0222) | medium | — |
+| 0216 | Two runs at once on PostgreSQL wait on the lock of the migrations table | behaviour | live | yes: the two tests of the migrations in src/postgres.test.ts (0222, 0225) | medium | — |
+| 0218 | An application names no table of its own with `effecttea_` | chosen | — | — | — | the caller's mistake, and the launch dies on it |
+| 0220 | A message offered on one process is handled by its own `Receive`, not `Handle` | behaviour | live | no | low | a test in src/runtime/loop.test.ts, under the scheduler, that a caller's request gives a `Receive` span and no `Handle` span |
+| 0221 | A host's timers do not run while the host is suspended | behaviour | live | yes: `the waker fires a stored timer within an hour of a suspended host’s return` in src/runtime/waker.test.ts (the rule holds either way) | low | — |
+| 0223 | The room a prune needs grows with what it deletes | behaviour | live | no (spikes/full-volume.test.ts tries one size) | low | spikes/full-volume.test.ts at two sizes of the log, measuring the room each prune needs |
+| 0224 | A step's time may run against its `seq` | behaviour | live | no | low | a test under the scheduler in src/runtime/loop.test.ts where two steps of one partition commit with times against their `seq` |
+| 0224 | The reading costs one lookup per consumer and partition | behaviour | live | no | low | a spike of the plan, as spikes/sqlite-partitions-plan.test.ts, for the age reading |
+| 0240 | A program keeps and reads the steps it chains | chosen | — | — | — | a reading of what a program may do with a `Step` |
+| 0241 | `runtime.ts` and `runtime/` may stand side by side | behaviour | live | yes: `bun run typecheck` and `bun test`, and the form test of groups in src/form.test.ts | low | — |
+| 0241 | A test moved to another file runs the schedules it ran before | behaviour | live | yes: seen 2026-11-10, and `bun run test:pins` runs each pin against its mutation | medium | — |
+| 0242 | Splitting the tests among jobs changes no test's result | behaviour | live | yes: spikes/bun-test-shards-partition-the-files.test.ts and the runs on the branch | low | — |
+| 0245 | Only the boundary knows how long its callers retry for | chosen | — | — | — | the boundary's knowledge, as 0125 says |
+| 0246 | A fiber that sleeps before its commit wakes a `txRetry` body | behaviour | live | no | low | a test in spikes/effect-tx-under-the-scheduler.test.ts with a TestClock sleep before the commit |
+| 0246 | I/O within a transaction would run again at each retry | behaviour | live | no | low | a test in spikes/effect-tx-under-the-scheduler.test.ts counting an `Effect.sync` inside an `Effect.tx` that conflicts |
+| 0247 | A version no migration reads throws inside `check`'s guard | behaviour | live | yes: `tells a row the migrations do not read from an activation that suspends` in src/check.test.ts | low | — |
+| 0248 | The clocks of two runners differ by less than a second | left-out | — | — | — | yes: The margin of a caller's rows on Cluster, once runners have clocks of their own |
+| 0248 | A read of replies that fails twice running is rare | left-out | — | — | — | yes: The margin of a caller's rows on Cluster… (its bullet on a client that missed its polls) |
+| 0248 | The margin: two polls and 1 000 ms outlast the second client's read | behaviour | live | yes: open question The margin of a caller's rows on Cluster…, and roadmap bug 89, reproduced | high | — |
+| 0249 | The id's deletion commits before `Sharding.reset` runs | behaviour | live | yes: the three tests named in the note, in src/cluster.test.ts | high | — |
+| 0250 | A sample of one deviation in twenty finds most bugs a sweep finds | chosen | — | — | — | a judgment of cost against the budget |
+| 0250 | A join under a 5 s timeout checks what a sleep and a reading did | behaviour | live | no | low | a mutation of `scripts/mutate.ts` or a pin that answers otherwise, run against the joined form |
+| 0251 | A sender and Cluster's round rest at a millisecond as the waker does | behaviour | live | yes: open question A sender and Cluster's round at the least retry | high | — |
+| 0252 | A crash that comes back at every activation is retried while the process runs | behaviour | live | yes: `an entity the waker cannot activate is tried again after the retry…` in src/runtime.test.ts; open question The cases of a crash's retry not run yet | medium | — |
+| 0252 | A mark on Cluster of an entity whose shard moved is harmless | behaviour | live | yes: roadmap bug 33, in open question The cases of a crash's retry not run yet | medium | — |
+| 0252 | An at-most-once fiber has stopped before the activation records `unknown` | behaviour | live | yes: open question An operation still stopping beside its `unknown` (bug 31) | high | — |
+| 0253 | Only the operation's own runs read or write its answers, one after the other | behaviour | live | yes: open question An operation's kept answer on Cluster across a crash, and under two runs at once | high | — |
+| 0092 | A door bounded by `maxIdleTime` ≤ passivation follows the entity out | behaviour | live | no | medium | a test in src/cluster.test.ts that a passivated entity leaves Cluster's resident entities within `passivate.millis` |
+| 0092 | The count of steps keeps memory equal to what is stored, for the runtime's machine | behaviour | live | yes: `a door step whose commit fails is dropped…` and `a door step that loads an entity and whose commit fails…` in src/cluster.test.ts (0161, 0252) | high | — |
+| 0092 | SQLite's one transaction orders two fibers stepping one entity, no lock needed | behaviour | superseded by 0161 | no | high | — (0161 takes the entity's lock inside the transaction) |
+| 0092 | The runtime's RPCs leave no interrupts in `cluster_messages` | behaviour | live | no (roadmap bug 59, reproduced, is near it) | low | a test in src/cluster.test.ts that a caller interrupted while it waits leaves no interrupt row |
+| 0092 | A resumption reaches every waiting sender by `Resumed`; a defect's id leaves no rows | behaviour | live | no (src/cluster.test.ts wakes one sender only) | high | a test in src/cluster.test.ts with two senders of two entities waiting on one receiver resumed on another runner |
+| 0099 | A library cannot promise more stability than what it is built on | chosen | — | — | — | a judgment |
+| 0101 | The tests under budgets assert what holds once the clock passed | behaviour | superseded by 0104 | no | low | — (no test runs under a budget since 0104) |
+| 0102 | The test reaches every point where an interruption is seen | behaviour | live | yes: `a deploy interrupted anywhere keeps its name and its waker…`, under prioritized schedules and every deviation, in src/runtime.test.ts | high | — |
+| 0103 | The runtime reads time only through `DateTime.now` and `Effect.sleep` | behaviour | live | yes: `the library reads the time and sleeps through Effect alone, which a test moves` in src/runtime.test.ts | medium | — |
+| 0104 | Every scenario of the runtime is deterministic once its choices are | behaviour | live | yes: `bun run test:pins` replays each pinned seed; spikes/effect-scheduler-controlled.test.ts | medium | — |
+| 0110 | The fiber waiting for detached work runs, forked in the process's scope | behaviour | live | yes: `a deploy interrupted anywhere…` in src/runtime.test.ts, which ends only with it | high | — |
+| 0112 | No test fails without the interruptible option at the pinned version | behaviour | live | yes: spikes/effect-uninterruptible-fork.test.ts; open question The forks of an uninterruptible activation (bug 22) | low | — |
+| 0114 | No operator stands in the line without an event offered | behaviour | live | no | medium | a test in src/runtime/callers.test.ts that interrupts a resume between its registration and its offer, if a yield can be put there |
+| 0116 | The loop interrupts the sleep once it has taken an item | behaviour | live | no | low | a test in src/runtime/loop.test.ts counting the fibers left after an event ends a wait |
+| 0117 | A run beginning after another's in the same task is on its stack | behaviour | live | yes: spikes/effect-inline-start-yields.test.ts | low | — |
+| 0119 | A step during the drain arms no timer | behaviour | live | yes: `a completion in the drain… arms no timer` and `a step the drain handles… arms no timer` in src/runtime.test.ts | medium | — |
+| 0119 | A message an at-most-once operation sends is delivered during the drain | behaviour | live | yes: `a message an at-most-once operation sends to another entity in the drain is delivered` in src/runtime.test.ts | high | — |
+| 0120 | The at-most-once operation then delivers `unknown` | behaviour | live | yes: `an at-most-once operation that outlasts the drain delivers unknown, as after a crash` in src/runtime.test.ts | high | — |
+| 0123 | 43 characters fit the services a program calls | left-out | — | — | — | no |
+| 0123 | Two keys never share a SHA-256 digest | left-out | — | — | — | no |
+| 0124 | A boundary exists in every deployment, and authenticates | chosen | — | — | — | the deployment's duty |
+| 0124 | A sender as fine as an identity keeps request ids apart | chosen | — | — | — | the caller's mistake (near: Request ids under a sender of `null`) |
+| 0125 | A boundary knows how long its protocol retries for | chosen | — | — | — | the boundary's knowledge |
+| 0125 | The runtime's clock and the boundary's agree well enough | left-out | — | — | — | no |
+| 0126 | A migration is a pure function | chosen | — | — | — | the program's duty |
+| 0126 | A migration whose cases hold reads every row as when deployed | left-out | — | — | — | yes: Generated cases of a migration |
+| 0126 | Carrying every migration costs too little to drop them | chosen | — | — | — | a judgment of cost |
+| 0127 | A source gives each item a stable offset or id | chosen | — | — | — | the source's duty |
+| 0127 | A boundary acknowledges an item only once `send` is answered | chosen | — | — | — | the boundary's duty (open question What a boundary acknowledges, bug 60) |
+| 0128 | A runner declared droppable acts on nothing in the world | chosen | — | — | — | the caller's mistake |
+| 0129 | A runner reaches `Entities` only through its own services | left-out | — | — | — | no (an `Entities` kept in a variable) |
+| 0130 | An operation returned the same on its completion is a mistake | chosen | — | — | — | a judgment |
+| 0131 | A world's reply is deleted once the work that asked ends | behaviour | live | no | low | a test in src/rehearse.test.ts reading the world's replies after a work ends |
+| 0131 | A receiver handled inside `send` gives the runtime's reply | behaviour | live | yes: `a rehearsal gives the replies and the projection the runtime gives` in src/rehearse.property.test.ts | medium | — |
+| 0132 | The waker's queries select only key rows with a `due` | behaviour | live | no | low | a test in src/storage.test.ts that a key row without a timer is never read by the waker's queries |
+| 0133 | effect-tea Guide's rules on splitting hold of a stored state | chosen | — | — | — | a reading of effect-tea's design |
+| 0133 | A state is a value nothing changes in place | chosen | — | — | — | the program's duty |
+| 0134 | The loop's yield shows no fiber a state it could not see | behaviour | live | yes: the explored tests under `bun run test:release` | medium | — |
+| 0135 | 262 144 characters is a threshold an operator wants | chosen | — | — | — | a default |
+| 0136 | A parameter's JSON keeps its order of fields through storage | behaviour | live | no (spikes/effect-schema-field-order.test.ts covers writing, not a round trip) | medium | a test in src/storage.test.ts storing a parameter with integer-like and other fields, reloading, and keeping its work |
+| 0137 | A consumer can act on one entity's order alone | chosen | — | — | — | a reading of Kafka's promise |
+| 0137 | `position` rises with `seq` within a partition with two writers | behaviour | live | yes: `two writers of one partition commit in the order of their seq…` in src/postgres.test.ts (0222) | high | — |
+| 0138 | A consumer acts on a part of the projection | chosen | — | — | — | a judgment of use |
+| 0138 | A topic is a pure function of the projection | chosen | — | — | — | the program's duty |
+| 0139 | A caller in the process is served by JSON as well | chosen | — | — | — | a judgment |
+| 0140 | A consumer acts on its topic's value, not the projection | chosen | — | — | — | a judgment of use |
+| 0141 | A parameter the types require may still be left out | behaviour | live | yes: `a cursor, a partition or a limit out of its range is its caller’s defect…` in src/runtime.test.ts | low | — |
+| 0145 | A range read in order with a limit stops after its rows | behaviour | live | yes: spikes/sqlite-page-statements-plan.test.ts (range, no sort) and SQLite's planner page | low | — |
+| 0147 | A caller's message is never in the stored mailbox while its caller waits | behaviour | live | no | medium | a test under the scheduler in src/runtime/callers.test.ts that reads the stored mailbox while callers wait at the bound |
+| 0147 | A refused message leaves nothing to undo | behaviour | live | yes: `a send past the bound of its entity’s callers is answered Full, stores nothing…` in src/runtime.test.ts | low | — |
+| 0148 | No caller sums an index of strings on purpose | chosen | — | — | — | the caller's mistake |
+| 0149 | A report's stores find what they need in the projection | chosen | — | — | — | a judgment of use |
+| 0149 | A store made for it answers every question beyond the three forms | chosen | — | — | — | a judgment |
+| 0151 | 10 000 is a number an operator wants by default | chosen | — | — | — | a default |
+| 0152 | A topic no consumer holds has no reader needing its rows | chosen | — | — | — | a reader by hand is the caller's |
+| 0155 | A handle's step is a function of the parent's state alone | chosen | — | — | — | the program's purity |
+| 0155 | A hand-written optic keeps nothing of the state it replaces | chosen | — | — | — | the program's mistake |
+| 0157 | A session advisory lock is held until its session ends | behaviour | live | yes: the two tests of the hold in src/postgres.test.ts (0222) | high | — |
+| 0157 | `REPEATABLE READ` gives every statement the first snapshot | behaviour | live | yes: the three tests of pages in src/postgres.test.ts (0222) | medium | — |
+| 0157 | Many connections run steps at once and the head still orders commits | behaviour | live | yes: `two writers of one partition commit in the order of their seq…` in src/postgres.test.ts (0222) | high | — |
+| 0158 | A consumer reads a page in the transaction it acks in | chosen | — | — | — | a use the design allows |
+| 0161 | No fiber holds an entity's lock while it waits for the connection | behaviour | live | no | high | a test under the scheduler in src/cluster.test.ts (or src/runtime/doors.test.ts) racing a door's step and a loop's step for one entity with the connection held |
+| 0161 | No door step reads machine between commit and assignments; a leaving entity settles first | behaviour | live | no | high | a test in src/runtime/doors.test.ts that yields between a door's commit and its assignments, and tells the entity to leave there |
+| 0162 | A waker reading every partition would activate refused entities again and again | chosen | — | — | — | what the rejected design costs |
+| 0162 | An entity either enters before the mark or finds it | behaviour | live | no | high | a test in src/runtime/doors.test.ts that loads an entity during the shard's finalizer, under the scheduler |
+| 0162 | The loop of an entity that left steps nothing more | behaviour | live | no | low | a test in src/cluster.test.ts that counts the loop's wakes after its shard moves |
+| 0163 | `PRAGMA data_version` costs little beside the steps | behaviour | live | no | low | a measure in spikes/sqlite-data-version.test.ts of the pragma's time against a step's |
+| 0165 | A latest reply no longer `Suspended`/`NotFound` is a step's reply | behaviour | live | no | medium | a test under the scheduler in src/cluster.test.ts of a retry reset while a concurrent retry's step stores its reply |
+| 0165 | A caller who waits is served better than one answered `Full` | chosen | — | — | — | a judgment |
+| 0166 | An operator's event is rare enough to keep Cluster's rows | chosen | — | — | — | a judgment (open question The rows of operators' events on Cluster) |
+| 0167 | One `Resumed` per sender's entity wakes every waiting request of it | behaviour | live | no | high | a test in src/cluster.test.ts with two requests of one sender waiting on one receiver, resumed once |
+| 0167 | A `Resumed` lost to a sender whose shard moved costs nothing | behaviour | live | no | high | a test in src/cluster.test.ts that moves the sender's shard before the resume, and waits for the operation's answer |
+| 0168 | Every failure Cluster saves passes with time or the operator fixes it | behaviour | live | yes: open question A cause holding U+0000 in Cluster's tables | medium | — |
+| 0169 | A step reads the asker's work after its commit or before it began | behaviour | live | no | low | a test in src/cluster.test.ts of a request answered while its asker's work ends |
+| 0170 | No delivery read before the work ends saves its failure after | behaviour | live | no | low | a test in src/cluster.test.ts that holds Cluster between its read and `saveReply` across the work's end |
+| 0170 | A client finds the asker's work ended only on a runner without its shard | behaviour | live | no | medium | a test in src/cluster.test.ts whose shard's finalizer does not run before another runner gains it |
+| 0171 | The client's clock, read after the answer, is no earlier than the step's | behaviour | live | no | low | a test in src/cluster.test.ts with the client's clock behind the step's |
+| 0171 | A crash in `expire` leaves no request without its replies | behaviour | live | yes: `a process killed inside a transaction leaves… nothing of the transaction` in spikes/sqlite-transaction.test.ts | medium | — |
+| 0172 | No taker outside a transaction loads an entity on Cluster | behaviour | live | no | high | a check in src/form.test.ts that every taker of an entity's lock on Cluster runs inside a transaction, with a case it refuses |
+| 0172 | Two loaders of a pool of PostgreSQL wait for one lock | left-out | — | — | — | no (the roadmap's step on Cluster across machines on PostgreSQL) |
+| 0173 | The door's step reads the work after the step that ended it committed | behaviour | live | no | low | the same test as 0169's, in src/cluster.test.ts |
+| 0173 | The time between Cluster's read and its save is short | behaviour | live | no | low | a measure in src/cluster.test.ts of the time between `getUnprocessedMessages` and `saveReply` |
+| 0174 | A program deployed without its record escapes both checks of 0159 | behaviour | live | no | low | a test in src/cluster.test.ts that deploys with no record and steps past `outranked` and `atNewest` |
+| 0177 | I/O in a `Tx` transaction would run again after a commit | behaviour | live | no | low | the same spike as 0246's, in spikes/effect-tx-under-the-scheduler.test.ts |

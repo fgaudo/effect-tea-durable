@@ -571,19 +571,19 @@ describe('passivation', () => {
             yield* Fiber.interrupt(caller)
             // What runs detached is counted from the step that forks it to its end: a count left behind would
             // keep this from returning, and the run would not end (decision 0079). With the count raised before the
-            // uninterruptible step that forks, seed 5, pinned, fails. `bun run test:pins` runs it against that form,
+            // uninterruptible step that forks, seed 162, pinned, fails. `bun run test:pins` runs it against that form,
             // the pin `0079 what runs detached` of `src/runtime.test_pins.ts` (decision 0254).
             yield* runtime.settled
             return 'settled'
           }))
-      }), 'settled', { pinned: [5] })
+      }), 'settled', { pinned: [162] })
   }, 60_000)
 
   test('a caller interrupted anywhere as it sends leaves its entity’s bound whole, in every schedule within one deviation', () => {
     const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
     // Each schedule moves the point where the interruption reaches the caller, the permit taken and the message not
     // offered yet among them (decision 0147). A send that yields between the two, outside an uninterruptible region,
-    // keeps the permit in a schedule, and the second send is answered Full: the deviation at decision 370, pinned.
+    // keeps the permit in a schedule, and the second send is answered Full: the deviation at decision 373, pinned.
     // `bun run test:pins` runs it against that form, the pin `0147` of `src/runtime.test_pins.ts` (decision 0254).
     explored(() =>
       Effect.gen(function*() {
@@ -598,7 +598,7 @@ describe('passivation', () => {
             yield* runtime.settled
             return yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' })
           }))
-      }), { _tag: 'Accepted' }, { bound: 1, pinned: [{ decision: 370, choice: 1 }] })
+      }), { _tag: 'Accepted' }, { bound: 1, pinned: [{ decision: 373, choice: 1 }] })
   }, 60_000)
 
   test('a caller loads an unloaded entity again, and is answered', () =>
@@ -1251,7 +1251,7 @@ test('an entity whose wait runs out as an event arrives waits again from the eve
   // wait is passed over. Taken for the next wait's end, it would unload the entity as soon as the event is applied,
   // 2 millis after it: an unload no activation follows. The event applied first waits again, and the wait run out
   // first is followed by the message's activation, so either order pairs each unload with an activation. With no end
-  // passed over, seed 9, pinned, fails. `bun run test:pins` runs it against that form, the pin `0116` of
+  // passed over, seed 140, pinned, fails. `bun run test:pins` runs it against that form, the pin `0116` of
   // `src/runtime.test_pins.ts` (decision 0254).
   explored((window) =>
     Effect.gen(function*() {
@@ -1275,7 +1275,7 @@ test('an entity whose wait runs out as an event arrives waits again from the eve
           yield* runtime.settled
           return entities.length - events.filter((event) => event._tag === 'Restart').length
         }))
-    }), 0, { open: false, pinned: [9] })
+    }), 0, { open: false, pinned: [140] })
 }, 60_000)
 
 test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {
