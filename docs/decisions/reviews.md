@@ -2451,3 +2451,107 @@ table says. Each cites the area's note for a rule it applies as written: a datab
 checked, a program checked where it enters, or the package's name. 0064, 0132, 0136 and 0141 change a note of the
 area, and were not read, since the status lines of 0053 and 0054 say what each changed, and the code that keeps it
 was read. Every note of the area itself was read whole, with its code, and so was 0193 against the notes it cites.
+
+## 2026-11-11: premise review of the pairs against Versions and deploys, a first part
+
+Read by a session that wrote none of these notes, on the branch `claude/premise-pairs-versions-1-e03c02`, cut from
+`main` at `e6d3808`. It reads the notes 0015, 0018, 0021, 0025, 0033, 0034, 0037, 0038, 0046, 0048, 0056, 0061,
+0062, 0063, 0072, 0077 and 0085 against the notes of area 3 they meet. The review of Versions and deploys read these
+notes only at the lines that cite the area.
+
+### The pairs
+
+Each note of the list was read whole, and so was each note of the area it meets. The pairs were found by the table of
+the area's report, by the index, and by `grep -w` of each number in both directions.
+
+| Pair | What binds it | How it was read |
+| --- | --- | --- |
+| 0015 and 0022 | 0022 changes 0015's consequence on a rename | both whole, with `givenKey` and `reconcile` of `src/machine.ts` |
+| 0018 and 0020 | 0020 applies 0018's comparison at an activation | both whole, with `renew`, `reconcile` and `activate` of `src/machine.ts` |
+| 0018 and 0058 | 0058 changes 0018's comparison | both whole, with `encodeWork`, `isSame` and `startWork` of `src/machine.ts`, and the test of an annotated operation in `src/machine.test.ts` |
+| 0021 and 0020 | 0021 cites 0020 as its reason | both whole, with `holds` and the replies `ended` of `src/machine.ts` |
+| 0100 and 0021 | 0100 cites 0021 as its reason | both whole |
+| 0025 and 0020, 0022 | 0025 cites both as its reason | all whole, with `encodeWork` |
+| 0036 and 0025 | 0036 cites 0025 as its reason | both whole |
+| 0058 and 0025 | 0058 changes 0025's consequences | both whole |
+| 0033 and 0020, 0022 | 0033 cites both for a renamed key | all whole |
+| 0034 and 0020 | 0034 cites 0020 for what a deploy may not change | both whole |
+| 0037 and 0022 | 0037 applies 0022's defect as its own | both whole, with `admitted` of `src/machine.ts` |
+| 0038 and 0036 | 0038 applies 0036 to the rows of the log | both whole, with the publication of `src/machine.ts` and the reading of `src/storage/log.ts` |
+| 0072 and 0036 | 0072 applies 0036 to the projection in the log | both whole, with the same code |
+| 0046 and 0043 | 0046 cites 0043 as its reason | both whole, with `unlessCrashed` and `entities` of `src/runtime/callers.ts` |
+| 0048 and 0036 | 0048 applies 0036 to the sender | both whole |
+| 0056 and 0051 | 0056 cites 0051 as its reason | both whole, with the deploy of `src/runtime.ts` |
+| 0061 and 0043 | 0061 applies 0043 to a corrupted row | both whole |
+| 0062 and 0043 | 0062 applies 0043 to a row a schema refuses | both whole |
+| 0063 and 0051 | 0063 changes 0051's consequence | both whole, with the claim and the signal of `undeployed` in the deploy of `src/runtime.ts` |
+| 0077 and 0043, 0051 | 0077 changes 0043's consequence, and cites 0051 | all whole, with `src/runtime/waker.ts` and the tests of a rollback in `src/runtime.test.ts` |
+| 0085 and 0036 | 0085 applies 0036 to Cluster's mailbox | both whole, with `doorOf`, `answerCodec` and the client's `send` and `create` of `src/cluster.ts`, and `send` of `src/runtime/callers.ts` |
+
+### Findings
+
+1. **Reproduced: on Cluster, a caller of an older version is given a rejection's reason as the newer version writes
+   it, and reads it through its own schema.** The notes are 0085 and 0036, with 0043. Decision 0036 has every value
+   read by migrating its JSON from the version that wrote it up to the program's version. So a reader is never older
+   than the writer. Decision 0043 keeps that premise where it fails: a row of a version the program does not have is
+   not read, and the call fails with a defect that names both versions. Decision 0085 makes the answer of an RPC a
+   text with no version. The step encodes the answer at the runner's version, by `answerCodec` at
+   `src/cluster.ts:422`. The client decodes it with its own program's schema, by `answered` at `src/cluster.ts:470`,
+   and keys the request by its own version, at `src/runtime/callers.ts:308`. A rolling deploy gives a reader older
+   than the writer. The runner of version 1 runs on, holding no shard, and its callers still send. The step runs on
+   the runner of version 2 (decision 0159), and the reason reaches the caller of version 1 in version 2's shape. The
+   sequence: version 1 rejects with a least price `{ minimum: 1250 }`, in cents. Version 2 gives the price in euros,
+   with a migration of `rejection` that divides by 100. A caller on the older runner sends `low`, and is given
+   `{ minimum: 12.5 }`, which it reads as 12.5 cents. Nothing fails. Where version 2's reason does not decode under
+   version 1's schema, the caller is given a defect instead. Every retry under that request id then gets the same
+   defect, from the reply Cluster saved under version 1's key. An operation of the older runner, during a drain,
+   takes that defect as the receiver's crash, and sends again after `retry` (decision 0046) until the runner stops.
+   The same holds of a creation's `Rejected`, through `creationCodec`. Reproduced by `FAILING: on Cluster, a caller
+   of an older version is never given a reason as the newer version writes it`, in `src/cluster.test.ts`, in the
+   commit of this report. It is a case of family A, and of the row of the rejections in the table of the step What a
+   deploy may change of a program. A fix could begin in `answerCodec`, with an answer that carries the version that
+   encoded it. The client would then refuse a version its program does not have, with the defect of decision 0043.
+   A fix could also begin at the client, which would refuse to send once a newer version of its program is recorded.
+
+### Suspects ruled out
+
+- 0018 against 0058: a step that changes only a property the operation's schema does not declare keeps the work. A
+  run after a crash is then given the operation decoded, without that property. 0058 decides it, a test of
+  `src/machine.test.ts` holds it, and the runner's type has no such property. An encoding that loses a declared field
+  would give a run after a crash another value under the same key. 0025 called that a defect, and 0058 replaced that
+  consequence on purpose. None of the schemas the examples use encodes so.
+- 0063 against 0051: the signal of a name not deployed yet is completed only once the deployment is registered,
+  after its activations, at `src/runtime.ts:1169` to `1172`. So a deploy that dies wakes no operation.
+- 0077 against 0043 and 0051: on one process, a rollback dies as a whole when version 2 left an entity with an
+  operation under way, and then serves no entity of the program. 0043's consequence says a rollback serves the
+  entities the newer version never wrote. But 0043's decision says the deploy dies, and the test `a deploy that has
+  no reading of the version stored dies`, in `src/runtime.test.ts`, holds it. The deploy fails loudly, and nothing
+  is lost.
+- 0072 against 0036: the step compares the projections before and after as the deployed program computes both, in
+  `src/machine.ts`. The log migrates a stored projection before a topic selects from it, in `src/storage/log.ts`.
+- 0085 against 0036 under a rollback on Cluster: `recordVersions` refuses a launch older than the newest version
+  recorded, so no runner reads a payload newer than its program.
+- 0021 against 0020: the statement that deletes a reply compares the sender's name, id, key and incarnation with the
+  stored keys, and reads no JSON. So a row of another version changes nothing of the deletion.
+- 0015, 0033 and 0037 against 0022: a renamed key is new work, and a key dropped while its operation is under way is
+  a defect at the activation, in `reconcile` and `admitted`. A rename of the program is bug 15 of the roadmap.
+- 0025 against 0020 and 0022, 0036 against 0025, 0034 against 0020, 0048 against 0036, 0061 and 0062 against 0043,
+  0100 against 0021, and 0056 against 0051: each later note applies the earlier rule as it is written. No case the
+  later note opens takes away a condition of the earlier rule.
+- 0046 against 0043: a receiver whose row no deployed version reads keeps its senders waiting for ever, which the
+  consequences of 0046 say.
+
+### Noticed, not checked
+
+- 0056 with 0021, out of this area: an idempotent or at-least-once operation of a crashed entity may still be
+  stopping while its entity is loaded again and the same incarnation restarts. Once the new run's work ends, the
+  receiver's reply to its request is deleted. If the old run sends again from a region it holds uninterruptible, the
+  receiver applies the request a second time. Bug 31 is the at-most-once case alone. A test would crash an entity
+  whose operation sends from an uninterruptible finalizer, end the restarted run, and count what the receiver
+  applied. It is not checked, since it is a pair of areas 1 and 4.
+- Finding 1 for an operation of the older runner during the drain of a rolling deploy: whether the drain waits for
+  an operation that retries a defect of the client is not run. It waits on the choice of bug 2.
+
+### Not read whole
+
+None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.

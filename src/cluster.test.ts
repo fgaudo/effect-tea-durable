@@ -1818,3 +1818,107 @@ describe('the shards of a runner on Cluster', () => {
         expect(Date.now() - started).toBeLessThan(5_000)
       })), 30_000)
 })
+
+describe('an answer across two versions on Cluster', () => {
+  type Priced = {
+    state: Readonly<{ last: string }>
+    flags: null
+    inbound: string
+    internal: string
+    operation: never
+    key: never
+    parameter: {}
+    rejection: Readonly<{ minimum: number }>
+    sender: null
+    projection: string
+    index: never
+    services: never
+  }
+  /**
+   * Version 1 gives a rejection's least price in cents. Version 2 gives it in euros, and its migration of `rejection`
+   * reads version 1's reason as version 2 writes it (decision 0036).
+   */
+  const priced = (version: 1 | 2): Program<Priced> => ({
+    name: 'Priced',
+    keys: {},
+    schemas: {
+      state: Schema.Struct({ last: Schema.String }),
+      flags: Schema.Null,
+      inbound: Schema.String,
+      internal: Schema.String,
+      operation: Schema.Never,
+      rejection: Schema.Struct({ minimum: Schema.Number }),
+      sender: Schema.Null,
+      projection: Schema.String,
+    },
+    init: () => ({ last: 'start' }),
+    update: (message) => () => message === 'low' ? rejectWith({ minimum: version === 1 ? 1250 : 12.5 }) : { last: message },
+    work: () => noWork,
+    operations: {},
+    project: ({ last }) => last,
+    indexes: {},
+    migrations: version === 1 ? [] : [{
+      rejection: (json) => ({ minimum: (json as { minimum: number }).minimum / 100 }),
+    }],
+  })
+  const shardsPerGroup = 12
+  const shards = Array.from({ length: shardsPerGroup }, (_, i) => ShardId.make('default', i + 1))
+
+  // A FAILING test, of the premise review of the pairs against Versions and deploys: a step of the newest version
+  // answers with the reason as its own version writes it, and the door's client decodes it with the schema of the
+  // version that sent (decisions 0036, 0085). No migration reads a newer version's JSON at an older one.
+  test('FAILING: on Cluster, a caller of an older version is never given a reason as the newer version writes it', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
+    const start = (port: number, program: Program<Priced>) =>
+      Effect.gen(function*() {
+        const context = yield* Layer.build(
+          sharding([program]).pipe(
+            Layer.provideMerge(Runners.layerNoop),
+            Layer.provideMerge(SqlMessageStorage.layer),
+            Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
+            Layer.provideMerge(ShardingConfig.layer({
+              runnerAddress: Option.some(RunnerAddress.make('localhost', port)),
+              shardsPerGroup,
+              refreshAssignmentsInterval: Duration.millis(50),
+              runnerHealthCheckInterval: Duration.millis(50),
+              shardLockRefreshInterval: Duration.millis(100),
+              shardLockExpiration: Duration.seconds(3),
+              entityMessagePollInterval: Duration.millis(100),
+            })),
+            Layer.provideMerge(SqliteClient.layer({ filename: join(directory, 'store.db') })),
+            Layer.provide(Digest.layerWebCrypto),
+          ),
+        ).pipe(Effect.orDie)
+        const runtime = yield* Effect.provide(launch({ sweep: 'none' }), context)
+        const handle = yield* Effect.provide(runtime.deploy(program), context)
+        const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
+        return { handle, count: () => shards.filter((shard) => held.hasShardId(shard)).length }
+      })
+    const until = (count: () => number, done: (n: number) => boolean) =>
+      Effect.repeat(Effect.sync(count), { schedule: Schedule.spaced('25 millis'), until: done }).pipe(
+        Effect.timeout('15 seconds'),
+      )
+    try {
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        // A rolling deploy: the runner of version 1 runs on, holding no shard, and its callers still send.
+        const older = yield* start(1, priced(1))
+        yield* until(older.count, (n) => n === shardsPerGroup)
+        const newer = yield* start(2, priced(2))
+        yield* until(newer.count, (n) => n === shardsPerGroup)
+        yield* until(older.count, (n) => n === 0)
+        expect(yield* newer.handle.create('one', { flags: null, requestId: 'c', sender: null })).toEqual({
+          _tag: 'Created',
+        })
+        expect(yield* newer.handle.send('one', 'low', { requestId: 'r2', sender: null, keep: 'forever' })).toEqual({
+          _tag: 'Rejected',
+          reason: { minimum: 12.5 },
+        })
+        // The caller of version 1 reads a least price of 12.5 cents, where version 1 says 1250.
+        const exit = yield* Effect.exit(older.handle.send('one', 'low', { requestId: 'r1', sender: null, keep: 'forever' }))
+        expect(Exit.isSuccess(exit) ? exit.value : 'a defect').not.toEqual({ _tag: 'Rejected', reason: { minimum: 12.5 } })
+      })).pipe(Effect.provide(collected)) as Effect.Effect<void, unknown>)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 30_000)
+})
