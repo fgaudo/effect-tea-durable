@@ -757,3 +757,154 @@ By their decision sections only: the later notes that cite these: 0038, 0053, 00
 ### Not reached
 None of the notes the brief named. Of the later notes, 0021, 0048, 0071, 0085, 0092, 0122, 0125, 0245, 0248 and 0249
 were not read against these areas. The brief or the roadmap already cover 0085, 0245, 0248 and 0249.
+
+## 2026-11-11: premise review of Schemas and projections, second part
+
+The area of the section Schemas, storage and projections, second part: 0121, 0122, 0135, 0137 to 0140, 0151 to 0155,
+0157, 0158, 0184, 0206, 0210, 0213 to 0215 and 0240, with 0122 also read against the notes of the areas already read
+that it cites. The reviewer wrote none of them. It found two bugs. The first is reproduced on SQLite. The second is
+only reasoned, and its test is written for the CI's job `postgres`.
+
+### The notes read
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0121 | of the area | whole, with `projected` of `storage/projections.ts` |
+| 0122 | of the area; also against 0043, 0061 and 0070 | whole, with `reindex` of `storage/projections.ts` and `shownOf` of `machine.ts` |
+| 0135 | of the area | whole, with `warnOfSize` of `runtime/loop.ts` and the count of `write` in `storage/entities.ts` |
+| 0137 | of the area | whole, with `storage/log.ts` and the draw of the head in `storage/entities.ts` |
+| 0138 | of the area | whole, with `storage/log.ts` |
+| 0139 | of the area | whole; its code is the type `Json` of `program.ts`, read where `shownOf` encodes |
+| 0140 | of the area | whole, with `published` of `storage/log.ts` |
+| 0151 | of the area | whole, with the default of `capacity` in `runtime.ts` and `spare` of `runtime/loop.ts` |
+| 0152 | of the area | whole, with `declare`, `prune` and `forget` of `storage/log.ts`, and `deploy` and `enlisted` of `runtime.ts` |
+| 0153 | of the area | whole, with `published` of `storage/log.ts` |
+| 0154 | of the area | whole, with `write` of `storage/entities.ts` and the trigger of `storage/tables.ts` |
+| 0155 | of the area | whole, with `forEach` of `program.ts` |
+| 0157 | of the area | whole, with `storage/projections.ts`, and `transaction` and `hold` of `storage/tables.ts` |
+| 0158 | of the area | whole, with `snapshot` of `storage/held.ts` |
+| 0184 | of the area | whole, with `consume` of `runtime.ts` and `waited` of `runtime/readings.ts` |
+| 0206 | of the area | whole, with `shownOf` of `machine.ts` |
+| 0210 | of the area | whole, with `isJson` of `program.ts` |
+| 0213 | of the area | whole, with `projectionViolations` of `testing.ts` |
+| 0214 | of the area | whole, with `replied` of `machine.ts` |
+| 0215 | of the area | whole, with the trigger of `storage/tables.ts` |
+| 0240 | of the area | whole, with `forEach` of `program.ts` |
+| 0070 | cited by 0122 as its reason | whole |
+| 0222 | changes 0157 and 0158 | whole |
+| 0162 | changes 0137 | in part: the status, the context, and the decision on the shard and the order of a partition |
+| 0179 | changes 0157 | in part: from the status to What it rests on |
+| 0191 | changes 0158 | in part: from the status to What it rests on |
+| 0198 | changes 0158 | in part: from the status to What it rests on |
+| 0216 | changes 0215 | in part: from the status to What it rests on |
+| 0217 | changes 0215 | in part: from the status to What it rests on |
+| 0223 | changes 0152 | in part: from the status to What it rests on |
+| 0224 | changes 0154 | in part: from the status to What it rests on, with `consumers` of `storage/log.ts` |
+| 0043 | changed by 0122 | whole |
+| 0142 | changed by 0153 and 0184 | in part: the decision and What it rests on |
+| 0026 | changed by 0213 | in part: the decision |
+| 0007, 0032, 0038, 0039, 0040, 0065, 0072, 0076, 0133, 0156 | changed by notes of the area | not read: only through the passage of the area's note that changes each |
+| 0061, 0080 | cited by 0122 and 0152 as premises | not read: only through the passages that cite them |
+| 0148, 0150 | cite 0121 | in part: the passage that cites it |
+| 0247 | cites 0122 | in part: the decision |
+| 0132, 0133, 0147 | cite 0135 | in part: the passage that cites it |
+| 0149 | cites 0138 | in part: the passages that cite it |
+| 0185, 0204, 0205, 0207, 0209, 0218 | cite 0157 or 0158 | in part: the passages that cite them |
+| 0211, 0212 | cite 0210 or 0214 | in part: the passages that cite them |
+
+### Finding 1, reproduced: on Cluster a forget on one runner drops a consumer another runner declares (0152, 0080)
+
+- 0152 keeps a consumer the deploy declares from `forget`, so that no consumer still read loses its rows. Its premise
+  is that one process holds the database, so that one deploy declares the consumers (0080, in its What it rests
+  on). On Cluster every runner deploys the program with consumers of its own. `enlisted` in
+  `src/runtime.ts:868-885` reads only the declaration of the runner that is called.
+- The sequence: runner 1 deploys with `billing` declared for the topic `projection`, and an entity is created. Runner
+  2 deploys the same version without `billing`, and only warns that the consumer is stored and not declared. An
+  operator follows the design's procedure on runner 2. The forget of `billing` succeeds, and the prune runs. The
+  topic has no stored consumer, so the prune drops it whole (`pruneBatch` in `src/storage/log.ts`). Runner 1's
+  `billing` then reads nothing, though it never acked the creation's row.
+- The same holds in a rolling deploy whose newer version drops a consumer that the older runners still read. Once
+  the forget is done, the sweep's prune drops the rows with no operator's prune, on whichever runner holds the sweep's
+  singleton (0245).
+- Reproduced by `FAILING: a forget on a runner that does not declare a consumer leaves the consumer another runner
+  declares, and its rows` in `src/cluster.test.ts`, on two runners on one SQLite file. The test first checks that
+  runner 1 reads the row, then fails on the reading after the forget and the prune.
+- Where a fix could begin: on Cluster `forget` refuses a consumer that a running deployment declares, which the
+  runners would record as `recordVersions` records their versions. Or the design says that on Cluster a consumer is
+  forgotten only once no runner declares it.
+
+### Finding 2, only reasoned, its test written: on PostgreSQL `reindex` writes a stale row over a step (0070, 0157, 0222)
+
+- 0070 writes a row of `reindex` only over the state it was computed from. One statement does it,
+  `INSERT … SELECT … FROM effecttea_entities WHERE state = … ON CONFLICT DO UPDATE`, in
+  `src/storage/projections.ts:499-509`. Its premise is that "the check and the write are one, and nothing commits
+  between them". That holds on SQLite's one writer and on PGlite's one session. 0157 runs the storage on PostgreSQL,
+  and 0222 runs it on a server with a pool.
+- The sequence: a step updates the entity's state (`src/storage/entities.ts:259`) and upserts its row of the read
+  model (`src/storage/entities.ts:279`). It has not committed yet: it still writes its keys and its log, and may wait
+  on its partition's head behind another step. `reindex` runs its statement for that entity in autocommit, at the
+  role's level, `READ COMMITTED` by default. Its SELECT reads its snapshot, finds the old state, and gives a row. Its
+  insert meets the row of the read model that the step holds locked, and waits. The step commits. PostgreSQL then
+  applies `DO UPDATE` to the row the step committed, though no version of that row is in the statement's snapshot.
+  PostgreSQL's manual says so of `INSERT … ON CONFLICT DO UPDATE`, under Transaction Isolation. The row then holds
+  the projection of the state before the step, until the entity's next step, which may never come. That is the bug
+  0070 was taken to fix.
+- The same statement fails in a second way. Under a role whose default level is `REPEATABLE READ` or `SERIALIZABLE`,
+  the statement fails with `SerializationError` in the same sequence, and `reindex` dies with it. 0222 says that
+  every transaction of the runtime states its level, and 0122 lets only the program's failures pass over an entity.
+- The test `FAILING: reindex leaves the row a step committed while its statement waited on the row` in
+  `src/postgres.test.ts` holds a step's transaction open after its write. It waits until `reindex` waits on a lock,
+  then lets the step commit, and reads the row. It typechecks, and was not run, since no server of PostgreSQL runs on
+  the reviewer's machine. The CI's job `postgres` runs it. On PGlite the sequence cannot happen, since `reindex`
+  waits for the step's whole transaction there.
+- Where a fix could begin: the row's statement runs in a transaction of `transaction`, which locks the entity's row
+  with `SELECT … FOR UPDATE` before it writes. Or the `DO UPDATE` takes a `WHERE` that reads the entity's state
+  again, which PostgreSQL evaluates against the latest version of the row.
+
+### Suspects ruled out
+
+- Two prunes on PostgreSQL that each drop one row of a publication, so that both triggers keep it: the rows of one
+  step have neighbouring positions, so a batch that holds the later row holds the earlier one too, and waits for the
+  other prune's lock. Only a consumer stored between the two batches would part them, and on one process a consumer
+  is stored only at deploy.
+- A batch of a prune (0245) that parts the rows of one publication: the later batch's trigger finds no row left, and
+  drops the publication.
+- The position of the outbox on PostgreSQL, against 0137's premise that it rises with `seq` within a partition: the
+  identity is drawn by the insert, after the head's row is locked (`src/storage/entities.ts:411-440`).
+- The default capacity of 0151 unloading an entity whose door step is not settled on Cluster: such an entity does not
+  leave (`src/runtime/loop.ts:608-613`).
+- `consume` with a wait that never ends (0184), against a commit that 0142's timed wait would miss only for its
+  time: the steps of the loop, of a creation, of a door and of an operator's `resume` or `discard` each tell their
+  topics after the commit (`runtime/loop.ts:403`, `runtime/callers.ts:264`, `runtime/doors.ts:76` and `:140`). On
+  Cluster the watcher tells every reading (0163).
+- `forEach` over steps made first, with the identity (0240): a handle's step is a function of the parent's state,
+  found by `toldOf`, so a run is joined as it is over the ids.
+- `-0` in an index, a criterion or a cursor (0210): `JSON.stringify` writes `0`, SQLite compares `-0.0` equal to `0`,
+  and PostgreSQL is bound `String(-0)`, which is `0`.
+- 0121's read on Cluster: a caller's answer is saved with the step's commit (0081), so a read after the answer finds
+  the row.
+- A `reindex` of an older runner in a rolling deploy, over rows a newer runner reindexed: the state's version is the
+  older one, so the row is written again with the older projection, and read through the newer migrations. Nothing
+  is lost, and it is a case of the roadmap's table of what a deploy changes.
+- 0215's trigger, under the `search_path` of 0217: the function is made in the schema the tables are made in, and
+  resolves its tables by the session's `search_path`, which a pool gives every connection (0222).
+
+### Noticed, not checked
+
+- A step whose fiber is interrupted between its commit and `tell` (`runtime/loop.ts:399-403`) leaves a reader of
+  `consume` with `wait: true` waiting until the topic's next commit. Under 0142's timed wait the cost was the time.
+  Whether the loop can be interrupted there, other than when the runtime stops, was not read.
+- `projectionViolations` (0213) gives `allows` the projection as `project` returns it, not as a caller reads it from
+  its JSON (0210, 0211), and gives `update` the sender unmigrated. A projection that holds `-0` is then checked as no
+  caller reads it.
+- With finding 1, every runner that does not declare another runner's consumer warns of it at each deploy, as of a
+  consumer to forget. An operator then sees a consumer in use named as one to forget.
+
+### Not read whole
+
+- 0162, 0179, 0191, 0198, 0216, 0217, 0223 and 0224 change notes of the area. They were read from their status to What
+  it rests on, since their alternatives and consequences hold no premise.
+- 0007, 0032, 0038, 0039, 0040, 0065, 0072, 0076, 0133 and 0156 are changed by notes of the area. They were read only
+  through the passages that change them, since they belong to areas already read.
+- 0061 and 0080 were read only through the passages that cite them. 0142 and 0026 were read in part.
+- The notes that only cite a note of the area were read at the passage that cites it.

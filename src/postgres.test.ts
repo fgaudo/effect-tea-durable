@@ -463,3 +463,52 @@ describe('the migrations of createTables (decision 0216)', () => {
       expect(yield* sql`SELECT migration_id FROM effecttea_migrations`).toEqual([{ migration_id: 1 }])
     }))
 })
+
+describe('reindex beside a step (premise review of 0070, 0157 and 0222)', () => {
+  // Decision 0070 writes a row of `reindex` only over the state it was computed from, by one statement that selects
+  // the entity's row where its state is the one read. On SQLite nothing commits between the check and the write. On a
+  // server, at `READ COMMITTED`, the statement's SELECT reads its snapshot, and its `ON CONFLICT DO UPDATE` waits for
+  // the step that holds the row of the read model, then updates the row that step committed.
+  onServer('FAILING: reindex leaves the row a step committed while its statement waited on the row', (_, sql) =>
+    Effect.gen(function*() {
+      yield* on(sql)(createTables)
+      const store = storage(ranked, sql, 1)
+      yield* transaction(
+        sql,
+        store.write(
+          'a',
+          written({
+            created: true,
+            entity: { state: { last: 'start' }, creation },
+            shown: { projection: 'start', indexes: { rank: 'start' } },
+          }),
+          0,
+        ),
+      )
+      const drawn = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      // The step has written the entity's state and its row of the read model, and has not committed.
+      const step = yield* Effect.forkChild(transaction(
+        sql,
+        Effect.andThen(
+          store.write(
+            'a',
+            written({
+              entity: { state: { last: 'two' }, creation },
+              shown: { projection: 'two', indexes: { rank: 'two' } },
+            }),
+            0,
+          ),
+          Effect.andThen(Deferred.succeed(drawn, undefined), Deferred.await(release)),
+        ),
+      ))
+      yield* Deferred.await(drawn)
+      // `reindex` reads the state the step has not committed past, and waits on the row of the read model.
+      const reindexed = yield* Effect.forkChild(store.reindex)
+      yield* waitingOnLocks(sql, 1)
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(step)
+      yield* Fiber.join(reindexed)
+      expect(yield* store.projected('a')).toBe('two')
+    }))
+})

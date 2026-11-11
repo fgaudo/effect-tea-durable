@@ -1818,3 +1818,59 @@ describe('the shards of a runner on Cluster', () => {
         expect(Date.now() - started).toBeLessThan(5_000)
       })), 30_000)
 })
+
+describe('a consumer one runner declares, and another does not (premise review of 0152)', () => {
+  // Decision 0152 keeps a consumer the deploy declares from `forget`, and rests on decision 0080: one process holds
+  // the database, so its deploy is the only one. On Cluster each runner deploys the program with its own consumers,
+  // and `forget` reads the declaration of its own runner alone.
+  test('FAILING: a forget on a runner that does not declare a consumer leaves the consumer another runner declares, and its rows', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
+    const filename = join(directory, 'store.db')
+    const toy = at('Toy', 1)
+    const runner = (port: number) =>
+      Layer.build(
+        sharding([toy]).pipe(
+          Layer.provideMerge(Runners.layerNoop),
+          Layer.provideMerge(SqlMessageStorage.layer),
+          Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
+          Layer.provideMerge(ShardingConfig.layer({
+            runnerAddress: Option.some(RunnerAddress.make('localhost', port)),
+            shardsPerGroup: 12,
+            refreshAssignmentsInterval: Duration.millis(50),
+            runnerHealthCheckInterval: Duration.millis(50),
+            shardLockRefreshInterval: Duration.millis(100),
+            shardLockExpiration: Duration.seconds(3),
+            entityMessagePollInterval: Duration.millis(100),
+          })),
+          Layer.provideMerge(SqliteClient.layer({ filename })),
+          Layer.provide(Digest.layerWebCrypto),
+        ),
+      ).pipe(Effect.orDie)
+    try {
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const first = yield* runner(1)
+        const declaring = yield* Effect.provide(
+          Effect.flatMap(launch({ sweep: 'none' }), (runtime) =>
+            runtime.deploy(toy, { consumers: { projection: ['billing'] } })),
+          first,
+        )
+        expect(yield* declaring.create('one', { flags: null, requestId: 'c1', sender: null })).toEqual({
+          _tag: 'Created',
+        })
+        const second = yield* runner(2)
+        const other = yield* Effect.provide(Effect.flatMap(launch({ sweep: 'none' }), (runtime) => runtime.deploy(toy)), second)
+        expect(warningsAndErrors()).toEqual(['a consumer is stored and not declared; it holds its topic until it is forgotten'])
+        expect((yield* declaring.fetch('projection', 'billing', 10)).map(({ id }) => id)).toEqual(['one'])
+        // The first runner still declares `billing`, and has read nothing: the forget should be refused, as on one
+        // process, and the prune should keep the creation's row.
+        const forgotten = yield* Effect.exit(other.forget('projection', 'billing'))
+        yield* other.prune
+        const read = yield* declaring.fetch('projection', 'billing', 10)
+        expect(read.map(({ id }) => id)).toEqual(['one'])
+        expect(Exit.isFailure(forgotten)).toBe(true)
+      })).pipe(Effect.provide([SqliteClient.layer({ filename }), collected])) as Effect.Effect<void, unknown>)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 30_000)
+})
