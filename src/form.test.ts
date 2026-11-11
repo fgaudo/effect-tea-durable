@@ -588,6 +588,36 @@ export const pinsUnmatched = (texts: ReadonlyMap<string, string>, pins: Readonly
   ]
 }
 
+/**
+ * The notes from decision `from` on whose section `What it rests on` says a premise is reasoned or not run, as
+ * `file: word`, given the text of each note by its file (AGENTS.md, under Notes). The section ends at the next
+ * heading of its level or above.
+ */
+export const premisesUnchecked = (notes: ReadonlyMap<string, string>, from: number): ReadonlyArray<string> =>
+  [...notes].filter(([file]) => Number(/(\d{4})-[^/]*\.md$/.exec(file)?.[1] ?? 0) >= from).flatMap(([file, text]) => {
+    const section = /^## What it rests on\s*$([\s\S]*?)(?=^#{1,2} |(?![\s\S]))/m.exec(text)?.[1] ?? ''
+    return ['reasoned', 'not run'].filter((word) => new RegExp(`\\b${word}\\b`, 'i').test(section))
+      .map((word) => `${file}: ${word}`)
+  })
+
+const notesOfTheRepository = () => {
+  const folder = join(import.meta.dir, '..', 'docs', 'decisions')
+  return new Map(readdirSync(folder, { recursive: true, encoding: 'utf8' })
+    .map((file) => file.replaceAll(sep, '/'))
+    .filter((file) => /^(archive\/)?\d{4}-.*\.md$/.test(file))
+    .map((file) => [file, readFileSync(join(folder, file), 'utf8')] as const))
+}
+
+describe('the form of the notes', () => {
+  // A premise of what code does is tested, documented or seen in a spike before its note is taken, and a judgment is
+  // chosen; the notes before 0258 keep what they wrote (AGENTS.md, under Notes).
+  test('no note numbered 0258 or above says a premise is reasoned or not run', () => {
+    const notes = notesOfTheRepository()
+    expect(notes.size).toBeGreaterThan(200)
+    expect(premisesUnchecked(notes, 258)).toEqual([])
+  })
+})
+
 const workflowOfTheRepository = () =>
   Bun.YAML.parse(readFileSync(join(import.meta.dir, '..', '.github', 'workflows', 'ci.yml'), 'utf8')) as Workflow
 
@@ -769,6 +799,24 @@ describe('the check of the form', () => {
       'src/a.test.ts: six: no pin',
       '2: no test of src/a.test.ts pins under that name',
       '3: no test of src/b.test.ts pins under that name',
+    ])
+  })
+
+  test('a premise reasoned or not run is found from the note given on, and one outside the section passes', () => {
+    const note = (premise: string) =>
+      ['# A note', '', 'Reasoned out of scope.', '', '## What it rests on', '', `- ${premise}`, '', '## Later', '',
+        'It was only reasoned.'].join('\n')
+    const notes = new Map([
+      ['0257-before.md', note('That it holds: **only reasoned**.')],
+      ['0258-reasoned.md', note('That it holds: **only Reasoned**.')],
+      ['archive/0259-not-run.md', note('That it fails before the change is **not run**.')],
+      ['0260-tested.md', note('That it holds: **tested** by `a test`. A case left out is in the open questions.')],
+      ['0261-last.md', ['## What it rests on', '', '- That it holds: reasoned.'].join('\n')],
+    ])
+    expect(premisesUnchecked(notes, 258)).toEqual([
+      '0258-reasoned.md: reasoned',
+      'archive/0259-not-run.md: not run',
+      '0261-last.md: reasoned',
     ])
   })
 

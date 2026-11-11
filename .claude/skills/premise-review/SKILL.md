@@ -61,8 +61,9 @@ HOW:
    the later note still gives each condition, in every case it opens.
 3. A suspect is a finding only once you have tried to confirm it: a test that fails, written beside the module it
    tests with the helpers of src/runtime.test_shared.ts or of src/cluster.test.ts (its `onFile`, `start` and
-   `withholding` make two runners on one file deterministic), or a precise reading of the code and of the
-   dependency's source in node_modules/effect/src that shows the sequence. Run only the tests you need.
+   `withholding` make two runners on one file deterministic). A reading of the code alone, or of a dependency's
+   source, gives a lead and no finding: report it as a lead, with the test that would reproduce it. Run only the
+   tests you need.
 
 RULES: fix nothing, write no decision note, and change no file of docs/ or src/ other than tests that reproduce a
 finding and your report. Name each such test `FAILING: …`. Write your report as a section at the end of
@@ -74,7 +75,8 @@ YOUR REPORT, the deliverable, in this order:
   you read it: whole with the code, in part (say which part: the code only, a passage, the decision), or not at
   all. No note of the list is left out of the table.
 - Each finding, with the two notes, the premise that fell, the sequence that breaks, the files and lines, and
-  whether it is reproduced, naming the test and the commit, or only reasoned, and where a fix could begin.
+  the test that reproduces it and the commit, and where a fix could begin. Each lead, with the same, and the test
+  that would reproduce it.
 - The suspects you ruled out, each with its reason in a line.
 - Every suspect you noticed and did not check, with the sequence you suspect.
 - The notes of the table you did not read whole, and why.
@@ -122,10 +124,10 @@ HOW:
    still gives each condition, in every case it opens.
 3. A suspect is a finding only once you have tried to confirm it: a test that fails, written beside the module it
    tests with the helpers of src/runtime.test_shared.ts or of src/cluster.test.ts (its `onFile`, `start` and
-   `withholding` make two runners on one file deterministic), or a precise reading of the code and of the
-   dependency's source in node_modules/effect/src that shows the sequence. Run only the tests you need. Where no
-   PostgreSQL server runs, a test of src/postgres.test.ts is written, said not run, and its finding is only
-   reasoned.
+   `withholding` make two runners on one file deterministic). A reading of the code alone, or of a dependency's
+   source, gives a lead and no finding: report it as a lead, with the test that would reproduce it. Run only the
+   tests you need. Where no PostgreSQL server runs, a test of src/postgres.test.ts is written and said not run, and
+   it stays a lead until the CI's job of PostgreSQL runs it.
 
 RULES: fix nothing, write no decision note, and change no file of docs/ or src/ other than tests that reproduce a
 finding and your report. Name each such test `FAILING: …`. Write your report as a section at the end of
@@ -137,8 +139,9 @@ YOUR REPORT, the deliverable, in this order:
 - The table of step 1: each pair, what binds it (changes, applies as, cites as its reason), and how you read it:
   both whole with the code, or in part (say which part). Every note of your list is read whole, with its code: one
   not read so is a gap your last message names.
-- Each finding, with the two notes, the premise that fell, the sequence that breaks, the files and lines, and whether
-  it is reproduced, naming the test and the commit, or only reasoned, and where a fix could begin.
+- Each finding, with the two notes, the premise that fell, the sequence that breaks, the files and lines, and
+  the test that reproduces it and the commit, and where a fix could begin. Each lead, with the same, and the test
+  that would reproduce it.
 - The suspects you ruled out, each with its reason in a line.
 - Every suspect you noticed and did not check, with the sequence you suspect. Check each before you list it, where a
   test or a reading can: a suspect left unchecked says why.
@@ -162,11 +165,14 @@ docs/decisions/reviews.md of the branch.
 - Two reviewers may find one bug. It is one bug of the step, with both tests.
 - Run each test again on the last commit of `main` where the reviewer's branch was cut before it.
 - Every finding is a bug of the step of bugs of [`docs/roadmap.md`](../../../docs/roadmap.md), fixed by family,
-  marked reproduced or reasoned. A bug reproduced names the branch, the commit and the tests, and where the fix
-  begins. Its fix is a note that changes the earlier one, with the test, taken as `AGENTS.md` says.
-- A suspect the reviewer noticed and did not check is a bug of the same step, marked not checked.
-- A finding only reasoned, one whose fix is a choice of the design, and a suspect not checked are also questions of
-  [`docs/open-questions.md`](../../../docs/open-questions.md), with what would decide them.
+  reproduced. A bug names the branch, the commit and the tests, and where the fix begins. Its fix is a note that
+  changes the earlier one, with the test, taken as `AGENTS.md` says.
+- A lead, and a suspect the reviewer noticed and did not check, are no bugs yet. Write the test that would reproduce
+  each, here or in a session of its own, and run it, in the CI's job of PostgreSQL where it needs a server: a test
+  that fails makes it a bug of the step, and one that passes rules it out. A lead no test can reach yet, and a
+  finding whose fix is a choice of the design, are questions of
+  [`docs/open-questions.md`](../../../docs/open-questions.md), with what would decide them, and not bugs of the
+  roadmap (`AGENTS.md`, under Notes).
 - Copy the report's section to [`docs/decisions/reviews.md`](../../../docs/decisions/reviews.md) of `main`, whole,
   so that what the review ruled out stays when the branch goes.
 - Write what the review read and what it did not reach in the roadmap's step of the review, so that the next

@@ -67,11 +67,31 @@ This repository is a design and its pure core, not a library yet: read [`README.
   lists an archived note under its path in `archive/`, and each release moves what has come to be covered since. `bun run links` checks every
   link of the `.md` files.
 - A note lists, in a section `What it rests on`, each premise its decision falls without, and says of each whether it
-  is tested (naming the test), documented, seen in a spike, read in a dependency's source, or only reasoned. A
+  is tested (naming the test), documented, seen in a spike, read in a dependency's source, or chosen. A
   rule that holds only by a margin, such as a time longer than an interval, lists the margin as a premise, with the
   value it depends on. A note that changes another reads the premises of the note changed, and says of each whether
   it still holds. A review of the notes already taken, for a premise a later note took away, follows
   [`.claude/skills/premise-review/SKILL.md`](.claude/skills/premise-review/SKILL.md).
+- A premise about what code does when it runs is never only reasoned, whether the code is the library's, a
+  dependency's or a database's. Before its note is taken, the premise is tested, documented in the version pinned,
+  or seen in a spike. A test written and not run, as a test of `bun run test:postgres` on a machine with no server,
+  is not run yet: it runs on a branch, in the job of the CI that runs it, before the note is taken. A premise that
+  no test can reach yet does not hold a decision up. The decision is taken with a guard that makes the premise
+  unneeded, or it waits, and the premise goes in `docs/open-questions.md` as the question that holds it. A reasoned
+  premise of a note taken costs a bug found late, and a reasoned finding costs its analysis twice, so the check is
+  paid once, before.
+- A case the decision leaves out, such as a second name that a symbolic link gives a directory, is no premise. The
+  note says that the decision leaves the case out, and the case goes in `docs/open-questions.md`.
+- A premise that is a judgment, such as a default an operator wants or what a design that was rejected costs, is
+  `chosen`, not reasoned. The note says who chose it, the maintainer or the note itself. No test can make a judgment
+  fall, so a review of the premises does not read it.
+- A review reports a finding only once it is reproduced by a test that fails, or ruled out by a test that passes or
+  by the documentation of the version pinned. A reading of the code alone gives a lead, not a finding, and the
+  session that holds the lead turns it into a test or drops it. A lead no test can reach yet goes in
+  `docs/open-questions.md`, with what would decide it, and not in the roadmap as a bug.
+- A test of `src/form.test.ts` refuses the words `reasoned` and `not run` in the section `What it rests on` of every
+  note numbered 0258 or above. The notes taken before keep their premises as written, and a review reads those
+  first.
 - A premise about a dependency is looked up first in the documentation of the version pinned, for Effect its JSDoc
   in `node_modules/effect/src`: found, it is documented; not found, the note says so. A rule that loses data in
   silence if a behaviour not promised changes does not rest on it alone, where a guard of the library's is cheap;
@@ -79,8 +99,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A spike is a test in `spikes/`, run by `bun run test:spikes` at the pinned version, and by a job of the CI of its
   own on every push. `bun test` runs no spike, as `bunfig.toml` says
   ([decision 0250](docs/decisions/0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md)). A premise about what a dependency does
-  when it runs is tested, documented or seen in one before its note is taken; what no spike can run yet says what
-  would check it, and goes in `docs/open-questions.md`.
+  when it runs is tested, documented or seen in one before its note is taken. A premise that no spike can run yet
+  holds no decision up, as the rule above on premises of what code does says.
 - A dependency is never changed by hand: not in `node_modules`, not in bun's cache, not with a patch of the package
   manager, not for a spike. A fix the library needs is waited for in a release of the library. Until then the code
   works around it, as [decision 0116](docs/decisions/archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) does,
