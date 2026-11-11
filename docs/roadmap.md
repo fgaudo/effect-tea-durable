@@ -34,9 +34,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     40, 50, 51, 65, 67 and 79, each verified first. Bug 86 is fixed by
     [decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md), and bugs 26 and
     81 by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md), and bug 75
-    by [decision 0259](decisions/0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md). The part
-    next is bug 19, whose fix is a choice of the design, proposed to the maintainer before any code. Decision 0259
-    changes a reading of the storage, so the job of PostgreSQL of `ci.yml` runs on its branch before it is on `main`.
+    by [decision 0259](decisions/0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md), and bug 19
+    by [decision 0260](decisions/0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md). The part next
+    is bug 66, proposed to the maintainer before any code. Decision 0259 changes a reading of the storage, so the job
+    of PostgreSQL of `ci.yml` runs on its branch before it is on `main`.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
@@ -167,13 +168,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       [open question](open-questions.md#running) A name a rename left.
   17. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
   18. **Fixed by [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)**, whose waker activates an entity a crash took out.
-  19. **Reproduced: a discard does not get an entity past a message an operation sent.** An operator's discard
-      stores no reply ([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)), and an operation's
-      `send` waits for the resumption and sends the same request again
-      ([decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)). The entity dies on it again. The test
-      `FAILING: a discard gets an entity past the message an operation sent, which the operation does not send
-      again`, in `src/runtime.test.ts`, on `claude/premise-review-messages-975dd7` at `f9dc8e4`. Its fix is a choice
-      of the design: the [open question](open-questions.md#running) A discard of a message an operation sent.
+  19. **Fixed by [decision 0260](decisions/0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md)**, whose discard of a message an operation sent stores a rejection.
   20. **Reproduced: on Cluster, an operator's resume whose waiting sender is of a program the runner does not
       deploy is delivered again without end.** `Resumed` is sent from the step's transaction
       ([decision 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)),

@@ -695,9 +695,12 @@ its own, or a rule of the design it breaks. Anything else thrown while an event 
 a row the runtime corrupted — is the runtime's, and crashes the entity instead
 ([decision 0061](decisions/archive/0061-only-what-the-program-does-is-its-defect.md)). Resuming activates it as after a
 crash, by the program deployed: a fixed program is a deploy, which the entity stays suspended through, and the
-resumption follows it ([decision 0064](decisions/archive/0064-the-program-is-not-the-machines-state.md)); a discarded
-inbound message stores no reply, and its caller's retry is a new message
-([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)). An internal message is not discarded: the state
+resumption follows it ([decision 0064](decisions/archive/0064-the-program-is-not-the-machines-state.md)). A caller's
+discarded message stores no reply, and the caller's retry is a new message
+([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)). A discarded message an operation sent stores a
+rejection with no reason, kept while the work that sent it holds. The operation's `send` sends the request again at
+the resumption, and is given the rejection instead of the message being applied again
+([decision 0260](decisions/0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md)). An internal message is not discarded: the state
 before it still holds its work, so an operation's completion would run the operation again under another
 idempotency key, and a timer's firing would fire again at once. Only a program that handles it gets the entity
 past it ([decision 0041](decisions/archive/0041-a-completion-is-not-discarded.md),

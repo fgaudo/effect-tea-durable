@@ -8,6 +8,8 @@ That a resumption may bring a fixed program is replaced by
 What a creator is answered for a defect at creation is decided by [decision 0124](0124-the-boundary-authenticates-and-update-authorizes.md): the defect, with nothing stored.
 [Decision 0187](../0187-a-rehearsal-moves-time-by-a-duration.md) changes time in a rehearsal: `advance` moves it by a
 duration, and fires the timers due within it.
+[Decision 0260](../0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md) changes the discard of a message
+an operation sent: it stores a rejection with no reason, so that the operation's `send` does not send it again.
 
 ## Context
 

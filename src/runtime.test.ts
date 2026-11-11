@@ -1029,7 +1029,44 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // An operator discards the message an entity died on to get it past that message (decision 0014). When an
+  // operation sent it, the operation's `send` waits for the resumption and sends it again under the same request,
+  // and is answered the rejection the discard stored, so the entity does not die on it again (decision 0260).
+  test('a discard gets an entity past the message an operation sent, which the operation does not send again', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const breaking: Program<Omit<T, 'services'> & { services: Entities }> = {
+        ...sending,
+        name: 'Breaker',
+        operations: {
+          ...sending.operations,
+          C: operation.atLeastOnce(({ key }) =>
+            Effect.as(send(program, id, { _tag: 'Break', nonce: 'sent' }, 'break'), done(key))
+          ),
+        },
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const breaker = yield* runtime.deploy(breaking)
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          // The breaker's operation sends `Break`, the toy dies on it, and the operation waits for its resumption.
+          yield* ran(breaker.create('s', { flags: { at }, requestId: 's', sender: tester }))
+          expect((yield* toy.suspended).map(({ waiting }) => waiting.map(({ name }) => name))).toEqual([['break']])
+          yield* TestClock.adjust('5 millis')
+          expect(yield* toy.discard(id)).toEqual({ _tag: 'Discarded' })
+          // The step the woken operation sends runs, as in the test of what a discard did above.
+          yield* ran(Effect.void)
+          yield* ran(Effect.void)
+          // Without the stored rejection the toy is suspended again, on the message the operation sent again.
+          expect(yield* toy.suspended).toEqual([])
+        }))
+    })))
+
   // Each operator is answered by its own event, not by another operator's event applied first (decision 0114).
+
   test('two operators who discard at once are each told what their own discard did', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()

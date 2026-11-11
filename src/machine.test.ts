@@ -1558,6 +1558,40 @@ describe('discarding', () => {
     expect(discarded.machine.stored.mailbox).toEqual([])
     expect(discarded.machine.replies).toEqual(new Map())
   })
+
+  // The operation sends the same request again at the resumption, which a discard that stored nothing would let it
+  // apply again (decision 0260).
+  test('a message an operation sent is discarded with a rejection stored, which its next send is answered', () => {
+    const machine = checked((message) => (message === 'go' ? defect('broken') : message), () => ({}))
+    const request = ran('Booking', 'go')
+    const died = handled(machine, { _tag: 'Receive', request, message: 'go' })
+    const discarded = stepped(died.machine, { _tag: 'Discard' })
+    const rejected = { _tag: 'Rejected', reason: null } as const
+    expect(discarded.outputs).toContainEqual({ _tag: 'Replied', request, reply: rejected })
+    expect(discarded.written?.replies).toEqual([
+      expect.objectContaining({ tag: 'Rejected', reason: null, asked: expect.objectContaining({ name: 'Booking' }) }),
+    ])
+    expect(discarded.machine.stored.suspension).toBeNull()
+    const again = stepped(discarded.machine, { _tag: 'Receive', request, message: 'go' })
+    expect(again.outputs).toEqual([{ _tag: 'Replied', request, reply: rejected }])
+    expect(again.machine.stored.mailbox).toEqual([])
+    expect(again.machine.stored.suspension).toBeNull()
+  })
+
+  test('a discard that leaves the entity suspended keeps the message an operation sent, and stores no reply', () => {
+    const machine = checked((message) => (message === 'go' ? defect('broken') : message), () => ({}))
+    const request = ran('Booking', 'go')
+    const died = handled(machine, { _tag: 'Receive', request, message: 'go' })
+    const failing = tiny((message) => message, (state) => (state === 'start' ? defect('broken again') : {}))
+    const deployed = stepped(died.machine, { _tag: 'Restart' }, failing)
+    const discarded = stepped(deployed.machine, { _tag: 'Discard' })
+    expect(discarded.machine.stored.suspension).not.toBeNull()
+    expect(discarded.machine.stored.mailbox).toEqual(deployed.machine.stored.mailbox)
+    // The suspension answers the request `Suspended`, as every suspension does, and stores no reply for it.
+    expect(discarded.outputs.filter((output) => output._tag === 'Replied' && output.reply._tag !== 'Suspended'))
+      .toEqual([])
+    expect(discarded.machine.replies).toEqual(new Map())
+  })
 })
 
 describe('the keys a program declares', () => {

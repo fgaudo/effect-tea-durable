@@ -403,15 +403,6 @@ with a requirement that no example has yet.
   [roadmap](roadmap.md), reproduced for `retry`. It would be decided by:
   - whether `launchWith` checks every option before the hold, or closes its own scope when it dies after it;
   - a test of each option checked after the hold, in a scope the launcher gives.
-- **A discard of a message an operation sent.** An operator discards the message an entity died on, and no reply is
-  stored ([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)). An operation's `send` waits for the
-  resumption and sends the same request again
-  ([decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)), so the entity dies on it again. It is
-  bug 19 of the [roadmap](roadmap.md), reproduced. It would be decided by:
-  - whether a discard stores an answer the sender is given, such as a rejection of the runtime's, so that the
-    operation's `send` returns;
-  - or whether a message an operation sent cannot be discarded, and `discard` answers `NotDiscarded`, as for an
-    internal message.
 - **A resume to a sender no runner deploys.** On Cluster a step that resumes an entity sends `Resumed` to each
   waiting sender from its transaction
   ([decision 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)).
@@ -670,6 +661,15 @@ with a requirement that no example has yet.
 
 ## The surface
 
+- **A reason an operator gives to a discard.** A discard of a message an operation sent stores a rejection with a
+  reason of `null` ([decision 0260](decisions/0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md)).
+  The sender cannot tell it from a bare `reject` of the receiver, though a discard says the receiver had a bug and
+  an operator dropped the message. An operator could give the reason, as `discard(id, { reason })`, typed by the
+  receiver's schema of rejections, with `null` when none is given. The rule of decision 0260 would not change. It
+  would cost an encoding of the reason on the operator's path, and a payload in Cluster's request `Discard`. A
+  program whose schema of rejections is `Never` could take no reason. It would be decided by:
+  - a program that acts otherwise on a discard than on a rejection, as one that alerts or sends again later;
+  - whether a reason the receiver's schema declares for a discard reads as the receiver's own rule.
 - **An own message named like a child, with a tag typed `string`.** A parent's own message that takes the name of a
   child is refused by the compiler alone (`Checks` in `src/program.ts`), since `update` routes a message whose `_tag`
   is a child's name to that child

@@ -71,7 +71,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0002](archive/0002-store-the-state-not-the-messages.md) | Store the state after each message, never replay messages |  |
 | [0003](archive/0003-durable-work-derived-from-state.md) | All durable work is derived from the state | [0195](0195-the-package-is-effect-tea-persistent.md) |
 | [0013](archive/0013-the-runtime-is-a-pure-machine.md) | The runtime's semantics are a pure machine | [0065](archive/0065-the-machine-holds-no-replies.md) |
-| [0014](archive/0014-rules-the-machine-settled.md) | The rules the pure machine settled | [0023](archive/0023-suspended-means-no-reply-yet.md), [0041](archive/0041-a-completion-is-not-discarded.md), [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md) |
+| [0014](archive/0014-rules-the-machine-settled.md) | The rules the pure machine settled | [0023](archive/0023-suspended-means-no-reply-yet.md), [0041](archive/0041-a-completion-is-not-discarded.md), [0044](archive/0044-a-firing-is-not-discarded.md), [0064](archive/0064-the-program-is-not-the-machines-state.md), [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md), [0260](0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md) |
 | [0031](archive/0031-a-state-is-an-object.md) | A state is an object |  |
 | [0033](archive/0033-a-program-declares-its-keys.md) | A program declares its keys | [0132](archive/0132-a-key-may-take-a-parameter.md) |
 | [0035](archive/0035-one-place-where-a-program-is-declared.md) | One place where a program is declared | [0180](0180-a-program-leaves-out-what-it-does-not-have.md) |
@@ -160,6 +160,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0114](archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) | An operator sees the suspended entities, and what a resume or a discard did | [0185](0185-inspect-gives-what-is-stored-of-one-entity.md) |
 | [0185](0185-inspect-gives-what-is-stored-of-one-entity.md) | `inspect` gives what is stored of one entity, read from one snapshot |  |
 | [0205](0205-a-defects-cause-is-written-as-text-every-database-holds.md) | A defect's cause is written as text every database holds, with each character none holds escaped |  |
+| [0260](0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md) | A discard of a message an operation sent stores a rejection with no reason, which the operation's `send` is given |  |
 
 ## Versions and deploys
 

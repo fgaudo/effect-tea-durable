@@ -1060,16 +1060,28 @@ const resume = <T extends Types>(program: Program<T>, machine: Machine<T>): Move
 }
 
 /**
- * Drops the inbound message a suspended entity died on, storing no reply, and resumes it (decision 0014). An
- * internal message is not discarded: the state before it still holds its work, so an operation would run again
- * under another idempotency key, and a timer whose time has passed would fire again at once. Only a program that
- * handles it gets the entity past it (decisions 0041, 0044).
+ * Drops the inbound message a suspended entity died on, and resumes it (decision 0014). A caller's message stores
+ * no reply, and the caller's retry is a new message. A message an operation sent stores a rejection with no reason,
+ * since the operation sends the same request again at the resumption, and would otherwise apply it again
+ * (decision 0260). A discard that leaves the entity suspended keeps its message, and stores nothing. An internal
+ * message is not discarded: the state before it still holds its work, so an operation would run again under
+ * another idempotency key, and a timer whose time has passed would fire again at once. Only a program that handles
+ * it gets the entity past it (decisions 0041, 0044).
  */
 const discard = <T extends Types>(program: Program<T>, machine: Machine<T>): Moved<T> => {
   const { stored } = machine
   const [head, ...rest] = stored.mailbox
   if (stored.suspension?.on._tag !== 'Message' || head?._tag !== 'Inbound') return { machine, outputs: [] }
-  return activate(program, machine, { ...machine, stored: { ...stored, mailbox: rest, suspension: null } }, true)
+  const moved = activate(program, machine, { ...machine, stored: { ...stored, mailbox: rest, suspension: null } }, true)
+  if (head.request._tag !== 'Operation' || moved.machine.stored.suspension !== null) return moved
+  const reply = { _tag: 'Rejected', reason: null } as const
+  return {
+    ...moved,
+    outputs: [{ _tag: 'Replied', request: head.request, reply }, ...moved.outputs],
+    // No time: a reply to an operation is kept while the work that asked holds, and goes with it (decision 0021).
+    handled: head,
+    answered: reply,
+  }
 }
 
 /**

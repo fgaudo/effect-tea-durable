@@ -1271,8 +1271,9 @@ describe('the shards of a runner on Cluster', () => {
           return { ...state, ring: message.at }
         case 'Relay':
           return { ...state, relay: message.to }
+        // An entity whose id starts with `brittle` dies on `Poke`, so that an operation's message can suspend it.
         case 'Poke':
-          return { ...state, n: state.n + 1 }
+          return state.who.startsWith('brittle') ? defect('broken') : { ...state, n: state.n + 1 }
         case 'Break':
           return defect('broken')
         case 'Haunt':
@@ -1688,6 +1689,33 @@ describe('the shards of a runner on Cluster', () => {
         const [left] = yield* Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) =>
           sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_waiting`)
         expect(left?.held).toBe(0)
+      })), 30_000)
+
+  // The operation's `send` sends the poke again once `Resumed` wakes it, and the door's step on the receiver's
+  // runner answers it the rejection the discard stored, without applying it again (decision 0260).
+  slow('a discard on another runner of the message an operation sent is answered to the operation as a rejection', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const ids = Array.from({ length: 64 }, (_, i) => `brittle${i}`)
+        const sender = ids.find((id) => first.holds(id))!
+        const receiver = ids.find((id) => second.holds(id))!
+        yield* create(first, sender)
+        yield* create(first, receiver)
+        yield* send(first, sender, { _tag: 'Relay', to: receiver }, 'm-relay')
+        yield* until(Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) =>
+          sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_waiting`), ([row]) => row?.held === 1)
+        expect(yield* second.bell.discard(receiver)).toEqual({ _tag: 'Discarded' })
+        expect(yield* until(stateOf(sender), (state) => state?.relayed !== null)).toMatchObject({
+          relay: null,
+          relayed: 'AlreadyExists/Rejected',
+        })
+        expect(yield* second.bell.suspended).toEqual([])
       })), 30_000)
 
   slow('an operation is woken by a `Resumed` delivered before its client gives it the answer Suspended', () => {
