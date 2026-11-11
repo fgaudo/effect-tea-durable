@@ -580,6 +580,9 @@ state, compares the operations under way with the new `work`, and calls the `unk
 that may have run. A suspended entity is stepped as a `resume` by the new program would activate it, and the
 message it died on is not handled. The check launches nothing, holds nothing and writes nothing, so it runs on the
 database the old version holds ([decision 0247](decisions/0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)).
+On SQLite the check's client is opened `readonly`. A writable client of `@effect/sql-sqlite-bun` begins each
+transaction with `BEGIN IMMEDIATE`, which waits for the old version's steps even where it only reads
+([decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)).
 
 It gives the entities not suspended and the suspended ones apart: how many it checked, how many fail, and the first
 `limit` failures in the order it read them. A failure is `Load`, a migration or a schema that dies on a stored row,
@@ -1167,8 +1170,13 @@ How the library tests its own machine and runtime is under
 
 On one process, with SQLite or PostgreSQL: the mailbox, the states and the timers sit in one database, so each step
 is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md), [0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). A runtime holds its
-database until it ends: a second runtime on it, or a launch while another connection has the file of SQLite open,
-dies as it launches ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). A database of
+database until it ends: a second runtime on it dies as it launches
+([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). The hold refuses no reader, on SQLite as on a
+server of PostgreSQL. A file of SQLite is held by a file of its own beside it, named by the database's path and
+`-effecttea-hold`, which the runtime's connection attaches in SQLite's exclusive locking mode and writes. The
+database itself stays in the normal locking mode, so another connection reads it while the runtime runs, and the end
+of the process gives the hold back however it ends
+([decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)). A database of
 PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. A database of
 PGlite is held in the process by its client. Its data directory is held too, while the client a runtime launched on
 is open, so a launch on another client over the directory dies

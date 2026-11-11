@@ -541,7 +541,7 @@ describe('passivation', () => {
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
             // Each activation holds its caller's event before the other can tell it to leave (decision 0079). With
-            // the caller's event offered after the lock of the activation is let go, seed 239610329, pinned, fails. `bun
+            // the caller's event offered after the lock of the activation is let go, seed 33, pinned, fails. `bun
             // run test:pins` runs it against that form, the pin `0079 an activation` of `src/runtime.test_pins.ts`
             // (decision 0254).
             return yield* together([
@@ -549,7 +549,7 @@ describe('passivation', () => {
               toy.send('u-2', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' }),
             ])
           }))
-      }), [{ _tag: 'Accepted' }, { _tag: 'Accepted' }], { pinned: [239610329] })
+      }), [{ _tag: 'Accepted' }, { _tag: 'Accepted' }], { pinned: [33] })
   }, 60_000)
 
   test('a caller interrupted anywhere as it activates its entity leaves the process able to settle', () => {
@@ -571,12 +571,12 @@ describe('passivation', () => {
             yield* Fiber.interrupt(caller)
             // What runs detached is counted from the step that forks it to its end: a count left behind would
             // keep this from returning, and the run would not end (decision 0079). With the count raised before the
-            // uninterruptible step that forks, seed 199, pinned, fails. `bun run test:pins` runs it against that form,
+            // uninterruptible step that forks, seed 134, pinned, fails. `bun run test:pins` runs it against that form,
             // the pin `0079 what runs detached` of `src/runtime.test_pins.ts` (decision 0254).
             yield* runtime.settled
             return 'settled'
           }))
-      }), 'settled', { pinned: [199] })
+      }), 'settled', { pinned: [134] })
   }, 60_000)
 
   test('a caller interrupted anywhere as it sends leaves its entity’s bound whole, in every schedule within one deviation', () => {
@@ -819,7 +819,7 @@ describe('passivation', () => {
     })))
 
   // The load is under the entity's lock: two callers never read it from storage and build a machine each
-  // (decisions 0029, 0067). With the lock held by no one, seed 6, pinned, builds two. `bun run test:pins` runs it
+  // (decisions 0029, 0067). With the lock held by no one, seed 11, pinned, builds two. `bun run test:pins` runs it
   // against that form, the pin `0067 the load` of `src/runtime.test_pins.ts` (decision 0254).
   test('two callers of an entity not loaded build one machine for it, under prioritized schedules', () => {
     const tester = { _tag: 'Tester' } as const
@@ -844,7 +844,7 @@ describe('passivation', () => {
             ])
           }))
         return { both, restarts: events.filter((event) => event._tag === 'Restart').length }
-      }), { both: [{ _tag: 'Accepted' }, { _tag: 'Accepted' }], restarts: 1 }, { pinned: [6] })
+      }), { both: [{ _tag: 'Accepted' }, { _tag: 'Accepted' }], restarts: 1 }, { pinned: [11] })
   }, 60_000)
 
   test('two creations of one entity at once build one machine, and the second is answered AlreadyExists', () => {

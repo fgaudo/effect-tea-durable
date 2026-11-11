@@ -1434,13 +1434,13 @@ describe('a planned stop', () => {
   test('the drain waits for the completion of an at-most-once operation, under prioritized schedules', () => {
     // Decision 0119: the drain looks whether anything is left after it takes the signal of `settled`, so an
     // operation's end or a step's between the look and the wait is not missed, and its completion is committed. With
-    // the signal taken in a step after the look, seed 91, pinned, fails. `bun run test:pins` runs it against that
+    // the signal taken in a step after the look, seed 79, pinned, fails. `bun run test:pins` runs it against that
     // form, the pin `0119` of `src/runtime.test_pins.ts` (decision 0254).
     explored((window) =>
       Effect.map(
         stopped({ drain: { millis: 100 } }, (_toy, open) => Effect.andThen(opened(window, true), open)),
         ({ second, published }) => ({ rerun: second.filter((act) => act === 'b').length, unknown: unknown(published) }),
-      ), { rerun: 0, unknown: [] }, { open: false, pinned: [91] })
+      ), { rerun: 0, unknown: [] }, { open: false, pinned: [79] })
   }, 60_000)
 
   test('a completion in the drain starts no operation that runs again, and arms no timer', () =>
@@ -4104,50 +4104,83 @@ describe('what the runtime cannot finish', () => {
     })))
 })
 
+// A hold of the file as another runtime's storage takes it: the hold file beside the database, attached in the
+// exclusive locking mode and written (decision 0267).
+const holdBy = (sql: SqlClient.SqlClient, filename: string) =>
+  Effect.gen(function*() {
+    yield* sql`ATTACH DATABASE ${`${filename}-effecttea-hold`} AS effecttea_hold`
+    yield* sql`PRAGMA effecttea_hold.locking_mode = EXCLUSIVE`
+    yield* sql.withTransaction(Effect.andThen(
+      sql`CREATE TABLE IF NOT EXISTS effecttea_hold.hold (id INTEGER PRIMARY KEY)`,
+      sql`INSERT OR REPLACE INTO effecttea_hold.hold (id) VALUES (1)`,
+    ))
+  })
+
 describe('a database held by one runtime', () => {
   const reasonOf = (exit: Exit.Exit<unknown>) => {
     const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
     return cause instanceof InvariantDefect ? cause.reason : null
   }
-  const held = 'the database is held by another runtime, or open to another connection'
+  const held = 'the database is held by another runtime'
 
-  test('a runtime holds its database file alone: no other connection opens it, nor launches while one is open', () => {
+  test('a runtime holds its database file against another runtime, and a reader reads it beside the runtime', () => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-'))
     const filename = join(directory, 'store.db')
-    // A client of the file, as a process opens one, with no busy wait: one that cannot get the file fails at once.
-    const client = (scope: Scope.Scope) =>
+    // A client of the file, as a process opens one, with no busy wait: one that cannot take a lock fails at once.
+    const client = (scope: Scope.Scope, readonly = false) =>
       Effect.map(
-        Scope.provide(Layer.build(SqliteClient.layer({ filename, busyTimeout: 0 })), scope),
+        Scope.provide(Layer.build(SqliteClient.layer({ filename, busyTimeout: 0, readonly })), scope),
         (context) => Context.get(context, SqlClient.SqlClient),
       )
     const on = (sql: SqlClient.SqlClient) => <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
       Effect.provideService(effect, SqlClient.SqlClient, sql)
     return Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const firstScope = yield* Scope.make()
-      const first = yield* client(firstScope)
-      yield* on(first)(createTables)
-      yield* on(first)(process({}, () =>
-        Effect.gen(function*() {
-          // A second process would load the entities the first holds in memory, and one's steps would be lost
-          // under the other's: while a runtime runs, nothing else opens the file (decision 0080).
-          expect(Exit.isFailure(yield* Effect.exit(Effect.scoped(Effect.flatMap(Effect.scope, client)))))
-            .toBe(true)
-        })))
-      // The first runtime has ended and given the file back: another connection opens it, but launches nothing
-      // while the first client is still open on it.
+      const first = yield* client(yield* Effect.scope)
       const second = yield* client(yield* Effect.scope)
-      expect(reasonOf(yield* Effect.exit(on(second)(process({}, () => Effect.void))))).toBe(held)
-      yield* Scope.close(firstScope, Exit.void)
       const at = DateTime.makeUnsafe(0)
+      yield* on(first)(process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
+          // A reader opened `readonly` reads the rows the runtime committed, as a check does (decision 0247).
+          const read = Effect.scoped(Effect.flatMap(
+            Effect.flatMap(Effect.scope, (scope) => client(scope, true)),
+            (reader) => reader`SELECT id FROM effecttea_entities`,
+          ))
+          expect(yield* read).toEqual([{ id }])
+          // A second runtime would load the entities the first holds in memory, and one's steps would be lost
+          // under the other's: while a runtime runs, no other launches on the file (decision 0267).
+          expect(reasonOf(yield* Effect.exit(on(second)(process({}, () => Effect.void))))).toBe(held)
+        })))
+      // The first runtime has ended and given the hold back: another launches while the first client is still open.
       yield* on(second)(process({}, (runtime) =>
         Effect.gen(function*() {
           const { layer } = yield* hands()
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          expect(yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } }))
-            .toEqual({ _tag: 'Created' })
+          expect(yield* toy.read(id)).not.toBeNull()
         })))
     })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
   })
+
+  // A database in memory names no file, so its client alone holds it, and two databases in memory are two databases
+  // (decision 0267). A hold file named by an empty path would hold them as one.
+  test('two runtimes launch at once on two databases in memory', () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const memory = Effect.map(
+        Effect.flatMap(Effect.scope, (scope) =>
+          Scope.provide(Layer.build(SqliteClient.layer({ filename: ':memory:', busyTimeout: 0 })), scope)),
+        (context) => Context.get(context, SqlClient.SqlClient),
+      )
+      const first = yield* memory
+      const second = yield* memory
+      yield* Effect.provideService(
+        process({}, () =>
+          Effect.provideService(process({}, () => Effect.void), SqlClient.SqlClient, second)),
+        SqlClient.SqlClient,
+        first,
+      )
+    })).pipe(Effect.provide(TestClock.layer()))))
 
   // A launch creates the tables once it holds the database, so a launch refused leaves a new file as it was
   // (decision 0191). Created before the hold, the tables would be in the file the refused launch left.
@@ -4165,6 +4198,7 @@ describe('a database held by one runtime', () => {
       const first = yield* client(yield* Effect.scope)
       const otherScope = yield* Scope.make()
       const other = yield* client(otherScope)
+      yield* holdBy(other, filename)
       expect(reasonOf(yield* Effect.exit(on(first)(process({}, () => Effect.void))))).toBe(held)
       expect(yield* other`SELECT name FROM sqlite_master WHERE type = 'table'`).toEqual([])
       yield* Scope.close(otherScope, Exit.void)
@@ -4459,9 +4493,9 @@ describe('a launch that dies holds nothing in the scope its launcher gave (decis
       }
     })))
 
-  // A file another client has open refuses the hold after this client is claimed, and on PostgreSQL a lock another
+  // A file another runtime holds refuses the hold after this client is claimed, and on PostgreSQL a lock another
   // session holds refuses it after a connection is reserved: both are given back with the launch's scope.
-  test('a launch refused by a file another client has open gives the file back', () => {
+  test('a launch refused by a file another runtime holds gives the file back', () => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-'))
     const filename = join(directory, 'store.db')
     const client = (scope: Scope.Scope) =>
@@ -4475,10 +4509,11 @@ describe('a launch that dies holds nothing in the scope its launcher gave (decis
       const firstScope = yield* Scope.make()
       const first = yield* client(firstScope)
       yield* on(first)(createTables)
+      yield* holdBy(first, filename)
       const second = yield* client(yield* Effect.scope)
       yield* Effect.scoped(Effect.gen(function*() {
         expect(reasonOf(yield* Effect.exit(on(second)(launch({ sweep: 'none' })))))
-          .toBe('the database is held by another runtime, or open to another connection')
+          .toBe('the database is held by another runtime')
         yield* Scope.close(firstScope, Exit.void)
         const again = yield* Effect.exit(on(second)(launch({ sweep: 'none' })))
         expect(Exit.isSuccess(again) ? 'launched' : reasonOf(again)).toBe('launched')

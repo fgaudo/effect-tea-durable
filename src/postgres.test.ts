@@ -173,7 +173,7 @@ const sqlReasonOf = (exit: Exit.Exit<unknown, unknown>) => {
   return SqlError.isSqlError(cause) ? cause.reason._tag : null
 }
 
-const held = 'the database is held by another runtime, or open to another connection'
+const held = 'the database is held by another runtime'
 
 describe('the order of a partition (decision 0137)', () => {
   // On SQLite and PGlite two writers commit one after the other whatever the head does: only a server runs two at

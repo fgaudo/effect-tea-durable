@@ -4,7 +4,9 @@
 keeps. What an alternative says of Cluster's shard locks is corrected by
 [decision 0084](0084-a-step-commits-only-where-the-commit-checks-the-shard.md). The hold is let go last only in a
 sequential scope, which the runtime forks of its own since
-[decision 0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md).
+[decision 0120](0120-the-runtime-closes-a-sequential-scope-of-its-own.md). A file of SQLite is held by a file of its
+own beside it, and another connection reads the database while a runtime runs, since
+[decision 0267](../0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md).
 
 ## Context
 

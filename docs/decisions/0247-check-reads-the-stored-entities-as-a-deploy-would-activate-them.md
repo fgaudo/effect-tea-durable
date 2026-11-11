@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-11-10, with the step A check of a program against the stored entities, before it is
 deployed, of the [roadmap](../roadmap.md). Adds to
 [decision 0064](archive/0064-the-program-is-not-the-machines-state.md) a way to learn before a deploy what it
-would suspend.
+would suspend. On SQLite the check reads a file the old version holds, through a client opened `readonly`, since
+[decision 0267](0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md).
 
 ## Context
 

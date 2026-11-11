@@ -51,7 +51,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0007](archive/0007-one-process-first.md) | One process with SQL first, Effect Cluster later | [0080](archive/0080-a-database-is-held-by-one-runtime.md), [0081](archive/0081-on-cluster-a-step-commits-with-its-reply.md), [0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) |
 | [0019](archive/0019-unstable-effect-modules.md) | The library depends on Effect's unstable modules | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) |
 | [0055](archive/0055-the-public-surface-is-what-its-users-use.md) | The public surface is what its users use | [0191](0191-a-launch-creates-the-tables.md), [0193](0193-the-public-surface-is-four-entries.md) |
-| [0080](archive/0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md), [0120](archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md) |
+| [0080](archive/0080-a-database-is-held-by-one-runtime.md) | A database is held by one runtime | [0084](archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md), [0120](archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md), [0267](0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md) |
 | [0099](archive/0099-a-library-on-unstable-modules-is-released-as-experimental.md) | A library on unstable modules is released as experimental |  |
 | [0193](0193-the-public-surface-is-four-entries.md) | The public surface is four entries: the main one, a program's module, a test's and a launcher's on Cluster |  |
 | [0195](0195-the-package-is-effect-tea-persistent.md) | The package is `@fgaudo/effect-tea-persistent`, a program's work is `work`, a reader fetches, and `deploy` stays |  |
@@ -63,6 +63,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0250](0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md) | `bun test` holds its budget by samples, and the spikes and the tests on a clock that is real run on their own |  |
 | [0254](0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) | A check of the project runs against the case it refuses: a check gets a sample of each case, a list of files is read from the disk, and a pinned seed of an explored test runs against its rule taken out |  |
 | [0255](0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md) | A data directory of PGlite is held in the process while the client a runtime launched on is open |  |
+| [0267](0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md) | A file of SQLite is held by a file of its own beside it, and the hold refuses no reader |  |
 
 ## The machine and the program
 
@@ -180,7 +181,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0058](archive/0058-work-is-compared-by-what-is-stored.md) | Work is compared by what is stored |  |
 | [0075](archive/0075-a-name-is-deployed-once-in-a-process.md) | A name is deployed once in a process | [0078](archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) |
 | [0102](archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md) | A deploy interrupted before it registers undoes itself whole |  |
-| [0247](0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md) | `check` reads the stored entities as a deploy of a new program would activate them, and writes nothing |  |
+| [0247](0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md) | `check` reads the stored entities as a deploy of a new program would activate them, and writes nothing | [0267](0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md) |
 
 ## Schemas, storage and projections
 

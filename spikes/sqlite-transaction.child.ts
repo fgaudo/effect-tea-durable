@@ -10,8 +10,6 @@ const filename = Bun.argv[2] ?? ''
 
 await Effect.runPromise(Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
-  // As the runtime's storage holds its file (decision 0080).
-  yield* sql`PRAGMA locking_mode = EXCLUSIVE`
   yield* sql`CREATE TABLE rows (name TEXT NOT NULL)`
   yield* sql.withTransaction(sql`INSERT INTO rows (name) VALUES ('committed')`)
   yield* sql.withTransaction(Effect.gen(function*() {

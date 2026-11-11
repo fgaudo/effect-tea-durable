@@ -42,7 +42,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md), and bug 44 by
     [decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md), and bugs 72 and 63 by
     [decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md), and bug 42 by
-    [decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md). The part next is bug 87, proposed to the maintainer before any code. The test of decision
+    [decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md), and bug 87 by
+    [decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md). The part
+    next is bug 4, reproduced by a `test.failing` of `src/rehearse.test.ts`, proposed to the maintainer before any
+    code.
+    The spike of decision 0267, `spikes/sqlite-hold-file.test.ts`, passed on Windows, and runs on Linux first in the
+    job of the spikes, on the push of `main` that takes the note. The test of decision
     0264 on PostgreSQL passed in the job of PostgreSQL of the push of `af8c5d5`. Decision 0265 changes the statements
     of the table `effecttea_waiting`, so its tests run on PostgreSQL first in that job, on the push of `main` that
     takes it.
@@ -599,17 +604,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       the step waits for the lock Cluster's transaction holds until the busy timeout. The
       [open question](open-questions.md#running) A second runtime on one database.
   86. **Fixed by [decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md)**, which holds a data directory of PGlite while the client a runtime launched on is open.
-  87. **Reproduced: `check` cannot run beside the old version on SQLite.** `check` launches nothing and takes no lock,
-      so that it runs on a database another version holds
-      ([decision 0247](decisions/0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)). A file of
-      SQLite is held in the exclusive locking mode
-      ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), and a new version is checked from a process of
-      its own. Its client dies with `database is locked` after the busy timeout, which blocks the event loop under
-      `bun:sqlite`. Nothing is lost, since the check fails loudly. The test `FAILING: a check from a client of its own
-      reads a file of SQLite the old version holds`, in `src/check.test.ts`, on `claude/gallant-almeida-c81283` at
-      `e04fcd4`. The same on PostgreSQL under a role of rows alone is noticed and not checked. The fix is a note that
-      narrows 0247 and the design to a stopped version or a copy of the file, or the old runtime gives the check
-      through its handle. The [open question](open-questions.md#running) A check beside the old version on SQLite.
+  87. **Fixed by [decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)**, which holds a file of SQLite by a file of its own beside it, so that `check` reads the file the old version holds.
   88. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose check refuses an `@effect/` package at a version other than `effect`'s.
   89. **Reproduced: on Cluster, a second client on a runner that polls replies more slowly than the runner that keeps
       the id waits for ever.** A caller's rows go once its client has the answer and its time is past

@@ -275,7 +275,7 @@ describe('two entities that talk', () => {
 test('a sender answered Suspended is woken by the resumption, under prioritized schedules from its arrival', () => {
   // Decision 0063: a sender registers for the receiver's resumption before it sends. A resumption between its being
   // answered `Suspended` and a registration made after it would wake no one, and the sender would wait for ever.
-  // With the registration moved after the send, seed 52, pinned, fails. `bun run test:pins` runs it against that form,
+  // With the registration moved after the send, seed 63, pinned, fails. `bun run test:pins` runs it against that form,
   // the pin `0063` of `src/runtime.test_pins.ts` (decision 0254).
   const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
     ...program,
@@ -309,13 +309,13 @@ test('a sender answered Suspended is woken by the resumption, under prioritized 
           yield* runtime.settled
           return { applied: (yield* store.load(id))?.state.applied, wanted: yield* senders.read('s') }
         }))
-    }), { applied: ['sent'], wanted: 0 }, { open: false, pinned: [52] })
+    }), { applied: ['sent'], wanted: 0 }, { open: false, pinned: [63] })
 }, 60_000)
 
 test('callers of an unloaded entity build one machine for it, under prioritized schedules from their arrival', () => {
   // Decision 0067: an entity's lock is dropped by its last user only. One dropped while a caller waits for it lets a
   // new taker hold a lock of its own beside that caller, and both load the entity: two machines, two `Restart`s.
-  // With the lock dropped by any user, seed 661, pinned, builds two. `bun run test:pins` runs it against that form, the
+  // With the lock dropped by any user, seed 146, pinned, builds two. `bun run test:pins` runs it against that form, the
   // pin `0067` of `src/runtime.test_pins.ts` (decision 0254).
   // The schedules are explored from the callers' arrival on.
   explored((window) =>
@@ -337,5 +337,5 @@ test('callers of an unloaded entity build one machine for it, under prioritized 
           yield* runtime.settled
           return { unloaded: [...entities], restarts: events.filter((event) => event._tag === 'Restart').length }
         }))
-    }), { unloaded: [id], restarts: 1 }, { open: false, pinned: [661] })
+    }), { unloaded: [id], restarts: 1 }, { open: false, pinned: [146] })
 }, 60_000)

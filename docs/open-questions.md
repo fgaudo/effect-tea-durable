@@ -594,20 +594,18 @@ with a requirement that no example has yet.
     a link to the directory;
   - whether a launch on Cluster checks that the runtime's client is the client of Cluster's `MessageStorage`, and a
     test that kills a runner between the two commits.
-- **A check beside the old version on SQLite.** `check` takes no lock, so that it runs on a database the old version
-  holds ([decision 0247](decisions/0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)). A file
-  of SQLite is held in the exclusive locking mode, so a check from a process of its own dies with `database is
-  locked`. It is bug 87 of the [roadmap](roadmap.md), reproduced. A script run by hand on Bun 1.4.4, not yet a
-  spike, saw a connection opened `readonly` refused alike, and saw the holding connection copy the file whole, by
-  `serialize`, which `export` of `SqliteClient` of `@effect/sql-sqlite-bun` calls, and by `VACUUM INTO`. It would be
-  decided by:
-  - whether the hold of SQLite moves to a file of its own beside the database, attached by the runtime's connection
-    in the exclusive locking mode, so that the database stays in the normal mode and any reader reads it. Raw
-    `bun:sqlite` on Bun 1.4.4 on Windows, by hand, saw readers read one snapshot beside the holder, a second holder
-    refused, and the hold taken again after the holder was killed. Linux and Effect's `SqliteClient` are not run;
-  - whether a note narrows 0247 and the design to a stopped version or a copy of the file, or the old runtime gives
-    the check through its handle;
-  - a run on a server of PostgreSQL under a role of rows alone, which reads `effecttea_migrations` by name.
+- **A check beside the old version on PostgreSQL under a role of rows alone.** `check` reads a database the old
+  version holds, on SQLite through the hold file
+  ([decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)) and on
+  PostgreSQL beside the advisory lock. Under a role that may only read and write rows, the check reads
+  `effecttea_migrations` by name, which no test has run against such a role. It would be decided by:
+  - a run on a server of PostgreSQL under a role of rows alone.
+- **A second name of a file of SQLite.** A file of SQLite is held by a hold file named by the database's path
+  ([decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)). Two
+  runtimes that open one file by two names, through a symbolic or a hard link, name two hold files, and both launch.
+  The decision leaves the case out. It would be decided by:
+  - a test of two runtimes on one file by two names, and whether SQLite's own path of the file resolves a symbolic
+    link on each system.
 
 ## Programs
 

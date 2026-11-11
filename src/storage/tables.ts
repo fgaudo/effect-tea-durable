@@ -52,8 +52,8 @@ const held = new WeakSet<SqlClient.SqlClient>()
 /**
  * The data directories of PGlite a runtime of this process has launched on, each with the client it launched on. Two
  * clients of PGlite over one directory are two copies of one database, and the last to close writes its copy over the
- * other's. So a launch on another client over a directory is refused while the client before it is open, as SQLite
- * refuses a file another connection has open (decision 0255).
+ * other's. So a launch on another client over a directory is refused while the client before it is open
+ * (decision 0255).
  */
 const directories = new Map<string, { readonly closed: boolean }>()
 
@@ -81,21 +81,22 @@ const directoryOf = (
 const advisoryKey = 7_465_616
 
 /**
- * Holds the database for one runtime until the scope ends (decisions 0080, 0157). The client is held in this
- * process, claimed in one synchronous step. A file of SQLite is held by SQLite's exclusive locking mode: a write
- * takes it only while no other connection has the file open, it keeps every other from opening it, and the end of
- * the process gives it back, however it ends. A database of PostgreSQL is held by a session advisory lock, on a
- * connection reserved until the scope ends, and the end of the session gives it back. PGlite runs every statement on
- * one session, which would take the lock again. So in this process alone, the client holds it, and the client's data
- * directory is held while the client is open. A database another runtime holds, or another connection has open, is
- * the launcher's defect. So is a data directory of PGlite another process has open (decision 0255).
+ * Holds the database for one runtime until the scope ends, and refuses no reader (decisions 0157, 0267). The client
+ * is held in this process, claimed in one synchronous step. A file of SQLite is held by a file of its own beside it,
+ * named by the database's path and `-effecttea-hold`. The runtime's connection attaches the hold file in SQLite's
+ * exclusive locking mode and writes it, so that no other connection takes it, and the end of the process gives it
+ * back, however it ends. The database itself stays in the normal locking mode, so another connection reads it. A
+ * database of SQLite in memory is held by its client alone, since no other connection opens it. A database of
+ * PostgreSQL is held by a session advisory lock, on a connection reserved until the scope ends, and the end of the
+ * session gives it back. PGlite runs every statement on one session, which would take the lock again. So in this
+ * process alone, the client holds it, and the client's data directory is held while the client is open. A database
+ * another runtime holds is the launcher's defect. So is a data directory of PGlite another process has open
+ * (decision 0255).
  */
 export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
   const dialect = dialectOf(sql)
-  const refused = () => new InvariantDefect({
-    reason: 'the database is held by another runtime, or open to another connection',
-  })
+  const refused = () => new InvariantDefect({ reason: 'the database is held by another runtime' })
   yield* Effect.acquireRelease(
     Effect.sync(() => {
       if (held.has(sql)) throw refused()
@@ -121,9 +122,19 @@ export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope>
     if (taken[0]?.[0] !== true) return yield* Effect.die(refused())
     return
   }
-  // The mode is the connection's, and is taken or given back by the next access of the file.
-  const take = Effect.andThen(sql`PRAGMA locking_mode = EXCLUSIVE`, sql.withTransaction(Effect.void))
-  const give = Effect.ignore(Effect.andThen(sql`PRAGMA locking_mode = NORMAL`, sql.withTransaction(Effect.void)))
+  const [main] = yield* Effect.orDie(sql<{ file: string }>`SELECT file FROM pragma_database_list WHERE name = 'main'`)
+  if (main === undefined || main.file === '') return
+  // The mode is the attached file's alone. In that mode a write takes the file's exclusive lock and keeps it until
+  // the file is detached or the connection closed, so the write is what takes the hold (decision 0267).
+  const take = Effect.gen(function*() {
+    yield* sql`ATTACH DATABASE ${`${main.file}-effecttea-hold`} AS effecttea_hold`
+    yield* sql`PRAGMA effecttea_hold.locking_mode = EXCLUSIVE`
+    yield* sql.withTransaction(Effect.andThen(
+      sql`CREATE TABLE IF NOT EXISTS effecttea_hold.hold (id INTEGER PRIMARY KEY)`,
+      sql`INSERT OR REPLACE INTO effecttea_hold.hold (id) VALUES (1)`,
+    ))
+  })
+  const give = Effect.ignore(sql`DETACH DATABASE effecttea_hold`)
   yield* Effect.acquireRelease(
     take.pipe(
       Effect.mapError((error) => error.reason._tag === 'LockTimeoutError' ? refused() : error),

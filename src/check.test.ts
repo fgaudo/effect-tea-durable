@@ -2,11 +2,18 @@
  * The check of a program against the stored entities, before its deploy: what it finds, against what a deploy of the
  * same program then does, and what it refuses (decision 0247).
  */
+import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { describe, expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Context from 'effect/Context'
+import * as Layer from 'effect/Layer'
+import * as Scope from 'effect/Scope'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import { check } from './check.ts'
@@ -244,4 +251,39 @@ describe('the check of a program', () => {
       const broken = { ...program, name: '' } as Program<T>
       expect(yield* diesWith(check(broken, { limit: all }))).not.toBeNull()
     })))
+
+  // The check runs in the new version's process, on a client of its own, while the old version's runtime holds the
+  // database (decision 0247). On SQLite the runtime holds a file of its own beside the database, and leaves the
+  // database to any reader (decision 0267). The check's client is opened `readonly`, with no busy wait, so that it
+  // waits for no step of the old version, and a reading it cannot take fails at once.
+  test('a check from a client of its own reads a file of SQLite the old version holds', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-'))
+    const filename = join(directory, 'store.db')
+    const client = (scope: Scope.Scope, readonly = false) =>
+      Effect.map(
+        Scope.provide(Layer.build(Layer.orDie(SqliteClient.layer({ filename, busyTimeout: 0, readonly }))), scope),
+        (context) => Context.get(context, SqlClient.SqlClient),
+      )
+    return Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const outer = yield* Effect.scope
+      const old = yield* client(outer)
+      const at = yield* DateTime.now
+      yield* Effect.provideService(
+        process({}, (runtime) =>
+          Effect.gen(function*() {
+            const { layer } = yield* hands()
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            yield* toy.create('t-1', { flags: { at }, requestId: 'c-t-1', sender: tester })
+            // The new version's process opens its own client, and checks its program before it deploys it.
+            const exit = yield* Effect.exit(Effect.flatMap(
+              client(outer, true),
+              (other) => Effect.provideService(check(program, { limit: all }), SqlClient.SqlClient, other),
+            ))
+            expect(Exit.isSuccess(exit) ? exit.value.active.checked : Cause.pretty(exit.cause)).toBe(1)
+          })),
+        SqlClient.SqlClient,
+        old,
+      )
+    })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
+  })
 })
