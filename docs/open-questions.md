@@ -235,9 +235,12 @@ with a requirement that no example has yet.
   key, whose deletion is not committed, and the asker's step does not see the reply, whose insertion is not
   committed. Both commit, and the reply stays for ever, since it has no time for `expire`. It is a row left, and no
   wrong answer. It happens where work ends while its request is still handled, as an operation that times out its
-  own `send` does. It is only reasoned: no test runs it. It would be decided by:
+  own `send` does. An answer no entity stores, kept for an operation in `effecttea_answers`, is kept and deleted by
+  the same two statements
+  ([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)), and may
+  stay for ever in the same way. It is only reasoned: no test runs it. It would be decided by:
   - a test in [`src/postgres.test.ts`](../src/postgres.test.ts), on the CI's server, that holds the two steps at
-    their statements and finds the row;
+    their statements and finds the row, of a reply and of an answer;
   - whether the receiver's step locks the asker's key as it reads it, or a sweep deletes the replies whose asker's
     work is gone.
 - **A step of a drain that changes a droppable operation.** A planned stop drains the at-most-once operations, and

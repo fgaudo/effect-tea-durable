@@ -3101,9 +3101,12 @@ describe('what the runtime cannot finish', () => {
           yield* ran(from.create('sender', creation))
           yield* runtime.settled
         }))
-      const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
+      const sql = yield* SqlClient.SqlClient
+      const stored = yield* storage(program, sql).load(id)
       // The first run told `toy-1` `Rejected`, and the run after the crash is given `Rejected` again.
       expect(stored?.state.applied).toEqual(['Rejected'])
+      // The work ended, and took its answer with it.
+      expect(yield* sql`SELECT * FROM effecttea_answers`).toEqual([])
     })))
 
   // A message to no entity is answered `NotFound`, which no entity stores, so the operation's answer is kept for its

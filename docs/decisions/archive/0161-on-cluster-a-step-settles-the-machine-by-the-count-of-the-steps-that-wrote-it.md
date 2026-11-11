@@ -8,7 +8,7 @@ transaction to every fork of the runtime, and has a test read it in the code. A 
 and an operation's no longer die on Cluster: each goes through the door's client, by
 [decision 0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md),
 [decision 0166](0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md) and
-[decision 0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md). [Decision 0198](../0198-every-object-the-runtime-makes-is-named-with-tea.md) names every table with `tea_`, and a database made before is no longer given `steps`. [decision 0252](../0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md) makes a door's step that loaded the entity and rolled back leave it unsettled, so that the next step crashes it and loads it again.
+[decision 0167](0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md). [Decision 0198](../0198-every-object-the-runtime-makes-is-named-with-tea.md) names every table with `tea_`, and a database made before is no longer given `steps`. [Decision 0252](../0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md) makes a door's step that loaded the entity and rolled back leave it unsettled, so that the next step crashes it and loads it again.
 
 ## Context
 

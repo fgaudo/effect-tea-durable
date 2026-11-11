@@ -156,6 +156,27 @@ test('a reply asked by work that no longer holds goes as it is stored, and one w
       expect(yield* store.reply('r', asked('ended', 2), 0)).toBeNull()
     })))
 
+// An answer no entity stores is kept by the rule of a reply: it goes as it is kept where the work that asked has
+// ended, and a creation's answer and a message's under one name keep a row each (decision 0253).
+test('an answer kept for work that no longer holds goes as it is kept, and a creation’s and a message’s are apart', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      // The asker holds its work in its first incarnation: the second one has ended.
+      const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
+      yield* storage(asker, sql).write(
+        'a',
+        created({ keys: [{ key: { name: 'ask' }, incarnation: 1, work, delivery: 'Idempotent', due: null }] }),
+        0,
+      )
+      const store = storage(receiver, sql)
+      yield* store.keepAnswer('r', 'Message', asked('held', 1), { _tag: 'NotFound' })
+      yield* store.keepAnswer('r', 'Create', asked('held', 1), { _tag: 'Rejected', reason: null })
+      yield* store.keepAnswer('r', 'Message', asked('ended', 2), { _tag: 'NotFound' })
+      expect(yield* store.answer('r', 'Message', asked('held', 1))).toEqual({ _tag: 'NotFound' })
+      expect(yield* store.answer('r', 'Create', asked('held', 1))).toEqual({ _tag: 'Rejected', reason: null })
+      expect(yield* store.answer('r', 'Message', asked('ended', 2))).toBeNull()
+    })))
+
 // A key without a parameter has none, which no parameter's JSON is: its row and its parameter's never meet
 // (decision 0136).
 test('a key is stored as its name and its parameter, apart from a key of the same name without one', () =>
@@ -1882,6 +1903,26 @@ describe('renaming a program (decision 0156)', () => {
           ['Client', 'Asker'],
           ['Receiver', null],
         ])
+      }).pipe(Effect.orDie)))
+
+  // A rename moves the answers no entity stores as it moves the replies: the receiver's name, the sender's, and the
+  // request's text, so that the sender's run after a crash finds its answer under the new names (decision 0253).
+  test('a rename moves the answers kept for the requests of the old name, and of the receiver’s', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const key = { key: { name: 'ask' }, incarnation: 1, work, delivery: 'Idempotent', due: null } as const
+        yield* storage(asker, sql).write('a', created({ keys: [key], incarnations: 1 }), 0)
+        const store = storage(receiver, sql)
+        yield* store.keepAnswer('r', 'Message', askedBy('Asker'), { _tag: 'NotFound' })
+        yield* rename(sql, [['Asker', 'Buyer']])
+        expect(yield* store.answer('r', 'Message', askedBy('Asker'))).toBeNull()
+        expect(yield* store.answer('r', 'Message', askedBy('Buyer'))).toEqual({ _tag: 'NotFound' })
+        yield* rename(sql, [['Receiver', 'Seller']])
+        expect(yield* store.answer('r', 'Message', askedBy('Buyer'))).toBeNull()
+        expect(yield* storage(named('Seller'), sql).answer('r', 'Message', askedBy('Buyer'))).toEqual({ _tag: 'NotFound' })
+        // The sender's work still holds under its new name, so the answer is kept until that work ends.
+        const [row] = yield* sql<{ sender_name: string }>`SELECT sender_name FROM effecttea_answers`
+        expect(row?.sender_name).toBe('Buyer')
       }).pipe(Effect.orDie)))
 
   test('on Cluster, a rename moves the senders a receiver tells of its resumption, and the request ids they sent', () =>
