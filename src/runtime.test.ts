@@ -19,6 +19,7 @@ import * as References from 'effect/References'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
+import * as Schedule from 'effect/Schedule'
 import * as Scope from 'effect/Scope'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
@@ -3518,6 +3519,53 @@ describe('what the runtime cannot finish', () => {
       expect((yield* storage(gate, sql).load('g'))?.state.applied).toEqual([])
       // The work ended, and took its answer with it.
       expect(yield* sql`SELECT * FROM effecttea_answers`).toEqual([])
+    })))
+
+  // A premise of decision 0269, proposed: an operation's request is found by its run and name, and what it carries is
+  // not compared, so a run after a crash that builds another message under a name is given the first one's reply,
+  // and the receiver holds the first message alone.
+  test('an at-least-once operation run again after a crash that sends another message under a name is given the first reply', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { layer } = yield* hands()
+      let runs = 0
+      const replies: Array<string> = []
+      // Tells `toy-1` the number of its run under one name, and, in the first process, never ends.
+      const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
+        ...sending,
+        operations: {
+          ...sending.operations,
+          C: operation.atLeastOnce(({ key }) =>
+            Effect.gen(function*() {
+              runs++
+              const told = yield* send(program, id, { _tag: 'Want', key: 'a', on: false, nonce: `run-${runs}` }, 'tell')
+              replies.push(told._tag)
+              if (runs === 1) yield* Effect.never
+              return done(key)
+            })
+          ),
+        },
+      }
+      const creation = { flags: { at }, requestId: 'creation', sender: tester }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const from = yield* runtime.deploy(sender)
+          yield* ran(toy.create(id, creation))
+          yield* ran(from.create('sender', creation))
+          yield* Effect.repeat(Effect.sync(() => replies.length), { schedule: Schedule.spaced('5 millis'), until: (n) => n === 1 })
+        }))
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          yield* Effect.provide(runtime.deploy(program), layer)
+          const from = yield* runtime.deploy(sender)
+          yield* ran(from.create('sender', creation))
+          yield* runtime.settled
+        }))
+      const sql = yield* SqlClient.SqlClient
+      expect(runs).toBe(2)
+      expect(replies).toEqual(['Accepted', 'Accepted'])
+      expect((yield* storage(program, sql).load(id))?.state.applied).toEqual(['run-1'])
     })))
 
   test('an entity the waker cannot activate is tried again after the retry, and the other timers fire', () =>

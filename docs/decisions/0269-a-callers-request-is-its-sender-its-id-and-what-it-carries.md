@@ -43,6 +43,10 @@ is the scope. The check is what this decision adds.
 - **A caller's request is its sender, its request id and what it carries.** What a message carries is the message, as
   the program's `inbound` schema encodes it. What a creation carries is its flags, as the program's `flags` schema
   encodes it. A second request under a caller's sender and request id is a retry only if it carries the same text.
+- **What a request carries is compared as it encodes, not as a value.** A value whose encoding keeps the order it was
+  built in, as a set, is the same request only when it is built in the same order. A retry decoded from the same
+  request off the wire is, and a caller that sends an equal set in another order sends another request, as Stripe
+  compares the parameters a request was sent with.
 - **A request that carries another text is answered `Reused`.** Nothing of it is applied, stored or queued, and the
   first request's reply is kept as it was. The caller's `send` and `create` of a `Handle`, and a rehearsal's `send`
   and `create`, give `Reused`. The boundary answers it as a refusal of the caller's request, such as 422 over HTTP.
@@ -92,27 +96,27 @@ is the scope. The check is what this decision adds.
 
 ## What it rests on
 
-- That a message or flags of one value encode to one text, across sends and processes, so that a real retry is never
-  answered `Reused`: to be **tested** before any other code, by a test of `src/machine.test.ts` that encodes a message
-  with an optional key left out and given as `undefined`, a message whose schema transforms, and flags of the same
-  forms, and compares the texts. `Machine.requestKey` writes the fields of each object in order, and the test checks
-  that the encoding of a message does the same.
-- That Cluster delivers to the door a second request under one sender and request id, when its message differs, once
-  the message's text is part of the primary key: to be **tested** by a test of `src/cluster.test.ts`, with a second
-  client on another runner, before the code of Cluster changes. A reading of `src/cluster.ts` gives that Cluster
-  deduplicates by `primaryKey` before the door runs, so the key must hold the message.
-- That a retry after a deploy that migrates `inbound`, or `flags`, compares equal to the reply the older version
-  stored: to be **tested** by a test of `src/runtime.test.ts` on each storage, which stores a reply at version 1,
-  deploys a version 2 whose migration changes the message's form, and retries. The same test of `src/rehearse.ts`
-  decides bug 5, since a rehearsal keys its replies by the request's text.
+- That a message or flags of one value encode to one text, whatever order its fields were given in and whatever input
+  a transformation was built from, and that a retry decoded from the same request encodes to the same text:
+  **tested** by `what a request carries encodes to one text (decision 0269)`, in
+  [`src/machine.test.ts`](../../src/machine.test.ts), with the `encode` and `ordered` of `src/program.ts` that a
+  request's key is written by. The test also sees the case the rule decides otherwise: a set encodes in the order it
+  was built, so an equal set built in another order is another text, and is answered `Reused`.
+- That Cluster answers a request under a primary key it saved from the saved reply, and saves no envelope of it for
+  the door, whatever message the request carries: **tested** by `a second message under a caller's saved request is
+  answered by Cluster with the saved reply, and saved for no door`, in
+  [`src/cluster.test.ts`](../../src/cluster.test.ts). The same test, run against a `primaryKey` that holds the
+  message, failed on a second envelope saved, so a key that holds the message delivers the second request to the door.
+  An operation's request keeps its key, so Cluster answers a run after a crash from the saved reply, as the test sees.
 - That a run of an operation after a crash which sends another message under the same name is given the first
-  message's reply, and that the receiver's state holds the first message alone: to be **tested** on the runtime and in
-  a rehearsal's world, once with the first message handled and once with it still queued in the receiver's mailbox.
-  The same test with a creation checks that a run which creates with other flags is given `Created`, and that the
-  entity holds the first flags.
-- That Cluster gives an operation's request the reply it saved, or delivers it to the door, which answers it from the
-  stored reply, once the primary key holds no message for it: to be **tested** by the test of `src/cluster.test.ts`
-  above, with an operation's request beside the caller's.
+  message's reply, and that the receiver holds the first message alone: **tested** by `a run after a crash that sends
+  another message under an operation's request`, in [`src/machine.test.ts`](../../src/machine.test.ts), with the
+  first message handled and with it still in the mailbox, by `an at-least-once operation run again after a crash that
+  sends another message under a name is given the first reply`, in
+  [`src/runtime.test.ts`](../../src/runtime.test.ts), and in a rehearsal's world by `answers a run after a crash that
+  builds another message or other flags with the first one's reply`, in
+  [`src/rehearse.test.ts`](../../src/rehearse.test.ts). The test of the world also checks that a run which creates
+  with other flags is answered `Created`, and that the entity keeps the first flags.
 - That a boundary which decodes the same request off the wire under the new version gets the message the migration
   writes: **chosen** by the note. The library cannot check a boundary, and a boundary that decodes otherwise breaks a
   retry across a deploy whatever this decision says.
@@ -158,6 +162,10 @@ is the scope. The check is what this decision adds.
   `examples/server` answers `Reused` with 422.
 - Whether a rehearsal's crash should fail a test when the run after it sends another message under a name is an
   [open question](../open-questions.md#programs). The decision leaves it out.
+- A test of `src/runtime.test.ts` on each storage stores a reply at version 1, deploys a version 2 whose migration of
+  `inbound` changes the message's form, and retries: the retry is given the stored reply, and a retry with another
+  message is answered `Reused`. The same test of `src/rehearse.ts` decides bug 5, since a rehearsal keys its replies by
+  the request's text.
 - The `test.failing` `a program with no sender` of `src/rehearse.test.ts` becomes two tests: a second message under a
   used id is answered `Reused` and the total stays 1, and the same message under a used id is a retry.
   `src/machine.test.ts` has a rule for a queued and a stored request, and a contract test runs the requests alike on

@@ -646,6 +646,36 @@ describe('a world', () => {
     ))
   })
 
+  // A premise of decision 0269, proposed: an operation's request is found by its run and name, so a run after a crash
+  // that creates with other flags is answered `Created` and the entity keeps the first flags, and one that sends
+  // another message is given the first one's reply, which alone the receiver holds.
+  test("answers a run after a crash that builds another message or other flags with the first one's reply", () => {
+    let runs = 0
+    const told: Array<string> = []
+    const rebuilding = holdingBy(operation.atLeastOnce(({ event }) =>
+      Effect.gen(function*() {
+        runs++
+        const created = yield* create(inventory, 'concert-9', 'inventory', { capacity: runs === 1 ? 4 : 9 })
+        const held = yield* send(inventory, event, { _tag: 'HoldRequested', seats: runs === 1 ? 2 : 3 }, 'hold')
+        // Five seats fit the second run's capacity and not the first's.
+        const large = yield* send(inventory, 'concert-9', { _tag: 'HoldRequested', seats: 5 }, `large-${runs}`)
+        told.push(`${created._tag}/${held._tag}/${large._tag}`)
+        return { _tag: 'SeatsHeld' } as const
+      })
+    ))
+    return Effect.runPromise(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        const seats = yield* world.create(inventory, 'concert-1', { capacity: 4 })
+        const held = yield* world.create(rebuilding, 'booking-1', flags)
+        yield* held.run('hold', { crash: true })
+        expect(yield* held.run('hold')).toBe('Delivered')
+        expect(told).toEqual(['Created/Accepted/Rejected', 'Created/Accepted/Rejected'])
+        expect((yield* seats.state).held).toEqual({ 'booking-1': 2 })
+      }),
+    ))
+  })
+
   // A reference brings no code, so a world creates through one only a program it runs (decision 0183).
   test('creates through a reference a program the world runs, and fails the run where it runs none', async () => {
     const Inventory = reference<typeof inventory>('Inventory')

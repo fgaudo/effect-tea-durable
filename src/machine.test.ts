@@ -12,6 +12,7 @@ import fc from 'fast-check'
 import * as Machine from './machine.ts'
 import {
   defect,
+  encode,
   type IdempotencyKey,
   idempotencyKey,
   InvariantDefect,
@@ -19,6 +20,7 @@ import {
   type Json,
   noWork,
   operation,
+  ordered,
   type Program,
   program as declare,
   reject,
@@ -2626,4 +2628,78 @@ test('a key is one text for one parameter, whatever the order of its fields, and
     }),
     { numRuns: 2_000 },
   )
+})
+
+// A premise of decision 0269, proposed: a caller's retry is told from a reused request id by the text of what it
+// carries, so one value must encode to one text, as a request's key does. The text is the encoding with the fields of
+// each object in order, as `Machine.requestKey` writes a request.
+describe('what a request carries encodes to one text (decision 0269)', () => {
+  const carried = <A>(codec: Schema.Codec<A, Json>, value: A) => JSON.stringify(ordered(encode(codec, value, 'message')))
+
+  test('a message built with its fields in another order, or through a transformation from another input, is one text', () => {
+    const message = Schema.Struct({
+      n: Schema.NumberFromString,
+      at: Schema.DateTimeUtcFromString,
+      note: Schema.optionalKey(Schema.String),
+      counts: Schema.Record(Schema.String, Schema.Int),
+    })
+    const texts = new Set([
+      carried(message, { n: 1.5, at: DateTime.makeUnsafe(0), counts: { a: 1, b: 2 } }),
+      carried(message, { counts: { b: 2, a: 1 }, at: DateTime.makeUnsafe('1970-01-01T00:00:00Z'), n: 1.5 }),
+    ])
+    expect(texts.size).toBe(1)
+    expect(carried(message, { n: 1.5, at: epoch, counts: {}, note: 'x' }))
+      .not.toBe(carried(message, { n: 1.5, at: epoch, counts: {} }))
+    expect(carried(Schema.Number, -0)).toBe(carried(Schema.Number, 0))
+  })
+
+  test('flags are compared as a message is', () => {
+    const flags = Schema.Struct({ capacity: Schema.Int, owner: Schema.String })
+    expect(carried(flags, { owner: 'ann', capacity: 2 })).toBe(carried(flags, { capacity: 2, owner: 'ann' }))
+  })
+
+  test('an optional field given as undefined is no text at all, but the defect it already is at the door', () => {
+    const message = Schema.Struct({ n: Schema.Int, note: Schema.optionalKey(Schema.String) })
+    expect(() => carried(message, { n: 1, note: undefined } as never)).toThrow(InvariantDefect)
+  })
+
+  // The case the premise leaves out: a value whose encoding keeps the order it was built in. A retry decoded from the
+  // same request is built in the same order, so it is one text; one equal value built in another order is another.
+  test('a set encodes in the order it was built, so a retry decoded from the same request is one text', () => {
+    const message = Schema.toCodecJson(Schema.Struct({ seats: Schema.ReadonlySet(Schema.Int) })) as unknown as Schema.Codec<
+      Readonly<{ seats: ReadonlySet<number> }>,
+      Json
+    >
+    const decode = Schema.decodeUnknownSync(message)
+    const wire = { seats: [3, 1, 2] }
+    expect(carried(message, decode(wire))).toBe(carried(message, decode(wire)))
+    expect(carried(message, { seats: new Set([1, 2, 3]) })).not.toBe(carried(message, { seats: new Set([3, 1, 2]) }))
+  })
+})
+
+// A premise of decision 0269, proposed: an operation's request is found by its run and name, and what it carries is
+// not compared, so a run after a crash that builds another message is given the first message's reply, and the
+// receiver holds the first message alone, whether the first was handled or still waits in the mailbox.
+describe("a run after a crash that sends another message under an operation's request", () => {
+  const accepted = { _tag: 'Accepted' } as const
+  test('is given the reply stored for the first message, which alone was applied', () => {
+    const first = handled(checked((message) => message, () => ({})), { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'one' })
+    const again = stepped(first.machine, { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'two' })
+    expect(again.outputs).toContainEqual({ _tag: 'Replied', request: ran('Booking', 'hold'), reply: accepted })
+    expect(again.machine.stored.state).toEqual({ last: 'one' })
+  })
+
+  test('waits for the reply of the first message still in the mailbox, which alone is applied', () => {
+    const machine = checked((message) => message, () => ({}))
+    const queued: Entity = {
+      ...machine,
+      stored: { ...machine.stored, mailbox: [{ _tag: 'Inbound', request: ran('Booking', 'hold'), message: 'one' }] },
+    }
+    const again = stepped(queued, { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'two' })
+    expect(again.outputs).toEqual([])
+    const done = stepped(again.machine, { _tag: 'Handle', at })
+    expect(done.outputs).toContainEqual({ _tag: 'Replied', request: ran('Booking', 'hold'), reply: accepted })
+    expect(done.machine.stored.state).toEqual({ last: 'one' })
+    expect(done.machine.stored.mailbox).toEqual([])
+  })
 })
