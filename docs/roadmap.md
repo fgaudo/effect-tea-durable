@@ -36,10 +36,35 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     12 of the next step, the last two suspects it noticed and did not check, and each is an open question too. Read by their
     decisions only: 0038, 0053, 0079, 0130, 0206, 0062, 0109, 0175, 0166, 0177 and 0186. Not reached there, the later
     notes that cite the two sections: 0021, 0048, 0071, 0092, 0122 and 0125.
-  - Next, the sections of the index not read at all: the queries and their pages, 0141 to 0150, 0207 and 0209; the tables and migrations, 0191 to 0218
-    and 0225; the rehearsal and testing, 0131, 0183 to 0189, 0200 and 0211; the scheduler of the tests, 0104, 0115,
-    0117 and 0244; and what enters the library. The step begins with the skill's brief, given the first of these
-    areas.
+  - The first session read pairs, not sections. So every section of the index the sessions above did not name is
+    still to read whole, the pairs listed above included. The areas left, one session each, in this order, with
+    every note of [the index](decisions/README.md) in one of them:
+    1. Messages, requests and replies, without the rehearsal: 0004, 0009, 0010, 0015, 0021, 0023, 0047, 0048, 0059,
+       0060, 0065, 0069, 0124, 0125 and 0245.
+    2. Effect Cluster: 0081, 0084, 0085, 0090 to 0092, 0159 to 0163, 0165 to 0176, 0178, 0248 and 0249.
+    3. Versions and deploys: 0020, 0022, 0036, 0043, 0051, 0058, 0075, 0100, 0102, 0126, 0156 and 0247.
+    4. The runtime, without the scheduler of the tests: 0028, 0029, 0063, 0066 to 0068, 0071, 0073, 0074, 0076 to
+       0079, 0101, 0103, 0109 to 0112, 0116, 0119, 0120, 0134, 0147, 0164, 0177, 0194, 0219 to 0221, 0243 and 0246.
+    5. Schemas and projections, of the section Schemas, storage and projections: 0025 to 0027, 0030, 0032, 0038 to
+       0040, 0062, 0070, 0072, 0098, 0121, 0122, 0135, 0137 to 0140, 0151 to 0155, 0157, 0158, 0184, 0206, 0210,
+       0213 to 0215 and 0240.
+    6. The queries and their pages, of the same section: 0141 to 0146, 0148 to 0150, 0207 and 0209.
+    7. The tables and migrations, of the same section: 0191, 0198, 0216 to 0218 and 0222 to 0225.
+    8. The rehearsal and testing, of the section Messages, requests and replies: 0131, 0183, 0186 to 0190, 0200,
+       0201 and 0211.
+    9. The scheduler of the tests, of the section The runtime: 0104, 0115, 0117 and 0244.
+    10. The project and what enters the library: 0007, 0019, 0052 to 0055, 0080, 0099, 0179, 0193, 0195, 0196,
+        0203, 0204, 0208, 0212, 0241 and 0242.
+  - Each area also reads, against the notes of the areas already read, every later note of its own that cites
+    them. The sessions above did not reach these, and each is read in the area that holds it: 0021, 0022, 0029,
+    0035, 0047 to 0049, 0060, 0071, 0075, 0077, 0085, 0092, 0122, 0125, 0131, 0142, 0156, 0162, 0180, 0183 and 0193.
+  - A last session reads whole the pairs the sessions above read by the code and the later note only, or by a
+    note's decision only, where an area of the list has not read them since: 0039, 0137, 0152, 0029, 0068, 0076,
+    0078, 0151, 0159, 0174, 0175, 0161 to 0163, 0172 and 0021, of the first session; 0058 against 0018 and 0067
+    against 0056, of the third; 0038, 0053, 0079, 0130, 0206, 0062, 0109, 0175, 0166, 0177 and 0186, of the fourth.
+  - The step begins with the skill's brief, given the first area of the list not done. A session that ends an area
+    writes here what it read, what it found and what it did not reach, and the step leaves this file once the last
+    session is done.
 
 - **The bugs the premise review found, to verify and fix.** Each bug below is a rule of a note whose premise a
   later note took away. A bug reproduced has a test that fails, and its fix begins where the bug says. A bug only
