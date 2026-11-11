@@ -1,7 +1,7 @@
 # 0242. The CI deals the files of the tests among four jobs, by Bun's own shards, and `bun test` stays one run
 
 **Status:** accepted, 2026-11-10, with the step A faster run of the checks, which it was made for. [Decision 0250](0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md)
-takes the spikes out of `bun test`, and adds a job for them and one for the tests on a clock that is real.
+takes the spikes out of `bun test`, and adds a job for them and one for the tests on a clock that is real. [Decision 0254](0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) makes the check of the workflow read every key of a job, and refuse one it does not read.
 
 ## Context
 

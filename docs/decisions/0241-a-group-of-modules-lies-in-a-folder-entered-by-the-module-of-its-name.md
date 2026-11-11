@@ -1,6 +1,6 @@
 # 0241. A group of modules lies in a folder, entered by the module of its name
 
-**Status:** accepted, 2026-11-10, with the step Modules and test files a reviewer reads whole, which it was made for.
+**Status:** accepted, 2026-11-10, with the step Modules and test files a reviewer reads whole, which it was made for. [Decision 0254](0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) makes its check refuse a file only tests import whose name `bun test` runs.
 
 ## Context
 

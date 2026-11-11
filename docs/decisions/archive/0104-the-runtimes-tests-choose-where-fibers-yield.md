@@ -12,7 +12,7 @@ and a twentieth of them otherwise, as [`AGENTS.md`](../../../AGENTS.md) says.
 Its preemptions under `inline` resumptions are changed by
 [decision 0115](0115-the-scheduler-of-the-tests-preempts-from-a-runs-third-step.md): none comes before a run's
 third step, where Effect never makes a fiber yield. A fiber on another's stack is asked even with no task ready, by
-[decision 0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md).
+[decision 0117](0117-a-fiber-on-another-s-stack-yields-with-no-task-ready.md). [Decision 0254](../0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) pins, in each explored test whose comment names an interleaving, a seed that a job of the CI runs against the rule taken out.
 
 ## Context
 

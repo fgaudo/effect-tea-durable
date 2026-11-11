@@ -1,6 +1,6 @@
 # 0254. A check of the project runs against the case it refuses
 
-**Status:** proposed, 2026-11-11, with the step The bugs the premise review found, fixed by family, of the
+**Status:** accepted, 2026-11-11, with the step The bugs the premise review found, fixed by family, of the
 [roadmap](../roadmap.md), as the rule of its family G. The maintainer chose this rule on 2026-11-11, from three
 proposed, in the form a Fable 5.2 agent advised. It changes
 [decision 0241](0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md), whose check now refuses
@@ -125,8 +125,8 @@ then bug 52 test by test, then bug 83.
   `r-1`, `r-2`, `r-3` and `null`. The runtime is given `new-<at>` for a send drawn `null`, distinct for each send.
   The rehearsal is given no id for such a send, and draws `request-<k>`, distinct for each draw, skipping any id the
   test named (`send` of `src/rehearse.ts`). No id of one of the three sets can be an id of another, so the runtime and
-  the rehearsal take the same sends for retries. The bug leaves the roadmap as verified false when the family is
-  taken.
+  the rehearsal take the same sends for retries. The bug stays in the roadmap as one line, verified false, since the
+  documents cite bugs by their number.
 
 Bug 52 is done, test by test, on 2026-11-11. Each of the explored tests whose comment names an interleaving and that
 pinned no seed got a pin: the mutation its comment names, then the seeds run on the mutation until one failed, then
@@ -175,21 +175,24 @@ that fails is pinned. The tests pinned, each with its pin in `src/runtime.test_p
   is deployed once in a process, however two deploys of it interleave`, the five tests of a deploy interrupted after
   a count of yields, and `a second runtime on one client dies as it launches` of `src/runtime.test.ts`.
 
-Every part of family G is done. The next part takes the family, in one commit: this note `accepted`, bugs 43, 46 to
-48, 52, 53 and 88 one line each, `Fixed by` this note, bug 83 one line, verified false, in the roadmap, and the open
-questions The checks that hold less than their note and The margin of the explored tests left or rewritten for what
-remains. The step then waits for `bun run test:release` on `main` and the workflow run by hand, as the roadmap says.
+Every part of family G is done, and the family is taken with this note. `bun run test:pins` held its 15 pins, and
+`bun test` passed, on 2026-11-11 on the maintainer's machine.
 
 ## What it rests on
 
 - That `bun test` runs the files whose names match the patterns of its documentation: **documented** in
   `node_modules/bun-types/docs/test/discovery.mdx`, at Bun 1.4.4.
-- That a mutation and a seed pinned stay together across a change: **only reasoned** until the job exists. A change
-  that moves a yield draws another schedule from each seed.
+- That a mutation and a seed pinned stay together across a change: **tested** by `bun run test:pins`, which the job
+  `pins` of `ci.yml` runs on every push. A change that moves a yield draws another schedule from each seed, and the
+  job fails on a pin whose test then passes on its mutation.
+- That `bun test -t` matches the names of the enclosing `describe`s and the test's, joined by spaces: **seen** on
+  2026-11-11 at Bun 1.4.4, where a pattern anchored at the test's name matched no test inside a `describe`.
+  `scripts/pins.ts` lets the name follow a space, and fails a pin that runs no test.
 
 ## Findings of the reading that chose the rule
 
-The Fable 5.2 agent that advised the rule found these, by reading alone, and none is checked yet:
+The Fable 5.2 agent that advised the rule found these, by reading alone. Each was checked by the part of What is done
+it belongs to:
 
 - Bug 47 is wider than the roadmap says. The checks of the jobs of the spikes and of the slow tests use `toContain`
   on `run`, and have the same hole. The job of PostgreSQL in `ci.yml` has no check of its form.

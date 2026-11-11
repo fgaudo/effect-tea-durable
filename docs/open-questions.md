@@ -415,37 +415,6 @@ with a requirement that no example has yet.
   [roadmap](roadmap.md), reproduced for `retry`. It would be decided by:
   - whether `launchWith` checks every option before the hold, or closes its own scope when it dies after it;
   - a test of each option checked after the hold, in a scope the launcher gives.
-- **The margin of the explored tests.** A test under `explored` holds a rule only by the seeds it runs, and a change
-  of the runtime's yields or of the scheduler moves every schedule
-  ([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)). An interleaving found by
-  no pinned seed can then lose its seeds in silence. The lock of
-  [decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md) did: 6 seeds of 2,000 find it at
-  `a746214`, none among the 100 of `bun test`, which is bug 43 of the [roadmap](roadmap.md). The other interleavings
-  not pinned are bug 52, not checked. It would be decided by:
-  - the first pass of [`scripts/mutate.ts`](../scripts/mutate.ts) on each rule an explored test holds, which names
-    the rules `bun test` no longer holds;
-  - whether `AGENTS.md` asks a seed pinned for each interleaving a decision names, and not only for a bug a seed
-    found;
-  - whether a change of the scheduler or of the yields counts again the seeds of those interleavings.
-- **The checks that hold less than their note.** A check of the form or of the CI says what it keeps, and a case
-  it does not read passes it. `bun test` runs a file of a role that ends in `_test` or `_spec`, which the check of
-  [decision 0241](decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md) reads as a
-  file only tests import, which is bug 46, reproduced. The test of the workflow's form passes a job of the tests
-  given `if`, `continue-on-error` or an `exclude`
-  ([decision 0242](decisions/0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md)), which is bug 47. The
-  property of the fixtures never reaches the CI's server, since `test:postgres` lists its files by name
-  ([decision 0212](decisions/0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md)), which
-  is bug 48, and a fixture added gets no property, which is bug 53. They are of the [roadmap](roadmap.md). It would
-  be decided by:
-  - whether each check is run, in a test of its own, against the case it refuses, as `scripts/mutate.ts` does for
-    the runtime's rules;
-  - whether `test:postgres` runs every file that imports `src/storage.test_databases.ts`, and the property every
-    fixture of `src/fixtures/`;
-  - for bug 83, reasoned by a reading, whether the property draws its request ids where no derived id can be the id
-    the runtime gives a send without one;
-  - for bug 88, reasoned, whether `AGENTS.md` names `@effect/sql-pg` and `@effect/sql-pglite` among the packages a
-    move of Effect pins, `scripts/compare-docs.ts` compares their JSDoc, and a test of the form of `package.json`
-    checks that every `@effect/` package is at the version of `effect`.
 - **A discard of a message an operation sent.** An operator discards the message an entity died on, and no reply is
   stored ([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)). An operation's `send` waits for the
   resumption and sends the same request again

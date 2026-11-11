@@ -2,7 +2,7 @@
 
 **Status:** accepted, 2026-11-09. Decides the open question of values generated from a program's schemas. The
 maintainer agreed, on 2026-11-09, that the tests of `src/` use `effect/Arbitrary`, a module marked
-`@stability unstable`.
+`@stability unstable`. [Decision 0254](0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) makes the property read its fixtures from `src/fixtures/`, and `test:postgres` run it on the CI's server.
 
 ## Context
 

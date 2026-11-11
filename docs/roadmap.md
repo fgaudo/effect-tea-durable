@@ -18,22 +18,21 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   passes under the rule, as the proof that the rule holds the case. A bug of no family gets a fix of its own.
 
   How the step goes on:
-  - The parts done are families F, E and B. Family F is decided by
+  - The parts done are families F, E, B and G. Family F is decided by
     [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), family E by
-    [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md), and family B by
-    [decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md). What each left
-    unverified is an [open question](open-questions.md#running): A sender and Cluster's round at the least retry,
-    The cases of a crash's retry not run yet, and An operation's kept answer on Cluster across a crash, and under two
-    runs at once.
-  - The part under way is family G, the last whose rule is this step's. Families A, C and D take their rules from
-    later steps of this roadmap. The maintainer chose G's rule on 2026-11-11, in the form a Fable 5.2 agent advised,
-    and [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md), `proposed`, says it,
-    with the order of its parts, the parts done, and what the agent found by reading. Each part is committed alone,
-    and the note's section What is done names the next.
+    [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md), family B by
+    [decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md), and
+    family G by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md). What each
+    left unverified is an [open question](open-questions.md#running): A sender and Cluster's round at the least retry,
+    The cases of a crash's retry not run yet, An operation's kept answer on Cluster across a crash, and under two
+    runs at once, and A timer due, which no test of the capacity reaches.
+  - G was the last family whose rule is this step's. Families A, C and D take their rules from later steps of this
+    roadmap. The part next is the bugs of no family, each with a fix of its own, proposed to the maintainer before
+    any code as a family's rule is. The maintainer has not chosen their order yet.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
-    hand has not run yet. A family fixed after `07cb3fb` runs both again.
+    hand has not run yet. Family G was fixed after `07cb3fb`, so both run again.
   - A family's rule is proposed to the maintainer before any code, with the alternatives, and the code waits for the
     maintainer's choice. The maintainer may ask for the opinion of a subagent first, as a Fable 5.2 agent gave for F
     and E.
@@ -54,9 +53,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does not read
     again on the row it then writes.
   - G, a check of the project that holds less than its note says: bugs 43, 46 to 48, 52, 53, 83 and 88. A check passes on
-    the case its rule forbids, or a test no longer reaches the case it was written for. Its rule would be that each
-    check of the form, of the CI and of the explored tests is run against the case it refuses, as
-    [`scripts/mutate.ts`](../scripts/mutate.ts) does for the rules of the runtime.
+    the case its rule forbids, or a test no longer reaches the case it was written for. Its rule is that each check
+    of the form, of the CI and of the explored tests is run against the case it refuses, as
+    [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) says. Every bug of it
+    is fixed, or verified false.
   - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 72, 75, 79, 81, 82, 86 and 87.
   1. **Reproduced: a droppable operation that a new program delivers at most once never runs.** A deploy that
      declares a `Droppable` operation stored under a key as `operation.atMostOnce` keeps its incarnation
@@ -315,15 +315,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       `claude/premise-review-rehearsal-cdcc14` at `abd8d29`. The fix begins at `advance` of `src/rehearse.ts`, and is
       a choice of what a rehearsal of a downtime is: the [open question](open-questions.md#programs) A rehearsal of a
       downtime.
-  43. **Measured: `bun test` no longer holds the rule that a lock is dropped by its last user only.** The interleaving
-      that [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md) reaches for
-      [decision 0067](decisions/archive/0067-each-entity-is-held-by-its-own-lock.md) is found by 6 seeds of 2,000 at
-      `a746214`, all past the 100 that `bun test` runs, where 0104 counted 67. So 2,000 runs miss it with a
-      probability near e^-6, not e^-25. Measured by taking `if (lock.users === 0)` out of `holding` in
-      `src/runtime/process.ts`: `bun test` passes, and `SEED=661` fails `callers of an unloaded entity build one
-      machine for it`, checked again on `main`. No test is committed. The fix begins by pinning seed 661 in that test,
-      and by correcting the counts of the two tests' comments. The [open question](open-questions.md#running) The
-      margin of the explored tests.
+  43. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, which pins seed 661 and runs it against the lock dropped by any user.
   44. **Reproduced: a launch refused for an option still holds the database, and has already moved its renames.**
       [Decision 0208](decisions/0208-a-launch-checks-every-option.md) says a launch refused for an option dies before
       anything is held or stored. The hold ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)),
@@ -336,26 +328,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       checks every option before the hold. The [open question](open-questions.md#running) A launch that dies after
       the hold.
   45. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
-  46. **Reproduced: `bun test` runs a file only tests import whose role ends in `_test` or `_spec`.**
-      [Decision 0241](decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md) says
-      `bun test` runs no file named `<module>.test_<role>.ts`, and tried the role `x` alone. No file of the repository
-      has such a role today. The test `FAILING: bun test runs no file that ofTheTests reads as a file only tests
-      import`, in `src/form.test.ts`, on `claude/premise-review-project-17a123` at `a18c520`. The fix begins at
-      `ofTheTests` of `src/form.test.ts`. The [open question](open-questions.md#running) The checks that hold less
-      than their note.
-  47. **Reasoned: the test of the workflow's form passes on a job of the tests that runs nothing, or whose failure is
-      ignored.** It reads only the matrix's `shard` and the steps' `run`, so `if: false`, `continue-on-error: true` or
-      an `exclude` of one shard pass it
-      ([decision 0242](decisions/0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md)). The fix begins at
-      `divided` of `src/form.test.ts`. The [open question](open-questions.md#running) The checks that hold less than
-      their note.
-  48. **Reasoned: the property of the fixtures runs on PGlite alone.** [Decision
-      0212](decisions/0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md) checks the
-      runtime on SQLite and on PostgreSQL, and `bun run test:postgres` lists its files by name, without
-      `src/fixtures.property.test.ts` or the cases of `src/cluster.test.ts` on `pg`. Since
-      [decision 0222](decisions/0222-postgresql-with-many-connections.md) found what PGlite hides, the property's
-      values never reach a server. The fix begins at the script `test:postgres` of `package.json`. The
-      [open question](open-questions.md#running) The checks that hold less than their note.
+  46. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose check refuses a file only tests import whose name `bun test` runs.
+  47. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose check of the workflow reads every key of a job, and refuses one it does not read.
+  48. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose check refuses a file of the tests that reaches the databases and that `test:postgres` does not run.
   49. **Noticed, not checked: on a pool of PostgreSQL, the sweep's batch and a step that deletes its entity's replies
       may deadlock.** The two deletes take the same rows in two orders, which
       [decision 0222](decisions/0222-postgresql-with-many-connections.md) did not count among its cycles
@@ -371,14 +346,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       [Decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md) rests on the
       lock coming first, and the JSDoc of `createTables` does not say so. It needs a server. The
       [open question](open-questions.md#storage-and-reading) The migrations inside an operator's transaction.
-  52. **Noticed, not checked: the other interleavings found by a seed that is not pinned may have lost their margin,
-      as bug 43's did.** ([decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md)).
-      The review counted the seeds of 0063, 0067, 0110 and 0116 alone. The
-      [open question](open-questions.md#running) The margin of the explored tests.
-  53. **Noticed, not checked: a fixture added to `src/fixtures/` gets no property, and nothing says so.**
-      `src/fixtures.property.test.ts` imports the three fixtures by name
-      ([decision 0212](decisions/0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md)). The
-      [open question](open-questions.md#running) The checks that hold less than their note.
+  52. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, which pins a seed in each explored test whose comment names an interleaving, and runs it against the rule taken out.
+  53. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose property reads its fixtures from `src/fixtures/`.
   54. **Reproduced: on Cluster, a runner keeps Cluster's bound of resident entities, and a caller past it waits.**
       [Decision 0151](decisions/archive/0151-a-process-holds-ten-thousand-entities-by-default.md) says that on
       Cluster the runtime's capacity is the only bound, as
@@ -681,14 +650,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       at `6c7928d`. The fix begins at `sendFrom` of `src/rehearse.ts`, which would refuse the address of an entity the
       world holds, or build its request under a key no program can declare. The
       [open question](open-questions.md#programs) A `sendFrom` under a member's address.
-  83. **Reasoned by a reading: the property of the fixtures may fail for no bug of the library, where a derived
-      request id is the id the runtime gives a send without one.** The property sends a request with no request id
-      under `new-<index>` on the runtime, and under a drawn id in the rehearsal
-      ([decision 0212](decisions/0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md)).
-      Where `Arbitrary.schema(RequestId)` derives `new-<k>` for another send under the same sender, the runtime takes
-      it for a retry and the rehearsal applies both. A run almost never meets it. Read in
-      `src/fixtures.property.test.ts`, and not run. The [open question](open-questions.md#running) The checks that
-      hold less than their note.
+  83. **Verified false by a reading, as [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) says**: the runtime and the rehearsal draw their request ids from sets that share no id.
   84. **Reproduced: a runtime of one process launches on the database of a runner of the runtime on Cluster, and a
       step is lost.** A database is held by one runtime
       ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), and on Cluster a shard's lock takes the place of
@@ -732,15 +694,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       `e04fcd4`. The same on PostgreSQL under a role of rows alone is noticed and not checked. The fix is a note that
       narrows 0247 and the design to a stopped version or a copy of the file, or the old runtime gives the check
       through its handle. The [open question](open-questions.md#running) A check beside the old version on SQLite.
-  88. **Reasoned: a move of Effect's version by the rule of `AGENTS.md` leaves the drivers of PostgreSQL at the version
-      it leaves.** Effect is pinned and moved on purpose ([decision 0019](decisions/archive/0019-unstable-effect-modules.md)), and the
-      drivers `@effect/sql-pglite` and `@effect/sql-pg` are unstable modules whose sources hold premises of
-      [decisions 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md) and
-      [0222](decisions/0222-postgresql-with-many-connections.md). `AGENTS.md` names neither among the packages a move
-      pins, `scripts/compare-docs.ts` compares neither, and their peer range `^4.1.3` installs with no warning. All five
-      packages are at 4.1.3 today, so nothing is wrong yet. The fix begins at `AGENTS.md` and
-      `scripts/compare-docs.ts`, with a test of the form of `package.json` that every `@effect/` package is at the
-      version of `effect`. The [open question](open-questions.md#running) The checks that hold less than their note.
+  88. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose check refuses an `@effect/` package at a version other than `effect`'s.
   89. **Reproduced: on Cluster, a second client on a runner that polls replies more slowly than the runner that keeps
       the id waits for ever.** A caller's rows go once its client has the answer and its time is past
       ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)),
