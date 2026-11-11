@@ -620,21 +620,6 @@ with a requirement that no example has yet.
   - whether a helper can add its attempts and its timer to a program's state and keys without hiding them from
     `update`, `work` and the rehearsal.
 
-- **Request ids under a sender of `null`.** A caller's request id is stored under its sender
-  ([decision 0048](decisions/archive/0048-a-callers-request-belongs-to-its-sender.md)), and decision 0124 keeps
-  callers apart because a sender as fine as an identity keeps their ids apart.
-  [Decision 0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md) makes a sender left out a
-  `Schema.Null`, so every caller of such a program shares one space of request ids. A caller that sends an id another
-  caller used gets that caller's stored reply, and its own message is never applied, with nothing reported. Neither
-  `docs/design.md` nor the guide says so. Whether the guide requires such a program's ids to be unique across its
-  callers, or the boundary always gives a sender, is not decided. The premise review of 2026-11-11 found it by
-  reading, and no test holds it. It waits for a program whose callers do not identify themselves. It would be
-  decided by:
-  - whether a boundary that takes callers it cannot tell apart is a case the library serves at all;
-  - whether a sender left out should still be required where the program takes inbound messages.
-  [Decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md), `proposed`, decides
-  it once taken: a request that carries another message under a used id is answered `Reused`.
-
 - **A rehearsal's crash and an operation that sends another message after it.** A run of an operation after a crash
   that sends another message under a name it used is given the first message's reply, and the receiver holds the
   first message alone ([decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md)).

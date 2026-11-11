@@ -8,7 +8,8 @@ creation's rows on Cluster, and [decision 0223](0223-a-disk-that-is-really-full.
 open question A request without a sender. Changed by
 [decision 0248](0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md): a creation's client keeps its
 Cluster id for at least two of Cluster's polls of replies and a second, so that another client of the request reads
-the answer first.
+the answer first. A request under a reply's sender and request id that carries another message is answered `Reused`
+while the reply is kept, by [decision 0269](0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md).
 
 ## Context
 

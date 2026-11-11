@@ -47,6 +47,7 @@ import {
   type Program,
   type Receiver,
   type Reply,
+  type Reused,
   type Request,
   type Piece,
   type SenderOf,
@@ -85,7 +86,7 @@ import { waking } from './runtime/waker.ts'
  * callers' messages as its bound, and nothing of this one was offered or stored (decision 0147). On Cluster a caller
  * is never answered `Full` (decision 0165).
  */
-export type Answer<Reason> = Reply<Reason> | Readonly<{ _tag: 'Suspended' }> | Readonly<{ _tag: 'Full' }>
+export type Answer<Reason> = Reply<Reason> | Readonly<{ _tag: 'Suspended' }> | Readonly<{ _tag: 'Full' }> | Reused
 
 export { type Suspended, type Waiting } from './storage.ts'
 
@@ -319,7 +320,8 @@ export interface Handle<T extends Types, C = {}> {
   readonly partitions: number
   /**
    * Creates the entity `id` with the request's `flags`, left out where the program's flags are `null`
-   * (decision 0245). A retry of the request that created it is answered `Created` (decision 0017). Flags the
+   * (decision 0245). A retry of the request that created it is answered `Created` (decision 0017), and a request under
+   * the same sender and request id with other flags is answered `Reused`, and changes nothing (decision 0269). Flags the
    * program's `init` rejects are answered `Rejected`, and nothing is stored: a retry runs `init` again
    * (decision 0182). A request id that is no text a database holds is the caller's defect (decision 0204). A call
    * within a transaction of the client of the runtime is the caller's defect too, since the step it waits for commits
@@ -328,10 +330,12 @@ export interface Handle<T extends Types, C = {}> {
   readonly create: (
     id: string,
     request: Readonly<{ requestId: string } & FlagsOf<T> & SenderOf<T>>,
-  ) => Effect.Effect<Creation<T['rejection']>>
+  ) => Effect.Effect<Creation<T['rejection']> | Reused>
   /**
    * Sends an inbound message, and waits for the reply. A retry under the same request id gets the reply stored for
-   * it. The boundary gives `keep`, the time its protocol retries for. The reply is then kept for `keep.millis` from
+   * it. A request under the same sender and request id that carries another message is answered `Reused`, and nothing
+   * of it is applied or stored, since a program whose sender is `null` shares its request ids among every caller
+   * (decision 0269). The boundary gives `keep`, the time its protocol retries for. The reply is then kept for `keep.millis` from
    * the step that answers, and a retry after that is a new request, applied again. `'forever'` keeps the reply for
    * ever. `keep` is required, since only the boundary knows the window, and `keep.millis` is a non-negative integer:
    * anything else is the caller's defect (decisions 0125, 0245). A
@@ -589,8 +593,8 @@ export type Operating = Readonly<{ _tag: 'Resume' | 'Discard'; id: string }>
 
 /** What a door's step answers: a message's answer, a creation's, or what an operator's event did. */
 export type DoorAnswer<Reason> =
-  | Readonly<{ _tag: 'Message'; answer: Reply<Reason> | Readonly<{ _tag: 'Suspended' }> }>
-  | Readonly<{ _tag: 'Create'; answer: Creation<Reason> }>
+  | Readonly<{ _tag: 'Message'; answer: Reply<Reason> | Readonly<{ _tag: 'Suspended' }> | Reused }>
+  | Readonly<{ _tag: 'Create'; answer: Creation<Reason> | Reused }>
   | Readonly<{ _tag: 'Operated'; answer: Operated }>
 
 /**
@@ -663,7 +667,7 @@ export interface OnCluster {
     sent: Omit<Delivered, '_tag' | 'keep'>,
     kept?: (requestId: string) => Effect.Effect<boolean>,
     given?: (requestId: string, least: number) => Effect.Effect<void>,
-  ) => Effect.Effect<Creation<T['rejection']>>
+  ) => Effect.Effect<Creation<T['rejection']> | Reused>
   /**
    * A message, sent through the program's door by Cluster's client. An answer `Suspended` or `NotFound` is no reply:
    * Cluster's row of it is reset, and the message sent again, whose answer is given (decisions 0085, 0165). A failure
@@ -675,7 +679,7 @@ export interface OnCluster {
     sent: Omit<Delivered, '_tag'>,
     kept?: (requestId: string) => Effect.Effect<boolean>,
     given?: (requestId: string, least: number) => Effect.Effect<void>,
-  ) => Effect.Effect<Reply<T['rejection']> | Readonly<{ _tag: 'Suspended' }>>
+  ) => Effect.Effect<Reply<T['rejection']> | Readonly<{ _tag: 'Suspended' }> | Reused>
   /**
    * An operator's `Resume` or `Discard`, sent through the program's door by Cluster's client, from whatever runner
    * the operator is on: what the door's step answered it (decision 0166).

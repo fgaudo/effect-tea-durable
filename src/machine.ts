@@ -30,6 +30,7 @@ import {
   type Program,
   reasonOf,
   type Reply,
+  type Reused,
   type Request,
   type Runner,
   runnerOf,
@@ -388,6 +389,30 @@ export const requestKey = <T extends Types>(program: Program<T>, request: Reques
 }
 
 /**
+ * What a caller's request carried, as text: the message or the flags as the program's schema encodes them, with the
+ * fields of each object in order, as a request's key is written. A retry is the same request only where it carries
+ * the same text, so a value whose encoding keeps the order it was built in is the same only built alike
+ * (decision 0269).
+ */
+export const carriedText = (json: Json): string => canonical(json)
+
+/**
+ * What a caller waits for the answer of: an operation's request alone, since what it carries is not compared, and a
+ * caller's request with the text of what it carried, so that a request answered `Reused` and the one whose id it
+ * reused are told apart. A JSON text holds no line feed, so the two parts never run into each other (decision 0269).
+ */
+const answerKey = (request: Request<unknown>, key: string, carried: () => Json): string =>
+  request._tag === 'Caller' ? `${key}\n${carriedText(carried())}` : key
+
+/** What a caller of `send` waits for the answer of, given the message it carried (decision 0269). */
+export const messageKey = <T extends Types>(program: Program<T>, request: Request<T['sender']>, message: T['inbound']) =>
+  answerKey(request, requestKey(program, request), () => encodeOnce(program.schemas.inbound, message, 'inbound message'))
+
+/** What a caller of `create` waits for the answer of, given the flags it carried (decision 0269). */
+export const creationKey = <T extends Types>(program: Program<T>, request: Request<T['sender']>, flags: T['flags']) =>
+  answerKey(request, requestKey(program, request), () => encodeOnce(program.schemas.flags, flags, 'value of the flags'))
+
+/**
  * The run of the work under a key the state holds work under. A key whose work is gone has no row, since its
  * incarnation is drawn from the entity's counter, which never goes back (decision 0132).
  */
@@ -431,6 +456,11 @@ export type Stored<T extends Types> = Readonly<{
   mailbox: ReadonlyArray<Envelope<T>>
   /** The request that created the entity: its retries are answered `Created` (decision 0017). */
   creation: Request<T['sender']>
+  /**
+   * The flags the entity was created with, as the program's version writes them: a caller's retry of the creation
+   * that carries other flags is answered `Reused` (decision 0269).
+   */
+  flags: Json
   suspension: Suspension | null
 }>
 
@@ -452,18 +482,24 @@ export type Event<T extends Types> =
    * An inbound message arrives, under its request, with the reply stored under that request, or null for none: a
    * runtime reads it just before the step, where no other event of the entity is applied (decision 0065). A reply
    * past its time is none (decision 0125). One that finds the mailbox empty is handled at `at` in the same event:
-   * one transaction (decision 0074). `keep` is how long a caller's reply is kept once it is answered.
+   * one transaction (decision 0074). `keep` is how long a caller's reply is kept once it is answered. `carried` is
+   * the message the stored reply's request carried, as the program's version reads it, or null for none or for an
+   * operation's request (decision 0269).
    */
   | Readonly<{
     _tag: 'Receive'
     request: Request<T['sender']>
     message: T['inbound']
     reply: StoredReply<T['rejection']> | null
+    carried: Json | null
     at: DateTime.Utc
     keep?: number
   }>
-  /** A request to create the entity, which exists. Its flags do not matter (decision 0012). */
-  | Readonly<{ _tag: 'Create'; request: Request<T['sender']> }>
+  /**
+   * A request to create the entity, which exists. Its flags do not change the entity (decision 0012), and a caller's
+   * are compared with those the entity was created with (decision 0269).
+   */
+  | Readonly<{ _tag: 'Create'; request: Request<T['sender']>; flags: T['flags'] }>
   /** An operation's effect ends with its message, recorded in the mailbox. */
   | Readonly<{ _tag: 'Complete'; key: Key; incarnation: number; message: T['internal'] }>
   /** A timer's time comes, and its message is recorded in the mailbox. */
@@ -488,19 +524,24 @@ export type Event<T extends Types> =
  */
 export type Offered<T extends Types> =
   | Exclude<Event<T>, Readonly<{ _tag: 'Receive' }>>
-  | Omit<Extract<Event<T>, Readonly<{ _tag: 'Receive' }>>, 'reply' | 'at'>
+  | Omit<Extract<Event<T>, Readonly<{ _tag: 'Receive' }>>, 'reply' | 'carried' | 'at'>
 
 export type Output<T extends Types> =
+  /**
+   * A message's request answered, with the message it carried: a caller waits for the reply of its own request and
+   * message, so that one answered `Reused` is never given another message's reply (decision 0269).
+   */
   | Readonly<{
     _tag: 'Replied'
     request: Request<T['sender']>
-    reply: StoredReply<T['rejection']> | Readonly<{ _tag: 'Suspended' }>
+    message: T['inbound']
+    reply: StoredReply<T['rejection']> | Readonly<{ _tag: 'Suspended' }> | Reused
   }>
   /**
    * A creation's request answered: apart from a message's, since a creation and a message share request ids
    * (decisions 0017, 0050).
    */
-  | Readonly<{ _tag: 'CreationReplied'; request: Request<T['sender']>; reply: Creation }>
+  | Readonly<{ _tag: 'CreationReplied'; request: Request<T['sender']>; flags: T['flags']; reply: Creation | Reused }>
   /** A completion, a firing or an `unknown` written to the mailbox. */
   | Readonly<{ _tag: 'Recorded'; key: Key; incarnation: number }>
   /** An internal message `update` handled. */
@@ -563,6 +604,8 @@ export type Unstored<Reason = unknown> =
  */
 export type ReplyRow = Readonly<{
   request: string
+  /** The message a caller's request carried, which a retry is compared with, or null for another's (decision 0269). */
+  carried: Json | null
   tag: StoredReply<unknown>['_tag']
   reason: Json | null
   asked: Asker | null
@@ -589,8 +632,8 @@ export type Publication = Readonly<{
 export type Written = Readonly<{
   /** Whether the entity is new: its row is inserted. */
   created: boolean
-  /** The state, with the request that created the entity, when the event changed the state. */
-  entity: Readonly<{ state: Json; creation: Json }> | null
+  /** The state, with the request that created the entity and its flags, when the event changed the state. */
+  entity: Readonly<{ state: Json; creation: Json; flags: Json }> | null
   /** Why the entity is suspended, its cause rendered, or null when it is not. */
   suspension: Readonly<{ on: Suspension['on']; cause: string }> | null
   /** The keys that changed, whole. */
@@ -859,10 +902,11 @@ export const start = <T extends Types>(
 ): Start<T> => {
   let state: T['state']
   let work: Held<T>
+  let written: Json
   try {
     // `init` is given the flags its schema takes, and no others: flags that do not encode are a defect, and
     // nothing is stored (decision 0049). The request is stored with the entity, and encodes too.
-    encodeBy(program.schemas.flags, flags, 'value of the flags')
+    written = encodeOnce(program.schemas.flags, flags, 'value of the flags')
     encodeOnce(requestCodec(program), request, 'request')
     const first = byProgram(() => program.init(flags, at))
     if (isRejected(first)) {
@@ -883,15 +927,16 @@ export const start = <T extends Types>(
     ...renew(program, { keys: {}, incarnations: 0 }, {}, work),
     mailbox: [],
     creation: request,
+    flags: written,
     suspension: null,
   }
   const created: Machine<T> = { stored, running: {} }
   const { machine, outputs } = activate(program, created, created, false)
-  const reply: Output<T> = { _tag: 'CreationReplied', request, reply: { _tag: 'Created' } }
+  const reply: Output<T> = { _tag: 'CreationReplied', request, flags, reply: { _tag: 'Created' } }
   // A new entity always writes its row.
-  const written = writes(program, null, machine.stored, null, null)
-  if (written === null) throw new Error(`the creation of '${program.name}' '${id}' writes nothing`)
-  return { _tag: 'Created', machine, outputs: [reply, ...outputs], written }
+  const writing = writes(program, null, machine.stored, null, null)
+  if (writing === null) throw new Error(`the creation of '${program.name}' '${id}' writes nothing`)
+  return { _tag: 'Created', machine, outputs: [reply, ...outputs], written: writing }
 }
 
 /**
@@ -909,7 +954,7 @@ const suspend = <T extends Types>(machine: Machine<T>, suspension: Suspension): 
     { _tag: 'Suspended', cause: suspension.cause },
     ...machine.stored.mailbox.flatMap((envelope): ReadonlyArray<Output<T>> =>
       envelope._tag === 'Inbound'
-        ? [{ _tag: 'Replied', request: envelope.request, reply: { _tag: 'Suspended' } }]
+        ? [{ _tag: 'Replied', request: envelope.request, message: envelope.message, reply: { _tag: 'Suspended' } }]
         : []
     ),
   ],
@@ -921,18 +966,31 @@ const receive = <T extends Types>(
   event: Extract<Event<T>, { _tag: 'Receive' }>,
 ): Moved<T> => {
   const { stored } = machine
-  const { request, reply } = event
+  const { request, reply, message } = event
+  // A caller's request that carries another message than the request under its sender and id is answered `Reused`,
+  // and nothing of it is applied or stored. An operation's is a retry whatever it carries (decision 0269).
+  const reused: Moved<T> = { machine, outputs: [{ _tag: 'Replied', request, message, reply: { _tag: 'Reused' } }] }
+  const carries = () => carriedText(encodeOnce(program.schemas.inbound, message, 'inbound message'))
   // A stored reply is read from storage: a suspended entity gives it too.
-  if (reply !== null) return { machine, outputs: [{ _tag: 'Replied', request, reply }] }
+  if (reply !== null) {
+    if (request._tag === 'Caller' && event.carried !== null && carriedText(event.carried) !== carries()) return reused
+    return { machine, outputs: [{ _tag: 'Replied', request, message, reply }] }
+  }
+  // A retry of a message still in the mailbox waits for its reply, and one that carries another message is
+  // answered at once, the entity suspended or not.
+  const key = requestKey(program, request)
+  const waiting = stored.mailbox.find((envelope) =>
+    envelope._tag === 'Inbound' && requestKey(program, envelope.request) === key
+  )
+  if (
+    waiting?._tag === 'Inbound' && request._tag === 'Caller' &&
+    carriedText(encodeOnce(program.schemas.inbound, waiting.message, 'inbound message')) !== carries()
+  ) return reused
   // Queued or not, a message has no reply yet: its caller retries once the entity is resumed (decision 0023).
   if (stored.suspension !== null) {
-    return { machine, outputs: [{ _tag: 'Replied', request, reply: { _tag: 'Suspended' } }] }
+    return { machine, outputs: [{ _tag: 'Replied', request, message, reply: { _tag: 'Suspended' } }] }
   }
-  // A retry of a message still in the mailbox waits for its reply.
-  const key = requestKey(program, request)
-  if (stored.mailbox.some((envelope) => envelope._tag === 'Inbound' && requestKey(program, envelope.request) === key)) {
-    return { machine, outputs: [] }
-  }
+  if (waiting !== undefined) return { machine, outputs: [] }
   // Only a caller's reply has a time: another entity's is kept while the work that asked holds (decision 0021).
   const envelope: Envelope<T> = event.keep === undefined || request._tag !== 'Caller'
     ? { _tag: 'Inbound', request, message: event.message }
@@ -1005,7 +1063,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
       const reply = { _tag: 'Rejected', reason: replied(program.schemas.rejection, reasonOf(result)) } as const
       return {
         machine: { ...machine, stored: { ...stored, mailbox: rest } },
-        outputs: [{ _tag: 'Replied', request: head.request, reply }],
+        outputs: [{ _tag: 'Replied', request: head.request, message: head.message, reply }],
         handled: head,
         answered: reply,
         at,
@@ -1049,7 +1107,7 @@ const handle = <T extends Types>(program: Program<T>, machine: Machine<T>, at: D
       outputs.push(startWork({ ...stored, keys, incarnations }, key, incarnation, work))
     }
     if (head._tag === 'Inbound') {
-      outputs.unshift({ _tag: 'Replied', request: head.request, reply: { _tag: 'Accepted' } })
+      outputs.unshift({ _tag: 'Replied', request: head.request, message: head.message, reply: { _tag: 'Accepted' } })
     }
     return {
       machine: { ...machine, stored: { ...stored, state, keys, incarnations, mailbox: rest }, running },
@@ -1091,7 +1149,7 @@ const discard = <T extends Types>(program: Program<T>, machine: Machine<T>): Mov
   const reply = { _tag: 'Rejected', reason: null } as const
   return {
     ...moved,
-    outputs: [{ _tag: 'Replied', request: head.request, reply }, ...moved.outputs],
+    outputs: [{ _tag: 'Replied', request: head.request, message: head.message, reply }, ...moved.outputs],
     // No time: a reply to an operation is kept while the work that asked holds, and goes with it (decision 0021).
     handled: head,
     answered: reply,
@@ -1184,6 +1242,9 @@ export const writes = <T extends Types>(
   // The machine stores a reply only for the inbound message it handles.
   const replies: ReadonlyArray<ReplyRow> = answered === null || handled?._tag !== 'Inbound' ? [] : [{
     request: requestKey(program, handled.request),
+    carried: handled.request._tag === 'Caller'
+      ? encodeOnce(program.schemas.inbound, handled.message, 'inbound message')
+      : null,
     tag: answered._tag,
     reason: answered._tag === 'Rejected' && answered.reason !== null
       ? encodeOnce(program.schemas.rejection, answered.reason, 'reason of the rejection')
@@ -1229,6 +1290,7 @@ export const writes = <T extends Types>(
       ? {
         state: encodeOnce(program.schemas.state, after.state, 'state'),
         creation: encodeOnce(requestCodec(program), after.creation, 'request'),
+        flags: after.flags,
       }
       : null,
     suspension: after.suspension === null
@@ -1280,12 +1342,18 @@ const move = <T extends Types>(program: Program<T>, machine: Machine<T>, event: 
       return receive(program, machine, event)
     case 'Create': {
       // Read from storage, as a stored reply: a suspended entity answers it too.
-      const { request } = event
+      // A caller's retry that carries other flags than the creation is answered `Reused`. An operation's is a retry
+      // whatever it carries (decision 0269).
+      const { request, flags } = event
       const { stored } = machine
-      const reply: Creation = requestKey(program, request) === requestKey(program, stored.creation)
-        ? { _tag: 'Created' }
-        : { _tag: 'AlreadyExists' }
-      return { machine, outputs: [{ _tag: 'CreationReplied', request, reply }] }
+      const same = requestKey(program, request) === requestKey(program, stored.creation)
+      const reply: Creation | Reused = !same
+        ? { _tag: 'AlreadyExists' }
+        : request._tag === 'Caller' &&
+            carriedText(encodeOnce(program.schemas.flags, flags, 'value of the flags')) !== carriedText(stored.flags)
+        ? { _tag: 'Reused' }
+        : { _tag: 'Created' }
+      return { machine, outputs: [{ _tag: 'CreationReplied', request, flags, reply }] }
     }
     case 'Complete':
       return record(program, machine, 'Operation', event.key, event.incarnation, () => event.message)

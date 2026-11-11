@@ -241,7 +241,8 @@ const tables = Effect.gen(function*() {
   // Text of PostgreSQL is compared by its bytes, as SQLite compares it, so that ids are ordered alike in both
   // dialects (decision 0157).
   const text = sql.literal(dialect === 'pg' ? 'TEXT COLLATE "C"' : 'TEXT')
-  // The state, the request that created the entity and the suspension: one row per entity. `suspended_at` is the
+  // The state, the request that created the entity with its flags, and the suspension: one row per entity. A
+  // caller's retry of the creation is compared with the flags (decision 0269). `suspended_at` is the
   // time the entity suspended, kept while it stays suspended, which an operator reads (decision 0114).
   // `incarnations` is the last incarnation the entity drew, which never goes back (decision 0132). `keyed_as` is
   // the name the entity's idempotency keys are drawn from, written by its first rename and null before
@@ -254,6 +255,7 @@ const tables = Effect.gen(function*() {
       state ${text} NOT NULL,
       version ${integer} NOT NULL,
       creation ${text} NOT NULL,
+      flags ${text} NOT NULL,
       incarnations ${integer} NOT NULL,
       suspended_on ${text},
       suspended_cause ${text},
@@ -427,13 +429,15 @@ const tables = Effect.gen(function*() {
   // `effecttea_entity_keys` holds it (decision 0136). A caller's reply with an `until` is read before that time only
   // (decision 0125).
   // `request_id` is the id of a caller's request, null for another's, written by the process: PostgreSQL parses no
-  // JSON that holds U+0000, which the program's data may (decision 0157).
+  // JSON that holds U+0000, which the program's data may (decision 0157). `carried` is the message a caller's request
+  // carried, which a retry is compared with, and null for another's (decision 0269).
   yield* sql`
     CREATE TABLE effecttea_replies (
       name ${text} NOT NULL,
       id ${text} NOT NULL,
       request ${text} NOT NULL,
       request_id ${text},
+      carried ${text},
       tag ${text} NOT NULL,
       version ${integer} NOT NULL,
       reason ${text},

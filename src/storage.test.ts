@@ -95,7 +95,7 @@ const written = (rows: Partial<Machine.Written>): Machine.Written => ({
 const created = (rows: Partial<Machine.Written> = {}): Machine.Written =>
   written({
     created: true,
-    entity: { state: { last: 'start' }, creation },
+    entity: { state: { last: 'start' }, creation, flags: null },
     shown: { projection: 'start', indexes: {} },
     ...rows,
   })
@@ -113,6 +113,7 @@ const sent = (name: string, incarnation: number) => Machine.requestKey(receiver,
 
 const reply = (name: string, incarnation: number): Machine.ReplyRow => ({
   request: sent(name, incarnation),
+  carried: null,
   tag: 'Accepted',
   reason: null,
   asked: { name: 'Asker', id: 'a', key: { name: 'ask' }, incarnation },
@@ -155,8 +156,8 @@ test('a reply asked by work that no longer holds goes as it is stored, and one w
       )
       const store = storage(receiver, sql)
       yield* store.write('r', created({ replies: [reply('held', 1), reply('ended', 2)] }), 0)
-      expect(yield* store.reply('r', asked('held', 1), 0)).toEqual({ _tag: 'Accepted' })
-      expect(yield* store.reply('r', asked('ended', 2), 0)).toBeNull()
+      expect((yield* store.reply('r', asked('held', 1), 0))?.reply ?? null).toEqual({ _tag: 'Accepted' })
+      expect((yield* store.reply('r', asked('ended', 2), 0))?.reply ?? null).toBeNull()
     })))
 
 // An answer no entity stores is kept by the rule of a reply: it goes as it is kept where the work that asked has
@@ -215,6 +216,7 @@ test('a key is stored as its name and its parameter, apart from a key of the sam
         ({ _tag: 'Operation', entity: { name: 'Asker', id: 'a' }, key, incarnation, name: 'n' }) as const
       const kept = (key: Machine.KeyRow['key'], incarnation: number): Machine.ReplyRow => ({
         request: Machine.requestKey(receiver, asking(key, incarnation)),
+        carried: null,
         tag: 'Accepted',
         reason: null,
         asked: { name: 'Asker', id: 'a', key, incarnation },
@@ -222,9 +224,9 @@ test('a key is stored as its name and its parameter, apart from a key of the sam
       })
       yield* receiving.write('r', created({ replies: [kept(plain, 1), kept(empty, 2), kept(record, 4)] }), 0)
       yield* store.write('a', written({ gone: [empty], incarnations: 4, ended: [{ key: empty, incarnation: 2 }] }), 0)
-      expect(yield* receiving.reply('r', asking(plain, 1), 0)).toEqual({ _tag: 'Accepted' })
-      expect(yield* receiving.reply('r', asking(empty, 2), 0)).toBeNull()
-      expect(yield* receiving.reply('r', asking(record, 4), 0)).toEqual({ _tag: 'Accepted' })
+      expect((yield* receiving.reply('r', asking(plain, 1), 0))?.reply ?? null).toEqual({ _tag: 'Accepted' })
+      expect((yield* receiving.reply('r', asking(empty, 2), 0))?.reply ?? null).toBeNull()
+      expect((yield* receiving.reply('r', asking(record, 4), 0))?.reply ?? null).toEqual({ _tag: 'Accepted' })
       const after = yield* store.load('a')
       expect(Object.values(after?.keys ?? {}).map(({ key }) => key)).toEqual([plain, nothing, record])
     })))
@@ -256,14 +258,14 @@ test('the work that ended takes the replies to its requests with it, and no othe
       yield* store.write('s', created({ replies: [reply('other', 1)] }), 0)
       // Work of another incarnation asked nothing that is stored.
       yield* storage(asker, sql).write('a', written({ ended: [{ key: { name: 'ask' }, incarnation: 2 }] }), 0)
-      expect(yield* store.reply('r', asked('first', 1), 0)).toEqual({ _tag: 'Accepted' })
+      expect((yield* store.reply('r', asked('first', 1), 0))?.reply ?? null).toEqual({ _tag: 'Accepted' })
       yield* storage(asker, sql).write(
         'a',
         written({ gone: [{ name: 'ask' }], incarnations: 1, ended: [{ key: { name: 'ask' }, incarnation: 1 }] }),
         0,
       )
-      expect(yield* store.reply('r', asked('first', 1), 0)).toBeNull()
-      expect(yield* store.reply('s', asked('other', 1), 0)).toBeNull()
+      expect((yield* store.reply('r', asked('first', 1), 0))?.reply ?? null).toBeNull()
+      expect((yield* store.reply('s', asked('other', 1), 0))?.reply ?? null).toBeNull()
       // A key whose work is gone has no row, and the entity keeps the last incarnation it drew (decision 0132).
       const loaded = yield* storage(asker, sql).load('a')
       expect(loaded?.keys).toEqual({})
@@ -322,23 +324,25 @@ test('a reply is read by its request alone, and a caller is given its own', () =
       const caller = (id: string) => ({ _tag: 'Caller', sender: null, id }) as const
       const accepted = (id: string): Machine.ReplyRow => ({
         request: Machine.requestKey(receiver, caller(id)),
+        carried: null,
         tag: 'Accepted',
         reason: null,
         asked: null,
         until: null,
       })
       yield* store.write('r', created({ replies: [accepted('one')] }), 0)
-      expect(yield* store.reply('r', caller('one'), 0)).toEqual({ _tag: 'Accepted' })
-      expect(yield* store.reply('r', caller('two'), 0)).toBeNull()
-      expect(yield* store.reply('s', caller('one'), 0)).toBeNull()
+      expect((yield* store.reply('r', caller('one'), 0))?.reply ?? null).toEqual({ _tag: 'Accepted' })
+      expect((yield* store.reply('r', caller('two'), 0))?.reply ?? null).toBeNull()
+      expect((yield* store.reply('s', caller('one'), 0))?.reply ?? null).toBeNull()
       // An operation's request named as the caller's request id is another request.
-      expect(yield* store.reply('r', asked('one', 1), 0)).toBeNull()
+      expect((yield* store.reply('r', asked('one', 1), 0))?.reply ?? null).toBeNull()
     })))
 
 describe('how long a caller’s reply is kept (decision 0125)', () => {
   const caller = (id: string) => ({ _tag: 'Caller', sender: null, id }) as const
   const until = (id: string, time: number | null): Machine.ReplyRow => ({
     request: Machine.requestKey(receiver, caller(id)),
+    carried: null,
     tag: 'Accepted',
     reason: null,
     asked: null,
@@ -350,9 +354,9 @@ describe('how long a caller’s reply is kept (decision 0125)', () => {
       Effect.gen(function*() {
         const store = storage(receiver, sql)
         yield* store.write('r', created({ replies: [until('kept', 500), until('forever', null)] }), 0)
-        expect(yield* store.reply('r', caller('kept'), 499)).toEqual({ _tag: 'Accepted' })
-        expect(yield* store.reply('r', caller('kept'), 500)).toBeNull()
-        expect(yield* store.reply('r', caller('forever'), Number.MAX_SAFE_INTEGER)).toEqual({ _tag: 'Accepted' })
+        expect((yield* store.reply('r', caller('kept'), 499))?.reply ?? null).toEqual({ _tag: 'Accepted' })
+        expect((yield* store.reply('r', caller('kept'), 500))?.reply ?? null).toBeNull()
+        expect((yield* store.reply('r', caller('forever'), Number.MAX_SAFE_INTEGER))?.reply ?? null).toEqual({ _tag: 'Accepted' })
       })))
 
   test('a reply a version before stored is read before its time only, as one this version stored', () =>
@@ -368,12 +372,12 @@ describe('how long a caller’s reply is kept (decision 0125)', () => {
         const first = callers([])
         const by = (sender: string) => ({ _tag: 'Caller', sender, id: 'r' }) as const
         yield* storage(first, sql).write('r', created({
-          replies: [{ request: Machine.requestKey(first, by('a')), tag: 'Accepted', reason: null, asked: null, until: 500 }],
+          replies: [{ request: Machine.requestKey(first, by('a')), carried: null, tag: 'Accepted', reason: null, asked: null, until: 500 }],
         }), 0)
         // Version 2 renames the sender 'a' to 'b', so its retry is found by its request id (decision 0065).
         const after = storage(callers([{ sender: (json) => json === 'a' ? 'b' : json }]), sql)
-        expect(yield* after.reply('r', by('b'), 499)).toEqual({ _tag: 'Accepted' })
-        expect(yield* after.reply('r', by('b'), 500)).toBeNull()
+        expect((yield* after.reply('r', by('b'), 499))?.reply ?? null).toEqual({ _tag: 'Accepted' })
+        expect((yield* after.reply('r', by('b'), 500))?.reply ?? null).toBeNull()
       })))
 
   test('a step that stores a reply deletes the replies of its entity past their time, and no others', () =>
@@ -402,8 +406,8 @@ describe('how long a caller’s reply is kept (decision 0125)', () => {
         yield* store.write('s', created({ replies: [until('gone', 500)] }), 0)
         yield* storage(asker, sql).write('a', created({ replies: [until('gone', 500)] }), 0)
         expect(yield* store.expire(600)).toBe(2)
-        expect(yield* store.reply('r', caller('kept'), 600)).toEqual({ _tag: 'Accepted' })
-        expect(yield* store.reply('r', caller('ever'), 600)).toEqual({ _tag: 'Accepted' })
+        expect((yield* store.reply('r', caller('kept'), 600))?.reply ?? null).toEqual({ _tag: 'Accepted' })
+        expect((yield* store.reply('r', caller('ever'), 600))?.reply ?? null).toEqual({ _tag: 'Accepted' })
         expect(yield* storage(asker, sql).expire(0)).toBe(0)
         expect(yield* storage(asker, sql).expire(600)).toBe(1)
       })))
@@ -425,7 +429,7 @@ describe('how long a caller’s reply is kept (decision 0125)', () => {
         }
         yield* store.keepGiven('1', 'r', 900)
         expect(yield* store.expire(600)).toBe(2 * batch + 1)
-        expect(yield* store.reply('r', caller('kept'), 600)).toEqual({ _tag: 'Accepted' })
+        expect((yield* store.reply('r', caller('kept'), 600))?.reply ?? null).toEqual({ _tag: 'Accepted' })
         const left = (table: string) =>
           Effect.map(sql<{ count: number }>`SELECT count(*) AS count FROM ${sql(table)}`, (rows) => Number(rows[0]?.count))
         expect(yield* left('effecttea_replies')).toBe(1)
@@ -533,7 +537,7 @@ test('the state is written with the request that created the entity, and only wh
         state: { last: 'start' },
         suspension: { on: { _tag: 'Message' }, cause: 'broken' },
       })
-      yield* store.write('r', written({ entity: { state: { last: 'next' }, creation } }), 0)
+      yield* store.write('r', written({ entity: { state: { last: 'next' }, creation, flags: null } }), 0)
       expect(yield* store.load('r')).toMatchObject({
         state: { last: 'next' },
         creation,
@@ -573,6 +577,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               name: 'Receiver',
               id: 'r',
               request: Machine.requestKey(receiver, caller),
+              carried: null,
               tag: 'Maybe',
               version: 1,
               reason: null,
@@ -613,6 +618,7 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               name: 'Receiver',
               id: 'r',
               request: Machine.requestKey(receiver, caller),
+              carried: null,
               tag: 'Accepted',
               version: 1,
               reason: '"why"',
@@ -739,6 +745,7 @@ test('a caller whose request a migration gives the text of another caller’s ro
       const caller = (sender: string) => ({ _tag: 'Caller', sender, id: 'r' }) as const
       const accepted = (program: Program<Named>, sender: string): Machine.ReplyRow => ({
         request: Machine.requestKey(program, caller(sender)),
+        carried: null,
         tag: 'Accepted',
         reason: null,
         asked: null,
@@ -747,11 +754,11 @@ test('a caller whose request a migration gives the text of another caller’s ro
       yield* storage(first, sql).write('r', created({ replies: [accepted(first, 'a')] }), 0)
       const after = storage(second, sql)
       // The caller that is 'a' in version 2 has the text of the row of 'a' in version 1, and is not answered by it.
-      expect(yield* after.reply('r', caller('a'), 0)).toBeNull()
+      expect((yield* after.reply('r', caller('a'), 0))?.reply ?? null).toBeNull()
       yield* after.write('r', written({ replies: [accepted(second, 'a')] }), 0)
-      expect(yield* after.reply('r', caller('a'), 0)).toEqual({ _tag: 'Accepted' })
+      expect((yield* after.reply('r', caller('a'), 0))?.reply ?? null).toEqual({ _tag: 'Accepted' })
       // The caller version 1 stored as 'a' is 'b' now, and its retry still finds its own reply.
-      expect(yield* after.reply('r', caller('b'), 0)).toEqual({ _tag: 'Accepted' })
+      expect((yield* after.reply('r', caller('b'), 0))?.reply ?? null).toEqual({ _tag: 'Accepted' })
     })))
 
 // A message costs a reading by the table's key, and a caller's that finds nothing one more, by its request id: each
@@ -1317,8 +1324,8 @@ test('reindex skips an entity that a step wrote since, though its state has the 
   database((sql) =>
     Effect.gen(function*() {
       const first = storage(receiver, sql)
-      yield* first.write('a', created({ entity: { state: { last: 'x' }, creation } }), 0)
-      yield* first.write('b', created({ entity: { state: { last: 'x' }, creation } }), 0)
+      yield* first.write('a', created({ entity: { state: { last: 'x' }, creation, flags: null } }), 0)
+      yield* first.write('b', created({ entity: { state: { last: 'x' }, creation, flags: null } }), 0)
       // As 'a''s row is written, version 2 steps 'b' to the state it writes as the same text, which it reads as
       // its own, with no migration: the step lands between the reading of 'b' and the writing of its row.
       const step = `
@@ -1349,7 +1356,7 @@ test('reindex passes over a state a migration or the schema dies on, and fails o
     Effect.gen(function*() {
       const first = storage(receiver, sql)
       for (const id of ['a', 'b', 'c']) {
-        yield* first.write(id, created({ entity: { state: { last: id }, creation } }), 0)
+        yield* first.write(id, created({ entity: { state: { last: id }, creation, flags: null } }), 0)
       }
       // Version 2 dies on 'b' in its migration, and migrates 'c' to a state its schema refuses.
       const dying: Program<T> = {
@@ -1589,7 +1596,7 @@ test('reindex writes an index that is an integer beyond 2^53 with its exact digi
     Effect.gen(function*() {
       const store = storage(ranked, sql)
       const state = { last: JSON.stringify(2 ** 60) }
-      yield* store.write('a', created({ entity: { state, creation }, shown: { projection: '0', indexes: { rank: 0 } } }), 0)
+      yield* store.write('a', created({ entity: { state, creation, flags: null }, shown: { projection: '0', indexes: { rank: 0 } } }), 0)
       expect(yield* store.reindex).toEqual({ written: 1, failed: [] })
       const stored = yield* sql<{ indexes: string }>`SELECT indexes FROM effecttea_projections`
       expect(stored).toEqual([{ indexes: '{"rank":1152921504606846976}' }])
@@ -1803,7 +1810,7 @@ test('a suspended entity is listed with what it died on, its cause and since whe
       yield* store.write('inbound', written({ queued: [completion], suspension: onMessage }), 9)
       yield* store.write(
         'operation',
-        written({ entity: { state: { last: 'again' }, creation }, suspension: onOperation }),
+        written({ entity: { state: { last: 'again' }, creation, flags: null }, suspension: onOperation }),
         10,
       )
       expect((yield* listed).map(({ id, since }) => [id, since])).toEqual([['operation', 3], ['inbound', 5]])
@@ -1971,13 +1978,14 @@ describe('renaming a program (decision 0156)', () => {
         // The receiver was created by the asker, holds a message it sent, and stores a reply to it.
         const answered: Machine.ReplyRow = {
           request: Machine.requestKey(receiver, asked),
+          carried: null,
           tag: 'Accepted',
           reason: null,
           asked: { name: 'Asker', id: 'a', key: { name: 'ask' }, incarnation: 1 },
           until: null,
         }
         yield* storage(receiver, sql).write('r', created({
-          entity: { state: { last: 'start' }, creation: asked },
+          entity: { state: { last: 'start' }, creation: asked, flags: null },
           queued: [{ _tag: 'Inbound', message: 'later', request: asked, keep: null }],
           replies: [answered],
         }), 0)
@@ -1990,8 +1998,8 @@ describe('renaming a program (decision 0156)', () => {
         expect(loaded?.state).toEqual({ last: 'start' })
         // The sender's retry, under its new name, finds the reply stored for it.
         const store = storage(receiver, sql)
-        expect(yield* store.reply('r', askedBy('Buyer'), 0)).toEqual({ _tag: 'Accepted' })
-        expect(yield* store.reply('r', asked, 0)).toBeNull()
+        expect((yield* store.reply('r', askedBy('Buyer'), 0))?.reply ?? null).toEqual({ _tag: 'Accepted' })
+        expect((yield* store.reply('r', asked, 0))?.reply ?? null).toBeNull()
         const r = yield* store.load('r')
         expect(r?.creation).toEqual(askedBy('Buyer'))
         expect(r?.mailbox).toEqual([{ _tag: 'Inbound', message: 'later', request: askedBy('Buyer') }])
@@ -2058,6 +2066,7 @@ describe('renaming a program (decision 0156)', () => {
         ]
         const answered = (parameter: Json): Machine.ReplyRow => ({
           request: Machine.requestKey(receiver, askedBy('Asker', parameter)),
+          carried: null,
           tag: 'Accepted',
           reason: null,
           asked: null,

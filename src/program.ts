@@ -134,6 +134,11 @@ export type Migration = Readonly<{
   operation?: (json: Json) => Json
   /** Reads the reason of a stored reply. */
   rejection?: (json: Json) => Json
+  /**
+   * Reads the flags stored with the request that created an entity, which a retry of the creation is compared with
+   * (decision 0269).
+   */
+  flags?: (json: Json) => Json
   /** Reads the sender of a stored reply or of a message waiting. */
   sender?: (json: Json) => Json
   /** Reads a stored projection, in the read model and in the log. */
@@ -213,6 +218,13 @@ export type Reply<Reason> =
   /** `reason` is null for a bare `reject`. */
   | Readonly<{ _tag: 'Rejected'; reason: Reason | null }>
   | Readonly<{ _tag: 'NotFound' }>
+
+/**
+ * What a caller's request is answered when another request under its sender and request id carried another message
+ * or other flags: nothing of it is applied or stored, and the first request's reply is kept (decision 0269). Only a
+ * caller is given it: an operation's request is found by its run and name, and what it carries is not compared.
+ */
+export type Reused = Readonly<{ _tag: 'Reused' }>
 
 /**
  * The type of `update`: given a message and its meta, a function from the state to the next state or to a rejection.

@@ -1,7 +1,7 @@
 # 0269. A caller's request is its sender, its request id and what it carries
 
-**Status:** proposed, 2026-11-11, with the step The bugs the premise review found, fixed by family, of the
-[roadmap](../roadmap.md), as the fix of bug 4. Once taken, it changes
+**Status:** accepted, 2026-11-12, with the step The bugs the premise review found, fixed by family, of the
+[roadmap](../roadmap.md), as the fix of bug 4. It changes
 [decision 0048](archive/0048-a-callers-request-belongs-to-its-sender.md): a second request under a caller's sender and
 request id is a retry only where it carries the same message or flags. It changes
 [decision 0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md): a caller that reuses a request id
@@ -56,11 +56,16 @@ is the scope. The check is what this decision adds.
   still queued in the mailbox, the message offered to the entity and not yet handled, and on Cluster the request
   Cluster stored. Each compares what the retry carries. A caller that waits for a reply waits for the reply of its own
   request and message, so that a request answered `Reused` is never given the first request's reply.
-- **A reply's row holds what its request carried, as the version that wrote it encoded it.** It is the text, not a
-  hash, so that a later version reads it through the migrations. A reply written by the version that reads it is
-  compared by its text. A reply another version wrote is read through that version's migrations of `inbound` or
-  `flags`, encoded by the program's schema, and compared then, as a reply's sender is read through the migrations of
-  `sender` today ([decision 0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md)).
+- **A reply's row holds what its request carried, as the version that wrote it encoded it.** It is the JSON, not a
+  hash, so that a later version reads it through the migrations. The row of an entity holds the flags it was created
+  with the same way. A reply another version wrote is read through the migrations of `inbound` from its version, and
+  the flags through those of `flags`, as a reply's sender is read through the migrations of `sender`
+  ([decision 0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md)).
+- **What was carried is read as the migrations write it, and is not decoded.** It is compared as text with what the
+  retry carries, encoded by the program's schema. A schema of the flags that no longer reads the flags of an entity
+  created before would otherwise make the entity fail to load, though the flags serve only the comparison. A version
+  that changes the JSON form of a message or of the flags writes the migration, or a retry across the deploy is
+  answered `Reused`.
 - **A program's `Migration` takes a kind `flags`**, which reads the flags a version stored with the request that
   created an entity. A kind left out is unchanged, as for every kind.
 - **A reply past its time is no reply.** A request after a reply's `keep` is a new request, applied again, whatever it
@@ -93,6 +98,10 @@ is the scope. The check is what this decision adds.
 - **An operation's request holds no message on Cluster or in a reply's row.** Cluster's primary key of a door's
   requests holds the message's text for a caller's request alone, and a reply to an operation's request keeps no text
   of what it carried.
+- **On Cluster, a `Reused` Cluster saved is no reply.** The caller's client resets it and sends the request once more,
+  as it does a saved `NotFound` or `Suspended`, and a creator's client resets it before it sends, as a saved
+  `Rejected` ([decision 0182](0182-init-may-reject-the-flags.md)). The reply the request was compared with may be past
+  its time at the retry, and the step that answers the retry compares again.
 
 ## What it rests on
 
@@ -103,11 +112,11 @@ is the scope. The check is what this decision adds.
   request's key is written by. The test also sees the case the rule decides otherwise: a set encodes in the order it
   was built, so an equal set built in another order is another text, and is answered `Reused`.
 - That Cluster answers a request under a primary key it saved from the saved reply, and saves no envelope of it for
-  the door, whatever message the request carries: **tested** by `a second message under a caller's saved request is
-  answered by Cluster with the saved reply, and saved for no door`, in
-  [`src/cluster.test.ts`](../../src/cluster.test.ts). The same test, run against a `primaryKey` that holds the
-  message, failed on a second envelope saved, so a key that holds the message delivers the second request to the door.
-  An operation's request keeps its key, so Cluster answers a run after a crash from the saved reply, as the test sees.
+  the door, whatever message the request carries: seen by a test of `src/cluster.test.ts` before the code changed,
+  which counted one envelope of `cluster_messages` for two messages under one key, and two once the key held the
+  message (commit `5407b88`). **Tested** now by `another message under a caller's request id reaches the door, which
+  answers it Reused`, in [`src/cluster.test.ts`](../../src/cluster.test.ts), whose retry of the first message saves
+  no envelope. An operation's request keeps its key, so Cluster answers a run after a crash from the saved reply.
 - That a run of an operation after a crash which sends another message under the same name is given the first
   message's reply, and that the receiver holds the first message alone: **tested** by `a run after a crash that sends
   another message under an operation's request`, in [`src/machine.test.ts`](../../src/machine.test.ts), with the
@@ -147,26 +156,37 @@ is the scope. The check is what this decision adds.
 
 - [`src/machine.ts`](../../src/machine.ts) compares what a request carries where it finds a queued or a stored request,
   and gives `Reused`. A creation compares its flags.
-- [`src/storage/tables.ts`](../../src/storage/tables.ts) gives `effecttea_replies` a column for what the request
-  carried, and the row of the request that created an entity holds its flags. No release holds the tables, so the
-  first migration changes. [`src/storage/entities.ts`](../../src/storage/entities.ts) compares it, on every backend.
-- [`src/runtime/doors.ts`](../../src/runtime/doors.ts) and [`src/runtime/callers.ts`](../../src/runtime/callers.ts)
-  wait for the reply of a request and its message.
+- [`src/storage/tables.ts`](../../src/storage/tables.ts) gives `effecttea_replies` a column `carried` for what the
+  request carried, and `effecttea_entities` a column `flags`. No release holds the tables, so the first migration
+  changes. [`src/storage/entities.ts`](../../src/storage/entities.ts) reads them through the migrations, on every
+  backend, and gives a stored reply with what its request carried.
+- [`src/runtime/doors.ts`](../../src/runtime/doors.ts), [`src/runtime/callers.ts`](../../src/runtime/callers.ts) and
+  [`src/runtime/loop.ts`](../../src/runtime/loop.ts) wait for the reply of a request with what it carried, by
+  `Machine.messageKey` and `Machine.creationKey`. Without it, two callers under one request id with two messages at
+  once were both given the first one's `Accepted`, as `two callers under one request id with two messages at once are
+  answered Accepted and Reused`, in [`src/runtime.test.ts`](../../src/runtime.test.ts), fails against the key of the
+  request alone.
 - [`src/cluster.ts`](../../src/cluster.ts) puts the message's text in the primary key of a caller's request to a
-  door, and keeps the primary key of an operation's request as it is.
+  door, and keeps the primary key of an operation's request as it is. Its codecs of a door's answers hold `Reused`.
 - [`src/rehearse.ts`](../../src/rehearse.ts) keeps what a named request carried, and gives `Reused`.
-- `Answer` and the caller's `Creation` of a `Handle` hold `Reused`. An operation's `send` and `create` never give it.
-- `docs/design.md`, under Inbound messages and the rehearsal's `send`, and `docs/glossary.md`, under Request, say the
-  rule. `docs/design.md`, under Entities that talk, says that an operation's reply answers the first message under
+- `Answer` and `Handle.create` hold `Reused`, which `src/program.ts` declares and the entry `program` exports. An
+  operation's `send` and `create` never give it, and the runtime dies where a step would.
+- `docs/design.md`, under Inbound messages, creation, migrations and the rehearsal's `send`, `docs/glossary.md`, under
+  Request, `docs/concepts.md`, in what each call answers, and the guide say the rule. `docs/design.md`, under Entities that talk, says that an operation's reply answers the first message under
   its request, and that an operation builds what it reports from its stored value and its replies.
   `examples/server` answers `Reused` with 422.
 - Whether a rehearsal's crash should fail a test when the run after it sends another message under a name is an
   [open question](../open-questions.md#programs). The decision leaves it out.
-- A test of `src/runtime.test.ts` on each storage stores a reply at version 1, deploys a version 2 whose migration of
-  `inbound` changes the message's form, and retries: the retry is given the stored reply, and a retry with another
-  message is answered `Reused`. The same test of `src/rehearse.ts` decides bug 5, since a rehearsal keys its replies by
-  the request's text.
-- The `test.failing` `a program with no sender` of `src/rehearse.test.ts` becomes two tests: a second message under a
-  used id is answered `Reused` and the total stays 1, and the same message under a used id is a retry.
-  `src/machine.test.ts` has a rule for a queued and a stored request, and a contract test runs the requests alike on
-  each storage and on Cluster. A test sends after a reply's `keep`, and the request is applied.
+- `a retry after a deploy is compared with what the caller's request carried, read through the migrations`, in
+  [`src/runtime.test.ts`](../../src/runtime.test.ts), runs on each storage. It stores a reply and a creation at
+  version 1, and deploys a version 2 whose migrations of `inbound` and `flags` change their form. A retry as the
+  migrations write it is given the stored reply, and what version 1 sent is answered `Reused`. Bug 5, a rehearsal
+  that keys its replies by the request's text, is not decided by this note.
+- The `test.failing` `a program with no sender` of [`src/rehearse.test.ts`](../../src/rehearse.test.ts) became two
+  tests: a second message under a used id is answered `Reused` and the total stays 1, and the same message under a
+  used id is a retry. `what a caller's request carries (decision 0269)`, in
+  [`src/machine.test.ts`](../../src/machine.test.ts), holds the rule for a stored, a queued and a suspended request,
+  and for a creation. `another message under a caller's request id after the reply's keep is a new request, and is
+  applied`, in [`src/runtime.test.ts`](../../src/runtime.test.ts), holds the end of the reply's time.
+- A test of the machine that sent another message under a used request id as its retry,
+  `a caller's retry gets the stored reply, whatever the order of its sender's fields`, sends the same message now.

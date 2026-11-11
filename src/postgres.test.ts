@@ -88,14 +88,14 @@ const creation = { _tag: 'Caller', sender: null, id: 'creation' } as const
 const created = (rank: Scalar = 1): Machine.Written =>
   written({
     created: true,
-    entity: { state: { last: 'start' }, creation },
+    entity: { state: { last: 'start' }, creation, flags: null },
     shown: { projection: JSON.stringify(rank), indexes: { rank } },
   })
 
 /** A step that handled `message`, which it publishes in the topic `projection`. */
 const handled = (message: string): Machine.Written =>
   written({
-    entity: { state: { last: message }, creation },
+    entity: { state: { last: message }, creation, flags: null },
     shown: { projection: '1', indexes: { rank: 1 } },
     published: { kind: 'Inbound', message, projection: '1', topics: ['projection'] },
   })

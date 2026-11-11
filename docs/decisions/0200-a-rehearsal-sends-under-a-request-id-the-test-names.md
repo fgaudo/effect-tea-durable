@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-08. Changes the surface of a rehearsal that
 [decision 0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) gives a member of a world and
-`rehearse` gives its entity: `send` takes a request id.
+`rehearse` gives its entity: `send` takes a request id. A second send under the same sender and request id that
+carries another message is answered `Reused`, by [decision 0269](0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md).
 
 ## Context
 

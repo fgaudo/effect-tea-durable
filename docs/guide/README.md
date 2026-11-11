@@ -491,7 +491,11 @@ const customerOf = Effect.fnUntraced(function*(id: string) {
 ```
 
 Every `create` and `send` carries a **request id**, chosen by the caller, here the customer's app. A retry under the
-same request id is given the stored reply, and the message is applied once.
+same request id is given the stored reply, and the message is applied once. A retry carries the same message, or
+the same flags: a request under the same sender and request id that carries another one is answered `Reused`, and
+nothing of it is applied. A boundary answers `Reused` as a refusal of what its client sent, as `422` over HTTP. A
+program whose sender is `null` shares one space of request ids among all its callers, so its boundary gives each
+request an id no other caller uses, as a UUID that the client keeps for its retries.
 
 The ride's id is derived from the request id:
 
@@ -577,8 +581,8 @@ const rides = yield* Effect.provide(runtime.deploy(ride), mailer)
 
 `launch` creates the runtime's tables on the `SqlClient` it is given. `deploy` gives a **handle** to one program's
 entities, with `create`, `send`, `read` and the queries. A program's runners ask for services, the mailer here, and
-the deploy is where they are provided. `create` answers a `Creation`, `Created`, `AlreadyExists` or `Rejected`, and
-`read` gives the projection, or null for no such entity.
+the deploy is where they are provided. `create` answers a `Creation`, `Created`, `AlreadyExists` or `Rejected`, or
+`Reused` for a request id used with other flags, and `read` gives the projection, or null for no such entity.
 
 The runtime reads time from Effect's `Clock`. A test of a timer days away provides `TestClock.layer()` of
 `effect/testing/TestClock` beside the database, and moves the time with `TestClock.adjust({ days: 21 })`. A

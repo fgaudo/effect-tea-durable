@@ -33,7 +33,8 @@ import type * as Scope from 'effect/Scope'
 import * as Schema from 'effect/Schema'
 import { Rpc } from 'effect/rpc'
 import { SqlClient } from 'effect/sql'
-import { type Address, InvariantDefect, type Program, type Types, versionOf } from './program.ts'
+import * as Machine from './machine.ts'
+import { type Address, InvariantDefect, type Json, type Program, type Types, versionOf } from './program.ts'
 import { type Delivered, launchWith, type OnCluster, type Operating, type Options, type Runtime } from './runtime.ts'
 import { createTables, forgetGiven, leased, outranked, recordVersions, standingOf } from './storage.ts'
 
@@ -124,9 +125,16 @@ const payload = {
 
 /**
  * Cluster keys a request by the version that keyed it and its request's text, under the receiver's address and the
- * RPC's tag, so that two versions never share a key (decision 0085).
+ * RPC's tag, so that two versions never share a key (decision 0085). A caller's request is keyed with the text of
+ * what it carried too, since Cluster answers a key it saved before the door runs: a request that carries another
+ * message or other flags reaches the door, which answers it `Reused` (decision 0269). An operation's request keeps
+ * its key, since what it carries is not compared. A JSON text holds no line feed, so the parts never run into each
+ * other.
  */
-const primaryKey = ({ version, request }: Readonly<{ version: number; request: string }>) => `${version}/${request}`
+const primaryKey = ({ version, request, message }: Readonly<{ version: number; request: string; message: string }>) =>
+  (JSON.parse(request) as Readonly<{ _tag: string }>)._tag === 'Caller'
+    ? `${version}/${request}\n${Machine.carriedText(JSON.parse(message) as Json)}`
+    : `${version}/${request}`
 
 /**
  * The entity of the program `name` on Cluster, the door to the runtime's entity: one RPC for a creation and one for
@@ -216,12 +224,17 @@ export const answerCodec = <T extends Types>(program: Program<T>) =>
     Schema.TaggedStruct('Rejected', { reason: Schema.NullOr(program.schemas.rejection) }),
     Schema.TaggedStruct('NotFound', {}),
     Schema.TaggedStruct('Suspended', {}),
+    Schema.TaggedStruct('Reused', {}),
   ]))
 
-/** The text of a step's answer to a message that is no reply: Cluster saves it, and a caller's client resets it. */
+/**
+ * The text of a step's answer to a message that is no reply: Cluster saves it, and a caller's client resets it. A
+ * `Reused` is none either: the reply it was compared with may be past its time at a retry (decision 0269).
+ */
 const noReply = Schema.fromJsonString(Schema.Union([
   Schema.TaggedStruct('NotFound', {}),
   Schema.TaggedStruct('Suspended', {}),
+  Schema.TaggedStruct('Reused', {}),
 ]))
 
 /** The text of what an operator's event did (decision 0166). */
@@ -243,13 +256,17 @@ export const creationCodec = <T extends Types>(program: Program<T>) =>
     Schema.TaggedStruct('Created', {}),
     Schema.TaggedStruct('AlreadyExists', {}),
     Schema.TaggedStruct('Rejected', { reason: Schema.NullOr(program.schemas.rejection) }),
+    Schema.TaggedStruct('Reused', {}),
   ]))
 
 /**
  * The text of a step's answer to a creation that is not stored: Cluster saves it, and a creator's client resets it, as
- * a message's `NotFound` (decision 0182).
+ * a message's `NotFound`. A `Rejected` is not stored (decision 0182), nor is a `Reused` (decision 0269).
  */
-const creationRejected = Schema.fromJsonString(Schema.TaggedStruct('Rejected', { reason: Schema.Unknown }))
+const creationRejected = Schema.fromJsonString(Schema.Union([
+  Schema.TaggedStruct('Rejected', { reason: Schema.Unknown }),
+  Schema.TaggedStruct('Reused', {}),
+]))
 
 /**
  * The shard group of every door: a door annotates none, so Cluster puts each in its default group, and the runtime's
@@ -488,7 +505,7 @@ export const onCluster: Effect.Effect<
         // Cluster's client gives a stored answer as it gives a new one, so either answer that is no reply is reset
         // and the message sent once more: the second answer is a step's, made as the entity is then (decision 0085).
         const final = Effect.flatMap(once, (first) =>
-          first._tag === 'Suspended' || first._tag === 'NotFound'
+          first._tag === 'Suspended' || first._tag === 'NotFound' || first._tag === 'Reused'
             ? Effect.andThen(reset(program.name, 'Message', sent, noReplySaved), once)
             : Effect.succeed(first))
         return keptGiven(program.name, 'Message', sent, final, given)

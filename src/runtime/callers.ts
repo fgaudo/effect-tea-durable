@@ -39,6 +39,7 @@ import {
   type Receiver,
   type Reply,
   type Request,
+  type Reused,
   type Types,
   versionOf,
 } from '../program.ts'
@@ -194,7 +195,7 @@ export const create = <T extends Types>(
   id: string,
   flags: T['flags'],
   request: Request<T['sender']>,
-): Effect.Effect<Creation<T['rejection']>, Faulted> =>
+): Effect.Effect<Creation<T['rejection']> | Reused, Faulted> =>
   Effect.gen(function*() {
     const entity: Address = { name: deployed.program.name, id }
     // A caller's creation is stored under its sender, which a sender that does not encode cannot be: the
@@ -234,15 +235,17 @@ export const create = <T extends Types>(
         if (kept?._tag === 'Rejected') return kept
       }
       const held = deployed.loaded.get(id) ?? null
-      const creating: Machine.Offered<T> = { _tag: 'Create', request }
+      const creating: Machine.Offered<T> = { _tag: 'Create', request, flags }
+      // A caller waits for the answer of its request with the flags it carried (decision 0269).
+      const waited = Machine.creationKey(deployed.program, request, flags)
       // The entity was already there: the machine answers the request from what is stored (decision 0017).
       if (held !== null) {
-        return { _tag: 'Asked', asked: yield* ask(p, p.creations, held, entity, requested, creating) } as const
+        return { _tag: 'Asked', asked: yield* ask(p, p.creations, held, entity, waited, creating) } as const
       }
       const stored = yield* deployed.storage.load(id)
       if (stored !== null) {
         const loaded = yield* activate(p, deployed, stored)
-        return { _tag: 'Asked', asked: yield* ask(p, p.creations, loaded, entity, requested, creating) } as const
+        return { _tag: 'Asked', asked: yield* ask(p, p.creations, loaded, entity, waited, creating) } as const
       }
       // The creation is a step of its own, linked to its caller's span (decision 0220). The entity's loop is forked
       // past the step's span, which would otherwise parent what the loop runs outside its steps.
@@ -262,7 +265,7 @@ export const create = <T extends Types>(
           return { _tag: 'Rejected', reply: started.reply } as const
         }
         const loaded = yield* fresh<T>(p, started.machine, 0)
-        const creation: Machine.Event<T> = { _tag: 'Create', request }
+        const creation: Machine.Event<T> = { _tag: 'Create', request, flags }
         yield* at(p, 'BeforeCommit', entity, creation)
         const characters = yield* transaction(
           p.sql,
@@ -348,7 +351,9 @@ export const send = <T extends Types>(
       // yields between them fails `a caller interrupted anywhere as it sends leaves its entity’s bound whole`
       // outside the region, and passes inside it.
       const offered = (taken: boolean): Effect.Effect<Offered> =>
-        taken ? ask(p, p.messages, loaded, entity, requested, event) : Effect.as(warnOfFull(p, loaded, entity), 'Full')
+        taken
+          ? ask(p, p.messages, loaded, entity, Machine.messageKey(deployed.program, request, message), event)
+          : Effect.as(warnOfFull(p, loaded, entity), 'Full')
       return Effect.uninterruptible(Effect.flatMap(loaded.callers.takeIfAvailable(1), offered))
     })
     if (asked === null) {
@@ -394,6 +399,13 @@ export const unlessCrashed = <A, B>(delivery: Effect.Effect<A, Faulted>, none: B
  * full receiver, which stored nothing of the message, and the operation is never given `Full` (decision 0147).
  * `send` and `create` wait for the deploy of a program not deployed yet (decisions 0045, 0063).
  */
+/**
+ * The runtime's defect where an operation's request is answered `Reused`: what an operation's request carries is never
+ * compared, so no step gives it one (decision 0269).
+ */
+const notReused = (name: string, id: string) =>
+  new InvariantDefect({ reason: `an operation's request to ${name} '${id}' was answered Reused` })
+
 export const entities = (p: Process, entity: Address, key: Key, incarnation: number, droppable: boolean) => {
   const used = { message: new Set<string>(), creation: new Set<string>() }
   /** The request named `name` to the entity `id` of `program`, or the run's defect if it made it already. */
@@ -441,15 +453,22 @@ export const entities = (p: Process, entity: Address, key: Key, incarnation: num
                 ? Effect.as(Effect.sleep(`${p.retry} millis`), null)
                 : reply._tag === 'Suspended'
                 ? Effect.as(resumed, null)
+                : reply._tag === 'Reused'
+                ? Effect.die(notReused(program.name, id))
                 : Effect.succeed(reply),
           ).pipe(Effect.ensuring(forget)))
         return faulted(Effect.repeat(attempt, { until: (reply) => reply !== null }))
       }),
     create: <T extends Types>(program: Receiver<T>, id: string, name: string, ...[flags]: Flagged<T>) =>
       Effect.flatMap(named('creation', program, id, name), ({ deployed, request }) => {
-        const attempt = Effect.tap(
+        const attempt = Effect.flatMap(
           unlessCrashed(create(p, deployed, id, flags === undefined ? null : flags, request), null),
-          (creation) => creation === null ? Effect.sleep(`${p.retry} millis`) : Effect.void,
+          (creation): Effect.Effect<Creation<T['rejection']> | null> =>
+            creation === null
+              ? Effect.as(Effect.sleep(`${p.retry} millis`), null)
+              : creation._tag === 'Reused'
+              ? Effect.die(notReused(program.name, id))
+              : Effect.succeed(creation),
         )
         return faulted(Effect.repeat(attempt, { until: (creation) => creation !== null }))
       }),

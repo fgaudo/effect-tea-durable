@@ -8,7 +8,7 @@ import * as Effect from 'effect/Effect'
 import * as Result from 'effect/Result'
 import * as Schema from 'effect/Schema'
 import * as Machine from '../machine.ts'
-import type { Address, Key, Request, Types } from '../program.ts'
+import type { Address, Json, Key, Request, Types } from '../program.ts'
 import type { Storage } from '../storage.ts'
 import { forgetSent, forgetUnder } from './cluster.ts'
 import type { Held } from './held.ts'
@@ -105,7 +105,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
   const entity = (id: string, guard: Guard = unguarded) =>
     Effect.gen(function*() {
       const entities = yield* rows('effecttea_entities', Rows.entity)(
-        sql`SELECT keyed_as, state, version, creation, incarnations, suspended_on, suspended_cause, suspended_at
+        sql`SELECT keyed_as, state, version, creation, flags, incarnations, suspended_on, suspended_cause, suspended_at
             FROM effecttea_entities WHERE name = ${name} AND id = ${id}`,
       )
       const row = entities[0]
@@ -152,6 +152,9 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
         incarnations: row.incarnations,
         mailbox,
         creation: request.read(row.creation, upRequest(row.version), guard),
+        // Read through the migrations, and not decoded: a retry of the creation is compared with the text, and a
+        // schema of the flags that no longer reads them leaves the entity as it was (decision 0269).
+        flags: up('flags', row.version)(JSON.parse(row.flags) as Json),
         // The cause is what was rendered when the entity suspended: an operator reads it, nothing acts on it.
         suspension: row.suspended_on === null
           ? null
@@ -213,12 +216,16 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
   const replyOf = (found: Effect.Success<ReturnType<typeof Rows.reply>>, key: string) => {
     for (const held of found) {
       if (Machine.requestKey(program, request.read(held.request, upRequest(held.version))) !== key) continue
-      return held.tag === 'Accepted'
+      const reply = held.tag === 'Accepted'
         ? { _tag: 'Accepted' } as const
         : {
           _tag: 'Rejected',
           reason: held.reason === null ? null : reason.read(held.reason, upReason(held.version)),
         } as const
+      // What the request carried is read through the migrations, and not decoded, as the creation's flags are
+      // (decision 0269).
+      const carried = held.carried === null ? null : up('inbound', held.version)(JSON.parse(held.carried) as Json)
+      return { reply, carried }
     }
     return null
   }
@@ -232,7 +239,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
       const key = Machine.requestKey(program, asked)
       const exact = replyOf(
         yield* rows('effecttea_replies', Rows.reply)(sql`
-          SELECT request, tag, version, reason FROM effecttea_replies
+          SELECT request, carried, tag, version, reason FROM effecttea_replies
           WHERE name = ${name} AND id = ${id} AND request = ${key} AND (until IS NULL OR until > ${at})
         `),
         key,
@@ -240,7 +247,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
       if (exact !== null || asked._tag !== 'Caller') return exact
       return replyOf(
         yield* rows('effecttea_replies', Rows.reply)(sql`
-          SELECT request, tag, version, reason FROM effecttea_replies
+          SELECT request, carried, tag, version, reason FROM effecttea_replies
           WHERE name = ${name} AND id = ${id} AND request_id = ${asked.id} AND version <> ${version}
             AND (until IS NULL OR until > ${at})
         `),
@@ -318,6 +325,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
             state,
             version,
             creation: JSON.stringify(entity.creation),
+            flags: JSON.stringify(entity.flags),
             incarnations: written.incarnations,
             suspended_on: on,
             suspended_cause: cause,
@@ -333,7 +341,8 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
         yield* sql`
           UPDATE effecttea_entities
           SET state = ${state}, version = ${version},
-              creation = ${JSON.stringify(entity.creation)}, incarnations = ${written.incarnations},
+              creation = ${JSON.stringify(entity.creation)}, flags = ${JSON.stringify(entity.flags)},
+              incarnations = ${written.incarnations},
               suspended_on = ${on}, suspended_cause = ${cause},
               suspended_at = CASE WHEN CAST(${on} AS TEXT) IS NULL THEN NULL WHEN suspended_at IS NULL THEN ${at} ELSE suspended_at END,
               steps = steps + 1
@@ -430,6 +439,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
           id,
           request: reply.request,
           request_id: callerOf(reply.request),
+          carried: reply.carried === null ? null : JSON.stringify(reply.carried),
           tag: reply.tag,
           version,
           reason: reply.reason === null ? null : JSON.stringify(reply.reason),

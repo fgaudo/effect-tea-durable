@@ -755,23 +755,32 @@ describe('the runtime on Cluster', () => {
       expect(yield* stateOf).toEqual({ n: 3, asking: false })
     })), 30_000)
 
-  // A premise of decision 0269, proposed: Cluster answers a request under a key it saved from the saved reply, and
-  // saves no envelope of it, so a caller's retry that carries another message is told apart only once the key holds
-  // the message. The rows of `cluster_messages` count what Cluster saved to deliver to the door.
-  test("a second message under a caller's saved request is answered by Cluster with the saved reply, and saved for no door", () =>
+  // Cluster answers a request under a key it saved from the saved reply, before the door, so a caller's request is
+  // keyed with the message it carried: another message under the same request id is saved for the door, which
+  // answers it `Reused`, and a retry of the first message is answered by Cluster (decision 0269). The rows of
+  // `cluster_messages` count what Cluster saved to deliver to the door.
+  test("another message under a caller's request id reaches the door, which answers it Reused", () =>
     onRunner(Effect.gen(function*() {
       const sender = { user: 'u' }
       const keep = 'forever'
       const saved = Effect.flatMap(
         Effect.service(SqlClient.SqlClient),
-        (sql) => Effect.map(sql<{ n: number }>`SELECT COUNT(*) AS n FROM cluster_messages WHERE tag = 'Message'`, ([row]) => Number(row!.n)),
+        (sql) =>
+          Effect.map(
+            sql<{ n: number }>`SELECT COUNT(*) AS n FROM cluster_messages WHERE tag = 'Message'`,
+            ([row]) => Number(row!.n),
+          ),
       )
       yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })
       expect(yield* handle!.send('one', { _tag: 'Add', n: 2 }, { requestId: 'm1', sender, keep })).toEqual({ _tag: 'Accepted' })
       expect(yield* saved).toBe(1)
-      expect(yield* handle!.send('one', { _tag: 'Add', n: 5 }, { requestId: 'm1', sender, keep })).toEqual({ _tag: 'Accepted' })
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 2 }, { requestId: 'm1', sender, keep })).toEqual({ _tag: 'Accepted' })
       expect(yield* saved).toBe(1)
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 5 }, { requestId: 'm1', sender, keep })).toEqual({ _tag: 'Reused' })
+      expect(yield* saved).toBe(2)
       expect(yield* stateOf).toEqual({ n: 3, asking: false })
+      expect(yield* handle!.create('one', { flags: { start: 9 }, requestId: 'c1', sender })).toEqual({ _tag: 'Reused' })
+      expect(yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
     })), 30_000)
 
   test('a message answered NotFound is handled when it is sent again, once its entity is created', () =>

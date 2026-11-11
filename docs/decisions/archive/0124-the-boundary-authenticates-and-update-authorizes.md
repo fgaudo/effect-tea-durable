@@ -5,7 +5,9 @@
 [decision 0014](0014-rules-the-machine-settled.md) left open of what a creator is answered for a defect at
 creation. Says who a sender is, which [decision 0048](0048-a-callers-request-belongs-to-its-sender.md) left to
 the boundary. A program's `init` may reject the flags, answered `Rejected` and not stored, by
-[decision 0182](../0182-init-may-reject-the-flags.md): a creation then has three replies.
+[decision 0182](../0182-init-may-reject-the-flags.md): a creation then has three replies. A caller that reuses a
+request id of its identity for another message or other flags is answered `Reused`, by
+[decision 0269](../0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md).
 
 ## Context
 

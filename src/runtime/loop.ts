@@ -295,7 +295,10 @@ export const perform = <T extends Types>(
     // The callers first: a reply is what the event's commit made true (decision 0023).
     for (const output of outputs) {
       if (output._tag !== 'Replied' && output._tag !== 'CreationReplied') continue
-      const request = Machine.requestKey(deployed.program, output.request)
+      // A caller waits for the answer of its request with what it carried (decision 0269).
+      const request = output._tag === 'Replied'
+        ? Machine.messageKey(deployed.program, output.request, output.message)
+        : Machine.creationKey(deployed.program, output.request, output.flags)
       loaded.links.delete(linkKey(output._tag === 'CreationReplied', request))
       yield* output._tag === 'Replied'
         ? answer(p, p.messages, entity, request, output.reply)
@@ -370,8 +373,10 @@ export const apply = <T extends Types>(
  * loop empties the mailbox before it takes an event, and a suspended entity queues no message (decision 0220).
  */
 export const linkOf = <T extends Types>(deployed: Deployment<T>, loaded: Loaded<T>, offered: Machine.Offered<T>) =>
-  offered._tag === 'Receive' || offered._tag === 'Create'
-    ? loaded.links.get(linkKey(offered._tag === 'Create', Machine.requestKey(deployed.program, offered.request)))
+  offered._tag === 'Receive'
+    ? loaded.links.get(linkKey(false, Machine.messageKey(deployed.program, offered.request, offered.message)))
+    : offered._tag === 'Create'
+    ? loaded.links.get(linkKey(true, Machine.creationKey(deployed.program, offered.request, offered.flags)))
     : undefined
 
 export const applyInProcess = <T extends Types>(
@@ -384,12 +389,11 @@ export const applyInProcess = <T extends Types>(
     loaded.applying = true
     const entity: Address = { name: loaded.machine.stored.name, id: loaded.machine.stored.id }
     const now = yield* DateTime.now
+    const found = offered._tag === 'Receive'
+      ? yield* deployed.storage.reply(entity.id, offered.request, DateTime.toEpochMillis(now))
+      : null
     const event: Machine.Event<T> = offered._tag === 'Receive'
-      ? {
-        ...offered,
-        reply: yield* deployed.storage.reply(entity.id, offered.request, DateTime.toEpochMillis(now)),
-        at: now,
-      }
+      ? { ...offered, reply: found?.reply ?? null, carried: found?.carried ?? null, at: now }
       : offered
     const before = loaded.machine
     const transition = Machine.step(deployed.program, before, event)

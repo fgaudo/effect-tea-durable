@@ -48,11 +48,13 @@ current one, so a late answer of a first attempt never reaches the second. [Work
 | `create` | `Created`                                                       | the entity exists; a retry of the same request is answered `Created` again                |
 |          | `AlreadyExists`                                                 | another request created an entity with that id                                            |
 |          | `Rejected`, with a reason or `null`                             | `init` rejected the flags, and nothing is stored                                          |
+|          | `Reused`                                                        | the request id created the entity with other flags, and nothing changed                   |
 | `send`   | `Accepted`                                                      | the message is applied, once, whichever retry finds the stored reply                      |
 |          | `Rejected`, with a reason or `null`                             | `update` rejected the message, and the state did not change                               |
 |          | `NotFound`                                                      | no entity has that id, and nothing is created                                             |
 |          | `Suspended`                                                     | the entity is suspended, and the request has no reply yet: retry under the same request id |
 |          | `Full`                                                          | the entity holds `callers.messages` messages already, and nothing is stored               |
+|          | `Reused`                                                        | the request id was used for another message, and nothing of this one is applied            |
 | `read`   | the projection, or `null`                                       | what the last step that changed the state wrote                                           |
 | `resume` | `Resumed`, `StillSuspended`, `NotSuspended` or `NotFound`       | what the operator's own resumption did                                                    |
 | `discard`| `Discarded`, `NotDiscarded`, `StillSuspended`, `NotSuspended` or `NotFound` | what the operator's own discard did                                           |

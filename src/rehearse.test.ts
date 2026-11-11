@@ -1187,8 +1187,9 @@ describe('time that passes', () => {
   })
 })
 
-// Bug 4 of the roadmap: a program that leaves its sender out keys every caller's request under one sender, `null`,
-// so two callers that happen to choose one request id share it.
+// A program that leaves its sender out keys every caller's request under one sender, `null`, so two callers that
+// choose one request id share it. A request carries its message, so a second message under the id is told
+// `Reused`, and the same message is a retry (decision 0269).
 describe('a program with no sender', () => {
   const counter = declare({
     state: Schema.Struct({ total: Schema.Int }),
@@ -1208,11 +1209,18 @@ describe('a program with no sender', () => {
     project: (state) => state,
     indexes: {},
   })
-  test.failing("applies a second caller's message sent under a request id a first caller used", () =>
+  test('answers Reused to another message under a request id a first message used, and applies it not', () =>
     Effect.runPromise(rehearse(counter, { at: placedAt }, Effect.fnUntraced(function*(rehearsal) {
-      yield* rehearsal.send({ _tag: 'Add', n: 1 }, { requestId: 'r' })
-      yield* rehearsal.send({ _tag: 'Add', n: 5 }, { requestId: 'r' })
-      expect(yield* rehearsal.state).toEqual({ total: 6 })
+      expect(yield* rehearsal.send({ _tag: 'Add', n: 1 }, { requestId: 'r' })).toEqual({ _tag: 'Accepted' })
+      expect(yield* rehearsal.send({ _tag: 'Add', n: 5 }, { requestId: 'r' })).toEqual({ _tag: 'Reused' })
+      expect(yield* rehearsal.state).toEqual({ total: 1 })
+    }))))
+
+  test('answers the same message under a used request id as a retry, with the stored reply', () =>
+    Effect.runPromise(rehearse(counter, { at: placedAt }, Effect.fnUntraced(function*(rehearsal) {
+      expect(yield* rehearsal.send({ _tag: 'Add', n: 1 }, { requestId: 'r' })).toEqual({ _tag: 'Accepted' })
+      expect(yield* rehearsal.send({ _tag: 'Add', n: 1 }, { requestId: 'r' })).toEqual({ _tag: 'Accepted' })
+      expect(yield* rehearsal.state).toEqual({ total: 1 })
     }))))
 })
 

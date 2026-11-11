@@ -54,6 +54,7 @@ export {
   type Reply,
   type Request,
   type Returned,
+  type Reused,
   type Scalar,
   type Schemas,
   send,

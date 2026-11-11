@@ -21,8 +21,10 @@ import {
   type FlagsOf,
   type Program,
   type Receiver,
+  type Json,
   type Reply,
   type Request,
+  type Reused,
   runnerOf,
   type SenderOf,
   type Types,
@@ -77,10 +79,14 @@ interface Acts<T extends Types> {
    * under the same sender and request id is a retry, given the reply stored for the first and not applied again,
    * as the runtime answers it. The reply is kept for the whole rehearsal, a restart and a deploy included, as the
    * runtime keeps one sent with `keep: 'forever'`. Without a request id, each send is a new request, whose reply no
-   * named request finds (decision 0200). A program whose sender is `null` may leave the sender out, and the request
-   * with it (decision 0245).
+   * named request finds (decision 0200). A second send under the same sender and request id that carries another
+   * message is answered `Reused`, and is not applied (decision 0269). A program whose sender is `null` may leave the
+   * sender out, and the request with it (decision 0245).
    */
-  readonly send: (message: T['inbound'], ...request: SentBy<T>) => Effect.Effect<Machine.StoredReply<T['rejection']>>
+  readonly send: (
+    message: T['inbound'],
+    ...request: SentBy<T>
+  ) => Effect.Effect<Machine.StoredReply<T['rejection']> | Reused>
   /**
    * Delivers an inbound message from another entity's operation, as a new run of it (decision 0059). The entity
    * need not exist: the test answers for it. Under the address of an entity of the world, the run is none of that
@@ -196,9 +202,10 @@ export interface World {
 
 /**
  * A reply stored under a request: of another entity's operation, kept while that work holds (decision 0021), or of
- * a caller's request the test named, kept for the whole rehearsal, with no asker (decision 0200).
+ * a caller's request the test named, kept for the whole rehearsal, with no asker (decision 0200), and with the
+ * message it carried, which a retry is compared with (decision 0269).
  */
-type Kept = Readonly<{ reply: Machine.StoredReply<unknown>; asked: Machine.Asker | null }>
+type Kept = Readonly<{ reply: Machine.StoredReply<unknown>; asked: Machine.Asker | null; carried: Json | null }>
 
 /** An entity of the world: what is stored of it, what its process does, and the replies stored under its requests. */
 type Entity<T extends Types> = {
@@ -273,10 +280,11 @@ const makeWorld = (at: DateTime.Utc) => {
   const keep = <T extends Types>(entity: Entity<T>, transition: Machine.Transition<T>) => {
     const program = programOf(entity)
     for (const output of transition.outputs) {
-      if (output._tag !== 'Replied' || output.reply._tag === 'Suspended') continue
+      if (output._tag !== 'Replied' || output.reply._tag === 'Suspended' || output.reply._tag === 'Reused') continue
       if (output.request._tag === 'Caller') {
         const request = Machine.requestKey(program, output.request)
-        if (named.has(request)) entity.replies.set(request, { reply: output.reply, asked: null })
+        const carried = encode(program.schemas.inbound, output.message, 'inbound message')
+        if (named.has(request)) entity.replies.set(request, { reply: output.reply, asked: null, carried })
         continue
       }
       if (output.request._tag !== 'Operation') continue
@@ -284,6 +292,7 @@ const makeWorld = (at: DateTime.Utc) => {
       entity.replies.set(Machine.requestKey(program, output.request), {
         reply: output.reply,
         asked: { name: asker.name, id: asker.id, key, incarnation },
+        carried: null,
       })
     }
     for (const ended of transition.written?.ended ?? []) {
@@ -326,32 +335,45 @@ const makeWorld = (at: DateTime.Utc) => {
 
   /**
    * Delivers an inbound message under `request`, with the reply stored under it, and returns the reply. A message
-   * the runtime could not store fails the test, as it is the caller's defect there (decision 0040).
+   * the runtime could not store fails the test, as it is the caller's defect there (decision 0040). A caller's
+   * request that carries another message than the one stored under it is answered `Reused` (decision 0269).
    */
   const receive = <T extends Types>(
     entity: Entity<T>,
     message: T['inbound'],
     request: Request<T['sender']>,
-  ): Effect.Effect<Machine.StoredReply<T['rejection']>> =>
+  ): Effect.Effect<Machine.StoredReply<T['rejection']> | Reused> =>
     Effect.flatMap(Effect.sync(() => {
       const program = programOf(entity)
       encode(program.schemas.inbound, message, 'inbound message')
       if (request._tag === 'Caller') encode(program.schemas.sender, request.sender, 'sender')
-      const key = Machine.requestKey(program, request)
-      const stored = entity.replies.get(key)?.reply ?? null
-      return { key, stored: stored as Machine.StoredReply<T['rejection']> | null }
-    }), ({ key, stored }) =>
-      Effect.flatMap(apply(entity, { _tag: 'Receive', request, message, reply: stored, at: now }), (outputs) => {
+      // The answer waited for is the request's with what it carried, so that `Reused` and the reply of the request
+      // whose id it reused are told apart (decision 0269).
+      const key = Machine.messageKey(program, request, message)
+      const held = entity.replies.get(Machine.requestKey(program, request))
+      return {
+        key,
+        stored: (held?.reply ?? null) as Machine.StoredReply<T['rejection']> | null,
+        carried: held?.carried ?? null,
+      }
+    }), ({ key, stored, carried }) =>
+      Effect.flatMap(apply(entity, { _tag: 'Receive', request, message, reply: stored, carried, at: now }), (outputs) => {
         const program = programOf(entity)
         for (const output of outputs) {
-          if (output._tag !== 'Replied' || Machine.requestKey(program, output.request) !== key) continue
+          if (output._tag !== 'Replied' || Machine.messageKey(program, output.request, output.message) !== key) continue
           const { reply } = output
-          if (reply._tag === 'Accepted' || reply._tag === 'Rejected') {
-            return Effect.succeed<Machine.StoredReply<T['rejection']>>(reply)
+          if (reply._tag === 'Accepted' || reply._tag === 'Rejected' || reply._tag === 'Reused') {
+            return Effect.succeed<Machine.StoredReply<T['rejection']> | Reused>(reply)
           }
         }
         return Effect.die(`the request ${key} was not answered`)
       }))
+
+  /**
+   * What an operation's request is answered: never `Reused`, since what it carries is not compared (decision 0269).
+   */
+  const stored = <R>(reply: Machine.StoredReply<R> | Reused): Effect.Effect<Machine.StoredReply<R>> =>
+    reply._tag === 'Reused' ? Effect.die("an operation's request was answered Reused") : Effect.succeed(reply)
 
   /** The kind of the work under way under `pending`'s key, in `pending`'s incarnation. */
   const kindOf = <T extends Types>(entity: Entity<T>, { key, incarnation }: Pending) => {
@@ -515,7 +537,7 @@ const makeWorld = (at: DateTime.Utc) => {
           // work that asked.
           return receiver === undefined
             ? Effect.succeed(kept(program.name, id, 'Message', request, { _tag: 'NotFound' }) as Reply<R['rejection']>)
-            : receive(receiver, message, request)
+            : Effect.flatMap(receive(receiver, message, request), stored)
         }),
       create: <R extends Types>(program: Receiver<R>, id: string, name: string, ...[given]: Flagged<R>) =>
         Effect.flatMap(named('creation', program as unknown as Receiver<Types>, id, name), (request) =>
@@ -536,8 +558,14 @@ const makeWorld = (at: DateTime.Utc) => {
                     : { _tag: 'Created' },
               )
             }
-            return Effect.flatMap(apply(existing, { _tag: 'Create', request }), (outputs) => {
-              for (const output of outputs) if (output._tag === 'CreationReplied') return Effect.succeed(output.reply)
+            const flags = given === undefined ? null : given
+            return Effect.flatMap(apply(existing, { _tag: 'Create', request, flags }), (outputs) => {
+              for (const output of outputs) {
+                if (output._tag !== 'CreationReplied') continue
+                // An operation's creation is never answered `Reused`, since its flags are not compared (decision 0269).
+                if (output.reply._tag === 'Reused') return Effect.die("an operation's creation was answered Reused")
+                return Effect.succeed(output.reply)
+              }
               return Effect.die(`the creation of ${program.name} '${id}' was not answered`)
             })
           })),
@@ -663,13 +691,16 @@ const makeWorld = (at: DateTime.Utc) => {
       // incarnation is below 1, which no entity draws, so under a member's address it is a run the member never
       // has, and neither answers the other's send from its reply (decision 0262).
       sendFrom: (message, from) =>
-        receive(entity, message, {
-          _tag: 'Operation',
-          entity: from,
-          key: { name: 'rehearsal' },
-          incarnation: --forged,
-          name: 'request',
-        }),
+        Effect.flatMap(
+          receive(entity, message, {
+            _tag: 'Operation',
+            entity: from,
+            key: { name: 'rehearsal' },
+            incarnation: --forged,
+            name: 'request',
+          }),
+          stored,
+        ),
       pending: (name, ...parameter) => pending(name, parameter[0]),
       underWay: (name, ...parameter) => underWay(name, parameter[0]),
       // Each act takes a pending or a key, and the overloads of its type say which arguments follow.

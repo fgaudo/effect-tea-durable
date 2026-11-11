@@ -131,8 +131,10 @@ Cluster's says so.
   the `keep` its boundary gave `send`, from the step that answers, or for ever where the `keep` is `'forever'`. Another entity's is kept
   while the work that asked is stored. Another entity's `NotFound`, and its creation that `init` rejected, are kept
   the same way, though no entity stores them.
-- **Request.** What identifies an inbound message: a caller's sender and request id, or the run of an operation and the
-  name it gave `send`. A request is applied once, whichever retry finds it while its reply is kept.
+- **Request.** What identifies an inbound message: a caller's sender and request id with the message it carries, or
+  the run of an operation and the name it gave `send`. A request is applied once, whichever retry finds it while its
+  reply is kept. A caller's request under a used sender and request id that carries another message, or other flags
+  for a creation, is answered `Reused`, and changes nothing.
 - **Runner.** Of an operation: the function in `operations` that runs its kind. Of Cluster: a process that serves
   entities ([`cluster.md`](cluster.md)).
 - **Sweep.** What the runtime runs for each program at an interval, as `launch`'s `sweep` says: `expire`, then

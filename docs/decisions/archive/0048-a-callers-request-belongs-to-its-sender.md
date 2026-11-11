@@ -8,6 +8,8 @@ tag. That a load computes a stored request's key again is changed by
 caller's by its text, then among the rows other versions wrote under its request id, compared once migrated. A
 reply's row is keyed by its version too, by [decision 0069](0069-a-reply-is-keyed-by-the-version-that-wrote-it.md).
 Who a sender is, the identity the boundary authenticated, is decided by [decision 0124](0124-the-boundary-authenticates-and-update-authorizes.md).
+A second request under a caller's sender and request id is a retry only where it carries the same message or flags,
+and is answered `Reused` otherwise, by [decision 0269](../0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md).
 
 ## Context
 

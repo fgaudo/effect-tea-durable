@@ -126,6 +126,7 @@ export const Rows = {
       state: Schema.String,
       version: Version,
       creation: Schema.String,
+      flags: Schema.String,
       incarnations: Count,
       suspended_on: Schema.Null,
       suspended_cause: Schema.Null,
@@ -136,6 +137,7 @@ export const Rows = {
       state: Schema.String,
       version: Version,
       creation: Schema.String,
+      flags: Schema.String,
       incarnations: Count,
       suspended_on: Schema.String,
       suspended_cause: Schema.String,
@@ -194,9 +196,16 @@ export const Rows = {
   ])),
   /** Only a rejection carries a reason, and null for a bare `reject` (decision 0010). */
   reply: decoder(Schema.Union([
-    Schema.Struct({ request: Schema.String, tag: Schema.Literal('Accepted'), version: Version, reason: Schema.Null }),
     Schema.Struct({
       request: Schema.String,
+      carried: Schema.NullOr(Schema.String),
+      tag: Schema.Literal('Accepted'),
+      version: Version,
+      reason: Schema.Null,
+    }),
+    Schema.Struct({
+      request: Schema.String,
+      carried: Schema.NullOr(Schema.String),
       tag: Schema.Literal('Rejected'),
       version: Version,
       reason: Schema.NullOr(Schema.String),

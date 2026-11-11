@@ -257,6 +257,16 @@ A message is one of two kinds, and the rule for a message that does not apply fo
   request is a value — a caller's sender and request id, or the run of another entity's operation and the name it
   gave — stored as its schema writes it, and never parsed out of a string
   ([decision 0059](decisions/archive/0059-a-request-is-a-value.md)).
+  A caller's request carries its message too. A second request under a caller's sender and request id is a retry
+  only where its message, as the `inbound` schema encodes it with the fields of each object in order, is the same
+  text. One that carries another message is answered `Reused`: nothing of it is applied, queued or stored, and the
+  first request's reply is kept. So a value whose encoding keeps the order it was built in, as a set, is the same
+  request only built alike, and a retry decoded from the same request is. A reply another version stored is
+  compared once read through the migrations of `inbound`. A boundary answers `Reused` as a refusal of the caller's
+  request, as `422` over HTTP. A program whose sender is `null` keeps one space of request ids for every caller, so
+  its boundary gives request ids unique across its callers, as a UUID each. A request after a reply's `keep` is a
+  new request, whatever it carries
+  ([decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md)).
   `meta.from` says who sent it, read off the request, so that
   `update` decides who may do what. An inbound message may arrive in any state: a slow client, a retry, a second
   device, a malicious caller. One that does not apply is rejected.
@@ -278,7 +288,9 @@ trusts it, and never compares `meta.at` with the deadline. Another node's clock 
 behind.
 
 An entity is created by a request of its own, with its flags, answered `Created` once and `AlreadyExists`
-after, or `Rejected` where its program's `init` rejects the flags, as the paragraph after this one says. A
+after, or `Rejected` where its program's `init` rejects the flags, as the paragraph after this one says. The flags
+are stored with the entity, and a caller's retry of the creation that carries other flags is answered `Reused`, as
+a message is ([decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md)). A
 message to an entity that does not exist is answered `NotFound`, and creates nothing
 ([decision 0012](decisions/archive/0012-creation-is-a-request-of-its-own.md),
 [decision 0017](decisions/archive/0017-creation-in-the-machine.md)). A caller gives the flags in the request, as
@@ -427,7 +439,12 @@ the same requests, and gets the receiver's stored replies, kept while the work t
 ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). An answer no entity
 stores is kept for the operation the same way: a creation `init` rejected, and a message's `NotFound`. A run after a
 crash is given the kept answer, though another creator has made the entity since, and its message is not applied
-([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)). While the receiver is
+([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)). What an operation's
+request carries is not compared, since the runtime makes the request and no two intents share it. A run after a crash
+that builds another message, or other flags, under a name is given the reply of the first one, which alone the
+receiver holds. So an operation whose completion reports what it sent builds the message from its stored value and
+the replies it was given, never from what it reads again
+([decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md)). While the receiver is
 suspended, `send` waits for its resumption, and an operation that reaches a program not deployed yet waits for
 its deploy ([decision 0045](decisions/archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md)): each is woken by
 what it waits for, and nothing looks again on a clock
@@ -543,8 +560,11 @@ that asked ends. The migrations of `rejection` are kept as long as a reply of a 
 ([decision 0100](decisions/archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md)).
 
 A migration is a record of pure functions **from the JSON a version wrote to the JSON the next one reads**, by
-kind of stored value: `state`, `operation`, `inbound`, `internal`, `rejection`, `sender` and `projection`, and a
-kind left out is unchanged. It works on the JSON, which every schema encodes to
+kind of stored value: `state`, `flags`, `operation`, `inbound`, `internal`, `rejection`, `sender` and `projection`,
+and a kind left out is unchanged. `flags` reads the flags stored with the request that created an entity, which a
+caller's retry of the creation is compared with, and `inbound` reads the message of a stored reply too. Both are
+read as the migrations write them, and not decoded
+([decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md)). It works on the JSON, which every schema encodes to
 ([decision 0030](decisions/archive/0030-a-schema-encodes-to-json.md)), so the types and schemas of the version before do
 not live on in the code.
 
@@ -1062,7 +1082,9 @@ time passes, and when the process dies:
   request comes last, as `send(message, { sender, requestId })`. Given a request id, it is a request the test
   names: a second send under the same sender and request id is a retry, given the stored reply and not applied
   again, and the reply is kept through a restart and a deploy. Without one, each send is a new request
-  ([decision 0200](decisions/0200-a-rehearsal-sends-under-a-request-id-the-test-names.md)). A program whose sender is
+  ([decision 0200](decisions/0200-a-rehearsal-sends-under-a-request-id-the-test-names.md)). A second send under the same
+  sender and request id that carries another message is answered `Reused`, and is not applied
+  ([decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md)). A program whose sender is
   `null` may leave the sender out, and the request with it, as `send(message)`
   ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md));
 - `pending(key)` finds the work under way under one of the program's keys, with its idempotency key and its

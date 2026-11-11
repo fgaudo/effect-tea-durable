@@ -340,7 +340,7 @@ export const doorStep = <T extends Types>(p: Process, deployed: Deployment<T>) =
         stepped.steps = 1
         stepped.machine = started.machine
         stepped.transitions.push({
-          event: { _tag: 'Create', request },
+          event: { _tag: 'Create', request, flags },
           written: started.written,
           outputs: started.outputs,
           span,
@@ -348,7 +348,7 @@ export const doorStep = <T extends Types>(p: Process, deployed: Deployment<T>) =
         })
         answer = { _tag: 'Create', answer: { _tag: 'Created' } }
       } else {
-        const transition = yield* stepIn(p, deployed, stepped, entity, { _tag: 'Create', request }, now)
+        const transition = yield* stepIn(p, deployed, stepped, entity, { _tag: 'Create', request, flags }, now)
         const reply = transition.outputs.find((output) => output._tag === 'CreationReplied')
         answer = { _tag: 'Create', answer: reply?._tag === 'CreationReplied' ? reply.reply : { _tag: 'AlreadyExists' } }
       }
@@ -372,17 +372,20 @@ export const doorStep = <T extends Types>(p: Process, deployed: Deployment<T>) =
         yield* finishIn(p, deployed, stepped, entity)
         return { _tag: 'Message', answer: kept }
       }
-      const key = Machine.requestKey(program, request)
-      const reply = yield* stored.reply(id, request, DateTime.toEpochMillis(now))
+      // The door waits for the answer of the request with the message it carried (decision 0269).
+      const key = Machine.messageKey(program, request, message)
+      const found = yield* stored.reply(id, request, DateTime.toEpochMillis(now))
+      const reply = found?.reply ?? null
+      const carried = found?.carried ?? null
       const arrival: Machine.Event<T> = delivered.keep === undefined
-        ? { _tag: 'Receive', request, message, reply, at: now }
-        : { _tag: 'Receive', request, message, reply, at: now, keep: delivered.keep }
+        ? { _tag: 'Receive', request, message, reply, carried, at: now }
+        : { _tag: 'Receive', request, message, reply, carried, at: now, keep: delivered.keep }
       let transition = yield* stepIn(p, deployed, stepped, entity, arrival, now)
       // The mailbox is handled up to the message, each `Handle` stepping its head (decision 0160).
       let replied: DoorAnswer<T['rejection']> | null = null
       while (replied === null) {
         for (const output of transition.outputs) {
-          if (output._tag === 'Replied' && Machine.requestKey(program, output.request) === key) {
+          if (output._tag === 'Replied' && Machine.messageKey(program, output.request, output.message) === key) {
             replied = { _tag: 'Message', answer: output.reply }
           }
         }

@@ -3208,6 +3208,100 @@ describe('a schema that changes', () => {
         }))
     })))
 
+  // A caller's retry is compared with what its request carried, read through the migrations of `inbound` and
+  // `flags` at the version that reads it: the message or flags as the migration writes them is a retry, and what
+  // version 1 sent is another request, answered `Reused` (decision 0269).
+  test("a retry after a deploy is compared with what the caller's request carried, read through the migrations", () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const later = DateTime.add(at, { milliseconds: 1 })
+      // `a` is wanted already: the message is logged, and changes no work.
+      const want = (nonce: string) => ({ _tag: 'Want', key: 'a', on: true, nonce }) as const
+      const sent = { requestId: 'r-6', sender: tester, keep: 'forever' } as const
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          expect(yield* toy.create('m-6', { flags: { at }, requestId: 'c-6', sender: tester })).toEqual({ _tag: 'Created' })
+          expect(yield* toy.send('m-6', want('w'), sent)).toEqual({ _tag: 'Accepted' })
+          // Before the deploy, another message and other flags under the same ids are answered `Reused`.
+          expect(yield* toy.send('m-6', want('x'), sent)).toEqual({ _tag: 'Reused' })
+          expect(yield* toy.create('m-6', { flags: { at: later }, requestId: 'c-6', sender: tester }))
+            .toEqual({ _tag: 'Reused' })
+          yield* runtime.settled
+        }))
+      // Version 2 marks every nonce, and moves the time of the flags by a millisecond.
+      const marked: Program<T> = {
+        ...program,
+        migrations: [{
+          inbound: (json) => {
+            const held = json as Readonly<Record<string, Json>>
+            return held._tag === 'Want' ? { ...held, nonce: `${String(held.nonce)}!` } : held
+          },
+          flags: (json) => ({ at: ((json as Readonly<{ at: number }>).at) + 1 }),
+        }],
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(marked), layer)
+          expect(yield* toy.send('m-6', want('w!'), sent)).toEqual({ _tag: 'Accepted' })
+          expect(yield* toy.send('m-6', want('w'), sent)).toEqual({ _tag: 'Reused' })
+          expect(yield* toy.create('m-6', { flags: { at: later }, requestId: 'c-6', sender: tester }))
+            .toEqual({ _tag: 'Created' })
+          expect(yield* toy.create('m-6', { flags: { at }, requestId: 'c-6', sender: tester })).toEqual({ _tag: 'Reused' })
+          yield* runtime.settled
+          const stored = yield* storage(marked, yield* SqlClient.SqlClient).load('m-6')
+          // The message was applied once, by version 1.
+          expect(stored?.state.applied).toEqual(['w'])
+        }))
+    })))
+
+  // A caller waits for the answer of its request with the message it carried, so that two callers under one request
+  // id with two messages are each answered their own: one is applied, and the other is told `Reused`, whichever the
+  // entity steps first (decision 0269).
+  test('two callers under one request id with two messages at once are answered Accepted and Reused', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const want = (nonce: string) => ({ _tag: 'Want', key: 'a', on: true, nonce }) as const
+      const sent = { requestId: 'r-7', sender: tester, keep: 'forever' } as const
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('m-7', { flags: { at }, requestId: 'c-7', sender: tester })
+          const replies = yield* Effect.all([toy.send('m-7', want('w'), sent), toy.send('m-7', want('x'), sent)], {
+            concurrency: 'unbounded',
+          })
+          expect(replies.map((reply) => reply._tag).sort()).toEqual(['Accepted', 'Reused'])
+          yield* runtime.settled
+          const stored = yield* storage(program, yield* SqlClient.SqlClient).load('m-7')
+          expect(stored?.state.applied).toHaveLength(1)
+        }))
+    })))
+
+  // A reply past its `keep` is no reply, so another message under the request id after it is a new request, applied
+  // (decisions 0245, 0269).
+  test("another message under a caller's request id after the reply's keep is a new request, and is applied", () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const want = (nonce: string) => ({ _tag: 'Want', key: 'a', on: true, nonce }) as const
+      const sent = { requestId: 'r-8', sender: tester, keep: { millis: 10 } } as const
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('m-8', { flags: { at }, requestId: 'c-8', sender: tester })
+          expect(yield* toy.send('m-8', want('y'), sent)).toEqual({ _tag: 'Accepted' })
+          // At the reply's time, which is no longer read (decision 0125).
+          yield* TestClock.adjust('10 millis')
+          expect(yield* toy.send('m-8', want('z'), sent)).toEqual({ _tag: 'Accepted' })
+          yield* runtime.settled
+          const stored = yield* storage(program, yield* SqlClient.SqlClient).load('m-8')
+          expect(stored?.state.applied).toEqual(['y', 'z'])
+        }))
+    })))
+
   test('a deploy that has no reading of the version stored dies', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now

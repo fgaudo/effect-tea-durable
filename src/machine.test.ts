@@ -334,6 +334,7 @@ const toEvent = (
       return {
         _tag: 'Create',
         request: command.again ? creation : { _tag: 'Caller', sender: 'ann', id: `c${requests.length}` },
+        flags: null,
       }
     case 'Complete': {
       const operations = runningOf(machine, 'Operation')
@@ -386,12 +387,24 @@ type Traced = Readonly<{
  */
 type Replies<Reason> = Map<string, Machine.StoredReply<Reason>>
 
+/** What each stored reply's request carried, by the replies it is stored beside, as a storage keeps it (decision 0269). */
+const carriedBy = new WeakMap<Replies<unknown>, Map<string, Json | null>>()
+const carriedOf = (replies: Replies<unknown>) => {
+  let held = carriedBy.get(replies)
+  if (held === undefined) {
+    held = new Map()
+    carriedBy.set(replies, held)
+  }
+  return held
+}
+
 const store = <Reason>(
   replies: Replies<Reason>,
   written: Machine.Written | null,
   reason: (json: unknown) => Reason,
 ) => {
   for (const row of written?.replies ?? []) {
+    carriedOf(replies as Replies<unknown>).set(row.request, row.carried)
     replies.set(
       row.request,
       row.tag === 'Accepted'
@@ -408,7 +421,12 @@ const given = <U extends Types>(
   offered: Machine.Offered<U>,
 ): Machine.Event<U> =>
   offered._tag === 'Receive'
-    ? { ...offered, reply: replies.get(Machine.requestKey(program, offered.request)) ?? null, at }
+    ? {
+      ...offered,
+      reply: replies.get(Machine.requestKey(program, offered.request)) ?? null,
+      carried: carriedOf(replies as Replies<unknown>).get(Machine.requestKey(program, offered.request)) ?? null,
+      at,
+    }
     : offered
 
 /** The message an event handles: a step's, or a message's that finds the mailbox empty (decision 0074). */
@@ -802,7 +820,7 @@ describe('the machine', () => {
         if (!outputs.some((output) => output._tag === 'Suspended')) continue
         for (const envelope of after.stored.mailbox) {
           if (envelope._tag !== 'Inbound') continue
-          expect(outputs).toContainEqual({ _tag: 'Replied', request: envelope.request, reply: { _tag: 'Suspended' } })
+          expect(outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: envelope.request, reply: { _tag: 'Suspended' } }))
         }
       }
     }))
@@ -1158,11 +1176,11 @@ describe('the checks of a step', () => {
       const transition = handled(machine, inbound)
       expect(transition.machine.stored.suspension?.cause).toBe(broken)
       expect(transition.machine.stored.state).toEqual({ last: 'start' })
-      expect(transition.outputs).toContainEqual({
+      expect(transition.outputs).toContainEqual(expect.objectContaining({
         _tag: 'Replied',
         request: by('r'),
         reply: { _tag: 'Suspended' },
-      })
+      }))
     }
   })
   test('a deploy whose program dies on the stored state suspends the entity on the activation, as it was', () => {
@@ -1416,7 +1434,7 @@ describe('what a runtime writes', () => {
     const transition = handled({ ...base, program }, inbound)
     expect(reasonOfSuspension(transition)).toStartWith('the state does not encode')
     expect(transition.machine.stored.state).toEqual({ last: 'start' })
-    expect(transition.outputs).toContainEqual({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } })
+    expect(transition.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } }))
   })
 
   test('a reason of a rejection its schema does not encode is a defect, and no rejection is stored', () => {
@@ -1426,7 +1444,7 @@ describe('what a runtime writes', () => {
     const transition = handled({ ...base, program }, inbound)
     expect(reasonOfSuspension(transition)).toStartWith('the reason of the rejection does not encode')
     expect(transition.machine.stored.state).toEqual({ last: 'start' })
-    expect(transition.outputs).toContainEqual({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } })
+    expect(transition.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } }))
   })
 
   test('an operation whose message does not encode suspends the entity on the operation', () => {
@@ -1593,13 +1611,13 @@ describe('discarding', () => {
     const died = handled(machine, { _tag: 'Receive', request, message: 'go' })
     const discarded = stepped(died.machine, { _tag: 'Discard' })
     const rejected = { _tag: 'Rejected', reason: null } as const
-    expect(discarded.outputs).toContainEqual({ _tag: 'Replied', request, reply: rejected })
+    expect(discarded.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request, reply: rejected }))
     expect(discarded.written?.replies).toEqual([
       expect.objectContaining({ tag: 'Rejected', reason: null, asked: expect.objectContaining({ name: 'Booking' }) }),
     ])
     expect(discarded.machine.stored.suspension).toBeNull()
     const again = stepped(discarded.machine, { _tag: 'Receive', request, message: 'go' })
-    expect(again.outputs).toEqual([{ _tag: 'Replied', request, reply: rejected }])
+    expect(again.outputs).toEqual([expect.objectContaining({ _tag: 'Replied', request, reply: rejected })])
     expect(again.machine.stored.mailbox).toEqual([])
     expect(again.machine.stored.suspension).toBeNull()
   })
@@ -1724,11 +1742,11 @@ describe('a suspended entity', () => {
   test('gives the replies it stored, and answers anything else Suspended', () => {
     const machine = suspended()
     expect(stepped(machine, { _tag: 'Receive', request: by('first'), message: 'ok' }).outputs)
-      .toEqual([{ _tag: 'Replied', request: by('first'), reply: { _tag: 'Accepted' } }])
+      .toEqual([expect.objectContaining({ _tag: 'Replied', request: by('first'), reply: { _tag: 'Accepted' } })])
     expect(stepped(machine, { _tag: 'Receive', request: by('third'), message: 'ok' }).outputs)
-      .toEqual([{ _tag: 'Replied', request: by('third'), reply: { _tag: 'Suspended' } }])
-    expect(stepped(machine, { _tag: 'Create', request: by('creation') }).outputs)
-      .toEqual([{ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } }])
+      .toEqual([expect.objectContaining({ _tag: 'Replied', request: by('third'), reply: { _tag: 'Suspended' } })])
+    expect(stepped(machine, { _tag: 'Create', request: by('creation'), flags: null }).outputs)
+      .toEqual([expect.objectContaining({ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } })])
   })
 
   test('answers Suspended every caller waiting, and gives each its reply on a retry once resumed', () => {
@@ -1743,16 +1761,16 @@ describe('a suspended entity', () => {
     const queued = stepped(stepped(completed.machine, receive('second', 'bug')).machine, receive('third', 'ok'))
     const died = stepped(stepped(queued.machine, { _tag: 'Handle', at }).machine, { _tag: 'Handle', at })
     for (const requestId of ['second', 'third']) {
-      expect(died.outputs).toContainEqual({ _tag: 'Replied', request: by(requestId), reply: { _tag: 'Suspended' } })
+      expect(died.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: by(requestId), reply: { _tag: 'Suspended' } }))
     }
     const resumed = resumedBy(died.machine, { ...machine.program, update: (message) => () => ({ last: message }) })
     // A retry while its message is queued waits for the reply, which handling it gives.
     expect(stepped(resumed.machine, receive('third', 'ok')).outputs).toEqual([])
     const first = stepped(resumed.machine, { _tag: 'Handle', at })
     const second = stepped(first.machine, { _tag: 'Handle', at })
-    expect(second.outputs).toContainEqual({ _tag: 'Replied', request: by('third'), reply: accepted })
+    expect(second.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: by('third'), reply: accepted }))
     expect(stepped(second.machine, receive('third', 'ok')).outputs)
-      .toEqual([{ _tag: 'Replied', request: by('third'), reply: accepted }])
+      .toEqual([expect.objectContaining({ _tag: 'Replied', request: by('third'), reply: accepted })])
   })
 
   test('an operation that dies answers Suspended every caller waiting', () => {
@@ -1761,7 +1779,7 @@ describe('a suspended entity', () => {
     const completed = stepped(machine, { _tag: 'Complete', key: { name: 'work' }, incarnation: 2, message: 'done' })
     const queued = stepped(completed.machine, { _tag: 'Receive', request: by('r'), message: 'go' })
     const died = stepped(queued.machine, { _tag: 'Die', key: { name: 'charge' }, incarnation: 1, cause: 'died' })
-    expect(died.outputs).toContainEqual({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } })
+    expect(died.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: by('r'), reply: { _tag: 'Suspended' } }))
   })
 
   // The program is not the machine's: a fix is deployed, and the resumption is stepped by it (decision 0064).
@@ -1784,11 +1802,11 @@ describe('a suspended entity', () => {
     const resumed = resumedBy(machine, { ...machine.program, update: (message) => () => ({ last: message }) })
     const transition = stepped(resumed.machine, { _tag: 'Handle', at })
     expect(transition.machine.stored.state).toEqual({ last: 'bug' })
-    expect(transition.outputs).toContainEqual({
+    expect(transition.outputs).toContainEqual(expect.objectContaining({
       _tag: 'Replied',
       request: by('second'),
       reply: { _tag: 'Accepted' },
-    })
+    }))
   })
 
   test('stays suspended when the fixed program dies on its state', () => {
@@ -2006,7 +2024,7 @@ describe('the operations a suspended entity answers', () => {
     expect(suspended.machine.stored.suspension).not.toBeNull()
     expect(suspended.written?.waits).toEqual([])
     const operation = stepped(suspended.machine, { _tag: 'Receive', request: ran('Booking', 'want'), message: 'x' })
-    expect(operation.outputs).toEqual([{ _tag: 'Replied', request: ran('Booking', 'want'), reply: { _tag: 'Suspended' } }])
+    expect(operation.outputs).toEqual([expect.objectContaining({ _tag: 'Replied', request: ran('Booking', 'want'), reply: { _tag: 'Suspended' } })])
     expect(operation.machine.stored).toBe(suspended.machine.stored)
     expect(operation.written).toMatchObject({ waits: [{ asked: asker, name: 'want' }], woken: false })
     const caller = stepped(suspended.machine, { _tag: 'Receive', request: by('s'), message: 'x' })
@@ -2040,9 +2058,9 @@ describe('who a request belongs to', () => {
     const third = handled(second.machine, { _tag: 'Receive', request: ran('Waitlist', 'k'), message: 'go' })
     const rejected = { _tag: 'Rejected', reason: null } as const
     const accepted = { _tag: 'Accepted' } as const
-    expect(first.outputs).toContainEqual({ _tag: 'Replied', request: by('k'), reply: rejected })
-    expect(second.outputs).toContainEqual({ _tag: 'Replied', request: ran('Booking', 'k'), reply: accepted })
-    expect(third.outputs).toContainEqual({ _tag: 'Replied', request: ran('Waitlist', 'k'), reply: accepted })
+    expect(first.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: by('k'), reply: rejected }))
+    expect(second.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: ran('Booking', 'k'), reply: accepted }))
+    expect(third.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: ran('Waitlist', 'k'), reply: accepted }))
     expect(third.machine.stored.state).toEqual({ last: 'go' })
   })
 
@@ -2088,7 +2106,7 @@ describe('who a request belongs to', () => {
     const again = stepped(first.machine, {
       _tag: 'Receive',
       request: caller({ user: 'ann', team: 'ops' }, 'r'),
-      message: 'two',
+      message: 'one',
     })
     expect(again.machine).toBe(first.machine)
     expect(again.outputs.map((output) => output._tag === 'Replied' && output.reply)).toEqual([{ _tag: 'Accepted' }])
@@ -2103,19 +2121,21 @@ describe('who a request belongs to', () => {
       request: by('r'),
       message: 'go',
       reply: accepted,
+      carried: null,
       at,
     })
     expect(given.machine).toBe(machine)
-    expect(given.outputs).toEqual([{ _tag: 'Replied', request: by('r'), reply: accepted }])
+    expect(given.outputs).toEqual([expect.objectContaining({ _tag: 'Replied', request: by('r'), reply: accepted })])
     expect(given.written).toBeNull()
     const none = Machine.step(machine.program, machine, {
       _tag: 'Receive',
       request: by('r'),
       message: 'go',
       reply: null,
+      carried: null,
       at,
     })
-    expect(none.outputs).toEqual([{ _tag: 'Replied', request: by('r'), reply: accepted }])
+    expect(none.outputs).toEqual([expect.objectContaining({ _tag: 'Replied', request: by('r'), reply: accepted })])
     expect(none.machine.stored.mailbox).toEqual([])
     expect(none.written?.queued).toEqual([])
     expect(Object.keys(none.machine.stored)).not.toContain('replies')
@@ -2200,23 +2220,23 @@ describe('how long a reply is kept (decision 0125)', () => {
 describe('creation', () => {
   test('answers the request that created the entity Created, and stores nothing for the others', () => {
     const machine = checked((message) => message, () => ({}))
-    const create = (request: Request<null>) => stepped(machine, { _tag: 'Create', request })
+    const create = (request: Request<null>) => stepped(machine, { _tag: 'Create', request, flags: null })
     expect(create(by('creation')).outputs)
-      .toEqual([{ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } }])
+      .toEqual([expect.objectContaining({ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } })])
     // The same request id from another sender is another request.
     expect(create(ran('Booking', 'creation')).outputs)
-      .toEqual([{ _tag: 'CreationReplied', request: ran('Booking', 'creation'), reply: { _tag: 'AlreadyExists' } }])
+      .toEqual([expect.objectContaining({ _tag: 'CreationReplied', request: ran('Booking', 'creation'), reply: { _tag: 'AlreadyExists' } })])
     expect(create(by('other')).machine).toBe(machine)
   })
 
   // A runtime waits for each apart: a reply to the one must not reach a caller of the other (decision 0050).
   test('a creation is answered apart from a message under the same request id', () => {
     const machine = checked((message) => message, () => ({}))
-    expect(stepped(machine, { _tag: 'Create', request: by('creation') }).outputs)
-      .toEqual([{ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } }])
+    expect(stepped(machine, { _tag: 'Create', request: by('creation'), flags: null }).outputs)
+      .toEqual([expect.objectContaining({ _tag: 'CreationReplied', request: by('creation'), reply: { _tag: 'Created' } })])
     const sent = handled(machine, { _tag: 'Receive', request: by('creation'), message: 'go' })
     expect(sent.outputs.filter((output) => output._tag === 'Replied' || output._tag === 'CreationReplied'))
-      .toEqual([{ _tag: 'Replied', request: by('creation'), reply: { _tag: 'Accepted' } }])
+      .toEqual([expect.objectContaining({ _tag: 'Replied', request: by('creation'), reply: { _tag: 'Accepted' } })])
   })
 
   test('a creation is not a message: its request id may be used again to send one', () => {
@@ -2296,7 +2316,8 @@ describe('what an event writes', () => {
     property(({ trace }) => {
       for (const { event, program, before, outputs, written } of trace.slice(1)) {
         const stored = outputs.flatMap((output) =>
-          output._tag === 'Replied' && output.reply._tag !== 'Suspended' && handledBy(event, before) !== undefined
+          output._tag === 'Replied' && output.reply._tag !== 'Suspended' && output.reply._tag !== 'Reused' &&
+            handledBy(event, before) !== undefined
             ? [{
               request: Machine.requestKey(program, output.request),
               tag: output.reply._tag,
@@ -2374,7 +2395,7 @@ describe('topics of the log (decision 0138)', () => {
     return created
   }
   const step = (program: Program<Topical>, machine: Machine.Machine<Topical>, message: string) =>
-    Machine.step(program, machine, { _tag: 'Receive', request: by(message), message, reply: null, at })
+    Machine.step(program, machine, { _tag: 'Receive', request: by(message), message, reply: null, carried: null, at })
 
   test('a step is written in each topic whose selection changed, with the projection, and a creation in every topic', () => {
     const program = topical()
@@ -2469,7 +2490,7 @@ describe('keys with a parameter', () => {
   let requests = 0
   /** A message from a caller, handled as it arrives. */
   const send = (message: string): Machine.Event<L> =>
-    ({ _tag: 'Receive', request: by(`r-${++requests}`), message, reply: null, at })
+    ({ _tag: 'Receive', request: by(`r-${++requests}`), message, reply: null, carried: null, at })
   /** The events, stepped in order, from the creation of the entity. */
   const run = (events: ReadonlyArray<Machine.Event<L>>) => {
     const created = Machine.start(lines, 'l', null, epoch, by('creation'))
@@ -2685,7 +2706,7 @@ describe("a run after a crash that sends another message under an operation's re
   test('is given the reply stored for the first message, which alone was applied', () => {
     const first = handled(checked((message) => message, () => ({})), { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'one' })
     const again = stepped(first.machine, { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'two' })
-    expect(again.outputs).toContainEqual({ _tag: 'Replied', request: ran('Booking', 'hold'), reply: accepted })
+    expect(again.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: ran('Booking', 'hold'), reply: accepted }))
     expect(again.machine.stored.state).toEqual({ last: 'one' })
   })
 
@@ -2698,8 +2719,100 @@ describe("a run after a crash that sends another message under an operation's re
     const again = stepped(queued, { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'two' })
     expect(again.outputs).toEqual([])
     const done = stepped(again.machine, { _tag: 'Handle', at })
-    expect(done.outputs).toContainEqual({ _tag: 'Replied', request: ran('Booking', 'hold'), reply: accepted })
+    expect(done.outputs).toContainEqual(expect.objectContaining({ _tag: 'Replied', request: ran('Booking', 'hold'), reply: accepted }))
     expect(done.machine.stored.state).toEqual({ last: 'one' })
     expect(done.machine.stored.mailbox).toEqual([])
+  })
+})
+
+// A caller's request is its sender, its request id and what it carries: a request under a caller's sender and id
+// that carries another message or other flags is answered `Reused`, and nothing of it is applied, queued or stored.
+// An operation's request is a retry whatever it carries (decision 0269).
+describe("what a caller's request carries (decision 0269)", () => {
+  const reused = { _tag: 'Reused' } as const
+  const accepted = { _tag: 'Accepted' } as const
+
+  test('another message under a stored request is answered Reused, and the same message the stored reply', () => {
+    const first = handled(checked((message) => message, () => ({})), { _tag: 'Receive', request: by('r'), message: 'one' })
+    const other = stepped(first.machine, { _tag: 'Receive', request: by('r'), message: 'two' })
+    expect(other.outputs).toEqual([{ _tag: 'Replied', request: by('r'), message: 'two', reply: reused }])
+    expect(other.machine).toBe(first.machine)
+    expect(other.written).toBeNull()
+    const same = stepped(first.machine, { _tag: 'Receive', request: by('r'), message: 'one' })
+    expect(same.outputs).toEqual([{ _tag: 'Replied', request: by('r'), message: 'one', reply: accepted }])
+  })
+
+  test('another message under a request still in the mailbox is answered Reused, and the same message waits', () => {
+    const machine = checked((message) => message, () => ({}))
+    const queued: Entity = {
+      ...machine,
+      stored: { ...machine.stored, mailbox: [{ _tag: 'Inbound', request: by('r'), message: 'one' }] },
+    }
+    const other = stepped(queued, { _tag: 'Receive', request: by('r'), message: 'two' })
+    expect(other.outputs).toEqual([{ _tag: 'Replied', request: by('r'), message: 'two', reply: reused }])
+    expect(other.machine.stored.mailbox).toEqual(queued.stored.mailbox)
+    expect(stepped(queued, { _tag: 'Receive', request: by('r'), message: 'one' }).outputs).toEqual([])
+    const done = stepped(queued, { _tag: 'Handle', at })
+    expect(done.outputs).toContainEqual({ _tag: 'Replied', request: by('r'), message: 'one', reply: accepted })
+    expect(done.machine.stored.state).toEqual({ last: 'one' })
+  })
+
+  test('another message under a request queued in a suspended entity is answered Reused, and the same one Suspended', () => {
+    const machine = checked((message) => message, () => ({}))
+    const suspended: Entity = {
+      ...machine,
+      stored: {
+        ...machine.stored,
+        mailbox: [{ _tag: 'Inbound', request: by('r'), message: 'one' }],
+        suspension: { cause: 'broken', on: { _tag: 'Message' } },
+      },
+    }
+    expect(stepped(suspended, { _tag: 'Receive', request: by('r'), message: 'two' }).outputs)
+      .toEqual([{ _tag: 'Replied', request: by('r'), message: 'two', reply: reused }])
+    expect(stepped(suspended, { _tag: 'Receive', request: by('r'), message: 'one' }).outputs)
+      .toEqual([{ _tag: 'Replied', request: by('r'), message: 'one', reply: { _tag: 'Suspended' } }])
+  })
+
+  test('the reply stores the message a caller carried, and none for an operation', () => {
+    const machine = checked((message) => message, () => ({}))
+    expect(handled(machine, { _tag: 'Receive', request: by('r'), message: 'one' }).written?.replies.map((row) => row.carried))
+      .toEqual(['one'])
+    expect(
+      handled(machine, { _tag: 'Receive', request: ran('Booking', 'hold'), message: 'one' }).written?.replies
+        .map((row) => row.carried),
+    ).toEqual([null])
+  })
+
+  test("a retry of a caller's creation with other flags is answered Reused, and an operation's Created", () => {
+    const base = tiny((message) => message, () => ({}))
+    const program = { ...base, schemas: { ...base.schemas, flags: Schema.Int } } as unknown as Program<Tiny>
+    const created = Machine.start(program, 'tiny', 1 as never, epoch, by('creation'))
+    if (created._tag !== 'Created') throw new Error('not created')
+    expect(created.machine.stored.flags).toBe(1)
+    expect(created.written.entity?.flags).toBe(1)
+    const machine: Entity = { ...created.machine, program, replies: new Map() }
+    const replies = (request: Request<null>, flags: number) =>
+      stepped(machine, { _tag: 'Create', request, flags: flags as never }).outputs.map((output) =>
+        output._tag === 'CreationReplied' && output.reply
+      )
+    expect(replies(by('creation'), 2)).toEqual([reused])
+    expect(replies(by('creation'), 1)).toEqual([{ _tag: 'Created' }])
+    expect(replies(by('another'), 2)).toEqual([{ _tag: 'AlreadyExists' }])
+    const operated = Machine.start(program, 'tiny', 1 as never, epoch, ran('Booking', 'creation'))
+    if (operated._tag !== 'Created') throw new Error('not created')
+    const made: Entity = { ...operated.machine, program, replies: new Map() }
+    expect(
+      stepped(made, { _tag: 'Create', request: ran('Booking', 'creation'), flags: 2 as never }).outputs.map((output) =>
+        output._tag === 'CreationReplied' && output.reply
+      ),
+    ).toEqual([{ _tag: 'Created' }])
+  })
+
+  test('a caller waits for the answer of its request with what it carried, an operation for its request alone', () => {
+    const program = tiny((message) => message, () => ({}))
+    expect(Machine.messageKey(program, by('r'), 'one')).not.toBe(Machine.messageKey(program, by('r'), 'two'))
+    expect(Machine.messageKey(program, by('r'), 'one')).toBe(Machine.messageKey(program, by('r'), 'one'))
+    expect(Machine.messageKey(program, ran('Booking', 'hold'), 'one'))
+      .toBe(Machine.messageKey(program, ran('Booking', 'hold'), 'two'))
   })
 })

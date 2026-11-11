@@ -4,7 +4,9 @@
 [decision 0035](archive/0035-one-place-where-a-program-is-declared.md), whose `program(schemas)(…)` takes every
 piece. `keys` is a list, and `keys` left out is the empty list, since
 [decision 0197](0197-a-program-lists-its-keys-and-key-gives-one-a-parameter.md). `update` may be left out where
-there is no own message, since [decision 0202](0202-update-is-left-out-where-there-is-no-own-message.md).
+there is no own message, since [decision 0202](0202-update-is-left-out-where-there-is-no-own-message.md). A
+program whose sender is left out keeps one space of request ids for every caller, and a request under a used id that
+carries another message is answered `Reused`, by [decision 0269](0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md).
 
 ## Context
 

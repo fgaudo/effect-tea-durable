@@ -43,18 +43,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md), and bugs 72 and 63 by
     [decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md), and bug 42 by
     [decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md), and bug 87 by
-    [decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md). The part
-    under way is bug 4. Its fix is
-    [decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md), `proposed`, which
-    the maintainer chose on 2026-11-11 after the opinion of a Fable 5.2 agent: a caller's request carries its message
-    or flags, and a reused id with another one is answered `Reused`, on every sender. No code of it is written yet.
-    On the maintainer's ask, a second opinion of Fable 5.2 kept an operation's requests out of the check, for the
-    reason decision 0047 gives, and the note says what an operation's reply then answers. The premises the note
-    rests on are tested, and the note names each test; the encoding of a set in the order it was built changed the
-    note, which compares what a request carries as it encodes. The part next is the code, test first: the
-    `test.failing` `a program with no sender` of `src/rehearse.test.ts` turned into the two tests the note's
-    Consequences name, then the rule in `src/machine.ts`, then the storage, the runtime, Cluster and the rehearsal,
-    with the test across a deploy that migrates `inbound`.
+    [decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md), and bug 4 by
+    [decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md), which the maintainer chose
+    on 2026-11-11 after two opinions of a Fable 5.2 agent. The part next is bug 8, the first of the bugs reasoned
+    after bug 6, which is verified false: it is verified first, then proposed to the maintainer before any code.
+    Decision 0269 changes the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
+    taken, and its tests of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of
+    PostgreSQL of the push of `main` that takes it.
     The spikes of decision 0267, `spikes/sqlite-hold-file.test.ts` and `spikes/full-volume.test.ts`, passed on Linux
     in the jobs of the CI of the push of `25a4530`. The test of decision
     0264 on PostgreSQL passed in the job of PostgreSQL of the push of `af8c5d5`. Decision 0265 changes the statements
@@ -119,13 +114,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      same way ([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)).
      Verified by a test of `src/postgres.test.ts` on the CI's server: the [open question](open-questions.md#running) The
      deletions of a reply on a pool of PostgreSQL.
-  4. **Reproduced: callers of a program whose sender is `null` share their request ids.** A caller that sends an id
-      Reproduced by `a program with no sender`, a `test.failing` of `src/rehearse.test.ts`: a second `Add` under the first's request id leaves the total at 1.
-     another caller used gets that caller's reply, and its own message is never applied, with nothing reported
-     ([decisions 0048](decisions/archive/0048-a-callers-request-belongs-to-its-sender.md),
-     [0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)). Verified by a test with two callers and
-     one request id: the [open question](open-questions.md#programs) Request ids under a sender of `null`. Its fix is
-     proposed in [decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md).
+  4. **Fixed by [decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md)**, whose caller's request carries its message, and a reused id with another is answered `Reused`.
   5. **Reasoned: a rehearsal may apply a retry twice after a deploy that changes how the sender is written.** The
      rehearsal keys a reply by the request's text, and the runtime finds a request by its id
      ([decisions 0065](decisions/archive/0065-the-machine-holds-no-replies.md),

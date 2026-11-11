@@ -16,7 +16,7 @@
 import type * as Effect from 'effect/Effect'
 import type { SqlClient } from 'effect/sql'
 import type * as Machine from './machine.ts'
-import type { Key, Program, Request, Topic, Types } from './program.ts'
+import type { Json, Key, Program, Request, Topic, Types } from './program.ts'
 import { onClusterOf } from './storage/cluster.ts'
 import { type Due, entitiesOf, type Examined, type Inspection, type Suspended } from './storage/entities.ts'
 import { heldOf } from './storage/held.ts'
@@ -103,13 +103,15 @@ export interface Storage<T extends Types> {
   ) => Effect.Effect<Readonly<{ request: Request<T['sender']>; flags: T['flags'] }>>
   /**
    * The reply stored for the entity `id` under `request`, or null for none: what a `Receive` is given
-   * (decision 0065). A caller's reply past its time at `at`, in milliseconds, is none (decision 0125).
+   * (decision 0065). A caller's reply past its time at `at`, in milliseconds, is none (decision 0125). `carried` is
+   * the message a caller's request carried, read through the migrations of `inbound` at the program's version, and
+   * null for another's (decision 0269).
    */
   readonly reply: (
     id: string,
     request: Request<T['sender']>,
     at: number,
-  ) => Effect.Effect<Machine.StoredReply<T['rejection']> | null>
+  ) => Effect.Effect<Readonly<{ reply: Machine.StoredReply<T['rejection']>; carried: Json | null }> | null>
   /**
    * The answer kept for the operation's request `request` to the entity `id`, as a creation or a message by `kind`,
    * or null for none: a creation `init` rejected, or `NotFound`. No entity stores these, so the storage keeps them

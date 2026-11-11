@@ -208,7 +208,8 @@ type Answered = Creation<unknown> | Answer<unknown> | Operated
  * (decision 0190). A suspended order is answered `409` and not `503`, since an HTTP client retries a `503` as
  * transient, and a suspended order waits for an operator. A full entity is answered `503`, since its caller retries
  * later under the same request id. On Cluster a caller is never answered `Full` (decision 0165), and the entry
- * serves a boundary on one process that copies the map.
+ * serves a boundary on one process that copies the map. A request id reused for another body is answered `422`, as
+ * the header `Idempotency-Key` of HTTP answers it, since the body is the client's to fix (decision 0269).
  */
 const status = {
   Created: 'Created',
@@ -218,6 +219,7 @@ const status = {
   NotFound: 'NotFound',
   Suspended: 'Conflict',
   Full: 'ServiceUnavailable',
+  Reused: 'UnprocessableEntity',
   Resumed: 'OK',
   Discarded: 'OK',
   NotDiscarded: 'Conflict',

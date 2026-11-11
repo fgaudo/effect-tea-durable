@@ -16,7 +16,7 @@ import * as Semaphore from 'effect/Semaphore'
 import type { SqlClient } from 'effect/sql'
 import type * as Tracer from 'effect/Tracer'
 import * as Machine from '../machine.ts'
-import type { Address, Creation, Entities, Key, Program, Types } from '../program.ts'
+import type { Address, Creation, Entities, Key, Program, Reused, Types } from '../program.ts'
 import type { Readings } from './readings.ts'
 import type { Answer, OnCluster, Operated, Point, Said } from '../runtime.ts'
 import type { Storage } from '../storage.ts'
@@ -58,7 +58,7 @@ export interface Process {
    * from a message's, since the two share request ids (decisions 0017, 0050).
    */
   readonly messages: Callers<Answer<unknown>>
-  readonly creations: Callers<Creation>
+  readonly creations: Callers<Creation | Reused>
   /**
    * The operators waiting for what their `Resume` or `Discard` did, by entity, in the order their events were
    * offered. Each event answers the first, so that an operator is told what its own event did, not what another
