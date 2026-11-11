@@ -3994,3 +3994,145 @@ None.
 ### Not read whole
 
 None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.
+
+## 2026-11-11: premise review of the pairs against Schemas and projections, a second part
+
+Branch `claude/premise-pairs-schemas-2-5e31db`, fast-forwarded to `main` at `9fd90aa` before the review. One finding,
+reproduced on SQLite by rows written by hand in the order a server commits them, with a test for the CI's job
+`postgres` that was not run. The report of area 7 was read whole, with what it ruled out. The step of bugs of
+`docs/roadmap.md` and the open questions were read before the pairs. Every note of the list was read whole, with its
+code.
+
+### The pairs read
+
+| Note of the list | Note of the area | What binds them | How they were read |
+| --- | --- | --- | --- |
+| 0026 | 0213 | 0213 changes it: `allows` is given the sender | both whole, with `projectionViolations` of `src/testing.ts` |
+| 0032 | 0121 | 0121 cites it as its reason: every event that changes the state writes the row | both whole, with `projected` of `src/storage/projections.ts` |
+| 0032 | 0135 | 0135 cites it as its reason: a step writes the projection in the read model | both whole, with `write` of `src/storage/entities.ts` |
+| 0032 | 0138 | 0138 applies its rule as 0032 does: a topic selects as an index does | both whole, with `published` of `src/storage/log.ts` |
+| 0032 | 0139 | 0139 changes it: the projection is JSON, and an index converts nothing | both whole, with `Json` and `program` of `src/program.ts` |
+| 0032 | 0206 | 0206 changes it: an index that is no scalar is the program's defect | both whole, with `shownOf` of `src/machine.ts` and `reindex` |
+| 0038 | 0135 | 0135 cites it as its reason: a consumer needs the projection of that step | both whole, with `write` of `src/storage/entities.ts` |
+| 0038 | 0137 | 0137 changes it: a `seq` is within a partition, under the head's lock | both whole, with `published`, `ack` and `pruneBatch` of `src/storage/log.ts` and the log's writes in `src/storage/entities.ts` |
+| 0038 | 0138 | 0138 changes it: a step writes a row in each topic whose selection changed | both whole, with the same code |
+| 0038 | 0140 | 0140 cites it as its reason: a row keeps the message and its kind | both whole, with `published` |
+| 0039 | 0137 | 0137 changes it: a consumer keeps a cursor per partition | both whole, with `published`, `fetch`, `ack`, `pruneBatch` and `consumers` of `src/storage/log.ts` |
+| 0039 | 0138 | 0138 changes it: a consumer reads one topic | both whole, with the same code |
+| 0039 | 0152 | 0152 changes it: consumers are declared at deploy, and a topic no consumer holds is pruned whole | both whole, with `declare`, `pruneBatch` and `forget` |
+| 0039 | 0184 | 0184 changes it: `consume` runs a reader, a page and its ack in one transaction | both whole, with `consume` of `src/runtime.ts` and `transaction` of `src/storage/tables.ts` |
+| 0040 | 0138 | 0138 applies its rule as 0040 does: a topic that selects what JSON does not hold suspends | both whole, with `encode` of `src/program.ts` |
+| 0040 | 0210 | 0210 changes it: a sparse array is no JSON, and `-0` is read back as `0` | both whole, with `encode` of `src/program.ts` |
+| 0061 | 0122 | 0122 applies its rule: what the runtime throws fails the whole `reindex` | both whole, with `reindex` and `programCause` of `src/machine.ts` |
+| 0065 | 0157 | 0157 changes it: a caller's request a version before stored is found by `request_id` | both whole, with `reply` of `src/storage/entities.ts` |
+| 0065 | 0214 | 0214 cites it as its reason: a retry is answered by the stored reply | both whole, with `replyOf` of `src/storage/entities.ts` |
+| 0072 | 0138 | 0138 changes it: a step is written in each topic whose selection changed | both whole, with `published` |
+| 0072 | 0140 | 0140 cites it as its reason: the log records what an entity did | both whole, with `published` |
+| 0076 | 0151 | 0151 changes it: the capacity is 10 000 by default | both whole, with `enter`, `spare` and `unload` of `src/runtime/loop.ts` |
+| 0132 | 0135 | 0132 cites 0135 as the note that takes up large states | both whole, with `warnOfSize` of `src/runtime/loop.ts` |
+| 0133 | 0135 | 0135 cites it as its reason: the children are kept in the parent's state | both whole, with `warnOfSize` |
+| 0133 | 0139 | 0139 applies its rule to a part's projection | both whole, with `part` of `src/program.ts` |
+| 0133 | 0155 | 0155 changes it: `forEach` puts children back once | both whole, with `forEach`, `andThen` and `toldOf` of `src/program.ts` |
+| 0142 | 0153 | 0153 changes it: `wait` moves into the options, beside the partitions | both whole, with `waited` of `src/runtime/readings.ts` and `published` |
+| 0142 | 0184 | 0184 changes it: a reader of `consume` waits with no time limit | both whole, with `waited`, `tell` and `consume` |
+| 0147 | 0135 | 0147 applies 0135's warning, once per activation | both whole, with `warnOfFull` of `src/runtime/callers.ts` and `warnOfSize` |
+| 0147 | 0151 | 0151 cites it as its reason: a busy entity holds at most `callers.messages` callers | both whole, with `spare` |
+| 0148 | 0121 | 0148 applies its rule as 0121 does: the rows are read as they stand while `reindex` runs | both whole, with `count` and `sum` of `src/storage/projections.ts` |
+| 0149 | 0138 | 0149 cites it as its reason: the projection is the one contract of the log | both whole, with `published` |
+| 0150 | 0121 | 0150 applies its rule as 0121 does, for `countBy` | both whole, with `countBy` of `src/storage/projections.ts` |
+| 0150 | 0184 | 0184 cites it as its reason: a reader waits outside a transaction | both whole, with `consume` and `ack` |
+| 0156 | 0137 | 0156 applies its rule as 0137 does: a rename is the launch's, as the partitions are | both whole, with `renamed` and `namedTables` of `src/storage/tables.ts` |
+| 0156 | 0157 | 0157 changes it: on PostgreSQL a rename writes a request again in the process | both whole, with `inProcess` and `inPlace` of `renamed` |
+| 0162 | 0137 | 0162 changes it: on Cluster the partition is the shard, and SQLite's write lock orders the commits | both whole, with `published` and the log's writes |
+| 0185 | 0157 | 0185 applies its rule as 0157 does: the readings begin at `REPEATABLE READ` | both whole, with `inspect`, `examine` and `snapshot` of `src/storage/held.ts` |
+| 0185 | 0158 | 0185 applies its rule as 0158 does: inside a caller's transaction, at the caller's level | both whole, with `snapshot` |
+| 0205 | 0157 | 0205 cites it as its reason: PostgreSQL holds U+0000 in no text | both whole, with `render` of `src/machine.ts` |
+| 0207 | 0157 | 0207 cites it as its reason: a lone surrogate compares otherwise on each dialect | both whole, with `criteria` and `isCompared` of `src/storage/projections.ts` |
+| 0209 | 0157 | 0209 cites it as its reason: `SUM` over doubles on PostgreSQL | both whole, with `sum` |
+| 0247 | 0122 | 0247 applies its rule as 0122 does: what the runtime throws fails the whole call | both whole, with `check` and `activated` of `src/check.ts` |
+
+### Finding 1, reproduced: on PostgreSQL a reading of the log skips a row for ever (0038 and 0039, against 0137 and 0157)
+
+- The premise that fell: 0038 promised that a cursor skips nothing, because one transaction commits at a time.
+  0137 kept the promise where two transactions commit at once, by the head's lock: the rows of one partition commit
+  in the order of their `seq`, and `position` rises with `seq` within a partition. Its rule also needs a condition it
+  never wrote: the reading must see the log as it stood at one moment. On SQLite that holds, since every write is
+  serialized, on one process and across runners (0162). 0157 and 0222 run the storage on a pool of PostgreSQL, where
+  steps of different partitions commit side by side. There each statement of a reading at `READ COMMITTED` reads a
+  snapshot of its own, and `published` is not run in `snapshot`.
+- The sequence: a step of partition 1 draws its `seq` and its `position`, 100, and has not committed. A step of
+  partition 2 takes position 101 and commits. A reading reads the heads (`src/storage/log.ts:115`): partition 1 has
+  no head committed past the cursor, so it is not behind. The step of partition 1 commits, and the next step of
+  partition 1 takes position 102 and commits. The reading then computes its first position from the partitions
+  behind, 101 (`:131`), and its page reads every partition from 101 (`:148-181`). The page gives the second row of
+  partition 1, past its cursor, and not the first, whose position is 100. A consumer that acks the page moves the
+  cursor of partition 1 past a row it never read, and the prune drops it. The same holds between two pages of one
+  reading, with no heads involved: a row whose place falls in the first page commits after that page is read, and
+  the next row of its partition commits before the second page.
+- What is lost: a row of the log, in silence, for every consumer that reads with `fetch` or `consume`, a report fed
+  from the log included (0149). A reader with its own cursors through `published` loses it the same way.
+- Reproduced on SQLite by `FAILING: a reading of the log gives no row of a partition past a row of it that committed
+  between its statements` and `FAILING: a reading of the log gives no row of a partition past a row of it that
+  committed between two pages`, in `src/storage.test.ts`, at `6730434` and `9ace256`. Each writes the rows by hand,
+  between the reading's statements, with `Statement.CurrentTransformer`, as a server would commit them, and fails
+  on SQLite. Run: `bun test src/storage.test.ts -t "FAILING: a reading of the log"`. On SQLite and PGlite no step can
+  commit in that order, so the tests show the reading's rule, not a sequence the runtime reaches there.
+- Written for a server and not run, since no server of PostgreSQL runs on the reviewer's machine: `FAILING: a reading
+  of the log gives no row of a partition past one it skipped` in `src/postgres.test.ts`, at `6730434`. It holds a
+  step's transaction open after its row, commits a step of another partition, and lets the held step and the next
+  step of its partition commit between the reading's first two statements.
+- Where a fix could begin: `published` in `src/storage/log.ts` could read every partition only up to the head it read
+  in its first statement, and only the partitions it counted behind. A head committed holds every row through its
+  `seq` committed, so the reading would then be whole at every level, inside a caller's transaction too. Or
+  `published` could run in `snapshot` of `src/storage/held.ts`, which holds only where the transaction is the
+  reading's own, as a page of a query does (0158). It is of the form of bugs 13 and 25: a rule kept by SQLite's one
+  writer that a pool of PostgreSQL takes away. The open question A statement whose condition PostgreSQL reads from
+  its snapshot lists such cases by statement, and this one is a reading of several statements.
+
+### Suspects ruled out
+
+- 0039 and 0152 against 0157, a prune of a topic with no consumer while another runner's deploy declares one: the
+  prune's statement reads one snapshot, and its `DELETE` touches no row committed after it. The next batch reads the
+  consumers again (`src/storage/log.ts:232-255`).
+- 0039 and 0150 against 0184, an ack in a caller's transaction at `REPEATABLE READ`: its heads may be stale, which
+  only caps the cursor lower (`:208-222`).
+- 0156 against 0157, a rename on PostgreSQL that finds the requests by `strpos` of the old name as JSON writes it:
+  JSON escapes a string alike wherever it stands, so every request that names the old name as its `entity` holds that
+  text (`src/storage/tables.ts:572-603`).
+- 0156 against 0137: `namedTables` holds the heads, the publications, the outbox, the consumers and the cursors, and
+  an entity keeps its stored partition through a rename.
+- 0162 against 0137, the finding on Cluster on SQLite: `BEGIN IMMEDIATE` holds the write lock for a whole step, so no
+  row with a lower position commits after one with a higher position.
+- 0040 against 0210, a resident state holding `-0` against the same state loaded again as `0`: only `Object.is` and a
+  division tell them apart, which 0210 accepts.
+- 0072 against 0140, a deploy that changes a selector: older rows give what the new selector selects, so two rows
+  in a row may give one value. 0140 decides it.
+- 0061 against 0122, and 0247 against 0122: `reindex` and `check` parse the stored text outside the guard, and run
+  only the migrations, the schema and `shownOf` inside it (`src/storage/projections.ts:476-492`, `src/check.ts`).
+  `check` builds its storage with the default number of partitions, which only a creation reads
+  (`src/storage/entities.ts:250`).
+- 0133 against 0155, and 0240: a handle's step is a function of the parent's state, kept in `toldOf` by its
+  function, so a list of steps made first joins a run as the ids do (`src/program.ts:892-940`).
+- 0148, 0150 and 0209 against 0157: each answer is one statement, which reads one snapshot on PostgreSQL too.
+- 0185 against 0158, `inspect` inside a caller's transaction at `READ COMMITTED` on a server: it reads at the
+  caller's level, as 0185 says, and a step between its statements is read in part. It is the case of a page that
+  0158 and 0222 describe.
+- 0142 and 0184 against 0153, a reader of some partitions woken by a commit of another: `waited` takes a new signal
+  before each reading, so it waits again (`src/runtime/readings.ts:63-90`).
+- 0065 against 0157 and 0214: a retry finds its reply by its text, then by `request_id` among the other versions'
+  rows, read through the migrations (`src/storage/entities.ts:192-228`).
+- 0076 and 0147 against 0151 on Cluster: bugs 54, 61 and 74.
+
+### Noticed, not checked
+
+- `fetch` called inside a caller's transaction at `READ COMMITTED` on a server would keep the finding under a fix by
+  `snapshot` alone, as a page of a query does. A fix that caps each partition at its head read first would not. Not
+  checked, since it depends on the fix.
+- The design's advice to begin at `REPEATABLE READ`, under Databases in `docs/design.md`, names a page of a query and
+  not `inspect`, which reads at the caller's level too (0185). It is a gap of the guide, not of the code, and was not
+  weighed further.
+
+### Not read whole
+
+- None of the list. The notes of the area that no note of the list meets, 0154 and 0215, were read only through the
+  passages that cite them.
