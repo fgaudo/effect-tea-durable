@@ -1656,6 +1656,38 @@ describe('the shards of a runner on Cluster', () => {
         expect(left?.held).toBe(0)
       })), 30_000)
 
+  // Premise review of the pairs against Effect Cluster: 0114 against 0092. On Cluster the waiting senders are the
+  // rows 0092 writes, and 0114 says that `suspended` reads them there. It reads the senders registered in the memory
+  // of the runner called, so an operator on another runner than the sender's sees nobody waiting.
+  test('FAILING: an operator on any runner sees the operation of another runner that waits for a resumption', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const ids = Array.from({ length: 64 }, (_, i) => `r${i}`)
+        const sender = ids.find((id) => first.holds(id))!
+        const receiver = ids.find((id) => second.holds(id))!
+        yield* create(first, sender)
+        yield* create(first, receiver)
+        expect(yield* send(first, receiver, { _tag: 'Break' }, 'm-break')).toBe('{"_tag":"Suspended"}')
+        yield* send(first, sender, { _tag: 'Relay', to: receiver }, 'm-relay')
+        yield* until(Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) =>
+          sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_waiting`), ([row]) => row?.held === 1)
+        const waitingOn = (runner: Runner) =>
+          Effect.map(runner.bell.suspended, (listed) =>
+            listed.filter(({ id }) => id === receiver).map(({ waiting }) => waiting.map(({ entity }) => entity.id)))
+        expect({ first: yield* waitingOn(first), second: yield* waitingOn(second) }).toEqual({
+          first: [[sender]],
+          second: [[sender]],
+        })
+        expect(yield* first.bell.discard(receiver)).toEqual({ _tag: 'Discarded' })
+        yield* until(stateOf(sender), (state) => state?.relayed !== null)
+      })), 30_000)
+
   test('an operation is woken by a `Resumed` delivered before its client gives it the answer Suspended', () => {
     // Decision 0063, read again on Cluster (decision 0172): the operation registers for the receiver's resumption
     // before it sends. The client resets a first answer `Suspended` and sends again, and gives the operation the
