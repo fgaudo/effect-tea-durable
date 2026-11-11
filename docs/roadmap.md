@@ -25,18 +25,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     unverified is an [open question](open-questions.md#running): A sender and Cluster's round at the least retry,
     The cases of a crash's retry not run yet, and An operation's kept answer on Cluster across a crash, and under two
     runs at once.
-  - The next part is family G, the last whose rule is this step's. Families A, C and D take their rules from later
-    steps of this roadmap. Its rule is proposed to the maintainer first, as the next item says. Three rules were
-    proposed on 2026-11-11, and the maintainer has chosen none yet:
-    - Each check of the form, of the CI and of the explored tests is run against the case it refuses. A check of
-      `src/form.test.ts` gets a sample of the case it refuses beside it, which holds bugs 46, 47 and 88. An explored
-      test whose comment names an interleaving keeps a pinned seed that finds it, which holds bugs 43 and 52, from
-      seed 661. The property of the fixtures lists them by reading `src/fixtures/`, which holds bug 53. Bugs 48 and
-      83 get fixes of their own. This rule was the one recommended.
-    - [`scripts/mutate.ts`](../scripts/mutate.ts) takes out the checks of the project too, as the workflow, the
-      scripts of `package.json` and the guard of `holding`. It is more uniform, but runs only in a review, and not at
-      every `bun test`.
-    - A fix of its own for each bug, with no rule of the family.
+  - The part under way is family G, the last whose rule is this step's. Families A, C and D take their rules from
+    later steps of this roadmap. The maintainer chose G's rule on 2026-11-11, in the form a Fable 5.2 agent advised,
+    and [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md), `proposed`, says it,
+    with the order of its parts, the parts done, and what the agent found by reading. Each part is committed alone,
+    and the note's section What is done names the next.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
