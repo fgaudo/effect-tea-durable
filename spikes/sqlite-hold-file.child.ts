@@ -13,10 +13,7 @@ await Effect.runPromise(Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
   yield* sql`ATTACH DATABASE ${`${filename}-effecttea-hold`} AS effecttea_hold`
   yield* sql`PRAGMA effecttea_hold.locking_mode = EXCLUSIVE`
-  yield* sql.withTransaction(Effect.andThen(
-    sql`CREATE TABLE IF NOT EXISTS effecttea_hold.hold (id INTEGER PRIMARY KEY)`,
-    sql`INSERT OR REPLACE INTO effecttea_hold.hold (id) VALUES (1)`,
-  ))
+  yield* Effect.provideService(sql.withTransaction(Effect.void), SqlClient.BeginTransaction, 'BEGIN EXCLUSIVE')
   const [main] = yield* sql<{ locking_mode: string }>`PRAGMA main.locking_mode`
   yield* sql`CREATE TABLE IF NOT EXISTS rows (pair INTEGER NOT NULL)`
   yield* Effect.sync(() => process.stdout.write(`held ${main?.locking_mode}\n`))

@@ -5,7 +5,8 @@
 [decision 0080](archive/0080-a-database-is-held-by-one-runtime.md): a file of SQLite is no longer held in the exclusive
 locking mode, and another connection reads it while a runtime runs. It makes
 [decision 0247](0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md) hold on SQLite as on
-PostgreSQL.
+PostgreSQL. The hold file is taken by an exclusive transaction that writes no row, so that a launch on a full volume
+takes it, since [decision 0268](0268-the-hold-of-a-file-of-sqlite-writes-no-row.md).
 
 ## Context
 

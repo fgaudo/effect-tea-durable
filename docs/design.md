@@ -1173,10 +1173,12 @@ is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md
 database until it ends: a second runtime on it dies as it launches
 ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). The hold refuses no reader, on SQLite as on a
 server of PostgreSQL. A file of SQLite is held by a file of its own beside it, named by the database's path and
-`-effecttea-hold`, which the runtime's connection attaches in SQLite's exclusive locking mode and writes. The
-database itself stays in the normal locking mode, so another connection reads it while the runtime runs, and the end
-of the process gives the hold back however it ends
-([decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)). A database of
+`-effecttea-hold`, which the runtime's connection attaches in SQLite's exclusive locking mode. An exclusive
+transaction that writes no row takes the hold file's lock, so that a launch on a full volume takes it. The database
+itself stays in the normal locking mode, so another connection reads it while the runtime runs, and the end of the
+process gives the hold back however it ends
+([decisions 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md),
+[0268](decisions/0268-the-hold-of-a-file-of-sqlite-writes-no-row.md)). A database of
 PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. A database of
 PGlite is held in the process by its client. Its data directory is held too, while the client a runtime launched on
 is open, so a launch on another client over the directory dies

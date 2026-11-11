@@ -4105,15 +4105,12 @@ describe('what the runtime cannot finish', () => {
 })
 
 // A hold of the file as another runtime's storage takes it: the hold file beside the database, attached in the
-// exclusive locking mode and written (decision 0267).
+// exclusive locking mode, and an exclusive transaction that writes no row (decisions 0267, 0268).
 const holdBy = (sql: SqlClient.SqlClient, filename: string) =>
   Effect.gen(function*() {
     yield* sql`ATTACH DATABASE ${`${filename}-effecttea-hold`} AS effecttea_hold`
     yield* sql`PRAGMA effecttea_hold.locking_mode = EXCLUSIVE`
-    yield* sql.withTransaction(Effect.andThen(
-      sql`CREATE TABLE IF NOT EXISTS effecttea_hold.hold (id INTEGER PRIMARY KEY)`,
-      sql`INSERT OR REPLACE INTO effecttea_hold.hold (id) VALUES (1)`,
-    ))
+    yield* Effect.provideService(sql.withTransaction(Effect.void), SqlClient.BeginTransaction, 'BEGIN EXCLUSIVE')
   })
 
 describe('a database held by one runtime', () => {

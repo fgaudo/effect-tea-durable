@@ -84,8 +84,8 @@ const advisoryKey = 7_465_616
  * Holds the database for one runtime until the scope ends, and refuses no reader (decisions 0157, 0267). The client
  * is held in this process, claimed in one synchronous step. A file of SQLite is held by a file of its own beside it,
  * named by the database's path and `-effecttea-hold`. The runtime's connection attaches the hold file in SQLite's
- * exclusive locking mode and writes it, so that no other connection takes it, and the end of the process gives it
- * back, however it ends. The database itself stays in the normal locking mode, so another connection reads it. A
+ * exclusive locking mode and begins and commits an exclusive transaction that writes no row, so that no other
+ * connection takes it, and the end of the process gives it back, however it ends (decision 0268). The database itself stays in the normal locking mode, so another connection reads it. A
  * database of SQLite in memory is held by its client alone, since no other connection opens it. A database of
  * PostgreSQL is held by a session advisory lock, on a connection reserved until the scope ends, and the end of the
  * session gives it back. PGlite runs every statement on one session, which would take the lock again. So in this
@@ -124,15 +124,13 @@ export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope>
   }
   const [main] = yield* Effect.orDie(sql<{ file: string }>`SELECT file FROM pragma_database_list WHERE name = 'main'`)
   if (main === undefined || main.file === '') return
-  // The mode is the attached file's alone. In that mode a write takes the file's exclusive lock and keeps it until
-  // the file is detached or the connection closed, so the write is what takes the hold (decision 0267).
+  // The mode is the attached file's alone. In that mode the exclusive lock an exclusive transaction takes is kept
+  // until the file is detached or the connection closed. The transaction writes no row, so that a launch on a full
+  // volume takes the hold, where a write would need room for its journal (decisions 0223, 0268).
   const take = Effect.gen(function*() {
     yield* sql`ATTACH DATABASE ${`${main.file}-effecttea-hold`} AS effecttea_hold`
     yield* sql`PRAGMA effecttea_hold.locking_mode = EXCLUSIVE`
-    yield* sql.withTransaction(Effect.andThen(
-      sql`CREATE TABLE IF NOT EXISTS effecttea_hold.hold (id INTEGER PRIMARY KEY)`,
-      sql`INSERT OR REPLACE INTO effecttea_hold.hold (id) VALUES (1)`,
-    ))
+    yield* transaction(sql, Effect.void, 'BEGIN EXCLUSIVE')
   })
   const give = Effect.ignore(sql`DETACH DATABASE effecttea_hold`)
   yield* Effect.acquireRelease(
