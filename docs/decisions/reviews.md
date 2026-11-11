@@ -757,3 +757,122 @@ By their decision sections only: the later notes that cite these: 0038, 0053, 00
 ### Not reached
 None of the notes the brief named. Of the later notes, 0021, 0048, 0071, 0085, 0092, 0122, 0125, 0245, 0248 and 0249
 were not read against these areas. The brief or the roadmap already cover 0085, 0245, 0248 and 0249.
+
+## 2026-11-11: premise review of Effect Cluster
+
+Branch `claude/premise-review-cluster-3063df`, test commit `3b1752e`. One finding reproduced. The later notes 0085,
+0092 and 0162 were read whole, and not against the notes they cite of the areas already read, as the last section
+says.
+
+### The notes read
+
+The area is 26 notes. "Cites one" means a note whose text names a note of the area, found by `grep -rlwE`. For an
+earlier note, that is mostly a status line saying that a note of the area changes it.
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0081 | of the area | whole; it keeps no code of its own |
+| 0084 | of the area | whole |
+| 0085 | of the area, and a later note to read against the areas already read | whole, with `reset` of `src/cluster.ts` |
+| 0090 | of the area | whole, with `forgetUnder` and `keepSent` of `src/storage/cluster.ts` |
+| 0091 | of the area | whole, with `Sharding.ts:1737-1768` of Effect |
+| 0092 | of the area, and a later note to read against the areas already read | whole, with `src/runtime/doors.ts` |
+| 0159 | of the area | whole |
+| 0160 | of the area | whole |
+| 0161 | of the area | whole, with `settle`, `applyOnCluster` and `finishIn` of `src/runtime/doors.ts` |
+| 0162 | of the area, and a later note to read against the areas already read | whole, with `serving`, `activating`, `losing` and `singletonsOf` |
+| 0163 | of the area | in part: Context, Decision and What it rests on; not its Consequences |
+| 0165 | of the area | whole, with `reset` and `keptGiven` of `src/cluster.ts` |
+| 0166 | of the area | whole, with the operator's branch of `doorStep` |
+| 0167 | of the area | whole, with `stored.wait` and `waiters` in `doorStep` |
+| 0168 | of the area | whole, with `resettingSavedFailure` |
+| 0169 | of the area | whole, with `keepSent` and `forgetPending` in `doorStep` |
+| 0170 | of the area | whole, with `resettingSavedFailure` |
+| 0171 | of the area | whole, with `keptGiven` and the deletions of `src/storage/entities.ts:404` and `:463` |
+| 0172 | of the area | whole |
+| 0173 | of the area | whole |
+| 0174 | of the area | whole |
+| 0175 | of the area | whole, with `guard` of `src/cluster.ts` and each call of it |
+| 0176 | of the area | whole, with `register` of `src/cluster.ts` and `sentNow` |
+| 0178 | of the area | not read: an example's server, read by its status and Context alone |
+| 0248 | of the area | whole, with `least` of `src/cluster.ts` |
+| 0249 | of the area | whole, with `reset` and `forgetGiven` |
+| 0245 | changes 0171 | whole, not its code (`expire` in batches, the sweep) |
+| 0182 | cites one (0165) | in part: what 0249 and `reset` say of `Rejected` |
+| 0042 | cited by 0092 and 0175 | whole, with `crash` and `leave` of `src/runtime/loop.ts`, for the finding |
+| 0007, 0021, 0063, 0074, 0079, 0080, 0125, 0137, 0142, 0147, 0156 | cite one, by a status line that says a note of the area changes it | the status line alone |
+| 0100, 0104, 0114, 0151, 0164, 0185, 0190, 0193, 0195, 0198, 0215, 0219, 0247 | cite one | not read |
+
+### Finding 1, reproduced: 0175 against 0042 and 0162
+
+- Test: `FAILING: an entity a step crashed under an expired lease that the runner renews runs its work again`, in
+  `src/cluster.test.ts` (describe `the shards of a runner on Cluster`), commit `3b1752e`. Run:
+  `bun test src/cluster.test.ts -t "FAILING: an entity a step crashed"`. It fails: `Ask` started once, not twice.
+- The premise that fell: 0042 makes a crash safe because "what is stored is what its next activation starts from".
+  On one process the next caller, the waker or the next start of the process loads the entity again. On Cluster an
+  entity left with work and no timer is loaded again only by the shard's round of 0162, which runs when the shard's
+  singleton starts. 0175 adds a crash that no such round follows. A step of the loop that `guard` refuses crashes its
+  entity (doors.ts:114), and the crash interrupts the entity's operations (loop.ts:535). 0175 says that such a runner
+  keeps trying "until Cluster moves the shard". Its own Context says that Cluster's refresh renews a lease that names
+  its runner, expired or not. So in a case 0175 names, a lease that expired and that no runner took, the shard never
+  moves and its singleton never starts again. The waker reads timers alone. An entity with an operation under way and
+  no timer is never loaded again while the runner runs, unless a message reaches its door.
+- Sequence: runner 1 holds every shard. Entity `one` runs `Ask`, which waits, and `Haunt`, which completes after two
+  seconds. The lease of the shard of `one` grows older than its expiration, and no runner takes it. In the test this
+  is an `UPDATE` of `acquired_at`. In a deployment it is a pause of the process, or a step of the wall clock that
+  `CURRENT_TIMESTAMP` reads, longer than the expiration. The loop steps `Haunt`'s completion, `guard` refuses it, and
+  `one` crashes, which interrupts `Ask`. The stored state still holds `asking` and `haunt`, as the test checks. The
+  lease is renewed, as Cluster's next refresh writes it. Four seconds later `Ask` has not run again, and nothing will
+  run it or `Haunt` on this runner.
+- The other crashes of a loop's step on Cluster that no move of the shard follows may leave the same: a `COMMIT` that
+  fails (0161), and a step that finds the entity's row written by another runner. Those were not run.
+- Where a fix could begin: a crash on Cluster of an entity whose shard is still held could have the shard's round run
+  again, or the waker read the entities left with work and not the timers alone. The code is `crash` and `leave` of
+  `src/runtime/loop.ts:468-535`, and `activating` of `src/runtime/doors.ts:474-500`. Another way is a step of the loop
+  that `guard` refuses leaving the entity loaded, and trying again after `retry`, instead of crashing it.
+
+### Suspects ruled out
+
+- An operation's wait on Cluster that cannot be interrupted, under `Uninterruptible` `"client"` (0091), so that a
+  crash on a shard lost leaves its fiber waiting for ever: `Sharding.ts:1742` of Effect only skips the `Interrupt`
+  envelope, and the wait itself is interrupted.
+- A change of `shardsPerGroup` with entities stored, which would move the partitions away from their shards (0092,
+  0162): the first launch stores the number of partitions, and a launch given another fails (runtime.ts:221-225, 938).
+- The two doors of a renamed entity (0176) stepping it at once, against 0085's "one at a time": the runner's one
+  connection runs one transaction at a time, and each door's step settles by the count of `steps`.
+- A pending id (0090, 0092, 0169) whose rows the next step deletes while a client still reads them, as 0248 found of
+  a caller's: an id is pending only where nothing waits. The asker's work has ended, or the request is `Resumed`, sent
+  with `discard`, or it is the request of 0170's client, which waits until it is interrupted.
+- What a door's step set going, performed by a step of the loop that `guard` then refuses: `guard` runs before
+  `settle` (doors.ts:114-115).
+- A round of activations on an older runner (0175) that keeps the process from being settled for ever: the round is
+  counted only while it runs, and not during the `retry` between two rounds (doors.ts:487-500).
+- The margin of 0175's lease check: a step holds the file's write lock from `BEGIN IMMEDIATE` to its commit, so no
+  runner takes the lease between the check and the commit.
+
+### Noticed, not checked
+
+- 0249 with two clients of one request: client B reads the latest answer `Suspended`. Client A then resets it, the
+  retry's reply is saved, and A keeps the id. B's `forgetGiven` then deletes the id A kept (cluster.ts:309-318). B's
+  send keeps it again with its answer. A caller B interrupted between the two leaves Cluster's rows for ever, and no
+  reply is lost.
+- 0176 with 0174: a process with no runner address, of the old code, keeps a caller's id in `given_requests` under
+  the old name. A step and `expire` delete by the program's new name (entities.ts:404, 463), so those ids and their
+  rows in Cluster's tables stay for ever.
+- 0167 with a program dropped from a later launch: a `Resumed` to a sender's door that no runner registers is failed
+  by Cluster after `entityRegistrationTimeout`. It leaves a request and a reply under an id nothing keeps.
+- 0163 with 0161: a door's commit tells this runner's readings at `Settle`, which `afterCommit` offers. A callback that
+  is lost leaves a reading on this runner to wait out its `wait`, since `data_version` does not move at the
+  connection's own commits. It loses nothing.
+- 0245 with 0159: the sweep's singleton may be held by an older runner during a rolling deploy. That runner runs
+  `expire` and `prune` with the older code, beside rows of the newer version.
+
+### Not read whole, and why
+
+- 0163's Consequences, and 0178: the first was cut by the length of a read, and the second is an example's server,
+  which keeps no rule of the runtime.
+- The later notes 0085, 0092 and 0162 were read whole, and not against the earlier notes they cite in the areas
+  already read (0006, 0015, 0017, 0023, 0029, 0036, 0046, 0048, 0050, 0056, 0057, 0059, 0065, 0069, 0071, 0076, 0078,
+  0137), except 0042, which the finding needed. The area itself took the session.
+- The citing notes marked "not read" or "the status line alone" in the table. Each names a note of the area in a
+  status line or in passing.
