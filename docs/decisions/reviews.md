@@ -3344,3 +3344,158 @@ the area's report, by the index, and by `grep -w` of each number in both directi
 ### Not read whole
 
 None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.
+
+## 2026-11-11: premise review of the pairs against The runtime, a first part, the notes before 0100
+
+Read by a session that wrote none of these notes, on the branch `claude/premise-pairs-runtime-1-1-eb56fb`, cut from
+`main` at `fcd2494` and moved to `743881f` before the reading. It reads the notes 0006, 0011, 0013, 0030, 0040, 0042,
+0043, 0045, 0046, 0051, 0056, 0061, 0062, 0075, 0081, 0085, 0090 and 0092 against the notes of area 4 they meet:
+0028, 0029, 0063, 0066 to 0068, 0071, 0073, 0074 and 0076 to 0079. The review of that area read these notes in part
+or not at all. Its two failing tests are in `src/cluster.test.ts`, at commit `876ea90`.
+
+### The pairs
+
+Each note of the list was read whole, and so was each note of the area it meets. The pairs were found by the table of
+the area's report, by the index, and by `grep -w` of each number in both directions. No note of the list meets 0066,
+0068 or 0073.
+
+| Pair | What binds it | How it was read |
+| --- | --- | --- |
+| 0006 and 0029 | 0029 applies 0006 to an unloaded suspended entity | both whole, with `nothingToDo` of `src/runtime/loop.ts` and `onHold` and `due` of `src/storage/entities.ts` |
+| 0006 and 0071 | 0071 leaves a suspended entity out, as 0006 has it | both whole, with `interruptedWithin` of `src/storage/entities.ts` |
+| 0006 and 0077 | 0077 cites 0006 against suspending an entity it cannot load | both whole, with `waking` of `src/runtime/waker.ts` |
+| 0011 and 0029 | 0029 cites 0011 as its reason that an unloaded entity holds no operation | both whole, with `nothingToDo` and `spare` |
+| 0013 and 0028 | 0028 cites 0013 as its reason | both whole |
+| 0013 and 0029 | 0029 applies 0013's comparison to a passivation | both whole, with `unload` |
+| 0030 and 0028 | 0030 changes 0028's rule of JSON into a type | both whole |
+| 0040 and 0028 | 0040 applies 0028's defect at creation to an inbound message | both whole, with the encoding of `send` in `src/runtime/callers.ts` |
+| 0042 and 0028 | 0042 cites 0028 as its reason | both whole, with `crash` and `loop` of `src/runtime/loop.ts` |
+| 0042 and 0067 | 0067 changes 0042's permit | both whole, with `holding` of `src/runtime/process.ts` and `crash` |
+| 0042 and 0077 | 0077 changes 0042's consequence for the waker | both whole, with `waking` |
+| 0042 and 0079 | 0079 keeps 0042's rule that an interruption is the process's crash | both whole, with `activate`, `detached` and `withEntity` |
+| 0043 and 0077 | 0077 changes 0043's consequence for the waker | both whole, with `waking` and the deploy's activations in `src/runtime.ts` |
+| 0045 and 0063 | 0063 changes 0045's wait | both whole, with `deployedAs` of `src/runtime/callers.ts` and the registration of `deploying` |
+| 0046 and 0063 | 0063 changes 0046's wait for a suspended receiver | both whole, with `entities` and `unlessCrashed` |
+| 0046 and 0077 | 0077 applies 0046's `retry` to the waker | both whole, with `waking` |
+| 0051 and 0028 | 0051 cites 0028 for an operation's retries | both whole |
+| 0051 and 0063 | 0063 changes 0051's consequence | both whole, with `deploy` and `deploying` of `src/runtime.ts` |
+| 0051 and 0077 | 0077 cites 0051 for a deploy that fails | both whole, with `deploying` |
+| 0056 and 0029 | 0056 cites 0029 for the permit of a crash | both whole, with `crash`, `unload` and `stopAll` |
+| 0056 and 0067 | 0067 changes 0056's permit | both whole, with the same code |
+| 0061 and 0077 | 0077 cites 0061 against suspending | both whole |
+| 0062 and 0077 | 0077 changes 0062's consequence for the waker | both whole, with `rows` of `src/storage/entities.ts` |
+| 0075 and 0078 | 0078 changes when 0075's deploy gives its name back | both whole, with `deploy` of `src/runtime.ts`, `register` of `src/cluster.ts`, and `registerEntity` and `registerSingleton` of `cluster/Sharding.ts` in Effect |
+| 0081 and 0071 | 0081 says 0071 is the one-process runtime's | both whole, with `activating` of `src/runtime/doors.ts` |
+| 0081 and 0074 | 0081 says 0074 does not hold on Cluster | both whole, with `doorStep` of `src/runtime/doors.ts` |
+| 0085 and 0063 | 0085 leaves the wait on a suspended entity to 0092, by 0063 | both whole, with `doorStep` and `wait` |
+| 0085 and 0074 | 0085 applies 0074 to the message an entity dies on | both whole, with `doorStep` |
+| 0090 and 0063 | 0090 cites 0063 against polling | both whole |
+| 0092 and 0029 | 0092 keeps 0029's passivation and waker on Cluster | both whole, with `waking`, `held` and the loop's wait |
+| 0092 and 0063 | 0092 wakes 0063's senders by `Resumed` | both whole, with `doorStep` and `resumed` of `deploying` |
+| 0092 and 0071 | 0092 applies 0071 to a shard gained | both whole, with `serving`, `activating` and `activateOnCluster` |
+| 0092 and 0074 | 0092 cites 0074 for a burst | both whole |
+| 0092 and 0076 | 0092 keeps 0076's capacity on Cluster | both whole, with `admit` and `entersHeld` |
+| 0092 and 0078 | 0092 keeps 0078's spare entity on Cluster | both whole, with `spare` and the loop's settle before an unload |
+| 0092 and 0079 | 0092 changes 0079 for an activation on Cluster | both whole, with `doorStep`, `loadIn`, `finishIn`, `settle` and `activateOnCluster` of `src/runtime/doors.ts` |
+
+### Findings
+
+- **Reproduced: on Cluster, a door's step that loads an entity and whose commit fails leaves the entity loaded without
+  its `Restart`, and its stored operation never runs.** Decision
+  [0079](archive/0079-what-a-caller-sets-going-is-finished-without-it.md) keeps the rule of
+  [decision 0042](archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md) that an activation is either
+  done or leaves nothing loaded. [Decision 0092](archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)
+  moves the activation on Cluster into the door's transaction. Decision
+  [0161](archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md) enters the
+  entity at the step's end, before Cluster commits, and reads a rollback by the held count. The premise that fell: a
+  loaded entity runs what its state holds. The sequence: an entity holds an operation and is not loaded on this
+  runner, as after a crash of the entity or a restart of the runner. A door's step loads it: `loadIn` steps its
+  `Restart` (`src/runtime/doors.ts:208-225`), the message's step writes, and `finishIn` enters the entity with its
+  loop and leaves the machine uncommitted (`doors.ts:241-255`). The `COMMIT` fails. Cluster delivers the request
+  again. The next step's `settle` reads the held count, and drops the uncommitted machine with the `Started` of its
+  `Restart` (`doors.ts:70-83`). It steps the message from the held machine, whose `running` is empty. The operation is
+  stored and never started. The entity is never unloaded either, since `nothingToDo` sees the operation
+  (`src/runtime/loop.ts:443`). A timer of such an entity is not armed, and fires only once a passivation unloads the
+  entity. **Reproduced** by `FAILING: a door step that loads an entity and whose commit fails leaves the entity to run
+  its stored operation`, in `src/cluster.test.ts`, at `876ea90`: `Ask` runs once, where it runs again when the second
+  commit does not fail. The test unloads the entity by a crash of its completion's commit, as bug 18 does. The same
+  holds of `activateOnCluster` (`doors.ts:404-420`), the activation of the waker and of a shard's round, which is only
+  reasoned: a failed commit of it is caught and tried again, and the next try finds the entity loaded and returns. A
+  fix could begin at `finishIn`, which would enter an entity it loaded only once its commit is known, or at `settle`,
+  which would crash an entity whose held machine was never restarted.
+- **Reproduced: on Cluster, a deploy that fails after its door is registered leaves every later deploy of its name
+  with a closed door.** [Decision 0075](archive/0075-a-name-is-deployed-once-in-a-process.md) gives a failed deploy's
+  name back, so that the program can be deployed again.
+  [Decision 0078](archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) does so while
+  the deployment is not registered. Both rest on a rule of
+  [decision 0051](archive/0051-a-deploy-that-fails-leaves-nothing-running.md): closing the deployment's scope leaves
+  nothing registered. On Cluster the door is registered in that scope
+  ([decision 0092](archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)), and Cluster
+  never unregisters an entity type. The scope's close marks the type `closed`, and `registerEntity` returns at once for
+  a type it holds (`cluster/Sharding.ts:2027` and `:1249` of Effect 4.1.1, read in the source). The sequence: a deploy
+  registers its door (`src/runtime.ts:1155`), and dies before its registration step, by an interruption, as decision
+  0102 undoes it, or by a singleton that cannot be registered. The scope closes, and the name is given back
+  (`src/runtime.ts:1108-1115`). The next deploy of the name succeeds, and its door is the first one's, closed. Every
+  request to the program on this runner is refused, and a caller's client is interrupted at once. **Reproduced** by
+  `FAILING: a deploy that fails after its door is registered leaves the next deploy of its name a door`, in
+  `src/cluster.test.ts`, at `876ea90`, with a singleton registered first under the name the deploy registers first.
+  The same runner with no failed deploy before answers `Created`. A fix could begin at `register` of `src/cluster.ts`,
+  or at the deploy, which would keep the name for the life of the runner once its door is registered.
+- **Reasoned by a reading: under a `retry` of 0, a shard's round on Cluster tries an entity it cannot activate again
+  at once, for ever.** It is a third place of family F, beside bugs 17 and 45. `activating`
+  (`src/runtime/doors.ts:498-501`) repeats a round that failed on `Schedule.spaced` of `retry`, which
+  [decision 0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) chose above 0, and
+  [decision 0208](0208-a-launch-checks-every-option.md) allows 0. Each round reads the shard's interrupted entities and
+  opens a transaction for each. So a row no version reads keeps the file's one writer busy, and the process is
+  settled only between two rounds. A fix of bug 17 at `waker.ts` alone leaves it. The family's rule, a launch that
+  refuses 0 or a least time of a wait, holds it.
+
+### Ruled out
+
+- 0006 against 0029, 0071 and 0077: `due` and `interrupted` leave out every suspended entity by `onHold`
+  (`src/storage/entities.ts:476-519`), so no timer wakes a suspended entity and no deploy starts one.
+- 0011 against 0029: `nothingToDo` reads the stored keys, so a passivation never leaves an operation stored with
+  nothing running. The cases where something else does are bugs 1, 14, 18 and 61, and the first finding above.
+- 0013 against 0028 and 0029: a passivation commits nothing, and a step that writes nothing is observed at once, so the
+  comparison with the machine replays every event that wrote.
+- 0030 and 0040 against 0028: a caller's message and sender are encoded before the entity is reached, on one process
+  and on Cluster (`src/runtime/callers.ts:300`), so a message that does not encode is the caller's defect and touches
+  no entity.
+- 0042 against 0067 and 0079: a crash runs under the entity's lock, from the loop, an activation and a door's step,
+  and touches no database while it holds the lock, as decision 0161 asks on Cluster.
+- 0043 and 0062 against 0077: a deploy whose activation meets a row no version reads still dies as a whole, as 0043
+  decides and 0077 keeps. 0071 widens what a deploy activates to the entities with a message, which 0074 narrows to the
+  completions and firings recorded. 0043's consequence that a rollback is not refused is wider than its own rule where
+  an interrupted entity was written by the newer version, and the rule is the decision.
+- 0045 against 0063: the signal of a name is completed in the uninterruptible step that registers the deployment, so a
+  deploy that fails leaves the operations waiting for the next one.
+- 0046 against 0063 and 0077: `retry` is waited after a crash and after `Full` alone, and a suspended receiver is waited
+  for by its resumption. A `retry` of 0 is bug 32.
+- 0051 against 0063 and 0077: the activations of a deploy are forked in the deployment's scope, which its close stops.
+  On Cluster the door is the exception, which the second finding holds.
+- 0056 against 0029 and 0067: an unload runs only where `nothingToDo` finds no operation, so `stopAll` under the lock
+  interrupts timers alone, whose sleep waits for nothing.
+- 0061 against 0077: a failed activation stores nothing, and the waker's retry suspends nothing.
+- 0081 against 0074: the door steps a `Receive` with its time, and the machine handles it at once where the mailbox is
+  empty, so 0074 holds of the runtime's mailbox on Cluster too. 0081's consequence that it does not is wider than the
+  code, and loses nothing.
+- 0081 against 0071: a shard's round reads the runtime's keys and mailbox of the shard, as 0092 decides in place of
+  0081's sentence.
+- 0085 and 0090 against 0063: a sender answered `Suspended` on Cluster waits for `Resumed`, and nothing polls. A
+  `Resumed` to a sender no runner deploys is bug 20.
+- 0092 against 0029, 0076 and 0078: the loop settles an uncommitted machine before it unloads, and an entity enters
+  on Cluster through `entersHeld`, which runs `admit`. A door's step that writes nothing and counts no use is in the
+  review of the pairs against Versions and deploys.
+
+### Noticed, not checked
+
+- The second finding by an interruption of the deploy between `cluster.register` and the step that registers the
+  deployment, which decision 0102 undoes on one process. No probe marks that point, so the test makes a singleton's
+  registration die instead. The same closed door would be kept under each name a rename leaves, the `formerly` of
+  `register`, which was not run.
+- The first finding through `activateOnCluster`, from the waker and from a shard's round. The reading above shows the
+  sequence. No test was written, since a probe reaches the commit of an activation only where its `Restart` writes.
+
+### Not read whole
+
+None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.
