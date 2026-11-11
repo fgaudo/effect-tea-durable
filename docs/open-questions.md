@@ -92,15 +92,25 @@ with a requirement that no example has yet.
   magnitudes is just under `Number.MAX_VALUE` might be refused on SQLite and accepted on PostgreSQL. It is bug 40 of
   the [roadmap](roadmap.md), not checked. It would be decided by:
   - a case of `src/dialects.test.ts` with such rows.
-- **The schema a launch finds its tables in.** The runtime's tables are found through the `search_path`
-  ([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)), and the history
-  of the migrations is named in `current_schema()`
-  ([decision 0217](decisions/0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md)). Under the default
-  `"$user", public`, the first schema changes once a schema of the role's name is made. The next launch then makes a
-  new set of tables there, and runs on them empty, with every entity, reply and cursor left behind and no error. It
-  is bug 41 of the [roadmap](roadmap.md), reproduced on PGlite. It would be decided by:
-  - whether `createTables` dies where a schema further on the `search_path` holds the history and the first does not;
-  - or whether a launch is given its schema by name.
+- **A set of tables the `search_path` no longer names.** A launch dies where a schema further on the `search_path`
+  holds the tables ([decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md)). A launch whose
+  `search_path` no longer names the schema that holds them, as `runtime` alone where the tables are in `public`, finds
+  no history and makes an empty set of tables, with no error. So does a launch on a database that bug 41 already
+  moved. It would be decided by:
+  - whether a launch dies where any schema of the database holds `effecttea_migrations` but the first, and what that
+    costs an operator who keeps a copy of the tables in another schema;
+  - a test of `src/storage.test.ts` on PGlite of each case.
+- **A connection of a pool whose `search_path` is another.** The check of decision 0263 reads one connection, and
+  `Migrator` runs its transaction on the connection the pool gives it next. A connection whose `search_path` a `SET`
+  of a session or a pooler changed is not seen by the check. It would be decided by:
+  - whether the check runs inside the transaction of `Migrator`, which `Migrator` gives no hook for at Effect 4.1.2;
+  - a test of `src/postgres.test.ts` on the CI's server, with one connection of the pool given another `search_path`.
+- **Cluster's tables where a schema is put in front of them.** `Migrator` of Effect looks for its history with
+  `to_regclass` without a schema, so Cluster's migrations would find their history further on the `search_path`, and
+  Cluster would stay on its tables there. A launch of the runtime now dies in that case
+  ([decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md)), so the two no longer part, but
+  Cluster's side was only read in `node_modules/effect/src/sql/Migrator.ts`. It would be decided by:
+  - a test of `src/storage.test.ts` with `SqlMessageStorage.layer` on PGlite, under a `search_path` of two schemas.
 - **The migrations inside an operator's transaction.** The migrations lock their table before they read
   ([decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md)). An operator who
   calls `createTables` inside a transaction of their own, at `REPEATABLE READ` with a query before it, makes the

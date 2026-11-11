@@ -223,6 +223,22 @@ describe('the check of a program', () => {
       expect((yield* storage(program, sql).load('t-1'))?.state.want).toEqual(['t'])
     })))
 
+  // A check reads the tables a launch would read, so it dies where the launch dies (decision 0263).
+  test('dies on PostgreSQL where a schema further on the search_path holds the tables', () =>
+    database(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql.withTransaction(Effect.gen(function*() {
+          yield* sql`CREATE SCHEMA runtime`
+          yield* sql`SET LOCAL search_path TO runtime, public`
+          expect(yield* diesWith(check(program, { limit: all }))).toContain(
+            "the tables are in the schema 'public', and the search_path names 'runtime' before it",
+          )
+        }))
+      }),
+      ['pg'],
+    ))
+
   test('refuses a program that cannot run as written, before it reads a row', () =>
     database(Effect.gen(function*() {
       const broken = { ...program, name: '' } as Program<T>

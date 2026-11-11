@@ -164,7 +164,7 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
   // `Migrator` looks for its table in every schema of the `search_path`, and would take the history of a schema
   // further on it for this one's. Named in the schema the tables are made in, it finds only this one's
   // (decision 0217). Without a schema to make them in, the creation fails as it would unnamed.
-  const schema = dialect === 'pg' ? yield* schemaOf(sql) : null
+  const schema = dialect === 'pg' ? yield* firstSchema(sql) : null
   const migrated = Migrator.make({})({
     loader: Migrator.fromRecord(migrations),
     table: migrationsTable(schema),
@@ -174,9 +174,28 @@ export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Eff
     : migrated
 }).pipe(Effect.orDie)
 
-/** The schema the tables are made in on PostgreSQL, the first of the `search_path`, or null for none (decision 0215). */
-const schemaOf = (sql: SqlClient.SqlClient) =>
-  Effect.map(sql<{ schema: string | null }>`SELECT current_schema() AS schema`, (found) => found[0]?.schema ?? null)
+/**
+ * The schema the tables are made in on PostgreSQL, the first of the `search_path` that exists, or null for none
+ * (decision 0215). Dies where `effecttea_migrations` is found in a schema further on the `search_path`, since
+ * the tables are then in that schema, and a launch would make a set of empty tables in the first (decision 0263).
+ */
+const firstSchema = (sql: SqlClient.SqlClient) =>
+  Effect.gen(function*() {
+    const [found] = yield* sql<{ first: string | null; holder: string | null }>`
+      SELECT current_schema() AS first,
+        (SELECT nspname FROM pg_class JOIN pg_namespace ON pg_namespace.oid = relnamespace
+         WHERE pg_class.oid = to_regclass('effecttea_migrations')) AS holder
+    `
+    const first = found?.first ?? null
+    const holder = found?.holder ?? null
+    if (holder !== null && holder !== first) {
+      const reason = `the tables are in the schema '${holder}', and the search_path names '${first}' before it, ` +
+        `where a launch would make tables of its own: set the role's search_path to the schema that holds the ` +
+        `tables, or move the tables into '${first}'`
+      return yield* Effect.die(new InvariantDefect({ reason }))
+    }
+    return first
+  })
 
 /** `effecttea_migrations`, named in the schema the tables are made in, where there is one (decision 0217). */
 const migrationsTable = (schema: string | null) =>
@@ -188,7 +207,7 @@ const migrationsTable = (schema: string | null) =>
  */
 export const tablesMade: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
-  const schema = dialectOf(sql) === 'pg' ? yield* schemaOf(sql) : null
+  const schema = dialectOf(sql) === 'pg' ? yield* firstSchema(sql) : null
   const recorded = yield* Effect.flatMap(
     sql`SELECT migration_id, name FROM ${sql(migrationsTable(schema))} ORDER BY migration_id`,
     Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ migration_id: Count, name: Schema.String }))),

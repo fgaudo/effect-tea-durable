@@ -431,6 +431,54 @@ describe('a role whose search_path is set by ALTER ROLE (decision 0215)', () => 
     }))
 })
 
+describe('a role under the default search_path (decision 0263)', () => {
+  // Under `"$user", public`, a schema of the role's name made after the tables moves `current_schema()` of every
+  // connection of the pool, those already open included. Bug 41 of the roadmap: the launch made empty tables there.
+  onServer('a schema of the role’s name made after the tables makes the launch die on every connection of the pool', (url, sql) =>
+    Effect.gen(function*() {
+      const role = `effecttea_role_${process.pid}_${roles++}`
+      yield* Effect.acquireRelease(
+        Effect.andThen(
+          sql.unsafe(`CREATE ROLE ${role} LOGIN PASSWORD '${role}'`),
+          sql.unsafe(`GRANT CREATE ON SCHEMA public TO ${role}`),
+        ),
+        () => Effect.ignore(Effect.andThen(sql.unsafe(`DROP OWNED BY ${role}`), sql.unsafe(`DROP ROLE ${role}`))),
+      )
+      const connections = 4
+      const owned = yield* connect(as(url, role), { maxConnections: connections })
+      yield* Effect.scoped(Effect.gen(function*() {
+        const runtime = yield* on(owned)(launch({}))
+        const handle = yield* runtime.deploy(ranked)
+        yield* handle.create('a', { requestId: 'create-a', sender: null })
+      }))
+      yield* sql.unsafe(`CREATE SCHEMA ${role} AUTHORIZATION ${role}`)
+      // Each of the pool's connections is held at once, so that each is read apart.
+      const all = yield* Deferred.make<void>()
+      let entered = 0
+      const seen = yield* Effect.forEach(
+        Array.from({ length: connections }, (_, index) => index),
+        () =>
+          owned.withTransaction(Effect.gen(function*() {
+            const reason = reasonOf(yield* Effect.exit(on(owned)(createTables)))
+            const [row] = yield* owned<{ pid: number }>`SELECT pg_backend_pid() AS pid`
+            if (++entered === connections) yield* Deferred.succeed(all, undefined)
+            yield* Deferred.await(all)
+            return { pid: row?.pid, reason }
+          })),
+        { concurrency: 'unbounded' },
+      )
+      expect(new Set(seen.map((row) => row.pid)).size).toBe(connections)
+      for (const { reason } of seen) {
+        expect(reason).toContain(`the tables are in the schema 'public', and the search_path names '${role}' before it`)
+      }
+      const made = yield* sql<{ name: string }>`
+        SELECT relname AS name FROM pg_class JOIN pg_namespace ON pg_namespace.oid = relnamespace WHERE nspname = ${role}
+      `
+      expect(made).toEqual([])
+      expect(yield* sql`SELECT id FROM public.effecttea_entities`).toEqual([{ id: 'a' }])
+    }))
+})
+
 describe('a call that waits for a step, within a transaction of a pool (decision 0256)', () => {
   // The runtime reserves one connection for its advisory lock, and each transaction below holds another, so no
   // connection of the pool is left for a step. A create that waited for its step there would wait for ever, which is

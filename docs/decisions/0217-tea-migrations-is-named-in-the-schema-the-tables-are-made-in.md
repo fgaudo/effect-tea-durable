@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-11-09. Changes [decision 0216](0216-the-tables-are-made-by-effects-migrator.md), whose
 `Migrator` was given `tea_migrations` unnamed. Changes
 [decision 0215](0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md), in which no statement of the
-storage names a schema.
+storage names a schema. Changed by
+[decision 0263](0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md): where a schema further
+on the `search_path` holds the tables, a launch dies instead of making a set of tables in the first schema.
 
 ## Context
 

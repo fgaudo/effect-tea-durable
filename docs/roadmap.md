@@ -38,9 +38,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     by [decision 0259](decisions/0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md), and bug 19
     by [decision 0260](decisions/0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md), and bug 66 by
     [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md), and bug 82 by
-    [decision 0262](decisions/0262-a-sendfrom-stands-for-a-run-no-entity-draws.md). The part next is bug 41,
-    proposed to the maintainer before any code. Decision 0259 changes a reading of the storage, so the job
-    of PostgreSQL of `ci.yml` runs on its branch before it is on `main`.
+    [decision 0262](decisions/0262-a-sendfrom-stands-for-a-run-no-entity-draws.md), and bug 41 by
+    [decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md). The part next is bug 44,
+    proposed to the maintainer before any code. Decisions 0259 and 0263 change a reading of the storage, so the job
+    of PostgreSQL of `ci.yml` runs on their branch before they are on `main`.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
@@ -303,15 +304,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       ([decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md)). The
       [open question](open-questions.md#storage-and-reading) A sum at the edge of the largest double.
       Reproduced by `a sum whose exact total of magnitudes reads back as the largest double is answered alike on both dialects`, a `test.failing` of `src/dialects.test.ts`: PGlite gives `Number.MAX_VALUE` and SQLite refuses the sum.
-  41. **Reproduced: under the default `search_path`, a schema of the role's name, made after the tables, moves the
-      runtime onto empty tables.** [Decision 0217](decisions/0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md)
-      names the history in `current_schema()`, which under `"$user", public` changes once a schema of the role's
-      name exists. The next launch makes a new set of tables there, and every stored entity, reply and cursor is left
-      behind, with no error ([decision 0215](decisions/0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md)).
-      The test `FAILING: on PostgreSQL a schema of the role’s name made after the tables leaves the runtime on the
-      tables it made`, in `src/storage.test.ts`, on PGlite, on `claude/premise-review-tables-28f779` at `0a019a9`. The
-      fix begins at `schemaOf` and `migrationsTable` of `src/storage/tables.ts`, and is a choice of the design: the
-      [open question](open-questions.md#storage-and-reading) The schema a launch finds its tables in.
+  41. **Fixed by [decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md)**, whose launch dies, and makes nothing, where a schema further on the `search_path` holds the tables.
   42. **Reproduced: a rehearsal refuses a repeating timer that catches up, which the runtime runs.**
       [Decision 0130](decisions/archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md) checks no timer,
       since a timer in the past is how a repeating timer catches up after a downtime.

@@ -219,7 +219,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0223](0223-a-disk-that-is-really-full.md) | On a disk that is really full an operator frees room first, and the runtime keeps none of its own | [0245](0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md) |
 | [0224](0224-a-consumer-shows-the-time-of-the-step-it-reads-next.md) | A consumer shows the time of the step it reads next, and the runtime records no metric of its age |  |
 | [0216](0216-the-tables-are-made-by-effects-migrator.md) | The tables are made by Effect's `Migrator`, which records each migration in `tea_migrations` | [0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md), [0218](0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md) |
-| [0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md) | On PostgreSQL `tea_migrations` is named in the schema the tables are made in |  |
+| [0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md) | On PostgreSQL `tea_migrations` is named in the schema the tables are made in | [0263](0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md) |
+| [0263](0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md) | A launch dies where a schema further on the `search_path` holds the tables, and makes nothing |  |
 | [0218](0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md) | The prefix is `effecttea_`, and a launch dies on a name the runtime's objects would take |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for | [0213](0213-a-projections-allows-is-given-the-sender.md) |

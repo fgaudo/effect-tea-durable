@@ -501,8 +501,10 @@ the tables of an application in the same database are never taken for its own. T
 application names no table of its own with it. A launch on a database that already holds an object under one of the
 runtime's names dies, and leaves none of the runtime's objects behind
 ([decision 0218](decisions/0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md)). On
-PostgreSQL the runtime makes every object in the schema that the client's `search_path` names first, even where a
-schema further on holds the tables already. Only `effecttea_migrations` is named with that schema, which
+PostgreSQL the runtime makes every object in the schema that the client's `search_path` names first. A launch dies
+where a schema further on the `search_path` holds the tables, and makes nothing, since the database cannot tell a
+schema put in front of them on purpose from one made later by chance
+([decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md)). Only `effecttea_migrations` is named with that schema, which
 `current_schema()` gives, since `Migrator` would otherwise find it in any schema of the `search_path`
 ([decision 0217](decisions/0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md)). A launcher that sets the `search_path` of the runtime's role, as Cluster asks for
 its own tables, puts them in a schema of their own. A database is still held by one runtime, whatever its schemas,

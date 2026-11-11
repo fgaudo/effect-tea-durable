@@ -27,6 +27,7 @@ import {
   renamed,
   standingOf,
   storage,
+  tablesMade,
 } from './storage.ts'
 import { client, onEach } from './storage.test_databases.ts'
 import fc from 'fast-check'
@@ -836,25 +837,78 @@ test('on PostgreSQL every object the runtime makes is in the schema its clientâ€
     })).pipe(Effect.provide(client('pg')), Effect.orDie),
   ))
 
-// Unnamed, `effecttea_migrations` was found in `public`, and the schema the search_path names first was given no table
-// (decision 0217).
-test('on PostgreSQL the tables are made in the schema the search_path names first, though one further on has them', () =>
+/** The objects of PostgreSQL in `schema`: its relations and its functions. */
+const objectsIn = (sql: SqlClient.SqlClient, schema: string) =>
+  sql<{ name: string }>`
+    SELECT relname AS name FROM pg_class JOIN pg_namespace ON pg_namespace.oid = relnamespace WHERE nspname = ${schema}
+    UNION ALL SELECT proname FROM pg_proc JOIN pg_namespace ON pg_namespace.oid = pronamespace WHERE nspname = ${schema}
+  `
+
+/** The message `effect` dies with, or null where it does not die. */
+const diesWith = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.map(Effect.exit(effect), (exit) => {
+    const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+    return cause instanceof Error ? cause.message : null
+  })
+
+// Unnamed, `effecttea_migrations` was found in `public`, and the schema the search_path names first was given no
+// table (decision 0217). Named, a launch made a second set of tables, empty, in that schema. The launch now dies
+// before `Migrator` makes its table, and makes nothing in either schema (decision 0263).
+test('on PostgreSQL a launch dies where a schema further on the search_path holds the tables, and makes nothing', () =>
   Effect.runPromise(
     inOneTransaction(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       yield* createTables
+      const held = (yield* objectsIn(sql, 'public')).length
       yield* sql`CREATE SCHEMA runtime`
       yield* sql`SET LOCAL search_path TO runtime, public`
+      expect(yield* diesWith(createTables)).toBe(
+        "the tables are in the schema 'public', and the search_path names 'runtime' before it, where a launch would " +
+          "make tables of its own: set the role's search_path to the schema that holds the tables, or move the " +
+          "tables into 'runtime'",
+      )
+      expect(yield* objectsIn(sql, 'runtime')).toEqual([])
+      expect((yield* objectsIn(sql, 'public')).length).toBe(held)
+      // With the search_path set to the schema that holds the tables, the launch runs on them.
+      yield* sql`SET LOCAL search_path TO public`
       yield* createTables
-      const tables = (schema: string) =>
-        sql<{ name: string }>`
-          SELECT relname AS name FROM pg_class JOIN pg_namespace ON pg_namespace.oid = relnamespace
-          WHERE nspname = ${schema} AND relkind = 'r' AND starts_with(relname, 'effecttea_') ORDER BY relname
-        `
-      const made = yield* tables('runtime')
-      expect(made.length).toBeGreaterThan(16)
-      expect(made).toEqual(yield* tables('public'))
-      expect(yield* sql`SELECT migration_id FROM runtime.effecttea_migrations`).toEqual([{ migration_id: 1 }])
+    })).pipe(Effect.provide(client('pg')), Effect.orDie),
+  ))
+
+// Under the default search_path, a schema of the role's name made after the tables moves `current_schema()` in front
+// of `public`. With the history named in `current_schema()`, the launch made new tables there, and the runtime read
+// them, empty, with no error: bug 41 of the roadmap (decision 0263).
+test('on PostgreSQL a schema of the roleâ€™s name made after the tables makes the launch die, with the entities kept', () =>
+  Effect.runPromise(
+    inOneTransaction(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`SET LOCAL search_path TO "$user", public`
+      yield* createTables
+      yield* storage(receiver, sql).write('r', created(), 0)
+      expect(yield* sql`SELECT current_schema() AS schema`).toEqual([{ schema: 'public' }])
+      // An operator, or the application, makes a schema for the role, as `CREATE SCHEMA AUTHORIZATION` names it.
+      yield* sql`CREATE SCHEMA AUTHORIZATION CURRENT_USER`
+      const role = (yield* sql<{ role: string }>`SELECT current_user AS role`)[0]?.role ?? ''
+      expect(yield* diesWith(createTables)).toContain(
+        `the tables are in the schema 'public', and the search_path names '${role}' before it`,
+      )
+      expect(yield* objectsIn(sql, role)).toEqual([])
+      yield* sql`SET LOCAL search_path TO public`
+      expect((yield* storage(receiver, sql).load('r')) === null).toBe(false)
+    })).pipe(Effect.provide(client('pg')), Effect.orDie),
+  ))
+
+// `tablesMade` reads the tables a launch would read, so it dies where the launch dies, before it reads the history
+// (decisions 0247, 0263).
+test('on PostgreSQL tablesMade dies where a schema further on the search_path holds the tables', () =>
+  Effect.runPromise(
+    inOneTransaction(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      yield* createTables
+      yield* tablesMade
+      yield* sql`CREATE SCHEMA runtime`
+      yield* sql`SET LOCAL search_path TO runtime, public`
+      expect(yield* diesWith(tablesMade)).toContain("the tables are in the schema 'public'")
     })).pipe(Effect.provide(client('pg')), Effect.orDie),
   ))
 
