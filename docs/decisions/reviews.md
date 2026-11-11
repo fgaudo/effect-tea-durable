@@ -2451,3 +2451,175 @@ table says. Each cites the area's note for a rule it applies as written: a datab
 checked, a program checked where it enters, or the package's name. 0064, 0132, 0136 and 0141 change a note of the
 area, and were not read, since the status lines of 0053 and 0054 say what each changed, and the code that keeps it
 was read. Every note of the area itself was read whole, with its code, and so was 0193 against the notes it cites.
+
+## 2026-11-11: premise review of the pairs against Effect Cluster
+
+Branch `claude/premise-pairs-cluster-32dc2e`, cut from `main` at `e6d3808`. Test commits `7deee20` and `31b01e8`, both
+in `src/cluster.test.ts`. Two findings, both reproduced, and one only reasoned. The notes are the 29 that the review
+of Effect Cluster read in part or not at all, each against the notes of that area it meets.
+
+### The pairs read
+
+"Whole" means both notes read whole, with the code that keeps the rule. "In part" says which part of the earlier
+note was read. The Cluster note of a pair was read whole unless the row says otherwise.
+
+| Earlier note | Cluster note | What binds them | How it was read |
+| --- | --- | --- | --- |
+| 0015 | 0085 | 0085 says how 0015 holds on Cluster | whole, with `doorOf` and `sentNow` |
+| 0021 | 0085, 0090 | 0090 corrects 0021's consequence, and 0085 keeps the replies as 0021 does | whole, with `keepSent` and `forgetPending` |
+| 0023 | 0085, 0092 | 0085 says how 0023 holds, and 0092 answers `Suspended` on the way | whole, with the mailbox loop of `doorStep` |
+| 0029 | 0092, 0161 | 0092 keeps 0029's passivation for doors, and 0161 decides the pending machine that keeps an entity from leaving | whole, with `steps`, `unload`, `nothingToDo`, `holding`, `finishIn` and `settle` |
+| 0036 | 0085 | 0085 cites it for messages stored before a deploy | whole |
+| 0048 | 0085 | 0085 keys a request by the sender as 0048 writes it | whole |
+| 0059 | 0085 | 0085 keys a request by its `requestKey` | in part: the decision |
+| 0063 | 0085, 0090, 0092, 0162, 0163, 0167, 0172 | 0092 changes its waits on Cluster, 0163 narrows it, and 0167 wakes a sender by `Resumed` | whole, with `entities` of `src/runtime/callers.ts`; 0162, 0167 and 0172 in part, at the passages that cite it |
+| 0065 | 0085 | 0085 cites it as its reason | in part: the decision, with the reply read in `doorStep` |
+| 0069 | 0085 | 0085 cites it as its reason | in part: the decision, with `answerCodec` and the door's encoding in `src/cluster.ts` |
+| 0071 | 0081, 0092, 0162 | 0092 and 0162 apply it to each shard | in part: the decision, with `activating`; 0081 not read |
+| 0074 | 0081, 0085, 0092 | 0081 changes it | in part: the decision; 0081 not read |
+| 0076, 0078 | 0092 | 0092 keeps them for doors | in part: the decisions, with `admit`, `spare` and `unload` |
+| 0079 | 0092 | 0092 changes it for an activation | in part: the decision, with `activateOnCluster` |
+| 0100 | 0090 | 0100 cites 0090 as its reason | whole |
+| 0114 | 0092, 0166 | 0166 applies it through the door | the passages on Cluster only; 0166 not read |
+| 0125 | 0085, 0090, 0165 | 0165 changes it on Cluster | the passages on Cluster only |
+| 0137 | 0162 | 0162 decides that its partition is the shard | in part: the decision and its premises, with `interruptedWithin` and `singletonsOf` |
+| 0142 | 0163 | 0163 narrows it | in part: the decision and its premises, with `tell` in `settle` |
+| 0147 | 0165 | 0165 drops its bound on Cluster | in part: the decision and its premises |
+| 0151 | 0092 | 0151 cites 0092 | the passages on Cluster only |
+| 0156 | 0167, 0169, 0171, 0174, 0176 | 0176 changes it | the passages on Cluster only, with `renamed` of `src/storage/tables.ts`; the Cluster notes not read |
+| 0164 | 0161, 0163 | 0164 extends 0161 | the passages on Cluster only |
+| 0182 | 0085, 0165, 0169, 0249 | 0182 cites them as its reason, and 0249 changes its reset | in part: its rules on Cluster, with `creationCodec`; 0249 at its decision and premises |
+| 0185 | 0161 | 0185 cites 0161 | the passages on Cluster only |
+| 0215 | 0175 | 0215 cites 0175 | the passages on Cluster only; 0175 not read |
+| 0219 | 0175 | 0219 cites 0175 | the passages on Cluster only; 0175 not read |
+| 0247 | 0159 | 0247 cites 0159 | the passages on Cluster only; 0159 at its passages on callers |
+
+### Finding 1, reproduced: 0029 against 0092 and 0161
+
+- Test: `FAILING: an entity whose passivation waits on a door step that starts an operation runs the operation`, in
+  `src/cluster.test.ts` (describe `the runtime on Cluster`), commit `7deee20`. Run:
+  `bun test src/cluster.test.ts -t "FAILING: an entity whose passivation"`. It fails: the entity is unloaded while its
+  stored state is `asking`, `Ask` never runs, and the state stays `{ n: 0, asking: true }`.
+- The premise that fell: 0029 says that an entity is never unloaded under a caller, since finding it and offering its
+  event is one hold of its lock. On one process the caller's event is in the queue before the lock is let go, so the
+  unload finds it pending. 0092 and 0161 move a door's step into Cluster's transaction. The step takes the lock inside
+  the transaction, and lets it go when the handler returns. Cluster commits after that, and only then does
+  `afterCommit` offer the `Settle` that makes the entity busy (doors.ts:255). Between the two, `loaded.uncommitted` is
+  set and nothing is pending.
+- 0161 says that an entity whose machine is not settled does not leave the process. The loop checks it once, outside
+  the lock, when it takes its `Passivate` or `Evict` (loop.ts:613). `unload` then reads `nothingToDo` or `spare` from
+  the held machine, under the lock, and neither reads `uncommitted` (loop.ts:434-459, 490-493). 0161's premise says
+  that only a lost callback or a rollback leaves an entity spare with an uncommitted machine. It missed this window,
+  where the commit succeeds.
+- Sequence: the entity `one` is loaded and idle, and its loop's wait runs out. The loop takes `Passivate`, finds no
+  uncommitted machine, and waits for the lock, which a door's step of `Ask` holds. The door's step writes
+  `asking: true`, sets `uncommitted`, and returns. The lock goes to the loop. Cluster saves the reply and commits.
+  `unload` reads the held machine, which has nothing to do, and the entity leaves. The `Settle` is offered to a loop
+  that has ended. The stored state holds `ask`, and nothing runs it on this runner. The waker reads timers alone, and
+  the shard's round runs only when the shard's singleton starts. The next message through the door loads the entity,
+  and its `Restart` starts `ask` then. An at-most-once operation would be given its `unknown` there, though it never
+  ran.
+- In the test the window is opened by one `Effect.yieldNow` before Cluster's `saveReply`, which runs in the door's
+  transaction after the handler returns. Without it the commit and the callback ran before the loop took the lock,
+  and the test passed. In a deployment a fiber yields there whenever it reaches Effect's budget of operations, so the
+  window opens for a share of the door's steps that meet a passivation or an eviction. A control run, with the yield
+  and a passivation of a minute, passes.
+- The same window drops more than the operation. The `tell` of the step's rows to the readings of this runner runs in
+  `settle` (doors.ts:76), so a reader of `consume` with `wait` on this runner waits out its time. A door's step that
+  resumes the entity is dropped the same way, by the branch of `nothingToDo` for a suspended entity: the resumption is
+  committed, and the entity is not loaded again until a message comes. Neither variant was run.
+- It is of family E of the step of bugs, an entity left with work stored that nothing loads again, by a third path
+  beside bugs 14 and 18.
+- Where a fix could begin: `unload` of `src/runtime/loop.ts:484`, which could refuse, under the lock, to unload an
+  entity whose `uncommitted` is set, and leave the decision to the `Settle` to come. Or `finishIn` of
+  `src/runtime/doors.ts:233`, which could count the `Settle` as pending before the lock is let go, and lower the count
+  where the transaction rolls back.
+
+### Finding 2, reproduced: 0069 and 0100 against 0085
+
+- Test: `FAILING: a caller of the older runner is given a reason the newer runner wrote, read as its version reads
+  it`, in `src/cluster.test.ts` (describe `two runners on one file`), commit `31b01e8`. Run:
+  `bun test src/cluster.test.ts -t "FAILING: a caller of the older runner"`. It fails: the reason's two fields come
+  back swapped.
+- The premise that fell: 0069 and 0100 read a rejection's reason through the migrations from the version that wrote
+  it. 0085 keys a request in Cluster's table by the version of the caller that sent it, and says that two versions
+  never share a key. The answer saved under that key is written by the door, at the door's version. The door encodes
+  it with its own program's `answerCodec` or `creationCodec` (src/cluster.ts:213-246, 422-423). The caller's client
+  decodes it with the caller's program (src/cluster.ts:454, 471). The text carries no version. So the key's version
+  and the answer's version differ whenever a runner of one version answers a caller of another.
+- Sequence: a runner of `Toy` version 1 holds every shard, and creates `one`. A runner of version 2 launches, and
+  takes every shard (decision 0159). Version 2's migration of `rejection` swaps the two fields of the reason. A caller
+  of the older runner sends a message under version 1, which the newer runner's door rejects. The older client decodes
+  version 2's reason with version 1's schema, and reads `{ first: 'closed', second: 'the clerk' }`, where version 1
+  means `{ first: 'the clerk', second: 'closed' }`. Nothing fails. A migration that renames a field makes the decode
+  fail instead, and the caller is given a defect. A creation's reason crosses the same way (decision 0182).
+- A retry within the version is then answered from that saved text, for as long as Cluster keeps the rows.
+- It is of family A of the step of bugs, a newer version against what an older one runs. Its fix is a choice of the
+  design, since a migration goes only forward. The answer could carry the version that wrote it, and a client of an
+  older version could refuse a reason it cannot read. Or Cluster's answer could hold no reason, and the client could
+  read the runtime's reply through the migrations.
+- Where a fix could begin: `answerCodec` and `creationCodec` of `src/cluster.ts:213`, and their decoding in `create`
+  and `send` of `onCluster`.
+
+### Finding 3, only reasoned: 0137 against 0162
+
+- The premise that fell: 0137 stores an entity's partition and never computes it again, so that a change of
+  `Hash.string` in a later release of Effect breaks no order. 0162 makes the partition the shard, and keeps that
+  sentence: "a hash that changes in a later release moves no stored partition". On Cluster the stored partition must
+  still be the shard Cluster computes now. The waker and the shard's round read entities by the stored partition
+  (`interruptedWithin`, src/storage/entities.ts:485). `loadable` and `losing` compute the shard from the id
+  (loop.ts:109-113, doors.ts:516).
+- Sequence: a release of Effect changes Cluster's hash and `Hash.string` alike. The deploy's check in `singletonsOf`
+  compares the two hashes of now, so it passes (doors.ts:430-447). An entity created before the move has a stored
+  partition `p`, and is routed to another shard `s`. The round of `s` does not read it. The round and the waker of `p`
+  read it, and `activateOnCluster` finds it `Unheld` wherever `s` is not held, and drops it with no log
+  (doors.ts:419). Its timers and its work wait until a message reaches it through the door.
+- What guards it today: the test `the partition of an id is Cluster's formula on Hash.string, pinned for a few ids`
+  in `src/storage.test.ts` fails at such a move of Effect's version. What a deployment does then is decided nowhere.
+  0137's reasoning, that a stored partition makes the change harmless, does not hold on Cluster.
+- Where a fix could begin: the rule of `AGENTS.md` for a move of Effect's version, or a check at a launch on Cluster
+  that the stored partitions of a sample of entities are the shards Cluster gives their ids.
+
+### Suspects ruled out
+
+- 0023 against 0092: a caller's message queued behind the entity's own work, which a suspension on the way stops, is
+  answered `Suspended` and stays in the stored mailbox. A retry after the resumption is answered from the reply the
+  resumption stored, so the message is applied once, as 0023 has it. 0085's consequence that such messages "are not
+  kept" is wider than the code, which loses nothing.
+- 0156 against 0167, 0169 and 0171: a rename moves `effecttea_sent_requests`, `effecttea_given_requests` and
+  `effecttea_waiting` with the replies (src/storage/tables.ts:613-618), so no kept id and no waiting sender stays
+  under the old name. Bug 27 holds the case of a process of the old code.
+- 0063 against 0092 and 0168: an operation whose receiver's program its own runner deploys, and the shard's holder
+  does not, is sent again every `retry`, 10 ms by default, with a keep and a reset each time, once the registration
+  window is past. It writes on the file's one writer for as long as the holder lacks the program. 0168's premise, that
+  such a failure passes with time or is the operator's to fix, accepts it. A program no runner deploys still waits on
+  its signal in `deployedAs`, as 0063 has it.
+- 0076 against 0092: a door's step that writes nothing offers no event, so it does not make the entity the most
+  recently used, and an entity used through its door alone may be evicted first. An eviction writes nothing and loses
+  nothing.
+- 0147 against 0165: Cluster's mailbox bounds a burst, and a caller is never answered `Full`. Nothing is lost.
+- 0065 against 0085 and 0092: a door's step reads the reply inside its transaction, after `settle`, on the runner's
+  one connection, so what it reads is what the steps before committed, as 0065 asks of the loop.
+- 0079 against 0092: a door's activation runs in the handler's fiber, which Cluster interrupts only when the shard
+  leaves. The transaction then rolls back, and the entity enters the process only in `finishIn`, so no half-loaded
+  entity stays.
+- 0215 against 0175: the lease check reads `cluster_locks` unqualified, by the `search_path` that Cluster's tables
+  follow too, and the runtime on Cluster runs on SQLite alone (decision 0084).
+- 0100 against 0090: a rejection's reason in the runtime's table goes with the asker's work on Cluster as on one
+  process. What crosses versions is Cluster's saved text, which is finding 2.
+
+### Noticed, not checked
+
+- Finding 1 for an `Evict`: `admit` marks an entity spare outside its lock, and `unload` reads `spare` under the lock
+  without `uncommitted` (loop.ts:97, 492). The window is the same. A test would differ from finding 1's only by a
+  capacity, so it was not written.
+- Finding 1 for a door's step that resumes the entity, and for the `tell` of its rows: reasoned from `nothingToDo`
+  and `settle`, as finding 1 says, and not run.
+
+### Not read whole, and why
+
+- The notes the table marks "in part" or "the passages on Cluster only": 0059, 0065, 0069, 0071, 0074, 0076, 0078,
+  0079, 0114, 0125, 0137, 0142, 0147, 0151, 0156, 0164, 0182, 0185, 0215, 0219 and 0247. The session spent its time on
+  the two findings, and read each of these at its decision and premises, or where it speaks of Cluster.
+- The Cluster notes 0081, 0159, 0162, 0166, 0167, 0169, 0171, 0172, 0174, 0175 and 0176, read only at the passages
+  that cite a note of the list, or not at all.
