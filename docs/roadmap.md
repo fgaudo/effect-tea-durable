@@ -57,11 +57,19 @@ it leaves this file, and what it decided goes into the design, a decision or an 
         0203, 0204, 0208, 0212, 0241 and 0242.
   - Each area also reads, against the notes of the areas already read, every later note of its own that cites
     them. The sessions above did not reach these, and each is read in the area that holds it: 0021, 0022, 0029,
-    0035, 0047 to 0049, 0060, 0071, 0075, 0077, 0085, 0092, 0122, 0125, 0131, 0142, 0156, 0162, 0180, 0183 and 0193.
+    0047, 0048, 0060, 0071, 0075, 0077, 0085, 0092, 0122, 0125, 0131, 0142, 0156, 0162, 0183, 0187, 0193 and 0219.
+    The second session read, of the later notes that cite its section, only 0133 and 0202, so the rule holds of its
+    section as of the others.
   - A last session reads whole the pairs the sessions above read by the code and the later note only, or by a
     note's decision only, where an area of the list has not read them since: 0039, 0137, 0152, 0029, 0068, 0076,
-    0078, 0151, 0159, 0174, 0175, 0161 to 0163, 0172 and 0021, of the first session; 0058 against 0018 and 0067
-    against 0056, of the third; 0038, 0053, 0079, 0130, 0206, 0062, 0109, 0175, 0166, 0177 and 0186, of the fourth.
+    0078, 0151, 0159, 0174, 0175, 0161 to 0163, 0172 and 0021, of the first session; 0058 against 0018, 0067
+    against 0056, 0090 and 0133 at the passages that cite 0005, 0092 at how 0056 holds for a shard that leaves, and
+    0113, 0147 and 0178 by their decisions, of the third; 0038, 0053, 0079, 0130, 0206, 0062, 0109, 0175, 0166, 0177
+    and 0186, of the fourth. It also reads the later notes of an area already read that cite an area read before
+    it, which no area of the list holds: 0035, 0049 and 0180 against the section Operations and timers.
+  - The first session's report is not kept, so what it ruled out is not written here. The reports of the second,
+    third and fourth sessions are recorded whole in this step, in the bugs of the next step and in
+    [the open questions](open-questions.md).
   - The step begins with the skill's brief, given the first area of the list not done. A session that ends an area
     writes here what it read, what it found and what it did not reach, and the step leaves this file once the last
     session is done.

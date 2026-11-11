@@ -74,5 +74,8 @@ and the sections you did not reach.
   check are also questions of [`docs/open-questions.md`](../../../docs/open-questions.md), with what would decide
   them. Nothing of a report stays only in the report.
 - Write what the review read and what it did not reach in the roadmap's step of the review, so that the next
-  review starts where this one stopped. The step leaves the roadmap once every section of the index is read.
+  review starts where this one stopped. A pair read only in part, by the code, by a passage or by a decision, is
+  listed to read whole. A note not reached goes to the area of the list that holds it, or to the step's last
+  session where that area is already read. Check the report whole against what the step and the open questions
+  now say, item by item, before the commit. The step leaves the roadmap once every section of the index is read.
 - Do not merge the reviewer's branch: its tests fail. A test moves to `main` with the fix that makes it pass.

@@ -164,12 +164,15 @@ with a requirement that no example has yet.
   ([decision 0182](decisions/0182-init-may-reject-the-flags.md)), nor is `NotFound`
   ([decision 0010](decisions/archive/0010-a-rejection-may-carry-a-reason.md)). A run after a crash may be told
   otherwise, and act otherwise, as the test `FAILING: an at-least-once operation run again after a crash acts once,
-  though init rejected its creation`, on the branch `claude/premise-review-creation-03f15d`, shows. Whether these
+  though init rejected its creation`, on the branch `claude/premise-review-creation-03f15d`, shows. A run after a
+  crash may also be told `Created` where the first was told `Rejected`, when `init` reads the time or a deploy
+  changed `init`. Decision 0182 says so of a caller's retry, and not of an operation that acts on the answer. Whether these
   answers are stored, or the promise of `docs/design.md` and of decision 0009 is narrowed, is not decided. It would
   be decided by:
   - whether storing a rejection of `init` or a `NotFound` while the operation's work holds keeps 0182's reason, that
     a rejected creation leaves nothing;
-  - a test of the `NotFound` half, which no test holds;
+  - a test of the `NotFound` half, which no test holds: the test above written again with a `send` to an entity
+    created between the two runs;
   - whether a sentence of the design can say which answers a run after a crash is given again, so that a program
     acts only on those.
 - **A creation that `init` dies on, on Cluster.** On one process, an operation's creation that `init` dies on
@@ -177,7 +180,8 @@ with a requirement that no example has yet.
   Cluster the door dies, and Cluster delivers the creation again without end
   ([decision 0160](decisions/archive/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)),
   so the operation's `create` waits until a fix is deployed. The sender is not suspended and the receiver does not
-  exist, so `suspended` lists nothing, and an operator cannot see what waits. Neither 0160 nor
+  exist, so `suspended` lists nothing, and only Cluster's log of restarts shows it. The sender's entity stays busy,
+  and is never unloaded. An operator cannot see what waits. Neither 0160 nor
   [decision 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)
   says what holds of 0046's rule on Cluster. The premise review of 2026-11-11 reasoned it. It would be decided by:
   - a test of `src/cluster.test.ts` where an operation creates an entity whose `init` dies, which would hang today;
@@ -190,7 +194,8 @@ with a requirement that no example has yet.
 - **A cause holding U+0000 in Cluster's tables.** A defect's cause is written as text every database holds, with U+0000
   escaped ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)), in the
   runtime's tables. A door that dies on such a cause may hand it to Cluster, which stores it in its own tables
-  unescaped. It matters once Cluster runs on PostgreSQL, the step Later of the roadmap. The premise review of
+  unescaped, and so may a failure Cluster saves
+  ([decision 0168](decisions/archive/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md)). It matters once Cluster runs on PostgreSQL, the step Later of the roadmap. The premise review of
   2026-11-11 noticed it and did not check it. It would be decided by reading what Cluster stores of a defect in
   `node_modules/effect/src`, and a test on the CI's PostgreSQL once that step starts.
 - **A failure of the storage that passes.** Every call of a handle but `consume` turns a `SqlError` into a defect,
