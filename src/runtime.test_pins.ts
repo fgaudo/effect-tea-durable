@@ -95,4 +95,35 @@ export const pins: ReadonlyArray<Pin> = [
     test: 'src/runtime/readings.test.ts',
     name: 'a reading is woken by a commit of another runner between its page and its wait, under prioritized schedules',
   },
+  {
+    id: '0185 an inspection reads one snapshot',
+    file: 'src/storage/entities.ts',
+    edits: [['    snapshot(entity(id)).pipe(\n', '    entity(id).pipe(\n']],
+    test: 'src/runtime.test.ts',
+    name: 'an inspection reads one snapshot, so a step that commits meanwhile is read whole, under prioritized schedules',
+  },
+  {
+    id: '0119 the drain takes the signal before it looks',
+    file: 'src/runtime.ts',
+    edits: [
+      [
+        '      const next = p.ended\n      return drained() ? Effect.void : Effect.flatMap(Deferred.await(next), () => emptied)\n',
+        '      return Effect.flatMap(Effect.sync(drained), (empty) =>\n        empty ? Effect.void : Effect.flatMap(Effect.sync(() => p.ended), (next) => Effect.flatMap(Deferred.await(next), () => emptied)))\n',
+      ],
+    ],
+    test: 'src/runtime.test.ts',
+    name: 'the drain waits for the completion of an at-most-once operation, under prioritized schedules',
+  },
+  {
+    id: '0142 a reading takes its topic\'s signal before it reads',
+    file: 'src/runtime/readings.ts',
+    edits: [
+      [
+        '      const commit = commitOf(p.readings, name, topic)\n      const page = yield* read\n',
+        '      const page = yield* read\n      const commit = commitOf(p.readings, name, topic)\n',
+      ],
+    ],
+    test: 'src/runtime.test.ts',
+    name: 'a consumer that waits is given the row a step commits while it reads, under prioritized schedules',
+  },
 ]

@@ -1127,6 +1127,8 @@ describe('the runtime on SQLite', () => {
   test('an inspection reads one snapshot, so a step that commits meanwhile is read whole, under prioritized schedules', () => {
     // The stored keys are the work the stored state holds, and the inspection reads the state and the keys in two
     // statements. A step between the two would give a state that holds a key and no work under it (decision 0185).
+    // With the two read outside one snapshot, seed 3, pinned, fails. `bun run test:pins` runs it against that form,
+    // the pin `0185` of `src/runtime.test_pins.ts` (decision 0254).
     explored(() =>
       Effect.gen(function*() {
         const { layer } = yield* hands()
@@ -1142,7 +1144,7 @@ describe('the runtime on SQLite', () => {
                 inspected.work.map(({ key }) => key.name).sort().join()
             )
           }))
-      }), [true, true, true, true])
+      }), [true, true, true, true], { pinned: [3] })
   }, 60_000)
 
   test('an at-most-once operation delivers unknown after a crash, and an idempotent one runs again', () =>
@@ -1294,12 +1296,14 @@ describe('a planned stop', () => {
 
   test('the drain waits for the completion of an at-most-once operation, under prioritized schedules', () => {
     // Decision 0119: the drain looks whether anything is left after it takes the signal of `settled`, so an
-    // operation's end or a step's between the look and the wait is not missed, and its completion is committed.
+    // operation's end or a step's between the look and the wait is not missed, and its completion is committed. With
+    // the signal taken in a step after the look, seed 91, pinned, fails. `bun run test:pins` runs it against that
+    // form, the pin `0119` of `src/runtime.test_pins.ts` (decision 0254).
     explored((window) =>
       Effect.map(
         stopped({ drain: { millis: 100 } }, (_toy, open) => Effect.andThen(opened(window, true), open)),
         ({ second, published }) => ({ rerun: second.filter((act) => act === 'b').length, unknown: unknown(published) }),
-      ), { rerun: 0, unknown: [] }, { open: false })
+      ), { rerun: 0, unknown: [] }, { open: false, pinned: [91] })
   }, 60_000)
 
   test('a completion in the drain starts no operation that runs again, and arms no timer', () =>
@@ -1986,7 +1990,9 @@ describe('publishing what happened', () => {
 
   test('a consumer that waits is given the row a step commits while it reads, under prioritized schedules', () => {
     // Decision 0142: the reading takes its topic's signal before it reads, so that a commit between its reading and
-    // its wait ends the wait at once. The clock never moves here, so a wait that missed the commit never ends.
+    // its wait ends the wait at once. The clock never moves here, so a wait that missed the commit never ends. With
+    // the signal taken after the reading, seed 27, pinned, fails. `bun run test:pins` runs it against that form, the
+    // pin `0142` of `src/runtime.test_pins.ts` (decision 0254).
     explored((window) =>
       Effect.gen(function*() {
         const at = yield* DateTime.now
@@ -2004,7 +2010,7 @@ describe('publishing what happened', () => {
             yield* opened(window, false)
             return (read as ReadonlyArray<Readonly<{ value: number }>>).map(({ value }) => value)
           }))
-      }), [3], { open: false })
+      }), [3], { open: false, pinned: [27] })
   }, 60_000)
 
   test('a row of another topic does not end a consumer’s wait, which gives nothing once it is over', () =>

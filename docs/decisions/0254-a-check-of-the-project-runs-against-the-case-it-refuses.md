@@ -148,6 +148,10 @@ that fails is pinned. The tests pinned so far, each with its pin in `src/runtime
 - `pinsUnmatched` of `src/form.test.ts` read a test only at the start of a line, so a test inside a `describe` that
   pinned a seed needed no pin. It now reads a test after its indentation, and an explored test where a line begins
   with `explored(`, so that its own samples, in strings, are no tests. A sample inside a `describe` holds it.
+- Of `src/runtime.test.ts`: `an inspection reads one snapshot`, seed 3, against the readings of decision 0185 made
+  outside one snapshot; `the drain waits for the completion of an at-most-once operation`, seed 91, against the
+  signal of decision 0119 taken in a step after the look; and `a consumer that waits is given the row a step commits
+  while it reads`, seed 27, against the signal of decision 0142 taken after the reading.
 
 ## What it rests on
 
