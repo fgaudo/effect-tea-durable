@@ -1530,6 +1530,33 @@ describe('the shards of a runner on Cluster', () => {
       { refresh: Duration.seconds(30), expiration: Duration.seconds(60) },
     ), 60_000)
 
+  // A premise review found it (decisions 0167 and 0092): the step that resumes sends `Resumed` from its transaction.
+  // Where the sender's shard is this runner's, Cluster's `notifyLocal` first waits for the sender's entity type to
+  // be registered, inside that transaction, and dies once the registration window is past. The step then rolls back
+  // and Cluster delivers the operator's event again, without end. The row of `effecttea_waiting` stands for a sender
+  // whose program this runner does not deploy: one a later launch dropped, or one not deployed yet.
+  test('FAILING: an operator resumes an entity whose waiting sender is of a program the runner does not deploy', () =>
+    onFile(
+      (start) =>
+        Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          const runner = yield* start(1)
+          yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
+          yield* create(runner, 'one')
+          yield* send(runner, 'one', { _tag: 'Break' }, 'm1')
+          yield* until(runner.bell.suspended, (listed) => listed.length === 1)
+          yield* sql`
+            INSERT INTO effecttea_waiting (name, id, sender_name, sender_id) VALUES ('Bell', 'one', 'Ghost', 'g')
+          `
+          // Past the runner's registration window, as on any runner that has run for a minute.
+          yield* Effect.sleep('1 second')
+          const resumed = yield* Effect.timeoutOption(runner.bell.resume('one'), '5 seconds')
+          expect(Option.getOrUndefined(resumed)).toEqual({ _tag: 'Resumed' })
+        }),
+      {},
+      Duration.millis(300),
+    ), 30_000)
+
   test('an entity left with work is activated by the runner that gains its shard', () =>
     onFile((start) =>
       Effect.gen(function*() {
