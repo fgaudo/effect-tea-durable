@@ -503,20 +503,26 @@ with a requirement that no example has yet.
   - what the rule of `AGENTS.md` for a move of Effect's version does when that test fails;
   - whether a launch on Cluster checks that the stored partitions of a sample of entities are the shards Cluster
     gives their ids.
-- **A deploy under way when a drain begins.** A planned stop stops at once what the registered deployments run again,
-  and waits for their at-most-once operations
-  ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). A deploy registers
-  only once its activations are done
-  ([decision 0051](decisions/archive/0051-a-deploy-that-fails-leaves-nothing-running.md)). So a deploy that registers
-  during the drain keeps its waker and the operations that run again through the drain, which is bug 66 of the
-  [roadmap](roadmap.md), reproduced. A drain that looks between a deploy's last activation and its registration may
-  close the scope on an at-most-once operation, which is only reasoned. A planned stop while the main fiber deploys
-  undoes the deploy ([decision 0102](decisions/archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)),
-  and its at-most-once operations deliver `unknown`, which is bug 67, not checked. It would be decided by:
-  - whether the drain stops and counts the deployments being made, or a deploy refuses to start or to register once
-    the drain began;
-  - whether a planned stop waits for the at-most-once operations of a deploy it interrupts;
-  - a test under `explored` with the deploy forked and no hold, for the window before the registration.
+- **A deploy that the planned stop interrupts or that fails in the drain.** The drain reaches a deploy still
+  activating, and the deploy activates nothing once the drain began
+  ([decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)), which fixes bug 66 of the
+  [roadmap](roadmap.md). A deploy that fails before it registers still closes its scope at once
+  ([decision 0051](decisions/archive/0051-a-deploy-that-fails-leaves-nothing-running.md)), and its at-most-once
+  operations are interrupted and deliver `unknown`. A planned stop while the main fiber deploys is such a failure: the
+  interruption undoes the deploy
+  ([decision 0102](decisions/archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)) before the drain
+  begins, which is bug 67, not checked. It would be decided by:
+  - whether an undo leaves the deployment's scope to the drain when the launch has `drain`, so that the drain waits
+    for its at-most-once operations;
+  - a test that interrupts the main fiber while its deploy waits at an activation, with an at-most-once operation of
+    an earlier entity under way.
+- **A drain on Cluster with a deploy under way.** On Cluster, the singleton of a shard activates the entities of the
+  shard before the deployment registers. The drain reaches them through the deployments it holds from the claim of
+  the name, as on one process ([decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)),
+  but no test runs a drain on Cluster with a deploy under way. The round of a shard's activation goes on in the
+  drain, and may start an at-most-once operation there, which the drain then waits for. It would be decided by:
+  - a test of `src/cluster.test.ts` that stops a runner while a shard's round activates its entities;
+  - whether the round stops at the next entity once the drain began, as the activations of one process do.
 - **Two programs of one version on Cluster.** A version is the count of a program's migrations plus one
   ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)), and an older runner is kept from
   every shard by the version recorded

@@ -35,8 +35,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md), and bugs 26 and
     81 by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md), and bug 75
     by [decision 0259](decisions/0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md), and bug 19
-    by [decision 0260](decisions/0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md). The part next
-    is bug 66, proposed to the maintainer before any code. Decision 0259 changes a reading of the storage, so the job
+    by [decision 0260](decisions/0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md), and bug 66 by
+    [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md). The part next is bug 82,
+    proposed to the maintainer before any code. Decision 0259 changes a reading of the storage, so the job
     of PostgreSQL of `ci.yml` runs on its branch before it is on `main`.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
@@ -448,30 +449,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). Bug 31 is the
       at-most-once case. Two sessions noticed it. The [open question](open-questions.md#running) A send after the
       work it belongs to ended.
-  66. **Reproduced: a deploy that registers during a drain keeps its waker, and the operations that run again,
-      through the drain.** The drain stops at once the timers, the waker and the operations that run again of the
-      deployments registered as it begins
-      ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). A deploy
-      registers only once its activations are done
-      ([decision 0051](decisions/archive/0051-a-deploy-that-fails-leaves-nothing-running.md)), and an activation may
-      start those operations. So a deploy still activating when the scope closes registers in the drain, forks its
-      waker there, and its idempotent and at-least-once operations run until the drain's time runs out. The test
-      `FAILING: a deploy that registers during the drain has the operations that run again stopped at once`, in
-      `src/runtime.test.ts`, on `claude/premise-pairs-versions-2-b6a869` at `8b65a28`. Two cases are only reasoned.
-      The waker forked in the drain activates entities, which is read in the code and not run. A drain that looks
-      between a deploy's last activation and its registration finds nothing to wait for, and closes the scope on an
-      at-most-once operation the deploy started, which then delivers `unknown`. A test under `explored` with the
-      deploy forked and no hold would check that second case. The fix begins at the drain of `src/runtime.ts`,
-      which would stop and count the deployments being made, or at `deploy`, which would refuse to start or to
-      register once `p.draining` is set. The [open question](open-questions.md#running) A deploy under way when a
-      drain begins.
+  66. **Fixed by [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)**, whose drain reaches a deployment still activating.
   67. **Noticed, not checked: a planned stop while the main fiber deploys undoes the deploy, and its at-most-once
       operations deliver `unknown`.** The interruption reaches the deploy before the scope's finalizers run, so the
       deploy undoes itself ([decision 0102](decisions/archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md))
       and stops its at-most-once operations before the drain of
       [decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md) begins. They
       deliver `unknown`, as after a crash. Whether a planned stop waits for them is a choice no note makes. The
-      [open question](open-questions.md#running) A deploy under way when a drain begins.
+      [open question](open-questions.md#running) A deploy that the planned stop interrupts or that fails in the drain.
   68. **Reasoned: on Cluster, a deploy that adds no migration does not outrank the runners it replaces, and an older
       runner steps the rows of the newer code.** A version is the count of a program's migrations plus one
       ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)), and an older runner is kept

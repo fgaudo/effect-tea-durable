@@ -38,7 +38,13 @@ export interface Process {
    * given no row, and reads nothing from a database about to be let go (decision 0142).
    */
   readonly closing: Deferred.Deferred<void>
+  /** The deployments registered: what a caller, an operation and the waker reach, by the program's name. */
   readonly deployments: Map<string, Deployment<never>>
+  /**
+   * Every deployment from the claim of its name to its undo, registered or still activating. The drain stops and
+   * counts each, since a deploy registers only once its activations are done (decision 0261).
+   */
+  readonly made: Set<Deployment<never>>
   /** The effects running detached from their callers, which `settled` waits for (decision 0079). */
   detachments: number
   /**

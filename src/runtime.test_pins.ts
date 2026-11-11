@@ -194,4 +194,11 @@ export const pins: ReadonlyArray<Pin> = [
     test: 'src/runtime/loop.test.ts',
     name: 'an entity whose wait runs out as an event arrives waits again from the event, under prioritized schedules',
   },
+  {
+    id: '0261 the drain counts the entities of a deployment still activating',
+    file: 'src/runtime.ts',
+    edits: [['      for (const deployed of p.made) {\n', '      for (const deployed of p.deployments.values()) {\n']],
+    test: 'src/runtime.test.ts',
+    name: 'a drain that looks while a deploy activates closes on no at-most-once operation the deploy stores, under every deviation',
+  },
 ]

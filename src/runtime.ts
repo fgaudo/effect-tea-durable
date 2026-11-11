@@ -1060,6 +1060,7 @@ export const launchWith = (
       running,
       closing,
       deployments: new Map(),
+      made: new Set(),
       detachments: 0,
       leaving: 0,
       messages: new Map(),
@@ -1137,11 +1138,13 @@ export const launchWith = (
               shards: new Map(),
               run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
             }
+            p.made.add(deployed as unknown as Deployment<never>)
             return yield* Effect.onError(restore(deploying<T, C>(deployed)), () =>
               p.deployments.has(program.name) ? Effect.void : Effect.andThen(
                 Scope.close(deployed.scope, Exit.void),
                 Effect.sync(() => {
                   deployed.loaded.forEach((loaded) => forgetUse(p, loaded))
+                  p.made.delete(deployed as unknown as Deployment<never>)
                   names.delete(program.name)
                 }),
               ))
@@ -1192,7 +1195,12 @@ export const launchWith = (
             yield* Scope.provide(cluster.singleton(name, serving(p, cluster, deployed, shard)), deployed.scope)
           }
         } else {
-          for (const id of yield* deployed.storage.interrupted) yield* loads(p, deployed, id)
+          // No activation starts once the drain began, so that the drain waits for no at-most-once operation of an
+          // entity it found unloaded: the next process activates what is left (decision 0261).
+          for (const id of yield* deployed.storage.interrupted) {
+            if (p.draining) break
+            yield* loads(p, deployed, id)
+          }
         }
         // Registered with its waker in one step: a deployment others can reach always has its timers woken. The
         // waker is not forked uninterruptible with the step, so the scope that closes it stops it (decisions 0078,
@@ -1205,6 +1213,9 @@ export const launchWith = (
           deployed.waking = yield* Effect.forkIn(untransacted(sql, waking(p, deployed)), deployed.scope, {
             uninterruptible: false,
           })
+          // A deployment registered during the drain wakes no timer, as the drain stops the waker of the others
+          // (decision 0261). A drain that began before the fork is found here, and one that begins after finds it.
+          if (p.draining) yield* Fiber.interrupt(deployed.waking)
         }))
         // The sweep frees what no reader needs, at its interval, and changes no answer (decision 0245). On Cluster
         // it is a singleton, so that the runners do not contend for the same rows.
@@ -1409,7 +1420,7 @@ export const launchWith = (
      */
     const drained = () => {
       if (p.detachments > 0) return false
-      for (const deployed of p.deployments.values()) {
+      for (const deployed of p.made) {
         for (const loaded of deployed.loaded.values()) {
           if (loaded.applying || loaded.pending > 0 || loaded.operations.size > 0) return false
         }
@@ -1430,7 +1441,7 @@ export const launchWith = (
     if (drain !== undefined) {
       yield* Scope.addFinalizer(scope, Effect.gen(function*() {
         p.draining = true
-        for (const deployed of [...p.deployments.values()]) {
+        for (const deployed of [...p.made]) {
           if (deployed.waking !== null) yield* Fiber.interrupt(deployed.waking)
           for (const loaded of [...deployed.loaded.values()]) {
             for (const id of [...loaded.timers.keys()]) yield* stop(loaded.timers, id)

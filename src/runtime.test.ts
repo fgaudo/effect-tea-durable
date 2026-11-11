@@ -1590,6 +1590,132 @@ describe('a planned stop', () => {
       expect(replies).toEqual({ sent: { _tag: 'Accepted' }, late: null })
     })))
 
+  /** The program with no work under `b`, so that a first process leaves `toy-1` to `toy-3` with `a` and `c` under way. */
+  const withoutB: Program<T> = {
+    ...program,
+    work: (state) => {
+      const kept = Object.entries(program.work(state) as Record<string, unknown>).filter(([key]) => key !== 'b')
+      return Object.fromEntries(kept) as ReturnType<typeof program.work>
+    },
+  }
+  const leftUnderWay = Effect.gen(function*() {
+    const at = yield* DateTime.now
+    yield* process({}, (runtime) =>
+      Effect.gen(function*() {
+        const toy = yield* Effect.provide(runtime.deploy(withoutB), (yield* hands({ holds: true })).layer)
+        yield* ran(toy.create('toy-1', { flags: { at }, requestId: 'one', sender: tester }))
+        yield* ran(toy.create('toy-2', { flags: { at }, requestId: 'two', sender: tester }))
+        yield* ran(toy.create('toy-3', { flags: { at }, requestId: 'three', sender: tester }))
+      }))
+  })
+
+  test('a deploy that registers during the drain has the operations that run again stopped at once', () =>
+    database(Effect.gen(function*() {
+      // Decision 0261: the drain stops the operations that run again of a deployment still activating, as it stops
+      // those of the deployments registered (decision 0119), a registration during the drain forks no waker, and no
+      // activation starts once the drain began. The second process deploys a program with work under `b`: the
+      // activation of `toy-1` starts `a`, `c` and the at-most-once `b`, and the deploy is held at the activation of
+      // `toy-2` while the launch's scope closes, then registers during the drain without activating `toy-3`.
+      yield* leftUnderWay
+      const gate = yield* Deferred.make<void>()
+      const reached = yield* Deferred.make<void>()
+      const held = yield* Deferred.make<void>()
+      const acted: Array<string> = []
+      const stopped: Array<string> = []
+      const layer = Layer.succeed(
+        Hands,
+        Hands.of({
+          act: (key) =>
+            Effect.andThen(
+              Effect.sync(() => acted.push(key)),
+              key === 'b'
+                ? Deferred.await(gate)
+                : Effect.onInterrupt(Effect.never, () => Effect.sync(() => stopped.push(key))),
+            ),
+        }),
+      )
+      const stopping = yield* Effect.forkChild(process({
+        drain: { millis: 100 },
+        at: (point, entity, event) =>
+          point === 'AfterCommit' && event._tag === 'Restart' && entity.id === 'toy-2'
+            ? Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(held))
+            : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          yield* Effect.forkChild(Effect.provide(runtime.deploy(program), layer))
+          yield* Deferred.await(reached)
+        })))
+      yield* Deferred.await(reached)
+      // The closing fiber reaches the drain's wait, which the activation of `toy-2` holds, and the deploy then
+      // registers. The timer `t` of `toy-3` is then due, 40 millis after its creation: a waker forked in the drain
+      // would activate `toy-3` and start its `b`. `b` ends well within the drain's time.
+      yield* TestClock.adjust('1 millis')
+      yield* Deferred.succeed(held, undefined)
+      yield* TestClock.adjust('1 millis')
+      yield* TestClock.adjust('50 millis')
+      yield* Deferred.succeed(gate, undefined)
+      yield* TestClock.adjust('1 millis')
+      // `a` and `c` of `toy-1` started before the drain, and run again at the next activation. So the drain stops
+      // them at once, as it stops those of a deployment registered before it (decision 0119), and does not wait its
+      // 100 millis for them. Those of `toy-2` are not started, since its activation ends in the drain, and `toy-3` is
+      // activated neither by the deploy nor by a waker: `b` starts twice, not three times.
+      const early = [...stopped].sort()
+      yield* TestClock.adjust('100 millis')
+      yield* Fiber.join(stopping)
+      expect(acted.filter((key) => key === 'b').length).toBe(2)
+      expect([...stopped].sort()).toEqual(['a', 'c'])
+      expect(early).toEqual(['a', 'c'])
+      const published = yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
+          yield* runtime.settled
+          return yield* toy.published('projection', [], all)
+        }))
+      // `b` of `toy-1` ran and ended within the drain, so it is not delivered `unknown`, and `toy-3` was activated
+      // by the next process alone, whose `b` starts there.
+      expect(unknown(published.filter((row) => row.id !== 'toy-2'))).toEqual([])
+    })))
+
+  test('a drain that looks while a deploy activates closes on no at-most-once operation the deploy stores, under every deviation', () => {
+    // Decision 0261: the drain counts the entities of a deployment still activating. The deploy runs detached, and
+    // the launch's scope closes once `toy-1` is activated, so that the drain looks while the deploy loads `toy-2` or
+    // `toy-3`. A drain that found nothing there to wait for would close the scope on an at-most-once `b` the deploy
+    // started, and the next process would deliver it `unknown`. A drain that looks before an entity is loaded closes
+    // the scope before the entity's activation commits, so that nothing of it is stored: no deviation of the run
+    // finds the drain between two activations otherwise. With the drain counting the registered deployments alone, the
+    // deviation pinned fails. `bun run test:pins` runs it against that form, the pin `0261` of
+    // `src/runtime.test_pins.ts` (decision 0254).
+    explored((window) =>
+      Effect.gen(function*() {
+        yield* leftUnderWay
+        const begun = yield* Deferred.make<void>()
+        const layer = Layer.succeed(
+          Hands,
+          Hands.of({ act: (key) => key === 'b' ? Effect.void : Effect.never }),
+        )
+        yield* process({
+          drain: { millis: 100 },
+          at: (point, entity, event) =>
+            point === 'AfterCommit' && event._tag === 'Restart' && entity.id === 'toy-1'
+              ? Deferred.succeed(begun, undefined)
+              : Effect.void,
+        }, (runtime) =>
+          Effect.gen(function*() {
+            yield* Effect.forkDetach(Effect.provide(runtime.deploy(program), layer))
+            yield* Deferred.await(begun)
+            yield* opened(window, true)
+          }))
+        yield* opened(window, false)
+        const published = yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
+            yield* runtime.settled
+            return yield* toy.published('projection', [], all)
+          }))
+        return unknown(published)
+      }), [], { open: false, bound: 1, pinned: [{ decision: 80, choice: 1 }] })
+  }, 60_000)
+
   test('a drain of no whole number of millis is the caller defect, and a drain of 0 millis is not', () =>
     database(Effect.gen(function*() {
       const exit = yield* Effect.exit(process({ drain: { millis: 1.5 } }, () => Effect.void))

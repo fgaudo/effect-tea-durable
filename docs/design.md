@@ -1266,7 +1266,10 @@ activation stop at once, and a step of the drain starts no such operation and ar
 `millis`, for the at-most-once operations under way and the commits of their completions, for an at-most-once
 operation such a step starts, and for a creation committed whose work has not started. Whatever is under way after
 `millis` stops as in a crash. A process launched without the option ends with a crash, as it always did
-([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). The runtime closes a sequential
+([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). The drain reaches a
+deploy still activating as it reaches a deployment registered: the deploy activates no entity once the drain began,
+and registers with no waker running, and the next process activates the entities left
+([decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)). The runtime closes a sequential
 scope of its own, so that the drain runs first and the database is let go last whatever the strategy of the scope it
 was launched in ([decision 0120](decisions/archive/0120-the-runtime-closes-a-sequential-scope-of-its-own.md)). The drain
 holds whether that scope is closed by `Scope.close` or by the interruption of the fiber that launched the runtime, as
