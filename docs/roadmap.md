@@ -97,6 +97,17 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      [0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md)). Verified by a test of types: the
      [open question](open-questions.md#the-surface) An own message named like a child, with a tag typed `string`.
 
+- **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds
+  an RPC to the door of a program on Cluster, or changes a payload, is not caught by the guard of the version
+  ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+  A runner of the older release that still holds a shard is given the newer request, and Cluster answers a payload
+  it cannot decode with a defect and stores it, so the request is lost in silence. The spike
+  [`spikes/cluster-older-runner-answers-a-newer-request.test.ts`](../spikes/cluster-older-runner-answers-a-newer-request.test.ts)
+  sees Cluster's answer. No test runs a rolling deploy of two releases of the library. The step comes after the fixes
+  of the bugs above. It begins with a test of `src/cluster.test.ts` with two runners whose doors differ, and its fix
+  is a choice of the design, which the [open question](open-questions.md#running) A door that changes between two
+  releases of the library lists.
+
 ## Later
 
 - **The release**, once there is code to publish. It is released as experimental while it depends
