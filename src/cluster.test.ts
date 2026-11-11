@@ -862,6 +862,45 @@ describe('the runtime on Cluster', () => {
       expect(Number(held?.held)).toBe(1)
     })), 30_000)
 
+  // A premise review of the pairs against Messages, requests and replies, a second part (decisions 0171, 0245). The
+  // sweep is to bound what the replies hold, and the guide says Cluster's rows of a message sent with a time go once
+  // the time is past. A caller's client keeps the Cluster id only once it is given the answer, so a caller that stops
+  // waiting first, as a caller's timeout does, keeps none, and no step, `expire` or sweep ever deletes its rows.
+  test('FAILING: a caller that stops waiting leaves its Cluster rows to go once its time is past', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const sender = { user: 'u' }
+      const rowsOf = (requestId: string) =>
+        Effect.map(
+          sql<{ held: number }>`
+            SELECT COUNT(*) AS held FROM cluster_messages WHERE tag = 'Message' AND payload LIKE ${`%${requestId}%`}
+          `,
+          (rows) => Number(rows[0]?.held ?? 0),
+        )
+      yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
+      const zero = { millis: 0 }
+      // The caller's timeout ends its wait before the answer comes. The message is still handled (decision 0091).
+      const waited = yield* Effect.timeoutOption(
+        handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm1', sender, keep: zero }),
+        '50 millis',
+      )
+      expect(waited).toEqual(Option.none())
+      yield* eventually(stateOf, (state) => state?.n === 1)
+      expect(yield* rowsOf('m1')).toBe(1)
+      yield* Effect.sleep(least)
+      // A later step that answers a caller, and `expire`, take what is past its time.
+      expect(yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender, keep: zero }))
+        .toEqual({ _tag: 'Accepted' })
+      yield* Effect.sleep(least)
+      yield* handle!.expire
+      expect(yield* rowsOf('m2')).toBe(0)
+      expect(yield* rowsOf('m1')).toBe(0)
+    }), () => (said) =>
+      // Each step of a message waits before its commit, so that the caller's timeout ends its wait first.
+      said._tag === 'Reached' && said.point === 'BeforeCommit' && said.event._tag === 'Receive'
+        ? Effect.sleep('300 millis')
+        : Effect.void), 30_000)
+
   // A creation's rows go as a keep of 0's do, past the least time, and a retry after is answered from the entity's
   // row (decisions 0017, 0245, 0248).
   test('a caller’s creation leaves its Cluster rows to expire, and a retry after is answered Created', () =>
@@ -1045,6 +1084,26 @@ describe('the runtime on Cluster', () => {
       expect(yield* sql`SELECT 1 FROM cluster_replies`).toEqual([])
       const messages = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Create'`
       expect(messages.map(({ processed }) => Number(processed))).toEqual([0])
+    })).then(() => expect(warningsAndErrors()).toEqual([restarted('a tally starts at zero or more')])), 30_000)
+
+  // A premise review of the pairs against Messages, requests and replies, a second part (decisions 0124, 0160). On
+  // one process a creation `init` dies on stores nothing, and only its creator meets the defect: another creator of
+  // the same id, with flags `init` accepts, creates the entity, and a message to the id is answered `NotFound`.
+  // On Cluster the door replays every request it holds in the order it took them, the creation first, at each
+  // restart, and handles one at a time, so every later request to the id waits behind the creation, for ever.
+  test('FAILING: on Cluster a creation the program dies on leaves another creator of its id to create the entity', () =>
+    onRunner(Effect.gen(function*() {
+      const clientOf = yield* doorOf('Tally').client
+      yield* clientOf('one').Create({ version: 1, request: caller('c1'), message: JSON.stringify({ start: -1 }) }, {
+        discard: true,
+      })
+      yield* Effect.sleep('500 millis')
+      const sender = { user: 'u' }
+      const second = yield* Effect.timeoutOption(
+        handle!.create('one', { flags: { start: 1 }, requestId: 'c2', sender }),
+        '8 seconds',
+      )
+      expect(second).toEqual(Option.some({ _tag: 'Created' }))
     })).then(() => expect(warningsAndErrors()).toEqual([restarted('a tally starts at zero or more')])), 30_000)
 
   test('what a door step sets going starts once it commits, and its completion is stepped by the loop', () =>
