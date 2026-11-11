@@ -632,6 +632,8 @@ with a requirement that no example has yet.
   decided by:
   - whether a boundary that takes callers it cannot tell apart is a case the library serves at all;
   - whether a sender left out should still be required where the program takes inbound messages.
+  [Decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md), `proposed`, decides
+  it once taken: a request that carries another message under a used id is answered `Reused`.
 
 - **A retry in a rehearsal after a deploy that changes how the sender is written.** A rehearsal keeps the reply of a
   request the test named for the whole rehearsal, a deploy included

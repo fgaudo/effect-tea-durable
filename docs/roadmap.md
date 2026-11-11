@@ -44,8 +44,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md), and bug 42 by
     [decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md), and bug 87 by
     [decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md). The part
-    next is bug 4, reproduced by a `test.failing` of `src/rehearse.test.ts`, proposed to the maintainer before any
-    code.
+    under way is bug 4. Its fix is
+    [decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md), `proposed`, which
+    the maintainer chose on 2026-11-11 after the opinion of a Fable 5.2 agent: a caller's request carries its message
+    or flags, and a reused id with another one is answered `Reused`, on every sender. No code of it is written yet.
+    The part next is the tests of the three premises its note says are to be tested, before any other code: first
+    the encoding of one value to one text, in `src/machine.test.ts`, then Cluster's primary key, in
+    `src/cluster.test.ts`, then a retry across a deploy that migrates `inbound`, in `src/runtime.test.ts`. A premise
+    that fails changes the note before the code.
     The spikes of decision 0267, `spikes/sqlite-hold-file.test.ts` and `spikes/full-volume.test.ts`, passed on Linux
     in the jobs of the CI of the push of `25a4530`. The test of decision
     0264 on PostgreSQL passed in the job of PostgreSQL of the push of `af8c5d5`. Decision 0265 changes the statements
@@ -115,7 +121,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      another caller used gets that caller's reply, and its own message is never applied, with nothing reported
      ([decisions 0048](decisions/archive/0048-a-callers-request-belongs-to-its-sender.md),
      [0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)). Verified by a test with two callers and
-     one request id: the [open question](open-questions.md#programs) Request ids under a sender of `null`.
+     one request id: the [open question](open-questions.md#programs) Request ids under a sender of `null`. Its fix is
+     proposed in [decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md).
   5. **Reasoned: a rehearsal may apply a retry twice after a deploy that changes how the sender is written.** The
      rehearsal keys a reply by the request's text, and the runtime finds a request by its id
      ([decisions 0065](decisions/archive/0065-the-machine-holds-no-replies.md),

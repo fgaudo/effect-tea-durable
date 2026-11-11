@@ -115,6 +115,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md) | A world asks a run for every service of its program, and a test mocks the ones it does not run |  |
 | [0190](0190-a-boundary-maps-each-answer-to-its-protocol.md) | A boundary maps each answer to its protocol, with one entry for each tag |  |
 | [0200](0200-a-rehearsal-sends-under-a-request-id-the-test-names.md) | A rehearsal sends under a request id the test names, and a retry is given the stored reply |  |
+| [0269](0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md) | A caller's request is its sender, its request id and what it carries, and a request that carries another message under a used id is answered `Reused` (proposed) |  |
 | [0201](0201-rejectwith-keeps-the-literal-of-its-reason.md) | `rejectWith` keeps the literal of its reason, with a `const` type parameter |  |
 | [0211](0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md) | A rehearsal gives the projection as a caller reads it, decoded from its JSON |  |
 | [0262](0262-a-sendfrom-stands-for-a-run-no-entity-draws.md) | A world's `sendFrom` stands for a run under an incarnation below 1, which no entity draws |  |
