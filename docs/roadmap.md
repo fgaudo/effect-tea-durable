@@ -1075,3 +1075,20 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The step also decides whether the runtime
   checks its advisory lock, which a server that ends its session gives back
   ([open question](open-questions.md#running)).
+
+- **Code written by hand where a module of Effect does the same**, of low priority. A review of `src/` against
+  the rule of [`AGENTS.md`](../AGENTS.md) on Effect's modules found four places, on 2026-11-11:
+  - The lock of each entity, `holding` in `src/runtime/process.ts`, keeps a `Map` of a semaphore and a count of its
+    users, and deletes the entry when the last user lets go. `RcMap`, which is stable, shares a resource by key and
+    releases it when the last scope closes. The comment does not say what `RcMap` does not do. A seed of the
+    test `callers of an unloaded entity build one machine for it` is pinned against a bug of this count. A move to
+    `RcMap` adds and moves yields, so it finds the pinned seeds again, as `AGENTS.md` says, and passes
+    `bun run test:release`.
+  - The order of use of the entities, `recent` in `src/runtime/process.ts` and `admit` in `src/runtime/loop.ts`, is
+    written by hand for a reason: `Cache` evicts by itself, and the runtime never unloads a busy entity or one whose
+    timer is due. `RcMap` refuses a new key at its capacity rather than evicting. The comment says neither.
+  - About fifteen guards are written as `typeof value === 'object' && value !== null`, with `!Array.isArray(value)`
+    or `TypeId in value`, in `src/machine.ts`, `src/program.ts`, `src/runtime.ts`, `src/storage/held.ts` and
+    `src/storage/projections.ts`. `Predicate.isObject` and `Predicate.hasProperty` are those guards.
+  - The comparisons of keys, `(a < b ? -1 : a > b ? 1 : 0)` in `src/machine.ts` and `src/program.ts`, are
+    `Order.String`, and the sort by incarnation in `src/runtime.ts` is `Order.mapInput(Order.Number, …)`.
