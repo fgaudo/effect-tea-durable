@@ -29,7 +29,7 @@ import {
   type TypesOf,
   key,
 } from './program.ts'
-import { rehearse, type World } from './rehearse.ts'
+import { type Member, rehearse, type World } from './rehearse.ts'
 
 const placedAt = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
 
@@ -1181,4 +1181,86 @@ describe('a program with no sender', () => {
       yield* rehearsal.send({ _tag: 'Add', n: 5 }, { requestId: 'r' })
       expect(yield* rehearsal.state).toEqual({ total: 6 })
     }))))
+})
+
+// A world's `sendFrom` stands for a run of another entity's operation under the key 'rehearsal', under any address
+// the test gives, the address of an entity of the world included. Its incarnation is below 1, which no entity draws,
+// so the run is none of the entity's own, whose send of the same text is applied as the runtime applies it
+// (decisions 0021, 0262). The counter of the drawn requests is moved first, onto the incarnation of the operation, so
+// that a `sendFrom` drawn from it would forge the operation's request.
+describe('a sendFrom under the address of an entity of the world', () => {
+  const tally = declare({
+    state: Schema.Struct({ total: Schema.Int }),
+    flags: Schema.Null,
+    inbound: Schema.Int,
+    rejection: Schema.Never,
+    sender: Schema.Null,
+    projection: Schema.Int,
+  })({
+    name: 'Tally',
+    init: () => ({ total: 0 }),
+    update: (message) => (state) => ({ total: state.total + message }),
+    project: ({ total }) => total,
+  })
+  const pusher = declare({
+    state: Schema.Struct({ done: Schema.Boolean }),
+    flags: Schema.Null,
+    inbound: Schema.Never,
+    internal: Schema.Literal('pushed'),
+    operation: Schema.TaggedStruct('Push', {}),
+    rejection: Schema.Never,
+    sender: Schema.Null,
+    projection: Schema.Boolean,
+  })({
+    name: 'Pusher',
+    keys: ['rehearsal'],
+    init: () => ({ done: false }),
+    update: () => () => ({ done: true }),
+    work: (state) => state.done ? {} : { rehearsal: { _tag: 'Push' } as const },
+    operations: {
+      Push: operation.atLeastOnce(() =>
+        Effect.as(send(reference<typeof tally>('Tally'), 'tally', 5, 'request'), 'pushed' as const)
+      ),
+    },
+    project: ({ done }) => done,
+    indexes: {},
+  })
+
+  const worldOf = (act: (
+    counted: Member<TypesOf<typeof tally>>,
+    pushing: Member<TypesOf<typeof pusher>>,
+  ) => Effect.Effect<void>) =>
+    Effect.runPromise(rehearse.together(
+      placedAt,
+      Effect.fnUntraced(function*(world) {
+        const counted = yield* world.create(tally, 'tally')
+        const pushing = yield* world.create(pusher, 'pusher')
+        const { incarnation } = yield* pushing.pending('rehearsal')
+        for (let drawn = 1; drawn < incarnation; drawn++) yield* counted.send(0)
+        yield* act(counted, pushing)
+      }),
+    ))
+
+  test("is applied before the entity's own send, and the send after it is applied too", () =>
+    worldOf(Effect.fnUntraced(function*(counted, pushing) {
+      expect(yield* counted.sendFrom(100, { name: 'Pusher', id: 'pusher' })).toEqual({ _tag: 'Accepted' })
+      expect(yield* pushing.run('rehearsal')).toBe('Delivered')
+      expect(yield* counted.projection).toBe(105)
+    })))
+
+  // The run crashes after its send, so that its work, and the reply kept for it, still hold when `sendFrom` comes.
+  test("is applied after the entity's own send, whose reply it is not answered", () =>
+    worldOf(Effect.fnUntraced(function*(counted, pushing) {
+      yield* pushing.run('rehearsal', { crash: true })
+      expect(yield* counted.sendFrom(100, { name: 'Pusher', id: 'pusher' })).toEqual({ _tag: 'Accepted' })
+      expect(yield* counted.projection).toBe(105)
+      expect(yield* pushing.run('rehearsal')).toBe('Delivered')
+      expect(yield* counted.projection).toBe(105)
+    })))
+
+  test('is a run of its own each time, applied each time', () =>
+    worldOf(Effect.fnUntraced(function*(counted) {
+      for (let sent = 0; sent < 3; sent++) yield* counted.sendFrom(100, { name: 'Pusher', id: 'pusher' })
+      expect(yield* counted.projection).toBe(300)
+    })))
 })

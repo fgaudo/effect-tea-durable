@@ -9,7 +9,8 @@ world `advance`, which moves its one time and fires the timers of every entity d
 a request id the test names, whose retry is answered from the stored reply.
 [Decision 0189](../0189-a-world-asks-a-run-for-every-service-of-its-program.md) says why a run asks for every
 service of its program, and how a test mocks the ones it does not run. [Decision 0211](../0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md)
-gives `projection` as a caller reads it, decoded from its JSON.
+gives `projection` as a caller reads it, decoded from its JSON. [Decision 0262](../0262-a-sendfrom-stands-for-a-run-no-entity-draws.md)
+gives `sendFrom` an incarnation below 1, so that it never forges the request of an entity of the world.
 
 ## Context
 

@@ -37,7 +37,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     81 by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md), and bug 75
     by [decision 0259](decisions/0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md), and bug 19
     by [decision 0260](decisions/0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md), and bug 66 by
-    [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md). The part next is bug 82,
+    [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md), and bug 82 by
+    [decision 0262](decisions/0262-a-sendfrom-stands-for-a-run-no-entity-draws.md). The part next is bug 41,
     proposed to the maintainer before any code. Decision 0259 changes a reading of the storage, so the job
     of PostgreSQL of `ci.yml` runs on its branch before it is on `main`.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
@@ -618,18 +619,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
       snapshot.
   81. **Fixed by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md)**, whose refusal holds on a pool too, as a test on the CI's server checks.
-  82. **Reproduced: a world's `sendFrom` may forge a member's request, and the member's own send is answered from
-      it.** A reply is keyed by the sender's address, key, incarnation and name, since no one else sends under that
-      address ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). A world gives its members
-      the surface of `rehearse` ([decision 0131](decisions/archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md)), and
-      `sendFrom` builds a request under any address, the key `rehearsal`, the name `request` and an incarnation of the
-      world's counter. So a member's operation of that key and name, at that incarnation, is answered `Accepted` from
-      the forged request, and its own message is never applied. A rehearsal then gives an answer no runtime gives, with
-      no defect, though only by chance. The test `FAILING: a run of an operation is not answered the reply of a sendFrom
-      under its address (decisions 0021, 0131)`, in `src/rehearse.test.ts`, on `claude/premise-pairs-rehearsal-996d6c`
-      at `6c7928d`. The fix begins at `sendFrom` of `src/rehearse.ts`, which would refuse the address of an entity the
-      world holds, or build its request under a key no program can declare. The
-      [open question](open-questions.md#programs) A `sendFrom` under a member's address.
+  82. **Fixed by [decision 0262](decisions/0262-a-sendfrom-stands-for-a-run-no-entity-draws.md)**, in either order of the two sends.
   83. **Verified false by a reading, as [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) says**: the runtime and the rehearsal draw their request ids from sets that share no id.
   84. **Reproduced: a runtime of one process launches on the database of a runner of the runtime on Cluster, and a
       step is lost.** A database is held by one runtime

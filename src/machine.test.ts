@@ -514,6 +514,17 @@ describe('the machine', () => {
       { numRuns: 200 },
     ))
 
+  // A rehearsal's `sendFrom` stands for a run of another entity under an incarnation below 1, which no entity's own
+  // run then shares (decision 0262).
+  test('every incarnation an entity draws is 1 or more, through creation, steps, deploys and restarts (decision 0132)', () =>
+    property(({ trace }) => {
+      for (const { after, written } of trace) {
+        for (const row of Object.values(after.stored.keys)) expect(row.incarnation).toBeGreaterThanOrEqual(1)
+        for (const running of Object.values(after.running)) expect(running.incarnation).toBeGreaterThanOrEqual(1)
+        for (const ended of written?.ended ?? []) expect(ended.incarnation).toBeGreaterThanOrEqual(1)
+      }
+    }))
+
   test('a request is answered the same each time, and applied once', () =>
     property(({ trace, machine }) => {
       const replies = new Map<string, unknown>()

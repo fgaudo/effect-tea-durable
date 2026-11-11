@@ -105,7 +105,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0124](archive/0124-the-boundary-authenticates-and-update-authorizes.md) | The boundary authenticates, and `update` authorizes | [0182](0182-init-may-reject-the-flags.md) |
 | [0125](archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md) | A caller's reply is kept as long as its boundary says, from the step that answers | [0165](archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md), [0245](0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md) |
 | [0245](0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md) | `send` requires `keep`, an argument that may be left out comes last, a request leaves out a sender and flags that are `null`, and the runtime sweeps what no reader needs, in batches | [0248](0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md) |
-| [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md), [0186](0186-a-rehearsal-names-the-work-by-its-key.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md), [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md), [0200](0200-a-rehearsal-sends-under-a-request-id-the-test-names.md), [0211](0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md) |
+| [0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) | A rehearsal runs the entities an operation sends to | [0183](0183-a-receiver-is-named-by-a-reference.md), [0186](0186-a-rehearsal-names-the-work-by-its-key.md), [0187](0187-a-rehearsal-moves-time-by-a-duration.md), [0189](0189-a-world-asks-a-run-for-every-service-of-its-program.md), [0200](0200-a-rehearsal-sends-under-a-request-id-the-test-names.md), [0211](0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md), [0262](0262-a-sendfrom-stands-for-a-run-no-entity-draws.md) |
 | [0183](0183-a-receiver-is-named-by-a-reference.md) | A receiver is named by a reference, which carries its program's name and types and none of its code |  |
 | [0186](0186-a-rehearsal-names-the-work-by-its-key.md) | A rehearsal names the work by its key, and `underWay` gives it or null |  |
 | [0187](0187-a-rehearsal-moves-time-by-a-duration.md) | A rehearsal moves time by a duration with `advance`, and fires the timers due within it |  |
@@ -115,6 +115,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0200](0200-a-rehearsal-sends-under-a-request-id-the-test-names.md) | A rehearsal sends under a request id the test names, and a retry is given the stored reply |  |
 | [0201](0201-rejectwith-keeps-the-literal-of-its-reason.md) | `rejectWith` keeps the literal of its reason, with a `const` type parameter |  |
 | [0211](0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md) | A rehearsal gives the projection as a caller reads it, decoded from its JSON |  |
+| [0262](0262-a-sendfrom-stands-for-a-run-no-entity-draws.md) | A world's `sendFrom` stands for a run under an incarnation below 1, which no entity draws |  |
 
 ## Operations and timers
 

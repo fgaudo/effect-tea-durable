@@ -656,14 +656,6 @@ with a requirement that no example has yet.
   reasoned. It would be decided by:
   - a note that changes 0127: a boundary acknowledges an item once it is answered with a reply, and sends it again
     under the same request id after `Suspended` or `Full`.
-- **A `sendFrom` under a member's address.** A reply is keyed by the sender's address, key, incarnation and name,
-  since no one else sends under that address
-  ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). In a world
-  ([decision 0131](decisions/archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md)), `sendFrom` builds a request under
-  any address, so it may forge a member's request, and the member's own send is answered from it. It is bug 82 of the
-  [roadmap](roadmap.md), reproduced. It would be decided by:
-  - whether `sendFrom` refuses the address of an entity the world holds, or builds its request under a key no program
-    can declare.
 
 ## The surface
 

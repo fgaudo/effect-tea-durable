@@ -83,7 +83,8 @@ interface Acts<T extends Types> {
   readonly send: (message: T['inbound'], ...request: SentBy<T>) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /**
    * Delivers an inbound message from another entity's operation, as a new run of it (decision 0059). The entity
-   * need not exist: the test answers for it.
+   * need not exist: the test answers for it. Under the address of an entity of the world, the run is none of that
+   * entity's own, so each one's message is applied, and neither is answered the other's reply (decision 0262).
    */
   readonly sendFrom: (message: T['inbound'], entity: Address) => Effect.Effect<Machine.StoredReply<T['rejection']>>
   /**
@@ -222,6 +223,8 @@ const makeWorld = (at: DateTime.Utc) => {
   const entities = new Map<string, Entity<Types>>()
   let now = at
   let requests = 0
+  // The incarnations of the runs a `sendFrom` stands for, drawn down from 0 (decision 0262).
+  let forged = 0
   // The callers' requests the test named, by their request's key: only their replies are kept (decision 0200).
   const named = new Set<string>()
   // The answers no entity stores that another entity's operation was given, kept while the work that asked holds, as
@@ -649,13 +652,15 @@ const makeWorld = (at: DateTime.Utc) => {
           while (named.has(Machine.requestKey(program, request)))
           return receive(entity, message, request)
         }),
-      // A request of another entity is a run of one of its operations: each one here is a run of its own.
+      // A request of another entity is a run of one of its operations: each one here is a run of its own. Its
+      // incarnation is below 1, which no entity draws, so under a member's address it is a run the member never
+      // has, and neither answers the other's send from its reply (decision 0262).
       sendFrom: (message, from) =>
         receive(entity, message, {
           _tag: 'Operation',
           entity: from,
           key: { name: 'rehearsal' },
-          incarnation: ++requests,
+          incarnation: --forged,
           name: 'request',
         }),
       pending: (name, ...parameter) => pending(name, parameter[0]),
