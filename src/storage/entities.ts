@@ -5,6 +5,7 @@
  */
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Result from 'effect/Result'
 import * as Schema from 'effect/Schema'
 import * as Machine from '../machine.ts'
 import type { Key, Request, Types } from '../program.ts'
@@ -52,6 +53,11 @@ export type Due = Readonly<{
   ready: ReadonlyArray<string>
   /** The earliest time a stored timer of another entity is due, by which the process sleeps, or null for none. */
   next: number | null
+  /**
+   * The entities whose earliest time no integer is, as a row no version writes: each with the reason its row is
+   * refused. The reading goes on past them, and the waker tries each again after `retry` (decision 0259).
+   */
+  refused: ReadonlyArray<Readonly<{ id: string; reason: string }>>
 }>
 
 /** The part of the storage of one program that reads and writes its entities. */
@@ -561,12 +567,15 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
   const interrupted = interruptedWithin(undefined)
   const interruptedIn = (partition: number) => interruptedWithin([partition])
 
+  /** One row of a reading through its schema, failed as a page of it would be. */
+  const one = <A>(decode: (held: unknown) => Effect.Effect<ReadonlyArray<A>, Schema.SchemaError>, row: unknown) =>
+    Effect.map(rows('effecttea_entity_keys', decode)(Effect.succeed([row])), (read) => read[0] as A)
   // The entities this process holds are left out as the rows are read, not by the query: a query that listed them
   // would take one parameter each, and fail past SQLite's limit on them. Each page skips at most the loaded ones.
   const due = (now: number, loaded: ReadonlyArray<string>, partitions?: ReadonlyArray<number>) =>
     Effect.gen(function*() {
       // No partition held reads nothing: `IN ()` is no SQL.
-      if (partitions !== undefined && partitions.length === 0) return { ready: [], next: null } satisfies Due
+      if (partitions !== undefined && partitions.length === 0) return { ready: [], next: null, refused: [] } satisfies Due
       const held = new Set(loaded)
       const ready: Array<string> = []
       let after = ''
@@ -581,23 +590,39 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
         if (page.length < batch) break
         after = page[page.length - 1]?.id ?? after
       }
-      // The earliest time of an entity this process does not hold, read in the order of the times.
+      // The earliest time of an entity this process does not hold, read in the order of the times. A row whose time
+      // is refused is its entity's alone: the entity is given back with the reason, and the reading goes on to the
+      // next row, so that one row an operator wrote by hand stops no other entity's timer (decision 0259).
       let next: number | null = null
-      let from: Readonly<{ at: number; id: string }> | null = null
+      const refused: Array<{ id: string; reason: string }> = []
+      let from: Readonly<{ at: number | string | bigint; id: string }> | null = null
       while (next === null) {
-        const page: ReadonlyArray<{ id: string; at: number }> = yield* rows('effecttea_entity_keys', Rows.due)(sql`
+        const page: ReadonlyArray<Readonly<{ id: unknown; at: number | string | bigint }>> = yield* sql<
+          Readonly<{ id: unknown; at: number | string | bigint }>
+        >`
           SELECT id, MIN(due) AS at FROM effecttea_entity_keys
           WHERE name = ${name} AND due > ${now} AND id NOT IN ${onHold} ${within(partitions)}
           GROUP BY id
           ${from === null ? sql`` : sql`HAVING MIN(due) > ${from.at} OR (MIN(due) = ${from.at} AND id > ${from.id})`}
           ORDER BY at, id LIMIT ${batch}
-        `)
-        next = page.find((row) => !held.has(row.id))?.at ?? null
-        const last = page[page.length - 1]
-        if (page.length < batch || last === undefined) break
-        from = last
+        `
+        let last: string | null = null
+        for (const row of page) {
+          const { id }: { id: string } = yield* one(Rows.id, row)
+          last = id
+          if (held.has(id)) continue
+          const read = yield* Effect.result(one(Rows.due, row))
+          if (Result.isFailure(read)) refused.push({ id, reason: read.failure.message })
+          else {
+            next = read.success.at
+            break
+          }
+        }
+        const end = page[page.length - 1]
+        if (next !== null || page.length < batch || end === undefined || last === null) break
+        from = { at: end.at, id: last }
       }
-      return { ready, next } satisfies Due
+      return { ready, next, refused } satisfies Due
     }).pipe(Effect.orDie)
 
   // The tag of the mailbox's first message says what a `Message` the entity died on is: an inbound one is

@@ -1233,7 +1233,10 @@ process, its callers are given the defect, and the next one loads it from what i
 ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)); nothing else waits
 for its operations to stop ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)).
 An activation the waker cannot finish crashes its entity alone too, and the waker tries it again after `retry`
-([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)). Every crash does the
+([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)). The waker's own reading
+of the timers goes on alike: a stored time it refuses leaves its entity out until `retry`, and a reading that fails is
+read again after `retry`, each logged once
+([decision 0259](decisions/0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md)). Every crash does the
 same, whatever the entity's timers: the waker activates the entity again after `retry`, so that an operation or a
 message it stored runs with no caller coming. A crash that hands a shard to another runner is the one exception. On
 Cluster an entity is not unloaded while a door's step is not known to be committed, and a door's step that loaded

@@ -571,19 +571,19 @@ describe('passivation', () => {
             yield* Fiber.interrupt(caller)
             // What runs detached is counted from the step that forks it to its end: a count left behind would
             // keep this from returning, and the run would not end (decision 0079). With the count raised before the
-            // uninterruptible step that forks, seed 162, pinned, fails. `bun run test:pins` runs it against that form,
+            // uninterruptible step that forks, seed 199, pinned, fails. `bun run test:pins` runs it against that form,
             // the pin `0079 what runs detached` of `src/runtime.test_pins.ts` (decision 0254).
             yield* runtime.settled
             return 'settled'
           }))
-      }), 'settled', { pinned: [162] })
+      }), 'settled', { pinned: [199] })
   }, 60_000)
 
   test('a caller interrupted anywhere as it sends leaves its entity’s bound whole, in every schedule within one deviation', () => {
     const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
     // Each schedule moves the point where the interruption reaches the caller, the permit taken and the message not
     // offered yet among them (decision 0147). A send that yields between the two, outside an uninterruptible region,
-    // keeps the permit in a schedule, and the second send is answered Full: the deviation at decision 374, pinned.
+    // keeps the permit in a schedule, and the second send is answered Full: the deviation at decision 375, pinned.
     // `bun run test:pins` runs it against that form, the pin `0147` of `src/runtime.test_pins.ts` (decision 0254).
     explored(() =>
       Effect.gen(function*() {
@@ -598,7 +598,7 @@ describe('passivation', () => {
             yield* runtime.settled
             return yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' })
           }))
-      }), { _tag: 'Accepted' }, { bound: 1, pinned: [{ decision: 374, choice: 1 }] })
+      }), { _tag: 'Accepted' }, { bound: 1, pinned: [{ decision: 375, choice: 1 }] })
   }, 60_000)
 
   test('a caller loads an unloaded entity again, and is answered', () =>
@@ -643,12 +643,12 @@ describe('passivation', () => {
       // The timer is the entity's only work: it is due at the time the state holds, a reading that counts the
       // entity among the process's own gives it neither as due nor as the next, and the time is `rings`.
       const rings = DateTime.toEpochMillis(since) + 40
-      expect(yield* store.due(rings - 1, [])).toEqual({ ready: [], next: rings })
-      expect(yield* store.due(rings, [])).toEqual({ ready: [id], next: null })
-      expect(yield* store.due(rings, [id])).toEqual({ ready: [], next: null })
+      expect(yield* store.due(rings - 1, [])).toEqual({ ready: [], next: rings, refused: [] })
+      expect(yield* store.due(rings, [])).toEqual({ ready: [id], next: null, refused: [] })
+      expect(yield* store.due(rings, [id])).toEqual({ ready: [], next: null, refused: [] })
       // However many entities the process holds: they are not parameters of the query, whose number SQLite caps.
       const many = Array.from({ length: 40_000 }, (_, n) => `loaded-${n}`)
-      expect(yield* store.due(rings, many)).toEqual({ ready: [id], next: null })
+      expect(yield* store.due(rings, many)).toEqual({ ready: [id], next: null, refused: [] })
       yield* process({ observe }, (runtime) =>
         Effect.gen(function*() {
           const { layer } = yield* hands()
@@ -723,6 +723,7 @@ describe('passivation', () => {
           expect(yield* store.due(DateTime.toEpochMillis(yield* DateTime.now) + 1_000, [])).toEqual({
             ready: [],
             next: null,
+            refused: [],
           })
           // An operator's act loads it again, and what it holds runs.
           yield* toy.discard(id)

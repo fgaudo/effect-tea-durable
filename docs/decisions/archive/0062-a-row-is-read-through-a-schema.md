@@ -1,7 +1,8 @@
 # 0062. A row is read through a schema, or not at all
 
 **Status:** accepted, 2026-10-31. Its consequence that the waker dies on a row it refuses is changed by
-[decision 0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md): the waker goes on, and tries the entity again.
+[decision 0077](0077-the-waker-tries-an-entity-it-cannot-load-again.md): the waker goes on, and tries the entity again. A row the waker's own reading of the next time refuses fails its
+entity alone, in [decision 0259](../0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md).
 
 ## Context
 

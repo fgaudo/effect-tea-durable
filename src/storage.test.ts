@@ -502,10 +502,10 @@ test('the work and the timers of some partitions are read apart from the others'
       yield* store.write(later, created({ keys: ringing(50) }), 0)
       expect(yield* store.interruptedIn(one!)).toEqual([busy])
       expect(yield* store.interruptedIn(two!)).toEqual([queued])
-      expect(yield* store.due(10, [], [one!])).toEqual({ ready: [ready], next: null })
-      expect(yield* store.due(10, [], [two!])).toEqual({ ready: [], next: 50 })
-      expect(yield* store.due(10, [], [one!, two!])).toEqual({ ready: [ready], next: 50 })
-      expect(yield* store.due(10, [], [])).toEqual({ ready: [], next: null })
+      expect(yield* store.due(10, [], [one!])).toEqual({ ready: [ready], next: null, refused: [] })
+      expect(yield* store.due(10, [], [two!])).toEqual({ ready: [], next: 50, refused: [] })
+      expect(yield* store.due(10, [], [one!, two!])).toEqual({ ready: [ready], next: 50, refused: [] })
+      expect(yield* store.due(10, [], [])).toEqual({ ready: [], next: null, refused: [] })
     })))
 
 test('the mailbox keeps the order its messages were queued in, as its head is handled', () =>
@@ -660,7 +660,12 @@ test('a row the runtime never writes fails the call that meets it, and is read a
               due: 'soon',
             })
           }`,
-          store.due(0, []),
+          // The waker's reading gives back the entity whose time it refuses, with the reason, and goes on
+          // (decision 0259): the refusal is the call's failure here.
+          Effect.flatMap(store.due(0, []), ({ refused }) =>
+            refused.length === 1 && refused[0]?.id === 'r'
+              ? Effect.die(new Error(refused[0].reason))
+              : Effect.succeed(refused)),
         ],
         // A step's publication always handles a message.
         [

@@ -33,8 +33,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     then 41, 44, 72, 42 and 87; then the bugs reasoned, 4, 6, 8, 22, 60 and 64, and the bugs noticed, 31, 37, 38,
     40, 50, 51, 65, 67 and 79, each verified first. Bug 86 is fixed by
     [decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md), and bugs 26 and
-    81 by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md). The part
-    next is bug 75, whose fix begins at `waking` of `src/runtime/waker.ts`.
+    81 by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md), and bug 75
+    by [decision 0259](decisions/0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md). The part
+    next is bug 19, whose fix is a choice of the design, proposed to the maintainer before any code. Decision 0259
+    changes a reading of the storage, so the job of PostgreSQL of `ci.yml` runs on its branch before it is on `main`.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
@@ -547,18 +549,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       reason of [decision 0135](decisions/archive/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)
       for a warning. It is a question of the design, which no test decides. The
       [open question](open-questions.md#running) The warnings on Cluster.
-  75. **Reproduced: a row the waker's own reading refuses stops every timer of the program, and the process never
-      settles again.** The waker goes on past an activation that fails
-      ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), changing
-      [decision 0062](decisions/archive/0062-a-row-is-read-through-a-schema.md)). Its own reading of the next time due
-      is a reading of rows too, and nothing catches it. A `due` no integer is, as an operator's fix may leave, makes
-      `due` of `src/storage/entities.ts` die by its `Effect.orDie`. The defect leaves `waking` of
-      `src/runtime/waker.ts`, the waker's fiber ends with no log, and `waker.busy` stays true, so `settled` never
-      returns. The test `FAILING: a row the waker’s own reading refuses stops every timer of the program, as 0077
-      says it no longer does`, in `src/runtime/waker.test.ts`, on `claude/premise-pairs-schemas-1-1-f736ec` at
-      `12c788e`. The fix begins at `waking`, which would catch a reading that dies and read again after `retry`, as
-      the sweep does, or at `due`, which would leave out the entity whose row it refuses. The
-      [open question](open-questions.md#running) A row the waker's reading refuses.
+  75. **Fixed by [decision 0259](decisions/0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md)**, which reads again after `retry` a reading of the waker that fails, and leaves out the entity whose time it refuses.
   76. **Reproduced: a consumer of a topic a newer version no longer publishes can never be forgotten, and holds its
       rows for ever.** A consumer that is gone leaves by `forget`
       ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)), and a deploy keeps a stored consumer it

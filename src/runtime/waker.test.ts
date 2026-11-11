@@ -8,6 +8,10 @@ import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
+import * as Logger from 'effect/Logger'
+import * as References from 'effect/References'
+
+import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import {
   adjusted,
@@ -18,6 +22,7 @@ import {
   type Hooks,
   hour,
   id,
+  onBoth,
   opened,
   process,
   program,
@@ -35,7 +40,7 @@ test('settled never returns while the waker rests from a reading another entity 
   // out `timed`, still held, with its timer due. Were the look and the clearing two steps, `timed` could leave between
   // them. The waker would then sleep toward the timer of `later`, and `settled` return with the timer of `timed` known
   // to nobody. A preemption of the waker between the two steps reaches it: with the look and the clearing split, the
-  // deviation at decision 183, pinned, fails. `bun run test:pins` runs it against that form, the pin `0068 the waker`
+  // deviation at decision 195, pinned, fails. `bun run test:pins` runs it against that form, the pin `0068 the waker`
   // of `src/runtime.test_pins.ts` (decision 0254).
   explored((window) =>
     Effect.gen(function*() {
@@ -99,7 +104,7 @@ test('settled never returns while the waker rests from a reading another entity 
           yield* runtime.settled
           return { early, restarted }
         }))
-    }), { early: false, restarted: true }, { open: false, bound: 1, pinned: [{ decision: 183, choice: 1 }] })
+    }), { early: false, restarted: true }, { open: false, bound: 1, pinned: [{ decision: 195, choice: 1 }] })
 }, 60_000)
 
 test('a clock moved past a timer while the waker reads fires the timer, and settled returns', () =>
@@ -264,3 +269,94 @@ test('under the least retry, an entity the waker can never activate leaves the p
         expect({ settled, tried: tried.length > 1, apart }).toEqual({ settled: true, tried: true, apart: true })
       }))
   })))
+
+describe('a reading of the waker that fails (decision 0259)', () => {
+  test('a row the waker’s reading refuses stops the timers of its entity alone', () =>
+    // The waker's reading of the next time decodes `MIN(due)` of each entity through `Rows.due`. Here `w-1`'s key holds
+    // a time no integer is, as a hand-written fix would leave it. The reading gives `w-1` to the waker's failed
+    // entities, and `w-2`'s timer, due before, fires.
+    database(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const fired: Array<string> = []
+      const { warned, logger } = warnings()
+      const { entities, unloaded } = unloads()
+      yield* process({
+        unloaded,
+        passivate: { millis: 5 },
+        observe: (entity, event) =>
+          Effect.sync(() => {
+            if (event._tag === 'Fire') fired.push(entity.id)
+          }),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), layer)
+          for (const entity of ['w-1', 'w-2']) yield* toy.create(entity, { flags: { at }, requestId: entity, sender: tester })
+          yield* runtime.settled
+          yield* TestClock.adjust('5 millis')
+          yield* runtime.settled
+          expect(entities).toEqual(['w-1', 'w-2'])
+          yield* sql`UPDATE effecttea_entity_keys SET due = 1000.5 WHERE id = 'w-1' AND due IS NOT NULL`
+          // The waker reads again once `w-2` is unloaded, and meets `w-1`'s time first, then `w-2`'s.
+          yield* TestClock.adjust('40 millis')
+          yield* runtime.settled
+          // The waker reads `w-1`'s time again at every retry, and logs its first refusal alone.
+          yield* TestClock.adjust('50 millis')
+          yield* runtime.settled
+          expect(fired).toEqual(['w-2'])
+          expect(warned).toEqual([{ name: timed.name, id: 'w-1' }])
+        })).pipe(Effect.provide(Logger.layer([logger])))
+    })))
+
+  test('a reading of the waker that fails is logged, and read again after the retry', () =>
+    // The table of the timers is out of reach while the waker reads, as a connection lost would leave it. The reading
+    // dies, and the waker logs it, rests, and reads again at every retry. Once the table is back, the timer fires.
+    // It runs on SQLite and PGlite.
+    onBoth(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const fired: Array<string> = []
+      const { warned, logger } = warnings()
+      const { entities, unloaded } = unloads()
+      yield* process({
+        unloaded,
+        passivate: { millis: 5 },
+        retry: { millis: 10 },
+        observe: (entity, event) =>
+          Effect.sync(() => {
+            if (event._tag === 'Fire') fired.push(entity.id)
+          }),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), layer)
+          yield* toy.create('w', { flags: { at }, requestId: 'w', sender: tester })
+          yield* runtime.settled
+          yield* TestClock.adjust('5 millis')
+          yield* runtime.settled
+          expect(entities).toEqual(['w'])
+          yield* sql`ALTER TABLE effecttea_entity_keys RENAME TO effecttea_entity_keys_away`
+          // `w`'s timer is due at 40, and the waker reads then.
+          yield* TestClock.adjust('35 millis')
+          yield* runtime.settled
+          // The waker reads again at every retry, and logs the first failure alone.
+          yield* TestClock.adjust('30 millis')
+          yield* runtime.settled
+          expect({ fired, warned }).toEqual({ fired: [], warned: [{ name: timed.name }] })
+          yield* sql`ALTER TABLE effecttea_entity_keys_away RENAME TO effecttea_entity_keys`
+          yield* TestClock.adjust('10 millis')
+          yield* runtime.settled
+          expect(fired).toEqual(['w'])
+        })).pipe(Effect.provide(Logger.layer([logger])))
+    })))
+})
+
+/** The annotations of each warning logged. */
+const warnings = () => {
+  const warned: Array<Readonly<Record<string, unknown>>> = []
+  const logger = Logger.make((options) => {
+    if (options.logLevel === 'Warn') warned.push(options.fiber.getRef(References.CurrentLogAnnotations))
+  })
+  return { warned, logger }
+}

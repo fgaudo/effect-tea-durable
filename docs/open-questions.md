@@ -559,14 +559,14 @@ with a requirement that no example has yet.
   and nothing names the entity a burst waits for, which is bug 74, not checked. It would be decided by:
   - whether a door's step warns once its commit is known, and whether a step rolled back warns;
   - whether a burst that waits in Cluster's table on one entity is told to an operator, and by what.
-- **A row the waker's reading refuses.** The waker goes on past an activation that fails
-  ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)), and its own reading of
-  the next time due is a reading of rows that nothing catches. A `due` no integer is stops every timer of the program
-  for the life of the process, with no log, and `settled` never returns again. It is bug 75 of the
-  [roadmap](roadmap.md), reproduced. It would be decided by:
-  - whether `waking` catches a reading that dies and reads again after `retry`, as the sweep does, or `due` leaves out
-    the entity whose row it refuses and gives it to the waker's map of failed entities;
-  - whether the readings of the waker on Cluster, by shard, fail alike.
+- **A row the waker's reading refuses, on Cluster.** In one process the waker leaves out an entity whose stored time
+  it refuses, and reads again after `retry` a reading that fails
+  ([decision 0259](decisions/0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md)). On Cluster the
+  waker reads the same `due` by the shards it holds, and no test runs that reading against a row refused or a reading
+  that fails. It would be decided by:
+  - a test of `src/cluster.test.ts` whose runner's waker meets a time refused in a shard it holds, and a timer of
+    another entity of the shard that fires;
+  - the same test with the reading failing, as the step The tests of a contract on every backend would run it.
 - **A second runtime on one database.** A database is held by one runtime
   ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). On Cluster a shard's lock takes the place of the
   hold ([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)), and keeps off only another

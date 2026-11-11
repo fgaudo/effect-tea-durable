@@ -17,10 +17,13 @@ import type { Types } from '../program.ts'
  * until the next, an hour at most (decision 0221), or until an entity is unloaded and brings an earlier one. An
  * activation that fails crashes its entity alone, which is tried again after `retry`, as a receiver that crashed is
  * sent to again (decisions 0046, 0077). An entity a crash took out of the process is activated after `retry` too,
- * since its stored work may hold no timer, and nothing else in this process would load it (decision 0252).
+ * since its stored work may hold no timer, and nothing else in this process would load it (decision 0252). A
+ * reading that fails, or a stored time it refuses, is logged and read again after `retry` (decision 0259).
  */
 export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => {
   const { waker } = deployed
+  let failing = false
+  const refused = new Set<string>()
   // One reading per round, and `forever` begins the next: a round that waited for itself would leave a frame
   // behind at every timer the process ever wakes for.
   return Effect.forever(Effect.gen(function*() {
@@ -37,11 +40,39 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
     }
     // A crash's mark leaves the entity in the readings: a timer due before the mark activates it then.
     const hidden = [...waker.failed].flatMap(([id, { hides }]) => hides ? [id] : [])
+    // A reading that fails is read again after `retry`, as the sweep goes on past a sweep that fails: a reading that
+    // died would end the fiber, and every timer of the program with it. Only the first failure of a run of them is
+    // logged, since a database out of reach would log one at every retry (decision 0259).
     const due = yield* deployed.storage.due(
       now,
       [...deployed.loaded.keys(), ...hidden, ...worked],
       p.cluster === null ? undefined : held(deployed),
+    ).pipe(
+      Effect.tap(() => Effect.sync(() => (failing = false))),
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause)
+          : Effect.as(
+            failing ? Effect.void : Effect.andThen(
+              Effect.sync(() => (failing = true)),
+              Effect.logWarning('a reading of the waker failed; it reads again at every retry', cause).pipe(
+                Effect.annotateLogs({ name: deployed.program.name }),
+              ),
+            ),
+            { ready: [], next: now + p.retry, refused: [] },
+          )
+      ),
     )
+    // An entity whose time the reading refuses is left out until `retry`, as one whose activation failed, and its
+    // first refusal in the process is logged.
+    for (const { id, reason } of due.refused) {
+      mark(waker, id, now + p.retry, { hides: true })
+      next = Math.min(next, now + p.retry)
+      if (refused.has(id)) continue
+      refused.add(id)
+      yield* Effect.logWarning(`the stored time of an entity is refused; the waker reads it again at every retry: ${reason}`)
+        .pipe(Effect.annotateLogs({ name: deployed.program.name, id }))
+    }
     next = Math.min(next, due.next ?? Infinity)
     waker.next = next === Infinity ? null : next
     // The entities just activated are this process's, and the reading of the next round leaves them out, as

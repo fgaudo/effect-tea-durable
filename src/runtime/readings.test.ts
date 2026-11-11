@@ -162,7 +162,7 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
     // The count of the readings that wait is raised before the wait and lowered by its finalizer. A fiber may yield
     // between the two, and an interruption there would leave the count raised: the watcher would read the version
     // at every interval for ever, though no reading waits. With the count raised before an `ensuring`, outside one
-    // acquisition, the deviation at decision 642, pinned, fails. `bun run test:pins` runs it against that form, the
+    // acquisition, the deviation at decision 644, pinned, fails. `bun run test:pins` runs it against that form, the
     // pin `0163 a reading's count` of `src/runtime.test_pins.ts` (decision 0254).
     explored((window) =>
       Effect.scoped(twoRunners((reader, _commit, reads) =>
@@ -175,7 +175,7 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
           const before = reads()
           yield* TestClock.adjust('1 second')
           return reads() - before
-        }), 200, false)), 0, { open: false, bound: 1, pinned: [{ decision: 642, choice: 1 }] })
+        }), 200, false)), 0, { open: false, bound: 1, pinned: [{ decision: 644, choice: 1 }] })
   }, 60_000)
 
   test('a reading is woken by a commit of another runner between its page and its wait, under prioritized schedules', () => {
