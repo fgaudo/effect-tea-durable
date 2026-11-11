@@ -73,9 +73,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - The first session's report is not kept, so what it ruled out is not written here. The reports of the second,
     third and fourth sessions are recorded whole in this step, in the bugs of the next step and in
     [the open questions](open-questions.md).
-  - The step begins with the skill's brief, given the first area of the list not done. A session that ends an area
-    writes here what it read, what it found and what it did not reach, and the step leaves this file once the last
-    session is done.
+  - The step begins with the skill's brief, given the first area of the list that does not start with `Done`, which
+    `bun scripts/premise-coverage.ts` names. A session that ends an area writes `Done, ` before the area's name in
+    the list, keeps its notes there, takes out of the list of notes not reached those it read whole, and adds a
+    bullet here of what it read, what it found and what it did not reach. The step leaves this file once the last session is done.
+  - The reviewers' branches are local to the maintainer's machine, and pushed nowhere:
+    `claude/premise-review-machine-c1a99e`, `claude/premise-review-operations-d2dda3` and
+    `claude/premise-review-creation-03f15d`. A bug of the next step names the commit of its failing test on one of
+    them. A session elsewhere writes that test again from the bug's sequence and the report in
+    [`reviews.md`](decisions/reviews.md).
 
 - **The bugs the premise review found, to verify and fix.** Each bug below is a rule of a note whose premise a
   later note took away. A bug reproduced has a test that fails, and its fix begins where the bug says. A bug only

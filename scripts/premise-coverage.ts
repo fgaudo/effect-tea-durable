@@ -1,7 +1,7 @@
 // Checks that the roadmap's step of the premise review covers every note of the index, as
 // `.claude/skills/premise-review/SKILL.md` asks after each review. It reads the step's text, not a format of its own:
 // a section of the index named in a bullet that starts `Done` is read; the numbered areas after `The areas left` are
-// still to read; the bullet that starts `Each area also reads` lists the later notes not reached.
+// still to read, unless one starts `Done`; the bullet that starts `Each area also reads` lists the later notes not reached.
 // Run: `bun scripts/premise-coverage.ts`. It exits 1 with each gap it finds.
 
 const index = await Bun.file(new URL('../docs/decisions/README.md', import.meta.url)).text()
@@ -53,11 +53,21 @@ const text = (note: number) => String(note).padStart(4, '0')
 
 const errors: string[] = []
 const areasBullet = bullets.find((bullet) => bullet.includes('The areas left'))
-const areas = (areasBullet ?? '').split(/ \d{1,2}\. /).slice(1).map(notesOf)
 if (areasBullet === undefined) errors.push('no bullet lists `The areas left`')
 
+// An area of the list that a session has read starts with `Done`, and stays in the list, so that an area that is part
+// of a section counts its own notes as read and not the section's.
+const areaTexts = (areasBullet ?? '').split(/ \d{1,2}\. /).slice(1)
+const areas = areaTexts.map(notesOf)
 const toRead = new Map<number, number>()
 areas.forEach((notes, area) => {
+  if (areaTexts[area]!.startsWith('Done')) {
+    for (const note of notes) {
+      if (read.has(note)) errors.push(`${text(note)} is in area ${area + 1}, but its section is read`)
+      read.add(note)
+    }
+    return
+  }
   for (const note of notes) {
     if (read.has(note)) errors.push(`${text(note)} is in area ${area + 1}, but its section is read`)
     if (toRead.has(note)) errors.push(`${text(note)} is in areas ${toRead.get(note)! + 1} and ${area + 1}`)
@@ -75,7 +85,9 @@ for (const note of notesOf(reached ?? '')) {
 
 const spread = [...sections].map(([name, notes]) => `${name}: ${[...notes].filter((note) => read.has(note)).length}/${notes.size}`)
 console.log(`read, by section: ${spread.join('; ')}`)
-console.log(`${read.size} notes read, ${toRead.size} in ${areas.length} areas left, of ${all.size}`)
+const left = areaTexts.filter((area) => !area.startsWith('Done'))
+console.log(`${read.size} notes read, ${toRead.size} in ${left.length} areas left, of ${all.size}`)
+if (left.length > 0) console.log(`next area: ${left[0]!.split(':')[0]}`)
 if (errors.length > 0) {
   for (const error of errors) console.error(error)
   process.exit(1)

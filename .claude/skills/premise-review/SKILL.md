@@ -95,7 +95,8 @@ docs/decisions/reviews.md of the branch.
 - Copy the report's section to [`docs/decisions/reviews.md`](../../../docs/decisions/reviews.md) of `main`, whole,
   so that what the review ruled out stays when the branch goes.
 - Write what the review read and what it did not reach in the roadmap's step of the review, so that the next
-  review starts where this one stopped. A note of the table read only in part is listed for the step's last
+  review starts where this one stopped. Write `Done, ` before the area's name in the step's list of areas, and keep
+  its notes there. Take out of the list of notes not reached each one the review read whole. A note of the table read only in part is listed for the step's last
   session, to read whole. A note not read goes to the area of the list that holds it, or to the last session where
   that area is already read.
 - Check the report whole against what the step, the bugs and the open questions now say, item by item. Then run
