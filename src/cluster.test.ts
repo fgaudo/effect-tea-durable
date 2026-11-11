@@ -391,6 +391,44 @@ describe('two runners on one file', () => {
         expect(defectOf(yield* deploys([at('Toy', 1)]))).toBeUndefined()
       })), 30_000)
 
+  // Decisions 0075, 0078 and 0092: a deploy that fails gives its name back, and its scope's close is taken to undo
+  // what it registered. Cluster's `registerEntity` keeps a closed entity type for the life of the `Sharding`, and a
+  // second registration of the type returns at once, so the second deploy's door is the first one's, closed.
+  test('FAILING: a deploy that fails after its door is registered leaves the next deploy of its name a door', () =>
+    onFile(() =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const context = yield* Layer.build(
+          sharding([at('Toy', 1)]).pipe(
+            Layer.provideMerge(Runners.layerNoop),
+            Layer.provideMerge(SqlMessageStorage.layer),
+            Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
+            Layer.provideMerge(ShardingConfig.layer({
+              runnerAddress: Option.some(RunnerAddress.make('localhost', 1)),
+              shardsPerGroup,
+              entityMessagePollInterval: Duration.millis(100),
+            })),
+            Layer.provideMerge(Layer.succeed(SqlClient.SqlClient, sql)),
+            Layer.provide(Digest.layerWebCrypto),
+          ),
+        ).pipe(Effect.orDie)
+        const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
+        const runtime = yield* Effect.provide(launch(), context)
+        // A singleton under the name the deploy registers first makes the deploy die after its door is registered.
+        const taken = yield* Scope.make()
+        yield* Scope.provide(held.registerSingleton('@fgaudo/effect-tea-persistent/Toy/0', Effect.never), taken)
+        expect(Exit.isFailure(yield* Effect.exit(Effect.provide(runtime.deploy(at('Toy', 1)), context)))).toBe(true)
+        yield* Scope.close(taken, Exit.void)
+        const handle = yield* Effect.provide(runtime.deploy(at('Toy', 1)), context)
+        // The door's client is interrupted at once by the closed door, where a runner with no failed deploy before
+        // answers `Created`.
+        const created = yield* handle.create('e1', { flags: null, requestId: 'c1', sender: null }).pipe(
+          Effect.timeoutOption('5 seconds'),
+          Effect.exit,
+        )
+        expect(created).toEqual(Exit.succeed(Option.some({ _tag: 'Created' })))
+      })), 30_000)
+
   test('a step of an older version dies and saves no reply, and a runner of the newest version steps its requests', () =>
     onFile((start) =>
       Effect.gen(function*() {
@@ -1091,6 +1129,39 @@ describe('the runtime on Cluster', () => {
             failed = true
             yield* sql`INSERT INTO child (parent) VALUES (1)`
           }).pipe(Effect.orDie),
+    ).then(() => expect(warningsAndErrors()).toEqual([restarted('Failed to execute statement')]))
+  }, 30_000)
+
+  // Decisions 0079 and 0092: an activation on Cluster runs in the door's transaction, and enters the entity before
+  // the commit. A commit that fails leaves the entity held at its stored machine, whose `Restart` the rollback
+  // dropped, and the next step settles it as rolled back and steps from it: the stored operation is never started.
+  test('FAILING: a door step that loads an entity and whose commit fails leaves the entity to run its stored operation', () => {
+    let phase: 'ask' | 'crash' | 'load' | 'done' = 'ask'
+    return onRunner(
+      Effect.gen(function*() {
+        yield* create(0, 'c1')
+        phase = 'crash'
+        // `Ask` runs once, and its completion's commit fails: the entity crashes with the operation stored.
+        expect(yield* send({ _tag: 'Ask' }, 'm1')).toBe('{"_tag":"Accepted"}')
+        yield* eventually(Effect.sync(() => phase), (now) => now === 'load')
+        expect(asked).toBe(1)
+        // The door loads the entity, whose `Restart` starts `Ask` again, and the step's commit fails once.
+        expect(yield* send({ _tag: 'Add', n: 1 }, 'm2')).toBe('{"_tag":"Accepted"}')
+        expect(phase as string).toBe('done')
+        const state = yield* eventually(stateOf, (state) => state?.n === 101).pipe(
+          Effect.timeoutOption('5 seconds'),
+          Effect.andThen(stateOf),
+        )
+        expect({ state, asked }).toEqual({ state: { n: 101, asking: false }, asked: 2 })
+      }),
+      (sql) => (said) => {
+        if (said._tag !== 'Reached' || said.point !== 'BeforeCommit') return Effect.void
+        const breaks = (phase === 'crash' && said.event._tag === 'Complete') ||
+          (phase === 'load' && said.event._tag === 'Receive')
+        if (!breaks) return Effect.void
+        phase = phase === 'crash' ? 'load' : 'done'
+        return sql`INSERT INTO child (parent) VALUES (1)`.pipe(Effect.asVoid, Effect.orDie)
+      },
     ).then(() => expect(warningsAndErrors()).toEqual([restarted('Failed to execute statement')]))
   }, 30_000)
 })
