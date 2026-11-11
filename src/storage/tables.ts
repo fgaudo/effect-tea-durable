@@ -88,10 +88,10 @@ const advisoryKey = 7_465_616
  * connection takes it, and the end of the process gives it back, however it ends. The database itself stays in the
  * normal locking mode, so another connection reads it. A database of SQLite in memory is held by its client alone,
  * since no other connection opens it. A database of PostgreSQL is held by a session advisory lock, on a connection
- * reserved until the scope ends, and the end of the session gives it back. PGlite runs every statement on one session, which would take the lock again. So in this
- * process alone, the client holds it, and the client's data directory is held while the client is open. A database
- * another runtime holds is the launcher's defect. So is a data directory of PGlite another process has open
- * (decision 0255).
+ * reserved until the scope ends, and the end of the session gives it back. PGlite runs every statement on one
+ * session, which would take the lock again. So in this process alone, the client holds it, and the client's data
+ * directory is held while the client is open. A database another runtime holds is the launcher's defect. So is a data
+ * directory of PGlite another process has open (decision 0255).
  */
 export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
