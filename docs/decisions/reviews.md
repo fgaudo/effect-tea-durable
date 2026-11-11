@@ -757,3 +757,136 @@ By their decision sections only: the later notes that cite these: 0038, 0053, 00
 ### Not reached
 None of the notes the brief named. Of the later notes, 0021, 0048, 0071, 0085, 0092, 0122, 0125, 0245, 0248 and 0249
 were not read against these areas. The brief or the roadmap already cover 0085, 0245, 0248 and 0249.
+
+## 2026-11-11: premise review of Schemas and projections, a first part
+
+The reviewer's report, whole, as its session wrote it.
+
+Branch `claude/premise-review-schemas-1-0ccf33`, failing tests at commit `778b0f2`, cut from `main` at `fcd2494`.
+One finding reproduced. One only reasoned, with a test written that runs only on a server of PostgreSQL.
+
+### The notes read
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0025 | of the area | whole, with the code (`encodeWork` in `src/machine.ts`) |
+| 0026 | of the area | whole, with the code (`projectionViolations` in `src/testing.ts`) |
+| 0027 | of the area | whole, with the code of the sender as `projectionViolations` and `Meta` give it |
+| 0030 | of the area | whole, with the code (`Json` in `src/program.ts`) |
+| 0032 | of the area | whole, with the code (`reindex` and `projected` in `src/storage/projections.ts`) |
+| 0038 | of the area | whole, with the code (the draw of a `seq` in `src/storage/entities.ts`, and `src/storage/log.ts`) |
+| 0039 | of the area | whole, with the code (`declare`, `fetch`, `ack`, `pruneBatch` and `forget` in `src/storage/log.ts`) |
+| 0040 | of the area | whole, with the code (`encodeOnce` and `shownOf` in `src/machine.ts`) |
+| 0062 | of the area | whole, with the code (the head of `src/storage/rows.ts` and `json`) |
+| 0070 | of the area | whole, with the code (`reindex` in `src/storage/projections.ts`) |
+| 0072 | of the area | whole, with the code (`shownOf` and its cache by program) |
+| 0098 | of the area, and changes 0030 | whole, with the code (`Json` in `src/program.ts`) |
+| 0057 | changes 0038 and 0040 | whole, with the caches of `src/machine.ts` |
+| 0058 | changes 0025 | whole, with `encodeWork` |
+| 0137 | changes 0038 and 0039 | whole, with the code |
+| 0138 | changes 0038, 0039 and 0072 | in part: the decision and `What it rests on` |
+| 0139 | changes 0032 | in part: the decision and `What it rests on` |
+| 0141 | changes 0032 and 0039 | not at all |
+| 0142 | changes 0039 | not at all |
+| 0143 | changes 0032 | not at all |
+| 0148 | changes 0032 | not at all |
+| 0150 | changes 0039 | in part: the ack's comment in `src/runtime.ts` |
+| 0152 | changes 0039 | in part: the decision and `What it rests on`, with the code of `declare` and `pruneBatch` |
+| 0184 | changes 0039 | in part: the decision and `What it rests on` |
+| 0195 | changes 0039 | not at all, since it only renames `feed` |
+| 0206 | changes 0032 | in part: the decision and `What it rests on` |
+| 0210 | changes 0040 | in part: the decision and `What it rests on` |
+| 0213 | changes 0026 | in part: the decision and `What it rests on`, with `projectionViolations` |
+| 0077 | changes 0062 | not at all, since the area of the runtime holds it and bug 17 is of it |
+| 0222 | the later note of finding 2, which cites no note of the area | whole, with `transaction` of `src/storage.ts` |
+| 0159 | the later note of finding 1 | in part: what bug 2 and the tests of two runners say of it |
+| 0052 | cites 0038 | in part: the decision |
+| 0031, 0033, 0034, 0035, 0036, 0046, 0048, 0049, 0053, 0099, 0101, 0104, 0120, 0121, 0122, 0135, 0140, 0146, 0149, 0180, 0197, 0245 | each cites a note of the area | not at all |
+
+### Finding 1, reproduced: 0152 and 0159 against 0039
+
+- The premise that fell: 0039 lets a consumer go by `forget`, and keeps a consumer's cursors only while the consumer
+  is stored. The rule holds because one process knows the consumers. 0152 refuses an ack of a name the deploy does
+  not declare, and a forget of a name it declares, so no ack follows a forget of the same name. 0152 rests on 0080, a
+  database held by one runtime. On Cluster, a rolling deploy runs an older runner beside a newer one (0159), and the
+  older runner's deploy still declares the name the newer runner forgot.
+- The sequence: the older runner deploys `Toy` with the consumers `queue` and `audit`, and creates `one`. Its reader
+  of `queue` fetches the creation's row. A newer version launches with `audit` alone, and its operator forgets
+  `queue`. The older reader acks its page. `ack` writes the cursor and does not check that the consumer is stored
+  (`src/storage/log.ts:208`). `audit` reads the row and acks it. The prune then counts two cursors in the partition
+  for one consumer. So the `HAVING count(*) = …` of `pruneBatch` (`src/storage/log.ts:237`) never holds there, and the
+  partition is never pruned again while the topic has a consumer. `consumers` shows `audit` alone, so the operator
+  sees no consumer that holds the log. A later deploy that declares `queue` again finds the cursor left, and reads
+  from it, not from `0` as 0039 says.
+- Reproduced by `FAILING: an ack of an older runner after a newer one forgot its consumer leaves the prune of the
+  partition`, in `src/cluster.test.ts`, describe `two runners on one file`, commit `778b0f2`. The prune gives 0 where
+  1 is expected. Without the older runner's ack the test passes. Run: `bun test src/cluster.test.ts -t "forgot its
+  consumer"`.
+- Where a fix could begin: `ack` in `src/storage/log.ts` could write a cursor only where its consumer is stored, as an
+  `INSERT … SELECT` from `effecttea_consumers`. Or `pruneBatch` could count only the cursors of stored consumers. It
+  is of family C of the step of bugs: a rule of one process that holds otherwise on Cluster.
+
+### Finding 2, only reasoned, with a test: 0222 against 0070
+
+- The premise that fell: 0070 writes a row of `reindex` only over the state the row was computed from. The check and
+  the write are one statement, `INSERT … SELECT … FROM effecttea_entities WHERE state = … ON CONFLICT DO UPDATE`
+  (`src/storage/projections.ts:500`), so that nothing commits between them. That held on SQLite, where a statement
+  runs alone. On a pool of PostgreSQL a step's transaction runs at `READ COMMITTED` (0222), and `reindex` runs outside
+  any transaction. There the `SELECT` reads the statement's snapshot. The `ON CONFLICT DO UPDATE` then waits for the
+  lock the step holds on the row of the read model, and updates the row the step commits. PostgreSQL documents this
+  under Transaction Isolation, Read Committed. The guard on the state is not read again.
+- The sequence: a step of `a` writes its state and its row of the read model, and has not committed yet. `reindex`
+  reads `a`'s committed state and computes its row. Its statement finds that state still stored, in its snapshot.
+  Its update waits on the step's row, and the step commits. The update then writes the projection of the state
+  before the step over the step's row. A query and `read` give a projection the entity has moved past, until the
+  entity's next step, which 0032 and 0070 say never happens. It is the bug 0070 fixed, back on a pool.
+- Not run: the worktree has no server of PostgreSQL, and PGlite runs one session, where the two cannot interleave.
+  The test `FAILING: a reindex beside a step on a pool leaves the row the step wrote`, in `src/postgres.test.ts`,
+  describe `a reindex beside a step (decision 0070)`, commit `778b0f2`, holds the step's transaction open, waits until
+  `reindex` waits on a lock, and expects the step's row. It runs under `POSTGRES_URL`, as the CI's job `postgres`
+  does. It races the wait with the end of `reindex`, so it ends without a hang if the reasoning is wrong.
+- Where a fix could begin: `reindex` in `src/storage/projections.ts`. A guard in the `WHERE` of the `DO UPDATE` is
+  read against the row the step committed. A statement that locks the entity's row first, `SELECT … FOR SHARE` in a
+  transaction per row, also holds. It is of family D of the step of bugs.
+
+### Suspects ruled out
+
+- The caches of 0057 against a deploy that changes `project` (0072): `shownOf`, `encodeWork` and `encodeOnce` keep a
+  value's encoding by program or by codec (`src/machine.ts:179-263`), so a new program computes both sides of a
+  step's comparison again.
+- 0057's encoding kept by the value, against a program that mutates its state: 0052 makes it the program's contract,
+  as purity is.
+- 0210's `-0` against 0058, 0070 and 0072: each compares the encoded JSON or its text, where `-0` and `0` are one value.
+- A prune on a pool of PostgreSQL against a consumer declared at the same time (0039, 0152, 0222): a batch drops only
+  the rows its snapshot sees. So the consumer loses only rows that a prune just before its declaration would have
+  dropped on SQLite.
+- `forget` on a pool of PostgreSQL, with a prune between its two deletes: the prune then finds fewer cursors than
+  consumers, and drops nothing of the partition.
+- An ack in a caller's transaction at `REPEATABLE READ` (0150, 0222): its reading of the heads is older, so it caps
+  the cursor lower, never higher.
+- 0138's rows of a step that share a `seq`, against 0137's order on a pool: the step draws the `seq` once, under the
+  head's lock, so the next step of the partition draws after the first commits.
+- 0026 against 0213: `projectionViolations` gives `update` the `Meta` the runtime gives, `at` and `from`, and nothing
+  more (`src/testing.ts:44-63`, `Meta` in `src/program.ts:197`).
+- The heads of the log under a rename, against 0038's `seq` that is never given again: `renamed` moves
+  `effecttea_heads` with the other tables keyed by a name (`src/storage/tables.ts:479-491`).
+
+### Noticed, not checked
+
+- `reindex` on Cluster over SQLite: a runner's `reindex` whose statement reads its snapshot while another runner's
+  step holds the write lock may end with `SQLITE_BUSY`, which no busy handler retries, and die. It loses no row.
+- `reindex` run by an operator on the older runner of a rolling deploy (0159): it writes the older `project`'s row,
+  at the older version, over a row the newer runner's `reindex` wrote, since the entity's state and version did not
+  change.
+- Finding 1 within one version: two runners of the same version whose deploys declare different consumers would
+  give it too.
+
+### Not read whole
+
+- 0138, 0139, 0152, 0184, 0206, 0210 and 0213 were read by their decisions and premises. They are notes of the second
+  part of this section, whose session reads them whole.
+- 0141, 0142, 0143 and 0148 were not read, and 0150 only by the ack's comment. They are notes of the area of the
+  queries and their pages, or of the second part of this section.
+- 0077 was not read: the area of the runtime holds it.
+- The notes that only cite the area were not read. The pairs of this review are the notes that change the area's
+  rules, and the later notes of the two findings.
