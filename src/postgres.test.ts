@@ -18,6 +18,7 @@ import * as Schema from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import { SqlClient, SqlError, Statement } from 'effect/sql'
 import type * as Machine from './machine.ts'
+import { requestKey } from './machine.ts'
 import { InvariantDefect, noWork, operation, type Program, type Scalar } from './program.ts'
 import { launch } from './runtime.ts'
 import { createTables, storage, transaction } from './storage.ts'
@@ -461,5 +462,45 @@ describe('the migrations of createTables (decision 0216)', () => {
       })
       expect(runs.every(Exit.isSuccess)).toBe(true)
       expect(yield* sql`SELECT migration_id FROM effecttea_migrations`).toEqual([{ migration_id: 1 }])
+    }))
+})
+
+describe('an expiry in batches beside a step that answers a retry again (decisions 0125, 0245)', () => {
+  // The batch's `DELETE` selects its rows by a subquery read from the snapshot its statement began with. At
+  // `READ COMMITTED` a row another transaction updated meanwhile is checked again against the `WHERE` of the
+  // `DELETE`, which holds no time: the subquery's rows are not read again. So a reply a step wrote again under the
+  // same key, with a new time, is deleted, and a retry within its new `keep` is applied a third time.
+  onServer('FAILING: expire keeps a reply a step wrote again with a new time while its batch waited', (url, sql) =>
+    Effect.gen(function*() {
+      yield* on(sql)(createTables)
+      const other = yield* connect(url)
+      const store = storage(ranked, sql, 1)
+      const sweep = storage(ranked, other, 1)
+      yield* transaction(sql, store.write('a', created(), 0))
+      const asked = { _tag: 'Caller', sender: null, id: 'r' } as const
+      const reply = (until: number) =>
+        written({
+          entity: { state: { last: 'r' }, creation },
+          replies: [{ request: requestKey(ranked, asked), tag: 'Accepted', reason: null, asked: null, until }],
+        })
+      // The first answer, kept until 10.
+      yield* transaction(sql, store.write('a', reply(10), 0))
+      // At 20 the retry is past its time, is applied again, and its reply is written again, kept until 1 020. The
+      // step's transaction is held open, holding the reply's row.
+      const wrote = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const step = yield* Effect.forkChild(transaction(
+        sql,
+        Effect.andThen(store.write('a', reply(1_020), 20), Effect.andThen(Deferred.succeed(wrote, undefined), Deferred.await(release))),
+      ))
+      yield* Deferred.await(wrote)
+      // The sweep's expiry at 20 reads the row as the first answer left it, past its time, and waits for its lock.
+      const expiry = yield* Effect.forkChild(on(other)(sweep.expire(20)))
+      yield* waitingOnLocks(sql, 1)
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(step)
+      yield* Fiber.join(expiry)
+      // A retry at 30 is within the new time, and is answered from storage.
+      expect(yield* store.reply('a', asked, 30)).toEqual({ _tag: 'Accepted' })
     }))
 })

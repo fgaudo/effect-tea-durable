@@ -757,3 +757,137 @@ By their decision sections only: the later notes that cite these: 0038, 0053, 00
 ### Not reached
 None of the notes the brief named. Of the later notes, 0021, 0048, 0071, 0085, 0092, 0122, 0125, 0245, 0248 and 0249
 were not read against these areas. The brief or the roadmap already cover 0085, 0245, 0248 and 0249.
+
+## 2026-11-11: premise review of Messages, requests and replies
+
+The reviewer's report, as its session wrote it. Branch `claude/premise-review-messages-975dd7`, cut from `main` at
+`fcd2494`. One finding, only reasoned against PostgreSQL's documented semantics, with a test written for the CI's
+server that this machine could not run.
+
+### The notes read
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0004 | of the area | whole, with the code (incarnations in `src/machine.ts`, `keyRow`) |
+| 0009 | of the area | whole, with the code (`entities` in `src/runtime/callers.ts`) |
+| 0010 | of the area | whole, with the code (`receive`, `handle` in `src/machine.ts`) |
+| 0015 | of the area | whole, with the code (`requestKey`, the replies' columns) |
+| 0021 | of the area | whole, with the code (`write` in `src/storage/entities.ts`) |
+| 0023 | of the area | whole, with the code (`receive`, `suspend`) |
+| 0047 | of the area | whole, with the code (`named` in `src/runtime/callers.ts`) |
+| 0048 | of the area | whole, with the code (`entity`, `replyOf`, `reply` in `src/storage/entities.ts`) |
+| 0059 | of the area | whole, with the code (`askerOf`, `callerOf`) |
+| 0060 | of the area | whole, with the code (`entities` in `src/runtime/callers.ts`) |
+| 0065 | of the area | whole, with the code (`applyInProcess` in `src/runtime/loop.ts`, the door's `Message` step) |
+| 0069 | of the area | whole, with the code (the upsert of `effecttea_replies`) |
+| 0124 | of the area | whole, with the code (`create` and `send` in `src/runtime/callers.ts`) |
+| 0125 | of the area | whole, with the code (`writes`, `reply`, `write`, `expire`) |
+| 0245 | of the area | whole, with the code (`expire` and `prune` in batches, and the commit `6423c6d` that brought them) |
+| 0132 | changes 0004 | whole, with the code |
+| 0248 | changes 0245 | whole, with the code (`send` on Cluster in `src/runtime/callers.ts`) |
+| 0182 | changes 0124 | in part: the code only (`create` in `callers.ts`, the door's creation) |
+| 0022, 0057, 0090, 0123, 0157, 0165 | change a note of the area | in part: by the status lines of the notes they change, and the code that keeps them |
+| 0131, 0201 | change 0009 and 0010 | not at all: the rehearsal is out of this area, and 0201 is a type |
+| 0156 | cites 0059 | in part: the code only (`renamed` in `src/storage/tables.ts`) |
+| 0008, 0014, 0133 | cite 0004 | not at all |
+| 0017, 0020, 0038 | cite 0009 | not at all; 0017 and 0020 by the passages 0021 and 0048 quote |
+| 0012, 0028, 0045, 0046 | cite 0010 | not at all |
+| 0085 | cites 0015 | not at all |
+| 0100 | cites 0021 | not at all |
+| 0092 | cites 0023 | not at all |
+| 0129 | cites 0060 | not at all |
+| 0013, 0200, 0214 | cite 0065 | not at all |
+| 0049, 0160, 0178 | cite 0124 | not at all |
+| 0126, 0127, 0141 | cite 0125 | not at all |
+| 0171 | cites 0245 | in part: the code of `given`, and the passages 0248 quotes |
+| 0223 | cites 0245 | not at all |
+| 0222 | outside the list, read for finding 1 | in part: its Context and the levels of a transaction |
+
+### Finding 1, only reasoned: 0245 against 0125, an expiry in batches deletes a reply a step wrote again
+
+- The premise that fell: 0125 says a retry within `keep` is answered from storage, and that a step and `expire`
+  delete only the rows past their time. Its `expire` was one statement,
+  `DELETE FROM effecttea_replies WHERE name = … AND until IS NOT NULL AND until <= at`. Unwritten, the rule needs the
+  condition on the time to be read on the row the statement deletes. 0245 made `expire` delete in batches, and the
+  commit `6423c6d` moved the condition into a subquery:
+  `DELETE … WHERE name = … AND (id, request, version) IN (SELECT … WHERE until <= at ORDER BY until LIMIT 256)`
+  (`src/storage/entities.ts:452-467`). 0245 also made a sweep fiber run it on its own, beside the steps, and 0222
+  runs the steps and the sweep at once on a pool of PostgreSQL, at `READ COMMITTED`.
+- The sequence, on a pool of PostgreSQL. A caller's reply is stored with `until` 10. At 20 the caller retries, past
+  its time. The step reads no reply, since `reply` filters `until > at`, applies the message again, and upserts the
+  reply under the same key `(name, id, request, version)` with `until` 1 020 (`src/storage/entities.ts:350-366`, and
+  the upsert of `src/storage/held.ts:63`). Before the step commits, the sweep's batch at 20 begins on another
+  connection. Its subquery reads the row as it was committed, with `until` 10, and its `DELETE` waits for the row's
+  lock. The step commits. PostgreSQL then checks the `WHERE` of the `DELETE` again on the updated row. The
+  documentation of PostgreSQL, Read Committed Isolation Level (13.2.1), says the search condition is re-evaluated on
+  the updated version of the row, and that the command does not see the effects of concurrent commands on other
+  rows. So the subquery's rows stay those of its snapshot. The key matches, and the reply kept until 1 020 is
+  deleted. A retry at 30, within the new `keep`, finds nothing and is applied a third time, in silence.
+- On SQLite it cannot happen, since one writer holds the database for the whole batch's transaction. Before
+  `6423c6d` it could not happen on PostgreSQL either, since the condition on `until` stood in the `WHERE` that
+  PostgreSQL checks again. The batch of `effecttea_given_requests` in the same transaction has the same form
+  (`request_id IN (SELECT … until <= at …)`), which matters once Cluster runs on PostgreSQL.
+- The test: `FAILING: expire keeps a reply a step wrote again with a new time while its batch waited`, in
+  `src/postgres.test.ts`, describe `an expiry in batches beside a step that answers a retry again (decisions 0125,
+  0245)`. It holds the step's transaction open after its upsert, starts `expire(20)` on a second pool, waits until a
+  session waits for a lock, releases the step, and expects the reply read at 30. No server of PostgreSQL is
+  reachable on this machine, so the test was skipped here and has not run. It runs with `bun run test:postgres`, or
+  with `POSTGRES_URL=<url> bun test src/postgres.test.ts -t FAILING`. It belongs to family D of the step of bugs.
+- Where a fix could begin: in `expire`, the condition on the time is kept on the outer row too, as
+  `… AND until IS NOT NULL AND until <= at AND (id, request, version) IN (…)`, so that PostgreSQL checks it again.
+  Or the subquery locks its rows with `FOR UPDATE`. The batch of `effecttea_given_requests` needs the same.
+
+### Suspects ruled out
+
+- 0125's `until` against a step that answers an inbound message without its time: every path of `handle` gives
+  `at` (`src/machine.ts:976-983, 1027-1031`), and `writes` computes `until` from it.
+- 0245's sweep against 0021: `expire` deletes only rows whose `until` is not null, and the machine gives no `until`
+  to another entity's reply (`src/machine.ts:908-911`). So a reply an operation's run needs is never swept.
+- 0065's reading outside the step's transaction, against the sweep: the reading filters `until > at` and the sweep
+  deletes `until <= at`. A reply the sweep deletes between the reading and the step is past its time, and the answer
+  given from the reading is one 0125 allows within the window.
+- 0125's application after `keep` against 0069's key: the reply is upserted under the same key, and replaces the
+  expired row of its version. The step's own deletion of `until <= at` runs after the upsert and spares the new row,
+  except for a `keep` of 0, which means no time.
+- 0048's migration of a sender against a message still queued: the mailbox's requests are read through the
+  migrations at load (`src/storage/entities.ts:110-116`), so a retry after a deploy finds its message queued and
+  waits.
+- 0004 and 0132 against an uncommitted step on Cluster that drew incarnations: what a door's step sets going is
+  performed only once its commit is proved by the count of steps (0161, `src/runtime/doors.ts:59-80`). So no run
+  starts under an incarnation the counter can draw again.
+- 0015 and 0059 against a rename (0156): the rename rewrites the `entity` of every stored request, the replies' and
+  the mailbox's included, and the sender's columns. So a run restarted under the new name finds its replies.
+- 0021 against 0020, 0064 and 0128: no activation brings a key back in the same incarnation with other work. A fix
+  that changes an operation is refused, and a droppable operation keeps its incarnation but sends to no entity.
+- 0047 and 0060's names against a receiver that crashes: the retry of 0046 is inside the same `send`, and does not
+  take the name again.
+- 0125's rule that when the rows go never changes an answer, against Cluster: on Cluster a retry past `keep` is
+  answered from Cluster's rows until they go. 0248 says so in its own words, and the answer is the earlier reply,
+  not a second application.
+- 0125's clocks against a sweep on another runner: the runners share one clock on one machine, which the open
+  question The margin of a caller's rows on Cluster already holds.
+
+### Noticed, not checked
+
+- 0245's prune in batches against a consumer declared at once on a pool of PostgreSQL (0152). The batch reads the
+  consumers in its statement's snapshot, so a topic whose first consumer is declared while the batch runs may lose
+  rows the consumer would read. The rows of the outbox are not updated in place, so it is not the form of finding 1,
+  and the single statement before 0245 read the same snapshot.
+- 0023 and 0114 for an operation's message. An operator who discards the message an entity died on resumes the
+  entity. Where an operation sent that message, the operation's `send` waits for the resumption and sends again
+  under the same request. The message is then applied as a new one, and may suspend the entity again. 0023 says it of
+  a caller, who decides to retry. No note says it of an operation, which retries with no one deciding.
+- 0065 and 0069 against a deploy that changes how a key's parameter is encoded (0132). An operation's request holds
+  the key's JSON, and its reply is found by its text alone, with no migration. A run of the same work after such a
+  deploy would send another text, and be applied again. Whether a deploy may change a parameter's encoding while the
+  work stays the same belongs to the step What a deploy may change of a program.
+- 0125's `until` across runners. A reply's `until` is written by the clock of the runner that steps, and read by the
+  clock of the runner that holds the shard at the retry. A skew between the two moves the window, which 0125 lists
+  only between the runtime and its boundary.
+
+### Notes not read whole, and why
+
+The notes that cite those of the area, and the changing notes 0022, 0057, 0090, 0123, 0157, 0165, 0182 and 0156,
+lie in other areas of the step: Cluster, Versions and deploys, Schemas, Operations and timers, and Creation. Their
+sessions read them whole. Of them only the code that keeps what the area's notes rely on was read. 0131 and 0201 are
+the rehearsal's and a type's. The session gave its time to the pairs of the area, and to the finding.
