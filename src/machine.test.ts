@@ -1841,6 +1841,26 @@ describe('a new program', () => {
     )
   })
 
+  test('FAILING: a droppable operation a new program delivers at most once starts, since it acted on nothing', () => {
+    // Decision 0128 keeps the incarnation of a droppable operation a new program delivers otherwise, since the
+    // incarnation stopped acted on nothing. Decision 0011's activation then reads that incarnation as an at-most-once
+    // one that may have acted, and records its `unknown` instead of starting it.
+    const machine = droppable((message) => message, () => ({ charge: 'operation' }))
+    const transition = stepped(machine, { _tag: 'Restart' }, {
+      ...tiny((message) => message, () => ({ charge: 'operation' })),
+      operations: { Work: operation.atMostOnce(() => Effect.succeed('done'), () => '?') },
+    })
+    expect(transition.machine.stored.suspension).toBeNull()
+    expect(transition.machine.stored.keys[Machine.keyText({ name: 'charge' })]).toMatchObject({
+      incarnation: 1,
+      delivery: 'AtMostOnce',
+    })
+    expect(transition.machine.stored.mailbox).toEqual([])
+    expect(transition.outputs).toContainEqual(
+      expect.objectContaining({ _tag: 'Started', key: { name: 'charge' }, incarnation: 1 }),
+    )
+  })
+
   test('an at-most-once operation that is new work at an activation starts: it never ran', () => {
     const machine = checked((message) => message, () => ({ deadline: 'timer' }))
     const program = machine.program
