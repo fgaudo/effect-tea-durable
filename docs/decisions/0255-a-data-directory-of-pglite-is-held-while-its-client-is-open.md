@@ -12,7 +12,8 @@ every statement on one session, which would take an advisory lock again, so deci
 its client alone, in the process. That rests on one client per data directory, a premise no note wrote.
 
 A second `PGlite` over the same data directory opens with no error. Each instance holds the database in its own
-memory, and the last to close writes its copy over the other's, as a script saw at PGlite 0.5.15. So a second runtime
+memory, and the last to close writes its copy over the other's, as the spike
+[`spikes/pglite-two-clients-one-directory.test.ts`](../../spikes/pglite-two-clients-one-directory.test.ts) sees. So a second runtime
 on another client launches, and the steps of one runtime are lost with nothing said. This is bug 86 of the premise
 review.
 
@@ -33,10 +34,14 @@ its mechanism for a backend the tests use.
 - **The directory is one name for every spelling of its path.** A path is resolved first. A name with a scheme, as
   `idb://`, is kept as it is, and a database in memory, with no directory or under `memory://`, is held by its client
   alone.
+- **The decision leaves out a directory named otherwise than by its spellings.** A symbolic link, or another case of a
+  path on a file system that ignores case, gives the same directory a name the register does not know. Two copies of
+  the library loaded in one process keep two registers, as they keep two registers of clients. The
+  [open question](../open-questions.md#running) A second runtime on one database holds both cases.
 - **A data directory of PGlite opened by another process is the launcher's defect.** The runtime does not see it. The
   [open question](../open-questions.md#running) A second runtime on one database keeps it as a rule no test holds.
-- **A client opened over a held directory, which launches no runtime, is the launcher's defect too.** Its close may
-  write its copy over the runtime's, which is not checked.
+- **A client opened over a held directory, which launches no runtime, is the launcher's defect too.** Its close
+  writes its copy over the runtime's, as the spike sees, and the runtime does not see the client.
 
 ## What it rests on
 
@@ -45,15 +50,12 @@ its mechanism for a backend the tests use.
   **tested** by `a runtime on a data directory of PGlite launches on no other client while one it launched on is open`,
   in `src/runtime.test.ts`. It runs under `slow`, since it opens three instances of PGlite. It fails against the code
   before the change, and against a register that does not resolve the path.
-- That two instances of PGlite over one directory each step their own copy, and the last to close writes its copy:
-  **seen** by a script at PGlite 0.5.15, with bug 86. The test reads the first client's entity after the first client
-  closed last.
-- That an instance of PGlite names its directory in `dataDir`: **read in the types** of PGlite 0.5.15, where the field
-  is public and has no doc comment. A client without it is held by the client alone, as before, so a release that drops
-  the field loses the guard and no data.
+- That a second instance of PGlite over the directory opens with no error, steps a copy of its own, and loses a write
+  of the first once it closes last: **seen** in the spike
+  [`spikes/pglite-two-clients-one-directory.test.ts`](../../spikes/pglite-two-clients-one-directory.test.ts), at
+  PGlite 0.5.15.
+- That an instance of PGlite names its directory in `dataDir`: **read in the source** of PGlite 0.5.15, in its types,
+  where the field is public and has no doc comment, and **tested** by the test above, whose refusal reads it. A client
+  without it is held by the client alone, as before, so a release that drops the field loses the guard and no data.
 - That `closed` says whether the instance is closed: **documented** in the types of PGlite 0.5.15, as "The closed state
   of the database".
-- That one directory has one resolved path: **only reasoned**. A symbolic link, or another case of a path on a file
-  system that ignores case, gives the same directory another name, which the register does not see.
-- That the register is one for the process: **only reasoned**. Two copies of the library loaded in one process keep two
-  registers, as they keep two registers of clients.
