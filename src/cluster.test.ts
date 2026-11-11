@@ -1093,6 +1093,53 @@ describe('the runtime on Cluster', () => {
           }).pipe(Effect.orDie),
     ).then(() => expect(warningsAndErrors()).toEqual([restarted('Failed to execute statement')]))
   }, 30_000)
+
+  // Premise review of the pairs against Effect Cluster: 0029 against 0092 and 0161. The door's step holds the
+  // entity's lock inside Cluster's transaction and lets it go before the commit, and its `Settle` is offered only by
+  // `afterCommit`. A passivation whose unload waited for the lock runs in that window, reads the held machine, which
+  // is idle, and unloads the entity with the work the door's step committed.
+  test('FAILING: an entity whose passivation waits on a door step that starts an operation runs the operation', () => {
+    let unloadedWhileAsking = 0
+    return onRunner(
+      Effect.gen(function*() {
+        yield* create(0, 'c1')
+        expect(yield* send({ _tag: 'Ask' }, 'm1')).toBe('{"_tag":"Accepted"}')
+        const state = yield* Effect.repeat(stateOf, {
+          schedule: Schedule.spaced('25 millis'),
+          until: (state) => state?.n === 100,
+        }).pipe(Effect.timeout('1500 millis'), Effect.exit)
+        // The step committed `asking`, and the entity left the process with nothing running for it.
+        expect({ unloadedWhileAsking, asked, state: yield* stateOf }).toEqual({
+          unloadedWhileAsking: 0,
+          asked: 1,
+          state: { n: 100, asking: false },
+        })
+        expect(Exit.isSuccess(state)).toBe(true)
+      }),
+      // The door's step of `Ask` waits past the passivation before it writes, holding the entity's lock, so that the
+      // loop's unload is waiting for the lock when the door lets it go.
+      (sql) => (said) =>
+        said._tag === 'Unloaded'
+          ? Effect.map(Effect.provideService(stateOf, SqlClient.SqlClient, sql), (state) => {
+            if (state?.asking === true) unloadedWhileAsking++
+          }).pipe(Effect.orDie)
+          : said._tag === 'Reached' && said.point === 'BeforeCommit' && said.event._tag === 'Receive'
+          ? Effect.sleep('600 millis')
+          : Effect.void,
+      { sweep: 'none', passivate: { millis: 300 } },
+      // Cluster saves the reply in the door's transaction, after the handler has let the lock go, and before the
+      // commit runs `afterCommit`. A fiber yields there whenever it reaches Effect's budget of operations; the yield
+      // is made here at once.
+      Layer.effect(
+        MessageStorage.MessageStorage,
+        Effect.map(Effect.service(MessageStorage.MessageStorage), (storage) =>
+          MessageStorage.MessageStorage.of({
+            ...storage,
+            saveReply: (reply) => Effect.andThen(Effect.yieldNow, storage.saveReply(reply)),
+          })),
+      ).pipe(Layer.provide(SqlMessageStorage.layer)),
+    )
+  }, 30_000)
 })
 
 describe('the shards of a runner on Cluster', () => {
