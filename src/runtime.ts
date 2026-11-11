@@ -177,14 +177,14 @@ export interface Options {
   /**
    * How long a `send` or a `create` from another entity waits before sending again to a receiver that crashed on
    * it (decision 0046). A suspended receiver is waited for until it is resumed, and a program not deployed yet until
-   * it is: neither is looked at again on a clock (decision 0063). A non-negative integer, 10 by default
-   * (decision 0208).
+   * it is: neither is looked at again on a clock (decision 0063). A positive integer, 10 by default
+   * (decision 0251).
    */
   readonly retry?: Readonly<{ millis: number }>
   /**
    * How long an entity stays loaded with no event coming for it. The wait starts again at every event, and when
    * it runs out the entity is unloaded, or waits again if it still has something to do (decision 0029). A
-   * non-negative integer, 30 000 by default (decision 0208).
+   * positive integer, 30 000 by default (decision 0251).
    */
   readonly passivate?: Readonly<{ millis: number }>
   /**
@@ -995,16 +995,18 @@ export const launchWith = (
       return yield* Effect.die(new InvariantDefect({ reason }))
     }
     // A time becomes the text of a duration, which Effect does not read as `Infinity millis` or `NaN millis`: the
-    // sleep of an entity's wait, or of an operation that sends again, would die (decision 0208).
+    // sleep of an entity's wait, or of an operation that sends again, would die (decision 0208). A retry or a
+    // passivation of 0 is refused too: the waker, a sender, Cluster's round and an entity's wait sleep on it, and
+    // each would try again at once, for ever (decision 0251).
     for (
-      const [what, value, unit] of [
-        ['retry', retry, 'millis'],
-        ['passivation', passivate, 'millis'],
-        ['warning', threshold, 'characters'],
+      const [what, value, unit, least] of [
+        ['retry', retry, 'millis', 1],
+        ['passivation', passivate, 'millis', 1],
+        ['warning', threshold, 'characters', 0],
       ] as const
     ) {
-      if (Number.isSafeInteger(value) && value >= 0) continue
-      const reason = `the ${what} is ${value} ${unit}, which is no non-negative integer`
+      if (Number.isSafeInteger(value) && value >= least) continue
+      const reason = `the ${what} is ${value} ${unit}, which is no ${least === 0 ? 'non-negative' : 'positive'} integer`
       return yield* Effect.die(new InvariantDefect({ reason }))
     }
     // Only a sweep left out is the default: a `null` from JavaScript is refused, as a `keep` of `null` is.

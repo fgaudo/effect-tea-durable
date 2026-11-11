@@ -35,9 +35,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     step whose commit fails, which leaves the entity loaded with its operation never started. Its rule would be that a crash which leaves work stored gives the entity to the waker's retry
     of [decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), in `crash` of
     `src/runtime/loop.ts`, on one process and on Cluster.
-  - F, a value that [decision 0208](decisions/0208-a-launch-checks-every-option.md) allows, taken to its end: bugs
-    17, 32 and 71, under a `retry` of 0, and 45, under a `passivate` of 0. Its rule is a least time of a wait the
-    runtime sleeps, or a launch that refuses 0.
   - G, a check of the project that holds less than its note says: bugs 43, 46 to 48, 52, 53, 83 and 88. A check passes on
     the case its rule forbids, or a test no longer reaches the case it was written for. Its rule would be that each
     check of the form, of the CI and of the explored tests is run against the case it refuses, as
@@ -164,13 +161,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       renamed back to the name it left is launched under it again`, in `src/storage.test.ts`, on
       `claude/premise-review-versions-36a283` at `cbb1ca7`. The fix begins in `mark` of `src/storage/tables.ts`. The
       [open question](open-questions.md#running) A name a rename left.
-  17. **Reproduced: under a `retry` of 0, the waker tries an entity it cannot activate at once, for ever, and the
-      process never settles.** [Decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)
-      rests on a `retry` above 0, and [decision 0208](decisions/0208-a-launch-checks-every-option.md) allows 0. The
-      test `FAILING: under a retry of no time, an entity the waker can never activate leaves the process settled`,
-      in `src/runtime/waker.test.ts`, on `claude/premise-review-runtime-1-b0a258` at `ac905d8`. The fix begins at
-      `waking` of `src/runtime/waker.ts`, or at the launch's check. The [open question](open-questions.md#running) A
-      retry of no time.
+  17. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
   18. **Reproduced: an entity a crash unloads with an operation or a message and no timer is never loaded again in
       its process until a caller comes.** The waker reads timers alone
       ([decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)), and a crash leaves the work stored
@@ -278,10 +269,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)), so the program's
       answer to `unknown` may act beside the old fiber. The [open question](open-questions.md#running) An operation
       still stopping beside its `unknown`.
-  32. **Noticed, not checked: under a `retry` of 0, a sender whose receiver crashes at every attempt, or answers
-      `Full`, sends again with no wait, for as long as the receiver fails.**
-      ([decision 0208](decisions/0208-a-launch-checks-every-option.md)). The
-      [open question](open-questions.md#running) A retry of no time.
+  32. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
   33. **Noticed, not checked: on Cluster, the waker's map of entities it failed to activate may outlive a move of
       the shard to another runner.**
       ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)). The
@@ -357,15 +345,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       `1c8da79`. The other options were read, and not run. The fix begins at `launchWith` of `src/runtime.ts`, which
       checks every option before the hold. The [open question](open-questions.md#running) A launch that dies after
       the hold.
-  45. **Reproduced: under a passivation of no time, an entity whose operation runs spins its loop.** Effect's sleep of
-      0 is one yield, so the wait of
-      [decision 0116](decisions/archive/0116-an-entitys-wait-ends-with-an-item-of-its-queue.md) ends at once, and the
-      unload that [decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md) refuses is tried again for as
-      long as the operation runs ([decision 0208](decisions/0208-a-launch-checks-every-option.md)). The test `FAILING:
-      under a passivation of no time, an entity whose operation runs waits without spinning`, in
-      `src/runtime/loop.test.ts`, on `claude/premise-review-project-17a123` at `3ac56e3`. It runs some two seconds,
-      past the budget of `AGENTS.md`, since it measures the processor's time. The fix begins at the loop's wait of
-      `src/runtime/loop.ts`. The [open question](open-questions.md#running) A retry of no time.
+  45. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
   46. **Reproduced: `bun test` runs a file only tests import whose role ends in `_test` or `_spec`.**
       [Decision 0241](decisions/0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md) says
       `bun test` runs no file named `<module>.test_<role>.ts`, and tried the role `x` alone. No file of the repository
@@ -600,16 +580,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       the doors kept under a rename's old names, are only reasoned. The fix begins at `register` of `src/cluster.ts`,
       or at the deploy, which would keep the name for the life of the runner once its door is registered. The
       [open question](open-questions.md#running) A deploy that fails after its door is registered.
-  71. **Reasoned: under a `retry` of 0, a shard's round on Cluster tries an entity it cannot activate again at once,
-      for ever.** The round is made again after `retry`
-      ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)),
-      a choice [decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) made above 0,
-      and [decision 0208](decisions/0208-a-launch-checks-every-option.md) allows 0. `activating` of
-      `src/runtime/doors.ts` repeats a failed round on `Schedule.spaced` of `retry`, so a row no version reads keeps
-      the file's one writer busy for as long as the entity cannot be loaded. Unlike bug 17, `settled` may return
-      between two rounds. A fix of bug 17 at `waker.ts` alone leaves it. Two sessions found it, by a reading, with no
-      test, since a round that fails needs two runners and a row no version reads. The
-      [open question](open-questions.md#running) A retry of no time.
+  71. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
   72. **Reproduced: after a restart, a suspended entity no longer lists the operation of a suspended sender that
       waits for it.** `suspended` reads the senders registered in the process, and is whole once a restarted process
       is settled, since every operation under way sends again

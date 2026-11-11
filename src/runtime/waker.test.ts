@@ -8,6 +8,7 @@ import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
+import { TestClock } from 'effect/testing'
 import {
   adjusted,
   database,
@@ -182,3 +183,36 @@ describe('a timer and the wall clock (decision 0221)', () => {
         })).pipe(Effect.provideService(Clock.Clock, host.clock))
     })))
 })
+
+// Decision 0077 has the waker try an entity it cannot activate again after `retry`. Under a retry of 0, decision 0208
+// let it try again at once, for ever, and `settled` never returned. The least retry is a millisecond (decision 0251):
+// the tries come a millisecond apart at least, and the process settles between them.
+test('under the least retry, an entity the waker can never activate leaves the process settled', () =>
+  database(Effect.gen(function*() {
+    const at = yield* DateTime.now
+    const tried: Array<number> = []
+    yield* process({
+      passivate: { millis: 5 },
+      retry: { millis: 1 },
+      // Every activation of `w` cannot finish, as a row no version reads (decision 0043).
+      observe: (entity, event) =>
+        entity.id !== 'w' || event._tag !== 'Restart'
+          ? Effect.void
+          : Effect.andThen(
+            Effect.map(DateTime.now, (now) => tried.push(DateTime.toEpochMillis(now))),
+            Effect.die('the runtime failed'),
+          ),
+    }, (runtime) =>
+      Effect.gen(function*() {
+        const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
+        yield* toy.create('w', { flags: { at }, requestId: 'w', sender: tester })
+        yield* runtime.settled
+        // The timer of `w` comes at 40, and every activation fails.
+        const settling = yield* Effect.forkChild(TestClock.adjust('100 millis').pipe(Effect.andThen(runtime.settled)))
+        yield* Effect.replicateEffect(Effect.yieldNow, 2000, { discard: true })
+        const settled = settling.pollUnsafe() !== undefined
+        yield* Fiber.interrupt(settling)
+        const apart = tried.slice(1).every((time, index) => time - tried[index]! >= 1)
+        expect({ settled, tried: tried.length > 1, apart }).toEqual({ settled: true, tried: true, apart: true })
+      }))
+  })))

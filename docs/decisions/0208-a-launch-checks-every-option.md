@@ -1,6 +1,8 @@
 # 0208. A launch checks every option
 
 **Status:** accepted, 2026-11-09, with the step A launch checks every option of the [roadmap](../roadmap.md).
+Changed by [decision 0251](0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), which refuses a `retry` and
+a `passivate` of 0.
 Changes [decision 0054](archive/0054-a-program-is-checked-where-it-enters.md), whose program and launch are checked
 where they enter.
 

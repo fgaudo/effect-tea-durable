@@ -403,21 +403,12 @@ with a requirement that no example has yet.
   - a test of each of bugs 27 to 30;
   - the step What a deploy may change of a program, against what is stored, of the [roadmap](roadmap.md), whose
     table holds a rename.
-- **A retry of no time.** A launch accepts a `retry` of 0
-  ([decision 0208](decisions/0208-a-launch-checks-every-option.md)), and two rules rest on a time above it. The
-  waker tries an entity it cannot activate again at once, for ever, and the process never settles
-  ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)), which is bug 17 of
-  the [roadmap](roadmap.md). A sender whose receiver crashes at every attempt, or answers `Full`, sends again with
-  no wait, which is bug 32, not checked. A `passivate` of 0 is the same: Effect's sleep of 0 is one yield, so an
-  entity whose operation runs ends its wait at once and tries to unload again for as long as the operation runs,
-  which is bug 45, reproduced. On Cluster a shard's round that fails is made again after `retry`
-  ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)),
-  so under 0 an entity no version reads keeps the file's one writer busy for ever, which is bug 71, reasoned. A fix of
-  bug 17 at the waker alone leaves it. It would be decided by:
-  - whether a wait the runtime sleeps has a least time of its own, or a launch refuses 0, or the loop's wait sleeps
-    only while the entity has nothing to do;
-  - a test of bug 32 with a receiver that crashes at every attempt;
-  - a test of bug 71 with two runners and a row no version reads.
+- **A sender and Cluster's round at the least retry.** A launch refuses a `retry` of 0, and a millisecond is the
+  least ([decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)). A test shows that
+  the waker rests at a millisecond, and only a reading says that a sender whose receiver crashes at every attempt,
+  and a shard's round on Cluster that fails, rest at it too. It would be decided by:
+  - a test of a sender at a retry of 1 ms, with a receiver that crashes at every attempt or answers `Full`;
+  - a test of a round at a retry of 1 ms, with two runners and a row no version reads.
 - **A launch that dies after the hold.** A launch refused for an option dies, as
   [decision 0208](decisions/0208-a-launch-checks-every-option.md) says, before anything is held or stored. Its hold
   ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), its tables and its renames run

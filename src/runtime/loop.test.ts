@@ -57,6 +57,37 @@ import {
 } from '../runtime.test_shared.ts'
 
 describe('passivation', () => {
+  // An entity whose operation runs is never unloaded, so its wait ends and the loop waits again. Under a passivation
+  // of 0, Effect's sleep was one yield and the loop spun; the least passivation is a millisecond (decision 0251), and
+  // the processor time of a real wait shows that it rests. It runs two seconds of a real clock.
+  slow('under the least passivation, an entity whose operation runs waits without spinning', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const busy = (passivate: number) =>
+        process({ passivate: { millis: passivate } }, (runtime) =>
+          Effect.gen(function*() {
+            const held = yield* hands({ holds: true })
+            const toy = yield* Effect.provide(runtime.deploy(program), held.layer)
+            const entity = `spin-${passivate}`
+            yield* toy.create(entity, { flags: { at }, requestId: `c-${passivate}`, sender: { _tag: 'Tester' } })
+            const want = { _tag: 'Want', key: 'a', on: true, nonce: `w-${passivate}` } as const
+            yield* toy.send(entity, want, { requestId: `w-${passivate}`, sender: { _tag: 'Tester' }, keep: 'forever' })
+            yield* Effect.promise(() => Bun.sleep(20))
+            expect(held.acted.some((act) => act.startsWith('a:'))).toBe(true)
+            const before = globalThis.process.cpuUsage()
+            yield* Effect.promise(() => Bun.sleep(1000))
+            const used = globalThis.process.cpuUsage(before)
+            return Math.round((used.user + used.system) / 1000)
+          }))
+      const resting = yield* busy(5)
+      const least = yield* busy(1)
+      // A process at rest uses some milliseconds of the 1000, and one that spins uses all of them, or more on its
+      // threads.
+      const shown = (millis: number) => (millis < 400 ? 'at rest' : `${millis} ms of the processor`)
+      expect({ passivate5: shown(resting), passivate1: shown(least) })
+        .toEqual({ passivate5: 'at rest', passivate1: 'at rest' })
+    })), 10_000)
+
   test('unloads an idle entity, and its stored timer wakes it', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -202,23 +233,31 @@ describe('passivation', () => {
     })))
 
   // Effect reads no `Infinity millis` and no `NaN millis`, so the sleep of an entity's wait, or of an operation that
-  // sends again, would die (decision 0208).
-  test('a retry, a passivation or a warning that is no non-negative integer is the launcher’s defect', () =>
+  // sends again, would die (decision 0208). A retry or a passivation of 0 would have the waker, a sender, Cluster's
+  // round and an entity's wait try again at once, for ever (decision 0251).
+  test('a retry or a passivation that is no positive integer, or a warning that is no non-negative one, is the launcher’s defect', () =>
     database(Effect.gen(function*() {
-      for (const value of [-1, 1.5, Infinity, NaN]) {
-        const launches = [
-          [{ retry: { millis: value } }, `the retry is ${value} millis`],
-          [{ passivate: { millis: value } }, `the passivation is ${value} millis`],
-          [{ warn: { characters: value } }, `the warning is ${value} characters`],
-        ] as const
-        for (const [options, said] of launches) {
+      const refused = (options: Options, reason: string) =>
+        Effect.gen(function*() {
           const exit = yield* Effect.exit(process(options, () => Effect.void))
           const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
-          expect(cause instanceof InvariantDefect && cause.reason).toBe(`${said}, which is no non-negative integer`)
-        }
+          expect(cause instanceof InvariantDefect && cause.reason).toBe(reason)
+        })
+      for (const value of [-1, 0, 1.5, Infinity, NaN]) {
+        yield* refused({ retry: { millis: value } }, `the retry is ${value} millis, which is no positive integer`)
+        yield* refused(
+          { passivate: { millis: value } },
+          `the passivation is ${value} millis, which is no positive integer`,
+        )
       }
-      // A retry and a passivation of no time at all are times.
-      yield* process({ retry: { millis: 0 }, passivate: { millis: 0 }, warn: { characters: 0 } }, () => Effect.void)
+      for (const value of [-1, 1.5, Infinity, NaN]) {
+        yield* refused(
+          { warn: { characters: value } },
+          `the warning is ${value} characters, which is no non-negative integer`,
+        )
+      }
+      // The least retry and passivation are a millisecond, and a warning at no character warns of every write.
+      yield* process({ retry: { millis: 1 }, passivate: { millis: 1 }, warn: { characters: 0 } }, () => Effect.void)
     })))
 
   slow('a process launched with no capacity holds ten thousand entities', () =>

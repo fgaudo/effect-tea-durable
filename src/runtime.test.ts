@@ -308,8 +308,8 @@ describe('the runtime on SQLite', () => {
         return cause instanceof InvariantDefect ? cause.reason : null
       }
       const fields = [
-        ['retry', 'millis', 'the retry is null millis, which is no non-negative integer'],
-        ['passivate', 'millis', 'the passivation is null millis, which is no non-negative integer'],
+        ['retry', 'millis', 'the retry is null millis, which is no positive integer'],
+        ['passivate', 'millis', 'the passivation is null millis, which is no positive integer'],
         ['capacity', 'entities', 'the capacity is null, which is no positive integer'],
         ['drain', 'millis', 'the drain is null millis, which is no non-negative integer'],
         ['warn', 'characters', 'the warning is null characters, which is no non-negative integer'],

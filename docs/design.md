@@ -1206,9 +1206,12 @@ An entity with nothing to do is unloaded, and the earliest of its stored timers 
 ([decision 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md)); how long it stays loaded is an option of the
 runtime. A launch checks each of its options, and one that is no number of the kind it names is the launcher's
 defect. Only an option left out, or a field of it left out, takes the default, and a `null` is refused.
-`retry`, `passivate` and `warn` are non-negative integers, since a time becomes the text of a duration, and
+`retry`, `passivate` and `warn` are integers, since a time becomes the text of a duration, and
 Effect reads no `Infinity millis` and no `NaN millis`
-([decision 0208](decisions/0208-a-launch-checks-every-option.md)). A timer fires once its time has come on the
+([decision 0208](decisions/0208-a-launch-checks-every-option.md)). `retry` and `passivate` are a millisecond at
+least, since the waker, a sender, Cluster's round and an entity's wait each try again when their sleep ends, and
+under 0 each would try again at once, for ever. `warn` may be 0
+([decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)). A timer fires once its time has come on the
 wall clock, and never before. A host suspended while a timer sleeps delays it by an hour at most once the host runs
 again, as [fibers and locks](#fibers-and-locks) says. An event the runtime cannot finish — a write that fails — crashes its entity alone: it leaves the
 process, its callers are given the defect, and the next one loads it from what is stored
