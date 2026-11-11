@@ -50,6 +50,51 @@ with a requirement that no example has yet.
     a table of its own;
   - what the record costs a step: a row more in each transaction, and the message stored for every step, next to
     what the outbox already stores once per publication.
+- **The consumers of several runners on Cluster.** A consumer is declared at deploy, and a forget refuses a
+  consumer the deploy declares
+  ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). That rests on one
+  process that holds the database ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). On
+  Cluster each runner declares its own. A forget on a runner that does not declare a consumer drops another runner's
+  consumer and its rows, which is bug 24 of the [roadmap](roadmap.md). An ack of a runner after another forgot the
+  consumer writes a cursor no consumer owns, and the partition is never pruned again, which is bug 23. A runner that
+  does not declare another's consumer also warns of it as of one to forget. It would be decided by:
+  - whether the runners record the consumers they declare, as they record their versions, and `forget` refuses a
+    consumer any running deployment declares;
+  - whether `ack` writes a cursor only for a stored consumer, or `pruneBatch` counts only theirs.
+- **A call of the handle inside a transaction.** `consume` runs its handler in a transaction of its own
+  ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). On SQLite and PGlite that transaction
+  holds the one connection, and a step waits for the connection
+  ([decision 0150](decisions/archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)). So a handler
+  that calls `create` or `send` stops the whole runtime, which is bug 26 of the [roadmap](roadmap.md), reproduced. A
+  caller that calls them in its own transaction stops it too, and nothing refuses it. It would be decided by:
+  - whether the handle refuses a call that waits for a step while a transaction is open, as `consume` refuses a
+    reader, through the client's `transactionService`;
+  - or whether the handler runs outside the transaction, and only the store's writes and the ack run in it, which
+    changes what 0184 promises of a store.
+- **A reindex on Cluster.** On Cluster each runner's `reindex` runs beside the other runners' steps on one file
+  ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). A statement that reads its
+  snapshot while another runner holds the write lock may end with `SQLITE_BUSY`, which no busy handler retries, and
+  `reindex` dies. It loses no row. It is bug 36 of the [roadmap](roadmap.md), not checked. It would be decided by:
+  - a test of `src/cluster.test.ts` with `withholding`, whose step holds the write lock while the other runner
+    reindexes.
+- **A reader with no time that misses a commit.** A reader of `consume` with `wait: true` waits until a commit tells
+  its topic ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). Before it, a timed wait cost
+  only its time ([decision 0142](decisions/archive/0142-a-consumer-waits-for-a-row-of-its-topic.md)). A step
+  interrupted between its commit and `tell` leaves such a reader waiting, which is bug 37 of the
+  [roadmap](roadmap.md). On Cluster another runner's commit is learned from `PRAGMA data_version`
+  ([decision 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)),
+  which reads nothing on PostgreSQL and may fail to be read, which is bug 39. Neither is checked. It would be decided
+  by:
+  - a reading of whether the loop can be interrupted between its commit and `tell`, other than when the runtime
+    stops;
+  - whether `wait: true` keeps a bound of its own, as the timed wait of 0142 did.
+- **A sum at the edge of the largest double.** A sum is refused past the largest double, alike on both dialects
+  ([decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md)). SQLite adds
+  the magnitudes as doubles, and PostgreSQL adds them exactly and rounds once. So a set of rows whose exact total of
+  magnitudes is just under `Number.MAX_VALUE` might be refused on SQLite and accepted on PostgreSQL. It is bug 40 of
+  the [roadmap](roadmap.md), not checked. It would be decided by:
+  - a case of `src/dialects.test.ts` with such rows.
+
 
 ## Running
 
@@ -79,6 +124,9 @@ with a requirement that no example has yet.
     database's clock instead of a runner's;
   - whether a client that missed its polls still waits for ever, or Cluster gives it a way to learn that its rows
     are gone.
+  - the same of a reply's `until`, which the clock of the runner that steps writes, and the clock of the runner
+    that holds the shard at a retry reads, as the premise review of Messages, requests and replies found
+    ([`reviews.md`](decisions/reviews.md)).
 - **A drain across a deploy of a newer version on Cluster.** A planned stop waits for the at-most-once operations
   under way, so that a deploy does not deliver `unknown`
   ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)), and the drain
@@ -220,6 +268,107 @@ with a requirement that no example has yet.
   - whether the tests on Cluster keep finding interleavings between runners;
   - what the step on Cluster across machines on PostgreSQL in the [roadmap](roadmap.md) adds to the protocol, a
     fence above all.
+- **A statement whose condition PostgreSQL reads from its snapshot.** At `READ COMMITTED`, PostgreSQL reads a row a
+  concurrent transaction updated again against the outer `WHERE` of an `UPDATE` or a `DELETE`, and against nothing
+  for an `INSERT … ON CONFLICT DO UPDATE`. A subquery's rows stay those of the statement's snapshot. Two statements
+  of the storage keep their guard where it is not read again, on a pool of PostgreSQL
+  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The batched `expire` deletes a reply a step
+  wrote again with a new time
+  ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)), and `reindex`
+  writes the projection of a state over the row a step committed
+  ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). They are bugs 13 and 25 of
+  the [roadmap](roadmap.md), each with a test of `src/postgres.test.ts` that no run has reached. It would be decided
+  by:
+  - the tests run against the CI's server, from the reviewers' branches;
+  - a reading of every statement of `src/storage/` whose guard stands in a subquery or in an `INSERT … SELECT`, for
+    the same form;
+  - whether a fix keeps the guard in the outer `WHERE`, or locks the rows first with `FOR UPDATE`.
+- **An entity a crash leaves with work stored.** A crash takes an entity out of its process with its work stored
+  ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). On one process
+  only a caller, a timer or the next start loads it again
+  ([decisions 0029](decisions/archive/0029-an-idle-entity-is-unloaded.md),
+  [0071](decisions/archive/0071-a-process-starts-the-entities-with-a-message.md)). On Cluster only the round of a
+  shard's singleton does
+  ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)),
+  and a lease its runner renews never moves the shard. So an operation under way, or a message in the mailbox,
+  waits in silence. They are bugs 14 and 18 of the [roadmap](roadmap.md). Bug 33, the waker's map of failed
+  entities on a shard that moves, is of the same code. It would be decided by:
+  - whether every crash that leaves work stored gives the entity to the waker's retry of
+    [decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), or whether the waker
+    reads the entities with work as well as the timers;
+  - a test of each crash of a loop's step on Cluster that no move of the shard follows: a `guard` that refuses, a
+    `COMMIT` that fails, and a row another runner wrote;
+  - a test of the message left in the mailbox, on one process and on Cluster;
+  - a test of bug 33, whose shard moves while the waker waits to retry an entity.
+- **A name a rename left.** A launch renames a program and keeps the keys of its old name
+  ([decision 0156](decisions/archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). On one process
+  nothing keeps a later launch from taking the old name again, and its entities then draw the keys the renamed
+  entities hold, which is bug 15. On Cluster the old name is marked for good
+  ([decision 0176](decisions/archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)), and a
+  rename back can never run, which is bug 16. Bugs 27 to 30 of the [roadmap](roadmap.md) are the rest of what an old
+  name leaves: ids kept under it on Cluster, an operation that still sends to it, a count of `check` during a rename,
+  and two programs renamed to one. It would be decided by:
+  - whether an old name may be taken again, on one process as on Cluster, and what then draws the keys of each
+    entity;
+  - a test of each of bugs 27 to 30;
+  - the step What a deploy may change of a program, against what is stored, of the [roadmap](roadmap.md), whose
+    table holds a rename.
+- **A retry of no time.** A launch accepts a `retry` of 0
+  ([decision 0208](decisions/0208-a-launch-checks-every-option.md)), and two rules rest on a time above it. The
+  waker tries an entity it cannot activate again at once, for ever, and the process never settles
+  ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)), which is bug 17 of
+  the [roadmap](roadmap.md). A sender whose receiver crashes at every attempt, or answers `Full`, sends again with
+  no wait, which is bug 32, not checked. It would be decided by:
+  - whether a retry has a least time of its own, or a launch refuses 0;
+  - a test of bug 32 with a receiver that crashes at every attempt.
+- **A discard of a message an operation sent.** An operator discards the message an entity died on, and no reply is
+  stored ([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)). An operation's `send` waits for the
+  resumption and sends the same request again
+  ([decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)), so the entity dies on it again. It is
+  bug 19 of the [roadmap](roadmap.md), reproduced. It would be decided by:
+  - whether a discard stores an answer the sender is given, such as a rejection of the runtime's, so that the
+    operation's `send` returns;
+  - or whether a message an operation sent cannot be discarded, and `discard` answers `NotDiscarded`, as for an
+    internal message.
+- **A resume to a sender no runner deploys.** On Cluster a step that resumes an entity sends `Resumed` to each
+  waiting sender from its transaction
+  ([decision 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)).
+  Where the sender's shard is the runner's own, Cluster first waits for the sender's type to be registered, inside
+  the transaction. A sender of a program the runner no longer deploys makes the step die, and Cluster delivers the
+  resume again without end. Inside the registration window, the wait holds the file's one writer for up to a
+  minute. It is bug 20 of the [roadmap](roadmap.md). It would be decided by:
+  - whether `Resumed` is sent after the commit, from a row the step keeps until the send;
+  - a test of the case inside the registration window, with the refresh of the leases.
+- **A caller's request through the door during a drain.** On one process a drain takes no caller's request
+  ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). On Cluster a
+  door's step has no such guard
+  ([decision 0219](decisions/0219-a-drain-holds-when-an-interrupted-fiber-closes-its-scope.md)), so a request starts
+  an at-most-once operation that the drain then stops, and the next runner delivers `unknown`. It is bug 21 of the
+  [roadmap](roadmap.md), reproduced. A door's step that commits after the drain looked is part of bug 21, and an
+  application that builds the runtime and `Sharding` in one parallel scope, and a door's step between the
+  interruption of the loops and the close of the door, are bugs 34 and 35. Those three are only reasoned. It would be
+  decided by:
+  - whether a door's step dies during a drain, so that Cluster delivers the request to the runner that takes the
+    shard, or whether `drained` counts a door's step from its start;
+  - a reading of Cluster's teardown in `entityManager.ts`, for the order of the loops and the door;
+  - a test of a runtime and `Sharding` built in one parallel scope.
+- **The forks of an uninterruptible activation.** Every fork from a region that cannot be interrupted says it is
+  interruptible
+  ([decision 0112](decisions/archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md)),
+  since Effect's default may change. The forks of `finishIn`, `forkHeld` and `drop` run inside the activation on
+  Cluster, which
+  [decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)
+  made uninterruptible, and pass no option. Nothing fails at the pinned version. It is bug 22 of the
+  [roadmap](roadmap.md). It would be decided by:
+  - a check of `src/form.test.ts` that every fork of `src/` passes the option, or a reading of each fork's region.
+- **An operation still stopping beside its `unknown`.** A crash forks the stop of its operations and gives the lock
+  back ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)). The next
+  activation records an at-most-once operation's `unknown` while the old fiber may still run a region that cannot be
+  interrupted, or a finalizer that acts. The program's answer to the `unknown` may then act beside it. It is bug 31
+  of the [roadmap](roadmap.md), not checked. It would be decided by:
+  - a test, under the scheduler of `src/testing.ts`, of an operation whose finalizer acts after the crash;
+  - whether the activation waits for the stop of the operations a crash forked.
+
 
 ## Programs
 
@@ -261,6 +410,13 @@ with a requirement that no example has yet.
     sender otherwise, and retries under the same id;
   - whether the runtime, read in `src/storage/` and `src/runtime/callers.ts`, does find the request by its id across
     such a deploy, as the review read.
+- **What a test of a projection gives `allows`.** `projectionViolations` checks a projection's `allows` with the
+  sender ([decision 0213](decisions/0213-a-projections-allows-is-given-the-sender.md)). It gives `allows` the
+  projection as `project` returns it, not as a caller reads it from its JSON, and gives `update` the sender
+  unmigrated. A projection that holds `-0` is then checked as no caller reads it. It is bug 38 of the
+  [roadmap](roadmap.md), not checked. It would be decided by:
+  - a case of `src/testing.test.ts` whose projection holds `-0`, and one whose sender a migration changes.
+
 
 ## The surface
 
