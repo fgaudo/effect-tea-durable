@@ -35,7 +35,7 @@ test('settled never returns while the waker rests from a reading another entity 
   // out `timed`, still held, with its timer due. Were the look and the clearing two steps, `timed` could leave between
   // them. The waker would then sleep toward the timer of `later`, and `settled` return with the timer of `timed` known
   // to nobody. A preemption of the waker between the two steps reaches it: with the look and the clearing split, the
-  // deviation at decision 182, pinned, fails. `bun run test:pins` runs it against that form, the pin `0068 the waker`
+  // deviation at decision 183, pinned, fails. `bun run test:pins` runs it against that form, the pin `0068 the waker`
   // of `src/runtime.test_pins.ts` (decision 0254).
   explored((window) =>
     Effect.gen(function*() {
@@ -99,8 +99,54 @@ test('settled never returns while the waker rests from a reading another entity 
           yield* runtime.settled
           return { early, restarted }
         }))
-    }), { early: false, restarted: true }, { open: false, bound: 1, pinned: [{ decision: 182, choice: 1 }] })
+    }), { early: false, restarted: true }, { open: false, bound: 1, pinned: [{ decision: 183, choice: 1 }] })
 }, 60_000)
+
+test('a clock moved past a timer while the waker reads fires the timer, and settled returns', () =>
+  // Decision 0258: the waker reads the clock again in the step that lets it rest, and sleeps toward its next timer
+  // from there. On a server the clock moves while the waker reads the storage. A waker that slept from the time it
+  // read before the reading would sleep past the timer: on the test's clock that sleep never ends, and `settled`
+  // waits for the timer for ever. The clock here moves on by 50 millis right after the first time a fiber of the
+  // runtime reads it, which is the waker's first round, before its reading.
+  database(Effect.gen(function*() {
+    const { layer } = yield* hands()
+    const at = yield* DateTime.now
+    // `timed` rings at 40 millis, stored by a process that ends before the next launches.
+    yield* process({}, (runtime) =>
+      Effect.gen(function*() {
+        const toy = yield* Effect.provide(runtime.deploy(timed), layer)
+        yield* toy.create('timed', { flags: { at }, requestId: 'c-timed', sender: tester })
+      }))
+    const host = yield* skewing
+    const main = Fiber.getCurrent()
+    const armed = { now: false }
+    const clock: Clock.Clock = {
+      ...host.clock,
+      currentTimeMillisUnsafe: () => {
+        const time = host.clock.currentTimeMillisUnsafe()
+        if (armed.now && Fiber.getCurrent() !== main) {
+          armed.now = false
+          host.wall.skew += 50
+        }
+        return time
+      },
+      currentTimeMillis: Effect.sync(() => clock.currentTimeMillisUnsafe()),
+    }
+    let fired = false
+    yield* process({
+      observe: (entity, event) =>
+        Effect.sync(() => {
+          if (entity.id === 'timed' && event._tag === 'Fire') fired = true
+        }),
+    }, (runtime) =>
+      Effect.gen(function*() {
+        armed.now = true
+        yield* Effect.provide(runtime.deploy(timed), layer)
+        yield* runtime.settled
+        expect(armed.now).toBe(false)
+        expect(fired).toBe(true)
+      })).pipe(Effect.provideService(Clock.Clock, clock))
+  })), 10_000)
 
 describe('a timer and the wall clock (decision 0221)', () => {
   const firings = () => {

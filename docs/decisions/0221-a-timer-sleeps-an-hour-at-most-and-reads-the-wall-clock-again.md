@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-09, with the step What the runtime tells a tracer of the [roadmap](../roadmap.md).
 Changes [decision 0194](0194-a-timer-months-away-sleeps-on-effects-promise-of-a-duration.md), whose timers slept
-the whole time left.
+the whole time left. The waker measures its sleep from the clock it reads as it rests, by
+[decision 0258](0258-the-waker-measures-its-sleep-from-the-clock-it-reads-as-it-rests.md).
 
 ## Context
 

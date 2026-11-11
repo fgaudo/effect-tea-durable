@@ -60,19 +60,26 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
       return
     }
     // Whether the reading stands: an entity unloaded while it was made has poked, and it is made again.
-    // Taking the poke and clearing the flag are each one step, so no reading is lost and none is stale.
-    const rests = yield* Effect.sync(() => {
-      if (Queue.sizeUnsafe(waker.poke) > 0) return false
-      waker.busy = false
-      end(p)
-      return true
-    })
-    if (!rests) return yield* Queue.take(waker.poke)
+    // Taking the poke and clearing the flag are each one step, so no reading is lost and none is stale. The clock is
+    // read again in the same step, since it moved while the storage was read: a time come meanwhile begins the next
+    // round with the flag still raised, and the sleep is measured from now (decision 0258).
+    const rests = yield* Effect.clockWith((clock) =>
+      Effect.sync(() => {
+        if (Queue.sizeUnsafe(waker.poke) > 0) return 'poked' as const
+        const after = clock.currentTimeMillisUnsafe()
+        if (next <= after) return 'due' as const
+        waker.busy = false
+        end(p)
+        return after
+      })
+    )
+    if (rests === 'poked') return yield* Queue.take(waker.poke)
+    if (rests === 'due') return
     // A sleep of `reread` at most, after which the round reads the wall clock and the storage again: a host
     // suspended during the sleep delays a timer by that much at most (decision 0221).
     yield* next === Infinity
       ? Queue.take(waker.poke)
-      : Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(`${Math.min(Math.max(0, next - now), reread)} millis`))
+      : Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(`${Math.min(next - rests, reread)} millis`))
     waker.busy = true
   }))
 }

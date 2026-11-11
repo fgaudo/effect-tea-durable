@@ -63,10 +63,10 @@ export const pins: ReadonlyArray<Pin> = [
     file: 'src/runtime/waker.ts',
     edits: [
       [
-        '    const rests = yield* Effect.sync(() => {\n      if (Queue.sizeUnsafe(waker.poke) > 0) return false\n',
-        '    const rests = yield* Effect.flatMap(Effect.sync(() => Queue.sizeUnsafe(waker.poke) > 0), (poked) =>\n      Effect.sync(() => {\n      if (poked) return false\n',
+        "      Effect.sync(() => {\n        if (Queue.sizeUnsafe(waker.poke) > 0) return 'poked' as const\n",
+        "      Effect.flatMap(Effect.sync(() => Queue.sizeUnsafe(waker.poke) > 0), (poked) => Effect.sync(() => {\n        if (poked) return 'poked' as const\n",
       ],
-      ['      return true\n    })\n    if (!rests)', '      return true\n    }))\n    if (!rests)'],
+      ['        return after\n      })\n    )\n', '        return after\n      }))\n    )\n'],
     ],
     test: 'src/runtime/waker.test.ts',
     name: 'settled never returns while the waker rests from a reading another entity left during, under bounded schedules',

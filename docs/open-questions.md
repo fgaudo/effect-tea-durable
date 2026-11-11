@@ -594,14 +594,6 @@ with a requirement that no example has yet.
   - whether a note narrows 0247 and the design to a stopped version or a copy of the file, or the old runtime gives
     the check through its handle;
   - a run on a server of PostgreSQL under a role of rows alone, which reads `effecttea_migrations` by name.
-- **A test of `check` that timed out once on the CI's server.** `finds the entities whose activation the new program
-  suspends, as a deploy then suspends them`, in `src/check.test.ts`, ran past its 5 seconds in the job of PostgreSQL
-  of run 43070135997, at `1ab1424`, on 2026-11-11. It takes some 360 milliseconds on that job otherwise, and passed when
-  the job ran again on the same commit, and on the run of a branch of the same code. It is the first test of its file,
-  so it makes the first database of the file on the server. It is a lead, not a finding: nothing says yet whether a
-  wait of the runtime or of the server held it. It would be decided by:
-  - runs of `src/check.test.ts` again and again on a server, until one times out;
-  - a run that logs, at the time out, what `pg_stat_activity` says each session of the test's database waits for.
 
 ## Programs
 
