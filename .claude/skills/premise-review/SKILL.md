@@ -67,11 +67,12 @@ and the sections you did not reach.
 - Run the reviewer's failing tests yourself before you tell the maintainer of a finding. A report is the
   reviewer's, and no proof.
 - Run each test again on the last commit of `main` where the reviewer's branch was cut before it.
-- A finding reproduced is a step of [`docs/roadmap.md`](../../../docs/roadmap.md), which names the branch, the
-  commit and the tests, and where the fix begins. Its fix is a note that changes the earlier one, with the test,
-  taken as `AGENTS.md` says.
-- A finding only reasoned, or one whose fix is a choice of the design, is a question of
-  [`docs/open-questions.md`](../../../docs/open-questions.md), with what would decide it.
+- Every finding is a bug of the step of [`docs/roadmap.md`](../../../docs/roadmap.md) that follows the review,
+  marked reproduced or reasoned. A bug reproduced names the branch, the commit and the tests, and where the fix
+  begins. Its fix is a note that changes the earlier one, with the test, taken as `AGENTS.md` says.
+- A finding only reasoned, one whose fix is a choice of the design, and a suspect the reviewer noticed and did not
+  check are also questions of [`docs/open-questions.md`](../../../docs/open-questions.md), with what would decide
+  them. Nothing of a report stays only in the report.
 - Write what the review read and what it did not reach in the roadmap's step of the review, so that the next
   review starts where this one stopped. The step leaves the roadmap once every section of the index is read.
 - Do not merge the reviewer's branch: its tests fail. A test moves to `main` with the fix that makes it pass.
