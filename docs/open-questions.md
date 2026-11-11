@@ -331,8 +331,10 @@ with a requirement that no example has yet.
   and a lease its runner renews never moves the shard. So an operation under way, or a message in the mailbox,
   waits in silence. They are bugs 14 and 18 of the [roadmap](roadmap.md). On Cluster an entity may also be
   unloaded between a door's step and its commit, since the step lets the lock go before Cluster commits, and the
-  operation the step stored never runs, which is bug 61, reproduced. Bug 33, the waker's map of failed entities on a
-  shard that moves, is of the same code. It would be decided by:
+  operation the step stored never runs, which is bug 61, reproduced. A door's step that loads an entity and whose
+  `COMMIT` fails leaves the entity loaded with a machine that never ran its `Restart`, so its stored operation never
+  starts and the entity is never unloaded, which is bug 69, reproduced. Bug 33, the waker's map of failed entities on
+  a shard that moves, is of the same code. It would be decided by:
   - whether every crash that leaves work stored gives the entity to the waker's retry of
     [decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), or whether the waker
     reads the entities with work as well as the timers;
@@ -341,7 +343,9 @@ with a requirement that no example has yet.
   - a test of the message left in the mailbox, on one process and on Cluster;
   - a test of bug 33, whose shard moves while the waker waits to retry an entity;
   - for bug 61, whether `unload` refuses an entity whose machine is not committed, and a test of its `Evict`, its
-    resumption and its `tell`.
+    resumption and its `tell`;
+  - for bug 69, whether `finishIn` enters an entity it loaded only once its commit is known, and a test of the same
+    failed commit through `activateOnCluster`, from the waker and from a shard's round.
 - **A name a rename left.** A launch renames a program and keeps the keys of its old name
   ([decision 0156](decisions/archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). On one process
   nothing keeps a later launch from taking the old name again, and its entities then draw the keys the renamed
@@ -362,10 +366,14 @@ with a requirement that no example has yet.
   the [roadmap](roadmap.md). A sender whose receiver crashes at every attempt, or answers `Full`, sends again with
   no wait, which is bug 32, not checked. A `passivate` of 0 is the same: Effect's sleep of 0 is one yield, so an
   entity whose operation runs ends its wait at once and tries to unload again for as long as the operation runs,
-  which is bug 45, reproduced. It would be decided by:
+  which is bug 45, reproduced. On Cluster a shard's round that fails is made again after `retry`
+  ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)),
+  so under 0 an entity no version reads keeps the file's one writer busy for ever, which is bug 71, reasoned. A fix of
+  bug 17 at the waker alone leaves it. It would be decided by:
   - whether a wait the runtime sleeps has a least time of its own, or a launch refuses 0, or the loop's wait sleeps
     only while the entity has nothing to do;
-  - a test of bug 32 with a receiver that crashes at every attempt.
+  - a test of bug 32 with a receiver that crashes at every attempt;
+  - a test of bug 71 with two runners and a row no version reads.
 - **A launch that dies after the hold.** A launch refused for an option dies, as
   [decision 0208](decisions/0208-a-launch-checks-every-option.md) says, before anything is held or stored. Its hold
   ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), its tables and its renames run
@@ -482,7 +490,7 @@ with a requirement that no example has yet.
   - whether a receiver refuses a request whose asker's work no longer holds, by the asker's key row it already reads;
   - a test of bug 65 with an operation that sends from an uninterruptible finalizer;
   - a helper of `src/cluster.test.ts` that keeps a runner's operation running after another runner took its shard.
-- **Who an operator sees waiting on Cluster.** `suspended` lists, for each suspended entity, the operations that
+- **Who an operator sees waiting.** `suspended` lists, for each suspended entity, the operations that
   wait for its resumption, and on Cluster it is meant to read the rows of `effecttea_waiting`
   ([decision 0114](decisions/archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)). An
   operator may act from any runner
@@ -490,7 +498,13 @@ with a requirement that no example has yet.
   and the code reads the registrations of the runner called alone. It is bug 63 of the [roadmap](roadmap.md),
   reproduced. It would be decided by:
   - whether `suspended` and `inspect` read the rows of `effecttea_waiting` on Cluster, which hold less than a
-    `Waiting`, or a note narrows 0114 to the runner called.
+    `Waiting`, or a note narrows 0114 to the runner called;
+  - on one process, whether the list holds the operation of a suspended sender after a restart. The operations of a
+    suspended entity run on ([decision 0113](decisions/archive/0113-a-suspended-entitys-operations-run-to-their-end.md)),
+    and a process starts no suspended entity
+    ([decision 0071](decisions/archive/0071-a-process-starts-the-entities-with-a-message.md)). So such an operation is
+    listed before a restart and not after it, which is bug 72, reproduced. A reading of the stored operations of the
+    suspended senders would hold it, or a note that narrows 0114 to the operations that run.
 - **A hash of Effect that moves the shards.** An entity's partition is stored, so that a change of `Hash.string`
   moves nothing ([decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md)). On Cluster the
   partition is the shard
@@ -501,6 +515,61 @@ with a requirement that no example has yet.
   - what the rule of `AGENTS.md` for a move of Effect's version does when that test fails;
   - whether a launch on Cluster checks that the stored partitions of a sample of entities are the shards Cluster
     gives their ids.
+- **A deploy under way when a drain begins.** A planned stop stops at once what the registered deployments run again,
+  and waits for their at-most-once operations
+  ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). A deploy registers
+  only once its activations are done
+  ([decision 0051](decisions/archive/0051-a-deploy-that-fails-leaves-nothing-running.md)). So a deploy that registers
+  during the drain keeps its waker and the operations that run again through the drain, which is bug 66 of the
+  [roadmap](roadmap.md), reproduced. A drain that looks between a deploy's last activation and its registration may
+  close the scope on an at-most-once operation, which is only reasoned. A planned stop while the main fiber deploys
+  undoes the deploy ([decision 0102](decisions/archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)),
+  and its at-most-once operations deliver `unknown`, which is bug 67, not checked. It would be decided by:
+  - whether the drain stops and counts the deployments being made, or a deploy refuses to start or to register once
+    the drain began;
+  - whether a planned stop waits for the at-most-once operations of a deploy it interrupts;
+  - a test under `explored` with the deploy forked and no hold, for the window before the registration.
+- **Two programs of one version on Cluster.** A version is the count of a program's migrations plus one
+  ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)), and an older runner is kept from
+  every shard by the version recorded
+  ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)). A
+  deploy that changes `update`, an index, a topic or `work` and adds no migration has the version of the runners it
+  replaces. So in a rolling deploy both codes hold shards, and a shard that moves back is stepped by the older code. A
+  query by a new index then misses the entity, or an operation of a new key suspends it. It is bug 68 of the
+  [roadmap](roadmap.md), reasoned. It would be decided by:
+  - whether a launch records a digest of what a program writes beside its version, and refuses a program of the
+    newest version whose digest differs from a runner's still registered;
+  - a test of `src/cluster.test.ts` with `onFile` and two runners of one version whose programs differ by an index;
+  - the step What a deploy may change of a program, against what is stored, of the [roadmap](roadmap.md), whose table
+    asks of a newer and an older version and not of one of the same number.
+- **A deploy that fails after its door is registered.** A failed deploy gives its name back, so that the program can
+  be deployed again ([decision 0075](decisions/archive/0075-a-name-is-deployed-once-in-a-process.md)). On Cluster the
+  door is registered in the deployment's scope
+  ([decision 0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)), and
+  Cluster never unregisters an entity type. So the next deploy of the name keeps the first door, closed. It is bug 70
+  of the [roadmap](roadmap.md), reproduced. It would be decided by:
+  - whether a runner keeps a name for its life once its door is registered, or `register` of `src/cluster.ts` reuses
+    the type it registered;
+  - a test of a deploy interrupted between `cluster.register` and its registration, and of the doors a rename's old
+    names keep.
+- **The warnings on Cluster.** The runtime warns of a step that writes a large state
+  ([decision 0135](decisions/archive/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)), and of
+  a full entity ([decision 0147](decisions/archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)), so
+  that an operator finds the entity that holds the others. On Cluster a door's step drops the length it wrote, so a
+  caller's creation or message never warns, which is bug 73 of the [roadmap](roadmap.md), reproduced. No caller is
+  answered `Full` on Cluster
+  ([decision 0165](decisions/archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md)),
+  and nothing names the entity a burst waits for, which is bug 74, not checked. It would be decided by:
+  - whether a door's step warns once its commit is known, and whether a step rolled back warns;
+  - whether a burst that waits in Cluster's table on one entity is told to an operator, and by what.
+- **A row the waker's reading refuses.** The waker goes on past an activation that fails
+  ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)), and its own reading of
+  the next time due is a reading of rows that nothing catches. A `due` no integer is stops every timer of the program
+  for the life of the process, with no log, and `settled` never returns again. It is bug 75 of the
+  [roadmap](roadmap.md), reproduced. It would be decided by:
+  - whether `waking` catches a reading that dies and reads again after `retry`, as the sweep does, or `due` leaves out
+    the entity whose row it refuses and gives it to the waker's map of failed entities;
+  - whether the readings of the waker on Cluster, by shard, fail alike.
 
 ## Programs
 

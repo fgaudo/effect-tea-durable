@@ -3344,3 +3344,653 @@ the area's report, by the index, and by `grep -w` of each number in both directi
 ### Not read whole
 
 None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.
+
+## 2026-11-11: premise review of the pairs against Versions and deploys, a second part
+
+Read by a session that wrote none of these notes, on the branch `claude/premise-pairs-versions-2-b6a869`, cut from
+`main` at `fcd2494` and moved onto `743881f` before any reading. It reads the notes 0101, 0110, 0119, 0121, 0122,
+0123, 0128, 0132, 0133, 0138, 0139, 0157, 0159, 0167, 0169, 0171 and 0174 against the notes of area 3 they meet. The
+review of Versions and deploys read these notes only at the lines that cite the area, or in part.
+
+### The pairs
+
+The pairs were found by the table of the area's report, by the index, and by `grep -w` of each number in both
+directions. Each note of the list was read whole, and so was each note of the area it meets. Two rows are pairs that
+the code joins, where neither note cites the other: the drain reads the deployments that a deploy registers.
+
+| Pair | What binds it | How it was read |
+| --- | --- | --- |
+| 0101 and 0075 | 0101 cites 0075's test, run under budgets | both whole, with `running` of `src/runtime.test_shared.ts` |
+| 0110 and 0102 | 0110 cites 0102 as its reason | both whole, with `detached` and `withEntity` of `src/runtime/loop.ts`, and `deploy` of `src/runtime.ts` |
+| 0119 and 0075 | 0119 cites 0075 as its reason | both whole, with the drain, `drained`, `admitted` and `deploy` of `src/runtime.ts`, and `start` and `arm` of `src/runtime/loop.ts` |
+| 0119 and 0051 | met by the code: the drain reads the deployments a deploy registers once its activations are done | both whole, with the same code |
+| 0119 and 0102 | met by the code: a deploy interrupted before it registers closes its scope | both whole, with the same code |
+| 0121 and 0020 | 0121 cites 0020 as its reason | both whole, with `projected` of `src/storage/projections.ts` and `reconcile` of `src/machine.ts` |
+| 0122 and 0043 | 0122 changes 0043's rule for `reindex` | both whole, with `reindex` of `src/storage/projections.ts` |
+| 0247 and 0122 | 0247 applies 0122's line between the program's failure and the runtime's | both whole |
+| 0123 and 0022 | 0123 applies 0022 to the form of the key | both whole, with `givenKey` and `reconcile` of `src/machine.ts` |
+| 0123 and 0043 | 0123 cites 0043 for a rollback | both whole |
+| 0156 and 0123 | 0156 cites 0123 for the name in a key | both whole, with `givenKey`, and `renamed` of `src/storage/tables.ts` |
+| 0128 and 0020 | 0128 makes an exception to 0020's check | both whole, with `renew`, `reconcile` and `activate` of `src/machine.ts` |
+| 0132 and 0058 | 0132 applies 0058's comparison to a key's parameter | both whole, with `canonical`, `isSame` and `renew` of `src/machine.ts` |
+| 0132 and 0126 | 0132 cites 0126 for the recorded cases | both whole |
+| 0133 and 0036 | 0133 applies 0036's migrations to the children | both whole, with `canonical` and `isSame` |
+| 0133 and 0058 | 0133 applies 0058 to a child removed and added again | both whole, with the same code |
+| 0138 and 0036 | 0138 applies 0036 to the rows of a topic | both whole, with `shownOf` of `src/machine.ts` |
+| 0139 and 0036 | 0139 cites 0036 for the projection's JSON | both whole, with `shownOf` |
+| 0157 and 0156 | 0157 changes 0156's rewrite of a request on PostgreSQL | both whole, with `inPlace`, `inProcess` and `rename` of `src/storage/tables.ts`, and `canonical` and `requestText` of `src/machine.ts` |
+| 0157 and 0043 | 0157 applies 0043 to an integer past 2^53 | both whole |
+| 0159 and 0043 | 0159 cites 0043 as its reason | both whole, with `atNewest` of `src/cluster.ts`, `recordVersions`, `standingOf` and `outranked` of `src/storage/cluster.ts`, `versionOf` of `src/program.ts`, and `shownOf` |
+| 0247 and 0159 | 0247 cites 0159 for why `check` launches nothing | both whole |
+| 0167 and 0156 | 0167 applies 0156's rename to `waiting` | both whole, with `rename` of `src/storage/tables.ts`, and 0176 read whole |
+| 0169 and 0156 | 0169 applies 0156's rename to `sent_requests` | both whole, with the same code |
+| 0171 and 0156 | 0171 applies 0156's rename to `given_requests` | both whole, with the same code |
+| 0174 and 0043, 0156 | 0174 cites 0043 as its reason, and refuses a deploy as 0156 does | all whole, with `deploy` of `src/runtime.ts`, `waking` and `held` of `src/runtime/waker.ts`, `due` of `src/storage/entities.ts`, and `guard` of `src/cluster.ts` |
+
+### Findings
+
+1. **Reproduced: a deploy that registers during a drain keeps its waker, and the operations that run again,
+   through the drain.** The notes are 0119 and 0051, with 0075. Decision 0119 stops at once the timers, the waker,
+   and the idempotent and at-least-once operations, so that the drain waits only for the at-most-once ones. Its
+   unwritten premise is that every deployment is registered when the drain begins. Decision 0051 registers a deploy
+   only once its activations are done, and an activation may start those operations. The drain stops what the
+   registered deployments hold as it begins, at `src/runtime.ts:1400` to `1405`. A deploy still activating when the
+   launch's scope closes is not among them. The drain waits for the deploy's activation, which `detached` counts. The
+   deploy then registers at `src/runtime.ts:1169`, and forks its waker at `1173`. The operations its activations
+   started before the drain run on, and `drained` at `1378` counts them. So the drain waits its whole `millis` for
+   work that runs again at the next activation, and an at-least-once operation may act in the drain. The waker forked
+   in the drain activates entities there, against 0119's rule that the waker activates none. That half is read in the
+   code, and not run. The sequence: a first process leaves `toy-1` and `toy-2` with work under way. The second
+   deploys a program that adds an at-most-once `b`, in a fiber of the process's body. The activation of `toy-1`
+   starts `a`, `c` and `b`, and the deploy is held at the activation of `toy-2` while the scope closes. Once `b` ends,
+   the drain still waits, and `a` and `c` are stopped only when its time runs out. Reproduced by `FAILING: a deploy
+   that registers during the drain has the operations that run again stopped at once`, in `src/runtime.test.ts`, at
+   commit `8b65a28`. One case is only reasoned. Suppose a drain looks between the end of a deploy's last activation,
+   which gives the count back, and the deploy's registration. It finds nothing to wait for, and closes the runtime's
+   scope. That interrupts an at-most-once operation the deploy started, which then delivers `unknown`. The default
+   scheduler runs the deploy to its registration without yielding, so the test above does not reach this case. A fix
+   could begin at the drain, which would stop and count the deployments being made too. It could also begin at
+   `deploy`, which would refuse to start or to register once `p.draining` is set.
+2. **Reasoned, by a reading of the code: on Cluster, a deploy that adds no migration does not outrank the runners it
+   replaces, and an older runner steps the rows of the newer code.** The notes are 0159 and 0043, with 0036.
+   Decision 0043 keeps a program from reading a row of a version it does not have. Decision 0159 keeps an older
+   runner from every shard, and from every commit, by the version recorded. Its premise, never written, is that two
+   programs that write differently differ in version. A version is the count of a program's migrations plus one
+   (decision 0036, `versionOf` at `src/program.ts:666`). A fix of `update`, a new index, a new topic or a changed
+   `work` adds no migration. `recordVersions` accepts a launch at the newest version (`src/storage/cluster.ts:86`),
+   `outranked` counts only a version below the newest (`src/storage/cluster.ts:162`), and `atNewest` dies only for a
+   version below it (`src/cluster.ts:164`). So in a rolling deploy of such a change both codes hold shards. A shard
+   that moves from a newer runner to an older one is stepped by the older code. It moves so when a newer runner
+   leaves, or when the deploy is rolled back. Two sequences follow.
+   - A newer version adds an index and runs `reindex`. A step on an older runner writes the entity's row with the
+     older indexes, which `shownOf` computes (`src/machine.ts:258`), at the same version. A query by the new index
+     then misses the entity until a step of the newer code, with no error. Decision 0143 has a row that an older
+     version wrote hold that version's index until `reindex` writes it, and here `reindex` has already run.
+   - A newer version starts an operation under a new key, and the operation is stored under way. An activation on an
+     older runner finds an operation under way that its `work` does not return, and suspends the entity
+     (decision 0020). It is loud, and lasts until an operator resumes the entity.
+
+   Not reproduced. A test of `src/cluster.test.ts` with `onFile` and two runners of one version, whose programs differ
+   by an index, would show the first sequence. It is a case of family A, and of the step What a deploy may change of
+   a program. That step's table asks about a deploy of a newer version and of an older one, and not about one of the
+   same number. A fix could begin at `recordVersions`, which would record, beside the version, a digest of what a
+   program writes. It could also begin at the launch, which would refuse a program of the newest version whose digest
+   differs from the digest of a runner still registered.
+
+### Suspects ruled out
+
+- 0157 against 0156, a name that holds `%`, `_` or a backslash: the rename on PostgreSQL finds a request by `strpos`
+  and not by `LIKE`, so no character of the name is a pattern (`src/storage/tables.ts:580`). The text it looks for is
+  `JSON.stringify` of the name, and `canonical` writes every request by `JSON.stringify` (`src/machine.ts:196`). So no
+  request of the old name is missed.
+- 0157 against 0156, the order of a request's keys: `canonical` sorts them, and `JSON.parse` keeps that order,
+  integer-like keys included. So `JSON.stringify` of the request with its new name is the text the runtime writes.
+- 0119 against 0051, a deploy held inside an activation when the drain begins: the activation is detached and
+  counted, so the drain waits for it, and for the at-most-once operations its deploy started. The first form of the
+  test of finding 1 passed for this reason.
+- 0174 against 0043, a process with no runner address that deploys an older version: it holds no shard. So its
+  waker reads no partition, since `due` returns at once on none (`src/storage/entities.ts:507`). `guard` refuses any
+  step such a process would make (`src/cluster.ts:393`). What its callers read is bug 62.
+- 0122 and 0159, a `reindex` on an older runner of a rolling deploy: the step What a deploy may change of a program
+  of the roadmap names that case already.
+- 0128 against 0020: `renew` keeps a droppable operation's incarnation only where its JSON is the same, and gives the
+  operation the new delivery. An operation stored with another delivery and declared droppable is a defect in
+  `reconcile`. The case of at most once is bug 1.
+- 0132 and 0133 against 0058 and 0036, a deploy that changes how a key's parameter or a child's id encodes: no
+  migration has a kind for keys, so the key's text changes. An operation under way under the old text is then a
+  dropped operation, which is a defect at the activation. It is loud, and runs nothing under a new key.
+- 0123 against 0022 and 0156: `givenKey` draws the digest from the readable key of `keyedAs ?? name`, so a rename
+  keeps the digest. A name taken again after a rename is bug 15.
+- 0121 against 0020: `projected` reads the row through the projection's migrations and calls no `project`. So a
+  program that suspends its entity at the activation still answers a read, as 0121 says.
+- 0138 and 0139 against 0036: a topic compares the canonical text of what it selects, which the program deployed
+  computes on both projections. The projection's JSON is the one its schema writes, which the migrations read.
+- 0167, 0169 and 0171 against 0156: `rename` moves `waiting`, `sent_requests` and `given_requests` with the other
+  rows, in its transaction. Decision 0176 names a request's sender and the receiver of a `Resumed` anew at the door.
+- 0110 against 0102, 0101 against 0075, 0157 against 0043, 0123 against 0043, 0247 against 0122 and 0159, and 0174
+  against 0156: each later note applies the earlier rule as it is written. No case the later note opens takes away
+  a condition of the earlier rule.
+
+### Noticed, not checked
+
+- Finding 1 under the scheduler of the tests: whether a schedule that yields between the end of a deploy's last
+  activation and its registration makes the drain end while an at-most-once operation runs. A test under `explored`,
+  with the deploy forked as in the test of finding 1 and no hold, would check it. It was not written, for the time it
+  takes.
+- 0119 against 0102, a planned stop while the main fiber deploys: the interruption reaches the deploy before the
+  scope's finalizers run. So the deploy undoes itself, and stops its at-most-once operations before the drain begins.
+  They then deliver `unknown`, as after a crash. Whether a planned stop should wait for them is a choice of the design,
+  which no note makes, so no test can decide it.
+
+### Not read whole
+
+None. Every note of the list and every note of the area it meets was read whole. For 0133, 0138 and 0139 the code
+read is the comparison and the encoding that the pairs rest on, not the whole of composition or of the log.
+
+## 2026-11-11: premise review of the pairs against The runtime, a first part, the notes before 0100
+
+Read by a session that wrote none of these notes, on the branch `claude/premise-pairs-runtime-1-1-eb56fb`, cut from
+`main` at `fcd2494` and moved to `743881f` before the reading. It reads the notes 0006, 0011, 0013, 0030, 0040, 0042,
+0043, 0045, 0046, 0051, 0056, 0061, 0062, 0075, 0081, 0085, 0090 and 0092 against the notes of area 4 they meet:
+0028, 0029, 0063, 0066 to 0068, 0071, 0073, 0074 and 0076 to 0079. The review of that area read these notes in part
+or not at all. Its two failing tests are in `src/cluster.test.ts`, at commit `876ea90`.
+
+### The pairs
+
+Each note of the list was read whole, and so was each note of the area it meets. The pairs were found by the table of
+the area's report, by the index, and by `grep -w` of each number in both directions. No note of the list meets 0066,
+0068 or 0073.
+
+| Pair | What binds it | How it was read |
+| --- | --- | --- |
+| 0006 and 0029 | 0029 applies 0006 to an unloaded suspended entity | both whole, with `nothingToDo` of `src/runtime/loop.ts` and `onHold` and `due` of `src/storage/entities.ts` |
+| 0006 and 0071 | 0071 leaves a suspended entity out, as 0006 has it | both whole, with `interruptedWithin` of `src/storage/entities.ts` |
+| 0006 and 0077 | 0077 cites 0006 against suspending an entity it cannot load | both whole, with `waking` of `src/runtime/waker.ts` |
+| 0011 and 0029 | 0029 cites 0011 as its reason that an unloaded entity holds no operation | both whole, with `nothingToDo` and `spare` |
+| 0013 and 0028 | 0028 cites 0013 as its reason | both whole |
+| 0013 and 0029 | 0029 applies 0013's comparison to a passivation | both whole, with `unload` |
+| 0030 and 0028 | 0030 changes 0028's rule of JSON into a type | both whole |
+| 0040 and 0028 | 0040 applies 0028's defect at creation to an inbound message | both whole, with the encoding of `send` in `src/runtime/callers.ts` |
+| 0042 and 0028 | 0042 cites 0028 as its reason | both whole, with `crash` and `loop` of `src/runtime/loop.ts` |
+| 0042 and 0067 | 0067 changes 0042's permit | both whole, with `holding` of `src/runtime/process.ts` and `crash` |
+| 0042 and 0077 | 0077 changes 0042's consequence for the waker | both whole, with `waking` |
+| 0042 and 0079 | 0079 keeps 0042's rule that an interruption is the process's crash | both whole, with `activate`, `detached` and `withEntity` |
+| 0043 and 0077 | 0077 changes 0043's consequence for the waker | both whole, with `waking` and the deploy's activations in `src/runtime.ts` |
+| 0045 and 0063 | 0063 changes 0045's wait | both whole, with `deployedAs` of `src/runtime/callers.ts` and the registration of `deploying` |
+| 0046 and 0063 | 0063 changes 0046's wait for a suspended receiver | both whole, with `entities` and `unlessCrashed` |
+| 0046 and 0077 | 0077 applies 0046's `retry` to the waker | both whole, with `waking` |
+| 0051 and 0028 | 0051 cites 0028 for an operation's retries | both whole |
+| 0051 and 0063 | 0063 changes 0051's consequence | both whole, with `deploy` and `deploying` of `src/runtime.ts` |
+| 0051 and 0077 | 0077 cites 0051 for a deploy that fails | both whole, with `deploying` |
+| 0056 and 0029 | 0056 cites 0029 for the permit of a crash | both whole, with `crash`, `unload` and `stopAll` |
+| 0056 and 0067 | 0067 changes 0056's permit | both whole, with the same code |
+| 0061 and 0077 | 0077 cites 0061 against suspending | both whole |
+| 0062 and 0077 | 0077 changes 0062's consequence for the waker | both whole, with `rows` of `src/storage/entities.ts` |
+| 0075 and 0078 | 0078 changes when 0075's deploy gives its name back | both whole, with `deploy` of `src/runtime.ts`, `register` of `src/cluster.ts`, and `registerEntity` and `registerSingleton` of `cluster/Sharding.ts` in Effect |
+| 0081 and 0071 | 0081 says 0071 is the one-process runtime's | both whole, with `activating` of `src/runtime/doors.ts` |
+| 0081 and 0074 | 0081 says 0074 does not hold on Cluster | both whole, with `doorStep` of `src/runtime/doors.ts` |
+| 0085 and 0063 | 0085 leaves the wait on a suspended entity to 0092, by 0063 | both whole, with `doorStep` and `wait` |
+| 0085 and 0074 | 0085 applies 0074 to the message an entity dies on | both whole, with `doorStep` |
+| 0090 and 0063 | 0090 cites 0063 against polling | both whole |
+| 0092 and 0029 | 0092 keeps 0029's passivation and waker on Cluster | both whole, with `waking`, `held` and the loop's wait |
+| 0092 and 0063 | 0092 wakes 0063's senders by `Resumed` | both whole, with `doorStep` and `resumed` of `deploying` |
+| 0092 and 0071 | 0092 applies 0071 to a shard gained | both whole, with `serving`, `activating` and `activateOnCluster` |
+| 0092 and 0074 | 0092 cites 0074 for a burst | both whole |
+| 0092 and 0076 | 0092 keeps 0076's capacity on Cluster | both whole, with `admit` and `entersHeld` |
+| 0092 and 0078 | 0092 keeps 0078's spare entity on Cluster | both whole, with `spare` and the loop's settle before an unload |
+| 0092 and 0079 | 0092 changes 0079 for an activation on Cluster | both whole, with `doorStep`, `loadIn`, `finishIn`, `settle` and `activateOnCluster` of `src/runtime/doors.ts` |
+
+### Findings
+
+- **Reproduced: on Cluster, a door's step that loads an entity and whose commit fails leaves the entity loaded without
+  its `Restart`, and its stored operation never runs.** Decision
+  [0079](archive/0079-what-a-caller-sets-going-is-finished-without-it.md) keeps the rule of
+  [decision 0042](archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md) that an activation is either
+  done or leaves nothing loaded. [Decision 0092](archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)
+  moves the activation on Cluster into the door's transaction. Decision
+  [0161](archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md) enters the
+  entity at the step's end, before Cluster commits, and reads a rollback by the held count. The premise that fell: a
+  loaded entity runs what its state holds. The sequence: an entity holds an operation and is not loaded on this
+  runner, as after a crash of the entity or a restart of the runner. A door's step loads it: `loadIn` steps its
+  `Restart` (`src/runtime/doors.ts:208-225`), the message's step writes, and `finishIn` enters the entity with its
+  loop and leaves the machine uncommitted (`doors.ts:241-255`). The `COMMIT` fails. Cluster delivers the request
+  again. The next step's `settle` reads the held count, and drops the uncommitted machine with the `Started` of its
+  `Restart` (`doors.ts:70-83`). It steps the message from the held machine, whose `running` is empty. The operation is
+  stored and never started. The entity is never unloaded either, since `nothingToDo` sees the operation
+  (`src/runtime/loop.ts:443`). A timer of such an entity is not armed, and fires only once a passivation unloads the
+  entity. **Reproduced** by `FAILING: a door step that loads an entity and whose commit fails leaves the entity to run
+  its stored operation`, in `src/cluster.test.ts`, at `876ea90`: `Ask` runs once, where it runs again when the second
+  commit does not fail. The test unloads the entity by a crash of its completion's commit, as bug 18 does. The same
+  holds of `activateOnCluster` (`doors.ts:404-420`), the activation of the waker and of a shard's round, which is only
+  reasoned: a failed commit of it is caught and tried again, and the next try finds the entity loaded and returns. A
+  fix could begin at `finishIn`, which would enter an entity it loaded only once its commit is known, or at `settle`,
+  which would crash an entity whose held machine was never restarted.
+- **Reproduced: on Cluster, a deploy that fails after its door is registered leaves every later deploy of its name
+  with a closed door.** [Decision 0075](archive/0075-a-name-is-deployed-once-in-a-process.md) gives a failed deploy's
+  name back, so that the program can be deployed again.
+  [Decision 0078](archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md) does so while
+  the deployment is not registered. Both rest on a rule of
+  [decision 0051](archive/0051-a-deploy-that-fails-leaves-nothing-running.md): closing the deployment's scope leaves
+  nothing registered. On Cluster the door is registered in that scope
+  ([decision 0092](archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)), and Cluster
+  never unregisters an entity type. The scope's close marks the type `closed`, and `registerEntity` returns at once for
+  a type it holds (`cluster/Sharding.ts:2027` and `:1249` of Effect 4.1.1, read in the source). The sequence: a deploy
+  registers its door (`src/runtime.ts:1155`), and dies before its registration step, by an interruption, as decision
+  0102 undoes it, or by a singleton that cannot be registered. The scope closes, and the name is given back
+  (`src/runtime.ts:1108-1115`). The next deploy of the name succeeds, and its door is the first one's, closed. Every
+  request to the program on this runner is refused, and a caller's client is interrupted at once. **Reproduced** by
+  `FAILING: a deploy that fails after its door is registered leaves the next deploy of its name a door`, in
+  `src/cluster.test.ts`, at `876ea90`, with a singleton registered first under the name the deploy registers first.
+  The same runner with no failed deploy before answers `Created`. A fix could begin at `register` of `src/cluster.ts`,
+  or at the deploy, which would keep the name for the life of the runner once its door is registered.
+- **Reasoned by a reading: under a `retry` of 0, a shard's round on Cluster tries an entity it cannot activate again
+  at once, for ever.** It is a third place of family F, beside bugs 17 and 45. `activating`
+  (`src/runtime/doors.ts:498-501`) repeats a round that failed on `Schedule.spaced` of `retry`, which
+  [decision 0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) chose above 0, and
+  [decision 0208](0208-a-launch-checks-every-option.md) allows 0. Each round reads the shard's interrupted entities and
+  opens a transaction for each. So a row no version reads keeps the file's one writer busy, and the process is
+  settled only between two rounds. A fix of bug 17 at `waker.ts` alone leaves it. The family's rule, a launch that
+  refuses 0 or a least time of a wait, holds it.
+
+### Ruled out
+
+- 0006 against 0029, 0071 and 0077: `due` and `interrupted` leave out every suspended entity by `onHold`
+  (`src/storage/entities.ts:476-519`), so no timer wakes a suspended entity and no deploy starts one.
+- 0011 against 0029: `nothingToDo` reads the stored keys, so a passivation never leaves an operation stored with
+  nothing running. The cases where something else does are bugs 1, 14, 18 and 61, and the first finding above.
+- 0013 against 0028 and 0029: a passivation commits nothing, and a step that writes nothing is observed at once, so the
+  comparison with the machine replays every event that wrote.
+- 0030 and 0040 against 0028: a caller's message and sender are encoded before the entity is reached, on one process
+  and on Cluster (`src/runtime/callers.ts:300`), so a message that does not encode is the caller's defect and touches
+  no entity.
+- 0042 against 0067 and 0079: a crash runs under the entity's lock, from the loop, an activation and a door's step,
+  and touches no database while it holds the lock, as decision 0161 asks on Cluster.
+- 0043 and 0062 against 0077: a deploy whose activation meets a row no version reads still dies as a whole, as 0043
+  decides and 0077 keeps. 0071 widens what a deploy activates to the entities with a message, which 0074 narrows to the
+  completions and firings recorded. 0043's consequence that a rollback is not refused is wider than its own rule where
+  an interrupted entity was written by the newer version, and the rule is the decision.
+- 0045 against 0063: the signal of a name is completed in the uninterruptible step that registers the deployment, so a
+  deploy that fails leaves the operations waiting for the next one.
+- 0046 against 0063 and 0077: `retry` is waited after a crash and after `Full` alone, and a suspended receiver is waited
+  for by its resumption. A `retry` of 0 is bug 32.
+- 0051 against 0063 and 0077: the activations of a deploy are forked in the deployment's scope, which its close stops.
+  On Cluster the door is the exception, which the second finding holds.
+- 0056 against 0029 and 0067: an unload runs only where `nothingToDo` finds no operation, so `stopAll` under the lock
+  interrupts timers alone, whose sleep waits for nothing.
+- 0061 against 0077: a failed activation stores nothing, and the waker's retry suspends nothing.
+- 0081 against 0074: the door steps a `Receive` with its time, and the machine handles it at once where the mailbox is
+  empty, so 0074 holds of the runtime's mailbox on Cluster too. 0081's consequence that it does not is wider than the
+  code, and loses nothing.
+- 0081 against 0071: a shard's round reads the runtime's keys and mailbox of the shard, as 0092 decides in place of
+  0081's sentence.
+- 0085 and 0090 against 0063: a sender answered `Suspended` on Cluster waits for `Resumed`, and nothing polls. A
+  `Resumed` to a sender no runner deploys is bug 20.
+- 0092 against 0029, 0076 and 0078: the loop settles an uncommitted machine before it unloads, and an entity enters
+  on Cluster through `entersHeld`, which runs `admit`. A door's step that writes nothing and counts no use is in the
+  review of the pairs against Versions and deploys.
+
+### Noticed, not checked
+
+- The second finding by an interruption of the deploy between `cluster.register` and the step that registers the
+  deployment, which decision 0102 undoes on one process. No probe marks that point, so the test makes a singleton's
+  registration die instead. The same closed door would be kept under each name a rename leaves, the `formerly` of
+  `register`, which was not run.
+- The first finding through `activateOnCluster`, from the waker and from a shard's round. The reading above shows the
+  sequence. No test was written, since a probe reaches the commit of an activation only where its `Restart` writes.
+
+### Not read whole
+
+None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.
+
+## 2026-11-11: premise review of the pairs against The runtime, a first part, the notes from 0100
+
+The notes read are 0101, 0102, 0103, 0109 to 0114, 0116, 0119, 0127, 0128, 0130, 0134, 0135, 0142, 0147, 0151, 0162
+to 0164, 0167, 0172, 0177, 0194, 0205 and 0220. Each was read against the notes it meets of area 4: 0028, 0029, 0063,
+0066 to 0068, 0071, 0073, 0074 and 0076 to 0079. Every note of both lists was read whole, with the code that keeps its
+rule. The pairs were found by the area's table, the index and a search of each note's number in both directions. The
+failing test is on the branch `claude/premise-pairs-runtime-1-2-876ced`, in the commit of this section. One finding is
+reproduced, and one is only reasoned.
+
+### The pairs
+
+| Later note | Earlier note | What binds them | How it was read |
+| --- | --- | --- | --- |
+| 0101 | 0066 | corrects a premise of | both whole, with the tests' use of `TestClock` |
+| 0101 | 0068, 0076, 0078 | cites their tests under budgets | both whole |
+| 0102 | 0078 | corrects | both whole, with `deploy` and `deploying` in `src/runtime.ts` |
+| 0102 | 0076, 0079 | cites as what a failed deploy undoes | both whole, with `forgetUse` and `detached` |
+| 0103 | 0066 | adds to | both whole |
+| 0103 | 0078 | corrects | both whole, with `admit`, `spare` and the loop's `Evict` |
+| 0103 | 0029, 0077 | cites the timers and retries `settled` counts | both whole, with `quiet` and `waking` |
+| 0103 | 0076, 0079 | cites | both whole |
+| 0109 | 0076 | adds to what `settled` waits for | both whole, with `unload` and `quiet` |
+| 0109 | 0068, 0073 | cites as its reason | both whole, with `leave` and the probe's `Unloaded` |
+| 0110 | 0079 | corrects | both whole, with `detached` |
+| 0111 | 0029 | adds a rule to the wait of | both whole; replaced by 0116 |
+| 0112 | 0078, 0079 | changes what they rest on | both whole, with every fork of `src/runtime.ts`, `loop.ts` and `callers.ts` |
+| 0113 | 0029 | replaces a premise of | both whole, with `nothingToDo`, `spare`, `perform` and `interruptedWithin` |
+| 0114 | 0063 | applies its registration as | both whole, with `awaitResumption` and `waitingFor` |
+| 0114 | 0028, 0066 | cites | both whole |
+| 0116 | 0029 | changes how its wait runs out | both whole, with `steps` |
+| 0119 | 0063 | applies its signal as | both whole, with the drain, `emptied` and `drained` |
+| 0119 | 0076, 0079 | cites | both whole, with `start`, `arm` and `admitted` |
+| 0127 | 0076 | cites as its reason | both whole; no code changes |
+| 0128 | 0063 | cites as its reason | both whole, with `drop` |
+| 0130 | 0063 | cites as its reason | both whole |
+| 0134 | 0028 | changes | both whole, with `again` in `steps` |
+| 0134 | 0068 | cites as its reason | both whole |
+| 0135 | 0028, 0073 | cites as its reason | both whole, with `warnOfSize` |
+| 0142 | 0063 | cites as its reason | both whole, with `waited` and `tell` |
+| 0147 | 0074 | changes | both whole, with the permits of `send` and `steps` |
+| 0147 | 0063, 0067, 0076 | cites | both whole, with `entities` of `callers.ts` |
+| 0151 | 0076 | changes | both whole, with `admit` and the launch's options |
+| 0151 | 0029, 0078 | cites | both whole |
+| 0162 | 0071 | applies for one shard | both whole, with `activating`, `serving` and `losing` in `src/runtime/doors.ts` |
+| 0162 | 0063 | cites as its reason | both whole |
+| 0163 | 0063 | narrows on Cluster | both whole, with the watcher in `launchWith` |
+| 0164 | 0063, 0068 | cites the counts it keeps | both whole, with `offer`, `detached` and `forkHeld` |
+| 0167 | 0063 | applies as on one process | both whole, with `awaitResumption` |
+| 0172 | 0063, 0067 | says how they hold on Cluster | both whole, with `holding` and `activateOnCluster` |
+| 0177 | 0063, 0067, 0068 | keeps | both whole |
+| 0194 | 0029 | adds a premise to | both whole, with `arm` and `waking` |
+| 0205 | 0028 | changes | both whole |
+| 0220 | 0074 | cites as a premise | both whole, with `linkOf` and the replies of `src/machine.ts` |
+
+### Finding 1, reproduced: 0114 against 0063, 0071 and 0113
+
+- Decision 0114 lists, for each suspended entity, the operations that wait for its resumption. It reads them from the
+  senders registered in the process, since decision 0063 has a sender register before it sends. It says the list is
+  whole once a restarted process is settled, since every operation under way sends again and registers again.
+- That premise needs every operation under way to run again after a restart. Decision 0113 keeps the operations of a
+  suspended entity running. Decision 0071 has a process start no suspended entity, and `interruptedWithin` leaves
+  them out (`src/storage/entities.ts:476` and `:488`). So the operation of a suspended sender runs and is listed
+  until the process stops. After a restart it neither runs nor registers.
+- The sequence: the toy is suspended. A sender's operation sends to it, is answered `Suspended`, and waits. The sender
+  then suspends on a message of its own, and the operation keeps waiting. `suspended` of the toy lists it. The process
+  stops, another starts on the database, and it is settled. `suspended` of the toy now lists no one waiting, though
+  nothing stored changed.
+- Nothing is lost: the operation sends again once its sender is resumed. An operator who reads the list to choose what
+  to resume first is told one thing before a restart and another after it.
+- Reproduced by `FAILING: after a restart, a suspended entity lists the operation of a suspended sender that waits for
+  it`, in `src/runtime.test.ts`, in the commit that adds this report. The check of the list before the restart passes,
+  and the list after it is empty.
+- A fix could begin at `waitingFor` of `src/runtime/callers.ts:60`, or with a note that narrows the promise of 0114 to
+  the operations that run. On Cluster the waiting senders are stored as rows (decision 0167), and bug 63 is how
+  `suspended` reads them there.
+
+### Finding 2, only reasoned: 0162 against 0071 and 0077, under a `retry` of 0
+
+- Decision 0162 starts, on Cluster, the entities of a shard that hold work, as decision 0071 does for a process. A
+  round that fails is made again after `retry`, the choice decision 0077 made for the waker. Decision 0077 rejected
+  trying again at once, since one row no version reads would keep the waker busy for ever. Decision 0208 allows a
+  `retry` of 0. Bug 17 is the waker under it, and the open question A retry of no time lists the waker, a sender and a
+  passivation, and not this round.
+- The sequence: on Cluster, under a `retry` of 0, a shard holds an entity whose activation always fails, such as one
+  whose row a newer version wrote. `activating` repeats its round with `Schedule.spaced` of 0 millis
+  (`src/runtime/doors.ts:499`). Each round reads the shard's interrupted entities and activates each one the
+  deployment does not hold. The next round starts with no wait. The rounds take the runner's one connection again and
+  again, for as long as the entity cannot be loaded. Between two rounds `p.detachments` is 0, so `settled` may return,
+  unlike in bug 17.
+- No test was written. A round that fails needs two runners and a row no version reads, and the reading is the same
+  as bug 17's. It belongs to family F.
+- A fix could begin where the fix of bug 17 does: a least time for a retry the runtime sleeps, or a launch that
+  refuses 0.
+
+### Ruled out
+
+- 0128 against 0063, through the drain of 0119: `drained` does not count an operation that `drop` interrupts, though
+  0128 says a planned stop waits for it. The inner scope closes after the drain, and a scope's close waits for the
+  fibers it interrupts, among them the fiber that `drop` forks.
+- 0113 against 0029 and 0076: `nothingToDo` checks the running operations before the suspension. So a suspended
+  entity with an operation under way is neither unloaded nor spare. Its completion is offered before `forkHeld`
+  takes it out of `operations`.
+- 0147 against 0074: a caller's message that finds a message ahead of it in the mailbox is answered `Accepted` at
+  once (`src/machine.ts:1024`). So no caller waits for a message of the stored mailbox, as 0147 rests on.
+- 0220 against 0074: after a resume, the message the entity died on is handled by a `Handle`. Its caller was answered
+  `Suspended`, which deleted the caller's link (`src/runtime/loop.ts:298`), so no caller that waits loses a link.
+- 0164 against 0063: an event offered to an entity that left the process keeps `pending` raised on a `Loaded` that
+  `quiet` and `drained` no longer read. Both read only the entities the deployment holds.
+- 0112 against 0079: the forks of `loop` in `activate` and `create` run in the fiber that `detached` forks
+  interruptible. The uninterruptible regions of `send` and `operate` fork nothing.
+- 0172 against 0067: every taker of an entity's lock on Cluster that loads takes it inside a transaction: a door's
+  step, `activateOnCluster`, and the waker through it. The takers outside a transaction, `losing` and the start after
+  a commit, run no statement under the lock.
+- 0110 against 0162: the round counts itself in `p.detachments` by one `acquireUseRelease`, so an interruption of the
+  singleton gives the count back.
+- 0102 against 0079: a detached activation of a deploy that fails is stopped by the deployment's scope, and its count
+  is given back by the fiber of 0110. A `Restart` committed before the stop is what the next deploy activates from.
+- 0109 against 0068, on the two rules of 0068 that 0109 says no test held: the review of 0098 to 0104 in this file
+  gave each a test.
+- 0116 against the waker, which races a take of its poke against a sleep: ruled out by the review of area 5, and read
+  again here. A poke lost there is lost before a reading that reads the storage anyway.
+
+### Noticed, not checked
+
+- None beyond finding 2, which a reading checked.
+
+### Not read whole
+
+None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.
+
+## 2026-11-11: premise review of the pairs against The runtime, a second part
+
+Read by a session that wrote none of these notes, on the branch `claude/premise-pairs-runtime-2-4e02ac`, cut from
+`main` at `fcd2494` and moved forward to `743881f` before the reading. It reads the notes 0011, 0028, 0029, 0046,
+0066, 0074, 0076, 0078, 0079, 0128, 0135, 0142, 0151, 0161, 0162, 0184 and 0192 against the notes of area 5 they
+meet. The review of The runtime, without the scheduler of the tests, a second part read these notes in part or not at
+all. One finding is reproduced.
+
+### The pairs
+
+The pairs were found by the table of the area's report, by the index, and by `grep -w` of each number in both
+directions. Every note of the list and every note of the area it meets was read whole, and so were 0220, 0221, 0243
+and 0246, which change or extend a note of a pair. The code read whole: `src/runtime/loop.ts`, `process.ts`,
+`waker.ts`, `doors.ts`, `callers.ts` and `readings.ts`, and `launchWith` of `src/runtime.ts`, with its drain,
+`quiet`, `drained` and the handle.
+
+| Pair | What binds it | How it was read |
+| --- | --- | --- |
+| 0011 and 0119 | 0119 decides the drain 0011 asks for | both whole, with the drain's finalizer, `admitted` and `drained` of `src/runtime.ts`, and `start` of `loop.ts` |
+| 0128 and 0119 | 0128 cites 0119 for a droppable operation in a planned stop | both whole, with `start`, `drop` and the drain's stop of `rerun` |
+| 0028 and 0134 | 0134 changes 0028's loop | both whole, with `steps` of `loop.ts` |
+| 0135 and 0134 | 0135 cites 0134 as its reason that a busy entity holds the others one step | both whole, with `warnOfSize`, `steps`, and every write of a step in `loop.ts`, `callers.ts` and `doors.ts` |
+| 0029 and 0103 | 0103 tests 0029's timers due in `settled` | both whole, with `quiet` and `waking` |
+| 0029 and 0111, 0116 | 0111 and then 0116 change 0029's wait | all whole, with `steps`, `nothingToDo` and `unload` |
+| 0029 and 0194, 0221 | 0194 adds to 0029's timers, and 0221 changes 0194 | all whole, with `arm`, `waking` and `due` of `src/storage/entities.ts` |
+| 0046 and 0147 | 0147 changes 0046's sender | both whole, with `entities`, `send` and `unlessCrashed` of `callers.ts` |
+| 0066 and 0101, 0103 | 0101 corrects 0066, and 0103 adds to it | all whole, with every read of a clock in `src/` |
+| 0074 and 0147 | 0147 changes 0074's burst | both whole, with `send` and `steps` |
+| 0074 and 0220 | 0220 cites 0074 as its reason that a `Receive` serves its caller | both whole, with `linkOf` and `steps` |
+| 0076 and 0109 | 0109 adds to 0076's `settled` | both whole, with `admit`, `spare`, `unload` and `quiet` |
+| 0076 and 0101, 0103, 0119, 0147 | each cites 0076 | all whole |
+| 0078 and 0103, 0101 | 0103 corrects 0078, and 0101 cites it | all whole, with `spare` and `admit` |
+| 0078 and 0112 | 0112 changes what 0078 rests on | both whole, with the deploy's registration and the fork of its waker |
+| 0079 and 0110, 0112 | 0110 corrects 0079, and 0112 changes what it rests on | all whole, with `detached`, `activate`, `crash` and `withEntity` |
+| 0079 and 0103, 0119 | each cites 0079 | all whole, with the drain's count of `detachments` |
+| 0142 and 0119, 0120 | 0142 cites both as its reason that a wait ends after the drain | all whole, with `waited` of `readings.ts` and the order of the finalizers of `launchWith` |
+| 0177 and 0142 | 0177 cites 0142, and 0246 corrects 0177 | all whole |
+| 0151 and 0147 | 0151 cites 0147 for what a busy entity holds | both whole |
+| 0161 and 0164 | 0164 changes 0161's forks | both whole, with `untransacted`, `settle`, `finishIn`, `doorStep` and `applyOnCluster` |
+| 0161 and 0243 | 0243 adds to 0164 what Effect does with a fork it misses | both whole |
+| 0184 and 0164 | 0184 cites 0164 for a reader that tells its transaction | both whole, with `consume` of `src/runtime.ts` and `waited` |
+| 0192 and 0164 | 0192 keeps a rule by a check of the code, as 0164 does | both whole; the walk of imports in `src/form.test.ts` not read, since the pair shares only the method of a check |
+| 0162 and 0112 | 0112's rule holds of every fork of 0162's uninterruptible activation | both whole, with `activateOnCluster` and `finishIn` |
+| 0162 and 0219, 0110, 0109 | 0219 opens the drain on Cluster over 0162's shards, whose rounds are counted as detached work | all whole, with `serving`, `activating` and `losing` |
+
+### Finding 1, reproduced: on Cluster a door's step never warns of a large state (0135, 0161)
+
+- Decision 0135 has the runtime warn of a step that writes more than `warn.characters`, once per activation. The
+  warning is how an operator finds the entity that holds the others, since a step holds the thread for as long as
+  its write takes. It rests on a premise no note wrote: every step that writes gives the length `write` returns to
+  `warnOfSize`. On one process the premise holds. The loop's steps warn at `src/runtime/loop.ts:404`, and a creation
+  at `src/runtime/callers.ts:265`.
+- Decision 0161 made the steps of a request on Cluster a door's step, written in Cluster's transaction: the
+  `Restart` of an entity the door loads, a creation, a message's arrival and each `Handle` up to its answer. Since
+  decision 0165 every caller's message and creation on Cluster takes that path. `stepIn` writes at
+  `src/runtime/doors.ts:189`, and the creation of `doorStep` writes at `src/runtime/doors.ts:321`. Both drop the
+  length, and neither `finishIn` nor `settle` warns. Only `applyOnCluster`, which steps the entity's own events,
+  warns, at `src/runtime/doors.ts:141`.
+- The sequence: a runner launched with `warn: { characters: 1 }` deploys a program, and a caller creates an entity
+  and sends it a message. Both steps write past the threshold, and nothing is logged. So a program whose state grows
+  with its callers' messages never warns on Cluster, where on one process it warns at the first such step. The
+  completion of an operation of the same entity does warn on Cluster: a check run in the session saw it, and is not
+  kept.
+- Reproduced by `FAILING: on Cluster a door step that writes past the threshold warns once per activation, as on one
+  process`, in `src/cluster.test.ts`, in the commit of this report. It failed in its one run, with no warning logged.
+- It is a case of family C of the step of bugs: a rule of one process that holds otherwise on Cluster.
+- Where a fix could begin: `stepIn` and the creation of `doorStep` keep the length each write returns, in the
+  transitions of `Stepping`. Then `finishIn`, for a step that wrote nothing, and `settle`, once the count proves the
+  commit, give it to `warnOfSize` on the entity's `Loaded`. Whether a step that rolls back may warn is a choice of
+  the fix, since 0135 warns of what a step writes, and a step rolled back wrote it too.
+
+### Suspects ruled out
+
+- 0119 against 0011: every step of a drain on one process that stores an at-most-once operation starts it, in
+  `start` at `src/runtime/loop.ts:222`, and `drained` counts it from `forkHeld`. A step stores one without starting it
+  only in a crash of the entity, which is a crash, and in the door's step on Cluster, which is bug 21.
+- 0119 against 0128: the drain stops the operations of `rerun`, droppable ones among them, by `stop`. `stop` waits for
+  each operation's finalizers, one after the other, before the drain's timeout begins (`src/runtime.ts:1401-1408`).
+  So a droppable runner's slow finalizer lengthens the drain past `millis`, though 0128 has the entity wait for no
+  such finalizer. The at-most-once operations run on meanwhile and gain the time, and nothing is stored or delivered
+  otherwise. A finalizer that never ends would hold the closing of the deployment's scope in any case.
+- 0128 against 0119: a droppable operation is not started in the drain, and is stopped at once with the others that
+  run again. It runs again at the next activation, as 0128's consequences say. A step of the drain that changes one
+  is bug 6.
+- 0116 against 0029: an item offered without raising `pending` is an `Evict`, a `Passivate`, or the `Settle` that
+  `losing` and a door's crash offer to a loop whose entity has left. `nothingToDo` reads `pending`, so no event
+  offered under the lock is lost to an unload. The `Settle` of a crash leaves `pending` at -1 on a `Loaded` that no
+  map holds, and neither `quiet` nor `drained` reads it.
+- 0194 and 0221 against 0029: the waker reads a timer due by the wall clock, and fires none early. A loaded entity
+  whose timer's sleep runs up to an hour past a clock set forward is unloaded by its passivation, and the waker then
+  fires the timer at once.
+- 0221 against 0078: `spare` reads `at > now` on the wall clock that the timer reads after each sleep, so a clock
+  set back or forward leaves the two in agreement.
+- 0103 and 0066 against the code: no module of `src/` reads `Date.now` or sets a timer of the host. `waited` reads
+  `Clock.currentTimeMillis`, which `ahead` moves as it moves `DateTime.now`.
+- 0147 against 0046: a sender given `Full` and a sender whose receiver crashed both send again under the same request
+  after `retry`, and `Full` stores nothing of the message. A `retry` of 0 is bug 32.
+- 0220 against 0074: a `Receive` on one process always meets an empty mailbox or a suspension. The loop handles the
+  mailbox before it takes an event, and `activate` applies the `Restart` before it forks the loop that handles a
+  message the crash left.
+- 0147 against 0074: a caller whose permit is taken has offered its event in the same uninterruptible region, and a
+  crash fails every caller registered, so no caller waits on the semaphore of a `Loaded` that left.
+- 0109 and 0076 against 0162: an entity of a shard lost crashes, and `leave` takes it out of `recent`, so it holds no
+  place under the capacity. `entersHeld` admits an entity as `enter` does.
+- 0110 and 0079 against 0119 on Cluster: the round of a shard gained is counted in `detachments`, which `drained`
+  waits for, and an activation in the drain starts its at-most-once operations alone.
+- 0119 and 0120 against 0142: `closing` is completed by a finalizer that runs between the drain and the closing of
+  `running`, in the runtime's own sequential scope, whatever its caller's strategy is.
+- 0164 against 0161: what `settle` performs inside the door's transaction forks through `untransacted`, in `start`,
+  `drop` and `arm`. A timer stopped inline there waits only for its sleep.
+- 0164 against 0184: a reader of `consume` refuses a transaction in its services, and no fork of the runtime keeps
+  one. So a reader the runtime forks is never refused, and a reader a caller runs in its transaction always is.
+- 0147 against 0151: what a busy entity holds is bounded per entity on one process. On Cluster a caller's message
+  waits in Cluster's table (decision 0165), and the bound of resident entities is bug 54.
+- 0134 against 0028 and 0135: the loop's yield stands after `warnOfSize`, and a step under the threshold yields
+  nowhere.
+- 0112 against 0162 is bug 22, and 0219 against 0162 is bugs 21, 34 and 35.
+- 0177 and 0246 against 0142: nothing of 0142's wait changes, since both keep its `Deferred` of a topic.
+
+### Noticed, not checked
+
+- The warning of a full entity, 0147's, has no counterpart on Cluster, where no caller is answered `Full`
+  (decision 0165). A burst on Cluster waits in Cluster's table, and nothing names the entity it waits for. That is
+  what 0165 decides. It was not weighed against 0135's reason for a warning: an operator who sees every entity slow
+  down has nothing that names the one that holds them. It is a question of the design, which no test decides.
+
+### Not read whole
+
+None of the list, and none of the area. `src/form.test.ts` was not read, as the table says of 0192.
+
+## 2026-11-11: premise review of the pairs against Schemas and projections, a first part, the notes before 0100
+
+The reviewer's report, whole, as its session wrote it.
+
+Branch `claude/premise-pairs-schemas-1-1-f736ec`, cut from `main` at `743881f`. One finding, reproduced. The
+report of area 6 was read whole, with what it ruled out. The reviews of the areas that hold the notes of the list were
+read through the step of bugs of `docs/roadmap.md` and the open questions, and by a search of `reviews.md` for the
+waker.
+
+### The pairs read
+
+| Later note | Note of the area | What binds them | How they were read |
+| --- | --- | --- | --- |
+| 0031 | 0026 | cites 0026 as its reason: `projectionViolations` checks what a tag would prove | both whole, with `Types` of `src/program.ts` and `projectionViolations` of `src/testing.ts` |
+| 0033 | 0032 | applies its rule as 0032 does: `key` is a slot of `Types`, as `index` is | both whole, with `keys` and `indexesOf` of `src/program.ts` |
+| 0034 | 0025 | cites 0025 as its reason: an operation is a value with a schema, so its answer is no part of it | both whole, with `Runners` of `src/program.ts` |
+| 0035 | 0025 | cites 0025 as its reason: the schemas come first, since everything that leaves the process is written with them | both whole, with `program` of `src/program.ts` |
+| 0035 | 0032 | applies its rule as 0032 does: `index` is inferred from `indexes` | both whole, with `program` and `indexesOf` |
+| 0036 | 0025 | changes it: a stored operation is read through the migrations, then compared | both whole, with `up` of `src/storage/held.ts` and the reading of keys in `src/storage/entities.ts` |
+| 0036 | 0030 | cites 0030 as its reason: a migration is a function on the JSON a schema encodes to | both whole, with the migrations' types in `src/program.ts` |
+| 0036 | 0032 | changes it: a projection's row is read through the migrations, and `reindex` writes it again | both whole, with `query`, `projected` and `reindex` of `src/storage/projections.ts` and `row` of `src/storage/entities.ts` |
+| 0038 | 0036 | applies 0036's rule: a row of the log carries its version, and is read through the migrations | both whole, with `published` of `src/storage/log.ts` |
+| 0072 | 0036 | applies 0036's rule: a projection whose schema changes is migrated in the log | both whole, with `published` of `src/storage/log.ts` |
+| 0046 | 0040 | cites 0040 as its reason: a message that does not encode is the sender's own defect | both whole, with `Faulted`, `unlessCrashed` and `entities` of `src/runtime/callers.ts`, `doorStep` of `src/runtime/doors.ts` and `delivered` of `src/storage/entities.ts` |
+| 0048 | 0027 | changes it: a caller's request is keyed by its sender as `schemas.sender` writes it | both whole, with `reply` of `src/storage/entities.ts` |
+| 0048 | 0040 | applies 0040's rule: a sender that does not encode is the caller's defect | both whole, with `Faulted` of `src/runtime/callers.ts` |
+| 0049 | 0040 | applies 0040's rule to the flags, encoded before `init` | both whole, with `deliveredCreation` of `src/storage/entities.ts` |
+| 0077 | 0062 | changes it: the waker goes on past an activation that fails | both whole, with `waking` of `src/runtime/waker.ts`, `due` of `src/storage/entities.ts`, `Rows.due` of `src/storage/rows.ts`, and `sweepOf` and `settled` of `src/runtime.ts` |
+
+### Finding 1, reproduced: 0077 against 0062
+
+- The premise that fell: 0062 fails the call that meets a row its table's schema refuses, and says the process goes on
+  serving what it can read. Its consequence names the waker among the readings that fail. 0077 changes that
+  consequence, and 0062's status line now says the waker goes on. But 0077 covers an activation alone. The waker's own
+  reading of the timers is a reading of rows too, and nothing catches it. So the rule of 0077 holds only where the
+  failure is one entity's, after the waker's reading.
+- The sequence: two entities of a program are unloaded with timers due at 40. An operator's fix leaves the `due` of a
+  key of `w-1` at `1000.5`, a value no integer is. At 40 the waker reads the entities due, and finds `w-2`. It then reads
+  the next time, `MIN(due)` by entity, and meets `w-1`'s row. `Rows.due` refuses its `at` (`src/storage/rows.ts:229`),
+  and `due` dies by its `Effect.orDie` (`src/storage/entities.ts:504-540`). The defect leaves `waking` before the loop
+  that activates `w-2` (`src/runtime/waker.ts:33-48`). The waker's fiber ends, forked in the deployment's scope with no
+  one joining it (`src/runtime.ts:1173`). Every timer of the program then stops for the life of the process, which is
+  the case 0077 was written for. `waker.busy` stays true, so `settled` never returns again (`src/runtime.ts:1349`). The
+  sweep beside it catches a failure and logs it (`src/runtime.ts:261-275`). The waker logs nothing.
+- Reproduced by `FAILING: a row the waker’s own reading refuses stops every timer of the program, as 0077 says it no
+  longer does`, in `src/runtime/waker.test.ts`, at the commit of this report. `w-2`'s timer never fires. With a `due`
+  of `1000`, an integer, the same test passes. Run: `bun test src/runtime/waker.test.ts -t "FAILING"`.
+- Where a fix could begin: `waking` in `src/runtime/waker.ts` could catch a reading that dies, as `sweepOf` does, and
+  read again after `retry`, never at once, as 0077's alternatives say. Or `due` could leave out the entity whose row it
+  refuses, and put it in `waker.failed`. It is of no family of the step of bugs yet. It is near family E: here every
+  entity of a program keeps stored work that nothing loads again.
+
+### Suspects ruled out
+
+- 0031 against 0026: a state with no tag leaves `projectionViolations` the same check, since the check takes states and
+  candidates and reads no phase (`src/testing.ts`).
+- 0033 against 0032: `keys` is a slot of `Types` the machine does not read, and takes nothing from the rule that a
+  query dies on an index the program was not deployed with.
+- 0034 against 0025: the answer of a runner is stored nowhere, so a new version that answers an operation otherwise
+  reads its stored operation by its schema as before.
+- 0035 against 0025 and 0032: the constructor infers the types and casts `indexesOf` once, and stores nothing.
+- 0036 against 0032, a query of a row an older version wrote: `query`, `read` and `published` read each row through
+  `up('projection', version)` (`src/storage/projections.ts:349-352` and `:461`, `src/storage/log.ts:164`). A query
+  still filters by the indexes the older version computed. 0036 and the JSDoc of `reindex` say so, and an operator
+  runs `reindex` after such a deploy.
+- 0036 against 0032, a row written only when the state changed: a new `project` over the same state leaves the old row
+  until a step or `reindex`, which the JSDoc of `read` says (`src/runtime.ts:360-366`).
+- 0036 against 0030: a migration's output is decoded by the program's schema. The activation encodes the state and
+  its work again and checks that they are JSON (0040), so a migration that gives `NaN` suspends the entity.
+- 0038 and 0072 against 0036, after 0138: a row of the log holds the whole projection. The topic's selector runs on it
+  once it is migrated (`src/storage/log.ts:164-177`), so the projection's migration is applied to a projection.
+- 0048 against 0027, two senders of version 1 that one migration writes alike: `reply` gives the first row whose
+  migrated key matches, in no order (`src/storage/entities.ts:209-228`). 0048 says two senders the schema writes the
+  same are one caller, so either reply is that caller's.
+- 0046 against 0040, on Cluster: an older runner's operation sends a message its schema encodes, and the newer door
+  refuses it with a schema that checks more. `delivered` dies (`src/storage/entities.ts:575-583`). The operation reads
+  the defect as a crash of the receiver (`unlessCrashed`, `src/runtime/callers.ts:364-366`), and sends again after
+  `retry` for ever (`:420-424`). It is a deploy whose schema refuses what the older version wrote. On one process a
+  stored message gives the same (0043), and 0046's consequence says such a receiver keeps its senders waiting for ever.
+  It is family A. The step What a deploy may change of a program names the internal messages among its pieces, and not
+  the inbound ones, which this case is of.
+- 0049 against 0040: the flags of a creation on Cluster, read with no migration (`deliveredCreation`,
+  `src/storage/entities.ts:585-590`), are bug 56. A creation that dies at the door is bug 58.
+- 0077 against 0062, a `retry` of 0, and the waker's map on Cluster: bugs 17 and 33.
+
+### Noticed, not checked
+
+None.
+
+### Not read whole
+
+None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.

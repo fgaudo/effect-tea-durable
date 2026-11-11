@@ -118,11 +118,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     4. Done, against area 1, the notes from 0100.
     5. Done, against area 2.
     6. Done, against area 3, the notes before 0100.
-    7. Against area 3, the notes from 0100.
-    8. Against area 4, the notes before 0100.
-    9. Against area 4, the notes from 0100.
-    10. Against area 5.
-    11. Against area 6, the notes before 0100.
+    7. Done, against area 3, the notes from 0100.
+    8. Done, against area 4, the notes before 0100.
+    9. Done, against area 4, the notes from 0100.
+    10. Done, against area 5.
+    11. Done, against area 6, the notes before 0100.
     12. Against area 6, the notes from 0100.
     13. Against area 7.
     14. Against areas 8 and 9, the two lists together.
@@ -135,6 +135,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     read them whole when it was sent back. Their findings are bugs 54 to 64 of the step of bugs, seven reproduced
     and four only reasoned, and bug 65, noticed by two sessions. Two sessions found one bug, 62. The six reports are
     recorded whole in [`reviews.md`](decisions/reviews.md).
+  - Done, in five of the last sessions of 2026-11-11 run at once: the notes from 0100 of the list against area 3,
+    both parts of the list against area 4, the list against area 5, and the notes before 0100 of the list against
+    area 6. Each read every note of its list whole with the code. Their findings are bugs 66 to 75 of the step of
+    bugs: six reproduced, each test run again on its branch and stopped at its assertion, two only reasoned, and
+    two noticed and not checked. Two sessions found one bug, 71. The five reports are recorded whole in
+    [`reviews.md`](decisions/reviews.md). The app runs five sessions at once, so the notes from 0100 of the list
+    against area 6, the twelfth last session, start with the next batch.
   - Once the last sessions are done, a sample decides whether the whole review is read a second time. The sessions
     sent back to their area on 2026-11-11 found bugs 19 and 20 on a second pass, so a pass does not find all a
     reading of pairs can find. A session that read none of the reports reads two areas again by the skill's brief,
@@ -162,7 +169,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     `claude/premise-review-scheduler-8df79e` and `claude/premise-review-project-17a123`, cut at `a746214`, and `claude/premise-pairs-first-ee0216`,
     `claude/premise-pairs-early-b0bea3`, `claude/premise-pairs-messages-1-dcd7d8`,
     `claude/premise-pairs-messages-2-a90d4b`, `claude/premise-pairs-cluster-32dc2e` and
-    `claude/premise-pairs-versions-1-e03c02`, cut at `e6d3808`. A bug of the step of bugs names the commit of its failing test on one of
+    `claude/premise-pairs-versions-1-e03c02`, cut at `e6d3808`, and `claude/premise-pairs-versions-2-b6a869`,
+    `claude/premise-pairs-runtime-1-1-eb56fb`, `claude/premise-pairs-runtime-1-2-876ced`,
+    `claude/premise-pairs-runtime-2-4e02ac` and `claude/premise-pairs-schemas-1-1-f736ec`, cut at `743881f`. A bug of the step of bugs names the commit of its failing test on one of
     them. A session elsewhere writes that test again from the bug's sequence and the report in
     [`reviews.md`](decisions/reviews.md).
 
@@ -188,31 +197,32 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   common, and a family gets one rule, kept in one place of the code, instead of a fix for each bug. Each bug's test
   passes under the rule, as the proof that the rule holds the case. A bug of no family gets a fix of its own. The
   families of 2026-11-11, which the rest of the review may change:
-  - A, a newer version against what an older one stored or runs: bugs 1, 5, 7, 15, 16, 28 to 30, 56 and 62, and the door
+  - A, a newer version against what an older one stored or runs: bugs 1, 5, 7, 15, 16, 28 to 30, 56, 62 and 68, and the door
     of the next step. A rename is such a change. Its rule is the step What a deploy may change of a program, against
     what is stored, below.
   - B, an answer an operation acts on and that a run after a crash is not given again: bug 9, and its half of
     `NotFound`. Its rule would be that every answer an operation acts on is kept while its work holds, in
     `src/runtime/callers.ts`, where every answer passes.
   - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39,
-    54, 55, 57 to 59 and 63, as decisions 0248 and 0249 were. Its rule is the step The tests of a contract on every backend, below: the
+    54, 55, 57 to 59, 63, 70, 73 and 74, as decisions 0248 and 0249 were. Its rule is the step The tests of a contract on every backend, below: the
     tests of the runtime run alike on one process and on Cluster.
   - D, a rule that holds only of one transaction at a time: bugs 3, 13, 25 and 49. Its rule is the same step: a test of
     rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their statements.
     Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does not read
     again on the row it then writes.
-  - E, an entity a crash leaves with work stored, which nothing loads again: bugs 14, 18 and 61, two on Cluster and
-    one on one process. Bug 61 is no crash: an unload between a door's step and its commit. Its rule would be that a crash which leaves work stored gives the entity to the waker's retry
+  - E, an entity a crash leaves with work stored, which nothing loads again: bugs 14, 18, 61 and 69, three on Cluster
+    and one on one process. Bug 61 is no crash: an unload between a door's step and its commit. Bug 69 is a door's
+    step whose commit fails, which leaves the entity loaded with its operation never started. Its rule would be that a crash which leaves work stored gives the entity to the waker's retry
     of [decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), in `crash` of
     `src/runtime/loop.ts`, on one process and on Cluster.
   - F, a value that [decision 0208](decisions/0208-a-launch-checks-every-option.md) allows, taken to its end: bugs
-    17 and 32, under a `retry` of 0, and 45, under a `passivate` of 0. Its rule is a least time of a wait the
+    17, 32 and 71, under a `retry` of 0, and 45, under a `passivate` of 0. Its rule is a least time of a wait the
     runtime sleeps, or a launch that refuses 0.
   - G, a check of the project that holds less than its note says: bugs 43, 46 to 48, 52 and 53. A check passes on
     the case its rule forbids, or a test no longer reaches the case it was written for. Its rule would be that each
     check of the form, of the CI and of the explored tests is run against the case it refuses, as
     [`scripts/mutate.ts`](../scripts/mutate.ts) does for the rules of the runtime.
-  - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 and 65.
+  - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 72 and 75.
   1. **Reproduced: a droppable operation that a new program delivers at most once never runs.** A deploy that
      declares a `Droppable` operation stored under a key as `operation.atMostOnce` keeps its incarnation
      ([decision 0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)), since the
@@ -681,7 +691,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       lost. The test `FAILING: an operator on any runner sees the operation of another runner that waits for a
       resumption`, in `src/cluster.test.ts`, on `claude/premise-pairs-cluster-32dc2e` at `902fce1`. The fix begins at
       `suspended` and `inspect` of `src/runtime.ts`. The [open question](open-questions.md#running) Who an operator
-      sees waiting on Cluster.
+      sees waiting.
   64. **Reasoned: a release of Effect that changes its hash moves the shards away from the stored partitions.**
       [Decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md) stores a partition so that a
       change of `Hash.string` moves nothing, and
@@ -697,6 +707,138 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). Bug 31 is the
       at-most-once case. Two sessions noticed it. The [open question](open-questions.md#running) A send after the
       work it belongs to ended.
+  66. **Reproduced: a deploy that registers during a drain keeps its waker, and the operations that run again,
+      through the drain.** The drain stops at once the timers, the waker and the operations that run again of the
+      deployments registered as it begins
+      ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). A deploy
+      registers only once its activations are done
+      ([decision 0051](decisions/archive/0051-a-deploy-that-fails-leaves-nothing-running.md)), and an activation may
+      start those operations. So a deploy still activating when the scope closes registers in the drain, forks its
+      waker there, and its idempotent and at-least-once operations run until the drain's time runs out. The test
+      `FAILING: a deploy that registers during the drain has the operations that run again stopped at once`, in
+      `src/runtime.test.ts`, on `claude/premise-pairs-versions-2-b6a869` at `8b65a28`. Two cases are only reasoned.
+      The waker forked in the drain activates entities, which is read in the code and not run. A drain that looks
+      between a deploy's last activation and its registration finds nothing to wait for, and closes the scope on an
+      at-most-once operation the deploy started, which then delivers `unknown`. A test under `explored` with the
+      deploy forked and no hold would check that second case. The fix begins at the drain of `src/runtime.ts`,
+      which would stop and count the deployments being made, or at `deploy`, which would refuse to start or to
+      register once `p.draining` is set. The [open question](open-questions.md#running) A deploy under way when a
+      drain begins.
+  67. **Noticed, not checked: a planned stop while the main fiber deploys undoes the deploy, and its at-most-once
+      operations deliver `unknown`.** The interruption reaches the deploy before the scope's finalizers run, so the
+      deploy undoes itself ([decision 0102](decisions/archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md))
+      and stops its at-most-once operations before the drain of
+      [decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md) begins. They
+      deliver `unknown`, as after a crash. Whether a planned stop waits for them is a choice no note makes. The
+      [open question](open-questions.md#running) A deploy under way when a drain begins.
+  68. **Reasoned: on Cluster, a deploy that adds no migration does not outrank the runners it replaces, and an older
+      runner steps the rows of the newer code.** A version is the count of a program's migrations plus one
+      ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)), and an older runner is kept
+      from every shard by the version recorded
+      ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+      A change of `update`, a new index, a new topic or a changed `work` adds no migration, so both codes hold shards
+      in a rolling deploy, and a shard that moves to an older runner is stepped by the older code. A step there
+      writes the row with the older indexes after `reindex` ran, and a query by the new index misses the entity with
+      no error. An operation the newer code started under a new key suspends the entity on the older runner
+      ([decision 0043](decisions/archive/0043-a-row-no-version-reads-fails-what-reads-it.md)). Read in
+      `recordVersions` and `outranked` of `src/storage/cluster.ts` and `atNewest` of `src/cluster.ts`, and not run. A
+      test of `src/cluster.test.ts` with `onFile` and two runners of one version whose programs differ by an index
+      would show it. The fix begins at `recordVersions`, which would record a digest of what a program writes beside
+      its version, or at the launch, which would refuse a program of the newest version whose digest differs from a
+      runner's still registered. The [open question](open-questions.md#running) Two programs of one version on
+      Cluster.
+  69. **Reproduced: on Cluster, a door's step that loads an entity and whose commit fails leaves the entity loaded
+      without its `Restart`, and its stored operation never runs.** An activation is done or leaves nothing loaded
+      ([decision 0079](decisions/archive/0079-what-a-caller-sets-going-is-finished-without-it.md)). On Cluster the
+      activation is in the door's transaction
+      ([decision 0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)),
+      and the entity is entered before Cluster commits
+      ([decision 0161](decisions/archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
+      Once the `COMMIT` fails, the next step's `settle` drops the uncommitted machine with the `Started` of its
+      `Restart`, and steps the message from a machine with nothing running. The operation stays stored and never
+      starts, and `nothingToDo` never unloads the entity. The test `FAILING: a door step that loads an entity and
+      whose commit fails leaves the entity to run its stored operation`, in `src/cluster.test.ts`, on
+      `claude/premise-pairs-runtime-1-1-eb56fb` at `876ea90`. The same through `activateOnCluster`, from the waker
+      and a shard's round, is only reasoned. The fix begins at `finishIn` of `src/runtime/doors.ts`, which would
+      enter an entity it loaded only once its commit is known, or at `settle`, which would crash an entity whose held
+      machine was never restarted. The [open question](open-questions.md#running) An entity a crash leaves with
+      work stored.
+  70. **Reproduced: on Cluster, a deploy that fails after its door is registered leaves every later deploy of its
+      name a closed door.** A failed deploy gives its name back
+      ([decisions 0075](decisions/archive/0075-a-name-is-deployed-once-in-a-process.md),
+      [0078](decisions/archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)), since
+      closing its scope leaves nothing registered
+      ([decision 0051](decisions/archive/0051-a-deploy-that-fails-leaves-nothing-running.md)). On Cluster the door is
+      registered in that scope
+      ([decision 0092](decisions/archive/0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md)),
+      and Cluster never unregisters an entity type: the scope's close marks it `closed`, and `registerEntity` returns
+      at once for a type it holds (`cluster/Sharding.ts` of Effect 4.1.1, read in the source). So the next deploy of
+      the name succeeds with the first door, closed, and every request to the program on the runner is refused. The
+      test `FAILING: a deploy that fails after its door is registered leaves the next deploy of its name a door`, in
+      `src/cluster.test.ts`, on `claude/premise-pairs-runtime-1-1-eb56fb` at `876ea90`, fails the deploy by a
+      singleton that cannot be registered. A deploy interrupted between `cluster.register` and its registration, and
+      the doors kept under a rename's old names, are only reasoned. The fix begins at `register` of `src/cluster.ts`,
+      or at the deploy, which would keep the name for the life of the runner once its door is registered. The
+      [open question](open-questions.md#running) A deploy that fails after its door is registered.
+  71. **Reasoned: under a `retry` of 0, a shard's round on Cluster tries an entity it cannot activate again at once,
+      for ever.** The round is made again after `retry`
+      ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)),
+      a choice [decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) made above 0,
+      and [decision 0208](decisions/0208-a-launch-checks-every-option.md) allows 0. `activating` of
+      `src/runtime/doors.ts` repeats a failed round on `Schedule.spaced` of `retry`, so a row no version reads keeps
+      the file's one writer busy for as long as the entity cannot be loaded. Unlike bug 17, `settled` may return
+      between two rounds. A fix of bug 17 at `waker.ts` alone leaves it. Two sessions found it, by a reading, with no
+      test, since a round that fails needs two runners and a row no version reads. The
+      [open question](open-questions.md#running) A retry of no time.
+  72. **Reproduced: after a restart, a suspended entity no longer lists the operation of a suspended sender that
+      waits for it.** `suspended` reads the senders registered in the process, and is whole once a restarted process
+      is settled, since every operation under way sends again
+      ([decisions 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md),
+      [0114](decisions/archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)). The operations
+      of a suspended entity run on
+      ([decision 0113](decisions/archive/0113-a-suspended-entitys-operations-run-to-their-end.md)), but a process
+      starts no suspended entity
+      ([decision 0071](decisions/archive/0071-a-process-starts-the-entities-with-a-message.md)). So the operation of a
+      suspended sender is listed until the process stops, and not after a restart, though nothing stored changed.
+      Nothing is lost: the operation sends again once its sender is resumed. The test `FAILING: after a restart, a
+      suspended entity lists the operation of a suspended sender that waits for it`, in `src/runtime.test.ts`, on
+      `claude/premise-pairs-runtime-1-2-876ced` at `f812a40`. The fix begins at `waitingFor` of
+      `src/runtime/callers.ts`, or is a note that narrows 0114 to the operations that run. Bug 63 is the same list on
+      Cluster. The [open question](open-questions.md#running) Who an operator sees waiting.
+  73. **Reproduced: on Cluster, a door's step never warns of a large state.** The runtime warns of a step that writes
+      more than `warn.characters`
+      ([decision 0135](decisions/archive/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)),
+      on the premise that every step that writes gives its length to `warnOfSize`. On Cluster a caller's creation and
+      message are a door's step
+      ([decisions 0161](decisions/archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md),
+      [0165](decisions/archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md)),
+      and `stepIn` and the creation of `doorStep` in `src/runtime/doors.ts` drop the length. Only `applyOnCluster`,
+      which steps the entity's own events, warns. The test `FAILING: on Cluster a door step that writes past the
+      threshold warns once per activation, as on one process`, in `src/cluster.test.ts`, on
+      `claude/premise-pairs-runtime-2-4e02ac` at `f548288`. The fix begins at `stepIn` and `doorStep`, which would
+      keep the length for `finishIn` and `settle` to warn of. Whether a step rolled back warns is a choice of the fix.
+      The [open question](open-questions.md#running) The warnings on Cluster.
+  74. **Noticed, not checked: on Cluster, nothing names the entity a burst of callers waits for.** On one process a
+      full entity warns, and its callers are answered `Full`
+      ([decision 0147](decisions/archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)). On Cluster no
+      caller is answered `Full`, and a burst waits in Cluster's table
+      ([decision 0165](decisions/archive/0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md)).
+      So an operator who sees every entity slow down has nothing that names the one that holds them, against the
+      reason of [decision 0135](decisions/archive/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)
+      for a warning. It is a question of the design, which no test decides. The
+      [open question](open-questions.md#running) The warnings on Cluster.
+  75. **Reproduced: a row the waker's own reading refuses stops every timer of the program, and the process never
+      settles again.** The waker goes on past an activation that fails
+      ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), changing
+      [decision 0062](decisions/archive/0062-a-row-is-read-through-a-schema.md)). Its own reading of the next time due
+      is a reading of rows too, and nothing catches it. A `due` no integer is, as an operator's fix may leave, makes
+      `due` of `src/storage/entities.ts` die by its `Effect.orDie`. The defect leaves `waking` of
+      `src/runtime/waker.ts`, the waker's fiber ends with no log, and `waker.busy` stays true, so `settled` never
+      returns. The test `FAILING: a row the waker’s own reading refuses stops every timer of the program, as 0077
+      says it no longer does`, in `src/runtime/waker.test.ts`, on `claude/premise-pairs-schemas-1-1-f736ec` at
+      `12c788e`. The fix begins at `waking`, which would catch a reading that dies and read again after `retry`, as
+      the sweep does, or at `due`, which would leave out the entity whose row it refuses. The
+      [open question](open-questions.md#running) A row the waker's reading refuses.
 
 - **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds
   an RPC to the door of a program on Cluster, or changes a payload, is not caught by the guard of the version
