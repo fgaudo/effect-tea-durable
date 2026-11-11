@@ -331,7 +331,9 @@ export interface Handle<T extends Types, C = {}> {
    * Creates the entity `id` with the request's `flags`, left out where the program's flags are `null`
    * (decision 0245). A retry of the request that created it is answered `Created` (decision 0017). Flags the
    * program's `init` rejects are answered `Rejected`, and nothing is stored: a retry runs `init` again
-   * (decision 0182). A request id that is no text a database holds is the caller's defect (decision 0204).
+   * (decision 0182). A request id that is no text a database holds is the caller's defect (decision 0204). A call
+   * within a transaction of the client of the runtime is the caller's defect too, since the step it waits for commits
+   * on a connection of its own (decision 0256).
    */
   readonly create: (
     id: string,
@@ -350,7 +352,8 @@ export interface Handle<T extends Types, C = {}> {
    * entity or `expire` deletes Cluster's rows of a reply past its time, a retry after `keep` is given the reply
    * Cluster saved, and a message kept `'forever'` keeps Cluster's rows for ever (decisions 0165, 0171). Cluster's
    * rows are kept for at least two of Cluster's polls of replies and a second, whatever the `keep`, so that another
-   * client of the request on another runner reads the answer first (decision 0248).
+   * client of the request on another runner reads the answer first (decision 0248). A call within a transaction of
+   * the client of the runtime is the caller's defect, as for `create` (decision 0256).
    */
   readonly send: (
     id: string,
@@ -437,7 +440,8 @@ export interface Handle<T extends Types, C = {}> {
    * Given `wait`, a reading that finds no row waits until a step commits a row in `topic`, and reads again, for at
    * most `wait.millis` from the call: it gives the first page with a row, or none once the time is over or the
    * runtime stops. A limit of 0 gives none at once. `wait.millis` is a non-negative integer, and anything else is
-   * the caller's defect (decision 0142).
+   * the caller's defect (decision 0142). A fetch that waits, within a transaction of the client of the runtime, is the
+   * caller's defect, as `create` is, and one that does not wait reads within the transaction (decision 0256).
    * Given `partitions`, a reading reads those partitions only, so that the readers of one name divide its
    * partitions among them. The division is the caller's: the runtime holds no reader, and two readers that name one
    * partition are given the same rows. A list that is empty, or holds what is no partition of the log, is the
@@ -475,7 +479,10 @@ export interface Handle<T extends Types, C = {}> {
    * the runtime stops: what a deployment runs. Given `partitions`, it reads those only, as `fetch` does. A failure
    * of `handler` or of the transaction rolls the page back and fails the reader, whose retries are the caller's. The
    * limit is a positive integer. A reader run within a transaction of the client would hold its connection while it
-   * waits, so it is the caller's defect, as is anything `fetch` refuses (decision 0184).
+   * waits, so it is the caller's defect, as is anything `fetch` refuses (decision 0184). `handler` runs within the
+   * page's transaction, so a call there of `create`, `send`, `resume`, `discard`, `deploy` or a fetch that waits is
+   * the caller's defect, and fails the reader. A handler that must create or send stores the request, and a fiber
+   * outside the transaction makes the call (decision 0256).
    */
   readonly consume: <Name extends Topic<T>, E, R>(
     topic: Name,
@@ -529,13 +536,15 @@ export interface Handle<T extends Types, C = {}> {
   /**
    * An operator resumes a suspended entity (decision 0006), with the program deployed: a fixed program is a deploy
    * of it, which the resume follows (decision 0064). It gives `Resumed`, `StillSuspended`, `NotSuspended` or
-   * `NotFound` (decision 0114).
+   * `NotFound` (decision 0114). A call within a transaction of the client of the runtime is the caller's defect, as
+   * for `create` (decision 0256).
    */
   readonly resume: (id: string) => Effect.Effect<Operated>
   /**
    * An operator discards the inbound message a suspended entity died on (decision 0014). An internal one is not
    * discarded, and the entity stays suspended (decisions 0041, 0044). It gives `Discarded`, `NotDiscarded`,
-   * `StillSuspended`, `NotSuspended` or `NotFound` (decision 0114).
+   * `StillSuspended`, `NotSuspended` or `NotFound` (decision 0114). A call within a transaction of the client of the
+   * runtime is the caller's defect, as for `create` (decision 0256).
    */
   readonly discard: (id: string) => Effect.Effect<Operated>
 }
@@ -554,7 +563,9 @@ export interface Runtime {
    * `consumers` are the names the log is read with, by topic, none by default. The deploy stores each that is not
    * stored yet, so that it holds its topic from then on. A consumer stored and not declared is kept, and the deploy
    * logs a warning for it. A topic the program does not publish, consumers of a topic that are no list, an empty
-   * name or a name declared twice in a topic are refused, before anything is stored (decision 0152).
+   * name or a name declared twice in a topic are refused, before anything is stored (decision 0152). A deploy within
+   * a transaction of the client of the runtime is the caller's defect, since its activations are steps, which commit
+   * apart from any transaction of the caller (decision 0256).
    */
   readonly deploy: <T extends Types, const C extends Consumers<T> = {}>(
     program: Program<T>,
@@ -685,6 +696,23 @@ export interface OnCluster {
    */
   readonly resume: (sender: Address, receiver: Address) => Effect.Effect<void>
 }
+
+/**
+ * Runs `effect` unless it is called within a transaction of the client of the runtime, which is the caller's defect,
+ * named by `what` (decision 0256). `effect` runs a step of the runtime or waits for one, and a step commits on a
+ * connection of its own. On SQLite and PGlite the caller's transaction holds the one connection, and on a pool of
+ * PostgreSQL enough such callers hold every connection: the step waits for the caller, which waits for the step.
+ */
+const outside = <A, E, R>(
+  sql: SqlClient.SqlClient,
+  what: string,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  Effect.flatMap(Effect.serviceOption(sql.transactionService), (open) => {
+    if (Option.isNone(open)) return effect
+    const reason = `${what} runs within a transaction of the client of the runtime`
+    return Effect.die(new InvariantDefect({ reason }))
+  })
 
 /**
  * Runs `effect` once each count a caller gave — a cursor, a limit — is a non-negative integer: anything else is
@@ -1060,7 +1088,7 @@ export const launchWith = (
       program: Program<T>,
       deployOptions?: Readonly<{ consumers?: C }>,
     ) =>
-      Effect.gen(function*() {
+      outside(sql, 'deploy', Effect.gen(function*() {
         // A program that cannot run as written is refused before anything is stored or run, and so are consumers
         // that cannot be read as written (decisions 0054, 0152).
         yield* Effect.sync(() => checkProgram(program))
@@ -1119,7 +1147,7 @@ export const launchWith = (
               ))
           })
         )
-      })
+      }))
 
     const deploying = <T extends Types, C>(deployed: Deployment<T>) =>
       Effect.gen(function*() {
@@ -1190,7 +1218,7 @@ export const launchWith = (
         const handle: Handle<T, C> = {
           partitions,
           create: (id, given) =>
-            argued('request of create', given, (request) =>
+            outside(sql, 'create', argued('request of create', given, (request) =>
               texted(
                 id,
                 requested(
@@ -1203,9 +1231,9 @@ export const launchWith = (
                     }),
                   )),
                 ),
-              )),
+              ))),
           send: (id, message, given) =>
-            argued('request of send', given, (request) =>
+            outside(sql, 'send', argued('request of send', given, (request) =>
               texted(id, requested(request.requestId, kept(request.keep, (keep) =>
                 admitted(faulted(
                   send(p,
@@ -1216,7 +1244,7 @@ export const launchWith = (
                     keep,
                   ),
                 )))
-              ))),
+              )))),
           read: (id) => texted(id, deployed.storage.projected(id)),
           query: (given) =>
             argued('query', given, (query) => counted({ limit: query.limit }, deployed.storage.query(query))),
@@ -1242,7 +1270,9 @@ export const launchWith = (
                 named(
                   options?.partitions,
                   partitions,
-                  wait === undefined || limit === 0 ? read : waited(p, program.name, topic, wait.millis, read),
+                  wait === undefined || limit === 0
+                    ? read
+                    : outside(sql, 'a fetch that waits', waited(p, program.name, topic, wait.millis, read)),
                 ),
               )),
             )
@@ -1264,13 +1294,10 @@ export const launchWith = (
             const { limit, wait, partitions: given } = (options ?? {}) as typeof options
             const read = deployed.storage.fetch(topic, consumer, limit, given)
             const reading = wait === true ? waited(p, program.name, topic, undefined, read) : read
-            const reader = Effect.gen(function*() {
-              // A reader within a transaction of the client would wait for a row on the connection a step's commit
-              // waits for, and the commit that ends the wait would never come (decision 0184).
-              if (Option.isSome(yield* Effect.serviceOption(sql.transactionService))) {
-                const reason = 'a reader of consume runs within a transaction of the client of the runtime'
-                return yield* Effect.die(new InvariantDefect({ reason }))
-              }
+            // A reader within a transaction of the client would wait for a row on the connection a step's commit
+            // waits for, and the commit that ends the wait would never come (decision 0184). Its handler runs within
+            // the page's transaction, so a call of the handle there that waits for a step is refused (decision 0256).
+            const reader = outside(sql, 'a reader of consume', Effect.gen(function*() {
               // Each page is read after the last one is acked: the next reading starts from the stored cursors, so a
               // page read before the ack would be the same rows again (decision 0184).
               while (!Deferred.isDoneUnsafe(closing)) {
@@ -1278,7 +1305,7 @@ export const launchWith = (
                 if (page.length === 0) return
                 yield* transaction(sql, Effect.andThen(handler(page), deployed.storage.ack(topic, consumer, page)))
               }
-            })
+            }))
             return topical(
               program,
               topic,
@@ -1339,8 +1366,9 @@ export const launchWith = (
                     : { ...found.suspension, waiting: waitingFor(p, { name: program.name, id }) },
                 }),
             ),
-          resume: (id) => texted(id, admitted(operate(p, deployed, id, { _tag: 'Resume' }))),
-          discard: (id) => texted(id, admitted(operate(p, deployed, id, { _tag: 'Discard' }))),
+          resume: (id) => outside(sql, 'resume', texted(id, admitted(operate(p, deployed, id, { _tag: 'Resume' })))),
+          discard: (id) =>
+            outside(sql, 'discard', texted(id, admitted(operate(p, deployed, id, { _tag: 'Discard' })))),
         }
         return handle
       })

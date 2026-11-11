@@ -63,18 +63,6 @@ with a requirement that no example has yet.
   - whether the runners record the consumers they declare, as they record their versions, and `forget` refuses a
     consumer any running deployment declares;
   - whether `ack` writes a cursor only for a stored consumer, or `pruneBatch` counts only theirs.
-- **A call of the handle inside a transaction.** `consume` runs its handler in a transaction of its own
-  ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). On SQLite and PGlite that transaction
-  holds the one connection, and a step waits for the connection
-  ([decision 0150](decisions/archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)). So a handler
-  that calls `create` or `send` stops the whole runtime, which is bug 26 of the [roadmap](roadmap.md), reproduced. A
-  caller that calls them in its own transaction stops it too, and nothing refuses it. It would be decided by:
-  - whether the handle refuses a call that waits for a step while a transaction is open, as `consume` refuses a
-    reader, through the client's `transactionService`;
-  - or whether the handler runs outside the transaction, and only the store's writes and the ack run in it, which
-    changes what 0184 promises of a store;
-  - on a pool of PostgreSQL, a test with as many readers waiting at once as the pool holds connections, where no
-    step gets one, which is bug 81, not checked.
 - **A reindex on Cluster.** On Cluster each runner's `reindex` runs beside the other runners' steps on one file
   ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). A statement that reads its
   snapshot while another runner holds the write lock may end with `SQLITE_BUSY`, which no busy handler retries, and

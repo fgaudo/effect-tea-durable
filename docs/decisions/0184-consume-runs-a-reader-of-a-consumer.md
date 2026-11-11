@@ -3,7 +3,8 @@
 **Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Changes
 [decision 0039](archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md), whose runtime leaves the loop of a
 consumer to its caller. Changes [decision 0142](archive/0142-a-consumer-waits-for-a-row-of-its-topic.md), whose wait
-always ends at a time.
+always ends at a time. A call of the handler that runs a step or waits for one fails the reader, by
+[decision 0256](0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md).
 
 ## Context
 

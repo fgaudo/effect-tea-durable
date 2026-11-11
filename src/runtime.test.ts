@@ -2657,6 +2657,73 @@ describe('publishing what happened', () => {
         }))
     })))
 
+  // A call that runs a step or waits for one would wait, within a transaction, for the connection the transaction
+  // holds (decision 0256). Each is refused before it runs, and the transaction is the caller's own.
+  test('a deploy, a create, a send, a resume, a discard and a fetch that waits are refused within a transaction', () =>
+    database(Effect.gen(function*() {
+      const reasonOf = (exit: Exit.Exit<unknown, unknown>) => {
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        return cause instanceof InvariantDefect ? cause.reason : null
+      }
+      const at = yield* DateTime.now
+      const sql = yield* SqlClient.SqlClient
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const within = (effect: Effect.Effect<unknown, unknown>) =>
+            Effect.map(Effect.exit(sql.withTransaction(effect)), reasonOf)
+          const refused = (what: string) => `${what} runs within a transaction of the client of the runtime`
+          expect(yield* within(Effect.provide(runtime.deploy(program, queue), layer))).toBe(refused('deploy'))
+          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
+          expect(yield* within(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })))
+            .toBe(refused('create'))
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
+          const message = { _tag: 'Want', key: 't', on: false, nonce: 'off' } as const
+          expect(yield* within(toy.send(id, message, { requestId: 'off', sender: tester, keep: 'forever' })))
+            .toBe(refused('send'))
+          expect(yield* within(toy.resume(id))).toBe(refused('resume'))
+          expect(yield* within(toy.discard(id))).toBe(refused('discard'))
+          expect(yield* within(toy.fetch('projection', 'queue', all, { wait: { millis: 10 } })))
+            .toBe(refused('a fetch that waits'))
+          // A fetch that does not wait reads within the transaction, as a store of the caller's does.
+          expect(yield* within(toy.fetch('projection', 'queue', all))).toBeNull()
+          // Nothing refused was stored, and the runtime goes on.
+          expect(yield* toy.send(id, message, { requestId: 'off', sender: tester, keep: 'forever' }))
+            .toEqual({ _tag: 'Accepted' })
+        }))
+    })))
+
+  // The handler of `consume` runs in the page's transaction, which holds SQLite's one connection (decision 0184). A
+  // creation there would commit on a connection of its own, which the handler holds while it waits for the creation
+  // (decision 0150), so it is refused (decision 0256). The page rolls back, and the runtime holds no step.
+  test('a handler of consume that creates an entity is refused, and holds no step of the runtime', () =>
+    database(Effect.gen(function*() {
+      const reasonOf = (exit: Exit.Exit<unknown, unknown>) => {
+        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+        return cause instanceof InvariantDefect ? cause.reason : null
+      }
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands({ holds: true })
+          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
+          const page = yield* toy.fetch('projection', 'queue', all)
+          const reader = yield* Effect.forkChild(toy.consume('projection', 'queue', () =>
+            Effect.asVoid(toy.create('other', { flags: { at }, requestId: 'other', sender: tester })), { limit: all }))
+          yield* TestClock.adjust('1 minute')
+          const done = reader.pollUnsafe()
+          yield* Fiber.interrupt(reader)
+          expect(done === undefined ? undefined : reasonOf(done)).toBe(
+            'create runs within a transaction of the client of the runtime',
+          )
+          // The page is read again by the next reader, and the creation the handler asked for runs outside.
+          expect((yield* toy.fetch('projection', 'queue', all)).slice(0, page.length)).toEqual([...page])
+          expect(yield* toy.create('other', { flags: { at }, requestId: 'other', sender: tester }))
+            .toEqual({ _tag: 'Created' })
+        }))
+    })))
+
   test('a reader of consume without a wait ends once the runtime stops, and leaves the rows it did not read', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now

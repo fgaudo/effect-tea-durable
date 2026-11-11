@@ -887,7 +887,11 @@ and acks in one transaction: `ack` joins a transaction the caller left open on t
 launched with, so the store and the cursors commit together. Within that transaction the caller waits for nothing
 a step does, since the transaction may hold the one connection of the database, as on SQLite and PGlite, and a
 step's commit waits for it
-([decision 0150](decisions/archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)). A partition a
+([decision 0150](decisions/archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md)). So a call that
+runs a step or waits for one, within a transaction of the client, dies as the caller's defect: `deploy`, `create`,
+`send`, `resume`, `discard` and a fetch that waits. The handler of `consume` runs within its page's transaction, and
+a handler that must create or send stores the request for a fiber outside the transaction
+([decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md)). A partition a
 consumer has no cursor for is read from `0`.
 `prune` drops, in each topic and partition, what every consumer of the topic has read there, through the lowest
 cursor. A topic no consumer is stored for is dropped whole, since no reader that keeps cursors needs its rows

@@ -203,7 +203,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0151](archive/0151-a-process-holds-ten-thousand-entities-by-default.md) | A process holds ten thousand entities by default |  |
 | [0152](archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md) | The consumers of a topic are declared at deploy, and a topic no consumer holds is pruned whole | [0223](0223-a-disk-that-is-really-full.md) |
 | [0153](archive/0153-a-reader-of-a-consumer-names-the-partitions-it-reads.md) | A reader of a consumer names the partitions it reads, and the division is the caller's |  |
-| [0184](0184-consume-runs-a-reader-of-a-consumer.md) | `consume` runs a reader of a consumer, a page and its ack in one transaction |  |
+| [0184](0184-consume-runs-a-reader-of-a-consumer.md) | `consume` runs a reader of a consumer, a page and its ack in one transaction | [0256](0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md) |
+| [0256](0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md) | A call that runs a step or waits for one, `deploy`, `create`, `send`, `resume`, `discard` and a fetch that waits, is refused within a transaction of the client |  |
 | [0154](archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md) | A step's projection is stored once in the outbox, in a publication each topic's row names | [0224](0224-a-consumer-shows-the-time-of-the-step-it-reads-next.md) |
 | [0155](archive/0155-a-foreach-of-messages-to-children-puts-them-back-once.md) | A `forEach` of messages to children by id puts them back once, with the step one message after the other gives | [0240](0240-a-step-that-tells-many-children-is-written-with-foreach.md) |
 | [0240](0240-a-step-that-tells-many-children-is-written-with-foreach.md) | A step that tells many children is written with `forEach`, and `andThen` stays a step taken at once |  |
