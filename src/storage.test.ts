@@ -1993,6 +1993,23 @@ describe('renaming a program (decision 0156)', () => {
         expect(yield* provided(standingOf('Joined'))).toEqual({ version: 4, renamedTo: null })
       }).pipe(Effect.orDie)))
 
+  // Premise review of Versions and deploys: decision 0156 lets a later launch rename a program back to a name it
+  // left, as on one process. Decision 0176 marks the old name for good, and the rename back clears no mark.
+  test('FAILING: on Cluster, a program renamed back to the name it left is launched under it again', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const provided = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+          Effect.provideService(effect, SqlClient.SqlClient, sql)
+        yield* provided(recordVersions('old:1', [{ name: 'Asker', version: 2 }]))
+        yield* rename(sql, [['Asker', 'Buyer']], true)
+        yield* provided(recordVersions('new:1', [{ name: 'Buyer', version: 2 }]))
+        // A later launch takes the rename back: 'Buyer' is the old name now, and 'Asker' the new one.
+        yield* rename(sql, [['Buyer', 'Asker']], true)
+        expect(yield* provided(standingOf('Buyer'))).toEqual({ version: 2, renamedTo: 'Asker' })
+        expect(yield* provided(standingOf('Asker'))).toEqual({ version: 2, renamedTo: null })
+        yield* provided(recordVersions('new:2', [{ name: 'Asker', version: 2 }]))
+      }).pipe(Effect.orDie)))
+
   test('on Cluster, a rename from a version newer than the new name runs dies, and moves nothing (decision 0176)', () =>
     database((sql) =>
       Effect.gen(function*() {

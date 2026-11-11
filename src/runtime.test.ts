@@ -3761,6 +3761,39 @@ describe('renaming a program (decision 0156)', () => {
       expect((yield* storage(renamedProgram, sql).load(id))?.keyedAs).toBe('Toy')
     })))
 
+  // Premise review of Versions and deploys: decision 0156 keeps a renamed entity's keys drawn from its old name, and
+  // nothing on one process keeps the old name from being taken again by a later launch. An entity created under it
+  // then draws the keys of the renamed entity of the same id, which decisions 0020 and 0022 promise are never
+  // started for two operations.
+  test('FAILING: an entity created under a name left by a rename draws no key a renamed entity holds', () =>
+    onBoth(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const first = yield* hands({ holds: true })
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), first.layer)
+          yield* ran(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
+          yield* ran(toy.send(id, want, { requestId: 'w1', sender: tester, keep: 'forever' }))
+        }))
+      const renamedKeys = first.acted.filter((act) => act.startsWith('a:'))
+      expect(renamedKeys).toEqual([`a:${JSON.stringify(['Toy', id, 'a', 1])}`])
+      yield* process({ renames: { Toy: 'Plaything' } }, () => Effect.void)
+      // A later launch no longer names the rename, which has run, and a new program takes the name 'Toy'.
+      const third = yield* hands({ holds: true })
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), third.layer)
+          yield* ran(toy.create(id, { flags: { at }, requestId: 'creation-2', sender: tester }))
+          yield* ran(toy.send(id, want, { requestId: 'w2', sender: tester, keep: 'forever' }))
+        }))
+      const sql = yield* SqlClient.SqlClient
+      expect((yield* storage(renamedProgram, sql).load(id))?.keyedAs).toBe('Toy')
+      const newKeys = third.acted.filter((act) => act.startsWith('a:'))
+      expect(newKeys.length).toBe(1)
+      // The renamed entity 'Plaything' still holds its operation under way, under the key the new entity is given.
+      expect(newKeys.filter((key) => renamedKeys.includes(key))).toEqual([])
+    })))
+
   test('renames that cannot run as written are refused before the database is held', () =>
     database(Effect.gen(function*() {
       const refused = [

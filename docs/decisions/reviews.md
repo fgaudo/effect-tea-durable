@@ -757,3 +757,109 @@ By their decision sections only: the later notes that cite these: 0038, 0053, 00
 ### Not reached
 None of the notes the brief named. Of the later notes, 0021, 0048, 0071, 0085, 0092, 0122, 0125, 0245, 0248 and 0249
 were not read against these areas. The brief or the roadmap already cover 0085, 0245, 0248 and 0249.
+
+## 2026-11-11: premise review of Versions and deploys
+
+Read by a session that wrote none of these notes, on the branch `claude/premise-review-versions-36a283`, cut from
+`main` at `fcd2494`. The later notes 0022, 0075 and 0156 were also read against the notes they cite of the sections
+The machine and the program, Operations and timers, Creation and Defects.
+
+### The notes read
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0020 | of the area | whole, with `renew` and `activate` of `src/machine.ts` |
+| 0022 | of the area | whole, with `givenKey` of `src/machine.ts` |
+| 0036 | of the area | whole |
+| 0043 | of the area | whole |
+| 0051 | of the area | whole |
+| 0058 | of the area | whole |
+| 0075 | of the area | whole, with the claim of names in `src/runtime.ts` |
+| 0100 | of the area | whole |
+| 0102 | of the area | whole |
+| 0126 | of the area | whole |
+| 0156 | of the area | whole, with `renamed` of `src/storage/tables.ts` and its tests |
+| 0247 | of the area | whole, with the renames and the event of `src/check.ts` |
+| 0064 | changes 0020 | whole |
+| 0078 | changes 0075 | whole |
+| 0176 | changes 0156 | whole, with `mark` of `src/storage/tables.ts` and `recordVersions` of `src/storage/cluster.ts` |
+| 0063 | changes 0051 | in part: the decision |
+| 0077 | changes 0043 | in part: the decision |
+| 0122 | changes 0043 | in part: the decision and its premises |
+| 0157 | changes 0156 | in part: the passages on a rename, with `inProcess` of `src/storage/tables.ts` |
+| 0123 | cites 0022 and 0043 | in part: the passages that cite 0022 |
+| 0167, 0169 and 0171 | cite 0156 | in part: the passages that cite 0156 |
+| 0131 | cites 0075 | in part: the passage that cites 0075 |
+| 0015, 0018, 0021, 0025, 0033, 0034, 0037, 0038, 0046, 0048, 0056, 0061, 0062, 0072, 0080, 0085, 0101, 0104, 0110, 0119, 0121, 0128, 0132, 0133, 0138, 0139, 0159 and 0174 | cite a note of the area | in part: the lines that cite it, read for whether they apply its rule elsewhere |
+
+### Findings
+
+1. **Reproduced: an entity created under a name a rename left draws the idempotency keys of the renamed entity of
+   the same id.** The notes are 0156 and 0022, with the promise of 0020 that an idempotency key is never started for
+   two operations. Decision 0022 makes the name with the id an entity's address, which is unique. Decision 0156
+   keeps a renamed entity's keys drawn from its old name, in `keyed_as`. Its premise is that a key differs from
+   every other by its incarnation, whichever name it holds. An incarnation is drawn from a counter of each entity, so
+   the premise holds only while no other entity can be addressed by the old name and the same id. On one process
+   nothing keeps the old name from being taken again: a launch that no longer declares the rename deploys a program
+   of that name. The sequence: `Toy/x` starts an idempotent operation under `["Toy","x","a",1]`, and the process
+   ends. A launch renames `Toy` to `Plaything`. A later launch, without the rename, deploys a program named `Toy`
+   and creates `Toy/x`. Its operation is given `["Toy","x","a",1]`, the key of the operation `Plaything/x` holds
+   under way. A payment provider answers the second charge with the first one's result, and the second charge is
+   never made. The files are `givenKey` in `src/machine.ts:629` and the `keyed_as` of `renamed` in
+   `src/storage/tables.ts:617`. No check of `src/runtime.ts` refuses the old name at a later launch. On Cluster the
+   mark of 0176 refuses the old name for good, which is the second finding. Reproduced by `FAILING: an entity created
+   under a name left by a rename draws no key a renamed entity holds`, in `src/runtime.test.ts`, on SQLite and
+   PGlite. A fix could begin in `renamed`, which would record the old name on one process as on Cluster, or in
+   `givenKey`, which would draw a renamed entity's keys from a name no other entity can take.
+2. **Reproduced: on Cluster, a program renamed back to the name it left can never run under that name again.** The
+   notes are 0176 and 0156. Decision 0156 lets a launch rename a name that holds something to one that holds no
+   entity, so a later launch may rename `Buyer` back to `Asker`. Decision 0176 marks the old name renamed for good.
+   Its unwritten premise is that a name left is never wanted again. The rename back marks `Buyer`, and leaves
+   `Asker` marked renamed to `Buyer`, since `mark` writes the old name's row and never clears the new name's
+   (`src/storage/tables.ts:634` to `652`). So `recordVersions` refuses every launch of `Asker`
+   (`src/storage/cluster.ts:81`), and the check of every step dies for it. The program stops loudly, and nothing is
+   lost. Reproduced by `FAILING: on Cluster, a program renamed back to the name it left is launched under it again`,
+   in `src/storage.test.ts`, on SQLite and PGlite. A fix could begin in `mark`, which would clear the mark of the new
+   name, or in `renamesOf`, which would refuse a rename onto a name marked renamed. The fix of the first finding
+   decides this one too: a name left that may be taken again is a mark a rename back may clear.
+
+Both tests are in the commit of this report on the branch.
+
+### Suspects ruled out
+
+- 0058 against 0036: a migrated operation is compared by what the new schema writes of both, so the comparison of
+  0036 holds whatever order of keys a migration writes.
+- 0100 against 0125: a caller's reply kept for a time only shortens how long the migrations of `rejection` are
+  needed, and 0126 keeps every migration anyway.
+- 0126 against 0156: a rename keeps the version of every row, so a row read after a rename is migrated as before.
+- 0156's rewrite of requests on PostgreSQL, by 0157: only a text whose `entity.name` is the old name is written, and
+  a text that `JSON.stringify` does not give back makes the rename die before it moves anything.
+- 0156 against 0059: a reply to a renamed receiver is found by its `name` column, which moves. An operation names
+  its receiver by the program it imports, which the code renames.
+- 0156's refusal of a move onto a name that holds something reads only entities, heads and consumers. The other
+  tables hold rows of a name only while the name holds an entity, since no entity is deleted.
+- 0247 against 0156: `check` gives a renamed entity `keyedAs ?? name`, as the launch's `COALESCE` does. Two names
+  renamed to one may hold the same id, which `check` passes and the launch refuses, and 0247's consequences say so.
+- 0247 against 0043: a row no version reads is a `Load` failure of its entity, and fails no other.
+- 0075 against 0011 and 0119: a new process for a fix delivers `unknown` to an at-most-once operation under way, as
+  0075 says. The drain of 0119 is in bugs 2 and 6 of the roadmap.
+- 0102 against 0156: a deploy refused for a renamed name dies inside the region of 0102, and gives its name back.
+
+### Noticed, not checked
+
+- 0156 with 0045: after a rename, an operation of another program whose code still imports the old program sends
+  or creates under a name no deploy will take, since a deploy of it is refused. It waits for a deploy that never
+  comes, and no operator sees it. A test that renames a program and runs such an operation under the old name would
+  check it.
+- 0247 during a launch on Cluster that renames: an entity read under its old name in one page's snapshot, and under
+  its new name in a later page, is counted twice. Only the counts would be wrong.
+- 0176, two different programs renamed to one where only one holds entities: the new name takes the newer version,
+  and the other name's rows, its replies and its mailbox, are read through the migrations of a chain that is not
+  theirs.
+
+### Not read whole
+
+The notes the table marks in part. 0063, 0077, 0122 and 0157 belong to other areas, which read them whole, and this
+review read the rule each takes from a note of this area. The notes that only cite a note of the area were read at
+the lines that cite it, to find those that apply its rule elsewhere. Of them, 0123, 0131, 0167, 0169 and 0171 do,
+and were read at those passages.
