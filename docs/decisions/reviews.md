@@ -3344,3 +3344,127 @@ the area's report, by the index, and by `grep -w` of each number in both directi
 ### Not read whole
 
 None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.
+
+## 2026-11-11: premise review of the pairs against Schemas and projections, a first part, the notes from 0100
+
+Read by a session that wrote none of these notes, on the branch `claude/dazzling-darwin-f09ea9`, fast-forwarded to
+`main` at `743881f`. The failing tests are at commit `2f0867e`. It reads the notes 0101, 0120 to 0122, 0135, 0138 to
+0143, 0146, 0148 to 0150, 0152, 0159, 0180, 0184, 0197, 0206, 0210, 0213 and 0245 against the notes of area 6 they
+meet. The review of Schemas and projections, a first part, read these notes in part or not at all. Two findings are
+reproduced.
+
+### The pairs
+
+The pairs were found by the table of the area's report, by the index, and by `grep -w` of each number in both
+directions. Every note of the list and every note of the area was read whole.
+
+| Pair | What binds it | How it was read |
+| --- | --- | --- |
+| 0101 and 0070 | 0101 names 0070's test among those a moved clock serves under a budget | both whole, with `reindex leaves no row a step has moved past, under prioritized schedules` in `src/runtime.test.ts` |
+| 0120 and 0098 | 0120 cites 0098 only as the name of the review that found it | both whole; nothing of 0098's rule is used |
+| 0121 and 0032 | 0121 makes `read` answer from 0032's row | both whole, with `projected` of `src/storage/projections.ts` |
+| 0122 and 0070 | 0122 changes `reindex`, whose write 0070 guards | both whole, with `reindex` of `src/storage/projections.ts` |
+| 0135 and 0032, 0038 | 0135 counts the rows of 0032 and 0038 in its warning | all whole |
+| 0138 and 0032, 0038, 0039, 0040, 0072 | 0138 changes 0038, 0039 and 0072, and applies 0032's index and 0040's check to a topic | all whole, with `shownOf` of `src/machine.ts` and `src/storage/log.ts` |
+| 0139 and 0025, 0030, 0032 | 0139 changes 0032, and cites 0025 and 0030 | all whole, with `program` of `src/program.ts` |
+| 0140 and 0038, 0072 | 0140 applies 0072's comparison to what a row gives | all whole, with `published` of `src/storage/log.ts` |
+| 0141 and 0032, 0039 | 0141 changes both | all whole, with `counted` of `src/runtime.ts` |
+| 0142 and 0039 | 0142 changes 0039's `feed` | both whole, with the waits of `src/runtime.ts` |
+| 0143 and 0032 | 0143 changes 0032's query | both whole, with `query` and `storedIndexes` of `src/storage/projections.ts` |
+| 0146 and 0040 | 0146 cites 0040 for the text it writes | both whole, with `indexesText` and `bound` of `src/storage/projections.ts` |
+| 0148 and 0032 | 0148 changes 0032's read model | both whole, with `sum` and `count` of `src/storage/projections.ts` |
+| 0149 and 0032, 0039 | 0149 cites both as its reason | all whole |
+| 0150 and 0032, 0039 | 0150 changes 0039's ack | all whole, with `ack` of `src/storage/log.ts` and `countBy` |
+| 0152 and 0039 | 0152 changes 0039's consumers and prune | both whole, with `declare`, `ack`, `pruneBatch` and `forget` of `src/storage/log.ts`, and `topical`, `consumersOf` and `enlisted` of `src/runtime.ts` |
+| 0159 and 0039, 0070, 0032 | 0159 adds an older runner that runs on beside a newer one | all whole, with `reindex` of `src/storage/projections.ts` and the helpers of `two runners on one file` in `src/cluster.test.ts` |
+| 0180 and 0030 | 0180 cites 0030 for the sender it gives | both whole |
+| 0184 and 0039 | 0184 changes 0039's loop of a consumer | both whole, with `consume` of `src/runtime.ts` |
+| 0197 and 0030 | 0197 cites 0030 for a key's parameter | both whole, with `key` of `src/program.ts` |
+| 0206 and 0032 | 0206 changes 0032's index | both whole, with `shownOf` |
+| 0210 and 0040 | 0210 changes 0040's check | both whole, with `isJson` and `encode` of `src/program.ts` |
+| 0213 and 0026 | 0213 changes 0026's `allows` | both whole |
+| 0245 and 0039 | 0245 runs 0039's prune at an interval, in batches | both whole, with `prune` and `pruneBatch` of `src/storage/log.ts` |
+
+### Finding 1, reproduced: 0152 and 0138 against 0039
+
+- The premise that fell: 0039 lets every stored consumer go by `forget`, which is how a consumer that is gone stops
+  holding the log. 0152 keeps a stored consumer that a deploy no longer declares, and says it leaves by `forget`.
+  Both take for granted that the consumer's topic is still one the program publishes. 0138 makes `forget`, like
+  `fetch` and `ack`, refuse a topic the program does not publish. A program's topics have no schema, so a newer
+  version may drop or rename one.
+- The sequence: a version publishes the topic `projection` and declares its consumer `queue`. An entity is created,
+  and its row waits past `queue`'s cursor. The next version declares the topic `status` in place of `projection`.
+  Its deploy keeps `queue` and warns of it, and `consumers` shows it with `declared: false` and its rows behind.
+  `forget('projection', 'queue')` dies with "'projection' is no topic of the program", from `topical` at
+  `src/runtime.ts:823`, which wraps `forget` at `src/runtime.ts:1310`. So the rows past its cursor, and the
+  publications they name, stay for ever under every prune and sweep (`pruneBatch` at `src/storage/log.ts:232`).
+  Every later deploy warns of a consumer no operator can drop. The rows left are bounded by what the older version
+  wrote, since no step writes the old topic again.
+- Reproduced by `FAILING: a consumer of a topic a newer version no longer publishes is let be forgotten, and the
+  prune passes its rows`, in `src/runtime.test.ts`, describe `publishing what happened`, commit `2f0867e`. Run:
+  `bun test src/runtime.test.ts -t "no longer publishes"`. The assertions on `consumers` and on the first prune
+  pass, and the forget fails.
+- Where a fix could begin: `forget` in `src/runtime.ts` could take any topic a stored consumer names, without
+  `topical`. Or a deploy could drop, with a warning, the consumers of a topic its program does not publish, which
+  0152 refused for a topic still published. It is of family A of the step of bugs: a newer version against what an
+  older one stored.
+
+### Finding 2, reproduced: 0159 against 0070 and 0032
+
+- The premise that fell: 0070 writes a row of `reindex` only where the entity's state and version are still the
+  ones it read. That guard keeps a projection the entity has moved past out of the read model only while one
+  program computes every row. 0159 lets an older runner run on beside a newer one during a rolling deploy, serving
+  no shard. Only a step checks the newest version, so the older runner's `reindex` still writes. An entity that took
+  no step since the newer launch keeps its state and its version, and passes the guard.
+- The sequence: the older runner creates `one` with the projection `start`. The newer version computes another
+  projection of the same state, `START`, with no migration. The newer runner's `reindex` writes `START`, at version
+  2. An operator's script runs `reindex` on the older runner too. Its statement finds the state and version it read
+  (`src/storage/projections.ts:504`), and writes `start` at version 1 over the newer row. `read` and `query` of the
+  newer runner then give `start` until the entity's next step, which 0032 and 0070 say may never come. The indexes
+  are written by the same statement, so an index the newer version adds is missing from that row, and a query by it
+  misses the entity. That last part is reasoned from the statement, and not run.
+- Reproduced by `FAILING: a reindex of an older runner leaves the row the newer version wrote`, in
+  `src/cluster.test.ts`, describe `two runners on one file`, commit `2f0867e`. Run:
+  `bun test src/cluster.test.ts -t "reindex of an older runner"`. The helper `start` of that describe now also
+  gives the handles it deployed, and the other tests of the describe pass with it.
+- It is the case the review of Schemas and projections, a first part, noticed and did not check. The step What a
+  deploy may change of a program, against what is stored, of the roadmap names it as a case no bug holds.
+- Where a fix could begin: `reindex` in `src/storage/projections.ts` could refuse to run while its version is
+  outranked, as a step is refused, or its statement could write only where the stored row's version is not newer
+  than its own. It is of family A, on Cluster, so of family C too.
+
+### Suspects ruled out
+
+- 0146 against 0040 on PostgreSQL: `bound` binds the exact digits of an integer beyond 2^53 as `NUMERIC`
+  (`src/storage/projections.ts:218`), as `indexesText` writes them, so the stored and the bound values are equal.
+- 0146's digits read back: `storedIndexes` parses the exact digits to the same double, so a cursor holds the value
+  the query compared.
+- 0197 against 0030: `key` takes `Schema.Codec<Parameter, Json>` (`src/program.ts:429`), so a key's parameter
+  encodes to JSON as every schema does.
+- 0180 against 0030: a sender left out is `Schema.Null`, and `Schema.Never` encodes nothing, so every default is
+  JSON.
+- 0206 and 0210 against 0032 and 0143: `JSON.stringify` writes an index of `-0` as `0`, and `bound` binds `-0` equal
+  to `0`, so a criterion and a cursor find the row.
+- 0101 against 0070: 0070's test now runs under prioritized schedules, and asserts what holds at the end, never when.
+- 0122 against 0070: a row passed over keeps what it held, and every other row is written under the same guard.
+- 0140 against 0072 and 0038: a selector changed by a deploy may give two rows of one value in a row, which a
+  consumer deduplicates by `seq` as it does any row delivered again.
+- 0140 and 0121 against 0159: an older runner's `read`, `query` and reader of `consume` fail on a row the newer
+  version wrote, by decision 0043, so nothing is lost in silence.
+- 0150 and 0184 against 0039: a page's ack in the caller's transaction moves the cursors only if the store commits,
+  which is delivery at least once, as 0039 promises.
+- 0245 against 0039: each batch of the sweep's prune reads the consumers and the cursors in its own statement, and a
+  consumer stored between two batches holds what the next batch would drop.
+- 0141, 0143, 0148, 0149 and 0213 against the area: each changes only the shape of a reading or of a test, and keeps
+  the conditions the area's rules need. 0213's sender unmigrated is bug 38.
+- 0120 against 0098: 0120 uses nothing of 0098's rule.
+
+### Noticed, not checked
+
+- A deploy that drops a topic while a reader of `consume` of that topic runs on another runner of the older version:
+  the reader acks on, and its cursors hold the rows. It joins finding 1 and bug 23. It is not checked, since what
+  should hold there waits on the fix of finding 1.
+
+### Not read whole
+
+None. Every note of the list, and every note of the area it meets, was read whole, with the code that keeps its rule.
