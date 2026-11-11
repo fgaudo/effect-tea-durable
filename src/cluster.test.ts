@@ -296,7 +296,11 @@ describe('two runners on one file', () => {
         programs: ReadonlyArray<Program<T>>,
         deployed?: ReadonlyArray<Program<T>>,
         options?: Options,
-      ) => Effect.Effect<(() => number) & { context: Context.Context<Sharding.Sharding> }, never, Scope.Scope>,
+      ) => Effect.Effect<
+        (() => number) & { context: Context.Context<Sharding.Sharding>; handles: ReadonlyArray<Handle<T>> },
+        never,
+        Scope.Scope
+      >,
     ) => Effect.Effect<void, unknown, Scope.Scope | SqlClient.SqlClient>,
   ) => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
@@ -323,10 +327,12 @@ describe('two runners on one file', () => {
           ),
         ).pipe(Effect.orDie)
         const runtime = yield* Effect.provide(launch(options), context)
-        for (const program of deployed) yield* Effect.provide(runtime.deploy(program), context)
+        const handles: Array<Handle<T>> = []
+        for (const program of deployed) handles.push(yield* Effect.provide(runtime.deploy(program), context))
         const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
         return Object.assign(() => shards.filter((shard) => held.hasShardId(shard)).length, {
           context: context as Context.Context<Sharding.Sharding>,
+          handles,
         })
       })
     try {
@@ -356,6 +362,29 @@ describe('two runners on one file', () => {
           times: 20,
         })
         expect(Math.max(...seen)).toBe(0)
+      })), 30_000)
+
+  // Decision 0070 writes a row of `reindex` only over the state it was computed from, and 0159 lets an older runner
+  // run on beside a newer one: the entity's state and version are the same, so the older projection is written.
+  test('FAILING: a reindex of an older runner leaves the row the newer version wrote', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: null, id })
+        const older = yield* start(1, [at('Toy', 1)])
+        yield* until(older, (n) => n === shardsPerGroup)
+        const clientOf = yield* Effect.provide(doorOf('Toy').client, older.context)
+        expect(yield* clientOf('one').Create({ version: 1, request: caller('c1'), message: 'null' }))
+          .toBe('{"_tag":"Created"}')
+        // The newer version shows the same state otherwise, with no migration of the state.
+        const newer = yield* start(2, [{ ...at('Toy', 2), project: ({ last }) => last.toUpperCase() }])
+        yield* until(newer, (n) => n === shardsPerGroup)
+        const [newest] = newer.handles
+        const [old] = older.handles
+        expect((yield* newest!.reindex).written).toBe(1)
+        expect(yield* newest!.read('one')).toBe('START')
+        // An operator's script runs `reindex` on the older runner too, which still runs and serves no shard.
+        yield* old!.reindex
+        expect(yield* newest!.read('one')).toBe('START')
       })), 30_000)
 
   test('a runner launched older than the newest dies, and the newer keeps every shard', () =>

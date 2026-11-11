@@ -1906,6 +1906,40 @@ describe('publishing what happened', () => {
       expect(warnings).toHaveLength(1)
     })))
 
+  // Decisions 0039 and 0152 let a consumer no longer declared go by `forget`, and 0138 refuses a topic the program
+  // does not publish: a newer version that no longer publishes the topic leaves its consumer for ever.
+  test('FAILING: a consumer of a topic a newer version no longer publishes is let be forgotten, and the prune passes its rows', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const rows = yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
+          yield* runtime.settled
+          return yield* toy.published('projection', [], all)
+        }))
+      expect(rows.length).toBeGreaterThan(0)
+      // The next version publishes a topic of its own in place of `projection`, and declares no consumer of it.
+      const newer = {
+        ...program,
+        migrations: [...(program.migrations ?? []), {}],
+        topics: { status: (projection: Json) => projection },
+      } as unknown as Program<T>
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(newer), layer)
+          expect((yield* toy.consumers).map(({ topic, consumer, declared, behind }) => ({ topic, consumer, declared, behind })))
+            .toEqual([{ topic: 'projection', consumer: 'queue', declared: false, behind: rows.length }])
+          expect(yield* toy.prune).toBe(0)
+          // The consumer is no longer declared, so an operator forgets it, as decision 0152 says.
+          const forgotten = yield* Effect.exit(toy.forget('projection' as never, 'queue'))
+          expect(Exit.isFailure(forgotten) ? String(Cause.squash(forgotten.cause)) : null).toBeNull()
+          expect(yield* toy.prune).toBe(rows.length)
+        }))
+    })))
+
   test('a deploy whose consumers cannot be read as written dies, and stores nothing', () =>
     database(Effect.gen(function*() {
       const reasonOf = (exit: Exit.Exit<unknown>) => {
