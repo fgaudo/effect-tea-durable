@@ -38,7 +38,7 @@ import { SqlClient } from 'effect/sql'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addressText, byVersion, doorOf, launch, sharding } from './cluster.ts'
+import { addressText, answerCodec, byVersion, doorOf, launch, sharding } from './cluster.ts'
 import {
   create as createFrom,
   defect,
@@ -356,6 +356,46 @@ describe('two runners on one file', () => {
           times: 20,
         })
         expect(Math.max(...seen)).toBe(0)
+      })), 30_000)
+
+  // Premise review of the pairs against Effect Cluster: 0069 and 0100 against 0085. A reason is read through the
+  // migrations from the version that wrote it. Cluster keys a request by the version of the caller that sent it, and
+  // saves the door's answer as the door's version writes it, with no version in it. The client decodes that text
+  // with its own program, so a caller of the older runner reads a reason of the newer version as its own.
+  test('FAILING: a caller of the older runner is given a reason the newer runner wrote, read as its version reads it', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        type Reason = Readonly<{ first: string; second: string }>
+        // Version 1 writes who refused first. Version 2 writes why first, and its migration swaps the two.
+        const refusing = (version: number) => {
+          const toy = at('Toy', version)
+          return {
+            ...toy,
+            schemas: { ...toy.schemas, rejection: Schema.Struct({ first: Schema.String, second: Schema.String }) },
+            update: (message: string) => () =>
+              message === 'no'
+                ? rejectWith<Reason>(version === 1 ? { first: 'the clerk', second: 'closed' } : { first: 'closed', second: 'the clerk' })
+                : { last: message },
+            migrations: version === 1 ? [] : [{
+              rejection: (json: unknown) => {
+                const { first, second } = json as Reason
+                return { first: second, second: first }
+              },
+            }],
+          } as unknown as Program<T>
+        }
+        const caller = (id: string) => JSON.stringify({ _tag: 'Caller', sender: null, id })
+        const older = yield* start(1, [refusing(1)])
+        yield* until(older, (n) => n === shardsPerGroup)
+        const clientOf = yield* Effect.provide(doorOf('Toy').client, older.context)
+        expect(yield* clientOf('one').Create({ version: 1, request: caller('c1'), message: 'null' }))
+          .toBe('{"_tag":"Created"}')
+        const newer = yield* start(2, [refusing(2)])
+        yield* until(newer, (n) => n === shardsPerGroup)
+        // The older runner's caller sends as the older runner's client does, and decodes the answer with its program.
+        const text = yield* clientOf('one').Message({ version: 1, request: caller('m1'), message: '"no"' })
+        const answer = yield* Schema.decodeEffect(answerCodec(refusing(1) as unknown as Program<any>))(text)
+        expect(answer).toEqual({ _tag: 'Rejected', reason: { first: 'the clerk', second: 'closed' } })
       })), 30_000)
 
   test('a runner launched older than the newest dies, and the newer keeps every shard', () =>
