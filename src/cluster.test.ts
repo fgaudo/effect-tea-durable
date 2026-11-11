@@ -342,6 +342,111 @@ describe('two runners on one file', () => {
       Effect.timeout('15 seconds'),
     )
 
+  /**
+   * A runner of the runtime on `directory`'s file at `port`, whose `ShardingConfig` adds `config` to the settings of
+   * `onFile`, and whose runtime, launched with `options`, deploys `program` with `consumers`. Gives the handle and
+   * how many shards the runner holds.
+   */
+  const runnerOn = <const C extends Readonly<{ projection: ReadonlyArray<string> }>>(
+    directory: string,
+    port: number,
+    program: Program<T>,
+    consumers: C,
+    config: Partial<ShardingConfig.ShardingConfig['Service']> = {},
+    options?: Options,
+  ) =>
+    Effect.gen(function*() {
+      const context = yield* Layer.build(
+        sharding([program]).pipe(
+          Layer.provideMerge(Runners.layerNoop),
+          Layer.provideMerge(SqlMessageStorage.layer),
+          Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
+          Layer.provideMerge(ShardingConfig.layer({
+            runnerAddress: Option.some(RunnerAddress.make('localhost', port)),
+            shardsPerGroup,
+            refreshAssignmentsInterval: Duration.millis(50),
+            runnerHealthCheckInterval: Duration.millis(50),
+            shardLockRefreshInterval: Duration.millis(100),
+            shardLockExpiration: Duration.seconds(3),
+            entityMessagePollInterval: Duration.millis(100),
+            ...config,
+          })),
+          Layer.provideMerge(SqliteClient.layer({ filename: join(directory, 'store.db') })),
+          Layer.provide(Digest.layerWebCrypto),
+        ),
+      ).pipe(Effect.orDie)
+      const runtime = yield* Effect.provide(launch(options), context)
+      const handle = yield* Effect.provide(runtime.deploy(program, { consumers }), context)
+      const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
+      return { handle, count: () => shards.filter((shard) => held.hasShardId(shard)).length }
+    })
+
+  /** Runs `run` on a fresh SQLite file, with the logs collected. */
+  const inDirectory = async (run: (directory: string) => Effect.Effect<void, unknown, Scope.Scope>) => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
+    try {
+      await Effect.runPromise(
+        Effect.scoped(run(directory)).pipe(
+          Effect.provide([SqliteClient.layer({ filename: join(directory, 'store.db') }), collected]),
+        ) as Effect.Effect<void, unknown>,
+      )
+      // Cluster warns of no healthy runner as a lone runner starts or stops, which no rule here is about.
+      const kept = logged.splice(0).filter((line) => line !== 'No healthy runners available')
+      logged.push(...kept)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }
+
+  // Decision 0039 never drops a row a stored consumer has not read, and decision 0137 holds a partition from `0` for a
+  // consumer with no cursor there. `pruneBatch` reads that as a count of the partition's cursors equal to the count of
+  // the topic's consumers. A cursor whose consumer is not stored, which an older runner's ack writes after a forget on
+  // a newer runner (bug 23 of the roadmap, decisions 0152 and 0159), then stands for a stored consumer that has no
+  // cursor. The sweep of decision 0245 runs the prune at its interval, with no operator. Found by the premise review
+  // of the pairs the first session read in part, 2026-11-11.
+  test('FAILING: an ack of an older runner after a forget drops no row the stored consumer has not read', () =>
+    inDirectory((directory) =>
+      Effect.gen(function*() {
+        const older = yield* runnerOn(directory, 1, at('Toy', 1), { projection: ['queue', 'audit'] })
+        yield* until(older.count, (n) => n === shardsPerGroup)
+        expect(yield* older.handle.create('one', { requestId: 'c-one' })).toMatchObject({ _tag: 'Created' })
+        const page = yield* older.handle.fetch('projection', 'queue', 10)
+        expect(page.length).toBe(1)
+        const newer = yield* runnerOn(directory, 2, at('Toy', 2), { projection: ['audit'] })
+        yield* until(newer.count, (n) => n === shardsPerGroup)
+        yield* newer.handle.forget('projection', 'queue')
+        // The older runner's reader of `queue` acks its page after the forget. `audit` has read nothing.
+        yield* older.handle.ack('projection', 'queue', page)
+        expect((yield* newer.handle.consumers).map(({ consumer, behind }) => ({ consumer, behind })))
+          .toEqual([{ consumer: 'audit', behind: 1 }])
+        const pruned = yield* newer.handle.prune
+        // The newer deploy warns of `queue`, stored and not declared, before the forget.
+        logged.splice(0)
+        expect(pruned).toBe(0)
+        expect((yield* newer.handle.fetch('projection', 'audit', 10)).length).toBe(1)
+      })), 30_000)
+
+  // Decision 0092 leaves Cluster's `maxResidentEntities` unbounded, since a door outlives the runtime's entity by up to
+  // `maxIdleTime` and the reaper's period, and a bound of Cluster's would refuse entities the runtime has room for.
+  // Decision 0151 rests on it: the runtime's capacity is the only bound on Cluster. No code sets it: `sharding` builds
+  // Cluster's `Sharding` on the launcher's `ShardingConfig` as given, whose default is 10 000, and
+  // `ShardingConfig.layerFromEnv` reads no `'unbounded'`. A bound of 2 stands here for that default. Found by the
+  // premise review of the pairs the first session read in part, 2026-11-11.
+  test("FAILING: a runner whose ShardingConfig keeps Cluster's bound of resident entities answers a caller past it", () =>
+    inDirectory((directory) =>
+      Effect.gen(function*() {
+        const runner = yield* runnerOn(directory, 1, at('Toy', 1), { projection: [] }, { maxResidentEntities: 2 }, {
+          passivate: { millis: 20_000 },
+        })
+        yield* until(runner.count, (n) => n === shardsPerGroup)
+        expect(yield* runner.handle.create('one', { requestId: 'c-one' })).toMatchObject({ _tag: 'Created' })
+        expect(yield* runner.handle.create('two', { requestId: 'c-two' })).toMatchObject({ _tag: 'Created' })
+        // The runtime holds two entities, far below its capacity of 10 000. Cluster holds two doors, idle until its
+        // reaper finds them past `maxIdleTime`, the runtime's passivation.
+        const third = yield* Effect.timeoutOption(runner.handle.create('three', { requestId: 'c-three' }), '5 seconds')
+        expect(Option.getOrUndefined(third)).toMatchObject({ _tag: 'Created' })
+      })), 40_000)
+
   test('a rolling deploy moves every shard to the newer runner, and none back', () =>
     onFile((start) =>
       Effect.gen(function*() {
