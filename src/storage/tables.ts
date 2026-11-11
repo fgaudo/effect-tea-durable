@@ -389,6 +389,28 @@ const tables = Effect.gen(function*() {
   yield* sql`
     CREATE INDEX effecttea_replies_by_request_id ON effecttea_replies (name, id, request_id) WHERE request_id IS NOT NULL
   `
+  // The answers another entity's operation was given that no entity stores: a creation `init` rejected, and a
+  // message to no entity. Each is kept under the receiver and the request while the work
+  // that asked holds, so that a run after a crash is given it again (decision 0253). `kind` tells a creation's answer
+  // from a message's, which an operation may send under the same name.
+  yield* sql`
+    CREATE TABLE effecttea_answers (
+      name ${text} NOT NULL,
+      id ${text} NOT NULL,
+      request ${text} NOT NULL,
+      kind ${text} NOT NULL,
+      tag ${text} NOT NULL,
+      version ${integer} NOT NULL,
+      reason ${text},
+      sender_name ${text} NOT NULL,
+      sender_id ${text} NOT NULL,
+      sender_key ${text} NOT NULL,
+      sender_parameter ${text} NOT NULL,
+      sender_incarnation ${integer} NOT NULL,
+      PRIMARY KEY (name, id, request, kind)
+    )
+  `
+  yield* sql`CREATE INDEX effecttea_answers_sender ON effecttea_answers (sender_name, sender_id)`
   // On Cluster: the newest version each program was launched with, and the version of each program each runner
   // runs, by the runner's address (decision 0159). A runtime of one process writes neither. `renamed_to` is the name
   // a launch renamed the program to, which the check of every step reads in the same row (decision 0176).
@@ -487,6 +509,7 @@ const namedTables = [
   'effecttea_consumers',
   'effecttea_cursors',
   'effecttea_replies',
+  'effecttea_answers',
   'effecttea_waiting',
 ] as const
 
@@ -515,22 +538,26 @@ export const renamed = (
     /** A condition as a count, since PostgreSQL gives a boolean where SQLite gives an integer. */
     const counted = (condition: Statement.Fragment) => sql`SELECT CASE WHEN ${condition} THEN 1 ELSE 0 END AS held`
     const die = (reason: string) => Effect.die(new InvariantDefect({ reason }))
-    // Each `EXISTS` is a search of an index whose first column is the name, or of `effecttea_replies_sender`.
+    // Each `EXISTS` is a search of an index whose first column is the name, or of the index by sender of
+    // `effecttea_replies` or of `effecttea_answers`.
     const holds = (name: string) =>
       flag(counted(sql.or([
         ...namedTables.map((table) => sql`EXISTS (SELECT 1 FROM ${sql(table)} WHERE name = ${name})`),
         sql`EXISTS (SELECT 1 FROM effecttea_replies WHERE sender_name = ${name})`,
+        sql`EXISTS (SELECT 1 FROM effecttea_answers WHERE sender_name = ${name})`,
       ])))
     const occupied = (name: string) =>
       flag(counted(sql.or(['effecttea_entities', 'effecttea_heads', 'effecttea_consumers'].map((table) =>
         sql`EXISTS (SELECT 1 FROM ${sql(table)} WHERE name = ${name})`
       ))))
     // The requests the old name's entities sent name it as their `entity`: the request that created an entity, a
-    // message waiting in a mailbox, and a reply's request. Each table is given with the columns that key its rows.
+    // message waiting in a mailbox, a reply's request and an answer's. Each table is given with the columns that key
+    // its rows.
     const requests = [
       ['effecttea_entities', 'creation', ['name', 'id']],
       ['effecttea_mailbox', 'request', ['name', 'id', 'seq']],
       ['effecttea_replies', 'request', ['name', 'id', 'request', 'version']],
+      ['effecttea_answers', 'request', ['name', 'id', 'request', 'kind']],
     ] as const
     const sentBy = (column: string, from: string) =>
       sql`json_extract(${sql(column)}, '$._tag') = 'Operation' AND json_extract(${
@@ -611,6 +638,7 @@ export const renamed = (
         }
         yield* dialect === 'pg' ? inProcess(from, to) : inPlace(from, to)
         yield* sql`UPDATE effecttea_replies SET sender_name = ${to} WHERE sender_name = ${from}`
+        yield* sql`UPDATE effecttea_answers SET sender_name = ${to} WHERE sender_name = ${from}`
         yield* sql`UPDATE effecttea_sent_requests SET sender_name = ${to} WHERE sender_name = ${from}`
         yield* sql`UPDATE effecttea_given_requests SET name = ${to} WHERE name = ${from}`
         yield* sql`UPDATE effecttea_waiting SET sender_name = ${to} WHERE sender_name = ${from}`

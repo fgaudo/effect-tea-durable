@@ -104,6 +104,26 @@ export interface Storage<T extends Types> {
     at: number,
   ) => Effect.Effect<Machine.StoredReply<T['rejection']> | null>
   /**
+   * The answer kept for the operation's request `request` to the entity `id`, as a creation or a message by `kind`,
+   * or null for none: a creation `init` rejected, or `NotFound`. No entity stores these, so the storage keeps them
+   * for the operation while its work holds, and a run after a crash is given them again (decision 0253).
+   */
+  readonly answer: (
+    id: string,
+    kind: Machine.Answered,
+    request: Machine.OperationRequest,
+  ) => Effect.Effect<Machine.Unstored<T['rejection']> | null>
+  /**
+   * Keeps `answer` for the operation's request, as `answer` reads it, until the work that asked ends. The caller
+   * wraps it in a transaction. An answer to work that has already ended is not kept (decision 0253).
+   */
+  readonly keepAnswer: (
+    id: string,
+    kind: Machine.Answered,
+    request: Machine.OperationRequest,
+    answer: Machine.Unstored<T['rejection']>,
+  ) => Effect.Effect<void>
+  /**
    * Writes what an event wrote, as the machine encoded it (decision 0057). The caller wraps it in the transaction
    * of the event (decision 0007). `at` is the time of the event, in milliseconds: the time the entity suspended,
    * where the event suspends it (decision 0114). It gives how many characters it wrote of the state and of the

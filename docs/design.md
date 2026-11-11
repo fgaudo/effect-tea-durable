@@ -296,7 +296,9 @@ time of the creation, lives there. The creator is answered `Rejected`, with the 
 the entity nor the reply: a retry under the same request id runs `init` again, as a message answered `NotFound` is
 applied once its entity exists. On Cluster, Cluster saves the door's answer, and the creator's client resets a saved
 `Rejected` before it sends the creation, so that a retry is delivered again
-([decision 0182](decisions/0182-init-may-reject-the-flags.md)).
+([decision 0182](decisions/0182-init-may-reject-the-flags.md)). Another entity's operation is the exception: its
+rejection is kept while its work holds, so that a run after a crash is given it again, as
+[entities that talk](#entities-that-talk) says.
 
 ## Work
 
@@ -420,7 +422,10 @@ the name, whatever the operation's delivery, and no operation can send under ano
 ([decision 0060](decisions/archive/0060-send-and-create-take-no-key.md)): an operation that sends twice under one name to
 the same entity dies ([decision 0047](decisions/archive/0047-a-request-of-an-operation-has-a-name.md)). A restarted operation sends
 the same requests, and gets the receiver's stored replies, kept while the work that sent them is stored
-([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). While the receiver is
+([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). An answer no entity
+stores is kept for the operation the same way: a creation `init` rejected, and a message's `NotFound`. A run after a
+crash is given the kept answer, though another creator has made the entity since, and its message is not applied
+([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)). While the receiver is
 suspended, `send` waits for its resumption, and an operation that reaches a program not deployed yet waits for
 its deploy ([decision 0045](decisions/archive/0045-an-operation-waits-for-a-program-not-deployed-yet.md)): each is woken by
 what it waits for, and nothing looks again on a clock
@@ -1100,8 +1105,10 @@ machine, with one time and one process for all of them
 - what the runner sends reaches the receiver's machine, which handles its mailbox to its end before `send`
   returns. The world keeps the reply under the run's request while the work that asked is stored, so a run after a
   restart is given the stored reply. A receiver that does not exist answers `NotFound`, and `create` creates an
-  entity in the world. A `create` through a reference fails the test where the world runs no program of its name,
-  since a reference brings no code to run ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md));
+  entity in the world. A `NotFound` and a creation `init` rejects are kept for the run's work too, as the runtime
+  keeps them ([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)).
+  A `create` through a reference fails the test where the world runs no program of its name, since a reference
+  brings no code to run ([decision 0183](decisions/0183-a-receiver-is-named-by-a-reference.md));
 - `run(pending, { crash: true })`, or `run(key, { crash: true })`, runs the runner to its end, drops its message,
   and restarts the world: the process died between the replies and the completion;
 - `world.restart` restarts every entity, and `world.deploy(program)` restarts them with a new version of one
@@ -1373,6 +1380,11 @@ them and decides nothing. Each value is encoded once, and the projection of a st
 A reply to another entity is deleted in the transaction that ends the work that asked for it, which the machine
 names, or in the one that stores it, if that work has already ended: only the storage sees another entity's keys
 ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
+
+An answer no entity stores, given to another entity's operation, lies in a table of its own, `effecttea_answers`, and
+is deleted as a reply to another entity is. A row is keyed by the receiver, the request's text, and whether the
+request was a creation or a message, since an operation may give both one name
+([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)).
 
 The machine holds no reply. A message that arrives is given the reply stored under its request, which the runtime
 reads by the request just before the step, where no other event of the entity is applied; an activation reads

@@ -204,8 +204,9 @@ export type Meta<Sender> = Readonly<{
 /**
  * What an inbound message is answered. `Accepted` and `Rejected` are stored under the sender and its request id,
  * and a retry gets them again.
- * `NotFound` is the runtime's, and is not: a retry once the entity exists is applied. A caller outside may also
- * get `Suspended`, not stored either; `send` never does, since it waits.
+ * `NotFound` is the runtime's, and is not: a caller's retry once the entity exists is applied. An operation's is kept
+ * for its work, so a run after a crash is given it again (decision 0253). A caller outside may also get `Suspended`,
+ * not stored either; `send` never does, since it waits.
  */
 export type Reply<Reason> =
   | Readonly<{ _tag: 'Accepted' }>
@@ -1809,8 +1810,9 @@ export const part = <
 
 /**
  * What creating an entity is answered. Only `Created` is stored, under its sender and the request id.
- * `Rejected` is the program's `init`'s, and is not stored: the entity does not exist, and a retry runs `init` again,
- * as a message's `NotFound` is not stored (decision 0182).
+ * `Rejected` is the program's `init`'s, and is not stored: the entity does not exist, and a caller's retry runs `init`
+ * again, as a message's `NotFound` is not stored (decision 0182). An operation's is kept for its work, so a run after
+ * a crash is given it again (decision 0253).
  */
 export type Creation<Reason = never> =
   | Readonly<{ _tag: 'Created' }>
@@ -1843,7 +1845,8 @@ export class Entities extends Context.Service<Entities, {
 /**
  * Sends an inbound message to another entity from an operation, and waits for the reply. The request is the run of
  * the operation and `name`, which names it among those the operation makes (decisions 0047, 0060). So a restarted
- * operation sends the same requests, and gets the stored replies. One that sends twice under the same name to the
+ * operation sends the same requests, and gets the stored replies, and the `NotFound` the run before it was given
+ * (decision 0253). One that sends twice under the same name to the
  * same entity dies. While the receiver is suspended, it waits, and it sends again when the receiver crashes
  * (decision 0046). It sends again too when the receiver holds as many callers' messages as its bound, and is never
  * given `Full` (decision 0147).
@@ -1859,8 +1862,9 @@ export const send = <T extends Types>(
 /**
  * Creates an entity from an operation, under the run of the operation and `name`, as `send` sends. A creation is
  * stored apart from messages, so the same operation may then send the entity a message under the same name
- * (decisions 0017, 0050, 0060). The flags come last, and are left out where the program's flags are `null`
- * (decision 0245).
+ * (decisions 0017, 0050, 0060). A restarted operation is given the rejection of `init` the run before it was given,
+ * though the entity may exist since (decision 0253). The flags come last, and are left out where the program's flags
+ * are `null` (decision 0245).
  */
 export const create = <T extends Types>(
   program: Receiver<T>,

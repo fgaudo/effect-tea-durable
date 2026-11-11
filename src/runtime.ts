@@ -645,7 +645,9 @@ export interface OnCluster {
   /**
    * A creation, sent through the program's door by Cluster's client, from whatever runner the sender is on: what the
    * door's step answered it (decision 0165). An answer `Rejected` is not stored: one Cluster saved under the request is
-   * reset before the creation is sent, so that a retry runs `init` again (decision 0182). A failure Cluster saved as its reply is reset
+   * reset before the creation is sent, so that a caller's retry runs `init` again (decision 0182). An operation's
+   * rejection is kept by the door's step, which answers the creation sent again with it (decision 0253). A failure
+   * Cluster saved as its reply is reset
    * before it is given (decision 0168). `kept` is an operation's: the client calls it with the request's Cluster id
    * before that reset, and it gives whether the asker's work still holds. Where the work has ended, the client neither
    * resets nor gives the failure, and waits until it is interrupted (decisions 0092, 0170). `given` is a caller's:

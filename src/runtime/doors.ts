@@ -313,13 +313,23 @@ export const doorStep = <T extends Types>(p: Process, deployed: Deployment<T>) =
       const { flags } = created
       const request = sentNow(p, created.request)
       if (request._tag === 'Operation') yield* stored.keepSent(requestId, request)
-      if (stepped.loaded === null) {
+      // An operation is given again the rejection a run before it was given, as on one process. The creator's client
+      // resets a rejection Cluster saved, and this step answers it again (decision 0253).
+      const kept = request._tag === 'Operation' ? yield* stored.answer(id, 'Create', request) : null
+      if (kept?._tag === 'Rejected') {
+        if (stepped.loaded === null) return { _tag: 'Create', answer: kept }
+        answer = { _tag: 'Create', answer: kept }
+      } else if (stepped.loaded === null) {
         const started = Machine.start(program, id, flags, now, request)
         // A creation the program dies on stores nothing, and dies: Cluster delivers it again (decision 0160).
         if (started._tag === 'Defect') return yield* Effect.die(started.cause)
-        // A creation `init` rejects stores nothing of the runtime's. Cluster saves the answer, and the creator's
-        // client resets it, as it resets `NotFound` (decision 0182).
-        if (started._tag === 'Rejected') return { _tag: 'Create', answer: started.reply }
+        // A creation `init` rejects stores no entity. Cluster saves the answer, and the creator's client resets it,
+        // as it resets `NotFound`, so that a caller's retry runs `init` again (decision 0182). An operation's is kept
+        // for its work, in this transaction (decision 0253).
+        if (started._tag === 'Rejected') {
+          if (request._tag === 'Operation') yield* stored.keepAnswer(id, 'Create', request, started.reply)
+          return { _tag: 'Create', answer: started.reply }
+        }
         // The creation is a step of its own, linked to the span of the door's request (decision 0220).
         const { span, counted } = yield* traced(entity, { _tag: 'Create' }, yield* spanHere)(Effect.gen(function*() {
           yield* stored.write(id, started.written, DateTime.toEpochMillis(now))
@@ -349,7 +359,19 @@ export const doorStep = <T extends Types>(p: Process, deployed: Deployment<T>) =
       // Kept whatever the step answers: a request answered `Suspended` or `NotFound` is reset and answered again
       // under the same id, which is not kept twice (decision 0169).
       if (request._tag === 'Operation') yield* stored.keepSent(requestId, request)
-      if (stepped.loaded === null) return { _tag: 'Message', answer: { _tag: 'NotFound' } }
+      // An operation is given again the `NotFound` a run before it was given, though the entity may exist since, and
+      // an operation's `NotFound` is kept for its work, in this transaction (decision 0253).
+      const kept = request._tag === 'Operation' ? yield* stored.answer(id, 'Message', request) : null
+      if (stepped.loaded === null) {
+        if (kept === null && request._tag === 'Operation') {
+          yield* stored.keepAnswer(id, 'Message', request, { _tag: 'NotFound' })
+        }
+        return { _tag: 'Message', answer: { _tag: 'NotFound' } }
+      }
+      if (kept?._tag === 'NotFound') {
+        yield* finishIn(p, deployed, stepped, entity)
+        return { _tag: 'Message', answer: kept }
+      }
       const key = Machine.requestKey(program, request)
       const reply = yield* stored.reply(id, request, DateTime.toEpochMillis(now))
       const arrival: Machine.Event<T> = delivered.keep === undefined

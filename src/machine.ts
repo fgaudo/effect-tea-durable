@@ -531,6 +531,20 @@ export type EnvelopeRow =
 /** The work of another entity that sent a request: its reply is kept while that work holds (decision 0021). */
 export type Asker = Readonly<{ name: string; id: string; key: Key; incarnation: number }>
 
+/** A request one of another entity's operations sent. */
+export type OperationRequest = Extract<Request<unknown>, Readonly<{ _tag: 'Operation' }>>
+
+/** Which request an operation was given an answer to: a creation, or a message. */
+export type Answered = 'Create' | 'Message'
+
+/**
+ * An answer no entity stores: a creation `init` rejected, or a request to no entity. An operation's is kept for
+ * its work, so that a run after a crash is given it again (decision 0253).
+ */
+export type Unstored<Reason = unknown> =
+  | Readonly<{ _tag: 'Rejected'; reason: Reason | null }>
+  | Readonly<{ _tag: 'NotFound' }>
+
 /**
  * A reply stored under a request: `request` is its `requestKey`, the request's JSON as text, which the reply is
  * found by. A rejection's reason is null for a bare `reject`, and `asked` is the operation of another entity that

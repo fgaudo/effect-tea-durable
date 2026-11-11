@@ -12,7 +12,7 @@ import type { Storage } from '../storage.ts'
 import { forgetSent, forgetUnder } from './cluster.ts'
 import type { Held } from './held.ts'
 import { rowOf } from './projections.ts'
-import { batch, callerOf, Count, type Guard, keyOfRow, keyRow, Rows, unguarded } from './rows.ts'
+import { batch, callerOf, Count, type Guard, keyOfRow, keyRow, reasonOf, Rows, unguarded } from './rows.ts'
 import { partitionOf, transaction } from './tables.ts'
 
 /**
@@ -62,6 +62,8 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
   | 'delivered'
   | 'deliveredCreation'
   | 'reply'
+  | 'answer'
+  | 'keepAnswer'
   | 'write'
   | 'interrupted'
   | 'interruptedIn'
@@ -76,6 +78,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
     held
   const { state, inbound, internal, flags, request, reason, suspended } = held.codecs
   const row = rowOf(held)
+  const encodeReason = Schema.encodeSync(reasonOf(program.schemas.rejection))
 
   /**
    * The entity's rows, read through the migrations, and its cause and the time it suspended, if it is. What the
@@ -225,6 +228,60 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
         `),
         key,
       )
+    }).pipe(Effect.orDie)
+
+  // Kept under the receiver and the request, by `kind`, so that a creation and a message an operation names alike
+  // keep an answer each (decision 0253).
+  const answer = (id: string, kind: Machine.Answered, asked: Machine.OperationRequest) =>
+    Effect.gen(function*() {
+      const found = yield* rows('effecttea_answers', Rows.answer)(sql`
+        SELECT tag, version, reason FROM effecttea_answers
+        WHERE name = ${name} AND id = ${id} AND request = ${Machine.requestKey(program, asked)} AND kind = ${kind}
+      `)
+      const held = found[0]
+      if (held === undefined) return null
+      return held.tag === 'NotFound'
+        ? { _tag: 'NotFound' } as const
+        : {
+          _tag: 'Rejected',
+          reason: held.reason === null ? null : reason.read(held.reason, upReason(held.version)),
+        } as const
+    }).pipe(Effect.orDie)
+
+  // Written in the caller's transaction. The answer of work that already ended goes as it is written, as a reply
+  // to such work does, since no step of the work's entity is left to delete it (decisions 0021, 0253).
+  const keepAnswer = (
+    id: string,
+    kind: Machine.Answered,
+    asked: Machine.OperationRequest,
+    given: Machine.Unstored<T['rejection']>,
+  ) =>
+    Effect.gen(function*() {
+      const asking = keyRow(asked.key)
+      const request = Machine.requestKey(program, asked)
+      yield* upsert('effecttea_answers', ['name', 'id', 'request', 'kind'], {
+        name,
+        id,
+        request,
+        kind,
+        tag: given._tag,
+        version,
+        reason: given._tag === 'Rejected' && given.reason !== null ? JSON.stringify(encodeReason(given.reason)) : null,
+        sender_name: asked.entity.name,
+        sender_id: asked.entity.id,
+        sender_key: asking.key,
+        sender_parameter: asking.parameter,
+        sender_incarnation: asked.incarnation,
+      })
+      yield* sql`
+        DELETE FROM effecttea_answers
+        WHERE name = ${name} AND id = ${id} AND request = ${request} AND kind = ${kind}
+          AND NOT EXISTS (
+            SELECT 1 FROM effecttea_entity_keys AS asking
+            WHERE asking.name = ${asked.entity.name} AND asking.id = ${asked.entity.id} AND asking.key = ${asking.key}
+              AND asking.parameter = ${asking.parameter} AND asking.incarnation = ${asked.incarnation}
+          )
+      `
     }).pipe(Effect.orDie)
 
   const write = (id: string, written: Machine.Written, at: number) =>
@@ -380,6 +437,11 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
         const ended = keyRow(key)
         yield* sql`
           DELETE FROM effecttea_replies
+          WHERE sender_name = ${name} AND sender_id = ${id} AND sender_key = ${ended.key}
+            AND sender_parameter = ${ended.parameter} AND sender_incarnation = ${incarnation}
+        `
+        yield* sql`
+          DELETE FROM effecttea_answers
           WHERE sender_name = ${name} AND sender_id = ${id} AND sender_key = ${ended.key}
             AND sender_parameter = ${ended.parameter} AND sender_incarnation = ${incarnation}
         `
@@ -601,6 +663,8 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
     delivered,
     deliveredCreation,
     reply,
+    answer,
+    keepAnswer,
     write,
     interrupted,
     interruptedIn,

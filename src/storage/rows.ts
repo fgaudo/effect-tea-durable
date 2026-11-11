@@ -192,6 +192,11 @@ export const Rows = {
       reason: Schema.NullOr(Schema.String),
     }),
   ])),
+  /** An answer an operation was given that no entity stores: a creation's `Rejected`, or `NotFound` (decision 0253). */
+  answer: decoder(Schema.Union([
+    Schema.Struct({ tag: Schema.Literal('NotFound'), version: Version, reason: Schema.Null }),
+    Schema.Struct({ tag: Schema.Literal('Rejected'), version: Version, reason: Schema.NullOr(Schema.String) }),
+  ])),
   projection: decoder(Schema.Struct({
     id: Schema.String,
     projection: Schema.String,

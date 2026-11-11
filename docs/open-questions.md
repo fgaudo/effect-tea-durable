@@ -261,23 +261,19 @@ with a requirement that no example has yet.
   - a test of `src/cluster.test.ts` with two runners of two versions, where the newer resumes an entity the older
     suspended with a droppable operation under way;
   - whether the resume reconciles the stored operations with the program, as an activation does.
-- **An answer a run after a crash is not given again.** An operation that talks only to entities acts once, since a
-  run after a crash is given the stored replies
-  ([decision 0060](decisions/archive/0060-send-and-create-take-no-key.md)). A rejection of `init` is not stored
-  ([decision 0182](decisions/0182-init-may-reject-the-flags.md)), nor is `NotFound`
-  ([decision 0010](decisions/archive/0010-a-rejection-may-carry-a-reason.md)). A run after a crash may be told
-  otherwise, and act otherwise, as the test `FAILING: an at-least-once operation run again after a crash acts once,
-  though init rejected its creation`, on the branch `claude/premise-review-creation-03f15d`, shows. A run after a
-  crash may also be told `Created` where the first was told `Rejected`, when `init` reads the time or a deploy
-  changed `init`. Decision 0182 says so of a caller's retry, and not of an operation that acts on the answer. Whether these
-  answers are stored, or the promise of `docs/design.md` and of decision 0009 is narrowed, is not decided. It would
-  be decided by:
-  - whether storing a rejection of `init` or a `NotFound` while the operation's work holds keeps 0182's reason, that
-    a rejected creation leaves nothing;
-  - a test of the `NotFound` half, which no test holds: the test above written again with a `send` to an entity
-    created between the two runs;
-  - whether a sentence of the design can say which answers a run after a crash is given again, so that a program
-    acts only on those.
+- **An operation's kept answer on Cluster across a crash, and under two runs at once.** An answer no entity stores is
+  kept for the operation that was given it, and the door's step answers the request again with it
+  ([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)). A
+  test with a Cluster the test plays holds the door's step. No test runs an operation on Cluster that is given the
+  answer, crashes, and runs again. The rule also reads the kept answer outside the receiver's lock, since the runs of
+  one incarnation are one after the other. A crash forks the stop of its entity's operations and does not wait for
+  it, as bug 31 of the [roadmap](roadmap.md) says. So the next run may start before the old run ends: on one process
+  `retry` after the crash, and on Cluster on the runner that gains the shard. The new run may then read no answer
+  before the old run keeps one. It would be decided by:
+  - a test of `src/cluster.test.ts` that gives an operation `Rejected`, crashes the sender's entity, creates the
+    receiver, and checks the next run, which family C of the roadmap makes possible;
+  - whether two runs of one incarnation at once may act on different answers, as they may act twice on any answer,
+    or the answer is read and kept under the receiver's lock.
 - **A creation that `init` dies on, on Cluster.** On one process, an operation's creation that `init` dies on
   suspends the sender ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). On
   Cluster the door dies, and Cluster delivers the creation again without end

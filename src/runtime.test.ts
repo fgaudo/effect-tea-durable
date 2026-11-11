@@ -24,6 +24,7 @@ import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import * as Machine from './machine.ts'
 import {
+  create as createFrom,
   defect,
   type Address,
   type Entities,
@@ -3045,6 +3046,117 @@ describe('what the runtime cannot finish', () => {
           expect(yield* toy.create(id, { flags: { at }, ...creation })).toEqual({ _tag: 'Created' })
           yield* runtime.settled
         }))
+    })))
+
+  // An operation that talks only to entities acts once, since a run after a crash is given the answers the run before
+  // it was given. A creation `init` rejects stores no entity (decision 0182), so the operation's answer is kept for
+  // its work (decision 0253). Without it, the run after the crash is answered `AlreadyExists`, and acts on it too.
+  test('an at-least-once operation run again after a crash acts once, though init rejected its creation', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { layer } = yield* hands()
+      // `init` rejects flags at the time 0, and takes any other.
+      const gate: Program<T> = {
+        ...program,
+        name: 'Gate',
+        init: (flags, now) =>
+          DateTime.toEpochMillis(flags.at) === 0 ? rejectWith('Refused') : program.init(flags, now),
+      }
+      let holds = true
+      // Creates `g`, tells `toy-1` what the creation answered under a name of that answer, and, in the first
+      // process, never ends: its act is done in the world, and not recorded.
+      const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
+        ...sending,
+        operations: {
+          ...sending.operations,
+          C: operation.atLeastOnce(({ key }) =>
+            Effect.gen(function*() {
+              const made = yield* createFrom(gate, 'g', 'make', { at: DateTime.makeUnsafe(0) })
+              const name = made._tag === 'Rejected' ? 'refund' : 'confirm'
+              yield* send(program, id, { _tag: 'Want', key: 'a', on: false, nonce: made._tag }, name)
+              if (holds) yield* Effect.never
+              return done(key)
+            })
+          ),
+        },
+      }
+      const creation = { flags: { at }, requestId: 'creation', sender: tester }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const gates = yield* Effect.provide(runtime.deploy(gate), layer)
+          const from = yield* runtime.deploy(sender)
+          yield* ran(toy.create(id, creation))
+          yield* ran(from.create('sender', creation))
+          // Another creator makes `g` while the operation is under way.
+          expect(yield* ran(gates.create('g', { ...creation, flags: { at: DateTime.makeUnsafe(1) } })))
+            .toEqual({ _tag: 'Created' })
+        }))
+      holds = false
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          yield* Effect.provide(runtime.deploy(program), layer)
+          yield* Effect.provide(runtime.deploy(gate), layer)
+          const from = yield* runtime.deploy(sender)
+          yield* ran(from.create('sender', creation))
+          yield* runtime.settled
+        }))
+      const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
+      // The first run told `toy-1` `Rejected`, and the run after the crash is given `Rejected` again.
+      expect(stored?.state.applied).toEqual(['Rejected'])
+    })))
+
+  // A message to no entity is answered `NotFound`, which no entity stores, so the operation's answer is kept for its
+  // work (decision 0253). Without it, the run after the crash reaches the entity another creator made since, and acts
+  // on `Accepted` too.
+  test('an at-least-once operation run again after a crash acts once, though its message found no entity', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { layer } = yield* hands()
+      const gate: Program<T> = { ...program, name: 'Gate' }
+      let holds = true
+      // Tells `g` a message, tells `toy-1` what the message was answered, and, in the first process, never ends.
+      const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
+        ...sending,
+        operations: {
+          ...sending.operations,
+          C: operation.atLeastOnce(({ key }) =>
+            Effect.gen(function*() {
+              const told = yield* send(gate, 'g', { _tag: 'Want', key: 'b', on: false, nonce: 'n' }, 'tell')
+              yield* send(program, id, { _tag: 'Want', key: 'a', on: false, nonce: told._tag }, 'report')
+              if (holds) yield* Effect.never
+              return done(key)
+            })
+          ),
+        },
+      }
+      const creation = { flags: { at }, requestId: 'creation', sender: tester }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const gates = yield* Effect.provide(runtime.deploy(gate), layer)
+          const from = yield* runtime.deploy(sender)
+          yield* ran(toy.create(id, creation))
+          yield* ran(from.create('sender', creation))
+          // Another creator makes `g` while the operation is under way.
+          expect(yield* ran(gates.create('g', creation))).toEqual({ _tag: 'Created' })
+        }))
+      holds = false
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          yield* Effect.provide(runtime.deploy(program), layer)
+          yield* Effect.provide(runtime.deploy(gate), layer)
+          const from = yield* runtime.deploy(sender)
+          yield* ran(from.create('sender', creation))
+          yield* runtime.settled
+        }))
+      const sql = yield* SqlClient.SqlClient
+      const stored = yield* storage(program, sql).load(id)
+      expect(stored?.state.applied).toEqual(['NotFound'])
+      // The message reached `g` in neither run.
+      expect((yield* storage(gate, sql).load('g'))?.state.applied).toEqual([])
+      // The work ended, and took its answer with it.
+      expect(yield* sql`SELECT * FROM effecttea_answers`).toEqual([])
     })))
 
   test('an entity the waker cannot activate is tried again after the retry, and the other timers fire', () =>

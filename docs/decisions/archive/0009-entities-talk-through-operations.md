@@ -4,6 +4,9 @@
 replaced by [decision 0047](0047-a-request-of-an-operation-has-a-name.md), and `send` taking the request id by
 [decision 0060](0060-send-and-create-take-no-key.md). The two programs it left to two rehearsals are rehearsed
 together by [decision 0131](0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md).
+That a run after a crash is given every answer the run before it acted on holds since [decision
+0253](../0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md), which keeps the answers no
+entity stores.
 
 ## Context
 

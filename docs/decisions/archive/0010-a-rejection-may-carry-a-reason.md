@@ -3,6 +3,8 @@
 **Status:** accepted, 2026-10-30. What it says a caller of a suspended entity is answered is replaced by
 [decision 0023](0023-suspended-means-no-reply-yet.md). [Decision 0201](../0201-rejectwith-keeps-the-literal-of-its-reason.md) types
 the reason of `rejectWith` with a `const` parameter, so that it keeps its literal.
+Changed by [decision 0253](../0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md), which
+keeps an operation's `NotFound` for the operation's work, so that a run after a crash is given it again.
 
 ## Context
 

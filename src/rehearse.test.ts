@@ -701,6 +701,39 @@ describe('a world', () => {
     expect(reasonOf(exit)).toBe("the init of Inventory rejected the flags of 'concert-1'")
   })
 
+  // A rejection at creation and a message to no entity store no entity, and the world keeps each for the work that
+  // asked, as the runtime does: a run after a crash is given the same answers, though the entity exists by then
+  // (decision 0253).
+  test('answers a run after a crash as the first, where init rejected its creation or its message found no entity', () => {
+    const gated = {
+      ...inventory,
+      init: (flags: { capacity: number }, now: DateTime.Utc) =>
+        flags.capacity === 0 ? rejectWith('SalesClosed' as const) : inventory.init(flags, now),
+    }
+    const told: Array<string> = []
+    const creating = holdingBy(operation.atLeastOnce(({ event, seats }) =>
+      Effect.gen(function*() {
+        const created = yield* create(gated, event, 'inventory', { capacity: 0 })
+        const reply = yield* send(gated, 'concert-2', { _tag: 'HoldRequested', seats }, 'hold')
+        told.push(`${created._tag}/${reply._tag}`)
+        return { _tag: 'SeatsUnavailable', reason: 'SalesClosed' } as const
+      })
+    ))
+    return Effect.runPromise(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        const held = yield* world.create(creating, 'booking-1', flags)
+        yield* held.run('hold', { crash: true })
+        // Another creator makes both entities between the two runs.
+        yield* world.create(gated, 'concert-1', { capacity: 4 })
+        const second = yield* world.create(gated, 'concert-2', { capacity: 4 })
+        expect(yield* held.run('hold')).toBe('Delivered')
+        expect(told).toEqual(['Rejected/NotFound', 'Rejected/NotFound'])
+        expect((yield* second.state).held).toEqual({})
+      }),
+    ))
+  })
+
   test('fails a run of an operation no longer under way', async () => {
     const exit = await Effect.runPromiseExit(rehearse.together(
       at,

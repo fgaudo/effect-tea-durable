@@ -231,6 +231,12 @@ export const create = <T extends Types>(
     }
     // Detached from the caller: a creation committed is always started, and its entity loaded (decision 0079).
     const asked = yield* detached(p, deployed, holding(p, entity)(Effect.gen(function*() {
+      // An operation is given again the rejection a run before it was given, which no entity stores, so that a run
+      // after a crash acts on the same answer (decision 0253).
+      if (request._tag === 'Operation') {
+        const kept = yield* deployed.storage.answer(id, 'Create', request)
+        if (kept?._tag === 'Rejected') return kept
+      }
       const held = deployed.loaded.get(id) ?? null
       const creating: Machine.Offered<T> = { _tag: 'Create', request }
       // The entity was already there: the machine answers the request from what is stored (decision 0017).
@@ -250,9 +256,15 @@ export const create = <T extends Types>(
         // A defect at creation stores nothing (decision 0014): its creator is given the defect itself, and a
         // retry after a fix creates the entity (decision 0124).
         if (started._tag === 'Defect') return yield* Effect.fail(new Faulted({ defect: started.cause }))
-        // A creation `init` rejects stores nothing, and its reply is not stored either: a retry runs `init` again
-        // (decision 0182).
-        if (started._tag === 'Rejected') return { _tag: 'Rejected', reply: started.reply } as const
+        // A creation `init` rejects stores nothing, and its reply is not stored either: a caller's retry runs `init`
+        // again (decision 0182). An operation's is kept for its work before it is given (decision 0253).
+        if (started._tag === 'Rejected') {
+          if (request._tag === 'Operation') {
+            yield* transaction(p.sql, deployed.storage.keepAnswer(id, 'Create', request, started.reply))
+              .pipe(Effect.orDie)
+          }
+          return { _tag: 'Rejected', reply: started.reply } as const
+        }
         const loaded = yield* fresh<T>(p, started.machine, 0)
         const creation: Machine.Event<T> = { _tag: 'Create', request }
         yield* at(p, 'BeforeCommit', entity, creation)
@@ -322,6 +334,12 @@ export const send = <T extends Types>(
         : undefined
       return yield* p.cluster.send(deployed.program, { ...sent, keep }, kept, given)
     }
+    // An operation is given again the `NotFound` a run before it was given, though the entity may exist since, so
+    // that a run after a crash acts on the same answer (decision 0253).
+    if (request._tag === 'Operation') {
+      const kept = yield* deployed.storage.answer(id, 'Message', request)
+      if (kept?._tag === 'NotFound') return kept
+    }
     const event: Machine.Offered<T> = keep === undefined
       ? { _tag: 'Receive', request, message }
       : { _tag: 'Receive', request, message, keep }
@@ -337,7 +355,13 @@ export const send = <T extends Types>(
         taken ? ask(p, p.messages, loaded, entity, requested, event) : Effect.as(warnOfFull(p, loaded, entity), 'Full')
       return Effect.uninterruptible(Effect.flatMap(loaded.callers.takeIfAvailable(1), offered))
     })
-    if (asked === null) return { _tag: 'NotFound' }
+    if (asked === null) {
+      if (request._tag === 'Operation') {
+        yield* transaction(p.sql, deployed.storage.keepAnswer(id, 'Message', request, { _tag: 'NotFound' }))
+          .pipe(Effect.orDie)
+      }
+      return { _tag: 'NotFound' }
+    }
     if (asked === 'Full') return { _tag: 'Full' }
     return (yield* answered(asked)) as Answer<T['rejection']>
   })

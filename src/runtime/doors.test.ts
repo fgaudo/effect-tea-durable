@@ -11,7 +11,7 @@ import * as Metric from 'effect/Metric'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import * as Tracer from 'effect/Tracer'
-import { operation, type Program, versionOf } from '../program.ts'
+import { operation, type Program, rejectWith, versionOf } from '../program.ts'
 import { type Delivered, launchWith, type OnCluster, Probe, type Said } from '../runtime.ts'
 import { createTables, storage } from '../storage.ts'
 import { client } from '../storage.test_databases.ts'
@@ -311,4 +311,104 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
       expect(yield* counted).toMatchObject({ count: 4, sum: 1 })
     })).pipe(Effect.provide(client('sqlite')), Effect.provideService(Metric.MetricRegistry, registry)))
   }, 10_000)
+
+  // An operation's creation `init` rejects, and its message to no entity, store no entity: the door's step keeps the
+  // answer for the operation's work, and answers a delivery of the same request with it, as one process does. Cluster
+  // delivers the request again for a run after a crash, by then after another creator made the entity
+  // (decision 0253).
+  test('an operation’s request a door answered Rejected or NotFound is answered so again, though its entity exists', () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      asked = []
+      const sql = yield* SqlClient.SqlClient
+      yield* createTables
+      yield* clusterTables
+      type Gate = {
+        state: Readonly<{ told: number }>
+        flags: Readonly<{ open: boolean }>
+        inbound: Readonly<{ _tag: 'Tell' }>
+        internal: never
+        operation: never
+        key: never
+        parameter: {}
+        rejection: 'Closed'
+        sender: Readonly<{ user: string }>
+        projection: number
+        index: never
+        services: never
+      }
+      const gate: Program<Gate> = {
+        name: 'Gate',
+        keys: {},
+        schemas: {
+          state: Schema.Struct({ told: Schema.Number }),
+          flags: Schema.Struct({ open: Schema.Boolean }),
+          inbound: Schema.TaggedStruct('Tell', {}),
+          internal: Schema.Never,
+          operation: Schema.Never,
+          rejection: Schema.Literal('Closed'),
+          sender: Schema.Struct({ user: Schema.String }),
+          projection: Schema.Number,
+        },
+        init: ({ open }) => open ? { told: 0 } : rejectWith('Closed'),
+        update: () => ({ told }) => ({ told: told + 1 }),
+        work: () => ({}),
+        operations: {},
+        project: ({ told }) => told,
+        indexes: {},
+      }
+      const steps = new Map<string, (delivered: Delivered) => Effect.Effect<unknown>>()
+      const cluster: OnCluster = {
+        shards: 1,
+        versions: null,
+        shardOf: () => 1,
+        guard: () => Effect.void,
+        holds: () => true,
+        singleton: (_name, run) => Effect.asVoid(Effect.forkScoped(Effect.scoped(Effect.andThen(run, Effect.never)))),
+        register: (program, given) =>
+          Effect.sync(() => void steps.set(program.name, given as (delivered: Delivered) => Effect.Effect<unknown>)),
+        others: { version: Effect.succeed(0), millis: 1_000 },
+        // These tests step the door directly, and send nothing through Cluster's client.
+        create: () => Effect.die('no creation is sent through the client here'),
+        send: () => Effect.die('no message is sent through the client here'),
+        operate: () => Effect.die('no operator’s event is sent through the client here'),
+        resume: () => Effect.die('no sender is told of a resumption here'),
+      }
+      const runtime = yield* launchWith({}, cluster)
+      yield* runtime.deploy(relay)
+      yield* runtime.deploy(gate)
+      const door = (program: Program<any>, id: string, delivered: Pick<Delivered, '_tag' | 'request' | 'message'>) =>
+        sql.withTransaction(steps.get(program.name)!({ ...delivered, id, version: versionOf(program) }))
+      // `one` runs `Ask`, which never ends: the work whose requests the door is delivered.
+      yield* door(relay, 'one', { _tag: 'Create', request: caller('c1'), message: '{}' })
+      yield* door(relay, 'one', { _tag: 'Message', request: caller('m1'), message: JSON.stringify({ _tag: 'Go' }) })
+      let running: number | undefined
+      while (running === undefined) {
+        yield* Effect.sleep('10 millis')
+        const loaded = yield* storage(relay, sql).load('one')
+        running = Object.values(loaded?.keys ?? {}).find((run) => run.key.name === 'ask')?.incarnation
+      }
+      const fromAsk = (name: string) =>
+        JSON.stringify({
+          _tag: 'Operation',
+          entity: { name: 'Relay', id: 'one' },
+          key: { name: 'ask' },
+          incarnation: running,
+          name,
+        })
+      const closed = JSON.stringify({ open: false })
+      const open = JSON.stringify({ open: true })
+      const tell = JSON.stringify({ _tag: 'Tell' })
+      expect(yield* door(gate, 'g', { _tag: 'Create', request: fromAsk('make'), message: closed }))
+        .toEqual({ _tag: 'Create', answer: { _tag: 'Rejected', reason: 'Closed' } })
+      expect(yield* door(gate, 'h', { _tag: 'Message', request: fromAsk('tell'), message: tell }))
+        .toEqual({ _tag: 'Message', answer: { _tag: 'NotFound' } })
+      // Another creator makes both entities.
+      yield* door(gate, 'g', { _tag: 'Create', request: caller('c2'), message: open })
+      yield* door(gate, 'h', { _tag: 'Create', request: caller('c3'), message: open })
+      expect(yield* door(gate, 'g', { _tag: 'Create', request: fromAsk('make'), message: open }))
+        .toEqual({ _tag: 'Create', answer: { _tag: 'Rejected', reason: 'Closed' } })
+      expect(yield* door(gate, 'h', { _tag: 'Message', request: fromAsk('tell'), message: tell }))
+        .toEqual({ _tag: 'Message', answer: { _tag: 'NotFound' } })
+      expect((yield* storage(gate, sql).load('h'))?.state).toEqual({ told: 0 })
+    })).pipe(Effect.provide(client('sqlite')))), 10_000)
 })

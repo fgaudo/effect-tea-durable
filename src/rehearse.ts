@@ -224,6 +224,20 @@ const makeWorld = (at: DateTime.Utc) => {
   let requests = 0
   // The callers' requests the test named, by their request's key: only their replies are kept (decision 0200).
   const named = new Set<string>()
+  // The answers no entity stores that another entity's operation was given, kept while the work that asked holds, as
+  // the runtime keeps them: a creation `init` rejected, and a message to no entity (decision 0253).
+  const answers = new Map<string, Readonly<{ answer: Machine.Unstored; asked: Machine.Asker }>>()
+  const answerKey = (receiver: string, id: string, kind: Machine.Answered, request: Machine.OperationRequest) =>
+    JSON.stringify([
+      receiver,
+      id,
+      kind,
+      request.entity.name,
+      request.entity.id,
+      Machine.keyText(request.key),
+      request.incarnation,
+      request.name,
+    ])
 
   // A world holds entities of many programs: each is stepped by the one deployed under its name (decision 0064).
   const programOf = <T extends Types>(entity: Entity<T>) => programs.get(entity.address.name) as unknown as Program<T>
@@ -267,6 +281,12 @@ const makeWorld = (at: DateTime.Utc) => {
       })
     }
     for (const ended of transition.written?.ended ?? []) {
+      for (const [held, { asked }] of answers) {
+        if (
+          asked.name === entity.address.name && asked.id === entity.address.id &&
+          Machine.keyText(asked.key) === Machine.keyText(ended.key) && asked.incarnation === ended.incarnation
+        ) answers.delete(held)
+      }
       for (const other of entities.values()) {
         for (const [request, { asked }] of other.replies) {
           if (
@@ -461,28 +481,49 @@ const makeWorld = (at: DateTime.Utc) => {
           return invariant(`the operation ${kind === 'message' ? 'sent' : 'created'} '${name}' to ${program.name} '${id}' twice`)
         }
         used[kind].add(to)
-        return Effect.succeed<Request<never>>({ _tag: 'Operation', entity: sender, key, incarnation, name })
+        return Effect.succeed<Machine.OperationRequest>({ _tag: 'Operation', entity: sender, key, incarnation, name })
       })
+    const kept = (
+      to: string,
+      id: string,
+      kind: Machine.Answered,
+      request: Machine.OperationRequest,
+      answer: Machine.Unstored,
+    ) => {
+      const asked = { name: sender.name, id: sender.id, key, incarnation }
+      answers.set(answerKey(to, id, kind, request), { answer, asked })
+      return answer
+    }
     return Entities.of({
       send: <R extends Types>(program: Receiver<R>, id: string, message: R['inbound'], name: string) =>
         Effect.flatMap(named('message', program as unknown as Receiver<Types>, id, name), (request) => {
+          if (answers.has(answerKey(program.name, id, 'Message', request))) {
+            return Effect.succeed<Reply<R['rejection']>>({ _tag: 'NotFound' })
+          }
           const receiver = entities.get(addressKey({ name: program.name, id })) as Entity<R> | undefined
-          // A receiver that does not exist answers `NotFound`, and stores nothing.
+          // A receiver that does not exist answers `NotFound`, which no entity stores, and the world keeps for the
+          // work that asked.
           return receiver === undefined
-            ? Effect.succeed<Reply<R['rejection']>>({ _tag: 'NotFound' })
+            ? Effect.succeed(kept(program.name, id, 'Message', request, { _tag: 'NotFound' }) as Reply<R['rejection']>)
             : receive(receiver, message, request)
         }),
       create: <R extends Types>(program: Receiver<R>, id: string, name: string, ...[given]: Flagged<R>) =>
         Effect.flatMap(named('creation', program as unknown as Receiver<Types>, id, name), (request) =>
           Effect.suspend((): Effect.Effect<Creation<R['rejection']>> => {
+            const rejected = answers.get(answerKey(program.name, id, 'Create', request))?.answer
+            if (rejected?._tag === 'Rejected') return Effect.succeed(rejected as Creation<R['rejection']>)
             const existing = entities.get(addressKey({ name: program.name, id })) as Entity<R> | undefined
             if (existing === undefined) {
               // A creation that cannot be stored is the creator's defect, as in the runtime (decision 0049). One
-              // `init` rejects creates nothing, and its reply is not stored (decision 0182).
+              // `init` rejects creates nothing, and the world keeps its answer for the work that asked
+              // (decisions 0182, 0253).
               return Effect.map(
                 Effect.flatMap(deployedAs(program), (deployed) =>
                   born(deployed, id, given === undefined ? null : given, request)),
-                (born): Creation<R['rejection']> => born._tag === 'Rejected' ? born : { _tag: 'Created' },
+                (born): Creation<R['rejection']> =>
+                  born._tag === 'Rejected'
+                    ? kept(program.name, id, 'Create', request, born) as Creation<R['rejection']>
+                    : { _tag: 'Created' },
               )
             }
             return Effect.flatMap(apply(existing, { _tag: 'Create', request }), (outputs) => {

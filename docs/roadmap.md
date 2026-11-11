@@ -18,13 +18,17 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   passes under the rule, as the proof that the rule holds the case. A bug of no family gets a fix of its own.
 
   How the step goes on:
-  - The parts done are families F and E. Family F is decided by
-    [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), and family E by
-    [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md). What each left
+  - The parts done are families F, E and B. Family F is decided by
+    [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), family E by
+    [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md), and family B by
+    [decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md). What each left
     unverified is an [open question](open-questions.md#running): A sender and Cluster's round at the least retry,
-    and The cases of a crash's retry not run yet.
-  - The next part is a family the maintainer picks among B and G. Families A, C and D take their rules from later
-    steps of this roadmap. A review on 2026-11-11 put B after E, since bug 9 is independent of the others.
+    The cases of a crash's retry not run yet, and An operation's kept answer on Cluster across a crash, and under two
+    runs at once.
+  - The next part is family G, the last whose rule is this step's. Families A, C and D take their rules from later
+    steps of this roadmap. Its rule is proposed to the maintainer first, as the next item says. The rule proposed on
+    2026-11-11, not chosen yet, runs each check of the form, of the CI and of the explored tests against the case it
+    refuses, and leaves bugs 48 and 83 to fixes of their own.
   - A family's rule is proposed to the maintainer before any code, with the alternatives, and the code waits for the
     maintainer's choice. The maintainer may ask for the opinion of a subagent first, as a Fable 5.2 agent gave for F
     and E.
@@ -37,9 +41,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - A, a newer version against what an older one stored or runs: bugs 1, 5, 7, 15, 16, 28 to 30, 56, 62, 68, 76 and 77, and the door
     of the next step. A rename is such a change. Its rule is the step What a deploy may change of a program, against
     what is stored, below.
-  - B, an answer an operation acts on and that a run after a crash is not given again: bug 9, and its half of
-    `NotFound`. Its rule would be that every answer an operation acts on is kept while its work holds, in
-    `src/runtime/callers.ts`, where every answer passes.
   - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39,
     54, 55, 57 to 59, 63, 70, 73, 74, 77, 84, 85 and 89 to 91, as decisions 0248 and 0249 were. Its rule is the step The tests of a contract on every backend, below: the
     tests of the runtime run alike on one process and on Cluster.
@@ -105,20 +106,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      its check ([decisions 0133](decisions/archive/0133-an-entity-composes-children-as-effect-tea-does.md),
      [0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md)). Verified by a test of types: the
      [open question](open-questions.md#the-surface) An own message named like a child, with a tag typed `string`.
-  9. **Reproduced: an at-least-once operation run again after a crash acts twice, when `init` rejected its
-     creation.** An operation that talks only to entities acts once, since a run after a crash is given the stored
-     replies ([decisions 0009](decisions/archive/0009-entities-talk-through-operations.md),
-     [0060](decisions/archive/0060-send-and-create-take-no-key.md)). That holds only where every answer the
-     operation acts on is stored. A rejection of `init` is not stored
-     ([decision 0182](decisions/0182-init-may-reject-the-flags.md)). So a run told `Rejected` sends one message, the
-     process dies before its completion, another creator creates the entity, and the run after the crash is told
-     `AlreadyExists` and sends another. The test `FAILING: an at-least-once operation run again after a crash acts
-     once, though init rejected its creation`, in `src/runtime.test.ts`, reproduces it on the branch
-     `claude/premise-review-creation-03f15d`, at commit `38fb0a2`, cut from `main` at `f4a28e0`, with no change of
-     `src/` since. `NotFound` is not stored either
-     ([decision 0010](decisions/archive/0010-a-rejection-may-carry-a-reason.md)), so the gap is older than 0182, and
-     no test holds that half. Its fix is a choice of the design: the [open question](open-questions.md#running) An
-     answer a run after a crash is not given again.
+  9. **Fixed by [decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)**, which keeps an operation's `Rejected` of `init` and its `NotFound` for its work.
   10. **Reasoned: on Cluster, a creation that `init` dies on, sent by an operation, waits for ever and no operator
       sees it.** On one process the sender is suspended
       ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). On Cluster the door dies
