@@ -7,14 +7,13 @@
  * those of the callers' messages alone, which both handle in the order they are sent.
  */
 import { expect, test } from 'bun:test'
+import { readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import * as Arbitrary from 'effect/Arbitrary'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import { TestClock } from 'effect/testing'
-import { booking } from './fixtures/booking.ts'
-import { inventory } from './fixtures/inventory.ts'
-import { order } from './fixtures/order.ts'
 import { launch } from './index.ts'
 import { operation, type Program, type Types } from './index.program.ts'
 import { rehearse } from './index.testing.ts'
@@ -36,7 +35,6 @@ const stalled = <T extends Types>(program: Program<T>): Program<Any> => ({
 })
 
 type Case = Readonly<{
-  program: Program<Any>
   /**
    * A sender the flags name, which a step compares with the sender of a message. Two strings a schema derives are
    * almost never equal, so without it every message that asks for the entity's customer would be rejected.
@@ -44,16 +42,34 @@ type Case = Readonly<{
   named?: (flags: never) => unknown
 }>
 
-const cases: ReadonlyArray<Case> = [
-  { program: stalled(inventory) },
-  { program: stalled(booking), named: (flags: { customer: string }) => ({ _tag: 'Customer', id: flags.customer }) },
-  { program: stalled(order), named: (flags: { order: { customer: string } }) => ({ _tag: 'Customer', id: flags.order.customer }) },
-]
+/**
+ * What the property needs of each program of `src/fixtures/`, by the program's name. The programs are read from the
+ * folder, so a fixture added gets the property, and a test fails until it is listed here (decision 0254).
+ */
+const needs: Readonly<Record<string, Case>> = {
+  Inventory: {},
+  Booking: { named: (flags: { customer: string }) => ({ _tag: 'Customer', id: flags.customer }) },
+  Order: { named: (flags: { order: { customer: string } }) => ({ _tag: 'Customer', id: flags.order.customer }) },
+}
+
+/** Every program a module of `src/fixtures/` exports. */
+const fixtures: ReadonlyArray<Program<Any>> = await Promise.all(
+  readdirSync(join(import.meta.dir, 'fixtures')).filter((file) => file.endsWith('.ts')).map(async (file) =>
+    Object.values(await import(`./fixtures/${file}`) as Record<string, unknown>).filter((value): value is Program<Any> =>
+      typeof value === 'object' && value !== null && 'operations' in value && 'schemas' in value && 'name' in value
+    )
+  ),
+).then((found) => found.flat())
+
+test('every program of src/fixtures is given what the property needs of it', () => {
+  expect(fixtures.length).toBeGreaterThan(0)
+  expect(fixtures.map(({ name }) => name).sort()).toEqual(Object.keys(needs).sort())
+})
 
 // A few request ids, so that a send is now and then a retry of an earlier one, and null for a new request.
 const RequestId = Schema.NullOr(Schema.Literals(['r-1', 'r-2', 'r-3']))
 
-const scenarioOf = ({ program, named }: Case) => {
+const scenarioOf = (program: Program<Any>, { named }: Case) => {
   const sender = (flags: unknown) =>
     named === undefined
       ? Arbitrary.schema(program.schemas.sender)
@@ -118,7 +134,7 @@ const ran = (program: Program<Any>, dialect: Dialect, { flags, creator, sends }:
 
 const runs = Bun.env['SCHEDULES'] === 'all' ? 300 : 8
 
-for (const fixture of cases) {
+for (const fixture of fixtures.map((program) => ({ program: stalled(program), ...needs[program.name] }))) {
   test(`${fixture.program.name} answers on the runtime as its rehearsal does, over values of its schemas`, async () => {
     // How many sends the runtime accepted: a generator that reaches no branch past a rejection checks little.
     let accepted = 0
@@ -135,7 +151,7 @@ for (const fixture of cases) {
         return true
       })
     const result = await Effect.runPromise(
-      Arbitrary.checkEffect(scenarioOf(fixture), alike, { runs, seed: 0 }),
+      Arbitrary.checkEffect(scenarioOf(fixture.program, fixture), alike, { runs, seed: 0 }),
     )
     if (result._tag === 'Falsified') {
       // The shrunk input again, on SQLite, so that the test shows how the two differ.

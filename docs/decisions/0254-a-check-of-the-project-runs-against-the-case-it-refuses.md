@@ -89,7 +89,12 @@ then bug 52 test by test, then bug 83.
   in: `PgTypes.ts` and `internal/sqlError.ts` of `@effect/sql-pg`, and `PgliteClient.ts`. Its run from 4.1.3 to
   4.1.3 printed every line `same`, on 2026-11-11.
 
-The next part is bug 53, at the imports of the fixtures in `src/fixtures.property.test.ts`.
+- Bug 53 is done. `src/fixtures.property.test.ts` imports every module of `src/fixtures/` and takes each program it
+  exports, and `needs` gives, by the program's name, what the property needs of it. The test `every program of
+  src/fixtures is given what the property needs of it` fails on a program with no entry, and on two programs of one
+  name. Both were seen on 2026-11-11 with a copy of `inventory.ts` under another name, which also got the property.
+
+The next part is bug 48, at the script `test:postgres` of `package.json`.
 
 ## What it rests on
 
