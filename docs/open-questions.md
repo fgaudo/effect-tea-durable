@@ -139,6 +139,20 @@ with a requirement that no example has yet.
 
 ## Running
 
+- **A timer due, which no test of the capacity reaches.** An entity whose timer is due is not spare, and is not told
+  to leave a process over its capacity before the timer fires
+  ([decision 0078](decisions/archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)). The test `entities woken past the
+  capacity each fire their timer and leave once`, in [`src/runtime/loop.test.ts`](../src/runtime/loop.test.ts), was
+  written for it, and passes with the timers taken out of `spare` of `src/runtime/loop.ts`: under every seed of
+  2,000, at depth 10, and under every deviation of `bound` 1, on 2026-11-11. The firing seems to be queued before
+  the entity is told to leave, so its loop applies the firing first, and no timer is due when it decides. So no test
+  holds the rule, as [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) says
+  of an interleaving no seed finds. It would be decided by:
+  - a reading of the order of the firing and of the telling to leave, in `enter` and in the waker, which says whether
+    the rule can be reached at all;
+  - a test where the entity is told to leave between the activation and the arming of its timer, if it can be, with
+    a pin against the timers taken out of `spare`;
+  - or, if it cannot be reached, a note that says the clause of `spare` keeps nothing, and drops it.
 - **A runtime that loses its session on PostgreSQL.** A runtime holds a database of PostgreSQL with a session
   advisory lock, on a connection it reserves for its scope
   ([decision 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). The lock goes with its

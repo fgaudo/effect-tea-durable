@@ -144,7 +144,9 @@ describe('passivation', () => {
 
   test('a process over its capacity unloads its least recently used idle entity, under prioritized schedules', () => {
     const tester = { _tag: 'Tester' } as const
-    // Each schedule moves the points where the entity told to leave runs between two steps of the caller.
+    // Each schedule moves the points where the entity told to leave runs between two steps of the caller. The entity
+    // that leaves is counted from before it leaves (decision 0109): counted after, seed 0, pinned, fails. `bun run
+    // test:pins` runs it against that form, the pin `0109` of `src/runtime.test_pins.ts` (decision 0254).
     explored(() =>
       Effect.gen(function*() {
         const { layer } = yield* hands()
@@ -172,7 +174,7 @@ describe('passivation', () => {
             left.push([...entities])
             return left
           }))
-      }), [[], ['e-2'], ['e-2', 'e-1']])
+      }), [[], ['e-2'], ['e-2', 'e-1']], { pinned: [0] })
   }, 60_000)
 
   test('entities woken past the capacity each fire their timer and leave once, under prioritized schedules', () => {
@@ -538,13 +540,16 @@ describe('passivation', () => {
         return yield* process({ capacity: { entities: 1 } }, (runtime) =>
           Effect.gen(function*() {
             const toy = yield* Effect.provide(runtime.deploy(timed), (yield* hands()).layer)
-            // Each activation holds its caller's event before the other can tell it to leave (decision 0079).
+            // Each activation holds its caller's event before the other can tell it to leave (decision 0079). With
+            // the caller's event offered after the lock of the activation is let go, seed 91, pinned, fails. `bun
+            // run test:pins` runs it against that form, the pin `0079 an activation` of `src/runtime.test_pins.ts`
+            // (decision 0254).
             return yield* together([
               toy.send('u-1', want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }),
               toy.send('u-2', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' }),
             ])
           }))
-      }), [{ _tag: 'Accepted' }, { _tag: 'Accepted' }])
+      }), [{ _tag: 'Accepted' }, { _tag: 'Accepted' }], { pinned: [91] })
   }, 60_000)
 
   test('a caller interrupted anywhere as it activates its entity leaves the process able to settle', () => {
@@ -565,18 +570,21 @@ describe('passivation', () => {
             const caller = yield* Effect.forkChild(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }))
             yield* Fiber.interrupt(caller)
             // What runs detached is counted from the step that forks it to its end: a count left behind would
-            // keep this from returning, and the run would not end (decision 0079).
+            // keep this from returning, and the run would not end (decision 0079). With the count raised before the
+            // uninterruptible step that forks, seed 5, pinned, fails. `bun run test:pins` runs it against that form,
+            // the pin `0079 what runs detached` of `src/runtime.test_pins.ts` (decision 0254).
             yield* runtime.settled
             return 'settled'
           }))
-      }), 'settled')
+      }), 'settled', { pinned: [5] })
   }, 60_000)
 
   test('a caller interrupted anywhere as it sends leaves its entity’s bound whole, in every schedule within one deviation', () => {
     const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
     // Each schedule moves the point where the interruption reaches the caller, the permit taken and the message not
     // offered yet among them (decision 0147). A send that yields between the two, outside an uninterruptible region,
-    // keeps the permit in a schedule, and the second send is answered Full.
+    // keeps the permit in a schedule, and the second send is answered Full: the deviation at decision 370, pinned.
+    // `bun run test:pins` runs it against that form, the pin `0147` of `src/runtime.test_pins.ts` (decision 0254).
     explored(() =>
       Effect.gen(function*() {
         const at = yield* DateTime.now
@@ -590,7 +598,7 @@ describe('passivation', () => {
             yield* runtime.settled
             return yield* toy.send(id, want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' })
           }))
-      }), { _tag: 'Accepted' }, { bound: 1 })
+      }), { _tag: 'Accepted' }, { bound: 1, pinned: [{ decision: 370, choice: 1 }] })
   }, 60_000)
 
   test('a caller loads an unloaded entity again, and is answered', () =>
@@ -810,7 +818,8 @@ describe('passivation', () => {
     })))
 
   // The load is under the entity's lock: two callers never read it from storage and build a machine each
-  // (decisions 0029, 0067).
+  // (decisions 0029, 0067). With the lock held by no one, seed 6, pinned, builds two. `bun run test:pins` runs it
+  // against that form, the pin `0067 the load` of `src/runtime.test_pins.ts` (decision 0254).
   test('two callers of an entity not loaded build one machine for it, under prioritized schedules', () => {
     const tester = { _tag: 'Tester' } as const
     const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
@@ -834,7 +843,7 @@ describe('passivation', () => {
             ])
           }))
         return { both, restarts: events.filter((event) => event._tag === 'Restart').length }
-      }), { both: [{ _tag: 'Accepted' }, { _tag: 'Accepted' }], restarts: 1 })
+      }), { both: [{ _tag: 'Accepted' }, { _tag: 'Accepted' }], restarts: 1 }, { pinned: [6] })
   }, 60_000)
 
   test('two creations of one entity at once build one machine, and the second is answered AlreadyExists', () => {
@@ -1241,7 +1250,9 @@ test('an entity whose wait runs out as an event arrives waits again from the eve
   // Decision 0116: the wait's end is put in the entity's queue, and one put there just before the event that ended the
   // wait is passed over. Taken for the next wait's end, it would unload the entity as soon as the event is applied,
   // 2 millis after it: an unload no activation follows. The event applied first waits again, and the wait run out
-  // first is followed by the message's activation, so either order pairs each unload with an activation.
+  // first is followed by the message's activation, so either order pairs each unload with an activation. With no end
+  // passed over, seed 9, pinned, fails. `bun run test:pins` runs it against that form, the pin `0116` of
+  // `src/runtime.test_pins.ts` (decision 0254).
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -1264,7 +1275,7 @@ test('an entity whose wait runs out as an event arrives waits again from the eve
           yield* runtime.settled
           return entities.length - events.filter((event) => event._tag === 'Restart').length
         }))
-    }), 0, { open: false })
+    }), 0, { open: false, pinned: [9] })
 }, 60_000)
 
 test('a message that arrives as the wait of its entity runs out is handled, under prioritized schedules', () => {

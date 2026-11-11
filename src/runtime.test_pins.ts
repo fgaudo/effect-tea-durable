@@ -126,4 +126,72 @@ export const pins: ReadonlyArray<Pin> = [
     test: 'src/runtime.test.ts',
     name: 'a consumer that waits is given the row a step commits while it reads, under prioritized schedules',
   },
+  {
+    id: '0109 an entity that leaves is counted from before it leaves',
+    file: 'src/runtime/loop.ts',
+    edits: [
+      [
+        '      Effect.sync(() => {\n        p.leaving += 1\n      }),\n      () =>\n        Effect.gen(function*() {\n          yield* leave(p, deployed, loaded)\n',
+        '      Effect.andThen(leave(p, deployed, loaded), Effect.sync(() => {\n        p.leaving += 1\n      })),\n      () =>\n        Effect.gen(function*() {\n',
+      ],
+    ],
+    test: 'src/runtime/loop.test.ts',
+    name: 'a process over its capacity unloads its least recently used idle entity, under prioritized schedules',
+  },
+  {
+    id: '0079 an activation offers its caller\'s event under the same hold of the lock',
+    file: 'src/runtime/loop.ts',
+    edits: [
+      [
+        '  const loading = held(Effect.gen(function*() {\n    const loaded = deployed.loaded.get(id)\n    if (loaded !== undefined) return yield* found(loaded)\n    const stored = yield* deployed.storage.load(id)\n    return yield* found(stored === null ? null : yield* activate(p, deployed, stored))\n  }))\n',
+        '  const loading = Effect.flatMap(held(Effect.gen(function*() {\n    const loaded = deployed.loaded.get(id)\n    if (loaded !== undefined) return loaded\n    const stored = yield* deployed.storage.load(id)\n    return stored === null ? null : yield* activate(p, deployed, stored)\n  })), found)\n',
+      ],
+    ],
+    test: 'src/runtime/loop.test.ts',
+    name: 'callers of two unloaded entities over a capacity of one are both answered, under prioritized schedules',
+  },
+  {
+    id: '0079 what runs detached is counted from the uninterruptible step that forks it',
+    file: 'src/runtime/loop.ts',
+    edits: [
+      [
+        '    Effect.uninterruptible(Effect.gen(function*() {',
+        '    Effect.andThen(Effect.sync(() => {\n      p.detachments += 1\n    }), Effect.gen(function*() {',
+      ],
+      ['      p.detachments += 1\n      const fiber', '      const fiber'],
+    ],
+    test: 'src/runtime/loop.test.ts',
+    name: 'a caller interrupted anywhere as it activates its entity leaves the process able to settle',
+  },
+  {
+    id: '0147 a caller takes its permit and offers its message in one uninterruptible region',
+    file: 'src/runtime/callers.ts',
+    edits: [
+      [
+        '      return Effect.uninterruptible(Effect.flatMap(loaded.callers.takeIfAvailable(1), offered))\n',
+        '      return Effect.flatMap(Effect.tap(loaded.callers.takeIfAvailable(1), () => Effect.yieldNow), offered)\n',
+      ],
+    ],
+    test: 'src/runtime/loop.test.ts',
+    name: 'a caller interrupted anywhere as it sends leaves its entity’s bound whole, in every schedule within one deviation',
+  },
+  {
+    id: '0067 the load is under the entity\'s lock',
+    file: 'src/runtime/process.ts',
+    edits: [['    (lock) => lock.semaphore.withPermits(1)(effect),\n', '    () => effect,\n']],
+    test: 'src/runtime/loop.test.ts',
+    name: 'two callers of an entity not loaded build one machine for it, under prioritized schedules',
+  },
+  {
+    id: '0116 an end an earlier wait put in the queue is passed over',
+    file: 'src/runtime/loop.ts',
+    edits: [
+      [
+        "      (taken) => taken._tag === 'Passivate' && taken.wait !== wait ? take : Effect.succeed(taken),\n",
+        '      (taken) => Effect.succeed(taken),\n',
+      ],
+    ],
+    test: 'src/runtime/loop.test.ts',
+    name: 'an entity whose wait runs out as an event arrives waits again from the event, under prioritized schedules',
+  },
 ]

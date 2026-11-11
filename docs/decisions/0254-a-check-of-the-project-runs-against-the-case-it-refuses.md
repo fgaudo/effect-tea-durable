@@ -128,11 +128,11 @@ then bug 52 test by test, then bug 83.
   the rehearsal take the same sends for retries. The bug leaves the roadmap as verified false when the family is
   taken.
 
-The next part is bug 52, test by test. Each of the explored tests whose comment names an interleaving and that pins
-no seed gets a pin: the mutation its comment names, then `bun run test:explore -t <test>` on the mutation until a seed
-fails, then the seed pinned. There are 25 calls of `explored` in `src/runtime.test.ts` and `src/runtime/`, and two
+Bug 52 is done, test by test, on 2026-11-11. Each of the explored tests whose comment names an interleaving and that
+pinned no seed got a pin: the mutation its comment names, then the seeds run on the mutation until one failed, then
+that seed pinned. There are 25 calls of `explored` in `src/runtime.test.ts` and `src/runtime/`, and two
 pinned a seed when the part began. A seed is looked for under `SCHEDULES=all` from seed 0, so that the first seed
-that fails is pinned. The tests pinned so far, each with its pin in `src/runtime.test_pins.ts`:
+that fails is pinned. The tests pinned, each with its pin in `src/runtime.test_pins.ts`, and what the part found:
 
 - `a sender answered Suspended is woken by the resumption`, of `src/runtime/callers.test.ts`: seed 29, against the
   registration of decision 0063 moved after the send.
@@ -152,6 +152,33 @@ that fails is pinned. The tests pinned so far, each with its pin in `src/runtime
   outside one snapshot; `the drain waits for the completion of an at-most-once operation`, seed 91, against the
   signal of decision 0119 taken in a step after the look; and `a consumer that waits is given the row a step commits
   while it reads`, seed 27, against the signal of decision 0142 taken after the reading.
+- Of `src/runtime/loop.test.ts`: `a process over its capacity unloads its least recently used idle entity`, seed 0,
+  against the count of decision 0109 raised after the entity leaves; `callers of two unloaded entities over a
+  capacity of one are both answered`, seed 91, against the caller's event of decision 0079 offered after the lock
+  is let go; `a caller interrupted anywhere as it activates its entity leaves the process able to settle`, seed 5,
+  against the count of what runs detached raised outside the uninterruptible step; `a caller interrupted anywhere as
+  it sends leaves its entity’s bound whole`, the deviation `{ decision: 370, choice: 1 }`, against a yield between
+  the permit and the offer of decision 0147 outside one region; `two callers of an entity not loaded build one
+  machine for it`, seed 6, against the lock of decision 0067 held by no one; and `an entity whose wait runs out as an
+  event arrives waits again from the event`, seed 9, against the end of decision 0116 an earlier wait put in the
+  queue taken for the next wait's.
+- `entities woken past the capacity each fire their timer and leave once`, of `src/runtime/loop.test.ts`, passes with
+  the timers due taken out of `spare` (decision 0078), under every seed of 2,000, at depth 10, and under every
+  deviation of `bound` 1. So no test holds that rule, and it is the [open question](../open-questions.md#running) A
+  timer due, which no test of the capacity reaches.
+- `a message that arrives as the wait of its entity runs out is handled` pins no seed, as its comment says: the form
+  it was written against is a race of Effect 4.1.2, which a spike watches.
+- The other explored tests name no interleaving: their comments say only that each schedule moves the points where
+  one fiber runs between the steps of another. They are `the process settles and a stored timer wakes its entity`,
+  `entities entering at once tell no more to leave than the process holds too many` and `two creations of one entity
+  at once build one machine` of `src/runtime/loop.test.ts`, and `reindex leaves no row a step has moved past`, `a name
+  is deployed once in a process, however two deploys of it interleave`, the five tests of a deploy interrupted after
+  a count of yields, and `a second runtime on one client dies as it launches` of `src/runtime.test.ts`.
+
+Every part of family G is done. The next part takes the family, in one commit: this note `accepted`, bugs 43, 46 to
+48, 52, 53 and 88 one line each, `Fixed by` this note, bug 83 one line, verified false, in the roadmap, and the open
+questions The checks that hold less than their note and The margin of the explored tests left or rewritten for what
+remains. The step then waits for `bun run test:release` on `main` and the workflow run by hand, as the roadmap says.
 
 ## What it rests on
 
