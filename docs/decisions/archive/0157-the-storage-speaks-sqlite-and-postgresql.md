@@ -9,7 +9,9 @@ READ` only where the transaction is its own, by
 [decision 0158](0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md).
 An id is not empty either, by [decision 0179](../0179-an-id-is-not-empty.md). An integer of a row may come as a bigint
 up to 2^53, and every transaction of the runtime on PostgreSQL states its level, by
-[decision 0222](../0222-postgresql-with-many-connections.md), which ran the tests on a server.
+[decision 0222](../0222-postgresql-with-many-connections.md), which ran the tests on a server. A runtime on PGlite
+holds the client's data directory too, while the client is open, by
+[decision 0255](../0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md).
 
 ## Context
 

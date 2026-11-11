@@ -583,14 +583,16 @@ with a requirement that no example has yet.
   ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). On Cluster a shard's lock takes the place of the
   hold ([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)), and keeps off only another
   runner. So a runtime of one process launches on a runner's database, and a step is lost, which is bug 84 of the
-  [roadmap](roadmap.md), reproduced. A database of PGlite is held by its client, and a second client over the same data
-  directory opens with no error, so each runtime steps its own copy, which is bug 86, reproduced. A launcher that
+  [roadmap](roadmap.md), reproduced. A data directory of PGlite is held in the process while the client a runtime
+  launched on is open ([decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md)),
+  which fixes bug 86. Another process over the directory, or a client of this one that launches no runtime, still
+  steps a copy of its own, and the close of the last writes its copy over the others'. A launcher that
   builds Cluster's `SqlMessageStorage` on a client of its own commits a step and its reply apart
   ([decision 0081](decisions/archive/0081-on-cluster-a-step-commits-with-its-reply.md)), which is bug 85, not checked. It would be
   decided by:
   - whether a runner's launch adds its client to `held`, and takes the advisory lock in shared mode where a runtime of
     one process takes it exclusive;
-  - whether `hold` locks a data directory of PGlite, or a note says such a directory has one client;
+  - whether PGlite gives a lock of its data directory across processes, which `hold` would take;
   - whether a launch on Cluster checks that the runtime's client is the client of Cluster's `MessageStorage`, and a
     test that kills a runner between the two commits.
 - **A check beside the old version on SQLite.** `check` takes no lock, so that it runs on a database the old version

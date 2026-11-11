@@ -3,6 +3,7 @@
  * and its planned stop, and what several of the runtime's modules keep together. The tests of one module of
  * `src/runtime/` lie beside it, and what they share is in [`runtime.test_shared.ts`](runtime.test_shared.ts) (decision 0241).
  */
+import { PgliteClient } from '@effect/sql-pglite'
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { describe, expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
@@ -17,7 +18,7 @@ import * as Logger from 'effect/Logger'
 import * as References from 'effect/References'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import * as Scope from 'effect/Scope'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
@@ -73,6 +74,7 @@ import {
   running,
   Sender,
   sending,
+  slow,
   type T,
   tester,
   timed,
@@ -3710,6 +3712,51 @@ describe('a database held by one runtime', () => {
         })))
     })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
   })
+
+  // Two clients of PGlite over one data directory are two copies of one database, and the last to close writes its
+  // copy over the other's, so a runtime launches on a directory only while no other client is open on it, as on a
+  // file of SQLite (decision 0255). The test opens two instances of PGlite, which runs past the budget of `bun test`.
+  slow('a runtime on a data directory of PGlite launches on no other client while one it launched on is open', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-'))
+    const dataDir = join(directory, 'pg')
+    const client = (scope: Scope.Scope, path: string) =>
+      Effect.map(
+        Scope.provide(Layer.build(Layer.orDie(PgliteClient.layer({ dataDir: path }))), scope),
+        (context) => Context.get(context, SqlClient.SqlClient),
+      )
+    const on = (sql: SqlClient.SqlClient) => <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      Effect.provideService(effect, SqlClient.SqlClient, sql)
+    const at = DateTime.makeUnsafe(0)
+    return Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const firstScope = yield* Scope.make()
+      const first = yield* client(firstScope, dataDir)
+      // The second client names the directory by another spelling of its path, which is the same directory.
+      const secondScope = yield* Scope.make()
+      const second = yield* client(secondScope, `${directory}${sep}.${sep}pg`)
+      yield* on(first)(process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
+          expect(reasonOf(yield* Effect.exit(on(second)(process({}, () => Effect.void))))).toBe(held)
+        })))
+      // The first runtime has ended, and its client is still open on the directory.
+      expect(reasonOf(yield* Effect.exit(on(second)(process({}, () => Effect.void))))).toBe(held)
+      // A runtime launches again on the client it launched on before.
+      yield* on(first)(process({}, () => Effect.void))
+      yield* Scope.close(secondScope, Exit.void)
+      yield* Scope.close(firstScope, Exit.void)
+      // Both clients are closed, the first last: a client opened now launches, and finds the entity the first created.
+      const third = yield* client(yield* Effect.scope, dataDir)
+      yield* on(third)(process({}, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          expect(yield* toy.create(id, { flags: { at }, requestId: 'again', sender: { _tag: 'Tester' } }))
+            .toEqual({ _tag: 'AlreadyExists' })
+        })))
+    })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
+  }, 60_000)
 
   // A launch told the tables exist creates none, for a role of PostgreSQL that may not (decision 0191).
   test('a launch told the tables exist creates none, and dies where one is missing', () =>

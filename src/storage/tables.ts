@@ -4,6 +4,7 @@
  * migrations that make every table, and the rename of a program, which moves its rows in every table
  * (decisions 0157, 0216, 0241).
  */
+import { resolve } from 'node:path'
 import * as Effect from 'effect/Effect'
 import * as Hash from 'effect/Hash'
 import * as Schema from 'effect/Schema'
@@ -49,6 +50,31 @@ export const transaction = <A, E, R>(
 const held = new WeakSet<SqlClient.SqlClient>()
 
 /**
+ * The data directories of PGlite a runtime of this process has launched on, each with the client it launched on. Two
+ * clients of PGlite over one directory are two copies of one database, and the last to close writes its copy over the
+ * other's. So a launch on another client over a directory is refused while the client before it is open, as SQLite
+ * refuses a file another connection has open (decision 0255).
+ */
+const directories = new Map<string, { readonly closed: boolean }>()
+
+/**
+ * The data directory of a client of PGlite and the PGlite instance, or `undefined` where the client names no
+ * directory, as a database in memory does. The directory is one name for every spelling of its path. PGlite's
+ * `dataDir` is declared by its types and has no doc comment, so a client without it is held by the client alone, as
+ * before (decision 0255).
+ */
+const directoryOf = (
+  sql: SqlClient.SqlClient,
+): { readonly directory: string; readonly pglite: { readonly closed: boolean } } | undefined => {
+  const pglite = (sql as { readonly pglite?: { readonly dataDir?: unknown; readonly closed: boolean } }).pglite
+  const dataDir = pglite?.dataDir
+  if (pglite === undefined || typeof dataDir !== 'string' || dataDir === '' || dataDir.startsWith('memory://')) {
+    return undefined
+  }
+  return { directory: dataDir.includes('://') ? dataDir : resolve(dataDir), pglite }
+}
+
+/**
  * The key of the advisory lock a runtime holds a database of PostgreSQL by. It is fixed, so that every release of
  * the library takes the same lock (decision 0157).
  */
@@ -60,8 +86,9 @@ const advisoryKey = 7_465_616
  * takes it only while no other connection has the file open, it keeps every other from opening it, and the end of
  * the process gives it back, however it ends. A database of PostgreSQL is held by a session advisory lock, on a
  * connection reserved until the scope ends, and the end of the session gives it back. PGlite runs every statement on
- * one session, which would take the lock again, so the client alone holds it. A database another runtime holds, or
- * another connection has open, is the launcher's defect.
+ * one session, which would take the lock again. So in this process alone, the client holds it, and the client's data
+ * directory is held while the client is open. A database another runtime holds, or another connection has open, is
+ * the launcher's defect. So is a data directory of PGlite another process has open (decision 0255).
  */
 export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
@@ -77,7 +104,16 @@ export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope>
     () => Effect.sync(() => held.delete(sql)),
   )
   if (dialect === 'pg') {
-    if (sql.driver === 'pglite') return
+    if (sql.driver === 'pglite') {
+      const found = directoryOf(sql)
+      if (found === undefined) return
+      // The entry stays once the runtime ends, since the client it names may still be open, and a client closed
+      // gives the directory to the next.
+      const before = directories.get(found.directory)
+      if (before !== undefined && before !== found.pglite && !before.closed) return yield* Effect.die(refused())
+      directories.set(found.directory, found.pglite)
+      return
+    }
     const connection = yield* Effect.orDie(sql.reserve)
     // The connection goes back to the pool when the scope ends, so it gives back the lock first.
     yield* Effect.addFinalizer(() => Effect.ignore(connection.executeRaw('SELECT pg_advisory_unlock_all()', [])))

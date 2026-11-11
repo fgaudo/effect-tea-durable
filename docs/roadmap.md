@@ -27,8 +27,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     The cases of a crash's retry not run yet, An operation's kept answer on Cluster across a crash, and under two
     runs at once, and A timer due, which no test of the capacity reaches.
   - G was the last family whose rule is this step's. Families A, C and D take their rules from later steps of this
-    roadmap. The part next is the bugs of no family, each with a fix of its own, proposed to the maintainer before
-    any code as a family's rule is. The maintainer has not chosen their order yet.
+    roadmap. The part under way is the bugs of no family, each with a fix of its own, proposed to the maintainer
+    before any code as a family's rule is. The maintainer chose on 2026-11-11 the order of severity: first 86, 26
+    with 81, and 75, which lose steps or stop the runtime; then 19, 66 and 82, which deliver what they should not;
+    then 41, 44, 72, 42 and 87; then the bugs reasoned, 4, 6, 8, 22, 60 and 64, and the bugs noticed, 31, 37, 38,
+    40, 50, 51, 65, 67 and 79, each verified first. Bug 86 is fixed by
+    [decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md). The part next is
+    bug 26 with bug 81, whose fix begins at `consume` of `src/runtime.ts`.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
@@ -671,18 +676,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       the message twice or loses the state ([decision 0007](decisions/archive/0007-one-process-first.md)), and on one file of SQLite
       the step waits for the lock Cluster's transaction holds until the busy timeout. The
       [open question](open-questions.md#running) A second runtime on one database.
-  86. **Reproduced: a second runtime on another client of PGlite over the same data directory launches, and each
-      steps its own copy.** A database of PGlite is held by its client in the process
-      ([decisions 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md),
-      [0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)), which rests on one client per data directory, never
-      written. A second `PGlite` over the directory opens with no error, each instance holds the database in its own
-      memory, and the last to close writes its copy over the other's, seen by a script at PGlite 0.5.15. So the steps
-      of one runtime are lost with nothing said, against what `docs/design.md` says under Where it runs. The test
-      `FAILING: a second runtime on another client of PGlite over the same data directory dies as it launches`, in
-      `src/runtime.test.ts`, on `claude/gallant-almeida-c81283` at `ba56b8e`, runs some two seconds, past the budget
-      of `AGENTS.md`. Runners of Cluster on PGlite over one directory are noticed and not checked. The fix begins at
-      `hold` of `src/storage/tables.ts`, by a lock of the data directory, or is a note that says a directory of PGlite
-      has one client. The [open question](open-questions.md#running) A second runtime on one database.
+  86. **Fixed by [decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md)**, which holds a data directory of PGlite while the client a runtime launched on is open.
   87. **Reproduced: `check` cannot run beside the old version on SQLite.** `check` launches nothing and takes no lock,
       so that it runs on a database another version holds
       ([decision 0247](decisions/0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)). A file of

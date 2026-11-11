@@ -1152,7 +1152,11 @@ On one process, with SQLite or PostgreSQL: the mailbox, the states and the timer
 is one transaction ([decisions 0007](decisions/archive/0007-one-process-first.md), [0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). A runtime holds its
 database until it ends: a second runtime on it, or a launch while another connection has the file of SQLite open,
 dies as it launches ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). A database of
-PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. Once it holds the
+PostgreSQL is held by a session advisory lock, on a connection the runtime reserves until it ends. A database of
+PGlite is held in the process by its client. Its data directory is held too, while the client a runtime launched on
+is open, so a launch on another client over the directory dies
+([decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md)). A data directory of
+PGlite opened by another process is the launcher's defect, which the runtime does not see. Once it holds the
 database, a launch runs the migrations of the tables not yet recorded in `effecttea_migrations`, with Effect's
 `Migrator` ([decision 0216](decisions/0216-the-tables-are-made-by-effects-migrator.md)). The first migration is the schema of
 the first release, and a later change of a table is a migration after it. `Migrator` runs the pending migrations in
