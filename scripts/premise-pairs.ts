@@ -145,3 +145,12 @@ if (option('tables') !== undefined) {
   })
   console.log(`the tables, by their writers, readers and notes: ${notes.join('; ')}`)
 }
+
+// A table that the storage creates and that no declaration writes is a statement this script no longer recognizes,
+// as an SQL written in another form: its places would be missing from `--tables` in silence. A table may lack readers,
+// since Cluster reads its own tables and `forgetUnder` names a table by a parameter.
+const unwritten = touches.filter(({ writers }) => writers.length === 0).map(({ table }) => table)
+if (unwritten.length > 0) {
+  console.error(`no declaration writes ${unwritten.join(', ')}: the script misses how the code writes them`)
+  process.exit(1)
+}
