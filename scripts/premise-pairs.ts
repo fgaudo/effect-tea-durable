@@ -104,12 +104,22 @@ for (const declaration of declarations) {
 // of the review that reads one shared state.
 const tables = [...(await read('src/storage/tables.ts')).matchAll(/CREATE TABLE (\w+)/g)].map(([, name]) => [name!, name!])
 tables.push(['cluster_messages', 'clusterMessages'], ['cluster_replies', 'clusterReplies'])
+// A statement may name its table by a parameter, as `forgetUnder` does with `FROM ${sql(table)}`. The declaration
+// then names the tables the parameter takes as literals of its type, and touches each of them.
+const constants = new Set(tables.map(([, constant]) => constant))
+const writing = String.raw`(INSERT INTO|UPDATE|DELETE FROM)\s+`
+const reading = String.raw`(?<!DELETE )(FROM|JOIN)\s+`
+const byParameter = (code: string, verb: string, table: string) =>
+  [...code.matchAll(new RegExp(verb + String.raw`\$\{sql\((\w+)\)\}`, 'g'))].some(([, parameter]) =>
+    !constants.has(parameter!)
+  ) && new RegExp(`'${table}'`).test(code)
 const touches = tables.map(([table, constant]) => {
   const name = String.raw`(?:\$\{sql\()?(?:${table}|${constant})\b`
-  const writes = new RegExp(String.raw`(INSERT INTO|UPDATE|DELETE FROM)\s+` + name)
-  const reads = new RegExp(String.raw`(?<!DELETE )(FROM|JOIN)\s+` + name)
-  const of = (test: RegExp) => declarations.filter((declaration) => test.test(declaration.code))
-  return { table: table!, writers: of(writes), readers: of(reads) }
+  const of = (verb: string) =>
+    declarations.filter((declaration) =>
+      new RegExp(verb + name).test(declaration.code) || byParameter(declaration.code, verb, table!)
+    )
+  return { table: table!, writers: of(writing), readers: of(reading) }
 })
 
 const ranked = [...pairs.values()].sort((x, y) => x.size - y.size || x.a - y.a || x.b - y.b)
@@ -146,11 +156,23 @@ if (option('tables') !== undefined) {
   console.log(`the tables, by their writers, readers and notes: ${notes.join('; ')}`)
 }
 
-// A table that the storage creates and that no declaration writes is a statement this script no longer recognizes,
-// as an SQL written in another form: its places would be missing from `--tables` in silence. A table may lack readers,
-// since Cluster reads its own tables and `forgetUnder` names a table by a parameter.
-const unwritten = touches.filter(({ writers }) => writers.length === 0).map(({ table }) => table)
-if (unwritten.length > 0) {
-  console.error(`no declaration writes ${unwritten.join(', ')}: the script misses how the code writes them`)
+// A table that no declaration writes, or reads, is a statement this script no longer recognizes, as an SQL written in
+// another form: its places would be missing from `--tables` in silence. The tables below are the only ones `src/`
+// writes and never reads, each with its reason. A table of the list that gains a reader fails too, so that the list
+// never excuses a table that needs no excuse.
+const unread = new Map([
+  ['cluster_messages', 'Cluster reads its own table of messages; the library only deletes from it'],
+  ['cluster_replies', 'Cluster reads its own table of replies; the library only deletes from it'],
+])
+const errors: string[] = []
+for (const { table, writers, readers } of touches) {
+  if (writers.length === 0) errors.push(`no declaration writes ${table}: the script misses how the code writes it`)
+  if (readers.length === 0 && !unread.has(table)) {
+    errors.push(`no declaration reads ${table}: the script misses how the code reads it, or the table goes in \`unread\``)
+  }
+  if (readers.length > 0 && unread.has(table)) errors.push(`${table} is read by the code: take it out of \`unread\``)
+}
+if (errors.length > 0) {
+  for (const error of errors) console.error(error)
   process.exit(1)
 }
