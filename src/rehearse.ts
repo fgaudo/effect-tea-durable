@@ -130,7 +130,8 @@ export interface Rehearsal<T extends Types> extends Acts<T> {
   readonly deploy: (program: Program<T>) => Effect.Effect<void>
   /**
    * Time passes by `duration`. Each timer due within it fires at its time, in the order of the times, and its
-   * message is handled before the next one fires (decision 0187).
+   * message is handled before the next one fires (decision 0187). At one time, a key fires again only with a due
+   * time later than the one it last fired with, or the test fails (decision 0266).
    */
   readonly advance: (duration: Duration.Input) => Effect.Effect<void>
 }
@@ -186,7 +187,9 @@ export interface World {
   readonly deploy: <T extends Types>(program: Program<T>) => Effect.Effect<void>
   /**
    * Time passes by `duration` for every entity of the world. Each timer due within it fires at its time, in the
-   * order of the times, and every mailbox it reaches is handled before the next one fires (decision 0187).
+   * order of the times, and every mailbox it reaches is handled before the next one fires (decision 0187). At one
+   * time, a key fires again only with a due time later than the one it last fired with, or the test fails
+   * (decision 0266).
    */
   readonly advance: (duration: Duration.Input) => Effect.Effect<void>
 }
@@ -429,11 +432,13 @@ const makeWorld = (at: DateTime.Utc) => {
         return Effect.die(`time passes by a finite duration of zero or more, not ${Duration.format(length)}`)
       }
       const until = DateTime.addDuration(now, length)
-      // A timer that fires twice at one time was armed again at a time already reached, by its own firing or by
-      // another timer's at that time. It would fire again at once, turn after turn, and time would never pass, so
-      // the rehearsal fails, as it does for an operation that comes back the same on its completion (decision 0187).
+      // At one time, a key fires again only with a due time later than the one it last fired with. A repeating
+      // timer that catches up fires with a due time that grows, bounded by the time, in whole milliseconds, so it
+      // ends. A key armed again at a due time not later loops, and the rehearsal fails, as it does for an operation
+      // that comes back the same on its completion. The due times are forgotten once time moves (decision 0266).
+      // A `Map` is enough: its key is the JSON of three strings, which `MutableHashMap` would only compare by value.
       let instant = now
-      const fired = new Set<string>()
+      const fired = new Map<string, DateTime.Utc>()
       const loop: Effect.Effect<void> = Effect.suspend(() => {
         const next = dueBy(until)
         if (next === undefined) {
@@ -447,13 +452,15 @@ const makeWorld = (at: DateTime.Utc) => {
           fired.clear()
         }
         const which = JSON.stringify([entity.address.name, entity.address.id, Machine.keyText(pending.key)])
-        if (fired.has(which)) {
+        const last = fired.get(which)
+        if (last !== undefined && !DateTime.isGreaterThan(at, last)) {
           return Effect.die(
             `the timer under '${Machine.shownKey(pending.key)}' of ${entity.address.name} '${entity.address.id}' ` +
-              `fires twice at ${DateTime.formatIso(firesAt)}, and time would never pass`,
+              `fires again at ${DateTime.formatIso(firesAt)}, due at ${DateTime.formatIso(at)}, no later than ` +
+              `its last firing's ${DateTime.formatIso(last)}, and time would never pass`,
           )
         }
-        fired.add(which)
+        fired.set(which, at)
         return Effect.andThen(fireOf(entity, pending), loop)
       })
       return loop

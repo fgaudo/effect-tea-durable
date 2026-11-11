@@ -355,7 +355,9 @@ Two kinds of work exist.
 - **A timer** delivers one internal message at a time. It may be dropped in any state, since it has done
   nothing yet. `timer(at, message)` takes no type parameter: the message keeps its literal tag, and `work`
   checks it against the program's internal messages
-  ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)).
+  ([decision 0181](decisions/0181-a-timer-needs-no-type-parameter.md)). A timer is due at a whole millisecond, as
+  the storage holds it, and a timer due between two is a defect
+  ([decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md)).
 
 A stream from a socket or a feed is no work of a program, since it dies with the process. The boundary reads it,
 and sends each item as an inbound message, under a request id it derives from the item's offset or id, so that an
@@ -1073,9 +1075,12 @@ time passes, and when the process dies:
   ([decision 0211](decisions/0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md)). `state` gives the
   state as the entity holds it;
 - `advance(duration)` moves time forward, and fires each timer due within it at its time, in the order of the
-  times. A message after it is handled at the time reached. A key whose timer fires twice at one time fails the test:
-  it was armed again at a time already reached, and would fire at once, turn after turn. A world advances the one
-  time of all its entities ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md));
+  times. A message after it is handled at the time reached. A world advances the one time of all its entities
+  ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)). A repeating timer armed from its own
+  last due time catches up after a downtime: it fires once for each period missed, at once, as the runtime fires it.
+  At one time, a key fires again only with a due time later than the one it last fired with. A key armed again at a
+  due time no later would fire at once, turn after turn, and fails the test
+  ([decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md));
 - `answer`, `fire` and a member's `run` take a key in place of the pending, with its parameter for a key that takes
   one: `answer('charge', message)` acts on the work under way under the key, in its current incarnation. A test
   keeps a pending to act on an incarnation that has moved on, and sees its message dropped

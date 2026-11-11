@@ -41,7 +41,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0262](decisions/0262-a-sendfrom-stands-for-a-run-no-entity-draws.md), and bug 41 by
     [decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md), and bug 44 by
     [decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md), and bugs 72 and 63 by
-    [decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md). The part next is bug 42, proposed to the maintainer before any code. The test of decision
+    [decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md), and bug 42 by
+    [decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md). The part next is bug 87, proposed to the maintainer before any code. The test of decision
     0264 on PostgreSQL passed in the job of PostgreSQL of the push of `af8c5d5`. Decision 0265 changes the statements
     of the table `effecttea_waiting`, so its tests run on PostgreSQL first in that job, on the push of `main` that
     takes it.
@@ -308,15 +309,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       [open question](open-questions.md#storage-and-reading) A sum at the edge of the largest double.
       Reproduced by `a sum whose exact total of magnitudes reads back as the largest double is answered alike on both dialects`, a `test.failing` of `src/dialects.test.ts`: PGlite gives `Number.MAX_VALUE` and SQLite refuses the sum.
   41. **Fixed by [decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md)**, whose launch dies, and makes nothing, where a schema further on the `search_path` holds the tables.
-  42. **Reproduced: a rehearsal refuses a repeating timer that catches up, which the runtime runs.**
-      [Decision 0130](decisions/archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md) checks no timer,
-      since a timer in the past is how a repeating timer catches up after a downtime.
-      [Decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md) cites it, and fails a key whose timer
-      fires twice at one time, which every firing of a catch-up does. The test `FAILING: a renewal created after the
-      periods it bills fires once for each, as the runtime does (decisions 0130, 0187)`, in `src/rehearse.test.ts`, on
-      `claude/premise-review-rehearsal-cdcc14` at `abd8d29`. The fix begins at `advance` of `src/rehearse.ts`, and is
-      a choice of what a rehearsal of a downtime is: the [open question](open-questions.md#programs) A rehearsal of a
-      downtime.
+  42. **Fixed by [decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md)**, whose key fires again at one time only with a later due time, so a timer catches up.
   43. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, which pins seed 661 and runs it against the lock dropped by any user.
   44. **Fixed by [decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md)**, which checks every option before the hold, and closes the scope of a launch that dies.
   45. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.

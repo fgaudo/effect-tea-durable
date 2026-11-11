@@ -123,7 +123,14 @@ export const keyOf = <T extends Types>(program: Program<T>, name: T['key'], para
 
 /** Whether `work` is a piece of work the program can run: a timer, or an operation it gives a runner for. */
 const checkWork = <T extends Types>(program: Program<T>, key: string, work: unknown): void => {
-  if (isTimer(work)) return
+  if (isTimer(work)) {
+    // The storage holds a timer's time as whole milliseconds, and a rehearsal's `advance` ends only on times that
+    // are, so a time a sum of durations left between two milliseconds is a defect (decision 0266).
+    if (DateTime.isDateTime(work.at) && !Number.isInteger(DateTime.toEpochMillis(work.at))) {
+      broken(`the timer under '${key}' is due at ${DateTime.toEpochMillis(work.at)}, which is no whole millisecond`)
+    }
+    return
+  }
   const tag: unknown = typeof work === 'object' && work !== null ? (work as { _tag?: unknown })._tag : undefined
   if (typeof tag !== 'string') broken(`the state holds what is no work under '${key}'`)
   if (runnerOf(program, work as T['operation']) === undefined) {

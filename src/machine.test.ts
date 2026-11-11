@@ -4,6 +4,7 @@
  */
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Equal from 'effect/Equal'
 import * as Schema from 'effect/Schema'
@@ -1252,6 +1253,18 @@ describe('what the program throws', () => {
     const work = () => ({ deadline: timer(null as never, 'rang') })
     const machine = { ...base, program: { ...base.program, work } }
     expect(handled(machine, inbound).machine.stored.suspension?.cause).toBeInstanceOf(TypeError)
+  })
+
+  // A sum of durations may leave a time between two milliseconds, which the storage would not read back (decision 0266).
+  test('a timer due at no whole millisecond is a defect', () => {
+    const base = checked((message) => message, () => ({}))
+    const at = DateTime.addDuration(epoch, Duration.micros(500n))
+    const work = () => ({ deadline: timer(at, 'rang') })
+    const machine = { ...base, program: { ...base.program, work } }
+    expect(reasonOfSuspension(handled(machine, inbound))).toBe(
+      `the timer under 'deadline' is due at ${DateTime.toEpochMillis(at)}, which is no whole millisecond`,
+    )
+    expect(DateTime.toEpochMillis(at) % 1).toBe(0.5)
   })
 
   test('what init throws is its defect, and the creation stores nothing', () => {

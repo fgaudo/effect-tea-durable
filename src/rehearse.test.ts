@@ -26,6 +26,7 @@ import {
   type Runner,
   send,
   timer,
+  type Timer,
   type TypesOf,
   key,
 } from './program.ts'
@@ -1073,7 +1074,8 @@ describe('time that passes', () => {
       }),
     ))
     expect(failure(looping)).toBe(
-      "the timer under 'a' of Meter 'rehearsal' fires twice at 2026-10-30T11:00:00.000Z, and time would never pass",
+      "the timer under 'a' of Meter 'rehearsal' fires again at 2026-10-30T11:00:00.000Z, due at " +
+        "2026-10-30T11:00:00.000Z, no later than its last firing's 2026-10-30T11:00:00.000Z, and time would never pass",
     )
   })
 
@@ -1088,7 +1090,8 @@ describe('time that passes', () => {
       }),
     ))
     expect(failure(looping)).toBe(
-      "the timer under 'a' of Meter 'rehearsal' fires twice at 2026-10-30T11:00:00.000Z, and time would never pass",
+      "the timer under 'a' of Meter 'rehearsal' fires again at 2026-10-30T11:00:00.000Z, due at " +
+        "2026-10-30T11:00:00.000Z, no later than its last firing's 2026-10-30T11:00:00.000Z, and time would never pass",
     )
   })
 
@@ -1263,4 +1266,159 @@ describe('a sendFrom under the address of an entity of the world', () => {
       for (let sent = 0; sent < 3; sent++) yield* counted.sendFrom(100, { name: 'Pusher', id: 'pusher' })
       expect(yield* counted.projection).toBe(300)
     })))
+})
+
+// A repeating timer armed from its own last due time, not from the time it fires at, is how a timer catches up after
+// a downtime: the runtime fires it once for each period it missed, at once (decision 0130). At one time, a key fires
+// again only with a due time later than the one it last fired with (decision 0266).
+describe('a repeating timer that catches up', () => {
+  type Renewing = {
+    state: { periods: number }
+    flags: Readonly<{}>
+    inbound: Readonly<{ _tag: 'Ping' }>
+    internal: Readonly<{ _tag: 'RenewalDue' }>
+    operation: never
+    key: 'renewal'
+    parameter: {}
+    rejection: never
+    sender: Readonly<{ _tag: 'Tester' }>
+    projection: number
+    index: never
+    services: never
+  }
+  // Bills three periods of an hour from `placedAt`, each renewal armed at the end of the periods paid.
+  const renewing: Program<Renewing> = {
+    name: 'Renewing',
+    keys: { renewal: null },
+    schemas: {
+      state: Schema.Struct({ periods: Schema.Int }),
+      flags: Schema.Struct({}),
+      inbound: Schema.TaggedStruct('Ping', {}),
+      internal: Schema.TaggedStruct('RenewalDue', {}),
+      operation: Schema.Never,
+      rejection: Schema.Never,
+      sender: Schema.TaggedStruct('Tester', {}),
+      projection: Schema.Int,
+    },
+    init: () => ({ periods: 0 }),
+    update: (message) => (state) => message._tag === 'RenewalDue' ? { periods: state.periods + 1 } : state,
+    work: (state) =>
+      state.periods < 3
+        ? { renewal: timer(DateTime.add(placedAt, { hours: state.periods + 1 }), { _tag: 'RenewalDue' } as const) }
+        : {},
+    operations: {},
+    project: (state) => state.periods,
+    indexes: {},
+  }
+
+  test('a renewal created after the periods it bills fires once for each, as the runtime does', () =>
+    Effect.runPromise(rehearse(
+      renewing,
+      { flags: {}, at: DateTime.add(placedAt, { hours: 3 }) },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.advance(0)
+        expect((yield* rehearsal.state).periods).toBe(3)
+        expect(yield* rehearsal.underWay('renewal')).toBeNull()
+      }),
+    )))
+
+  // A plan arms the timers of its first stage, each key at the due time of its first entry there, hours after
+  // `placedAt`. A firing takes its key's entry out, and the next stage begins once the first is empty.
+  const Name = Schema.Literals(['k', 'l'])
+  const Entry = Schema.Struct({ key: Name, hours: Schema.Number })
+  type Planned = {
+    state: { stages: ReadonlyArray<ReadonlyArray<typeof Entry.Type>>; seen: ReadonlyArray<string> }
+    flags: Readonly<{}>
+    inbound: Readonly<{ _tag: 'Plan'; stages: ReadonlyArray<ReadonlyArray<typeof Entry.Type>> }>
+    internal: Readonly<{ _tag: 'Rang'; key: typeof Name.Type }>
+    operation: never
+    key: typeof Name.Type
+    parameter: {}
+    rejection: never
+    sender: Readonly<{ _tag: 'Tester' }>
+    projection: number
+    index: never
+    services: never
+  }
+  const hours = (count: number) => DateTime.add(placedAt, { hours: count })
+  const planned: Program<Planned> = {
+    name: 'Planned',
+    keys: { k: null, l: null },
+    schemas: {
+      state: Schema.Struct({ stages: Schema.Array(Schema.Array(Entry)), seen: Schema.Array(Schema.String) }),
+      flags: Schema.Struct({}),
+      inbound: Schema.TaggedStruct('Plan', { stages: Schema.Array(Schema.Array(Entry)) }),
+      internal: Schema.TaggedStruct('Rang', { key: Name }),
+      operation: Schema.Never,
+      rejection: Schema.Never,
+      sender: Schema.TaggedStruct('Tester', {}),
+      projection: Schema.Int,
+    },
+    init: () => ({ stages: [], seen: [] }),
+    update: (message, { at }) => (state) => {
+      if (message._tag === 'Plan') return { ...state, stages: message.stages }
+      const [first = [], ...rest] = state.stages
+      const taken = first.findIndex(({ key }) => key === message.key)
+      const left = first.filter((_, index) => index !== taken)
+      const seen = [...state.seen, `${message.key}@${DateTime.formatIso(at)}`]
+      return { stages: left.length === 0 ? rest : [left, ...rest], seen }
+    },
+    work: (state) => {
+      const work: Partial<Record<typeof Name.Type, Timer<Planned['internal']>>> = {}
+      for (const { key, hours: due } of state.stages[0] ?? []) {
+        work[key] ??= timer(hours(due), { _tag: 'Rang', key })
+      }
+      return work
+    },
+    operations: {},
+    project: (state) => state.seen.length,
+    indexes: {},
+  }
+  const tester = { _tag: 'Tester' } as const
+  // Plans `stages` at the time 10, lets two hours pass, and gives what fired, and when, to `check`.
+  const plan = (stages: Planned['inbound']['stages'], check: (seen: ReadonlyArray<string>) => void = () => {}) =>
+    rehearse(
+      planned,
+      { flags: {}, at: hours(10) },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.send({ _tag: 'Plan', stages }, { sender: tester })
+        yield* rehearsal.advance('2 hours')
+        check((yield* rehearsal.state).seen)
+      }),
+    )
+  const failure = (exit: Exit.Exit<unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+
+  // `k` fires due at 5 at the time 10, `l` moves time to 11, and only then is `k` armed at 4, which is no loop.
+  test('a key armed again at an earlier due time fires once time has moved', () =>
+    Effect.runPromise(plan(
+      [[{ key: 'k', hours: 5 }, { key: 'l', hours: 11 }], [{ key: 'k', hours: 4 }]],
+      (seen) =>
+        expect(seen).toEqual([
+          `k@${DateTime.formatIso(hours(10))}`,
+          `l@${DateTime.formatIso(hours(11))}`,
+          `k@${DateTime.formatIso(hours(11))}`,
+        ]),
+    )))
+
+  // Two keys that arm each other at two times already passed would alternate for ever, though neither fires twice
+  // in a row, and neither due time is the time reached.
+  test('fails on two keys that arm each other at two times already passed, turn after turn', async () => {
+    const exit = await Effect.runPromiseExit(
+      plan([[{ key: 'k', hours: 5 }], [{ key: 'l', hours: 3 }], [{ key: 'k', hours: 5 }], [{ key: 'l', hours: 3 }]]),
+    )
+    expect(failure(exit)).toBe(
+      "the timer under 'k' of Planned 'rehearsal' fires again at 2026-10-30T20:00:00.000Z, due at " +
+        "2026-10-30T15:00:00.000Z, no later than its last firing's 2026-10-30T15:00:00.000Z, and time would never pass",
+    )
+  })
+
+  // The decision refuses a program that ends: one key's second deadline, from another start, is earlier than its
+  // first, and both have passed. A rule that caught every loop of a finite set of keys refuses some such program.
+  test('fails on a key whose second deadline is earlier than its first, both passed', async () => {
+    const exit = await Effect.runPromiseExit(plan([[{ key: 'k', hours: 7 }], [{ key: 'k', hours: 5 }]]))
+    expect(failure(exit)).toBe(
+      "the timer under 'k' of Planned 'rehearsal' fires again at 2026-10-30T20:00:00.000Z, due at " +
+        "2026-10-30T15:00:00.000Z, no later than its last firing's 2026-10-30T17:00:00.000Z, and time would never pass",
+    )
+  })
 })

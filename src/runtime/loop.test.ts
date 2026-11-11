@@ -19,7 +19,7 @@ import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import * as Tracer from 'effect/Tracer'
 import * as Machine from '../machine.ts'
-import { InvariantDefect, type Program } from '../program.ts'
+import { InvariantDefect, type Program, timer } from '../program.ts'
 import * as Library from '../index.ts'
 import { type Answer, type Options, type Point } from '../runtime.ts'
 import { storage } from '../storage.ts'
@@ -1531,3 +1531,68 @@ test('an entity a failed write crashes runs its operation again with no caller c
         expect(acted).toEqual(['c', 'c'])
       }))
   })))
+
+// A repeating timer armed from its own last due time catches up after a downtime: each due time is past, and the
+// runtime fires the timer once for each period, at once (decisions 0130, 0266). A rehearsal runs the same.
+describe('a repeating timer that catches up', () => {
+  type Renewing = {
+    state: { periods: number; placedAt: DateTime.Utc }
+    flags: Readonly<{ placedAt: DateTime.Utc }>
+    inbound: Readonly<{ _tag: 'Ping' }>
+    internal: Readonly<{ _tag: 'RenewalDue' }>
+    operation: never
+    key: 'renewal'
+    parameter: {}
+    rejection: never
+    sender: Readonly<{ _tag: 'Tester' }>
+    projection: number
+    index: never
+    services: never
+  }
+  // Bills three periods of an hour from `placedAt`, each renewal armed at the end of the periods paid.
+  const renewing: Program<Renewing> = {
+    name: 'Renewing',
+    keys: { renewal: null },
+    schemas: {
+      state: Schema.Struct({ periods: Schema.Int, placedAt: Schema.DateTimeUtcFromMillis }),
+      flags: Schema.Struct({ placedAt: Schema.DateTimeUtcFromMillis }),
+      inbound: Schema.TaggedStruct('Ping', {}),
+      internal: Schema.TaggedStruct('RenewalDue', {}),
+      operation: Schema.Never,
+      rejection: Schema.Never,
+      sender: Schema.TaggedStruct('Tester', {}),
+      projection: Schema.Int,
+    },
+    init: (flags) => ({ periods: 0, placedAt: flags.placedAt }),
+    update: (message) => (state) =>
+      message._tag === 'RenewalDue' ? { ...state, periods: state.periods + 1 } : state,
+    work: (state) =>
+      state.periods < 3
+        ? {
+          renewal: timer(DateTime.add(state.placedAt, { hours: state.periods + 1 }), { _tag: 'RenewalDue' } as const),
+        }
+        : {},
+    operations: {},
+    project: (state) => state.periods,
+    indexes: {},
+  }
+
+  test('a renewal created after the periods it bills fires once for each', () =>
+    database(Effect.gen(function*() {
+      const placedAt = DateTime.subtract(yield* DateTime.now, { hours: 3 })
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const renewals = yield* runtime.deploy(renewing)
+          yield* renewals.create('renewal-1', { flags: { placedAt }, requestId: 'creation', sender: tester })
+          // Each due time is past, but a sleep of 0 still waits for the test's clock to move: each millisecond
+          // fires the renewal once, and the firing arms the next period, past too.
+          const periods: Array<number | null> = []
+          for (let tick = 0; tick < 4; tick++) {
+            yield* TestClock.adjust('1 millis')
+            yield* runtime.settled
+            periods.push(yield* renewals.read('renewal-1'))
+          }
+          expect(periods).toEqual([1, 2, 3, 3])
+        }))
+    })))
+})

@@ -642,16 +642,15 @@ with a requirement that no example has yet.
     sender otherwise, and retries under the same id;
   - whether the runtime, read in `src/storage/` and `src/runtime/callers.ts`, does find the request by its id across
     such a deploy, as the review read.
-- **A rehearsal of a downtime.** A repeating timer catches up after a downtime by firing at a time already past,
-  again and again, and the runtime runs that
-  ([decision 0130](decisions/archive/0130-a-runner-retries-and-the-state-counts-the-attempts.md)). A rehearsal fails a
-  key whose timer fires twice at one time ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)),
-  and time stands still while its timers fire, so every catch-up fails it. It is bug 42 of the
-  [roadmap](roadmap.md), reproduced. It would be decided by:
-  - whether the check fails only on a key armed again at the time it was due, or earlier, so that a timer whose due
-    time moves forward at each firing passes;
-  - what a rehearsal of a downtime is: a start after the timers, a `fire` of a later timer, or a deploy that arms one
-    in the past.
+- **A chain of keys that loops in a rehearsal.** A timer under a key with a parameter that arms the next parameter
+  at the time reached never fires one key twice, so a rehearsal's `advance` never ends
+  ([decisions 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md),
+  [0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md)). A rule on the key's name alone
+  would refuse three reminders of three parameters due at one time, and a catch-up that moves to the next parameter.
+  It would be decided by:
+  - a rule that fails a key's name only when a firing at the time reached armed it, which needs the rehearsal to
+    keep what each firing armed;
+  - whether a program needs a chain of parameters at one time at all.
 - **What a test of a projection gives `allows`.** `projectionViolations` checks a projection's `allows` with the
   sender ([decision 0213](decisions/0213-a-projections-allows-is-given-the-sender.md)). It gives `allows` the
   projection as `project` returns it, not as a caller reads it from its JSON, and gives `update` the sender

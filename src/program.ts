@@ -362,14 +362,15 @@ const TimerTypeId: unique symbol = Symbol.for('@fgaudo/effect-tea-persistent/Tim
 /** A timer, as `work` returns it under a key: data, which the runtime arms while the state holds it. */
 export interface Timer<Message> {
   readonly [TimerTypeId]: typeof TimerTypeId
-  /** When the timer fires. */
+  /** When the timer fires, a whole millisecond (decision 0266). */
   readonly at: DateTime.Utc
   /** The internal message the timer sends its entity when it fires. */
   readonly message: Message
 }
 
 /**
- * A timer that sends `message` to its entity at `at`. `Message` is `const`, so that a message's tag stays its literal
+ * A timer that sends `message` to its entity at `at`, a whole millisecond: a step whose work holds a timer due
+ * between two milliseconds is a defect (decision 0266). `Message` is `const`, so that a message's tag stays its literal
  * where nothing gives the call a type to infer from, as in a branch of `Match.valueTags`. `work` checks it against
  * the program's internal messages. `const` also makes an array a readonly tuple, which a mutable array of
  * `Schema.mutable` does not take, so a program with one writes `timer<Internal>(…)` (decision 0181).

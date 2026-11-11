@@ -3,6 +3,8 @@
 **Status:** accepted, 2026-11-08, with the step The API before the release of the [roadmap](../roadmap.md). Changes
 what [decision 0014](archive/0014-rules-the-machine-settled.md) says of time in a rehearsal, and adds `advance` to a
 world of [decision 0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md).
+Changed by [decision 0266](0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md): at one time, a key fails
+the test only when it fires again with a due time no later than its last, so a repeating timer catches up.
 
 ## Context
 
