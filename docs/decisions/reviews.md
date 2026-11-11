@@ -3994,3 +3994,145 @@ None.
 ### Not read whole
 
 None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.
+
+## 2026-11-11: premise review of the pairs against The queries and their pages, and The tables and migrations
+
+The fourteenth last session read the list against area 8 and the list against area 9 together. The branch is
+`claude/premise-pairs-queries-tables-b4f457`, moved to `main` at `9fd90aa` before the review began. One finding is
+only reasoned. Its test is written in `src/postgres.test.ts` and was not run, since no server of PostgreSQL runs
+here.
+
+### The pairs read
+
+Each pair was found by the index, the area's report and `grep -wE` of each note in both directions. Every note of the
+two lists, and every note of the two areas, was read whole, with the code named.
+
+| Pair | What binds it | How it was read |
+| --- | --- | --- |
+| 0032, 0141 | 0141 changes 0032's limit | both whole, with `counted` and `query` of `storage/projections.ts` |
+| 0032, 0143 | 0143 changes 0032's query, which gives an id and a projection | both whole, with `cursorOf` and the page's statements |
+| 0032, 0148 | 0148 changes 0032's read model | both whole, with `count` and `sum` |
+| 0032, 0149 | 0149 says where 0032's read model stops | both whole; 0149 holds no code |
+| 0032, 0150 | 0150 cites 0032's scalar indexes as its reason | both whole, with `countBy` |
+| 0039, 0141 | 0141 changes 0039's limit of `feed` and `published` | both whole, with `fetch` and `published` of `storage/log.ts` |
+| 0039, 0142 | 0142 changes 0039's `feed` | both whole, with `runtime/readings.ts` |
+| 0039, 0149 | 0149 cites 0039's cursor as its reason | both whole |
+| 0039, 0150 | 0150 changes 0039's ack | both whole, with `ack` of `storage/log.ts` and `transaction` of `storage/tables.ts` |
+| 0157, 0145 | 0157 applies 0145's page on PostgreSQL, at `REPEATABLE READ` | both whole, with `snapshot` of `storage/held.ts` |
+| 0157, 0146 | 0157 binds an integer past 2^53 as 0146 writes it | both whole, with `indexesText` |
+| 0157, 0207 | 0207 cites 0157's text a database holds as its reason | both whole, with `isCompared` and `criteria` |
+| 0157, 0209 | 0209 changes 0157's sum on PostgreSQL | both whole, with `sum` |
+| 0164, 0150 | 0164 cites 0150's rule that a caller in a transaction waits for no step | both whole, with `untransacted` and `detached` of `runtime/` |
+| 0177, 0142 | 0177 keeps 0142's signal taken before the reading | both whole, with `readings.ts` |
+| 0247, 0141 | 0247 cites 0141 for its required `limit` | both whole, with `check` of `src/check.ts` |
+| 0055, 0191 | 0191 changes 0055's operator who creates the tables | both whole, with `createTables` and `launch` |
+| 0145, 0198 | 0198 changes 0145's index of a database made before | both whole, with `indexed` |
+| 0152, 0223 | 0223 says how 0152's forget and prune hold in WAL mode | both whole, with `prune` and `forget` |
+| 0154, 0224 | 0224 changes 0154's publication, which holds the step's time | both whole, with the trigger of `storage/tables.ts` and `consumers` |
+| 0157, 0198 | 0198 cites 0157 for a schema no dialect shares | both whole |
+| 0157, 0216 | 0216 keeps 0157's collation off `effecttea_migrations` | both whole, with `createTables` and `Migrator.ts` |
+| 0157, 0218 | 0218 relies on 0157's cut of a long index name | both whole, with `indexName` |
+| 0157, 0222 | 0222 changes 0157's integers, and runs its pages and its trigger on a pool | both whole, with `transaction`, `snapshot`, `pruneBatch` and the trigger |
+| 0158, 0191 | 0191 changes 0158's column added and filled apart | both whole |
+| 0158, 0198 | 0198 drops 0158's column of a database made before | both whole |
+| 0158, 0222 | 0222 sees 0158's page in a caller's transaction give a row twice | both whole, with the page's transaction |
+| 0161, 0198 | 0198 drops 0161's `steps` given to a database made before | both whole, with `tables` |
+| 0176, 0198 | 0198 drops 0176's `renamed_to` given to a database made before | both whole, with `tables` |
+| 0220, 0198 | 0220 names its spans with `tea.`, as 0198 names the objects | both whole |
+| 0220, 0224 | 0224 decides 0220's open question of a consumer's age | both whole, with `consumers` |
+| 0245, 0223 | 0245 changes 0223 for a prune in batches, and adds the sweep | both whole, with `sweepOf` of `runtime.ts` and `pruneBatch` |
+| 0245, 0224 | 0245 cites 0224's `consumers` for a consumer that stalls | both whole |
+| 0247, 0217 | 0247 names the history of `Migrator` as 0217 does | both whole, with `tablesMade` |
+
+### Finding 1, reasoned, its test written: on a pool of PostgreSQL, two prunes at once may each keep a publication no row names (0154 and 0157, against 0222 and 0245)
+
+- **The premise that fell.** 0154 drops a publication with the last row of the outbox that names it, by a trigger
+  that runs in the statement that drops the row. 0157 rests on the same premise on PostgreSQL: a row trigger after a
+  delete sees every row the statement deleted. Both premises hold of one statement. They need one more condition,
+  which no note wrote: no other transaction drops a row of the same publication while the statement runs. 0154 wrote
+  it only of a step, and said that SQLite has one writer at a time.
+- **What the later notes change.** 0222 runs the runtime on a pool, at `READ COMMITTED`, where two transactions run
+  at once. 0245 adds a second actor that prunes, the sweep, beside a caller's `Handle.prune`. It also cuts each prune
+  into batches of 256 rows in the order of `position`. So two batches of two prunes may run at once, each on a
+  connection of its own.
+- **The sequence.** A step of one partition publishes in the topics `x` and `y`, at the positions 256 and 257, after
+  255 rows of `x` alone. The cursor of `y` is past the step, and the cursor of `x` is not. The sweep's batch takes its
+  snapshot, finds only `y`'s row to drop, and drops it. Its trigger finds `x`'s row, and keeps the publication. Before
+  the sweep commits, the consumer of `x` acks past the step, and a caller's `prune` begins. Its batch sees both rows,
+  and takes the first 256 by `position`, which end at `x`'s row and leave out `y`'s. It drops them, and waits for no
+  lock, since the two batches drop different rows. Its trigger still sees `y`'s row, whose delete has not committed,
+  and keeps the publication. Both commit. The publication stays, with its message and its projection, and no row of
+  the outbox names it. No later statement drops it, since the trigger runs only where a row of the outbox goes.
+- **Where it does not happen.** Where the two batches share a row, the second waits for the first's commit. Its
+  trigger runs at the end of its statement, and the trigger's query takes a snapshot of its own, which sees the other
+  row gone, so it drops the publication. So only two batches that share no row keep it.
+- **What it costs.** Storage, for ever: one publication per such meeting, holding a projection, which may be large
+  (decision 0135). No reading gives a wrong answer: `fetch` and `consumers` join from the outbox to the publications,
+  and never read a publication no row names.
+- **Files and lines.** The trigger of PostgreSQL at `src/storage/tables.ts:306-324`. `pruneBatch` and `prune` at
+  `src/storage/log.ts:222-264`. The sweep calls `prune` at `src/runtime.ts:261-264`, and the handle gives it at
+  `src/runtime.ts:1304`.
+- **Its test.** `FAILING: a publication goes with the last row that names it, though two transactions drop its rows
+  at once` in `src/postgres.test.ts`, in the commit of this report. It runs the two deletes the two batches run, each
+  in a transaction of its own on a pool of its own, both open until both statements have run. Then it expects the
+  publication gone. The test is skipped without a server, and was not run, since no server of PostgreSQL runs here.
+  So the finding is only reasoned. The reading of the trigger rests on PostgreSQL's manual: at `READ COMMITTED` a
+  volatile function takes a new snapshot for each query, and a delete not committed is not seen by another
+  transaction. How two batches come to drop disjoint rows at once, by the limit and an ack between two snapshots, is
+  reasoned from the statement of `pruneBatch`, and was not run.
+- **Where a fix could begin.** The trigger could lock the publication's row, with `SELECT … FOR UPDATE` on
+  `effecttea_publications`, before it looks for another row. The second trigger would then wait for the first
+  transaction's commit, and its next query would see the other row gone. Or a prune could take an advisory lock of
+  its transaction, keyed by the program, so that two prunes of one program never run at once. Or the sweep could drop
+  the publications no row names, by a statement of its own, which decision 0154 refused while one writer ran.
+
+### Suspects ruled out
+
+- 0039 against 0150, an ack in a caller's transaction at `REPEATABLE READ`, which 0222 tells a caller of pages to
+  begin: the ack's upsert of a cursor fails with `SerializationError` only where another transaction updates the same
+  cursor at once. That is a second reader of the same consumer, and 0039 says a consumer that runs in several
+  processes is a consumer per process.
+- 0039 against 0245, a consumer declared or forgotten between two batches of one prune: each batch reads the
+  consumers and drops its rows in one statement. A forget lets the next batch prune the topic whole, which is what a
+  forget is for. A consumer declared holds its topic from its deploy, and the rows a batch dropped before were
+  prunable then.
+- 0154 against 0222, a step's publication and its rows seen half written by a prune: a statement at `READ COMMITTED`
+  reads a snapshot of committed transactions, and a step writes its publication and its rows in one.
+- 0157 and 0158 against 0222, a page in a caller's transaction at `READ COMMITTED` that gives a row twice: 0222 sees
+  it on a server, and the design tells such a caller to begin at `REPEATABLE READ`.
+- 0157 against 0218, more names cut by the longer prefix: `indexName` ends each cut name with a hash of the whole
+  name, so two indexes of a read model share a name only where their hashes meet.
+- 0158 against 0191 and 0198, the column `request_id` added and filled: 0198 makes the tables under names no database
+  holds, so no launch adds the column.
+- 0161 and 0176 against 0198: `steps` and `renamed_to` are columns of the first migration, and no database holds the
+  tables under their new names without them.
+- 0164 against 0150: a handler of `consume` that calls a step is bug 26. 0164's own forks keep 0150's rule, since
+  each is given `untransacted`.
+- 0177 against 0142: `waited` takes the topic's `Deferred` before it reads, as both notes say, in `readings.ts`.
+- 0220 against 0198 and 0218: the spans keep `tea.` while the tables moved to `effecttea_`. 0220's reason names
+  0198's prefix, and no rule of the runtime reads a span's name.
+- 0224 against 0154 and the finding: `consumers` joins a partition's next row with its publication, so a publication
+  kept without a row is read by no join from the outbox. `stored` and `behind` are two statements, so a forget
+  between them shows a consumer with nothing behind it, which is a reading of a moment.
+- 0245 against 0223, a sweep on a full volume: each batch fails and rolls back, the sweep warns, and the next sweep
+  runs at its interval. The operator's procedure stands, as 0245 saw in the spike.
+- 0247 against 0141: `check` refuses a limit that is no non-negative safe integer before it reads
+  (`src/check.ts:71-75`), and a limit of 0 gives the counts alone.
+- 0247 against 0217: `tablesMade` names the history as `createTables` does. Where a schema of the role's name moves
+  the first schema, `check` dies, as bug 41 says.
+- 0032 against 0148, 0150 and 0209: each aggregate is one statement, which reads one snapshot at `READ COMMITTED` on
+  a pool as on SQLite.
+- 0055 against 0191: `createTables` stays exported for the operator. Its run inside an operator's own transaction is
+  bug 51.
+
+### Noticed, not checked
+
+- **Bug 26 on a pool of PostgreSQL, by the pool's size (0164 against 0150).** On a pool, a handler of `consume` holds
+  one connection in its page's transaction, and a step it waits for takes another. Where as many readers wait at once
+  as the pool holds connections, no step gets a connection, and every reader waits for ever. It needs a server and a
+  pool of a known size, so it was not run.
+
+### Not read whole
+
+None. Every note of the two lists, and every note of areas 8 and 9 it meets, was read whole, with the code that keeps
+its rule.

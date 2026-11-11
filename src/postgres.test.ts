@@ -463,3 +463,43 @@ describe('the migrations of createTables (decision 0216)', () => {
       expect(yield* sql`SELECT migration_id FROM effecttea_migrations`).toEqual([{ migration_id: 1 }])
     }))
 })
+
+describe('the publication of a step pruned by two transactions at once (decisions 0154, 0157, 0245)', () => {
+  // Each statement that drops a row of the outbox runs the trigger, which drops the publication where no other row
+  // names it. Two batches of two prunes at once, the sweep's and an operator's, may each drop one of a step's two
+  // rows: the batches end at a limit of 256 rows in the order of `position`, and the cursors one reads were raised by
+  // an ack the other's snapshot does not hold. At `READ COMMITTED` neither trigger sees the other's delete, which has
+  // not committed, so each keeps the publication. The two deletes below are what the two batches' statements do.
+  onServer('FAILING: a publication goes with the last row that names it, though two transactions drop its rows at once', (url, sql) =>
+    Effect.gen(function*() {
+      yield* on(sql)(createTables)
+      const other = yield* connect(url)
+      const store = storage(ranked, sql, 1)
+      yield* transaction(sql, store.write('a', created(), 0))
+      yield* transaction(sql, store.write('a', written({
+        entity: { state: { last: 'one' }, creation },
+        shown: { projection: '1', indexes: { rank: 1 } },
+        published: { kind: 'Inbound', message: 'one', projection: '1', topics: ['x', 'y'] },
+      }), 0))
+      const dropped = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const drop = (client: SqlClient.SqlClient, topic: string, signal: boolean) =>
+        Effect.forkChild(transaction(client, Effect.gen(function*() {
+          yield* client`DELETE FROM effecttea_outbox WHERE name = 'Ranked' AND topic = ${topic}`
+          if (signal) yield* Deferred.succeed(dropped, undefined)
+          yield* Deferred.await(release)
+        })))
+      const first = yield* drop(sql, 'x', true)
+      yield* Deferred.await(dropped)
+      const second = yield* drop(other, 'y', false)
+      // The second delete runs its trigger while the first transaction is open: it waits for no lock, since the two
+      // transactions drop two rows.
+      yield* Effect.sleep('200 millis')
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(first)
+      yield* Fiber.join(second)
+      expect(yield* sql`SELECT seq FROM effecttea_outbox WHERE name = 'Ranked'`).toEqual([])
+      // Fails: the publication stays, and no row of the outbox names it, so no prune drops it again.
+      expect(yield* sql`SELECT seq FROM effecttea_publications WHERE name = 'Ranked'`).toEqual([])
+    }))
+})
