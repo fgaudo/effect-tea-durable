@@ -40,11 +40,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md), and bug 82 by
     [decision 0262](decisions/0262-a-sendfrom-stands-for-a-run-no-entity-draws.md), and bug 41 by
     [decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md), and bug 44 by
-    [decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md). The part next is bug 72, proposed to the maintainer before any code. Decisions 0259 and 0263
-    change a reading of the storage, and decision 0264 the hold of PostgreSQL, so the job of PostgreSQL of `ci.yml`
-    runs on their branch before they are on `main`. The maintainer chose on 2026-11-11 to put decision 0264 on
-    `main` before that job ran, so its test `a launch refused by another runtime’s lock gives the database back, in
-    the scope its launcher gave`, of `src/postgres.test.ts`, runs first in the job of the push of `main`.
+    [decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md). The part next is bug 72, proposed to the maintainer before any code. Decision 0264 changes
+    the hold of PostgreSQL, and its test `a launch refused by another runtime’s lock gives the database back, in the
+    scope its launcher gave`, of `src/postgres.test.ts`, runs first in the job of PostgreSQL of the next push of
+    `main`.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by

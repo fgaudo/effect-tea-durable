@@ -75,7 +75,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A premise about what code does when it runs is never only reasoned, whether the code is the library's, a
   dependency's or a database's. Before its note is taken, the premise is tested, documented in the version pinned,
   or seen in a spike. A test written and not run, as a test of `bun run test:postgres` on a machine with no server,
-  is not run yet: it runs on a branch, in the job of the CI that runs it, before the note is taken. A premise that
+  is not run yet: it runs in the job of the CI that runs it, on the push of `main` that takes the note. A job that
+  fails there is the next commit's work, before any other. A premise that
   no test can reach yet does not hold a decision up. The decision is taken with a guard that makes the premise
   unneeded, or it waits, and the premise goes in `docs/open-questions.md` as the question that holds it. A reasoned
   premise of a note taken costs a bug found late, and a reasoned finding costs its analysis twice, so the check is
@@ -213,8 +214,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
   `bun run test:slow`, and another `bun run test:pins`, and a test of the workflow's form checks them, reading every
   key of the workflow. Another job runs `bun run test:postgres` against a container of
   PostgreSQL, and `spikes/full-volume.test.ts` on a volume of fixed size it mounts. A change of the storage, of a transaction of the
-  runtime or of a statement passes that job too, run on the branch, since PGlite runs one session and hides what a
-  pool does. Run by hand from the repository's Actions, the workflow also runs `bun run test:release`, in four jobs
+  runtime or of a statement passes that job too, on the push of `main`, since PGlite runs one session and hides what
+  a pool does. Run by hand from the repository's Actions, the workflow also runs `bun run test:release`, in four jobs
   as `bun test`, and a release passes it there. The site's audit ignores one advisory of minimatch, since TypeDoc's range excludes the version
   with the fix. The workflow's comment says when the ignore goes.
 - Bun is pinned by `packageManager` in `package.json`, and the workflow installs that version, so that a run of the
