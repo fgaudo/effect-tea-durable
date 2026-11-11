@@ -1309,6 +1309,7 @@ describe('the shards of a runner on Cluster', () => {
         port: number,
         said?: (said: Said) => void,
         withheld?: (reply: Reply.Reply<any>) => boolean,
+        poll?: Duration.Input,
       ) => Effect.Effect<Runner, never, Scope.Scope>,
     ) => Effect.Effect<void, unknown, Scope.Scope | SqlClient.SqlClient>,
     options: Parameters<typeof launch>[0] = {},
@@ -1320,7 +1321,12 @@ describe('the shards of a runner on Cluster', () => {
   ) => {
     const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-test-'))
     const store = SqliteClient.layer({ filename: join(directory, 'store.db') })
-    const start = (port: number, said?: (said: Said) => void, withheld?: (reply: Reply.Reply<any>) => boolean) =>
+    const start = (
+      port: number,
+      said?: (said: Said) => void,
+      withheld?: (reply: Reply.Reply<any>) => boolean,
+      poll?: Duration.Input,
+    ) =>
       Effect.gen(function*() {
         const scope = yield* Effect.scope
         const context = yield* Layer.build(
@@ -1337,6 +1343,7 @@ describe('the shards of a runner on Cluster', () => {
               shardLockExpiration: locks.expiration,
               entityMessagePollInterval: Duration.millis(100),
               entityRegistrationTimeout: registration,
+              ...(poll === undefined ? {} : { entityReplyPollInterval: poll }),
             })),
             // Each runner its own connection, as a runner of its own process has: a layer built once is shared.
             Layer.provideMerge(SqliteClient.layer({ filename: join(directory, 'store.db') })),
@@ -1793,6 +1800,32 @@ describe('the shards of a runner on Cluster', () => {
         }))
     }, 30_000)
   }
+
+  // The least time of decision 0248 is read from the poll of the runner whose client keeps the id. A second client
+  // on a runner launched with a longer poll reads the reply only at that poll, after the first runner's least time is
+  // past, and a later step has deleted Cluster's rows by then.
+  test('FAILING: a second client on a runner with a longer poll of replies is answered after a later step', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        const second = yield* start(2, undefined, undefined, Duration.seconds(5))
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const who = Array.from({ length: 64 }, (_, i) => `y${i}`).find((id) => first.holds(id))!
+        const sender = { user: 'u' }
+        const poking = { requestId: 'p', sender, keep: { millis: 0 } }
+        yield* first.bell.create(who, { flags: { who }, requestId: 'c', sender })
+        const late = yield* Effect.forkChild(Effect.asVoid(second.bell.send(who, { _tag: 'Poke' }, poking)))
+        yield* until(stateOf(who), (state) => state?.n === 1)
+        // The first client is given the answer Cluster saved, and keeps the id for its runner's least time, 1.4 s.
+        yield* Effect.asVoid(first.bell.send(who, { _tag: 'Poke' }, poking))
+        yield* Effect.sleep('1600 millis')
+        // A later step that stores a reply deletes Cluster's rows of the requests past their time.
+        yield* first.bell.send(who, { _tag: 'Poke' }, { requestId: 'q', sender, keep: 'forever' })
+        expect(Option.isSome(yield* Fiber.join(late).pipe(Effect.timeoutOption('12 seconds')))).toBe(true)
+      })), 30_000)
 
   test('a consumer that waits is woken by a commit of another runner, within its poll', () =>
     onFile((start) =>
