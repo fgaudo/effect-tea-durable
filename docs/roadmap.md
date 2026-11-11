@@ -9,7 +9,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   later note took away. A bug reproduced has a test that fails, and its fix begins where the bug says. A bug only
   reasoned is verified first, by a test that fails or by a reading that rules it out, and the
   [open question](open-questions.md) that holds it says what would decide it. A fix is a note that changes the
-  earlier one, taken with its test, renamed without `FAILING:` or out of `todo`. A bug verified false leaves this
+  earlier one, taken with its test, renamed without `FAILING:`, out of `todo`, or made a `test` from a
+  `test.failing`. A bug verified false leaves this
   list, and its open question says why. The premise review, the step after this one, adds each bug it finds here.
   The step starts before the review's second reading, as the maintainer chose on 2026-11-11, so that the second
   reading reads the code as the fixes leave it. A bug the second reading adds to a family is fixed by the family's
@@ -48,6 +49,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     and E.
   - A bug fixed stays in the list below as one line, `Fixed by` its note. Markdown numbers an ordered list by its
     place, so a bug taken out would shift the number of every bug after it, and the documents cite bugs by number.
+  - A bug reproduced on `main` keeps its test there as a `test.failing`, so that `bun test` passes while the bug
+    holds and fails once a change fixes it. The fix makes the test a `test`.
   - A bug's test is taken from the branch its entry names, applied to `main`, and renamed without `FAILING:`. A
     commit of such a branch may hold the test of a bug of another family, which stays on its branch.
 
@@ -96,7 +99,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      same way ([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)).
      Verified by a test of `src/postgres.test.ts` on the CI's server: the [open question](open-questions.md#running) The
      deletions of a reply on a pool of PostgreSQL.
-  4. **Reasoned: callers of a program whose sender is `null` share their request ids.** A caller that sends an id
+  4. **Reproduced: callers of a program whose sender is `null` share their request ids.** A caller that sends an id
+      Reproduced by `a program with no sender`, a `test.failing` of `src/rehearse.test.ts`: a second `Add` under the first's request id leaves the total at 1.
      another caller used gets that caller's reply, and its own message is never applied, with nothing reported
      ([decisions 0048](decisions/archive/0048-a-callers-request-belongs-to-its-sender.md),
      [0180](decisions/0180-a-program-leaves-out-what-it-does-not-have.md)). Verified by a test with two callers and
@@ -107,7 +111,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      [0200](decisions/0200-a-rehearsal-sends-under-a-request-id-the-test-names.md)). Verified by a test of
      `src/rehearse.ts`: the [open question](open-questions.md#programs) A retry in a rehearsal after a deploy that
      changes how the sender is written.
-  6. **Reasoned: a step of a drain that changes a droppable operation leaves an incarnation counted as running and
+  6. **Verified false: a step of a drain that changes a droppable operation leaves an incarnation counted as running and
+      Verified false by `a droppable operation that a step of the drain changes runs at the next activation` of `src/runtime.test.ts`. A caller waits for the drain's end, so only an at-most-once completion steps in it, and the next activation starts the incarnation it changed.
      never started.** ([decisions 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md),
      [0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)). Verified by a test of
      `src/runtime/loop.ts`: the [open question](open-questions.md#running) A step of a drain that changes a
@@ -118,7 +123,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      versions here. Verified by a test of `src/cluster.test.ts` with two runners of two versions: the
      [open question](open-questions.md#running) A resume whose program drops a droppable operation kept while
      suspended.
-  8. **Reasoned: an own message whose `_tag` is typed `string` may take a child's name, and is then routed to the
+  8. **Reproduced: an own message whose `_tag` is typed `string` may take a child's name, and is then routed to the
+      Reproduced by `an own message whose tag is typed string, sent with a child's name, reaches the parent's update`, a `test.failing` of `src/composition.test.ts`: the declaration compiles, and the message goes to the child.
      child.** Only the compiler refuses an own message named like a child, and a tag that is not a literal passes
      its check ([decisions 0133](decisions/archive/0133-an-entity-composes-children-as-effect-tea-does.md),
      [0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md)). Verified by a test of types: the
@@ -190,13 +196,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       store an operation that never starts, which is only reasoned. The fix begins at `doorStep` of
       `src/runtime/doors.ts`, or at `drained` of `src/runtime.ts`. The [open question](open-questions.md#running) A
       caller's request through the door during a drain.
-  22. **Reasoned: three forks inside the uninterruptible activation on Cluster do not say they are
+  22. **Confirmed: three forks inside the uninterruptible activation on Cluster do not say they are
       interruptible.** [Decision 0112](decisions/archive/0112-a-fork-from-a-region-that-cannot-be-interrupted-says-it-is-interruptible.md)
       asks it of every such fork, and the forks of `finishIn` of `src/runtime/doors.ts`, and of `forkHeld` and
       `drop` of `src/runtime/loop.ts`, run inside the region that
       [decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)
       made. Nothing fails at Effect's pinned version. The fix is the option at the three forks, or a check of
       `src/form.test.ts`. The [open question](open-questions.md#running) The forks of an uninterruptible activation.
+      Confirmed by a reading: `activateOnCluster` reaches the three forks through `finishIn` and `perform` inside `Effect.uninterruptible`, with no option. Effect's internal default is `false` at the pinned version, and its JSDoc does not promise it.
   23. **Reproduced: on Cluster, an ack of an older runner after a newer one forgot its consumer leaves a cursor that
       stops the prune of the partition.** `ack` does not check that its consumer is stored
       ([decisions 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md),
@@ -246,13 +253,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       through the migrations of the other.**
       ([decision 0176](decisions/archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)). The
       [open question](open-questions.md#running) A name a rename left.
-  31. **Noticed, not checked: a crash records an at-most-once operation's `unknown` while the operation's fiber may
+  31. **Reproduced: a crash records an at-most-once operation's `unknown` while the operation's fiber may
       still run a region that acts.** The crash forks the stop and does not wait for it
       ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)), so the program's
       answer to `unknown` may act beside the old fiber. Since
       [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md) the waker
       activates the entity again `retry` after the crash, with no caller coming, so the window is reached more
       often. The [open question](open-questions.md#running) An operation still stopping beside its `unknown`.
+      Reproduced by `an at-most-once operation a crash stops delivers its unknown once its finalizer has run`, a `test.failing` of `src/runtime.test.ts`: the `unknown` is handled while the old finalizer still waits.
   32. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
   33. **Noticed, not checked: on Cluster, the waker's map of entities it failed to activate may outlive a move of
       the shard to another runner.**
@@ -277,20 +285,23 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       ([decisions 0142](decisions/archive/0142-a-consumer-waits-for-a-row-of-its-topic.md),
       [0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). The
       [open question](open-questions.md#storage-and-reading) A reader with no time that misses a commit.
-  38. **Noticed, not checked: `projectionViolations` gives `allows` the projection as `project` returns it, not as a
+      Not reproduced yet. Effect commits under `uninterruptibleMask`, so an interruption during the COMMIT lands after it and before `tell`. On one process nothing was found that interrupts a step and leaves a reader waiting, so the test needs Cluster or the scheduler.
+  38. **Reproduced: `projectionViolations` gives `allows` the projection as `project` returns it, not as a
       caller reads it from its JSON, and gives `update` the sender unmigrated.**
       ([decision 0213](decisions/0213-a-projections-allows-is-given-the-sender.md)). A projection that holds `-0` is
       checked as no caller reads it. The [open question](open-questions.md#programs) What a test of a projection
       gives `allows`.
+      Half reproduced by `projectionViolations gives allows the projection as a caller reads it, where -0 is 0`, a `test.failing` of `src/testing.test.ts`. The half of the sender unmigrated is not checked.
   39. **Noticed, not checked: on Cluster, a reader of `consume` with `wait: true` may wait for ever for another
       runner's rows, once Cluster runs on PostgreSQL, or where `PRAGMA data_version` cannot be read.**
       ([decisions 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md),
       [0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). The
       [open question](open-questions.md#storage-and-reading) A reader with no time that misses a commit.
-  40. **Noticed, not checked: a sum whose exact total of magnitudes is just under the largest double may be refused
+  40. **Reproduced: a sum whose exact total of magnitudes is just under the largest double may be refused
       on SQLite and accepted on PostgreSQL.**
       ([decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md)). The
       [open question](open-questions.md#storage-and-reading) A sum at the edge of the largest double.
+      Reproduced by `a sum whose exact total of magnitudes reads back as the largest double is answered alike on both dialects`, a `test.failing` of `src/dialects.test.ts`: PGlite gives `Number.MAX_VALUE` and SQLite refuses the sum.
   41. **Reproduced: under the default `search_path`, a schema of the role's name, made after the tables, moves the
       runtime onto empty tables.** [Decision 0217](decisions/0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md)
       names the history in `current_schema()`, which under `"$user", public` changes once a schema of the role's
@@ -335,11 +346,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       retry, before the forget and the prune run.** The spike of
       [decision 0223](decisions/0223-a-disk-that-is-really-full.md) ran no step beside the prune. It needs the CI's
       volume. The [open question](open-questions.md#storage-and-reading) A full volume beside the steps.
+      Not checked: it needs the CI's volume of fixed size.
   51. **Noticed, not checked: `createTables` called by an operator inside a transaction of their own, at `REPEATABLE
       READ` with a query before it, locks after its snapshot.**
       [Decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md) rests on the
       lock coming first, and the JSDoc of `createTables` does not say so. It needs a server. The
       [open question](open-questions.md#storage-and-reading) The migrations inside an operator's transaction.
+      Not checked: it needs a server of PostgreSQL, which PGlite's one session does not stand for.
   52. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, which pins a seed in each explored test whose comment names an interleaving, and runs it against the rule taken out.
   53. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose property reads its fixtures from `src/fixtures/`.
   54. **Reproduced: on Cluster, a runner keeps Cluster's bound of resident entities, and a caller past it waits.**
@@ -402,13 +415,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       Cluster rows to go once its time is past`, in `src/cluster.test.ts`, on `claude/premise-pairs-messages-2-a90d4b`
       at `d602b35`. The fix begins at `keptGiven` of `src/cluster.ts`. The
       [open question](open-questions.md#running) The rows of operators' events on Cluster.
-  60. **Reasoned: a boundary that acknowledges an item once `send` is answered may lose it.**
+  60. **Confirmed: a boundary that acknowledges an item once `send` is answered may lose it.**
       [Decision 0127](decisions/archive/0127-a-live-stream-feeds-its-entities-from-the-boundary.md) acknowledges an
       item on any answer, and `Suspended` ([decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)),
       `Full` ([decision 0147](decisions/archive/0147-an-entity-holds-a-bounded-number-of-callers-messages.md)) and
       `NotFound` store nothing. The source never gives the item again. Nothing of `src/` holds it. The fix is a note
       that changes 0127, and the paragraph on streams of `docs/design.md`. The
       [open question](open-questions.md#programs) What a boundary acknowledges.
+      Confirmed by the notes: decision 0023 answers a message to a suspended entity `Suspended` and queues nothing, and the tests of `Full` and `NotFound` show they store nothing.
   61. **Fixed by [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)**, whose waker activates an entity a crash took out.
   62. **Reproduced: on Cluster, a caller of an older version is given a rejection's reason as the newer version wrote
       it, and reads it through its own schema.** A reason is read through the migrations from the version that wrote
@@ -442,13 +456,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       the move is read by the round and the waker of its old shard, and dropped with no log. A test of
       `src/storage.test.ts` fails at such a move of Effect's version, and nothing says what a deployment does then.
       The [open question](open-questions.md#running) A hash of Effect that moves the shards.
-  65. **Noticed, not checked: an at-least-once operation of a crashed entity that sends from a region it holds
+      Not checked: it needs a release of Effect whose hash differs, and a dependency is never changed by hand.
+  65. **Reproduced: an at-least-once operation of a crashed entity that sends from a region it holds
       uninterruptible, after its new run ended the work, has the receiver apply the request twice.** The crash does
       not wait for the stop ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)),
       and the reply is deleted once the work ends
       ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). Bug 31 is the
       at-most-once case. Two sessions noticed it. The [open question](open-questions.md#running) A send after the
       work it belongs to ended.
+      Reproduced by `a send of an operation a crash could not interrupt, after its new run ended the work, is applied once`, a `test.failing` of `src/runtime.test.ts`: the receiver applies the message twice.
   66. **Fixed by [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)**, whose drain reaches a deployment still activating.
   67. **Noticed, not checked: a planned stop while the main fiber deploys undoes the deploy, and its at-most-once
       operations deliver `unknown`.** The interruption reaches the deploy before the scope's finalizers run, so the
@@ -457,6 +473,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       [decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md) begins. They
       deliver `unknown`, as after a crash. Whether a planned stop waits for them is a choice no note makes. The
       [open question](open-questions.md#running) A deploy that the planned stop interrupts or that fails in the drain.
+      Not reproduced yet. An at-most-once operation stored as started is delivered `unknown` at any activation, so the test needs a deploy whose activation starts a new incarnation.
   68. **Reasoned: on Cluster, a deploy that adds no migration does not outrank the runners it replaces, and an older
       runner steps the rows of the newer code.** A version is the count of a program's migrations plus one
       ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)), and an older runner is kept
@@ -577,13 +594,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       first statement read, or run in `snapshot` of `src/storage/held.ts`. The
       [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
       snapshot.
-  79. **Noticed, not checked: the design's advice to begin at `REPEATABLE READ` names a page of a query, and not
+  79. **Confirmed: the design's advice to begin at `REPEATABLE READ` names a page of a query, and not
       `inspect`, which reads at the caller's level too.** `inspect` reads inside a caller's transaction at the caller's
       level ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)), as a page does
       ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)),
       and under Databases `docs/design.md` names only the page. It is a gap of the guide, not of the code. The
       [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
       snapshot.
+      Confirmed by the JSDoc of `withTransaction`: `BeginTransaction` sets only the outermost transaction, and `inspect` runs three statements, so inside a caller's transaction at `READ COMMITTED` each reads a snapshot of its own.
   80. **Reasoned, its test written: on a pool of PostgreSQL, two prunes at once may each keep a publication no row
       names.** A publication goes with the last row of the outbox that names it, by a trigger of the statement that
       drops the row ([decisions 0154](decisions/archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md),
