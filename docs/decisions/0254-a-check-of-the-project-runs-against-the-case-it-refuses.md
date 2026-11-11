@@ -94,7 +94,15 @@ then bug 52 test by test, then bug 83.
   src/fixtures is given what the property needs of it` fails on a program with no entry, and on two programs of one
   name. Both were seen on 2026-11-11 with a copy of `inventory.ts` under another name, which also got the property.
 
-The next part is bug 48, at the script `test:postgres` of `package.json`.
+- Bug 48 is done in the repository, wider than the roadmap says. `postgresMissed` of `src/form.test.ts` finds the
+  files of the tests that reach `src/storage.test_databases.ts` through their imports and that `bun run test:postgres`
+  does not run, by the filters of Bun's documentation. The test `the job of PostgreSQL runs every file of the tests
+  that reaches the databases` found the four files the agent named. `test:postgres` now runs them, and the test
+  `a file of the tests that reaches the databases and that the run does not take is found` gives the check its
+  samples. The four files have not run on a server yet, since the maintainer's machine has none. The job `postgres`
+  of the next push runs them first, and a failure there is a bug this family found, added to the roadmap.
+
+The next part is the job of the pinned seeds, with bug 43.
 
 ## What it rests on
 

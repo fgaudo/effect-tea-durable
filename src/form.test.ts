@@ -530,6 +530,33 @@ export const effectPackagesApart = (manifest: Manifest): ReadonlyArray<string> =
     .map(([name, range]) => `${name}@${range}`)
 }
 
+/**
+ * The files of the tests that reach `src/storage.test_databases.ts` through their imports and that `command`, a run
+ * of `bun test`, does not run, given the text of each file by its path from the root. Such a file runs on PostgreSQL
+ * on the CI's server only if the job of PostgreSQL runs it (decision 0254). A filter of `bun test` runs every file
+ * whose path holds it, and one that starts with `./` the file it names, as Bun's documentation says in
+ * `node_modules/bun-types/docs/test/discovery.mdx`.
+ */
+export const postgresMissed = (texts: ReadonlyMap<string, string>, command: string): ReadonlyArray<string> => {
+  const reaches = new Map<string, boolean>()
+  const reached = (file: string): boolean => {
+    if (file === 'src/storage.test_databases.ts') return true
+    const known = reaches.get(file)
+    if (known !== undefined) return known
+    reaches.set(file, false)
+    const found = importsOf(texts.get(file) ?? '').some((specifier) =>
+      specifier.startsWith('.') && reached(posix.normalize(posix.join(posix.dirname(file), specifier)))
+    )
+    reaches.set(file, found)
+    return found
+  }
+  const filters = command.split(/\s+/).map((word) => word.replace(/^'|'$/g, '')).slice(2)
+    .filter((word) => word !== '' && !word.startsWith('-'))
+  const runs = (file: string) =>
+    filters.some((filter) => filter.startsWith('./') ? posix.normalize(filter) === file : file.includes(filter))
+  return [...texts.keys()].filter((file) => runByBunTest(file) && reached(file) && !runs(file)).sort()
+}
+
 const workflowOfTheRepository = () =>
   Bun.YAML.parse(readFileSync(join(import.meta.dir, '..', '.github', 'workflows', 'ci.yml'), 'utf8')) as Workflow
 
@@ -539,6 +566,22 @@ describe('the form of the workflow', () => {
   // failure, so the check refuses it (decisions 0242, 0250, 0254).
   test('every job of the workflow runs its tests, every shard of a division among them, with no key the check does not read', () => {
     expect(workflowRefused(workflowOfTheRepository())).toEqual([])
+  })
+
+  test('the job of PostgreSQL runs every file of the tests that reaches the databases', () => {
+    const root = join(import.meta.dir, '..')
+    const texts = new Map(['src', 'spikes'].flatMap((folder) =>
+      readdirSync(join(root, folder), { recursive: true, encoding: 'utf8' })
+        .filter((file) => file.endsWith('.ts'))
+        .map((file) => {
+          const path = `${folder}/${file.replaceAll(sep, '/')}`
+          return [path, readFileSync(join(root, path), 'utf8')] as const
+        })
+    ))
+    const scripts = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> })
+      .scripts
+    expect(texts.has('src/storage.test_databases.ts')).toBe(true)
+    expect(postgresMissed(texts, scripts['test:postgres']!)).toEqual([])
   })
 
   test('every package of Effect is pinned at the version of effect', () => {
@@ -649,6 +692,26 @@ describe('the check of the form', () => {
     } finally {
       rmSync(folder, { recursive: true, force: true })
     }
+  })
+
+  test('a file of the tests that reaches the databases and that the run does not take is found', () => {
+    const texts = new Map([
+      ['src/storage.test_databases.ts', ''],
+      ['src/a.test_shared.ts', "import { client } from './storage.test_databases.ts'"],
+      ['src/a.test.ts', "import { x } from './a.test_shared.ts'"],
+      ['src/b.test.ts', "// import { client } from './storage.test_databases.ts'"],
+      ['src/loop/c.test.ts', "import { client } from '../storage.test_databases.ts'"],
+      ['src/loop/d.test.ts', "import { x } from '../a.test_shared.ts'"],
+      ['spikes/e.test.ts', "import { client } from '../src/storage.test_databases.ts'"],
+    ])
+    expect(postgresMissed(texts, "bun test '--path-ignore-patterns=node_modules/**' src/loop/ spikes/e.test.ts")).toEqual([
+      'src/a.test.ts',
+    ])
+    expect(postgresMissed(texts, 'bun test ./src/a.test.ts src/loop/c.test.ts')).toEqual([
+      'spikes/e.test.ts',
+      'src/loop/d.test.ts',
+    ])
+    expect(postgresMissed(texts, 'bun test ./src/a src/loop spikes')).toEqual(['src/a.test.ts'])
   })
 
   test('a package of Effect at a version other than effect’s is found, and effect at a range', () => {
