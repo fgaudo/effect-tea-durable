@@ -108,6 +108,19 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   is a choice of the design, which the [open question](open-questions.md#running) A door that changes between two
   releases of the library lists.
 
+- **What a deploy may change of a program, against what is stored.** Four of the bugs the premise review found have
+  one form: a deploy of a newer version changes a piece of the program, while what is stored was written by the
+  older version. They are the delivery of an operation (bug 1), the way the sender is written (bug 5), a droppable
+  operation a resume drops (bug 7), and the door (the step above). The review reads one pair of notes at a time, so
+  it finds such a case only where one pair holds it. This step lists every piece a program declares: the sender,
+  the flags, the keys and their parameters, each operation and its delivery, the timers, the internal messages, the
+  rejections, the projection, the children and the door. For each piece and each way a deploy changes it, it asks
+  what happens to an entity stored, loaded, suspended or draining, on one process and on Cluster, with a deploy of
+  a newer version and of an older one. Each case gets a test that shows it holds, or a sentence that says why it
+  holds and cites the note that decides it. A case that fails is a bug of this step, fixed by a note with its test,
+  as the bugs above. The cases the steps above already hold cite them. The table is written in `docs/`, so that a
+  piece a later note adds to a program adds its row.
+
 ## Later
 
 - **The release**, once there is code to publish. It is released as experimental while it depends
