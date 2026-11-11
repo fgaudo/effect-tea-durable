@@ -23,7 +23,8 @@ import { existsSync, mkdtempSync, rmSync, statfsSync, statSync, writeFileSync } 
 import { join } from 'node:path'
 import { createTables, launch, noWork, program } from '../src/index.ts'
 
-const volume = Bun.env['FULL_VOLUME']
+// An empty value names no volume: taken as a path, it would fill the folder the run starts in.
+const volume = Bun.env['FULL_VOLUME'] || undefined
 
 const notes = program({
   state: Schema.Struct({ count: Schema.Int }),

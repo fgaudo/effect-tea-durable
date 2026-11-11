@@ -43,6 +43,7 @@ import {
   process,
   program,
   publishedOf,
+  slow,
   ran,
   received,
   replayed,
@@ -220,7 +221,7 @@ describe('passivation', () => {
       yield* process({ retry: { millis: 0 }, passivate: { millis: 0 }, warn: { characters: 0 } }, () => Effect.void)
     })))
 
-  test('a process launched with no capacity holds ten thousand entities', () =>
+  slow('a process launched with no capacity holds ten thousand entities', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const { entities, unloaded } = unloads()
@@ -1188,7 +1189,7 @@ describe('random sequences of events', () => {
             ).toEqual(publishedOf(since, events))
           })),
       ),
-      { numRuns: 500 },
+      { numRuns: Bun.env['SCHEDULES'] === 'all' ? 500 : 200 },
     ), 60_000)
 })
 

@@ -33,6 +33,12 @@ import * as Schema from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import { SqlClient } from 'effect/sql'
 
+/**
+ * A test that waits over two seconds on a clock that is real, for a runner's lease: `bun test` skips it, and
+ * `bun run test:release` and `bun run test:slow` run it, under `SCHEDULES=all`.
+ */
+const slow = Bun.env['SCHEDULES'] === 'all' ? test : test.skip
+
 /** The port of a server built by `layer`, which listens until `scope` closes. */
 const portOf = <E, R>(layer: Layer.Layer<HttpServer.HttpServer, E, R>, scope: Scope.Scope) =>
   Effect.map(Layer.buildWithScope(layer, scope), (context) => {
@@ -279,7 +285,7 @@ test('an order whose process is killed during its charge is paid once by the pro
   )
 }, 60_000)
 
-test('the orders of a runner killed during their charges are paid once by the other runner', async () => {
+slow('the orders of a runner killed during their charges are paid once by the other runner', async () => {
   await run((settings, theWorld) =>
     Effect.gen(function*() {
       const ids = Array.from({ length: 16 }, (_, n) => `o-${n}`)
@@ -308,8 +314,8 @@ test('the orders of a runner killed during their charges are paid once by the ot
 // unregisters. Without `DRAIN_MILLIS` the server launches its runtime without `drain`, so its charges stop as in a
 // crash (decision 0119).
 // Under a lease and a health check longer than the test, only the unregistration frees the shards. On Windows a
-// child process is ended at once by any signal, so the stop cannot be tested there.
-test.skipIf(process.platform === 'win32')(
+// child process is ended at once by any signal, so the stop cannot be tested there. It waits as `slow` says.
+test.skipIf(process.platform === 'win32' || Bun.env['SCHEDULES'] !== 'all')(
   'the orders of a runner stopped by SIGTERM in their charges are paid once by the other runner, within its lease',
   async () => {
     await run((settings, theWorld) =>

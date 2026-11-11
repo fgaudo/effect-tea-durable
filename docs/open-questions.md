@@ -171,6 +171,17 @@ with a requirement that no example has yet.
   - the same of a reply's `until`, which the clock of the runner that steps writes, and the clock of the runner
     that holds the shard at a retry reads, as the premise review of Messages, requests and replies found
     ([`reviews.md`](decisions/reviews.md)).
+- **A test of Cluster that times out under the whole run.** `` an operation is woken by a `Resumed` delivered before
+  its client gives it the answer Suspended ``, in [`src/cluster.test.ts`](../src/cluster.test.ts), failed once on
+  2026-11-11 in a whole run of `bun test` on the maintainer's machine. Its wait for the first answer `Suspended` to be
+  withheld timed out after 15 seconds. It passed six runs alone, in 3.5 seconds each, and two runs of its file. Its
+  runners poll on a clock that is real, so the cause may be the load of the run, or an interleaving the test does
+  not hold.
+  [Decision 0250](decisions/0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md) moved the test out of
+  `bun test`, to `bun run test:slow`. What makes it time out is not known. It would be decided by:
+  - runs of `bun run test:slow` and of `bun run test:release` again and again, which find it failing again, or not;
+  - a log of the runner's Cluster rows when it fails, which says whether the answer `Suspended` was ever saved, or
+    whether the storage saw it and did not withhold it.
 - **A drain across a deploy of a newer version on Cluster.** A planned stop waits for the at-most-once operations
   under way, so that a deploy does not deliver `unknown`
   ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)), and the drain

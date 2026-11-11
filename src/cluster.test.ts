@@ -55,6 +55,7 @@ import {
 } from './program.ts'
 import { type Handle, type Options, Probe, type Said } from './runtime.ts'
 import { createTables, leased, newestVersion, outranked, recordVersions } from './storage.ts'
+import { slow } from './runtime.test_shared.ts'
 import { client, onEach } from './storage.test_databases.ts'
 
 type T = {
@@ -342,7 +343,7 @@ describe('two runners on one file', () => {
       Effect.timeout('15 seconds'),
     )
 
-  test('a rolling deploy moves every shard to the newer runner, and none back', () =>
+  slow('a rolling deploy moves every shard to the newer runner, and none back', () =>
     onFile((start) =>
       Effect.gen(function*() {
         const older = yield* start(1, [at('Toy', 1)])
@@ -391,7 +392,7 @@ describe('two runners on one file', () => {
         expect(defectOf(yield* deploys([at('Toy', 1)]))).toBeUndefined()
       })), 30_000)
 
-  test('a step of an older version dies and saves no reply, and a runner of the newest version steps its requests', () =>
+  slow('a step of an older version dies and saves no reply, and a runner of the newest version steps its requests', () =>
     onFile((start) =>
       Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
@@ -818,7 +819,7 @@ describe('the runtime on Cluster', () => {
       expect(rows[1]?.until).toBeNull()
     })), 30_000)
 
-  test('a caller’s Cluster rows go once its client has the answer and its time is past, by a step or by expire', () =>
+  slow('a caller’s Cluster rows go once its client has the answer and its time is past, by a step or by expire', () =>
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       const sender = { user: 'u' }
@@ -903,8 +904,8 @@ describe('the runtime on Cluster', () => {
         yield* Effect.sleep(least)
         sweeping = true
         const retried = yield* Effect.forkDetach(handle!.create('one', creating))
-        yield* Effect.sleep('5 seconds')
-        expect(retried.pollUnsafe()).toEqual(Exit.succeed({ _tag: 'Created' }))
+        // The answer is awaited, within the time the test waited before, so that the test ends once it comes.
+        expect(yield* Effect.timeout(Fiber.join(retried), '5 seconds')).toEqual({ _tag: 'Created' })
       }),
       undefined,
       { sweep: 'none' },
@@ -928,8 +929,8 @@ describe('the runtime on Cluster', () => {
         yield* Effect.sleep(least)
         sweeping = true
         const retried = yield* Effect.forkDetach(handle!.send('one', add, { requestId: 'm2', sender, keep: zero }))
-        yield* Effect.sleep('5 seconds')
-        expect(retried.pollUnsafe()).toEqual(Exit.succeed({ _tag: 'Accepted' }))
+        // The answer is awaited, within the time the test waited before, so that the test ends once it comes.
+        expect(yield* Effect.timeout(Fiber.join(retried), '5 seconds')).toEqual({ _tag: 'Accepted' })
       }),
       undefined,
       { sweep: 'none' },
@@ -1387,7 +1388,7 @@ describe('the shards of a runner on Cluster', () => {
           row === undefined ? undefined : JSON.parse(row.state) as Bell['state']),
     )
 
-  test('a timer of an entity no runner holds is woken by the runner that holds its shard', () => {
+  slow('a timer of an entity no runner holds is woken by the runner that holds its shard', () => {
     const unloaded: Array<string> = []
     return onFile((start) =>
       Effect.gen(function*() {
@@ -1409,7 +1410,7 @@ describe('the shards of a runner on Cluster', () => {
       }), { passivate: { millis: 200 } })
   }, 30_000)
 
-  test("a timer of an older version, stepped by the entity's loop, dies and writes nothing", () =>
+  slow("a timer of an older version, stepped by the entity's loop, dies and writes nothing", () =>
     onFile((start) =>
       Effect.gen(function*() {
         const runner = yield* start(1)
@@ -1425,7 +1426,7 @@ describe('the shards of a runner on Cluster', () => {
         expect((yield* stateOf('one'))?.rung).toBe(false)
       }), { passivate: { millis: 60_000 } }), 30_000)
 
-  test('an activation of an older version dies before it steps the restart', () => {
+  slow('an activation of an older version dies before it steps the restart', () => {
     const unloaded: Array<string> = []
     const restarts: Array<string> = []
     let newer = false
@@ -1454,7 +1455,7 @@ describe('the shards of a runner on Cluster', () => {
       }), { passivate: { millis: 200 } })
   }, 30_000)
 
-  test("a step under a lease another runner took, or that expired, dies, a door's as the loop's", async () => {
+  slow("a step under a lease another runner took, or that expired, dies, a door's as the loop's", async () => {
     for (const overwrite of ["address = 'localhost:9'", "acquired_at = datetime(CURRENT_TIMESTAMP, '-120 seconds')"]) {
       await onFile(
         (start) =>
@@ -1537,7 +1538,7 @@ describe('the shards of a runner on Cluster', () => {
         }
       })), 30_000)
 
-  test('an operation creates and sends through the door, and a resumption on another runner wakes it', () =>
+  slow('an operation creates and sends through the door, and a resumption on another runner wakes it', () =>
     onFile((start) =>
       Effect.gen(function*() {
         const first = yield* start(1)
@@ -1569,7 +1570,7 @@ describe('the shards of a runner on Cluster', () => {
         expect(left?.held).toBe(0)
       })), 30_000)
 
-  test('an operation is woken by a `Resumed` delivered before its client gives it the answer Suspended', () => {
+  slow('an operation is woken by a `Resumed` delivered before its client gives it the answer Suspended', () => {
     // Decision 0063, read again on Cluster (decision 0172): the operation registers for the receiver's resumption
     // before it sends. The client resets a first answer `Suspended` and sends again, and gives the operation the
     // second (decision 0165). The first runner's storage withholds that second answer from the client until `Resumed`
@@ -1623,7 +1624,7 @@ describe('the shards of a runner on Cluster', () => {
       }))
   }, 30_000)
 
-  test("an operation's work takes Cluster's rows of its requests as it ends, and the next step those of `Resumed`", () =>
+  slow("an operation's work takes Cluster's rows of its requests as it ends, and the next step those of `Resumed`", () =>
     onFile((start) =>
       Effect.gen(function*() {
         const first = yield* start(1)
@@ -1688,7 +1689,7 @@ describe('the shards of a runner on Cluster', () => {
         expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_sent_requests`)).toBe(0)
       })), 30_000)
 
-  test('a request Cluster failed, its type registered by no runner in time, is reset, and handled once it is', () =>
+  slow('a request Cluster failed, its type registered by no runner in time, is reset, and handled once it is', () =>
     onFile((start) =>
       Effect.gen(function*() {
         const first = yield* start(1)
@@ -1711,7 +1712,7 @@ describe('the shards of a runner on Cluster', () => {
       }), {}, Duration.millis(300)), 30_000)
 
   for (const by of ['create', 'send'] as const) {
-    test(
+    slow(
       `an operation's request Cluster failed is kept under its work, and goes with it before it is delivered, by ${by}`,
       () =>
       onFile((start) =>
@@ -1760,7 +1761,7 @@ describe('the shards of a runner on Cluster', () => {
   // deletes Cluster's rows of a request past its time. Without the floor on that time, the rows go before the second
   // client reads them, and it waits for ever (decision 0248).
   for (const by of ['create', 'send'] as const) {
-    test(`a second client of a caller's request on another runner is answered after a later step, by ${by}`, () => {
+    slow(`a second client of a caller's request on another runner is answered after a later step, by ${by}`, () => {
       let withholding = true
       const answers = (reply: Reply.Reply<any>) => withholding && reply._tag === 'WithExit'
       return onFile((start) =>

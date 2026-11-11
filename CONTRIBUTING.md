@@ -13,7 +13,10 @@ bun test
 bun run links
 ```
 
-`bun test` runs one seed in twenty of the tests that explore where fibers yield. `bun run test:parallel` runs the
+`bun test` runs one seed in twenty of the tests that explore where fibers yield, and fewer cases of the property
+tests. It skips the tests of one case that take over two seconds, and runs no spike. `bun run test:slow` runs, under
+every seed, the files whose tests wait on a clock that is real, Cluster's and the server example's.
+`bun run test:spikes` runs the spikes. `bun run test:parallel` runs the
 same tests in eight processes at once, in less than half the time, for a quicker run while a change is under way. A
 commit passes `bun test`. `bun run test:release` runs every
 seed, and a step of the roadmap that changes the runtime passes it. `bun run test:explore` runs the explored tests
@@ -30,7 +33,7 @@ POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres bun run test:p
 ```
 
 The spike [`spikes/full-volume.test.ts`](spikes/full-volume.test.ts) fills a volume of fixed size, which
-`FULL_VOLUME` names, and is skipped without it. The CI mounts one of 32 MB on Linux.
+`FULL_VOLUME` names, and is skipped without it or with it empty. The CI mounts one of 32 MB on Linux.
 
 The site, with the guide, the examples and the API reference, is built into `site/dist/` by a package of its own:
 

@@ -2,8 +2,8 @@
  * Takes out, one at a time, the rules a review writes as mutations, and runs the tests against each (decision
  * 0094). It checks the mutations it is given and nothing else: a rule no mutation takes out is not checked by it.
  *
- * A mutation is a set of exact replacements in one file of `src/`, `examples/` or `spikes/`, made in turn, and must
- * leave code that runs: one that does not is killed by the error, and tells nothing. Before any runs, the suite and
+ * A mutation is a set of exact replacements in one file of `src/` or `examples/`, made in turn, and must leave code
+ * that runs: one that does not is killed by the error, and tells nothing. Before any runs, the suite and
  * the compiler run on the code unchanged, since what fails there would kill each mutation. A failure there whose
  * file passes alone is printed on stderr, and the suite runs once more. Each mutation runs first the tests of the
  * file it changes, then, if those pass, the whole suite, and stops at the first failure; if the suite passes too,
@@ -66,8 +66,11 @@ export type Result = Readonly<{
 
 const root = resolve(import.meta.dir, '..')
 
-/** What a copy holds, and so the only places a mutation or its tests may be. */
-const copied = ['src', 'examples', 'spikes'] as const
+/**
+ * What a copy holds, and so the only places a mutation or its tests may be. The spikes are not copied, since `bun test`
+ * runs none (decision 0250).
+ */
+const copied = ['src', 'examples'] as const
 
 /** The tests of a file: its own test file, if it has one. */
 const testsOf = (mutation: Mutation): ReadonlyArray<string> =>
@@ -110,11 +113,12 @@ export const check = (mutations: ReadonlyArray<Mutation>): ReadonlyArray<string>
 /**
  * A copy of the repository for one worker: its sources copied, `node_modules` linked. The README and `docs/` are
  * copied too, since the tests of `src/form.test.ts` compare their code with the examples (decisions 0196, 0203), and
- * so is `.github`, whose workflow a test of the same file reads (decision 0242).
+ * so is `.github`, whose workflow a test of the same file reads (decision 0242). `bunfig.toml` keeps the spikes out
+ * of `bun test` (decision 0250).
  */
 const copy = (): string => {
   const at = mkdtempSync(join(tmpdir(), 'mutate-'))
-  for (const entry of [...copied, 'README.md', 'docs', '.github', 'package.json', 'tsconfig.json', 'bun.lock']) {
+  for (const entry of [...copied, 'README.md', 'docs', '.github', 'bunfig.toml', 'package.json', 'tsconfig.json', 'bun.lock']) {
     cpSync(join(root, entry), join(at, entry), { recursive: true })
   }
   // A junction needs no privilege on Windows, and is a plain link elsewhere.

@@ -116,7 +116,7 @@ const ran = (program: Program<Any>, dialect: Dialect, { flags, creator, sends }:
     Effect.orDie,
   )
 
-const runs = Bun.env['SCHEDULES'] === 'all' ? 300 : 30
+const runs = Bun.env['SCHEDULES'] === 'all' ? 300 : 8
 
 for (const fixture of cases) {
   test(`${fixture.program.name} answers on the runtime as its rehearsal does, over values of its schemas`, async () => {

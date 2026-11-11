@@ -1,0 +1,3 @@
+# `bun test` runs no spike: `bun run test:spikes` runs them, in a job of the CI of their own (decision 0250).
+[test]
+pathIgnorePatterns = ["spikes/**"]

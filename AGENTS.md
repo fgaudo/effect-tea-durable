@@ -76,7 +76,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   in `node_modules/effect/src`: found, it is documented; not found, the note says so. A rule that loses data in
   silence if a behaviour not promised changes does not rest on it alone, where a guard of the library's is cheap;
   otherwise the premise goes in `docs/open-questions.md`.
-- A spike is a test in `spikes/`, run by `bun test` at the pinned version. A premise about what a dependency does
+- A spike is a test in `spikes/`, run by `bun run test:spikes` at the pinned version, and by a job of the CI of its
+  own on every push. `bun test` runs no spike, as `bunfig.toml` says
+  ([decision 0250](docs/decisions/0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md)). A premise about what a dependency does
   when it runs is tested, documented or seen in one before its note is taken; what no spike can run yet says what
   would check it, and goes in `docs/open-questions.md`.
 - A dependency is never changed by hand: not in `node_modules`, not in bun's cache, not with a patch of the package
@@ -99,8 +101,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
   [`scripts/mutate.ts`](scripts/mutate.ts) takes out, one at a time, the rules a review writes as mutations, and runs
   the tests and the compiler against each. It runs in two passes: first the schedules `bun test` runs, then every
   seed, under `SCHEDULES=all`, for each mutation the first pass leaves alive. A kill of the first pass is a test of
-  `bun test` that fails, so it holds under every seed. So a test reads `SCHEDULES` only for how many cases it runs. A
-  kill of the second pass is a rule that only `bun run test:release` holds. A rule no
+  `bun test` that fails, so it holds under every seed. So a test reads `SCHEDULES` only for how many cases it runs, none
+  included. A kill of the second pass is a rule that only `bun run test:release` holds. A rule no
   mutation takes out is not checked by it: a review writes one for each rule its notes decide that the code keeps,
   and keeps them outside the repository. A survivor is a rule no test holds, or a mutation that changes nothing,
   which only reading tells apart; an `uncertain` one failed only under load, and is read as a survivor.
@@ -140,8 +142,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   the change holds. A test under `explored` runs one seed in twenty, from seed 0, so that the suite runs in seconds;
   `bun run test:release` runs them all, and a release passes it. A step of the roadmap that changes the runtime
   or `src/testing.ts` passes `bun run test:release` before it is taken, since some rules of concurrency fail only
-  past the first hundred seeds. A schedule under `bound` 1 runs whole in every run,
-  since it is exhaustive within its bound. `bun test` and the release start from seed 0, so that each of their runs
+  past the first hundred seeds. A schedule under `bound` 1 is exhaustive within its bound under the release, which
+  runs every deviation; any other run runs one in twenty, from the first, and the deviations listed under `pinned`,
+  as `{ decision, choice }`. `bun test` and the release start from seed 0, so that each of their runs
   replays the same schedules. `bun run test:explore` looks for the bugs those schedules miss: it runs every seed of
   the explored tests from a random first seed, again and again, until a run fails or it is stopped. A failure names
   its seed, and `SEED=<seed> bun test` runs that seed first. Once the bug a seed found is fixed, the seed is listed
@@ -164,8 +167,12 @@ This repository is a design and its pure core, not a library yet: read [`README.
   guide's code and the form of `src/`, are no tests of the library's correctness, and are kept apart from the four.
 - `bun test` runs within two minutes on one machine, and no test of it runs over two seconds. A test that would
   run longer reads `SCHEDULES` for how many cases it runs, as the explored tests do, so that `bun test` runs a
-  sample and `bun run test:release` runs them all. `bun test --reporter=junit --reporter-outfile=<file>` gives each
-  test's time. A step of the roadmap brings the suite within this budget, which it does not hold yet.
+  sample and `bun run test:release` runs them all. A test of one case that would run longer, on a clock that is real
+  or on a case too large to divide, is declared with `slow` of `src/runtime.test_shared.ts`: `bun test` skips it, and
+  `bun run test:release` runs it. `bun run test:slow` runs, under `SCHEDULES=all`, the files whose tests wait on a
+  clock that is real, in a job of the CI on every push. `bun test --reporter=junit --reporter-outfile=<file>` gives
+  each test's time
+  ([decision 0250](docs/decisions/0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md)).
 - A decision that takes a value to its end, such as a time of 0 or of the moment itself, has a test at that value,
   with every caller the rule is about.
 - The workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the checks on Linux on every push and
@@ -173,7 +180,8 @@ This repository is a design and its pure core, not a library yet: read [`README.
   `bun test` in four jobs at once, each with `--shard`, and a test of the workflow's form checks that the jobs run
   every shard ([decision 0242](docs/decisions/0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md)).
   `bun test` on one machine stays one run. `bun run test:parallel` runs the suite under eight workers, for a quicker
-  run while a change is under way, and a commit passes `bun test`. Another job runs `bun run test:postgres` against a container of
+  run while a change is under way, and a commit passes `bun test`. A job runs `bun run test:spikes`, and another
+  `bun run test:slow`, and a test of the workflow's form checks both. Another job runs `bun run test:postgres` against a container of
   PostgreSQL, and `spikes/full-volume.test.ts` on a volume of fixed size it mounts. A change of the storage, of a transaction of the
   runtime or of a statement passes that job too, run on the branch, since PGlite runs one session and hides what a
   pool does. Run by hand from the repository's Actions, the workflow also runs `bun run test:release`, in four jobs

@@ -181,6 +181,6 @@ test('both dialects answer every call alike', () =>
     fc.asyncProperty(scenario, async (calls) => {
       alike(await run('pg', calls), await run('sqlite', calls))
     }),
-    // A release runs ten times as many scenarios, as it runs every seed of the explored tests.
-    { numRuns: Bun.env['SCHEDULES'] === 'all' ? 400 : 40 },
+    // `bun test` runs eight within its budget, and a release fifty times as many (decision 0250).
+    { numRuns: Bun.env['SCHEDULES'] === 'all' ? 400 : 8 },
   ), 1_200_000)

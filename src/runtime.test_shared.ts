@@ -5,7 +5,7 @@
  * (decision 0241).
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
-import { expect } from 'bun:test'
+import { expect, test } from 'bun:test'
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
@@ -312,6 +312,9 @@ export const running = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 /** The same for an effect that ends: what it gives, once everything it set going waits. */
 export const ran = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.flatMap(running(effect), Fiber.join)
 
+/** A deviation of a run in order under `bound` 1: at its `decision`-th decision in the window, the `choice`-th way. */
+export type Deviation = { decision: number; choice: number }
+
 /**
  * Where a test under `explored` is explored: while it is open, the schedules preempt and pick as PCT draws them; while
  * the test closes it, the run goes in order. A test closes it before it moves the clock, so that the fibers the move
@@ -320,10 +323,18 @@ export const ran = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.flatMap(r
 export type Window = { open: boolean }
 
 /**
- * The share of its seeds a test under `explored` runs. The release's run, `bun run test:release`, runs them all; any
- * other run of the tests runs one in twenty, so that the suite runs in seconds.
+ * The share of its seeds, or of its deviations under `bound` 1, a test under `explored` runs. The release's run,
+ * `bun run test:release`, runs them all; any other run of the tests runs one in twenty, so that the suite holds its
+ * budget (decision 0250).
  */
 export const share = Bun.env['SCHEDULES'] === 'all' ? 1 : 1 / 20
+
+/**
+ * A test of one case that runs over two seconds, which `bun test` cannot sample: its clock is real, or its case is
+ * large. `bun test` skips it, and `bun run test:release` runs it, as `bun run test:slow` and its job of the CI run a
+ * test on a clock that is real, under `SCHEDULES=all` (decision 0250).
+ */
+export const slow = Bun.env['SCHEDULES'] === 'all' ? test : test.skip
 
 /**
  * The seed a test under `explored` starts from: 0, so that `bun test` and the release replay the same schedules,
@@ -342,16 +353,17 @@ export const first = (() => {
  * unless `open` is false. PCT draws its changes of priority among the steps a run in order is asked of preemption with
  * the window open. With `bound` 1 it runs instead every schedule that deviates once from the run in order within the
  * window, a pick or a preemption, as `everySchedule` does: exhaustive where PCT is not, for a point between two steps
- * of one fiber. That one runs whole, in every run of the tests. Under PCT, the seeds `pinned` run in every run,
- * before the others: each is a seed a run once failed on, kept once its bug is fixed.
+ * of one fiber. The release runs every deviation, and any other run one in twenty, from the first, as `share` says
+ * (decision 0250). The seeds `pinned` under PCT, and the deviations `pinned` under `bound` 1, run in every run: each
+ * is one a run once failed on, kept once its bug is fixed.
  */
 export const explored = <A>(
   test: (window: Window) => Effect.Effect<A, unknown, SqlClient.SqlClient | Scope.Scope>,
   ended: A,
   { runs = 2_000, depth = 4, open = true, bound, pinned = [] }: Readonly<
     & { runs?: number; depth?: number; open?: boolean }
-    // A schedule under `bound` 1 has no seed, so it pins none.
-    & ({ bound?: never; pinned?: ReadonlyArray<number> } | { bound: 1; pinned?: never })
+    // A schedule under `bound` 1 has no seed, so it pins its deviations.
+    & ({ bound?: never; pinned?: ReadonlyArray<number> } | { bound: 1; pinned?: ReadonlyArray<Deviation> })
   > = {},
 ) => {
   const window: Window = { open }
@@ -375,21 +387,28 @@ export const explored = <A>(
       pick: (ready) => (window.open && ways.push(ready.length), 0),
       preempt: () => (window.open && ways.push(2), false),
     }, 'inline')
-    ways.forEach((choices, decision) => {
-      for (let choice = 1; choice < choices; choice++) {
-        let at = -1
-        const run = scheduled(scenario, {
-          pick: () => window.open && ++at === decision ? choice : 0,
-          preempt: () => window.open && ++at === decision,
-        }, 'inline')
-        expect({ decision, choice, ended: ends(run) }).toEqual({ decision, choice, ended })
-      }
-    })
+    const deviations = ways.flatMap((choices, decision) =>
+      Array.from({ length: choices - 1 }, (_, at): Deviation => ({ decision, choice: at + 1 }))
+    )
+    // Sampled over the deviations, not over the decisions, so that a decision of many choices is not left out whole.
+    const every = Math.round(1 / share)
+    const held = (pinned ?? []) as ReadonlyArray<Deviation>
+    const chosen = deviations.filter(({ decision, choice }, at) =>
+      at % every === 0 || held.some((pin) => pin.decision === decision && pin.choice === choice)
+    )
+    for (const { decision, choice } of chosen) {
+      let at = -1
+      const run = scheduled(scenario, {
+        pick: () => window.open && ++at === decision ? choice : 0,
+        preempt: () => window.open && ++at === decision,
+      }, 'inline')
+      expect({ decision, choice, ended: ends(run) }).toEqual({ decision, choice, ended })
+    }
     return
   }
   let steps = 0
   scheduled(scenario, { pick: () => 0, preempt: () => (window.open && (steps += 1), false) }, 'inline')
-  for (const seed of seeds({ first, count: Math.ceil(runs * share), pinned })) {
+  for (const seed of seeds({ first, count: Math.ceil(runs * share), pinned: pinned as ReadonlyArray<number> })) {
     const run = scheduled(scenario, within(prioritized(seed, depth, steps)), 'inline')
     expect({ seed, ended: ends(run) }).toEqual({ seed, ended })
   }

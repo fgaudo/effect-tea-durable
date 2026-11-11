@@ -3341,7 +3341,8 @@ describe('what the runtime cannot finish', () => {
         })), [null, "the program 'Toy' is deployed already", "the program 'Toy' is deployed already"])
   }, 60_000)
 
-  test('a deploy interrupted anywhere keeps its name and its waker, or stops what it started', () => {
+  // The notes cite this group by its name, which the test held before it was divided to fit the budget (decision 0250).
+  describe('a deploy interrupted anywhere keeps its name and its waker, or stops what it started', () => {
     // An entity left with its operations under way, which a deploy activates, and one with its timer alone, which
     // only a deployment's waker activates.
     const prepared = Effect.gen(function*() {
@@ -3415,13 +3416,17 @@ describe('what the runtime cannot finish', () => {
             return { ...seen, fired: [...fired].sort() }
           }))
       })
-    let runs = 0
-    explored(interrupted(() => runs++ % 200), { a: 1, c: 1, fired: ['d', 'w'] }, { open: false })
+    test('under prioritized schedules, after any count of yields', () => {
+      let runs = 0
+      explored(interrupted(() => runs++ % 200), { a: 1, c: 1, fired: ['d', 'w'] }, { open: false })
+    }, 120_000)
     // Two yields let the deploy reach its registration, where one deviation stops it.
     for (const count of [0, 1, 2, 3]) {
-      explored(interrupted(() => count), { a: 1, c: 1, fired: ['d', 'w'] }, { open: false, bound: 1 })
+      test(`after ${count} yields, under every schedule of one deviation`, () => {
+        explored(interrupted(() => count), { a: 1, c: 1, fired: ['d', 'w'] }, { open: false, bound: 1 })
+      }, 120_000)
     }
-  }, 120_000)
+  })
 
   test('a deploy interrupted as it activates an entity stops the activation', () =>
     database(Effect.gen(function*() {

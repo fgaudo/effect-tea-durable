@@ -5,18 +5,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 ## Next
 
-- **The suite within its budget.** `AGENTS.md` asks that `bun test` run within two minutes on one machine, and that
-  no test of it run over two seconds. On 2026-11-11 it ran 779 tests in 289 seconds. The 561 tests under a tenth of
-  a second took 5 seconds together, and the 20 slowest took 157. The slowest, `a deploy interrupted anywhere keeps
-  its name and its waker, or stops what it started` in `src/runtime.test.ts`, took 44 seconds alone. The files
-  `src/cluster.test.ts`, `src/runtime.test.ts`, `src/storage.test.ts` and `src/runtime/loop.test.ts` took two thirds
-  of the time, and the spikes about 30 seconds. The step measures each test with `bun test --reporter=junit
-  --reporter-outfile=<file>`. Each test over two seconds runs a sample of its cases under `bun test`, read from
-  `SCHEDULES`, and all of them under `bun run test:release`, so that no rule loses its test. The step also decides
-  whether the spikes leave `bun test` for a run of their own, in the CI and at each move of Effect's or Bun's
-  version, which changes the rule of `AGENTS.md` that `bun test` runs them, the workflow's shards and the test of
-  the workflow's form. It is done once `bun test` holds the budget, and `AGENTS.md` no longer says it does not.
-
 - **The bugs the premise review found, fixed by family.** Each bug below is a rule of a note whose premise a
   later note took away. A bug reproduced has a test that fails, and its fix begins where the bug says. A bug only
   reasoned is verified first, by a test that fails or by a reading that rules it out, and the

@@ -913,7 +913,8 @@ test('a launch dies on a table of the application under the name of any table or
       }).pipe(Effect.provide(client(dialect)), Effect.orDie),
     )
     expect(made.length).toBeGreaterThan(10)
-    for (const name of made) {
+    // `bun test` tries one name in four, from the first, within its budget, and a release every name (decision 0250).
+    for (const name of made.filter((_, at) => Bun.env['SCHEDULES'] === 'all' || at % 4 === 0)) {
       const died = await Effect.runPromise(
         Effect.gen(function*() {
           const sql = yield* SqlClient.SqlClient
@@ -2097,7 +2098,7 @@ describe('readings over generated rows', () => {
   const property = <A>(arbitrary: fc.Arbitrary<A>, body: (store: Store, value: A) => Effect.Effect<void>) =>
     fc.assert(
       fc.asyncProperty(arbitrary, (value) => database((sql) => body(storage(ranked, sql), value))),
-      { numRuns: Bun.env['SCHEDULES'] === 'all' ? 200 : 20 },
+      { numRuns: Bun.env['SCHEDULES'] === 'all' ? 200 : 8 },
     )
 
   test('the pages of a query, read one after the other, give the query read at once, in either order', () =>

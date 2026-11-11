@@ -17,7 +17,9 @@
     "test": "bun test",
     "test:parallel": "bun test --parallel=8",
     "test:release": "SCHEDULES=all bun test",
-    "test:postgres": "bun test src/check.test.ts src/storage.test.ts src/runtime.test.ts src/runtime/ src/dialects.test.ts src/postgres.test.ts spikes/postgres-session-ended.test.ts",
+    "test:slow": "SCHEDULES=all bun test src/cluster.test.ts examples/server/server.test.ts",
+    "test:spikes": "bun test '--path-ignore-patterns=node_modules/**' ./spikes",
+    "test:postgres": "bun test '--path-ignore-patterns=node_modules/**' src/check.test.ts src/storage.test.ts src/runtime.test.ts src/runtime/ src/dialects.test.ts src/postgres.test.ts spikes/postgres-session-ended.test.ts",
     "test:explore": "bun scripts/explore.ts",
     "links": "bun scripts/check-links.ts"
   },

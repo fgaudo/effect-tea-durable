@@ -59,7 +59,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0203](0203-the-guides-code-is-found-in-the-examples.md) | The guide's code is found in the examples, part by part, and a test finds it |  |
 | [0212](0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md) | The property tests of the fixtures derive their values from the programs' schemas, on Effect's engine |  |
 | [0241](0241-a-group-of-modules-lies-in-a-folder-entered-by-the-module-of-its-name.md) | A group of modules lies in a folder of `src/`, entered by the module of its name beside it, the tests of the runtime lie beside the modules they test, and a file only tests import is named `<module>.test_<role>.ts` |  |
-| [0242](0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md) | The CI deals the files of the tests among four jobs, by Bun's own shards, and `bun test` stays one run |  |
+| [0242](0242-the-ci-deals-the-files-of-the-tests-among-four-jobs.md) | The CI deals the files of the tests among four jobs, by Bun's own shards, and `bun test` stays one run | [0250](0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md) |
+| [0250](0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md) | `bun test` holds its budget by samples, and the spikes and the tests on a clock that is real run on their own |  |
 
 ## The machine and the program
 

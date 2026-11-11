@@ -437,6 +437,22 @@ describe('the form of the workflow', () => {
     divided('release', 'bun run test:release')
     expect(workflow.jobs['check']!.steps.filter((step) => step.run?.includes('test'))).toEqual([])
   })
+
+  // `bun test` runs no spike, and skips the tests over two seconds on a clock that is real, so jobs of their own run
+  // them (decision 0250).
+  test('a job runs every spike, and one every test on a clock that is real, which bun test leaves out', () => {
+    const root = join(import.meta.dir, '..')
+    const workflow = Bun.YAML.parse(readFileSync(join(root, '.github', 'workflows', 'ci.yml'), 'utf8')) as {
+      jobs: Record<string, { steps: ReadonlyArray<{ run?: string }> }>
+    }
+    expect(workflow.jobs['spikes']!.steps.map((step) => step.run)).toContain('bun run test:spikes')
+    expect(workflow.jobs['slow']!.steps.map((step) => step.run)).toContain('bun run test:slow')
+    const scripts = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> })
+      .scripts
+    expect(scripts['test:spikes']).toBe("bun test '--path-ignore-patterns=node_modules/**' ./spikes")
+    expect(scripts['test:slow']).toBe('SCHEDULES=all bun test src/cluster.test.ts examples/server/server.test.ts')
+    expect(readFileSync(join(root, 'bunfig.toml'), 'utf8')).toContain('pathIgnorePatterns = ["spikes/**"]')
+  })
 })
 
 describe('the check of the form', () => {
