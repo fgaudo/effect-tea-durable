@@ -484,15 +484,20 @@ const tables = Effect.gen(function*() {
       PRIMARY KEY (address, name)
     )
   `
-  // On Cluster: the entities whose operations were answered `Suspended` by a suspended entity, one row for each
-  // sender, which the step that takes the entity out of its suspension tells and deletes (decisions 0092, 0167).
+  // The operations a suspended entity answered `Suspended`, by their run and the name each sent under, written by
+  // the step that answered. The step that takes the entity out of its suspension deletes them, and on Cluster tells
+  // their entities first (decisions 0167, 0265).
   yield* sql`
     CREATE TABLE effecttea_waiting (
       name ${text} NOT NULL,
       id ${text} NOT NULL,
       sender_name ${text} NOT NULL,
       sender_id ${text} NOT NULL,
-      PRIMARY KEY (name, id, sender_name, sender_id)
+      sender_key ${text} NOT NULL,
+      sender_parameter ${text} NOT NULL,
+      sender_incarnation ${integer} NOT NULL,
+      request ${text} NOT NULL,
+      PRIMARY KEY (name, id, sender_name, sender_id, sender_key, sender_parameter, sender_incarnation, request)
     )
   `
   // On Cluster: the Cluster request id of each request an entity's operation sent, kept under the work that sent it,

@@ -18,7 +18,7 @@ import type { SqlClient } from 'effect/sql'
 import type * as Machine from './machine.ts'
 import type { Key, Program, Request, Topic, Types } from './program.ts'
 import { onClusterOf } from './storage/cluster.ts'
-import { type Due, entitiesOf, type Examined, type Inspection, type Suspension } from './storage/entities.ts'
+import { type Due, entitiesOf, type Examined, type Inspection, type Suspended } from './storage/entities.ts'
 import { heldOf } from './storage/held.ts'
 import { type Consumer, type Cursor, logOf, type Published } from './storage/log.ts'
 import {
@@ -42,7 +42,14 @@ export {
   standingOf,
   type Versioned,
 } from './storage/cluster.ts'
-export { type Due, type Examined, type Inspection, type Suspension } from './storage/entities.ts'
+export {
+  type Due,
+  type Examined,
+  type Inspection,
+  type Suspended,
+  type Suspension,
+  type Waiting,
+} from './storage/entities.ts'
 export { type Consumer, type Cursor, type Published } from './storage/log.ts'
 export { batch } from './storage/rows.ts'
 export {
@@ -223,8 +230,11 @@ export interface Storage<T extends Types> {
    * them (decision 0245).
    */
   readonly expire: (at: number) => Effect.Effect<number>
-  /** The suspended entities of the program, the longest suspended first (decision 0114). */
-  readonly suspended: Effect.Effect<ReadonlyArray<Suspension>>
+  /**
+   * The suspended entities of the program, the longest suspended first, each with its waits, from one snapshot
+   * (decisions 0114, 0265).
+   */
+  readonly suspended: Effect.Effect<ReadonlyArray<Suspended>>
   /**
    * What is stored for the entity `id`, read as `load` reads it, with its suspension as `suspended` lists it, or null
    * when there is none. Every row is read from one snapshot, so a step that commits meanwhile is read whole or not
@@ -243,11 +253,9 @@ export interface Storage<T extends Types> {
    */
   readonly entities: (after: string) => Effect.Effect<ReadonlyArray<Readonly<{ id: string; suspended: boolean }>>>
   /**
-   * On Cluster: records that an operation of the entity `sender` was answered `Suspended` by the entity `id`, once
-   * for each sender however often it is answered so (decision 0167).
+   * On Cluster: the entities whose operations wait for the resumption of the entity `id`, each once. The step that
+   * takes the entity out of its suspension reads them before it writes, which deletes them (decisions 0167, 0265).
    */
-  readonly wait: (id: string, sender: Readonly<{ name: string; id: string }>) => Effect.Effect<void>
-  /** On Cluster: the senders recorded for the entity `id`, deleted as they are read (decision 0167). */
   readonly waiters: (id: string) => Effect.Effect<ReadonlyArray<Readonly<{ name: string; id: string }>>>
   /**
    * On Cluster: keeps the Cluster request id `requestId` of a request the operation `asked` sent, under its work if

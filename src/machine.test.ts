@@ -1976,6 +1976,47 @@ describe('a new program', () => {
 const ran = (program: string, name: string, incarnation = 1) =>
   ({ _tag: 'Operation', entity: { name: program, id: 'b1' }, key: { name: 'hold' }, incarnation, name }) as const
 
+// A suspended entity stores a wait for each operation it answers `Suspended`, in the step that answers, and the
+// step that takes it out of its suspension says so, for the storage to delete them (decision 0265).
+describe('the operations a suspended entity answers', () => {
+  const dying = () =>
+    checked((message) => {
+      if (message === 'go') throw new Error('broken')
+      return message
+    }, () => ({}))
+  const asker = { name: 'Booking', id: 'b1', key: { name: 'hold' }, incarnation: 1 }
+
+  test('an operation answered Suspended is written as a wait, a caller is not, and the resumption wakes them', () => {
+    const suspended = handled(dying(), { _tag: 'Receive', request: by('r'), message: 'go' })
+    expect(suspended.machine.stored.suspension).not.toBeNull()
+    expect(suspended.written?.waits).toEqual([])
+    const operation = stepped(suspended.machine, { _tag: 'Receive', request: ran('Booking', 'want'), message: 'x' })
+    expect(operation.outputs).toEqual([{ _tag: 'Replied', request: ran('Booking', 'want'), reply: { _tag: 'Suspended' } }])
+    expect(operation.machine.stored).toBe(suspended.machine.stored)
+    expect(operation.written).toMatchObject({ waits: [{ asked: asker, name: 'want' }], woken: false })
+    const caller = stepped(suspended.machine, { _tag: 'Receive', request: by('s'), message: 'x' })
+    expect(caller.written).toBeNull()
+    const resumed = resumedBy(operation.machine, operation.machine.program)
+    expect(resumed.machine.stored.suspension).toBeNull()
+    expect(resumed.written).toMatchObject({ woken: true, waits: [] })
+  })
+
+  test('an operation whose message waits in the mailbox when the entity suspends is written as a wait', () => {
+    // A completion recorded first keeps the mailbox busy, so that both messages queue behind it.
+    const machine = checked((message) => {
+      if (message === 'go') throw new Error('broken')
+      return message
+    }, (state) => (state === 'start' ? { charge: 'operation' } : {}))
+    const recorded = stepped(machine, { _tag: 'Complete', key: { name: 'charge' }, incarnation: 1, message: 'done' })
+    const go = stepped(recorded.machine, { _tag: 'Receive', request: by('g'), message: 'go' })
+    const queued = stepped(go.machine, { _tag: 'Receive', request: ran('Booking', 'want'), message: 'x' })
+    expect(queued.machine.stored.mailbox).toHaveLength(3)
+    const died = stepped(stepped(queued.machine, { _tag: 'Handle', at }).machine, { _tag: 'Handle', at })
+    expect(died.machine.stored.suspension).not.toBeNull()
+    expect(died.written?.waits).toEqual([{ asked: asker, name: 'want' }])
+  })
+})
+
 describe('who a request belongs to', () => {
   test('the same request id from different senders is different requests, each answered its own reply', () => {
     const machine = checked((message) => (message === 'no' ? reject : message), () => ({}))

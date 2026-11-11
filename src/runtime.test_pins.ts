@@ -30,8 +30,8 @@ export const pins: ReadonlyArray<Pin> = [
     file: 'src/runtime/callers.ts',
     edits: [
       [
-        '        const attempt = Effect.flatMap(awaitResumption(p, { name: program.name, id }, waiting), ({ resumed, forget }) =>\n          Effect.flatMap(\n            unlessCrashed(send(p, deployed, id, message, request), null),',
-        '        const attempt = Effect.flatMap(unlessCrashed(send(p, deployed, id, message, request), null), (sent) =>\n          Effect.flatMap(awaitResumption(p, { name: program.name, id }, waiting), ({ resumed, forget }) =>\n          Effect.flatMap(\n            Effect.succeed(sent),',
+        '        const attempt = Effect.flatMap(awaitResumption(p, { name: program.name, id }), ({ resumed, forget }) =>\n          Effect.flatMap(\n            unlessCrashed(send(p, deployed, id, message, request), null),',
+        '        const attempt = Effect.flatMap(unlessCrashed(send(p, deployed, id, message, request), null), (sent) =>\n          Effect.flatMap(awaitResumption(p, { name: program.name, id }), ({ resumed, forget }) =>\n          Effect.flatMap(\n            Effect.succeed(sent),',
       ],
       ['          ).pipe(Effect.ensuring(forget)))\n', '          ).pipe(Effect.ensuring(forget))))\n'],
     ],
@@ -98,7 +98,7 @@ export const pins: ReadonlyArray<Pin> = [
   {
     id: '0185 an inspection reads one snapshot',
     file: 'src/storage/entities.ts',
-    edits: [['    snapshot(entity(id)).pipe(\n', '    entity(id).pipe(\n']],
+    edits: [['    snapshot(Effect.all([entity(id), waitingOf(id)])).pipe(\n', '    Effect.all([entity(id), waitingOf(id)]).pipe(\n']],
     test: 'src/runtime.test.ts',
     name: 'an inspection reads one snapshot, so a step that commits meanwhile is read whole, under prioritized schedules',
   },

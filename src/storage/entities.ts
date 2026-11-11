@@ -8,7 +8,7 @@ import * as Effect from 'effect/Effect'
 import * as Result from 'effect/Result'
 import * as Schema from 'effect/Schema'
 import * as Machine from '../machine.ts'
-import type { Key, Request, Types } from '../program.ts'
+import type { Address, Key, Request, Types } from '../program.ts'
 import type { Storage } from '../storage.ts'
 import { forgetSent, forgetUnder } from './cluster.ts'
 import type { Held } from './held.ts'
@@ -32,7 +32,19 @@ export type Suspension = Readonly<{
 }>
 
 /** What is stored of one entity, as an operator sees it: the suspension as `suspended` lists it (decision 0185). */
-export type Inspection<T extends Types> = Readonly<{ stored: Machine.Stored<T>; suspension: Suspension | null }>
+/**
+ * An operation of another entity whose `send` waits for the entity's resumption: its run, and the name it sent
+ * under (decisions 0114, 0265).
+ */
+export type Waiting = Readonly<{ entity: Address; key: Key; incarnation: number; name: string }>
+
+/**
+ * A suspended entity, as `Handle.suspended` lists it: what the storage holds of the suspension, and the operations
+ * stored as waiting for its resumption whose run still holds (decision 0265).
+ */
+export type Suspended = Suspension & Readonly<{ waiting: ReadonlyArray<Waiting> }>
+
+export type Inspection<T extends Types> = Readonly<{ stored: Machine.Stored<T>; suspension: Suspended | null }>
 
 /**
  * One entity as `check` reads it: what is stored, or the cause of what the program read of a row and died on, a
@@ -155,14 +167,14 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
 
   // The rows are read from one snapshot, so that a step between two readings is not read in half (decision 0185).
   const inspect = (id: string): Effect.Effect<Inspection<T> | null> =>
-    snapshot(entity(id)).pipe(
-      Effect.flatMap((found): Effect.Effect<Inspection<T> | null> => {
+    snapshot(Effect.all([entity(id), waitingOf(id)])).pipe(
+      Effect.flatMap(([found, waiting]): Effect.Effect<Inspection<T> | null> => {
         if (found === null) return Effect.succeed(null)
         const { stored, held } = found
         if (stored.suspension === null || held === null) return Effect.succeed({ stored, suspension: null })
         return Effect.map(
           listedAs(id, stored.suspension.on, stored.mailbox[0]?._tag ?? null, held.cause, held.at),
-          (suspension) => ({ stored, suspension }),
+          (suspension) => ({ stored, suspension: { ...suspension, waiting: waiting.get(id) ?? [] } }),
         )
       }),
       Effect.orDie,
@@ -462,6 +474,28 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
           )
         }
       }
+      // The step that takes the entity out of its suspension takes its waits with it, before the step's own are
+      // written: on Cluster the door read them first, to tell their entities (decision 0265).
+      if (written.woken) yield* sql`DELETE FROM effecttea_waiting WHERE name = ${name} AND id = ${id}`
+      for (const { asked, name: request } of written.waits) {
+        const sending = keyRow(asked.key)
+        yield* sql`
+          INSERT INTO effecttea_waiting ${
+          sql.insert({
+            name,
+            id,
+            sender_name: asked.name,
+            sender_id: asked.id,
+            sender_key: sending.key,
+            sender_parameter: sending.parameter,
+            sender_incarnation: asked.incarnation,
+            request,
+          })
+        }
+          ON CONFLICT (name, id, sender_name, sender_id, sender_key, sender_parameter, sender_incarnation, request)
+          DO NOTHING
+        `
+      }
       // A step that answers a caller takes its entity's replies past their time with it (decision 0125). On
       // Cluster it takes Cluster's rows of the requests whose clients were given their answers and whose time is past
       // too. The step's own request has no such row: its client keeps it once given the answer (decision 0171), and a
@@ -643,21 +677,55 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
         since: DateTime.makeUnsafe(at),
       })
 
-  const suspensions = Effect.gen(function*() {
+  // A wait is listed while the run that sent holds: a row whose run ended or was restarted under another
+  // incarnation is left out, and goes when the entity is taken out of its suspension (decision 0265).
+  const waitingOf = (id: string | null) =>
+    Effect.map(
+      rows('effecttea_waiting', Rows.waiting)(sql`
+        SELECT w.id, w.sender_name, w.sender_id, w.sender_key, w.sender_parameter, w.sender_incarnation, w.request
+        FROM effecttea_waiting AS w JOIN effecttea_entity_keys AS k
+          ON k.name = w.sender_name AND k.id = w.sender_id AND k.key = w.sender_key
+            AND k.parameter = w.sender_parameter AND k.incarnation = w.sender_incarnation
+        WHERE ${sql.and([sql`w.name = ${name}`, ...(id === null ? [] : [sql`w.id = ${id}`])])}
+        ORDER BY w.id, w.sender_name, w.sender_id, w.sender_key, w.sender_parameter, w.sender_incarnation, w.request
+      `),
+      (held) => {
+        const waiting = new Map<string, Array<Waiting>>()
+        for (const row of held) {
+          const listed = waiting.get(row.id) ?? []
+          listed.push({
+            entity: { name: row.sender_name, id: row.sender_id },
+            key: keyOfRow(row.sender_key, row.sender_parameter),
+            incarnation: row.sender_incarnation,
+            name: row.request,
+          })
+          waiting.set(row.id, listed)
+        }
+        return waiting
+      },
+    )
+
+  const suspensions = snapshot(Effect.gen(function*() {
+    const waiting = yield* waitingOf(null)
     const held = yield* rows('effecttea_entities', Rows.suspended)(sql`
       SELECT id, suspended_on, suspended_cause, suspended_at, (
         SELECT tag FROM effecttea_mailbox WHERE effecttea_mailbox.name = effecttea_entities.name AND effecttea_mailbox.id = effecttea_entities.id ORDER BY seq LIMIT 1
       ) AS head
       FROM effecttea_entities WHERE name = ${name} AND suspended_on IS NOT NULL ORDER BY suspended_at, id
     `)
-    const listed: Array<Suspension> = []
+    const listed: Array<Suspended> = []
     for (const row of held) {
-      listed.push(
-        yield* listedAs(row.id, suspended.read(row.suspended_on), row.head, row.suspended_cause, row.suspended_at),
+      const suspension = yield* listedAs(
+        row.id,
+        suspended.read(row.suspended_on),
+        row.head,
+        row.suspended_cause,
+        row.suspended_at,
       )
+      listed.push({ ...suspension, waiting: waiting.get(row.id) ?? [] })
     }
     return listed
-  }).pipe(Effect.orDie)
+  })).pipe(Effect.orDie)
 
   const delivered = (version: number, held: string, message: string) =>
     Effect.try({

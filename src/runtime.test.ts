@@ -1066,6 +1066,39 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
+  // Decision 0114 says the senders listed are whole once the process is settled after a restart, since every
+  // operation under way sends again. An operation of a suspended entity runs on (decision 0113), and a process starts
+  // no suspended entity (decision 0071), so after a restart nothing sends it again.
+  test('after a restart, a suspended entity lists the operation of a suspended sender that waits for it', () =>
+    database(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const waiting = (toy: Library.Handle<T>) =>
+        Effect.map(toy.suspended, (entities) => entities.map((entity) => entity.waiting))
+      const expected = [[{ entity: { name: 'Sender', id: 's' }, key: { name: 'c' }, incarnation: 1, name: 'want' }]]
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const senders = yield* runtime.deploy(sending)
+          yield* ran(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
+          expect(yield* ran(toy.send(id, { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester, keep: 'forever' })))
+            .toEqual({ _tag: 'Suspended' })
+          // The sender's operation waits for the toy's resumption, and the sender then suspends on a message of its own.
+          yield* ran(senders.create('s', { flags: { at }, requestId: 's', sender: tester }))
+          expect(yield* ran(senders.send('s', { _tag: 'Break', nonce: 'b' }, { requestId: 'break', sender: tester, keep: 'forever' })))
+            .toEqual({ _tag: 'Suspended' })
+          expect(yield* waiting(toy)).toEqual(expected)
+        }))
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const senders = yield* runtime.deploy(sending)
+          yield* runtime.settled
+          expect((yield* senders.suspended).map((entity) => entity.id)).toEqual(['s'])
+          expect(yield* waiting(toy)).toEqual(expected)
+        }))
+    })))
+
   // Each operator is answered by its own event, not by another operator's event applied first (decision 0114).
 
   test('two operators who discard at once are each told what their own discard did', () =>

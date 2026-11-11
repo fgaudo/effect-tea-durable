@@ -75,6 +75,8 @@ const written = (rows: Partial<Machine.Written>): Machine.Written => ({
   queued: [],
   replies: [],
   ended: [],
+  waits: [],
+  woken: false,
   shown: null,
   published: null,
   ...rows,

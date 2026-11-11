@@ -398,21 +398,23 @@ export const doorStep = <T extends Types>(p: Process, deployed: Deployment<T>) =
           transition = yield* stepIn(p, deployed, stepped, entity, { _tag: 'Handle', at: now }, now)
         }
       }
-      // An operation answered `Suspended` waits for the entity's resumption, which another runner may make: its
-      // entity is recorded, and told by the step that takes this one out of its suspension (decision 0167).
-      if (replied.answer._tag === 'Suspended' && request._tag === 'Operation') yield* stored.wait(id, request.entity)
+      // An operation answered `Suspended` waits for the entity's resumption, which another runner may make. The step
+      // that answered stored its wait, and the step that takes the entity out of its suspension tells its entity
+      // (decisions 0167, 0265).
       answer = replied
     } else {
       // An operator's event is stepped as on one process, in the door's transaction, and answered with what it
       // did (decisions 0114, 0166).
       if (stepped.loaded === null) return { _tag: 'Operated', answer: { _tag: 'NotFound' } }
       const before = stepped.machine!
+      // The senders an earlier step answered `Suspended` are read before the step, whose write deletes them if it
+      // takes the entity out of its suspension, and told from this transaction, so that a step that rolls back tells
+      // nobody (decisions 0167, 0265).
+      const waiters = before.stored.suspension === null ? [] : yield* stored.waiters(id)
       const transition = yield* stepIn(p, deployed, stepped, entity, { _tag: delivered._tag }, now)
       answer = { _tag: 'Operated', answer: operated(delivered._tag, before, transition.machine) }
-      // The senders an earlier step answered `Suspended` are told, from this transaction, so that a step that
-      // rolls back tells nobody (decision 0167).
       if (before.stored.suspension !== null && transition.machine.stored.suspension === null) {
-        for (const sender of yield* stored.waiters(id)) yield* p.cluster!.resume(sender, entity)
+        for (const sender of waiters) yield* p.cluster!.resume(sender, entity)
       }
     }
     yield* finishIn(p, deployed, stepped, entity)

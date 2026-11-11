@@ -44,7 +44,7 @@ import {
 } from '../program.ts'
 import { tell } from './readings.ts'
 import { transaction } from '../storage.ts'
-import type { Answer, Operated, Waiting } from '../runtime.ts'
+import type { Answer, Operated } from '../runtime.ts'
 
 /**
  * A defect that is its caller's, not the receiver's: a message or flags that do not encode, a creation that
@@ -56,10 +56,6 @@ export class Faulted extends Data.TaggedError('Faulted')<Readonly<{ defect: unkn
 export const faulted = <A>(effect: Effect.Effect<A, Faulted>): Effect.Effect<A> =>
   Effect.catchTag(effect, 'Faulted', (fault) => Effect.die(fault.defect))
 
-/** The senders waiting for the entity's resumption, as `suspended` lists them (decision 0114). */
-export const waitingFor = (p: Process, entity: Address): ReadonlyArray<Waiting> => [
-  ...(p.resumptions.get(addressOf(entity))?.values() ?? []),
-]
 export const answer = <A>(p: Process, waiting: Callers<A>, entity: Address, request: string, reply: A) =>
   Effect.suspend(() => {
     const requests = waiting.get(addressOf(entity))
@@ -119,7 +115,7 @@ export const wake = (p: Process, entity: Address) => {
   const senders = p.resumptions.get(address)
   if (senders === undefined) return
   p.resumptions.delete(address)
-  for (const sender of senders.keys()) Deferred.doneUnsafe(sender, Effect.void)
+  for (const sender of senders) Deferred.doneUnsafe(sender, Effect.void)
 }
 
 /**
@@ -127,15 +123,15 @@ export const wake = (p: Process, entity: Address) => {
  * is answered `Suspended`, and `forget` takes it back whatever it is answered. A registration made after the
  * answer would miss a resumption between the two, and wait for ever. `a sender answered Suspended is woken by
  * the resumption`, in the tests, reaches that under the scheduler of the tests (decision 0104), and a test on two
- * runners of Cluster reaches it with `Resumed` (decision 0172). `waiting` is
- * who registers, for `suspended` to list (decision 0114).
+ * runners of Cluster reaches it with `Resumed` (decision 0172). What `suspended` lists is stored by the step that
+ * answers, not read from here (decision 0265).
  */
-export const awaitResumption = (p: Process, entity: Address, waiting: Waiting) =>
+export const awaitResumption = (p: Process, entity: Address) =>
   Effect.sync(() => {
     const address = addressOf(entity)
     const sender = Deferred.makeUnsafe<void>()
-    const senders = p.resumptions.get(address) ?? new Map<Deferred.Deferred<void>, Waiting>()
-    senders.set(sender, waiting)
+    const senders = p.resumptions.get(address) ?? new Set<Deferred.Deferred<void>>()
+    senders.add(sender)
     p.resumptions.set(address, senders)
     const forget = Effect.sync(() => {
       senders.delete(sender)
@@ -437,8 +433,7 @@ export const entities = (p: Process, entity: Address, key: Key, incarnation: num
     send: <T extends Types>(program: Receiver<T>, id: string, message: T['inbound'], name: string) =>
       Effect.flatMap(named('message', program, id, name), ({ deployed, request }) => {
         // `null` is no reply yet: the receiver crashed, or is suspended and has been resumed since.
-        const waiting: Waiting = { entity, key, incarnation, name }
-        const attempt = Effect.flatMap(awaitResumption(p, { name: program.name, id }, waiting), ({ resumed, forget }) =>
+        const attempt = Effect.flatMap(awaitResumption(p, { name: program.name, id }), ({ resumed, forget }) =>
           Effect.flatMap(
             unlessCrashed(send(p, deployed, id, message, request), null),
             (reply): Effect.Effect<Reply<T['rejection']> | null> =>

@@ -983,6 +983,8 @@ describe('the crash table', () => {
         }],
         replies: [],
         ended: [],
+        waits: [],
+        woken: false,
         shown: null,
         published: null,
       }, 0))

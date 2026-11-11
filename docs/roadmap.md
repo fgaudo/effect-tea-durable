@@ -40,10 +40,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md), and bug 82 by
     [decision 0262](decisions/0262-a-sendfrom-stands-for-a-run-no-entity-draws.md), and bug 41 by
     [decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md), and bug 44 by
-    [decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md). The part next is bug 72, proposed to the maintainer before any code. Decision 0264 changes
-    the hold of PostgreSQL, and its test `a launch refused by another runtime’s lock gives the database back, in the
-    scope its launcher gave`, of `src/postgres.test.ts`, runs first in the job of PostgreSQL of the next push of
-    `main`.
+    [decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md), and bugs 72 and 63 by
+    [decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md). The part next is bug 42, proposed to the maintainer before any code. The test of decision
+    0264 on PostgreSQL passed in the job of PostgreSQL of the push of `af8c5d5`. Decision 0265 changes the statements
+    of the table `effecttea_waiting`, so its tests run on PostgreSQL first in that job, on the push of `main` that
+    takes it.
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
@@ -63,7 +64,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     of the next step. A rename is such a change. Its rule is the step What a deploy may change of a program, against
     what is stored, below.
   - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39,
-    54, 55, 57 to 59, 63, 70, 73, 74, 77, 84, 85 and 89 to 91, as decisions 0248 and 0249 were. Its rule is the step The tests of a contract on every backend, below: the
+    54, 55, 57 to 59, 70, 73, 74, 77, 84, 85 and 89 to 91, as decisions 0248 and 0249 were. Its rule is the step The tests of a contract on every backend, below: the
     tests of the runtime run alike on one process and on Cluster.
   - D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78 and 80. Its rule is the same step: a test of
     rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their statements.
@@ -74,7 +75,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     of the form, of the CI and of the explored tests is run against the case it refuses, as
     [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) says. Every bug of it
     is fixed, or verified false.
-  - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 72, 75, 79, 81, 82, 86 and 87.
+  - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 75, 79, 81, 82, 86 and 87.
   1. **Reproduced: a droppable operation that a new program delivers at most once never runs.** A deploy that
      declares a `Droppable` operation stored under a key as `operation.atMostOnce` keeps its incarnation
      ([decision 0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)), since the
@@ -425,15 +426,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       `claude/premise-pairs-versions-1-e03c02` at `d13fa1c`, both in `src/cluster.test.ts`. The fix begins at
       `answerCodec` and `creationCodec` of `src/cluster.ts`. The [open question](open-questions.md#running) What a
       newer version answers an older one on Cluster.
-  63. **Reproduced: on Cluster, an operator is not shown the senders that wait on another runner.**
-      [Decision 0114](decisions/archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md) says
-      `suspended` reads the rows of `effecttea_waiting` on Cluster, and
-      [decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)
-      lets an operator act from any runner. The code reads the registrations of the runner called alone. No reply is
-      lost. The test `FAILING: an operator on any runner sees the operation of another runner that waits for a
-      resumption`, in `src/cluster.test.ts`, on `claude/premise-pairs-cluster-32dc2e` at `902fce1`. The fix begins at
-      `suspended` and `inspect` of `src/runtime.ts`. The [open question](open-questions.md#running) Who an operator
-      sees waiting.
+  63. **Fixed by [decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md)**, whose waits are stored, and read on every runner.
   64. **Reasoned: a release of Effect that changes its hash moves the shards away from the stored partitions.**
       [Decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md) stores a partition so that a
       change of `Hash.string` moves nothing, and
@@ -495,21 +488,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       or at the deploy, which would keep the name for the life of the runner once its door is registered. The
       [open question](open-questions.md#running) A deploy that fails after its door is registered.
   71. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
-  72. **Reproduced: after a restart, a suspended entity no longer lists the operation of a suspended sender that
-      waits for it.** `suspended` reads the senders registered in the process, and is whole once a restarted process
-      is settled, since every operation under way sends again
-      ([decisions 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md),
-      [0114](decisions/archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)). The operations
-      of a suspended entity run on
-      ([decision 0113](decisions/archive/0113-a-suspended-entitys-operations-run-to-their-end.md)), but a process
-      starts no suspended entity
-      ([decision 0071](decisions/archive/0071-a-process-starts-the-entities-with-a-message.md)). So the operation of a
-      suspended sender is listed until the process stops, and not after a restart, though nothing stored changed.
-      Nothing is lost: the operation sends again once its sender is resumed. The test `FAILING: after a restart, a
-      suspended entity lists the operation of a suspended sender that waits for it`, in `src/runtime.test.ts`, on
-      `claude/premise-pairs-runtime-1-2-876ced` at `f812a40`. The fix begins at `waitingFor` of
-      `src/runtime/callers.ts`, or is a note that narrows 0114 to the operations that run. Bug 63 is the same list on
-      Cluster. The [open question](open-questions.md#running) Who an operator sees waiting.
+  72. **Fixed by [decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md)**, whose waits are stored, and listed after a restart.
   73. **Reproduced: on Cluster, a door's step never warns of a large state.** The runtime warns of a step that writes
       more than `warn.characters`
       ([decision 0135](decisions/archive/0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md)),

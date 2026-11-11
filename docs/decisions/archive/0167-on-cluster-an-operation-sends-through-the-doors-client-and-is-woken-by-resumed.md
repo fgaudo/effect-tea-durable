@@ -4,6 +4,8 @@
 [decision 0085](0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md) is code for an operation's
 request. Changes how [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) tells a
 resumption: once for each sender's entity, not once for each request, and with the receiver's address alone.
+Changed by [decision 0265](../0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md), whose table `waiting` holds a row for
+each run and name on every storage, written as the machine says, and read by the door before the step deletes it.
 
 ## Context
 

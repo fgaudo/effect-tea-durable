@@ -1718,6 +1718,37 @@ describe('the shards of a runner on Cluster', () => {
         expect(yield* second.bell.suspended).toEqual([])
       })), 30_000)
 
+  // On Cluster the waiting senders are rows of `effecttea_waiting`, so an operator on any runner sees the operation
+  // that waits, whichever runner holds its sender (decision 0265).
+  slow('an operator on any runner sees the operation of another runner that waits for a resumption', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const ids = Array.from({ length: 64 }, (_, i) => `r${i}`)
+        const sender = ids.find((id) => first.holds(id))!
+        const receiver = ids.find((id) => second.holds(id))!
+        yield* create(first, sender)
+        yield* create(first, receiver)
+        expect(yield* send(first, receiver, { _tag: 'Break' }, 'm-break')).toBe('{"_tag":"Suspended"}')
+        yield* send(first, sender, { _tag: 'Relay', to: receiver }, 'm-relay')
+        yield* until(Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) =>
+          sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_waiting`), ([row]) => row?.held === 1)
+        const waitingOn = (runner: Runner) =>
+          Effect.map(runner.bell.suspended, (listed) =>
+            listed.filter(({ id }) => id === receiver).map(({ waiting }) => waiting.map(({ entity }) => entity.id)))
+        expect({ first: yield* waitingOn(first), second: yield* waitingOn(second) }).toEqual({
+          first: [[sender]],
+          second: [[sender]],
+        })
+        expect(yield* first.bell.discard(receiver)).toEqual({ _tag: 'Discarded' })
+        yield* until(stateOf(sender), (state) => state?.relayed !== null)
+      })), 30_000)
+
   slow('an operation is woken by a `Resumed` delivered before its client gives it the answer Suspended', () => {
     // Decision 0063, read again on Cluster (decision 0172): the operation registers for the receiver's resumption
     // before it sends. The client resets a first answer `Suspended` and sends again, and gives the operation the

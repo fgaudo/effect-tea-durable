@@ -493,21 +493,16 @@ with a requirement that no example has yet.
   - a helper of `src/cluster.test.ts` that keeps a runner's operation running after another runner took its shard;
   - for bug 90, reasoned, whether a door loads an entity of a shard whose singleton has not started, since no
     finalizer then crashes it, and its operations run beside the next holder's.
-- **Who an operator sees waiting.** `suspended` lists, for each suspended entity, the operations that
-  wait for its resumption, and on Cluster it is meant to read the rows of `effecttea_waiting`
-  ([decision 0114](decisions/archive/0114-an-operator-sees-the-suspended-entities-and-what-a-resume-did.md)). An
-  operator may act from any runner
-  ([decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)),
-  and the code reads the registrations of the runner called alone. It is bug 63 of the [roadmap](roadmap.md),
-  reproduced. It would be decided by:
-  - whether `suspended` and `inspect` read the rows of `effecttea_waiting` on Cluster, which hold less than a
-    `Waiting`, or a note narrows 0114 to the runner called;
-  - on one process, whether the list holds the operation of a suspended sender after a restart. The operations of a
-    suspended entity run on ([decision 0113](decisions/archive/0113-a-suspended-entitys-operations-run-to-their-end.md)),
-    and a process starts no suspended entity
-    ([decision 0071](decisions/archive/0071-a-process-starts-the-entities-with-a-message.md)). So such an operation is
-    listed before a restart and not after it, which is bug 72, reproduced. A reading of the stored operations of the
-    suspended senders would hold it, or a note that narrows 0114 to the operations that run.
+- **A wait whose operation, run again, sends elsewhere.** A step that answers an operation `Suspended` stores its
+  wait, and `suspended` lists it while the run that sent holds
+  ([decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md)).
+  An operation run again after a crash keeps its incarnation, and may send to another entity than the first time,
+  since what it sends is its own effect's. Its wait stays listed under the first receiver until that receiver's
+  suspension ends, and on Cluster that resumption tells its entity `Resumed`, which wakes nothing. No test reaches
+  the case yet. It would be decided by:
+  - a test of the runtime whose operation sends to one entity, crashes, and sends to another once run again;
+  - whether an operator is misled by such a wait, or reads it as the history of the run;
+  - whether a run's wait could be dropped by the run's next send, at the cost of a write per send.
 - **A hash of Effect that moves the shards.** An entity's partition is stored, so that a change of `Hash.string`
   moves nothing ([decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md)). On Cluster the
   partition is the shard

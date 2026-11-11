@@ -150,6 +150,16 @@ export const Rows = {
     suspended_at: Count,
     head: Schema.NullOr(Schema.Literals(['Inbound', 'Internal'])),
   })),
+  /** An operation that waits for the resumption of the entity `id`: its run, and the name it sent under. */
+  waiting: decoder(Schema.Struct({
+    id: Schema.String,
+    sender_name: Schema.String,
+    sender_id: Schema.String,
+    sender_key: Schema.String,
+    sender_parameter: Schema.String,
+    sender_incarnation: Count,
+    request: Schema.String,
+  })),
   /** A timer has no delivery. */
   key: decoder(Schema.Struct({
     key: Schema.String,

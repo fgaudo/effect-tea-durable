@@ -18,7 +18,7 @@ import type * as Tracer from 'effect/Tracer'
 import * as Machine from '../machine.ts'
 import type { Address, Creation, Entities, Key, Program, Types } from '../program.ts'
 import type { Readings } from './readings.ts'
-import type { Answer, OnCluster, Operated, Point, Said, Waiting } from '../runtime.ts'
+import type { Answer, OnCluster, Operated, Point, Said } from '../runtime.ts'
 import type { Storage } from '../storage.ts'
 
 /** What the runtime of one process holds while it runs, made once by `launchWith` and read by the runtime's modules. */
@@ -81,7 +81,7 @@ export interface Process {
    * The senders waiting for an entity's resumption, by entity. Each registers before it sends, so that a
    * resumption between its being answered `Suspended` and its waiting is not missed (decisions 0023, 0063).
    */
-  readonly resumptions: Map<string, Map<Deferred.Deferred<void>, Waiting>>
+  readonly resumptions: Map<string, Set<Deferred.Deferred<void>>>
   /**
    * Each entity's lock, by entity, while someone holds or waits for it (decision 0067). What finds, loads,
    * creates, unloads or crashes an entity holds it. So no caller is between finding the entity and offering its

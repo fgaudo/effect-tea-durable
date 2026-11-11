@@ -1,7 +1,7 @@
 /**
- * The tables of the runtime on Cluster: the versions each launch records, the versions each runner runs, the senders
- * that wait for a suspended entity, and the request ids of Cluster the runtime keeps, by which it deletes Cluster's
- * rows (decisions 0159, 0167, 0169, 0171, 0241).
+ * The tables of the runtime on Cluster: the versions each launch records, the versions each runner runs, and the
+ * request ids of Cluster the runtime keeps, by which it deletes Cluster's rows. It reads, of the waits every storage
+ * keeps, the entities a resumption tells (decisions 0159, 0167, 0169, 0171, 0241, 0265).
  */
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -170,22 +170,19 @@ export const outranked = (address: string): Effect.Effect<boolean | undefined, S
     return found.older > 0
   })
 
-/** The part of the storage of one program that keeps, on Cluster, its waiters and the request ids of Cluster. */
+/** The part of the storage of one program that reads, on Cluster, its waiters, and keeps the request ids of Cluster. */
 export const onClusterOf = <T extends Types>(held: Held<T>): Pick<
   Storage<T>,
-  'wait' | 'waiters' | 'keepSent' | 'pendSent' | 'forgetPending' | 'keepGiven'
+  'waiters' | 'keepSent' | 'pendSent' | 'forgetPending' | 'keepGiven'
 > => {
   const { sql, name } = held
 
-  const wait = (id: string, sender: Readonly<{ name: string; id: string }>) =>
-    sql`
-      INSERT INTO effecttea_waiting (name, id, sender_name, sender_id) VALUES (${name}, ${id}, ${sender.name}, ${sender.id})
-      ON CONFLICT (name, id, sender_name, sender_id) DO NOTHING
-    `.pipe(Effect.asVoid, Effect.orDie)
-
   const waiters = (id: string) =>
     Effect.flatMap(
-      sql`DELETE FROM effecttea_waiting WHERE name = ${name} AND id = ${id} RETURNING sender_name, sender_id`,
+      sql`
+        SELECT DISTINCT sender_name, sender_id FROM effecttea_waiting WHERE name = ${name} AND id = ${id}
+        ORDER BY sender_name, sender_id
+      `,
       Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ sender_name: Schema.String, sender_id: Schema.String }))),
     ).pipe(
       Effect.map((rows) => rows.map((row) => ({ name: row.sender_name, id: row.sender_id }))),
@@ -236,5 +233,5 @@ export const onClusterOf = <T extends Types>(held: Held<T>): Pick<
       ON CONFLICT (request_id) DO NOTHING
     `.pipe(Effect.asVoid, Effect.orDie)
 
-  return { wait, waiters, keepSent, pendSent, forgetPending, keepGiven }
+  return { waiters, keepSent, pendSent, forgetPending, keepGiven }
 }

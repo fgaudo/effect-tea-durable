@@ -28,7 +28,7 @@ import * as Option from 'effect/Option'
 import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
 import { SqlClient, type SqlError } from 'effect/sql'
-import { create, faulted, operate, send, waitingFor, wake } from './runtime/callers.ts'
+import { create, faulted, operate, send, wake } from './runtime/callers.ts'
 import { current, doorStep, serving, singletonsOf } from './runtime/doors.ts'
 import { loads, stop } from './runtime/loop.ts'
 import * as Machine from './machine.ts'
@@ -72,7 +72,7 @@ import {
   storage,
   type Storage,
   type Summed,
-  type Suspension,
+  type Suspended,
   type Tally,
   transaction,
 } from './storage.ts'
@@ -87,17 +87,7 @@ import { waking } from './runtime/waker.ts'
  */
 export type Answer<Reason> = Reply<Reason> | Readonly<{ _tag: 'Suspended' }> | Readonly<{ _tag: 'Full' }>
 
-/**
- * An operation of another entity whose `send` waits for the entity's resumption: its run, and the name it sent
- * under (decision 0114).
- */
-export type Waiting = Readonly<{ entity: Address; key: Key; incarnation: number; name: string }>
-
-/**
- * A suspended entity, as `Handle.suspended` lists it: what the storage holds of the suspension, and the senders
- * waiting for its resumption in this process (decision 0114).
- */
-export type Suspended = Suspension & Readonly<{ waiting: ReadonlyArray<Waiting> }>
+export { type Suspended, type Waiting } from './storage.ts'
 
 /**
  * An entity, as `Handle.inspect` gives it: what is stored of it, read through the migrations as an activation reads
@@ -521,8 +511,10 @@ export interface Handle<T extends Types, C = {}> {
   readonly expire: Effect.Effect<number>
   /**
    * The suspended entities of the program, the longest suspended first: each with what it died on, the cause, since
-   * when, and the senders waiting for its resumption in this process. Read from what is stored, so an entity this
-   * process does not hold is listed too (decision 0114).
+   * when, and the operations that wait for its resumption. Read from what is stored, so an entity this process does
+   * not hold is listed too, with the operations of every process and of a process before a restart. An operation is
+   * listed from the step that answered it `Suspended` while its run holds, until the entity is taken out of its
+   * suspension (decisions 0114, 0265).
    */
   readonly suspended: Effect.Effect<ReadonlyArray<Suspended>>
   /**
@@ -1382,11 +1374,7 @@ const started = (
           forget: (topic, consumer) =>
             topical(program, topic, enlisted(deployed, topic, consumer, false, deployed.storage.forget(topic, consumer))),
           expire: Effect.flatMap(DateTime.now, (now) => deployed.storage.expire(DateTime.toEpochMillis(now))),
-          suspended: Effect.map(deployed.storage.suspended, (listed) =>
-            listed.map((suspension): Suspended => ({
-              ...suspension,
-              waiting: waitingFor(p, { name: program.name, id: suspension.id }),
-            }))),
+          suspended: deployed.storage.suspended,
           inspect: (id) =>
             texted(
               id,
@@ -1402,9 +1390,7 @@ const started = (
                   work: Object.values(found.stored.keys)
                     .map(({ key, incarnation, work }) => ({ key, incarnation, work }))
                     .sort((one, other) => one.incarnation - other.incarnation),
-                  suspension: found.suspension === null
-                    ? null
-                    : { ...found.suspension, waiting: waitingFor(p, { name: program.name, id }) },
+                  suspension: found.suspension,
                 }),
             ),
           resume: (id) => outside(sql, 'resume', texted(id, admitted(operate(p, deployed, id, { _tag: 'Resume' })))),

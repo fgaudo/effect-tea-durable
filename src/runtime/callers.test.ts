@@ -275,7 +275,7 @@ describe('two entities that talk', () => {
 test('a sender answered Suspended is woken by the resumption, under prioritized schedules from its arrival', () => {
   // Decision 0063: a sender registers for the receiver's resumption before it sends. A resumption between its being
   // answered `Suspended` and a registration made after it would wake no one, and the sender would wait for ever.
-  // With the registration moved after the send, seed 29, pinned, fails. `bun run test:pins` runs it against that form,
+  // With the registration moved after the send, seed 52, pinned, fails. `bun run test:pins` runs it against that form,
   // the pin `0063` of `src/runtime.test_pins.ts` (decision 0254).
   const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
     ...program,
@@ -309,7 +309,7 @@ test('a sender answered Suspended is woken by the resumption, under prioritized 
           yield* runtime.settled
           return { applied: (yield* store.load(id))?.state.applied, wanted: yield* senders.read('s') }
         }))
-    }), { applied: ['sent'], wanted: 0 }, { open: false, pinned: [29] })
+    }), { applied: ['sent'], wanted: 0 }, { open: false, pinned: [52] })
 }, 60_000)
 
 test('callers of an unloaded entity build one machine for it, under prioritized schedules from their arrival', () => {

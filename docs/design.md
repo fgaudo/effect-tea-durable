@@ -715,8 +715,11 @@ once, whichever retry finds it
 [decision 0023](decisions/archive/0023-suspended-means-no-reply-yet.md)).
 
 An operator finds the suspended entities with `suspended`, the longest suspended first: each with what it died on,
-the cause, since when, and the senders waiting for its resumption in this process. The cause is stored as text, as
-[what the storage writes](#what-the-storage-writes) says. Nobody is told on a clock: a sender waits as long as it takes, and a deployment that wants an alarm reads the list. `resume` and `discard` say
+the cause, since when, and the operations of other entities that wait for its resumption. The step that answers an
+operation `Suspended` stores its wait, and the step that takes the entity out of its suspension deletes the waits.
+So the list is read from storage, on any runner and after a restart, and holds a wait while the run that sent it
+holds ([decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md)).
+The cause is stored as text, as [what the storage writes](#what-the-storage-writes) says. Nobody is told on a clock: a sender waits as long as it takes, and a deployment that wants an alarm reads the list. `resume` and `discard` say
 what they did: `Resumed` or `Discarded`; `NotDiscarded`, for an entity that died on an internal message, in an
 operation or on its activation; `StillSuspended`, with the new cause, when the program deployed dies on the stored
 state, and a discard then keeps its message; `NotSuspended`; or `NotFound`. Each operator is told what the

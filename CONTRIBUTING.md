@@ -102,10 +102,10 @@ flowchart TB
   subgraph storage["the storage"]
     store["storage.ts: the storage of one program, made of its parts"]
     tables["storage/tables.ts: the dialects, the transaction, the hold of a database,<br/>the partitions, the migrations that make every table, each named<br/>with effecttea_, with migrations and log, and the rename of a program"]
-    entities["storage/entities.ts: entities, entity_keys, mailbox, replies<br/>and answers, and the write of a step"]
+    entities["storage/entities.ts: entities, entity_keys, mailbox, replies,<br/>answers and waiting, and the write of a step"]
     projections["storage/projections.ts: projections, their indexes,<br/>and the queries, counts and sums"]
     log["storage/log.ts: publications, outbox, heads, consumers and cursors"]
-    versions["storage/cluster.ts: on Cluster, versions, runner_versions,<br/>waiting, sent_requests and given_requests"]
+    versions["storage/cluster.ts: on Cluster, versions, runner_versions,<br/>sent_requests and given_requests, and the senders<br/>a resumption tells, read from waiting"]
     held["storage/held.ts: what the storage of one program holds,<br/>which its modules share"]
     rows["storage/rows.ts: the rows as the runtime writes them,<br/>and the codecs of their JSON"]
   end

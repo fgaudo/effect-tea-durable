@@ -531,6 +531,9 @@ export type EnvelopeRow =
 /** The work of another entity that sent a request: its reply is kept while that work holds (decision 0021). */
 export type Asker = Readonly<{ name: string; id: string; key: Key; incarnation: number }>
 
+/** An operation of another entity that waits for the entity's resumption: its run, and the name it sent under. */
+export type Wait = Readonly<{ asked: Asker; name: string }>
+
 /** A request one of another entity's operations sent. */
 export type OperationRequest = Extract<Request<unknown>, Readonly<{ _tag: 'Operation' }>>
 
@@ -596,6 +599,10 @@ export type Written = Readonly<{
   replies: ReadonlyArray<ReplyRow>
   /** The work of the entity that ended: the replies to the requests it sent are deleted (decision 0021). */
   ended: ReadonlyArray<Readonly<{ key: Key; incarnation: number }>>
+  /** The operations of other entities the event answered `Suspended`: each waits for the resumption (decision 0265). */
+  waits: ReadonlyArray<Wait>
+  /** Whether the event took the entity out of its suspension: the waits stored for it are deleted (decision 0265). */
+  woken: boolean
   /** The row a query reads, when the state changed (decision 0032). */
   shown: Shown | null
   /** The row of the outbox, in each topic whose selection changed, or null where none did (decisions 0038, 0138). */
@@ -1146,6 +1153,7 @@ export const writes = <T extends Types>(
   handled: Envelope<T> | null,
   answered: StoredReply<T['rejection']> | null,
   at: DateTime.Utc | null = null,
+  waits: ReadonlyArray<Wait> = [],
 ): Written | null => {
   const changed = before === null || before.state !== after.state
   const keys: Array<KeyRow> = []
@@ -1204,7 +1212,7 @@ export const writes = <T extends Types>(
   }
   if (
     before !== null && !changed && keys.length === 0 && gone.length === 0 && left === 0 && queued.length === 0 &&
-    replies.length === 0 && ended.length === 0 && before.suspension === after.suspension
+    replies.length === 0 && ended.length === 0 && before.suspension === after.suspension && waits.length === 0
   ) {
     return null
   }
@@ -1226,6 +1234,8 @@ export const writes = <T extends Types>(
     queued,
     replies,
     ended,
+    waits,
+    woken: before !== null && before.suspension !== null && after.suspension === null,
     shown: row === null ? null : { projection: row.projection, indexes: row.indexes },
     published,
   }
@@ -1237,13 +1247,25 @@ export const writes = <T extends Types>(
  */
 export const step = <T extends Types>(program: Program<T>, machine: Machine<T>, event: Event<T>): Transition<T> => {
   const { handled = null, answered = null, at = null, ...moved } = move(program, machine, event)
+  const waits = waitsOf(moved.outputs)
   return {
     ...moved,
-    written: moved.machine.stored === machine.stored
+    written: moved.machine.stored === machine.stored && waits.length === 0
       ? null
-      : writes(program, machine.stored, moved.machine.stored, handled, answered, at),
+      : writes(program, machine.stored, moved.machine.stored, handled, answered, at, waits),
   }
 }
+
+/**
+ * The operations an event answered `Suspended`. Each is stored as a wait in the event's own step, so that every
+ * runner lists it, after a restart too, and a resumption committed before it is never missed (decision 0265).
+ */
+const waitsOf = <T extends Types>(outputs: ReadonlyArray<Output<T>>): ReadonlyArray<Wait> =>
+  outputs.flatMap((output): ReadonlyArray<Wait> => {
+    if (output._tag !== 'Replied' || output.reply._tag !== 'Suspended') return []
+    const asked = askerOf(output.request)
+    return asked === null || output.request._tag !== 'Operation' ? [] : [{ asked, name: output.request.name }]
+  })
 
 const move = <T extends Types>(program: Program<T>, machine: Machine<T>, event: Event<T>): Moved<T> => {
   switch (event._tag) {

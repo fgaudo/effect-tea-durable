@@ -84,6 +84,8 @@ const written = (rows: Partial<Machine.Written>): Machine.Written => ({
   queued: [],
   replies: [],
   ended: [],
+  waits: [],
+  woken: false,
   shown: null,
   published: null,
   ...rows,
@@ -1793,8 +1795,8 @@ test('a suspended entity is listed with what it died on, its cause and since whe
       yield* store.write('operation', created({ suspension: onOperation }), 3)
       // The longest suspended first, each with the tag of the message it died on.
       expect(yield* listed).toEqual([
-        { id: 'operation', on: onOperation.on, cause: 'died', since: 3 },
-        { id: 'inbound', on: { _tag: 'Message', kind: 'Inbound' }, cause: 'broken', since: 5 },
+        { id: 'operation', on: onOperation.on, cause: 'died', since: 3, waiting: [] },
+        { id: 'inbound', on: { _tag: 'Message', kind: 'Inbound' }, cause: 'broken', since: 5, waiting: [] },
       ])
       // A step while the entity stays suspended, a completion recorded or a state written, keeps the time.
       const completion: Machine.EnvelopeRow = { _tag: 'Internal', message: 'done', key: { name: 'ask' }, incarnation: 1 }
@@ -1810,10 +1812,48 @@ test('a suspended entity is listed with what it died on, its cause and since whe
       expect((yield* listed).map(({ id }) => id)).toEqual(['operation'])
       yield* store.write('inbound', written({ suspension: onMessage }), 20)
       expect(yield* listed).toEqual([
-        { id: 'operation', on: onOperation.on, cause: 'died', since: 3 },
-        { id: 'inbound', on: { _tag: 'Message', kind: 'Internal' }, cause: 'broken', since: 20 },
+        { id: 'operation', on: onOperation.on, cause: 'died', since: 3, waiting: [] },
+        { id: 'inbound', on: { _tag: 'Message', kind: 'Internal' }, cause: 'broken', since: 20, waiting: [] },
       ])
     })))
+
+// A wait is stored by the step that answered `Suspended`, listed while the run that sent holds, and deleted by the
+// step that takes the entity out of its suspension (decision 0265).
+test('a suspended entity lists the stored waits whose run holds, and its resumption deletes them', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(receiver, sql)
+      const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
+      const waiting = Effect.map(store.suspended, (entities) => entities.map(({ id, waiting }) => [id, waiting]))
+      const run = (incarnation: number) =>
+        ({ key: { name: 'ask' }, incarnation, work, delivery: 'Idempotent', due: null }) as const
+      const wait = (id: string, incarnation: number, name: string): Machine.Wait => ({
+        asked: { name: 'Asker', id, key: { name: 'ask' }, incarnation },
+        name,
+      })
+      const onMessage = { on: { _tag: 'Message' }, cause: 'broken' } as const
+      yield* storage(asker, sql).write('a', created({ keys: [run(1)], incarnations: 1 }), 0)
+      yield* storage(asker, sql).write('b', created({ keys: [run(1)], incarnations: 1 }), 0)
+      yield* store.write('r', created({ queued: [inbound('one')], suspension: onMessage }), 1)
+      // A wait answered twice is stored once.
+      yield* store.write('r', written({ waits: [wait('b', 1, 'want'), wait('a', 1, 'want')], suspension: onMessage }), 2)
+      yield* store.write('r', written({ waits: [wait('a', 1, 'want')], suspension: onMessage }), 3)
+      const listedOf = (id: string) => ({ entity: { name: 'Asker', id }, key: { name: 'ask' }, incarnation: 1, name: 'want' })
+      expect(yield* waiting).toEqual([['r', [listedOf('a'), listedOf('b')]]])
+      expect((yield* store.inspect('r'))?.suspension?.waiting).toEqual([listedOf('a'), listedOf('b')])
+      // A run restarted under another incarnation no longer waits, nor does one whose work ended.
+      yield* storage(asker, sql).write('a', written({ keys: [run(2)], incarnations: 2 }), 4)
+      yield* storage(asker, sql).write('b', written({ gone: [{ name: 'ask' }] }), 4)
+      expect(yield* waiting).toEqual([['r', []]])
+      yield* storage(asker, sql).write('b', written({ keys: [run(1)] }), 5)
+      expect(yield* waiting).toEqual([['r', [listedOf('b')]]])
+      // The step that takes the entity out of its suspension deletes every wait, and a later suspension lists none.
+      yield* store.write('r', written({ handled: 1, woken: true }), 6)
+      yield* store.write('r', written({ queued: [inbound('two')], suspension: onMessage }), 7)
+      expect(yield* waiting).toEqual([['r', []]])
+      const [left] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_waiting`
+      expect(Number(left?.held)).toBe(0)
+    }).pipe(Effect.orDie)))
 
 // A move of Effect's version that changes `Hash.string` changes these, and is seen: the partition is stored, so
 // the entities created before keep theirs (decision 0137).
@@ -1991,7 +2031,8 @@ describe('renaming a program (decision 0156)', () => {
         const key = { key: { name: 'ask' }, incarnation: 1, work, delivery: 'Idempotent', due: null } as const
         yield* storage(asker, sql, undefined, true).write('a', created({ keys: [key], incarnations: 1 }), 0)
         yield* storage(receiver, sql, undefined, true).write('r', created(), 0)
-        yield* storage(receiver, sql, undefined, true).wait('r', { name: 'Asker', id: 'a' })
+        const waits = [{ asked: { name: 'Asker', id: 'a', key: { name: 'ask' }, incarnation: 1 }, name: 'want' }]
+        yield* storage(receiver, sql, undefined, true).write('r', written({ waits }), 1)
         const ask = { entity: { name: 'Asker', id: 'a' }, key: { name: 'ask' }, incarnation: 1 }
         yield* storage(receiver, sql, undefined, true).keepSent('7', ask)
         yield* rename(sql, [['Asker', 'Buyer'], ['Receiver', 'Seller']])
