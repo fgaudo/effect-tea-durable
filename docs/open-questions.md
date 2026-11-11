@@ -137,6 +137,27 @@ with a requirement that no example has yet.
     their statements and finds the row;
   - whether the receiver's step locks the asker's key as it reads it, or a sweep deletes the replies whose asker's
     work is gone.
+- **A step of a drain that changes a droppable operation.** A planned stop drains the at-most-once operations, and
+  starts no other work
+  ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). A step during the
+  drain may change a droppable operation, which gives it a new incarnation
+  ([decision 0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)). The runtime does not
+  start the new incarnation, since it drains, but the machine counts it as running. The next activation should start
+  it again, as an operation found stored with no completion. The premise review of 2026-11-11 noticed the case and
+  did not check it. It would be decided by:
+  - a test of `src/runtime/loop.ts` that stops a process while an at-most-once operation drains, sends a message
+    that changes a droppable operation, and checks that the next activation starts the new incarnation;
+  - whether anything reads a droppable incarnation as running before the process ends.
+- **A resume whose program drops a droppable operation kept while suspended.** An entity suspended with a droppable
+  operation under way keeps it, and a resume may run under a program that drops or changes that operation. In one
+  process a name is deployed once
+  ([decision 0075](decisions/archive/0075-a-name-is-deployed-once-in-a-process.md)), so the program cannot change
+  between the suspension and the resume. On Cluster, a runner of an older version holds its entities until it
+  crashes or stops, and a runner of a newer version may resume them. The premise review of 2026-11-11 reasoned that
+  the older runner's entities end first, and did not check it. It would be decided by:
+  - a test of `src/cluster.test.ts` with two runners of two versions, where the newer resumes an entity the older
+    suspended with a droppable operation under way;
+  - whether the resume reconciles the stored operations with the program, as an activation does.
 - **A failure of the storage that passes.** Every call of a handle but `consume` turns a `SqlError` into a defect,
   with `Effect.orDie`, so a connection that drops for a second reaches a caller as a defect, the same as a bug. A
   boundary that would retry such a failure must catch every defect to find it, and the type of `send`,

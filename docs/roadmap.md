@@ -25,11 +25,32 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     Its findings, only reasoned, are two open questions: request ids under a sender of `null`, and an own message
     named like a child with a tag typed `string`. A third case it noticed and did not reach, a retry in a rehearsal
     after a deploy that changes how the sender is written, is an open question too.
-  - Next, the sections of the index not read at all: operations and timers; creation
+  - Done, in a third session of 2026-11-11, both notes read whole with the code: the section Operations and timers,
+    with 0119 against 0011, 0128 and 0113. Its finding is the next step, a droppable operation a new program
+    delivers at most once. Two suspects it noticed and did not check are open questions of running. Read by the code
+    and the later note only, so to read whole: 0058 against 0018, and 0067 against 0056. Not reached there: 0064 and
+    0114 against 0041 and 0044, and the later notes that cite the section, 0022, 0029, 0035, 0047, 0049, 0060, 0075,
+    0077, 0131, 0142, 0156, 0162, 0180, 0183 and 0193.
+  - Next, the sections of the index not read at all: creation
     and defects; the queries and their pages, 0141 to 0150, 0207 and 0209; the tables and migrations, 0191 to 0218
     and 0225; the rehearsal and testing, 0131, 0183 to 0189, 0200 and 0211; the scheduler of the tests, 0104, 0115,
     0117 and 0244; and what enters the library. The step begins with the skill's brief, given the first of these
     areas.
+
+- **A droppable operation that a new program delivers at most once.** A deploy that declares a `Droppable`
+  operation stored under a key as `operation.atMostOnce` keeps its incarnation
+  ([decision 0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)), since the incarnation
+  stopped acted on nothing. The activation then reads that incarnation as an at-most-once one that may have started,
+  and records its `unknown` instead of starting it
+  ([decision 0011](decisions/archive/0011-an-operation-declares-what-a-crash-does.md)). So the operation never runs,
+  and a program that answers `unknown` by not acting again never acts. Decision 0011 rests on a premise no note
+  wrote: an incarnation stored with no completion was run with the delivery stored now. The premise review found it.
+  The test `FAILING: a droppable operation a new program delivers at most once starts, since it acted on nothing`,
+  in `src/machine.test.ts`, reproduces it on the branch `claude/premise-review-operations-d2dda3`, at commit
+  `d612640`, and fails on `main` at `40545c5` as on the branch. The fix begins in `activate` of `src/machine.ts`,
+  which gives `unknown` only to an incarnation run at most once. It either reads the delivery stored before
+  `reconcile` or `renew`, or decision 0128 draws a new incarnation for a droppable operation delivered otherwise.
+  The fix is a note that changes 0011 or 0128, taken with the test, renamed without `FAILING:`.
 
 ## Later
 
