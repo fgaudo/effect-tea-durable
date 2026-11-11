@@ -111,10 +111,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     `NotFound`. Its rule would be that every answer an operation acts on is kept while its work holds, in
     `src/runtime/callers.ts`, where every answer passes.
   - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10, 11 and 12, as decisions 0248 and 0249
-    were. Its rule would be that the tests of the runtime run alike on one process and on Cluster, as tests of a
-    contract.
-  - D, a rule that holds only of one transaction at a time: bug 3. Its rule would be that a test of rows of two
-    entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their statements.
+    were. Its rule is the step The tests of a contract on every backend, below: the tests of the runtime run
+    alike on one process and on Cluster.
+  - D, a rule that holds only of one transaction at a time: bug 3. Its rule is the same step: a test of rows of
+    two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their statements.
   - Of no family yet: bugs 4, 6 and 8.
   1. **Reproduced: a droppable operation that a new program delivers at most once never runs.** A deploy that
      declares a `Droppable` operation stored under a key as `operation.atMostOnce` keeps its incarnation
@@ -227,6 +227,20 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   activation by a program compares each piece stored with the program: the same, changed in a way the table
   allows, which it converts, or changed otherwise, which suspends the entity with a defect that names the piece.
 
+- **The tests of a contract on every backend.** It is the fourth kind of test of `AGENTS.md`, and the rule of
+  families C and D of the step of bugs. One set of requests runs alike on each way the library runs, and the
+  answers, the projections and what an operator reads must be the same on each. The ways are SQLite and PostgreSQL
+  on one process, PostgreSQL with a pool on the CI's server, and Cluster with two runners on one file.
+  [`src/dialects.test.ts`](../src/dialects.test.ts) is where it begins. It runs the calls fast-check generates on
+  SQLite and on PostgreSQL, and compares each answer
+  ([decision 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)), but it holds neither Cluster nor a
+  pool. The step adds Cluster, with the helpers `onFile`, `start` and `withholding` of
+  [`src/cluster.test.ts`](../src/cluster.test.ts), and the pool, with two steps held at their statements, as the
+  job `postgres` of the CI runs it. A test of the runtime that holds a rule of one process then runs on Cluster too,
+  where the rule is said to hold there, so that a rule of one process that holds otherwise on Cluster fails a test.
+  Bugs 2, 3, 10, 11 and 12 are cases of it. The step comes before the test of invariants, which runs on Cluster and
+  on a pool through it.
+
 - **A test of invariants over generated histories.** It is the second kind of test of `AGENTS.md`, which the library
   does not have yet. fast-check generates histories of commands: a message under a new request id or a retried one,
   an operation that completes or fails, time that passes, a crash and a restart, a deploy of a variant of the
@@ -244,8 +258,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     tests of concurrency, `prioritized` and `explore`, which stay.
   [`src/rehearse.property.test.ts`](../src/rehearse.property.test.ts), which compares the rehearsal and the runtime
   over generated messages, is where it begins. A failing history is shrunk by fast-check, and its shortest form is
-  pinned as a case. On Cluster and on PostgreSQL with a pool, the invariants run once the rules of families C and D
-  give the tests of a contract.
+  pinned as a case. On Cluster and on PostgreSQL with a pool, the invariants run through the step The tests of a
+  contract on every backend, above.
 
 - **The tests pruned by the mutations.** Once the test of invariants exists, `scripts/mutate.ts` takes out each
   rule the notes decide, one at a time. A test of a scenario that fails only where a test of the four kinds of
