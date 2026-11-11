@@ -58,4 +58,17 @@ export const pins: ReadonlyArray<Pin> = [
     test: 'src/runtime/loop.test.ts',
     name: 'settled never returns between a crash and the activation its due timer brings, under prioritized schedules',
   },
+  {
+    id: '0068 the waker looks for a poke and clears its flag in one step',
+    file: 'src/runtime/waker.ts',
+    edits: [
+      [
+        '    const rests = yield* Effect.sync(() => {\n      if (Queue.sizeUnsafe(waker.poke) > 0) return false\n',
+        '    const rests = yield* Effect.flatMap(Effect.sync(() => Queue.sizeUnsafe(waker.poke) > 0), (poked) =>\n      Effect.sync(() => {\n      if (poked) return false\n',
+      ],
+      ['      return true\n    })\n    if (!rests)', '      return true\n    }))\n    if (!rests)'],
+    ],
+    test: 'src/runtime/waker.test.ts',
+    name: 'settled never returns while the waker rests from a reading another entity left during, under bounded schedules',
+  },
 ]

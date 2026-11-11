@@ -34,7 +34,9 @@ test('settled never returns while the waker rests from a reading another entity 
   // the other. The first, `later`, has a timer in the future, and its departure wakes the waker, whose reading leaves
   // out `timed`, still held, with its timer due. Were the look and the clearing two steps, `timed` could leave between
   // them. The waker would then sleep toward the timer of `later`, and `settled` return with the timer of `timed` known
-  // to nobody. A preemption of the waker between the two steps reaches it.
+  // to nobody. A preemption of the waker between the two steps reaches it: with the look and the clearing split, the
+  // deviation at decision 182, pinned, fails. `bun run test:pins` runs it against that form, the pin `0068 the waker`
+  // of `src/runtime.test_pins.ts` (decision 0254).
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -97,7 +99,7 @@ test('settled never returns while the waker rests from a reading another entity 
           yield* runtime.settled
           return { early, restarted }
         }))
-    }), { early: false, restarted: true }, { open: false, bound: 1 })
+    }), { early: false, restarted: true }, { open: false, bound: 1, pinned: [{ decision: 182, choice: 1 }] })
 }, 60_000)
 
 describe('a timer and the wall clock (decision 0221)', () => {

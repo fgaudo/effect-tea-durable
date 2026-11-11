@@ -136,6 +136,9 @@ that fails is pinned. The tests pinned so far, each with its pin in `src/runtime
 
 - `a sender answered Suspended is woken by the resumption`, of `src/runtime/callers.test.ts`: seed 29, against the
   registration of decision 0063 moved after the send.
+- `settled never returns while the waker rests from a reading another entity left during`, of
+  `src/runtime/waker.test.ts`: the deviation `{ decision: 182, choice: 1 }`, against the look for a poke and the
+  clearing of the waker's flag of decision 0068 split in two steps.
 
 ## What it rests on
 
