@@ -101,13 +101,21 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     - against area 8: 0032, 0039, 0157, 0164, 0177 and 0247.
   - The lists of the two bullets above are divided, before the first last session starts, into sessions of thirty
     notes at most, each with the notes of the areas it reads them against.
+  - Once the last sessions are done, a sample decides whether the whole review is read a second time. The sessions
+    sent back to their area on 2026-11-11 found bugs 19 and 20 on a second pass, so a pass does not find all a
+    reading of pairs can find. A session that read none of the reports reads two areas again by the skill's brief,
+    given none of their findings: area 2, Effect Cluster, which found the most, and an area of the list that found
+    nothing, or area 11 where every area found something. The whole review is read again only if the sample finds a
+    bug, reproduced or of family C or D, that the step of bugs does not hold. Otherwise what a reading of pairs
+    misses, a rule that three notes or a whole flow keep together, is left to the steps What a deploy may change of
+    a program, The tests of a contract on every backend and A test of invariants over generated histories, below.
   - The first session's report is not kept, so what it ruled out is not written here. The reports of the second,
     third and fourth sessions are recorded whole in this step, in the step of bugs and in
     [the open questions](open-questions.md).
   - The step begins with the skill's brief, given the first area of the list that does not start with `Done`, which
     `bun scripts/premise-coverage.ts` names. A session that ends an area writes `Done, ` before the area's name in
     the list, keeps its notes there, takes out of the list of notes not reached those it read whole, and adds a
-    bullet here of what it read, what it found and what it did not reach. The step leaves this file once the last session is done.
+    bullet here of what it read, what it found and what it did not reach. The step leaves this file once the sample is done.
   - The reviewers' branches are local to the maintainer's machine, and pushed nowhere:
     `claude/premise-review-machine-c1a99e`, `claude/premise-review-operations-d2dda3`,
     `claude/premise-review-creation-03f15d`, `claude/premise-review-messages-975dd7`,
