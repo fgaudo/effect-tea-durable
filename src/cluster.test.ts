@@ -53,7 +53,7 @@ import {
   timer,
   versionOf,
 } from './program.ts'
-import { type Handle, type Options, Probe, type Said } from './runtime.ts'
+import { type Handle, launch as launchAlone, type Options, Probe, type Said } from './runtime.ts'
 import { createTables, leased, newestVersion, outranked, recordVersions } from './storage.ts'
 import { client, onEach } from './storage.test_databases.ts'
 
@@ -752,6 +752,28 @@ describe('the runtime on Cluster', () => {
       // The door answers what the runtime sent: the request is the caller's, under its sender.
       expect(yield* send(add, 'm1')).toBe('{"_tag":"Accepted"}')
       expect(yield* stateOf).toEqual({ n: 3, asking: false })
+    })), 30_000)
+
+  // Decision 0080 holds a database for one runtime, and decision 0084 lets the runners of Cluster share it under the
+  // shards' locks. A runner's launch holds nothing, so a runtime of one process on the same client is not refused.
+  test('FAILING: a runtime of one process launched on the client of a runner of the runtime on Cluster dies, as a second runtime on one database does', () =>
+    onRunner(Effect.gen(function*() {
+      const sender = { user: 'u' }
+      expect(yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+      // The partitions of the runner's log, so that the launch is refused, if at all, for the database it holds.
+      const launched = yield* Effect.exit(launchAlone({ sweep: 'none', log: { partitions: 12 } }))
+      let stored: number | undefined
+      if (Exit.isSuccess(launched)) {
+        const alone = yield* launched.value.deploy(tally)
+        const add = (n: number) => ({ _tag: 'Add', n }) as const
+        // The runtime of one process steps the entity from what it holds, and the runner's step lands between.
+        expect(yield* alone.send('one', add(1), { requestId: 'a1', sender, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
+        expect(yield* handle!.send('one', add(10), { requestId: 'a2', sender, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
+        expect(yield* alone.send('one', add(100), { requestId: 'a3', sender, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
+        stored = (yield* stateOf)?.n
+        warningsAndErrors()
+      }
+      expect(Exit.isFailure(launched) ? 'refused' : `launched, and the tally stores ${stored} of 111`).toBe('refused')
     })), 30_000)
 
   test('a message answered NotFound is handled when it is sent again, once its entity is created', () =>
