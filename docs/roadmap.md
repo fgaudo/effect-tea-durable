@@ -31,8 +31,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     and the later note only, so to read whole: 0058 against 0018, and 0067 against 0056. Not reached there: 0064 and
     0114 against 0041 and 0044, and the later notes that cite the section, 0022, 0029, 0035, 0047, 0049, 0060, 0075,
     0077, 0131, 0142, 0156, 0162, 0180, 0183 and 0193.
-  - Next, the sections of the index not read at all: creation
-    and defects; the queries and their pages, 0141 to 0150, 0207 and 0209; the tables and migrations, 0191 to 0218
+  - Done, in a fourth session of 2026-11-11, both notes read whole with the code: the sections Creation and
+    Defects, with 0064 and 0114 against 0041 and 0044, and 0046 against 0160 and 0182. Its findings are bugs 9 to
+    12 of the next step, the last two suspects it noticed and did not check, and each is an open question too. Read by their
+    decisions only: 0038, 0053, 0079, 0130, 0206, 0062, 0109, 0175, 0166, 0177 and 0186. Not reached there, the later
+    notes that cite the two sections: 0021, 0048, 0071, 0092, 0122 and 0125.
+  - Next, the sections of the index not read at all: the queries and their pages, 0141 to 0150, 0207 and 0209; the tables and migrations, 0191 to 0218
     and 0225; the rehearsal and testing, 0131, 0183 to 0189, 0200 and 0211; the scheduler of the tests, 0104, 0115,
     0117 and 0244; and what enters the library. The step begins with the skill's brief, given the first of these
     areas.
@@ -96,6 +100,36 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      its check ([decisions 0133](decisions/archive/0133-an-entity-composes-children-as-effect-tea-does.md),
      [0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md)). Verified by a test of types: the
      [open question](open-questions.md#the-surface) An own message named like a child, with a tag typed `string`.
+  9. **Reproduced: an at-least-once operation run again after a crash acts twice, when `init` rejected its
+     creation.** An operation that talks only to entities acts once, since a run after a crash is given the stored
+     replies ([decisions 0009](decisions/archive/0009-entities-talk-through-operations.md),
+     [0060](decisions/archive/0060-send-and-create-take-no-key.md)). That holds only where every answer the
+     operation acts on is stored. A rejection of `init` is not stored
+     ([decision 0182](decisions/0182-init-may-reject-the-flags.md)). So a run told `Rejected` sends one message, the
+     process dies before its completion, another creator creates the entity, and the run after the crash is told
+     `AlreadyExists` and sends another. The test `FAILING: an at-least-once operation run again after a crash acts
+     once, though init rejected its creation`, in `src/runtime.test.ts`, reproduces it on the branch
+     `claude/premise-review-creation-03f15d`, at commit `38fb0a2`, cut from `main` at `f4a28e0`, with no change of
+     `src/` since. `NotFound` is not stored either
+     ([decision 0010](decisions/archive/0010-a-rejection-may-carry-a-reason.md)), so the gap is older than 0182, and
+     no test holds that half. Its fix is a choice of the design: the [open question](open-questions.md#running) An
+     answer a run after a crash is not given again.
+  10. **Reasoned: on Cluster, a creation that `init` dies on, sent by an operation, waits for ever and no operator
+      sees it.** On one process the sender is suspended
+      ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). On Cluster the door dies
+      and Cluster delivers the creation again without end
+      ([decision 0160](decisions/archive/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)).
+      The sender is not suspended and the receiver does not exist, so `suspended` lists nothing. Verified by a test
+      of `src/cluster.test.ts`, which would hang today: the [open question](open-questions.md#running) A creation
+      that `init` dies on, on Cluster.
+  11. **Noticed, not checked: on Cluster, the rows of an operator's resume or discard may never be deleted.**
+      ([decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
+      Verified by a test that resumes an entity on Cluster and reads Cluster's tables after `expire`: the
+      [open question](open-questions.md#running) The rows of operators' events on Cluster.
+  12. **Noticed, not checked: a defect's cause holding U+0000 may reach Cluster's tables unescaped.**
+      ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)). It matters once
+      Cluster runs on PostgreSQL. Verified by reading what Cluster stores of a defect: the
+      [open question](open-questions.md#running) A cause holding U+0000 in Cluster's tables.
 
 - **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds
   an RPC to the door of a program on Cluster, or changes a payload, is not caught by the guard of the version
