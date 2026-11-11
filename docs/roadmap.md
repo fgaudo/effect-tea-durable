@@ -45,8 +45,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md), and bug 87 by
     [decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md), and bug 4 by
     [decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md), which the maintainer chose
-    on 2026-11-11 after two opinions of a Fable 5.2 agent. The part next is bug 8, the first of the bugs reasoned
-    after bug 6, which is verified false: it is verified first, then proposed to the maintainer before any code.
+    on 2026-11-11 after two opinions of a Fable 5.2 agent, and bug 8 by
+    [decision 0270](decisions/0270-a-childs-name-is-never-an-own-tag.md), which the maintainer chose on 2026-11-12
+    after an opinion of a Fable 5.2 agent. The part next is bug 22, the next of the bugs reasoned, confirmed by a
+    reading: its fix is proposed to the maintainer before any code.
     Decision 0269 changes the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
     taken, and its tests of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of
     PostgreSQL of the push of `main` that takes it.
@@ -133,17 +135,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
      versions here. Verified by a test of `src/cluster.test.ts` with two runners of two versions: the
      [open question](open-questions.md#running) A resume whose program drops a droppable operation kept while
      suspended.
-  8. **Reproduced: an own message whose `_tag` is typed `string` may take a child's name, and is then routed to the
-     child.** Only the compiler refuses an own message named like a child, and a tag that is not a literal passes
-     its check ([decisions 0133](decisions/archive/0133-an-entity-composes-children-as-effect-tea-does.md),
-     [0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md)). The composed schemas lose data
-     too. Each is a union whose own member stands first, and a union takes its first member that fits. So an own
-     member with a tag typed `string`, or with no tag, takes a child's wrapper and drops its fields, in the
-     messages, the internal messages and the operations alike. The compiler does not check the reasons at all, so
-     an own reason named like a child takes the child's wrapped reason. Reproduced by five `test.failing` of
-     `src/composition.test.ts`, from `an own message whose tag is typed string, sent with a child's name, reaches
-     the parent's update` on. The [open question](open-questions.md#the-surface) An own message named like a child,
-     with a tag typed `string`, holds the case.
+  8. **Fixed by [decision 0270](decisions/0270-a-childs-name-is-never-an-own-tag.md)**, which refuses an own tag that may be a child's, and tries a child's wrapper first.
   9. **Fixed by [decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)**, which keeps an operation's `Rejected` of `init` and its `NotFound` for its work.
   10. **Reasoned: on Cluster, a creation that `init` dies on, sent by an operation, waits for ever and no operator
       sees it.** On one process the sender is suspended

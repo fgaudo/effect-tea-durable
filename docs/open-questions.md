@@ -609,6 +609,15 @@ with a requirement that no example has yet.
 
 ## Programs
 
+- **A deploy that adds a child named like an own tag still stored.** A child's name is never a parent's own tag
+  ([decision 0270](decisions/0270-a-childs-name-is-never-an-own-tag.md)), but the compiler sees one version alone. A
+  version that adds a child named like an own message, reason or operation of the version before reads the rows that
+  version stored. Its composed schema then takes a stored own value as the child's wrapper, or refuses it, and the
+  entity fails to load. No test runs it. It would be decided by:
+  - a test that stores an own message under one version and reads it under a version with a child of its tag;
+  - the step What a deploy may change of a program, against what is stored, of the [roadmap](roadmap.md), whose
+    check of a deploy would refuse the new version.
+
 - **A retry that outlives the process.** A failure the provider may recover from is retried inside the runner, with
   `Effect.retry` and a schedule that ends, under the same key (the guide's operations). A crash or a passivation
   starts that schedule again from its first attempt, and an operation that waits between tries keeps its entity
@@ -678,21 +687,6 @@ with a requirement that no example has yet.
   program whose schema of rejections is `Never` could take no reason. It would be decided by:
   - a program that acts otherwise on a discard than on a rejection, as one that alerts or sends again later;
   - whether a reason the receiver's schema declares for a discard reads as the receiver's own rule.
-- **An own message named like a child, with a tag typed `string`.** A parent's own message that takes the name of a
-  child is refused by the compiler alone (`Checks` in `src/program.ts`), since `update` routes a message whose `_tag`
-  is a child's name to that child
-  ([decision 0133](decisions/archive/0133-an-entity-composes-children-as-effect-tea-does.md)). An own message whose
-  schema types `_tag` as `string` passes the check, as a list of keys typed `string[]` did before
-  [decision 0199](decisions/0199-a-list-of-keys-names-each-key-by-a-literal-type.md) refused it. Such a message,
-  tagged with a child's name at run time, goes to the child. The composed schemas lose data the same way. Each is a
-  union whose own member stands first, and `Schema.Union` of Effect 4.1.3 takes its first member that fits. So an
-  own member with a tag typed `string`, or with no tag, encodes a child's wrapper without its fields. That holds for
-  the messages, the internal messages, the operations and the reasons, and the compiler does not check the reasons
-  at all. Five `test.failing` of `src/composition.test.ts` reproduce it, and bug 8 of the roadmap is its fix. It
-  would be decided by:
-  - a rule that keeps each own member and each child's wrapper apart, in the types and in the composed schemas;
-  - what that rule refuses of a program that compiles today.
-
 - **A handle divided by who uses it.** A handle gives more than twenty calls in one interface: a caller's `create`,
   `send` and `read`, the queries, the log's `published`, `fetch`, `ack` and `consume`, and an operator's `suspended`,
   `inspect`, `resume`, `discard`, `prune`, `forget`, `expire` and `reindex`. A boundary that serves callers holds the

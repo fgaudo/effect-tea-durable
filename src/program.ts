@@ -1141,12 +1141,30 @@ type OnEventOf<State, Event, C> = [keyof OnEvents<State, Event, C>] extends [nev
 type TagOf<M> = M extends { readonly _tag: infer Tag } ? Tag : never
 
 /**
- * What the compiler refuses of a parent: an own message that takes a child's name, which would be routed to the
- * child, and a child that reads a sender its parent does not have.
+ * The names of `Tags` that a value of `Own` may carry as its `_tag`: a member's tag that is `string`, a template or
+ * the name itself, and a member with no `_tag` of its type that a value tagged with the name still is, as `unknown`
+ * or a record (decision 0270).
  */
-type Checks<Own, Sender, C> =
-  & ([Extract<TagOf<Own>, Names<C>>] extends [never] ? unknown
-    : Readonly<{ 'an own message takes the name of a child': Extract<TagOf<Own>, Names<C>> }>)
+type TakenBy<Own, Tags extends string> = Own extends unknown
+  ? (Tags & TagOf<Own>) | (Tags extends unknown ? Readonly<{ _tag: Tags }> extends Own ? Tags : never : never)
+  : never
+
+/** The children whose operations' tags, `<child>.<tag>`, a value of `Own` may carry as its `_tag` (decision 0270). */
+type OperationsTakenBy<Own, C> = {
+  [K in Names<C>]: [TakenBy<Own, `${K}.${string}`>] extends [never] ? never : K
+}[Names<C>]
+
+/**
+ * What the compiler refuses of a parent: an own message, reason or operation whose `_tag` may be a child's, which
+ * the composed schemas would refuse (decision 0270), and a child that reads a sender its parent does not have.
+ */
+type Checks<Own, Rejection, Operation, Sender, C> =
+  & ([TakenBy<Own, Names<C>>] extends [never] ? unknown
+    : Readonly<{ 'an own message takes the name of a child': TakenBy<Own, Names<C>> }>)
+  & ([TakenBy<Rejection, Names<C>>] extends [never] ? unknown
+    : Readonly<{ 'an own reason takes the name of a child': TakenBy<Rejection, Names<C>> }>)
+  & ([OperationsTakenBy<Operation, C>] extends [never] ? unknown
+    : Readonly<{ "an own operation takes the name of a child's": OperationsTakenBy<Operation, C> }>)
   & ([{ [K in Names<C>]: [Sender] extends [PartIn<C[K]>['sender']] ? never : K }[Names<C>]] extends [never] ? unknown
     : Readonly<{
       'a child reads a sender its parent does not have': {
@@ -1214,7 +1232,7 @@ type Pieces<
   & WorkOf<State, Internal, Operation, KeysOf<List>>
   & OperationsOf<Operation, Operations>
   & OnEventOf<State, Event, C>
-  & Checks<Inbound | Internal | External, Sender, C>
+  & Checks<Inbound | Internal | External, Rejection, Operation, Sender, C>
 
 /** The types of a composition: the own ones, and each child's, wrapped (decision 0133). */
 type Composed<
@@ -1525,10 +1543,10 @@ const assemble = (
   }
   const keys: Record<string, Schema.Codec<unknown, Json> | null> = { ...declaration.keys }
   const operations: Record<string, UntypedRunner> = { ...declaration.operations }
-  const inbound: Array<Schema.Codec<unknown, Json>> = [schemas.inbound]
-  const internal: Array<Schema.Codec<unknown, Json>> = [schemas.internal]
-  const operation: Array<Schema.Codec<unknown, Json>> = [schemas.operation]
-  const rejection: Array<Schema.Codec<unknown, Json>> = [schemas.rejection]
+  const inbound: Array<Schema.Codec<unknown, Json>> = []
+  const internal: Array<Schema.Codec<unknown, Json>> = []
+  const operation: Array<Schema.Codec<unknown, Json>> = []
+  const rejection: Array<Schema.Codec<unknown, Json>> = []
   for (const name of names) {
     const { part, id } = childOf(name)
     const idField = isEach(name) ? { id: id! } : {}
@@ -1553,8 +1571,18 @@ const assemble = (
     }
     rejection.push(struct({ _tag: Schema.Literal(name), reason: part.schemas.rejection }))
   }
-  const union = (members: ReadonlyArray<Schema.Codec<unknown, Json>>) =>
-    Schema.Union(members) as unknown as Schema.Codec<unknown, Json>
+  // A union takes the first member that fits, so a child's wrappers stand before the own schema, and the own schema
+  // refuses a value tagged as a child's. An own schema as wide as `unknown` would otherwise take a child's wrapper and
+  // drop its fields, and an own value tagged with a child's name would be routed to the child (decision 0270).
+  const isOperationOfChild = (tag: string) => names.some((name) => tag.startsWith(`${name}.`))
+  const isChild = (tag: string) => names.includes(tag)
+  const own = (schema: Schema.Codec<unknown, Json>, taken: (tag: string) => boolean, what: string) =>
+    schema.check(Schema.makeFilter((value: unknown) => {
+      const tag = fieldOf(value, '_tag')
+      return typeof tag !== 'string' || !taken(tag) || `${what} of the parent's own is tagged '${tag}', a child's`
+    })) as Schema.Codec<unknown, Json>
+  const union = (members: ReadonlyArray<Schema.Codec<unknown, Json>>, last: Schema.Codec<unknown, Json>) =>
+    Schema.Union([...members, last]) as unknown as Schema.Codec<unknown, Json>
   const projectAt = (place: Place, state: unknown) =>
     Opt.match(getAt(place, state), {
       onNone: () => defect(`the projection of the child '${place.name}', which is not in this state`),
@@ -1570,10 +1598,10 @@ const assemble = (
     keys,
     schemas: {
       state: schemas.state,
-      inbound: union(inbound),
-      internal: union(internal),
-      operation: union(operation),
-      rejection: union(rejection),
+      inbound: union(inbound, own(schemas.inbound, isChild, 'a message')),
+      internal: union(internal, own(schemas.internal, isChild, 'a message')),
+      operation: union(operation, own(schemas.operation, isOperationOfChild, 'an operation')),
+      rejection: union(rejection, own(schemas.rejection, isChild, 'a reason')),
     },
     init: declaration.init,
     update,

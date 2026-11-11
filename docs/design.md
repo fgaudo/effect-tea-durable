@@ -222,7 +222,12 @@ A part may hold children of its own, so a tree is as deep as a program needs.
 - **Reasons.** A reason a child gives reaches the caller as `{ _tag: <child>, id, reason }`.
 
 A name with a `.` is composition's: a parent whose own key, operation or child has one is refused where it is
-declared. A child that leaves the state with an operation under way is a defect, as any key dropped while its
+declared. A child's name is composition's too. A parent's own message or reason whose `_tag` may be a child's name
+does not compile, nor an own operation whose `_tag` may be `<child>.<tag>`. A tag typed `string`, a template that
+reaches a child's name, and a schema with no `_tag` that takes any, as a record, are refused alike. The composed
+schemas try each child's wrapper before the parent's own schema, and the own schema refuses a value tagged as a
+child's, so a cast past the compiler fails where the value is encoded or decoded, and no field is dropped
+([decision 0270](decisions/0270-a-childs-name-is-never-an-own-tag.md)). A child that leaves the state with an operation under way is a defect, as any key dropped while its
 operation runs. A child that asks its parent to drop it leaves its work first, from a state that holds none: work a
 state still holds after its completion runs again, so a parent that kept the child would run it twice. A child by id removed and added again comes back under new incarnations, so an answer of its earlier
 run is dropped.

@@ -871,94 +871,104 @@ test('a forEach of messages to children by id that raise no event puts the child
   expect(count('andThen')).toBe(50)
 })
 
-// Bug 8 of the roadmap: an own message whose `_tag` is typed `string` passes `Checks`, so the compiler accepts it
-// beside a child, and `update` routes such a message, tagged with the child's name, to the child.
-test.failing("an own message whose tag is typed string, sent with a child's name, reaches the parent's update", () => {
-  const seen: Array<string> = []
-  const loose = program({
-    state: Order,
-    flags: Schema.Null,
-    inbound: Schema.Struct({ _tag: Schema.String, id: Schema.String, message: Schema.Struct({ _tag: Schema.String, quantity: Schema.Int }) }),
-    internal: Schema.Never,
-    operation: Schema.Never,
-    rejection: Schema.Never,
-    sender: Schema.Null,
-    projection: Schema.Null,
-  })({
-    name: 'Loose',
-    keys: [],
-    children: { Line: each(line, { id: Schema.String, at: lines }) },
-    init: () => ({ lines: { a: line.init(null, at) }, charged: 0 }),
-    update: (message) => (state) => {
-      seen.push(message._tag)
-      return state
-    },
-    work: () => noWork,
-    operations: {},
-    project: () => null,
-    indexes: {},
-    onEvent: { Line: () => (state: Order) => state },
-  })
-  const state = loose.init(null, at) as Order
-  const next = loose.update({ _tag: 'Line', id: 'a', message: { _tag: 'Added', quantity: 3 } }, meta as never)(state)
-  // The parent declared the message as its own, so its own `update` should be the one to read it.
-  expect(seen).toEqual(['Line'])
-  expect(next).toBe(state)
+/** A parent's declaration beside the child `Line`, which compiles or not by the own schemas it is given. */
+const besideLine = {
+  name: 'Clash',
+  keys: [],
+  children: { Line: each(line, { id: Schema.String, at: lines }) },
+  init: () => ({ lines: {}, charged: 0 }),
+  update: () => (state: Order) => state,
+  work: () => noWork,
+  operations: {},
+  project: () => null,
+  indexes: {},
+  onEvent: { Line: () => (state: Order) => state },
+} as const
+
+const schemasBesideLine = {
+  state: Order,
+  flags: Schema.Null,
+  inbound: Schema.Never,
+  internal: Schema.Never,
+  operation: Schema.Never,
+  rejection: Schema.Never,
+  sender: Schema.Null,
+  projection: Schema.Null,
+} as const
+
+test("an own message, reason or operation whose tag may be a child's does not compile (decision 0270)", () => {
+  const declarations = [
+    // @ts-expect-error an own message takes the name of a child
+    () => program({ ...schemasBesideLine, inbound: Schema.Struct({ _tag: Schema.String }) })(besideLine),
+    // @ts-expect-error an own message takes the name of a child
+    () => program({ ...schemasBesideLine, internal: Schema.Struct({ _tag: Schema.TemplateLiteral(['Li', Schema.String]) }) })(besideLine),
+    // @ts-expect-error an own message takes the name of a child
+    () => program({ ...schemasBesideLine, inbound: Schema.Record(Schema.String, Schema.String) })(besideLine),
+    // @ts-expect-error an own reason takes the name of a child
+    () => program({ ...schemasBesideLine, rejection: Schema.TaggedStruct('Line', {}) })(besideLine),
+    // @ts-expect-error an own reason takes the name of a child
+    () => program({ ...schemasBesideLine, rejection: Schema.Struct({ _tag: Schema.String }) })(besideLine),
+    // @ts-expect-error an own operation takes the name of a child's
+    () => program({ ...schemasBesideLine, operation: Schema.Struct({ _tag: Schema.String }) })(besideLine),
+  ]
+  // What no child's tag reaches compiles: a reason with no tag, a message with none, and a template of other names.
+  const allowed = [
+    () => program({ ...schemasBesideLine, rejection: Schema.Literal('Full') })(besideLine),
+    () => program({ ...schemasBesideLine, inbound: Schema.Struct({ id: Schema.String }) })(besideLine),
+    () => program({ ...schemasBesideLine, inbound: Schema.Struct({ _tag: Schema.TemplateLiteral(['Own', Schema.String]) }) })(besideLine),
+  ]
+  expect([...declarations, ...allowed].every((declaration) => typeof declaration === 'function')).toBe(true)
 })
 
 /**
- * A parent beside the child `Line` with own schemas as wide as `own` gives, declared untyped since only what its
- * composed schemas encode is tested here.
+ * A parent beside the child `Line` with own schemas as wide as `own` gives, declared untyped, since the compiler
+ * refuses most of them and only what the composed schemas do is tested here.
  */
 const wide = (own: Readonly<Record<string, Schema.Codec<unknown, never>>>) =>
   (program as unknown as (schemas: unknown) => (declaration: unknown) => { schemas: typeof order.schemas })({
-    state: Order,
-    flags: Schema.Null,
-    inbound: Schema.Never,
-    internal: Schema.Never,
-    operation: Schema.Never,
-    rejection: Schema.Never,
-    sender: Schema.Null,
-    projection: Schema.Null,
+    ...schemasBesideLine,
     ...own,
-  })({
-    name: 'Wide',
-    keys: [],
-    children: { Line: each(line, { id: Schema.String, at: lines }) },
-    init: () => ({ lines: {}, charged: 0 }),
-    update: () => () => reject,
-    work: () => noWork,
-    operations: {},
-    project: () => null,
-    indexes: {},
-    onEvent: { Line: () => (state: Order) => state },
-  })
+  })(besideLine)
 
-const encodes = (schema: Schema.Codec<unknown, unknown>, value: unknown) => Schema.encodeUnknownSync(schema)(value)
+const encodes = (schema: unknown, value: unknown) => Schema.encodeUnknownSync(schema as Schema.Codec<unknown, unknown>)(value)
 
-// Bug 8 of the roadmap, as it reaches the composed schemas: a union takes its first member that fits, and the own
-// member stands first, so an own member with a tag typed `string`, or with no tag, takes a child's wrapper and drops
-// the fields the wrapper adds.
-test.failing("a child's message keeps its wrapper beside an own message whose tag is typed string", () => {
+// Bug 8 of the roadmap: a union takes its first member that fits, so an own member with a tag typed `string`, or
+// with no tag, that stood first took a child's wrapper and dropped the fields the wrapper adds.
+test("a child's message keeps its wrapper beside an own message whose tag is typed string (decision 0270)", () => {
   const message = { _tag: 'Line', id: 'a', message: { _tag: 'Added', quantity: 1 } }
   const inbound = wide({ inbound: Schema.Struct({ _tag: Schema.String }) as never }).schemas.inbound
   expect(encodes(inbound, message)).toEqual(message)
+  expect(Schema.decodeUnknownSync(inbound as Schema.Codec<unknown, unknown>)(message)).toEqual(message)
 })
 
-test.failing("a child's internal message keeps its wrapper beside an own message with no tag", () => {
+test("a child's internal message keeps its wrapper beside an own message with no tag (decision 0270)", () => {
   const message = { _tag: 'Line', id: 'a', message: { _tag: 'Charged', charge: 'c' } }
   const internal = wide({ internal: Schema.Struct({ id: Schema.String }) as never }).schemas.internal
   expect(encodes(internal, message)).toEqual(message)
 })
 
-test.failing("a child's reason keeps its wrapper beside an own reason named like the child", () => {
+test("a child's reason keeps its wrapper beside an own reason named like the child (decision 0270)", () => {
   const reason = { _tag: 'Line', id: 'a', reason: 'Empty' }
   const rejection = wide({ rejection: Schema.TaggedStruct('Line', {}) as never }).schemas.rejection
   expect(encodes(rejection, reason)).toEqual(reason)
 })
 
-test.failing("a child's operation keeps its wrapper beside an own operation whose tag is typed string", () => {
+test("a child's operation keeps its wrapper beside an own operation whose tag is typed string (decision 0270)", () => {
   const lifted = { _tag: 'Line.Charge', id: 'a', operation: { _tag: 'Charge', quantity: 1 } }
   const operation = wide({ operation: Schema.Struct({ _tag: Schema.String }) as never }).schemas.operation
   expect(encodes(operation, lifted)).toEqual(lifted)
+})
+
+test("an own value tagged as a child's, which no wrapper takes, is refused by the composed schemas (decision 0270)", () => {
+  const program = wide({
+    inbound: Schema.Struct({ _tag: Schema.String }) as never,
+    operation: Schema.Struct({ _tag: Schema.String }) as never,
+    rejection: Schema.Record(Schema.String, Schema.String) as never,
+  })
+  expect(() => encodes(program.schemas.inbound, { _tag: 'Line' })).toThrow("a message of the parent's own is tagged 'Line'")
+  expect(() => Schema.decodeUnknownSync(program.schemas.inbound as Schema.Codec<unknown, unknown>)({ _tag: 'Line' })).toThrow()
+  expect(() => encodes(program.schemas.operation, { _tag: 'Line.Other' })).toThrow("tagged 'Line.Other'")
+  expect(() => encodes(program.schemas.rejection, { _tag: 'Line' })).toThrow("a reason of the parent's own")
+  expect(encodes(program.schemas.inbound, { _tag: 'Own' })).toEqual({ _tag: 'Own' })
+  expect(encodes(program.schemas.operation, { _tag: 'Charge' })).toEqual({ _tag: 'Charge' })
 })
