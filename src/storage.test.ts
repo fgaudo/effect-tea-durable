@@ -1789,6 +1789,39 @@ test('a row that commits after one a consumer has read is read then, from its pa
       expect(seen(yield* store.published('projection', [], all))).toEqual(['b1'])
     }).pipe(Effect.orDie)))
 
+// A reading of the log reads the heads, then the position of the first row past each cursor, then its pages, each a
+// statement of its own. On a server, a step of one partition may take its place before a step of another partition
+// that commits, and commit itself between the reading's first two statements. The next step of its partition then
+// takes its place after both and commits too. The rows are written here by hand in that order, between the
+// statements, as a server would commit them (decisions 0038, 0137, 0157).
+test('FAILING: a reading of the log gives no row of a partition past a row of it that committed between its statements', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const store = storage(receiver, sql)
+      const seen = (read: ReadonlyArray<{ id: string; seq: number }>) => read.map(({ id, seq }) => `${id}${seq}`)
+      // `a1` has its place, 1, and is not committed yet. `b1` took the place after it, and is committed.
+      yield* logged(sql, 'b', 1, 2)
+      let selects = 0
+      const committing: Statement.Transformer = (statement) =>
+        Effect.gen(function*() {
+          const [text] = statement.compile()
+          if (text.trimStart().startsWith('SELECT') && ++selects === 2) {
+            // `a1` commits after the reading read the heads, and `a2`, the next step of its partition, after it.
+            yield* Effect.andThen(logged(sql, 'a', 1, 1), logged(sql, 'a', 2, 3)).pipe(
+              Effect.provideService(Statement.CurrentTransformer, undefined),
+              Effect.orDie,
+            )
+          }
+          return statement
+        })
+      const read = yield* store.published('projection', [], all)
+        .pipe(Effect.provideService(Statement.CurrentTransformer, committing))
+      expect(selects).toBeGreaterThan(2)
+      // A consumer that acks what it was given reads from those cursors next.
+      const next = yield* store.published('projection', read.map(({ partition, seq }) => ({ partition, seq })), all)
+      expect([...seen(read), ...seen(next)].sort()).toEqual(['a1', 'a2', 'b1'])
+    }).pipe(Effect.orDie)))
+
 test('a reading passes over the rows its cursors have read, page after page, and stops at its limit', () =>
   database((sql) =>
     Effect.gen(function*() {
