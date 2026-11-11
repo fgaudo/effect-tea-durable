@@ -72,13 +72,21 @@ with a requirement that no example has yet.
   - whether the handle refuses a call that waits for a step while a transaction is open, as `consume` refuses a
     reader, through the client's `transactionService`;
   - or whether the handler runs outside the transaction, and only the store's writes and the ack run in it, which
-    changes what 0184 promises of a store.
+    changes what 0184 promises of a store;
+  - on a pool of PostgreSQL, a test with as many readers waiting at once as the pool holds connections, where no
+    step gets one, which is bug 81, not checked.
 - **A reindex on Cluster.** On Cluster each runner's `reindex` runs beside the other runners' steps on one file
   ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). A statement that reads its
   snapshot while another runner holds the write lock may end with `SQLITE_BUSY`, which no busy handler retries, and
-  `reindex` dies. It loses no row. It is bug 36 of the [roadmap](roadmap.md), not checked. It would be decided by:
+  `reindex` dies. It loses no row. It is bug 36 of the [roadmap](roadmap.md), not checked. In a rolling deploy, a
+  `reindex` of the older runner writes the older projection over the row the newer runner wrote, since the entity's
+  state and version did not change
+  ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)). It is bug 77,
+  reproduced. It would be decided by:
   - a test of `src/cluster.test.ts` with `withholding`, whose step holds the write lock while the other runner
-    reindexes.
+    reindexes;
+  - for bug 77, whether `reindex` refuses to run while its version is outranked, or writes only where the stored
+    row's version is not newer than its own, and a test of the index a newer version adds.
 - **A reader with no time that misses a commit.** A reader of `consume` with `wait: true` waits until a commit tells
   its topic ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). Before it, a timed wait cost
   only its time ([decision 0142](decisions/archive/0142-a-consumer-waits-for-a-row-of-its-topic.md)). A step
@@ -119,6 +127,15 @@ with a requirement that no example has yet.
   [roadmap](roadmap.md), not checked. It would be decided by:
   - a run of `spikes/full-volume.test.ts` on the CI's volume, with steps beside the procedure.
 
+- **A consumer of a topic a newer version dropped.** A consumer that is gone leaves by `forget`
+  ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)), and a deploy keeps a stored consumer it no
+  longer declares ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). `forget` refuses a
+  topic the program does not publish ([decision 0138](decisions/archive/0138-the-log-publishes-topics.md)), and a newer version may
+  drop or rename a topic. So the consumer can never be forgotten, and its rows stay under every prune. It is bug 76 of
+  the [roadmap](roadmap.md), reproduced. It would be decided by:
+  - whether `forget` takes any topic a stored consumer names, or a deploy drops, with a warning, the consumers of a
+    topic it does not publish;
+  - what a reader of `consume` of the dropped topic does on an older runner, which acks on.
 
 ## Running
 
@@ -320,7 +337,17 @@ with a requirement that no example has yet.
     the same form;
   - whether a fix keeps the guard in the outer `WHERE`, or locks the rows first with `FOR UPDATE`;
   - for bug 49, not checked, a test that holds the sweep's batch and a step's deletion of its entity's replies at
-    their rows, and sees whether PostgreSQL ends one of them as a deadlock.
+    their rows, and sees whether PostgreSQL ends one of them as a deadlock;
+  - for bug 78, a reading of the log that runs several statements, each with a snapshot of its own, and skips a row
+    of a partition that commits between them. Whether `published` reads each partition only up to the head it read
+    first, or runs in `snapshot`, and whether a `fetch` inside a caller's transaction at `READ COMMITTED` keeps the
+    finding under the second fix. Its test of a server is written and has not run;
+  - for bug 79, whether the design's advice to begin at `REPEATABLE READ` names `inspect` beside a page of a query
+    ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md));
+  - for bug 80, two prunes that drop different rows of one publication at once and each keep it
+    ([decision 0154](decisions/archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). Whether the trigger locks the
+    publication's row first, or a prune takes an advisory lock of the program, and its test of a server, written and
+    not run.
 - **An entity a crash leaves with work stored.** A crash takes an entity out of its process with its work stored
   ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). On one process
   only a caller, a timer or the next start loads it again
@@ -407,7 +434,12 @@ with a requirement that no example has yet.
   - whether each check is run, in a test of its own, against the case it refuses, as `scripts/mutate.ts` does for
     the runtime's rules;
   - whether `test:postgres` runs every file that imports `src/storage.test_databases.ts`, and the property every
-    fixture of `src/fixtures/`.
+    fixture of `src/fixtures/`;
+  - for bug 83, reasoned by a reading, whether the property draws its request ids where no derived id can be the id
+    the runtime gives a send without one;
+  - for bug 88, reasoned, whether `AGENTS.md` names `@effect/sql-pg` and `@effect/sql-pglite` among the packages a
+    move of Effect pins, `scripts/compare-docs.ts` compares their JSDoc, and a test of the form of `package.json`
+    checks that every `@effect/` package is at the version of `effect`.
 - **A discard of a message an operation sent.** An operator discards the message an entity died on, and no reply is
   stored ([decision 0014](decisions/archive/0014-rules-the-machine-settled.md)). An operation's `send` waits for the
   resumption and sends the same request again
@@ -570,6 +602,27 @@ with a requirement that no example has yet.
   - whether `waking` catches a reading that dies and reads again after `retry`, as the sweep does, or `due` leaves out
     the entity whose row it refuses and gives it to the waker's map of failed entities;
   - whether the readings of the waker on Cluster, by shard, fail alike.
+- **A second runtime on one database.** A database is held by one runtime
+  ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)). On Cluster a shard's lock takes the place of the
+  hold ([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)), and keeps off only another
+  runner. So a runtime of one process launches on a runner's database, and a step is lost, which is bug 84 of the
+  [roadmap](roadmap.md), reproduced. A database of PGlite is held by its client, and a second client over the same data
+  directory opens with no error, so each runtime steps its own copy, which is bug 86, reproduced. A launcher that
+  builds Cluster's `SqlMessageStorage` on a client of its own commits a step and its reply apart
+  ([decision 0081](decisions/archive/0081-on-cluster-a-step-commits-with-its-reply.md)), which is bug 85, not checked. It would be
+  decided by:
+  - whether a runner's launch adds its client to `held`, and takes the advisory lock in shared mode where a runtime of
+    one process takes it exclusive;
+  - whether `hold` locks a data directory of PGlite, or a note says such a directory has one client;
+  - whether a launch on Cluster checks that the runtime's client is the client of Cluster's `MessageStorage`, and a
+    test that kills a runner between the two commits.
+- **A check beside the old version on SQLite.** `check` takes no lock, so that it runs on a database the old version
+  holds ([decision 0247](decisions/0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)). A file
+  of SQLite is held in the exclusive locking mode, so a check from a process of its own dies with `database is
+  locked`. It is bug 87 of the [roadmap](roadmap.md), reproduced. It would be decided by:
+  - whether a note narrows 0247 and the design to a stopped version or a copy of the file, or the old runtime gives
+    the check through its handle;
+  - a run on a server of PostgreSQL under a role of rows alone, which reads `effecttea_migrations` by name.
 
 ## Programs
 
@@ -635,6 +688,14 @@ with a requirement that no example has yet.
   reasoned. It would be decided by:
   - a note that changes 0127: a boundary acknowledges an item once it is answered with a reply, and sends it again
     under the same request id after `Suspended` or `Full`.
+- **A `sendFrom` under a member's address.** A reply is keyed by the sender's address, key, incarnation and name,
+  since no one else sends under that address
+  ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). In a world
+  ([decision 0131](decisions/archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md)), `sendFrom` builds a request under
+  any address, so it may forge a member's request, and the member's own send is answered from it. It is bug 82 of the
+  [roadmap](roadmap.md), reproduced. It would be decided by:
+  - whether `sendFrom` refuses the address of an entity the world holds, or builds its request under a key no program
+    can declare.
 
 ## The surface
 

@@ -123,12 +123,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     9. Done, against area 4, the notes from 0100.
     10. Done, against area 5.
     11. Done, against area 6, the notes before 0100.
-    12. Against area 6, the notes from 0100.
-    13. Against area 7.
-    14. Against areas 8 and 9, the two lists together.
-    15. Against area 10.
-    16. Against area 12, the notes before 0100.
-    17. Against area 12, the notes from 0100.
+    12. Done, against area 6, the notes from 0100.
+    13. Done, against area 7.
+    14. Done, against areas 8 and 9, the two lists together.
+    15. Done, against area 10.
+    16. Done, against area 12, the notes before 0100.
+    17. Done, against area 12, the notes from 0100.
   - Done, in six of the last sessions of 2026-11-11 run at once: both parts of the bullet that begins `A last
     session reads whole`, the lists against areas 1 and 2, and the notes before 0100 of the list against area 3.
     Each read every note of its list whole with the code. The session against area 2 read 21 notes in part, and
@@ -142,6 +142,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     two noticed and not checked. Two sessions found one bug, 71. The five reports are recorded whole in
     [`reviews.md`](decisions/reviews.md). The app runs five sessions at once, so the notes from 0100 of the list
     against area 6, the twelfth last session, start with the next batch.
+  - Done, in the last six of the last sessions of 2026-11-11: the notes from 0100 of the list against area 6, the
+    lists against areas 7, 8 and 9, and 10, and both parts of the list against area 12. Each read every note of its
+    list whole with the code. Their findings are bugs 76 to 88 of the step of bugs. Seven are reproduced, each test
+    run again on its branch and stopped at its assertion, one of them by rows written by hand where its test of a
+    server has not run. Three are only reasoned, one with its test of a server written, and three are noticed and not
+    checked. The six reports are recorded whole in [`reviews.md`](decisions/reviews.md). The seventeen last sessions
+    are done, so the step goes on with the sample below.
   - Once the last sessions are done, a sample decides whether the whole review is read a second time. The sessions
     sent back to their area on 2026-11-11 found bugs 19 and 20 on a second pass, so a pass does not find all a
     reading of pairs can find. A session that read none of the reports reads two areas again by the skill's brief,
@@ -153,8 +160,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - The first session's report is not kept, so what it ruled out is not written here. The reports of the second,
     third and fourth sessions are recorded whole in this step, in the step of bugs and in
     [the open questions](open-questions.md).
-  - Every area of the list is `Done`, so the step goes on with the first last session that is not, by the skill's
-    section A last session's brief. A session that records a review writes `Done, ` before what it read, and adds a
+  - Every area of the list and every last session is `Done`, so the step goes on with the sample above. A session
+    that records a review writes `Done, ` before what it read, and adds a
     bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
     reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
     a last session and read whole by no other review. The step leaves this file once the sample is done.
@@ -171,7 +178,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     `claude/premise-pairs-messages-2-a90d4b`, `claude/premise-pairs-cluster-32dc2e` and
     `claude/premise-pairs-versions-1-e03c02`, cut at `e6d3808`, and `claude/premise-pairs-versions-2-b6a869`,
     `claude/premise-pairs-runtime-1-1-eb56fb`, `claude/premise-pairs-runtime-1-2-876ced`,
-    `claude/premise-pairs-runtime-2-4e02ac` and `claude/premise-pairs-schemas-1-1-f736ec`, cut at `743881f`. A bug of the step of bugs names the commit of its failing test on one of
+    `claude/premise-pairs-runtime-2-4e02ac`, `claude/premise-pairs-schemas-1-1-f736ec` and
+    `claude/dazzling-darwin-f09ea9`, cut at `743881f`, and `claude/premise-pairs-schemas-2-5e31db`,
+    `claude/premise-pairs-queries-tables-b4f457`, `claude/premise-pairs-rehearsal-996d6c`,
+    `claude/premise-pairs-project-1-5b0c65` and `claude/gallant-almeida-c81283`, cut at `9fd90aa`. A bug of the step of bugs names the commit of its failing test on one of
     them. A session elsewhere writes that test again from the bug's sequence and the report in
     [`reviews.md`](decisions/reviews.md).
 
@@ -197,16 +207,16 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   common, and a family gets one rule, kept in one place of the code, instead of a fix for each bug. Each bug's test
   passes under the rule, as the proof that the rule holds the case. A bug of no family gets a fix of its own. The
   families of 2026-11-11, which the rest of the review may change:
-  - A, a newer version against what an older one stored or runs: bugs 1, 5, 7, 15, 16, 28 to 30, 56, 62 and 68, and the door
+  - A, a newer version against what an older one stored or runs: bugs 1, 5, 7, 15, 16, 28 to 30, 56, 62, 68, 76 and 77, and the door
     of the next step. A rename is such a change. Its rule is the step What a deploy may change of a program, against
     what is stored, below.
   - B, an answer an operation acts on and that a run after a crash is not given again: bug 9, and its half of
     `NotFound`. Its rule would be that every answer an operation acts on is kept while its work holds, in
     `src/runtime/callers.ts`, where every answer passes.
   - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39,
-    54, 55, 57 to 59, 63, 70, 73 and 74, as decisions 0248 and 0249 were. Its rule is the step The tests of a contract on every backend, below: the
+    54, 55, 57 to 59, 63, 70, 73, 74, 77, 84 and 85, as decisions 0248 and 0249 were. Its rule is the step The tests of a contract on every backend, below: the
     tests of the runtime run alike on one process and on Cluster.
-  - D, a rule that holds only of one transaction at a time: bugs 3, 13, 25 and 49. Its rule is the same step: a test of
+  - D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78 and 80. Its rule is the same step: a test of
     rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their statements.
     Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does not read
     again on the row it then writes.
@@ -218,11 +228,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - F, a value that [decision 0208](decisions/0208-a-launch-checks-every-option.md) allows, taken to its end: bugs
     17, 32 and 71, under a `retry` of 0, and 45, under a `passivate` of 0. Its rule is a least time of a wait the
     runtime sleeps, or a launch that refuses 0.
-  - G, a check of the project that holds less than its note says: bugs 43, 46 to 48, 52 and 53. A check passes on
+  - G, a check of the project that holds less than its note says: bugs 43, 46 to 48, 52, 53, 83 and 88. A check passes on
     the case its rule forbids, or a test no longer reaches the case it was written for. Its rule would be that each
     check of the form, of the CI and of the explored tests is run against the case it refuses, as
     [`scripts/mutate.ts`](../scripts/mutate.ts) does for the rules of the runtime.
-  - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 72 and 75.
+  - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 72, 75, 79, 81, 82, 86 and 87.
   1. **Reproduced: a droppable operation that a new program delivers at most once never runs.** A deploy that
      declares a `Droppable` operation stored under a key as `operation.atMostOnce` keeps its incarnation
      ([decision 0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)), since the
@@ -839,6 +849,153 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       `12c788e`. The fix begins at `waking`, which would catch a reading that dies and read again after `retry`, as
       the sweep does, or at `due`, which would leave out the entity whose row it refuses. The
       [open question](open-questions.md#running) A row the waker's reading refuses.
+  76. **Reproduced: a consumer of a topic a newer version no longer publishes can never be forgotten, and holds its
+      rows for ever.** A consumer that is gone leaves by `forget`
+      ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)), and a deploy keeps a stored consumer it
+      no longer declares, to be forgotten ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)).
+      Both take for granted that the consumer's topic is still published. `forget` refuses a topic the program does not
+      publish ([decision 0138](decisions/archive/0138-the-log-publishes-topics.md)), and a newer version may drop or rename a topic. So
+      `forget` dies by `topical` of `src/runtime.ts`, the rows past the consumer's cursor stay under every prune, and
+      every later deploy warns of a consumer no operator can drop. The test `FAILING: a consumer of a topic a newer
+      version no longer publishes is let be forgotten, and the prune passes its rows`, in `src/runtime.test.ts`, on
+      `claude/dazzling-darwin-f09ea9` at `2f0867e`. A reader of `consume` of the dropped topic on an older runner,
+      which acks on, is noticed and not checked. The fix begins at `forget`, which would take any topic a stored
+      consumer names, or at the deploy, which would drop with a warning the consumers of a topic it does not publish.
+      The [open question](open-questions.md#storage-and-reading) A consumer of a topic a newer version dropped.
+  77. **Reproduced: on Cluster, a `reindex` of an older runner writes the older projection over the row the newer
+      version wrote.** `reindex` writes a row only where the entity's state and version are those it read
+      ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)), which keeps a stale projection out only
+      while one program computes every row. An older runner runs on beside a newer one in a rolling deploy
+      ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)), and only a
+      step checks the newest version. So an entity that took no step since the newer launch passes the guard, and
+      `read` and `query` give the older projection until its next step, which may never come
+      ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md)). An index the newer version adds is missing from that row,
+      which is reasoned from the statement and not run. The test `FAILING: a reindex of an older runner leaves the row
+      the newer version wrote`, in `src/cluster.test.ts`, on `claude/dazzling-darwin-f09ea9` at `2f0867e`, which also
+      has the helper `start` give the handles it deployed. It is the case the step What a deploy may change of a
+      program names. The fix begins at `reindex` of `src/storage/projections.ts`, which would refuse to run while its
+      version is outranked, or write only where the stored row's version is not newer than its own. The
+      [open question](open-questions.md#storage-and-reading) A reindex on Cluster.
+  78. **Reproduced by rows written by hand: on a pool of PostgreSQL, a reading of the log may skip a row for ever.** A
+      cursor skips nothing, since the rows of one partition commit in the order of their `seq`
+      ([decisions 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md),
+      [0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md)). That rule also needs the reading to see the log as it
+      stood at one moment, which holds on SQLite's one writer. On a pool of PostgreSQL
+      ([decisions 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md),
+      [0222](decisions/0222-postgresql-with-many-connections.md)) each statement of `published` reads a snapshot of its
+      own. A step of one partition that commits between the reading's heads and its page, followed by the next step of
+      that partition, gives the second row and not the first, and an ack moves the cursor past the row never read. The
+      same holds between two pages. The tests `FAILING: a reading of the log gives no row of a partition past a row of
+      it that committed between its statements` and `FAILING: a reading of the log gives no row of a partition past a
+      row of it that committed between two pages`, in `src/storage.test.ts`, on
+      `claude/premise-pairs-schemas-2-5e31db` at `6730434` and `9ace256`, write the rows by hand between the reading's
+      statements, as a server would commit them. The test of a server, `FAILING: a reading of the log gives no row of a
+      partition past one it skipped` in `src/postgres.test.ts` at `6730434`, is written and has not run. A `fetch`
+      inside a caller's transaction at `READ COMMITTED`, under a fix by `snapshot` alone, is noticed and not checked.
+      The fix begins at `published` of `src/storage/log.ts`, which would read each partition only up to the head its
+      first statement read, or run in `snapshot` of `src/storage/held.ts`. The
+      [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
+      snapshot.
+  79. **Noticed, not checked: the design's advice to begin at `REPEATABLE READ` names a page of a query, and not
+      `inspect`, which reads at the caller's level too.** `inspect` reads inside a caller's transaction at the caller's
+      level ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)), as a page does
+      ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)),
+      and under Databases `docs/design.md` names only the page. It is a gap of the guide, not of the code. The
+      [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
+      snapshot.
+  80. **Reasoned, its test written: on a pool of PostgreSQL, two prunes at once may each keep a publication no row
+      names.** A publication goes with the last row of the outbox that names it, by a trigger of the statement that
+      drops the row ([decisions 0154](decisions/archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md),
+      [0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)), which holds while no other transaction drops a row
+      of the same publication. On a pool at `READ COMMITTED`
+      ([decision 0222](decisions/0222-postgresql-with-many-connections.md)), the sweep and a caller's `prune` run
+      batches of 256 rows at once ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)).
+      Two batches that drop different rows of one publication each see the other's row still there, and both keep the
+      publication, which no later statement drops. It costs storage alone, since no reading joins a publication no row
+      names. The test `FAILING: a publication goes with the last row that names it, though two transactions drop its
+      rows at once`, in `src/postgres.test.ts`, on `claude/premise-pairs-queries-tables-b4f457` at `bc445fb`, is written
+      and has not run. The fix begins at the trigger of `src/storage/tables.ts`, which would lock the publication's row
+      first, or at `prune` of `src/storage/log.ts`, by an advisory lock of the program. The
+      [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
+      snapshot.
+  81. **Noticed, not checked: on a pool of PostgreSQL, bug 26 happens once as many readers of `consume` wait as the
+      pool holds connections.** A handler holds one connection in its page's transaction, and a step it waits for takes
+      another ([decisions 0150](decisions/archive/0150-a-count-per-value-of-an-index-is-read-in-one-statement.md),
+      [0164](decisions/archive/0164-two-rules-of-the-runtime-are-kept-by-the-form-of-the-code-and-a-test-reads-it.md)). Where every
+      connection is so held, no step gets one, and every reader waits for ever. It needs a server and a pool of a known
+      size. The [open question](open-questions.md#storage-and-reading) A call of the handle inside a transaction.
+  82. **Reproduced: a world's `sendFrom` may forge a member's request, and the member's own send is answered from
+      it.** A reply is keyed by the sender's address, key, incarnation and name, since no one else sends under that
+      address ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). A world gives its members
+      the surface of `rehearse` ([decision 0131](decisions/archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md)), and
+      `sendFrom` builds a request under any address, the key `rehearsal`, the name `request` and an incarnation of the
+      world's counter. So a member's operation of that key and name, at that incarnation, is answered `Accepted` from
+      the forged request, and its own message is never applied. A rehearsal then gives an answer no runtime gives, with
+      no defect, though only by chance. The test `FAILING: a run of an operation is not answered the reply of a sendFrom
+      under its address (decisions 0021, 0131)`, in `src/rehearse.test.ts`, on `claude/premise-pairs-rehearsal-996d6c`
+      at `6c7928d`. The fix begins at `sendFrom` of `src/rehearse.ts`, which would refuse the address of an entity the
+      world holds, or build its request under a key no program can declare. The
+      [open question](open-questions.md#programs) A `sendFrom` under a member's address.
+  83. **Reasoned by a reading: the property of the fixtures may fail for no bug of the library, where a derived
+      request id is the id the runtime gives a send without one.** The property sends a request with no request id
+      under `new-<index>` on the runtime, and under a drawn id in the rehearsal
+      ([decision 0212](decisions/0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md)).
+      Where `Arbitrary.schema(RequestId)` derives `new-<k>` for another send under the same sender, the runtime takes
+      it for a retry and the rehearsal applies both. A run almost never meets it. Read in
+      `src/fixtures.property.test.ts`, and not run. The [open question](open-questions.md#running) The checks that
+      hold less than their note.
+  84. **Reproduced: a runtime of one process launches on the database of a runner of the runtime on Cluster, and a
+      step is lost.** A database is held by one runtime
+      ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), and on Cluster a shard's lock takes the place of
+      the hold ([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)), so a runner's launch
+      skips it. A shard's lock keeps off only another runner. So a runtime of one process on the runner's client is not
+      refused, writes its row from the machine it holds ([decision 0028](decisions/archive/0028-rules-the-runtime-settled.md)), and a
+      step of the runner is lost with no error. The test `FAILING: a runtime of one process launched on the client of a
+      runner of the runtime on Cluster dies, as a second runtime on one database does`, in `src/cluster.test.ts`, on
+      `claude/premise-pairs-project-1-5b0c65` at `6bd4222`. A runner launched beside a runtime of one process, and the
+      same across processes on PostgreSQL with `shardLockDisableAdvisory`, are only reasoned. The fix begins at
+      `launchWith` of `src/runtime.ts`, where a runner would add its client to `held` and take the advisory lock in
+      shared mode. The [open question](open-questions.md#running) A second runtime on one database.
+  85. **Noticed, not checked: on Cluster, a launcher that builds `SqlMessageStorage` on a client of its own commits
+      a step and its reply apart.** A step commits with Cluster's reply on one `SqlClient`
+      ([decision 0081](decisions/archive/0081-on-cluster-a-step-commits-with-its-reply.md)), and nothing checks that the runtime's
+      client is the client of Cluster's `MessageStorage`. A client joins only its own transaction, read in
+      `cluster/internal/entityManager.ts` and `sql/SqlClient.ts` of Effect. So a crash between the two commits applies
+      the message twice or loses the state ([decision 0007](decisions/archive/0007-one-process-first.md)), and on one file of SQLite
+      the step waits for the lock Cluster's transaction holds until the busy timeout. The
+      [open question](open-questions.md#running) A second runtime on one database.
+  86. **Reproduced: a second runtime on another client of PGlite over the same data directory launches, and each
+      steps its own copy.** A database of PGlite is held by its client in the process
+      ([decisions 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md),
+      [0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)), which rests on one client per data directory, never
+      written. A second `PGlite` over the directory opens with no error, each instance holds the database in its own
+      memory, and the last to close writes its copy over the other's, seen by a script at PGlite 0.5.15. So the steps
+      of one runtime are lost with nothing said, against what `docs/design.md` says under Where it runs. The test
+      `FAILING: a second runtime on another client of PGlite over the same data directory dies as it launches`, in
+      `src/runtime.test.ts`, on `claude/gallant-almeida-c81283` at `ba56b8e`, runs some two seconds, past the budget
+      of `AGENTS.md`. Runners of Cluster on PGlite over one directory are noticed and not checked. The fix begins at
+      `hold` of `src/storage/tables.ts`, by a lock of the data directory, or is a note that says a directory of PGlite
+      has one client. The [open question](open-questions.md#running) A second runtime on one database.
+  87. **Reproduced: `check` cannot run beside the old version on SQLite.** `check` launches nothing and takes no lock,
+      so that it runs on a database another version holds
+      ([decision 0247](decisions/0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)). A file of
+      SQLite is held in the exclusive locking mode
+      ([decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md)), and a new version is checked from a process of
+      its own. Its client dies with `database is locked` after the busy timeout, which blocks the event loop under
+      `bun:sqlite`. Nothing is lost, since the check fails loudly. The test `FAILING: a check from a client of its own
+      reads a file of SQLite the old version holds`, in `src/check.test.ts`, on `claude/gallant-almeida-c81283` at
+      `e04fcd4`. The same on PostgreSQL under a role of rows alone is noticed and not checked. The fix is a note that
+      narrows 0247 and the design to a stopped version or a copy of the file, or the old runtime gives the check
+      through its handle. The [open question](open-questions.md#running) A check beside the old version on SQLite.
+  88. **Reasoned: a move of Effect's version by the rule of `AGENTS.md` leaves the drivers of PostgreSQL at the version
+      it leaves.** Effect is pinned and moved on purpose ([decision 0019](decisions/archive/0019-unstable-effect-modules.md)), and the
+      drivers `@effect/sql-pglite` and `@effect/sql-pg` are unstable modules whose sources hold premises of
+      [decisions 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md) and
+      [0222](decisions/0222-postgresql-with-many-connections.md). `AGENTS.md` names neither among the packages a move
+      pins, `scripts/compare-docs.ts` compares neither, and their peer range `^4.1.3` installs with no warning. All five
+      packages are at 4.1.3 today, so nothing is wrong yet. The fix begins at `AGENTS.md` and
+      `scripts/compare-docs.ts`, with a test of the form of `package.json` that every `@effect/` package is at the
+      version of `effect`. The [open question](open-questions.md#running) The checks that hold less than their note.
 
 - **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds
   an RPC to the door of a program on Cluster, or changes a payload, is not caught by the guard of the version
@@ -862,10 +1019,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   what happens to an entity stored, loaded, suspended or draining, on one process and on Cluster, with a deploy of
   a newer version and of an older one. Each case gets a test that shows it holds, or a sentence that says why it
   holds and cites the note that decides it. A case that fails is a bug of this step, fixed by a note with its test,
-  as the bugs above. The cases the steps above already hold cite them. One case the premise review noticed and no bug holds: a `reindex` an operator runs on the
-  older runner of a rolling deploy writes the older projection over the row the newer runner wrote, since the
-  entity's state and version did not change ([`reviews.md`](decisions/reviews.md), the review of Schemas and
-  projections, a first part). The table is written in `docs/`, so that a
+  as the bugs above. The cases the steps above already hold cite them. A `reindex` an operator runs on the older runner of a rolling deploy writes the older
+  projection over the row the newer runner wrote, since the entity's state and version did not change, which is bug
+  77 of the step of bugs, reproduced. The table is written in `docs/`, so that a
   piece a later note adds to a program adds its row. The code that keeps the table is one place, where an
   activation by a program compares each piece stored with the program: the same, changed in a way the table
   allows, which it converts, or changed otherwise, which suspends the entity with a defect that names the piece.
