@@ -3994,3 +3994,124 @@ None.
 ### Not read whole
 
 None. Every note of the list and every note of the area it meets was read whole, with the code that keeps its rule.
+
+## 2026-11-11: premise review of the pairs against The project and what enters the library, the notes before 0100
+
+The reviewer's report, whole, as its session wrote it.
+
+Branch `claude/premise-pairs-project-1-5b0c65`, fast-forwarded to `main` at `9fd90aa` before any reading, since it
+was cut at `fcd2494`, before the report of area 12. One finding, reproduced. The report of area 12 was read whole,
+with what it ruled out. The step of bugs of `docs/roadmap.md` and the open questions were searched for each pair's
+subject. The reviews of the areas that hold the notes of the list were read through the reports of Effect Cluster
+and of the pairs against it, by a search of `reviews.md` for the hold, the advisory lock and a second runtime.
+
+### The pairs read
+
+The pairs were listed by the table of area 12's report, and by `grep -w` of each note of the list in each note of
+the area, both ways. Every note of the list and every note of the area named below was read whole.
+
+| Note of the list | Note of the area | What binds them | How they were read |
+| --- | --- | --- | --- |
+| 0003 | 0195 | 0195 renames 0003's `durable` to `work`, and `Durable` to `Piece` | both whole, with `work` and `Piece` of `src/program.ts` |
+| 0039 | 0195 | 0195 renames 0039's `feed` to `fetch` | both whole, with `fetch` of `src/storage/log.ts` |
+| 0028 | 0007 | cites 0007 as its reason: one process is the one writer, so a machine held in memory is never read again | both whole, with `write` of `src/storage/entities.ts` and `settle` of `src/runtime/doors.ts` |
+| 0028 | 0019 | applies 0019's rule: Effect is pinned where `effect/sql` is | both whole |
+| 0030 | 0007 | cites 0007 as its reason: the runtime writes JSON text in SQLite | both whole, with the columns of `src/storage/tables.ts` |
+| 0030 | 0099 | none: 0099 names "the review of 0016 to 0030", which `grep` found | 0099 whole |
+| 0038 | 0007 | cites 0007 as its reason: a `seq` is given and committed in one order, since the writes are serialized | both whole, with the draw of the head in `src/storage/entities.ts:407-440` and `fetch` of `src/storage/log.ts` |
+| 0038 | 0052 | 0052 cites 0038's rule of publication as one that leans on values never mutated | both whole, with `shownOf` of `src/machine.ts` |
+| 0057 | 0052 | applies 0052's rule: an encoding and a projection are kept by the value | both whole, with `encodeOnce`, `encodeWork`, `shownOf` and `requestKey` of `src/machine.ts` |
+| 0064 | 0054 | changes it: `resume` with a fixed program, one place a program entered, is gone | both whole, with `checkProgram` and its callers in `src/runtime.ts`, `src/rehearse.ts` and `src/check.ts` |
+| 0073 | 0055 | cites 0055 as its reason: a type of the machine stays out of the surface | both whole, with `Probe` of `src/runtime.ts` |
+| 0073 | 0193 | 0193 applies 0073's rule: no entry gives `Probe`, `Point` or `Said` | both whole, with the four entries |
+| 0075 | 0054 | applies 0054's rule: a second deploy of a name dies where a program that cannot run dies | both whole, with `deploy` of `src/runtime.ts:1056-1075` |
+| 0075 | 0080 | 0080 applies 0075's rule: a launch on a database held dies as a second deploy does | both whole, with `hold` of `src/storage/tables.ts` and `launchWith` of `src/runtime.ts` |
+| 0081 | 0007 | changes 0007's consequence for Cluster: a step commits with Cluster's reply | both whole, with `doorStep`, `stepIn`, `finishIn` and `settle` of `src/runtime/doors.ts`, `register` of `src/cluster.ts`, and `requestWriteOptions` of Effect's `cluster/internal/entityManager.ts` |
+| 0084 | 0019 | cites 0019 as its reason against a fence of the runtime's own | both whole, with `leased` of `src/storage/cluster.ts` |
+| 0084 | 0080 | corrects 0080's alternative on Cluster's locks, and is the reason a runner's launch holds nothing | both whole, with `hold` of `src/storage/tables.ts`, `launchWith` of `src/runtime.ts` and `write` of `src/storage/entities.ts` |
+
+### Finding 1, reproduced: 0084 against 0080, 0075 and 0028
+
+- **The notes.** [Decision 0080](archive/0080-a-database-is-held-by-one-runtime.md) holds a database for one
+  runtime: the client in the process, a file of SQLite by its exclusive mode, a database of PostgreSQL by an
+  advisory lock. [Decision 0084](archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md) lets the
+  runners of Cluster share one database under the shards' locks. So `launchWith` skips the hold for a runner
+  (`src/runtime.ts:945`, "a shard's lock takes the place of the database's").
+- **The premise that fell.** The hold kept off every second runtime, whatever its kind. A shard's lock keeps off
+  only another runner of Cluster. A runtime of one process takes no shard's lock, and a runner takes no part of the
+  hold. So a runtime of one process and a runner of Cluster are not refused on one database. Decision 0028's "one
+  process is the only writer" falls with it: the runtime of one process writes its row blindly
+  (`UPDATE effecttea_entities ... WHERE name = ... AND id = ...`, `src/storage/entities.ts:259` and `:269`), from
+  the machine it holds. Decision 0075's "two programs of one name never run in one process" falls too, since the
+  two runtimes each deploy the name.
+- **The sequence.** A runner of the runtime on Cluster runs on a client, and deploys `Tally`. A runtime of one
+  process is launched on the same client, with the runner's partitions of the log. Its `hold` finds the client in no
+  `held` set, since the runner's launch never added it (`src/storage/tables.ts:49` and `:66`). It takes SQLite's
+  exclusive mode on the connection both share, and deploys `Tally` too. The entity `one` is created at 0 through the
+  runner. The runtime of one process adds 1, reads the row, and holds the machine. The runner adds 10: its `settle`
+  sees the count of steps moved, crashes its own machine, loads the row, and stores 11. The runtime of one process
+  adds 100 to the machine it holds, at 1, and stores 101. The step of 10 is lost, and nobody is told.
+- **Reproduced** by `FAILING: a runtime of one process launched on the client of a runner of the runtime on Cluster
+  dies, as a second runtime on one database does`, in `src/cluster.test.ts`, at commit `6bd4222`. The launch is not
+  refused, and the tally stores 101 of 111. Run: `bun test src/cluster.test.ts -t "FAILING: a runtime of one process"`.
+- **The other cases, only reasoned.** A runner launched on a client that a runtime of one process already holds is
+  not refused either, since a runner's launch reads no `held` set. On SQLite, two processes are kept apart all the
+  same, in WAL mode: a runner keeps the file open, so the exclusive mode of the other's launch is refused. On a
+  server of PostgreSQL nothing keeps them apart: a runner never takes the advisory lock `7465616`, so a runtime of
+  one process takes it beside the runners. Today every step of a runner on PostgreSQL dies under Cluster's advisory
+  locks ([decision 0175](archive/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md)).
+  With `shardLockDisableAdvisory`, Cluster writes rows of `cluster_locks`, a runner's steps pass `leased`, and the
+  sequence above runs across processes. No server ran here.
+- **Where a fix could begin.** A runner's launch takes the part of the hold that a shard's lock does not replace. It
+  adds the client to `held`, and on PostgreSQL takes the advisory lock in shared mode
+  (`pg_try_advisory_lock_shared`), where a runtime of one process takes it exclusive. A runtime of one process is
+  then refused beside a runner, and the runners still share the database. It is of family C of the step of bugs: a
+  rule of one process that holds otherwise on Cluster.
+
+### Suspects ruled out
+
+- 0003 and 0039 against 0195: the renames change no rule. The prefix of the singletons, which 0195 fixes, is no
+  word of 0003's or 0039's.
+- 0028 against 0007, a runner that holds a machine another runner wrote past: `settle` compares the count of steps
+  stored with the one the machine holds, and crashes a machine it cannot settle (`src/runtime/doors.ts:64-84`,
+  decision 0161). A runtime of one process does not, which is finding 1.
+- 0028 and 0084 against 0019: pinning Effect and the reasons against a fence of the runtime's own add no condition
+  that 0019 does not give. The guard that 0175 added reads Cluster's columns, and 0175 says so of itself.
+- 0030 against 0007, on PostgreSQL: the state, the projection and the messages are `TEXT` on both databases
+  (`src/storage/tables.ts`), and `JSON.stringify` escapes U+0000 and a lone surrogate. Only the indexes are cast to
+  `jsonb`, and the machine refuses an index that is no text a database holds (`src/machine.ts:280`).
+- 0038 against 0007, on a pool of PostgreSQL: a `seq` is drawn by an upsert of the partition's head, which holds
+  the head's row until the commit, and the rows of the log are written after it (`src/storage/entities.ts:407-440`).
+  So within a partition the second step waits, draws the next `seq`, and commits after the first.
+- 0038 and 0057 against 0052, after a deploy: the encodings, the work and the projections are kept by program or by
+  codec, then by value (`src/machine.ts:179-280`). A new program computes the projection of the state before its
+  first step again, so a deploy publishes nothing of itself, as 0038 says.
+- 0057 against 0052, a request built twice: `requestKey` keeps the text by codec and by request object, and two
+  objects that encode alike give one text.
+- 0064 against 0054: every place a program now enters checks it: `deploy`, `rehearse`, a rehearsal's `deploy` and
+  `check`. `send` and `create` of `Entities` take the program deployed under the receiver's name, by `deployedAs`,
+  and not the object an operation gives.
+- 0075 against 0054: `deploy` checks the program before it claims the name, so a program refused claims nothing
+  (`src/runtime.ts:1062-1075`).
+- 0073 against 0055 and 0193: `launchWith` reads `Probe` once, on one process and on Cluster, and no entry gives it.
+  A user who writes its key could provide one, which area 12 ruled out.
+- 0081 against 0007, a step whose commit fails or whose runner loses the shard: the machine is replaced only once
+  `settle` sees the count of the commit, and a step that died is delivered again from the state before it.
+
+### Noticed, not checked
+
+- **0081 against 0007: the runtime's tables and Cluster's on one client.** 0081 says the step's writes and Cluster's
+  reply commit together because they sit "on one `SqlClient`". Nothing checks it. Cluster opens the transaction of a
+  `WithTransaction` request on the client of its `MessageStorage` (`storage.withTransaction`,
+  `cluster/internal/entityManager.ts:878` of Effect). The door's step writes on the client the launcher gave the
+  runtime (`register` of `src/cluster.ts`). A client joins only its own transaction, since each client has a
+  `TransactionConnection` of its own id (`sql/SqlClient.ts:328` and `:866` of Effect). So a launcher that builds
+  `SqlMessageStorage` on a client of its own commits a step and its reply apart. On two databases, a crash between
+  the two commits applies the message twice or loses the state, as 0007 says. On one SQLite file, the step waits for
+  the file's lock that Cluster's transaction holds, and dies at the busy timeout. It is read in the source and not
+  run. A test would build a runner whose `SqlMessageStorage` has a client of its own on another file, and kill the
+  process between the two commits.
+
+### Not read whole
+
+None. Every note of the list and every note of the area in the table was read whole, with the code that keeps it.
