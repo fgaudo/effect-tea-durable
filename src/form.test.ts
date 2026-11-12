@@ -714,6 +714,28 @@ describe('the form of the workflow', () => {
     expect(scripts['test:slow']).toBe('SCHEDULES=all bun test src/cluster.test.ts examples/server/server.test.ts')
     expect(readFileSync(join(root, 'bunfig.toml'), 'utf8')).toContain('pathIgnorePatterns = ["spikes/**"]')
   })
+
+  // Decision 0250 cut the cases a test samples under `bun test`, the property of the fixtures from 30 to 8
+  // (decision 0212 says 30), the dialects' property from 40 to 8 and the queries' from 20 to 8, and said the release
+  // runs every case it ran before. The job of PostgreSQL runs `test:postgres` with no `SCHEDULES`, so the server runs
+  // the sample, and the release runs on PGlite, with no server. So the cases past the sample, which the job ran on a
+  // server before decision 0250, run on no server, where a pool shows what PGlite hides (decision 0222).
+  test('FAILING: a job runs on a server of PostgreSQL every case of the files of test:postgres, as the release runs them on PGlite', () => {
+    const root = join(import.meta.dir, '..')
+    const scripts = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> })
+      .scripts
+    const jobs = Object.values((workflowOfTheRepository() as { jobs: object }).jobs) as ReadonlyArray<
+      { steps: ReadonlyArray<{ run?: string; env?: Record<string, string> }> }
+    >
+    const whole = jobs.some((job) =>
+      job.steps.some((step) =>
+        step.run !== undefined && step.env?.['POSTGRES_URL'] !== undefined
+        && (step.run.includes('test:postgres') && scripts['test:postgres']!.startsWith('SCHEDULES=all ')
+          || step.env['SCHEDULES'] === 'all')
+      )
+    )
+    expect(whole).toBe(true)
+  })
 })
 
 describe('the check of the form', () => {

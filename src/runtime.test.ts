@@ -5000,6 +5000,34 @@ describe('a database held by one runtime', () => {
       )
     })).pipe(Effect.provide(TestClock.layer()))))
 
+  // Decision 0267 holds a database in memory by its client alone, since no other connection opens it. A URI of
+  // SQLite with `mode=memory&cache=shared` names one database in memory that every client of the process opens, and
+  // `pragma_database_list` gives no file for it. So a second runtime on another client is not refused, and loads the
+  // entities the first holds in memory (decision 0080).
+  test('FAILING: a second runtime on another client of a database in memory that clients share dies as it launches', () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const filename = `file:effecttea-shared-${Date.now()}?mode=memory&cache=shared`
+      const shared = Effect.map(
+        Effect.flatMap(Effect.scope, (scope) =>
+          Scope.provide(Layer.build(SqliteClient.layer({ filename, busyTimeout: 0 })), scope)),
+        (context) => Context.get(context, SqlClient.SqlClient),
+      )
+      const first = yield* shared
+      const second = yield* shared
+      yield* first`CREATE TABLE effecttea_seen (x INTEGER)`
+      // The two clients open one database: the second reads the table the first made.
+      expect(yield* second`SELECT count(*) AS n FROM effecttea_seen`).toEqual([{ n: 0 }])
+      yield* Effect.provideService(
+        process({}, () =>
+          Effect.gen(function*() {
+            const exit = yield* Effect.exit(Effect.provideService(process({}, () => Effect.void), SqlClient.SqlClient, second))
+            expect(reasonOf(exit)).toBe(held)
+          })),
+        SqlClient.SqlClient,
+        first,
+      )
+    })).pipe(Effect.provide(TestClock.layer()))))
+
   // A launch creates the tables once it holds the database, so a launch refused leaves a new file as it was
   // (decision 0191). Created before the hold, the tables would be in the file the refused launch left.
   test('a launch creates the tables of a new database, and a launch refused creates none', () => {
