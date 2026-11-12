@@ -142,7 +142,7 @@ export const projectionsOf = <T extends Types>(held: Held<T>): Pick<
   Storage<T>,
   'indexed' | 'query' | 'count' | 'sum' | 'countBy' | 'projected' | 'reindex'
 > => {
-  const { program, sql, name, version, dialect, rows, up, snapshot } = held
+  const { program, sql, name, version, dialect, rows, up, snapshot, lockingTheCondition } = held
   const { state, projection } = held.codecs
 
   /**
@@ -506,14 +506,15 @@ export const projectionsOf = <T extends Types>(held: Held<T>): Pick<
         }
         // The row is written only if the state it was computed from is still the one stored, in one statement
         // (decision 0070). A step that committed since wrote its own row, which this would replace with a
-        // projection the entity has moved past.
+        // projection the entity has moved past. The entity's row is locked, so that on a pool the guard is read
+        // again on the state a step committed while the statement waited (decision 9998).
         const rewritten = yield* rows('effecttea_projections', Rows.id)(sql`
           INSERT INTO effecttea_projections (name, id, projection, indexes, version)
           SELECT name, id, CAST(${JSON.stringify(shown.projection)} AS TEXT), CAST(${
           indexesText(shown.indexes)
         } AS TEXT), CAST(${version} AS INTEGER)
           FROM effecttea_entities WHERE name = ${name} AND id = ${held.id} AND state = ${held.state}
-            AND version = ${held.version}
+            AND version = ${held.version} ${lockingTheCondition}
           ON CONFLICT (name, id)
           DO UPDATE SET projection = excluded.projection, indexes = excluded.indexes, version = excluded.version
           RETURNING id
