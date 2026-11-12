@@ -58,8 +58,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     proposed to the maintainer before any code. Bugs 31 and 65 are fixed by
     [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), which the
     maintainer chose on 2026-11-12 after three opinions of a Fable 5.2 agent. Bug 37 is verified false by a reading,
-    and its verification found bug 92, reproduced, whose fix is proposed to the maintainer next. The part after it is
-    the bugs noticed after 37: 38, 40, 50, 51, 67 and 79, each verified first, as bug 31 was.
+    and its verification found bug 92, fixed by
+    [decision 0275](decisions/0275-on-cluster-a-doors-commit-tells-the-readings-itself.md), which the maintainer chose on
+    2026-11-12 after an opinion of a Fable 5.2 agent. Decision 0275 changes the runtime, so `bun run test:pins` and
+    `bun run test:release` run again before the step is taken. The part next is the bugs noticed after 37: 38, 40, 50, 51, 67 and 79, each verified first, as bug 31 was.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
     machine.
@@ -619,17 +621,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       keep. Its own send keeps the id again once answered, so only a second client interrupted in that send leaves the
       rows for ever, as bug 59 does. Nothing is lost. The [open question](open-questions.md#running) The rows of
       operators' events on Cluster.
-  92. **Reproduced: on Cluster, a crash between a door's commit and the loop's `Settle` tells no reading of the rows
-      the door committed.** A door's step leaves its machine uncommitted, and the loop's `Settle` tells the readings
-      once the commit is proved ([decision 0161](decisions/archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
-      `crash` of `src/runtime/loop.ts` drops `loaded.uncommitted` and tells nobody, so a reading of this runner that
-      waits, as a reader of `consume` with `wait: true`, waits for the row until another commit of its topic. Only a
-      commit of another runner wakes it, through the watcher, which reads nothing on PostgreSQL (bug 39). The
-      `test.failing` `a reading is told of the row a door committed, though its entity crashes before the loop settles
-      it`, of `src/runtime/readings.test.ts`, reproduces it, with the loop's `Settle` refused by the guard
-      ([decision 0175](decisions/archive/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md)). A shard let go before the
-      `Settle` crashes the entity the same way. The fix begins in `crash`. The
-      [open question](open-questions.md#storage-and-reading) A reader with no time that misses a commit.
+  92. Fixed by [decision 0275](decisions/0275-on-cluster-a-doors-commit-tells-the-readings-itself.md).
 
 - **A review of every note that changes another, for a premise the later note takes away.** A rule of an earlier
   note is safe under conditions, some never written, and a later note that changes or reuses the rule may take one

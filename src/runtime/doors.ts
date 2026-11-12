@@ -75,6 +75,8 @@ export const settle = <T extends Types>(p: Process, deployed: Deployment<T>, loa
       loaded.steps = uncommitted.steps
       if (before.stored.suspension !== null && uncommitted.machine.stored.suspension === null) wake(p, { name, id })
       for (const { event, written, outputs, span, counted } of uncommitted.transitions) {
+        // Told already by the commit's callback, unless the callback was lost: a reading told twice reads again, and
+        // finds its row (decision 0275).
         if (written !== null) tell(p.readings, name, written)
         yield* counted
         yield* observe(p, { name, id }, event)
@@ -258,7 +260,16 @@ export const finishIn = <T extends Types>(
       }
     } else {
       held.uncommitted = { machine: stepped.machine!, steps: stepped.steps, transitions: stepped.transitions, loads }
-      yield* p.sql.afterCommit(offer(p, held, { _tag: 'Settle' }))
+      // The readings are told by the commit itself, not by the loop's `Settle`, so that a crash of the entity before
+      // the `Settle` leaves no reading waiting for a row committed. A callback lost to a commit whose outcome is
+      // unknown leaves them to `settle`, which tells them again (decision 0275).
+      const { transitions } = stepped
+      yield* p.sql.afterCommit(Effect.andThen(
+        Effect.sync(() => {
+          for (const { written } of transitions) if (written !== null) tell(p.readings, entity.name, written)
+        }),
+        offer(p, held, { _tag: 'Settle' }),
+      ))
     }
   })
 

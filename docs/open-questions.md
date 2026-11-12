@@ -88,13 +88,18 @@ with a requirement that no example has yet.
     uninterruptibly after the `COMMIT`, as the JSDoc of `SqlClient` says at the version pinned. An activation on
     Cluster is uninterruptible.
 
-  The reading found bug 92: on Cluster, a crash between a door's commit and the loop's `Settle` drops the machine
-  uncommitted and tells nobody, as a `test.failing` of `src/runtime/readings.test.ts` reproduces. On Cluster another
-  runner's commit is learned from `PRAGMA data_version`
-  ([decision 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)),
-  which reads nothing on PostgreSQL and may fail to be read, which is bug 39, not checked. They would be decided by:
-  - whether `crash` tells the readings of the topics the uncommitted machine wrote, at the cost of a reading woken
-    for a step that rolled back, which reads again and waits again;
+  The reading found bug 92, a crash between a door's commit and the loop's `Settle` that told no reading, which
+  [decision 0275](decisions/0275-on-cluster-a-doors-commit-tells-the-readings-itself.md) fixes: the commit's callback
+  tells the readings. Two cases are left:
+  - A `COMMIT` whose outcome is unknown loses its callbacks, as the JSDoc of `afterCommit` says. An entity that crashes
+    then before any `settle` leaves the row, which may be committed, with no reading of this runner told. No test
+    reaches an unknown outcome yet.
+  - On Cluster another runner's commit is learned from `PRAGMA data_version`
+    ([decision 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)),
+    which reads nothing on PostgreSQL and may fail to be read, which is bug 39, not checked.
+
+  They would be decided by:
+  - a test of a `COMMIT` whose outcome is unknown, as a connection lost during the `COMMIT`, followed by a crash;
   - whether `wait: true` keeps a bound of its own, as the timed wait of 0142 did.
 - **A sum at the edge of the largest double.** A sum is refused past the largest double, alike on both dialects
   ([decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md)). SQLite adds
