@@ -577,3 +577,46 @@ describe('the migrations of createTables (decision 0216)', () => {
       expect(yield* sql`SELECT migration_id FROM effecttea_migrations`).toEqual([{ migration_id: 1 }])
     }))
 })
+
+describe('the publications of steps pruned by two transactions at once (decisions 0154, 0245)', () => {
+  // Two batches of two prunes at once may drop different rows of one publication: two snapshots that differ by a
+  // deploy that declares a consumer and by an ack select different rows. Each statement that drops rows of the
+  // outbox runs the trigger, which drops a publication no other row names. The deletes below are what the two
+  // batches' statements do, the second while the first transaction is open, on two publications in opposite orders.
+  // No pair of calls of the test of a contract reaches it, since two prunes of one view select the same rows.
+  onServer('FAILING: a publication goes with the last row that names it, though two transactions drop its rows at once', (url, sql) =>
+    Effect.gen(function*() {
+      yield* on(sql)(createTables)
+      const other = yield* connect(url)
+      const store = storage(ranked, sql, 1)
+      yield* transaction(sql, store.write('a', created(), 0))
+      for (const message of ['one', 'two']) {
+        yield* transaction(sql, store.write('a', written({
+          entity: { state: { last: message }, creation, flags: null },
+          shown: { projection: '1', indexes: { rank: 1 } },
+          published: { kind: 'Inbound', message, projection: '1', topics: ['x', 'y'] },
+        }), 0))
+      }
+      const dropped = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const drop = (client: SqlClient.SqlClient, first: string, second: string, signal: boolean) =>
+        Effect.forkChild(transaction(client, Effect.gen(function*() {
+          yield* client`
+            DELETE FROM effecttea_outbox
+            WHERE name = 'Ranked' AND ((seq = 1 AND topic = ${first}) OR (seq = 2 AND topic = ${second}))
+          `
+          if (signal) yield* Deferred.succeed(dropped, undefined)
+          yield* Deferred.await(release)
+        })))
+      const first = yield* drop(sql, 'x', 'y', true)
+      yield* Deferred.await(dropped)
+      const second = yield* drop(other, 'y', 'x', false)
+      // The second statement runs while the first transaction is open.
+      yield* Effect.sleep('200 millis')
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(first)
+      yield* Fiber.join(second)
+      expect(yield* sql`SELECT seq FROM effecttea_outbox WHERE name = 'Ranked'`).toEqual([])
+      expect(yield* sql`SELECT seq FROM effecttea_publications WHERE name = 'Ranked'`).toEqual([])
+    }))
+})
