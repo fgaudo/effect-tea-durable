@@ -66,12 +66,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     opinion of a Fable 5.2 agent. Bug 40 is fixed by
     [decision 0277](decisions/0277-a-sum-is-refused-by-a-count-of-its-magnitudes-both-dialects-make-alike.md), which the maintainer chose on 2026-11-12 after an
     opinion of a Fable 5.2 agent. Its test of `src/storage.test.ts` runs on PostgreSQL first in the job of PostgreSQL
-    of the push of `main` that takes it. Bug 50 is seen by a second test of `spikes/full-volume.test.ts`, on the
-    CI's volume. The maintainer chose on 2026-11-12, after an opinion of a Fable 5.2 agent, that its fix is the
-    procedure of decision 0223 with the callers stopped before the room is freed, in a note that changes 0223. Before
-    the note, the spike checks on the CI's volume that the procedure holds with the callers stopped, and what the
-    steps the runtime takes of its own, as a timer due, take of the room freed. The bugs noticed after it, 51, 67 and 79, are each
-    verified first, as bug 31 was.
+    of the push of `main` that takes it. Bug 50 is fixed by
+    [decision 0278](decisions/0278-on-a-full-volume-the-callers-stop-before-room-is-freed.md), which the maintainer chose on 2026-11-12 after an
+    opinion of a Fable 5.2 agent. The part next is the bugs noticed after 50: 51, 67 and 79, each verified first, as
+    bug 31 was, beginning with bug 51.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
     machine.
@@ -328,14 +326,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)). Where
       PostgreSQL ends the step's transaction, the entity crashes. The
       [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its snapshot.
-  50. **Seen: on a full volume, the room an operator frees is taken by the steps the callers retry, before the
-      forget and the prune run.** The procedure of
-      [decision 0223](decisions/0223-a-disk-that-is-really-full.md) frees room, then forgets and prunes. The test
-      `the room freed on a full volume, beside the steps callers retry`, in `spikes/full-volume.test.ts`, saw it in
-      the CI's job `postgres` of the push of `2ed276b`: three callers retrying took the 1 MB freed with 95 steps
-      within a second, and the prune then failed with `database or disk is full`, though the forget committed. The
-      prune deletes 256 rows a batch, about 4 MB of pages here, and the steps need 16 KB each. The fix is a choice
-      the [open question](open-questions.md#storage-and-reading) A full volume beside the steps lists.
+  50. **Fixed by [decision 0278](decisions/0278-on-a-full-volume-the-callers-stop-before-room-is-freed.md)**, under which the callers stop before an operator frees room on a full volume.
   51. **Noticed, not checked: `createTables` called by an operator inside a transaction of their own, at `REPEATABLE
       READ` with a query before it, locks after its snapshot.**
       [Decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md) rests on the

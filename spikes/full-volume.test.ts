@@ -1,8 +1,8 @@
 /**
- * What the runtime does once the disk under its database is really full, for decision 0223. The database is a file of
- * SQLite in WAL mode, the client's default, on a volume of fixed size that `FULL_VOLUME` names: the CI on Linux
- * mounts one, and the spike is skipped without it. Unlike `spikes/full-database.test.ts`, nothing caps the file: the
- * WAL, the database and the volume fill together.
+ * What the runtime does once the disk under its database is really full, for decisions 0223 and 0278. The database
+ * is a file of SQLite in WAL mode, the client's default, on a volume of fixed size that `FULL_VOLUME` names: the CI
+ * on Linux mounts one, and the spike is skipped without it. Unlike `spikes/full-database.test.ts`, nothing caps the
+ * file: the WAL, the database and the volume fill together.
  *
  * A first process declares two consumers, one that reads once and never acks and one that acks every row, and sends
  * until a step cannot commit. It looks at what still answers. A second process deploys without the consumer that
@@ -12,8 +12,9 @@
  * The prune deletes in batches, each a transaction of its own (decision 0245). Its first batch fails on the full
  * volume as one prune did, and once room is freed the batches together take about as much of it as one prune took.
  *
- * A second test, for bug 50 of the roadmap, fills the volume again, and frees the room while callers retry their
- * steps. The operator forgets and prunes a second after the room is freed, and the callers go on beside the prune.
+ * A second test, for bug 50 of the roadmap and decision 0278, fills the volume again, and frees the room while
+ * callers retry their steps. The operator forgets and prunes a second after the room is freed, and the callers go on
+ * beside the prune.
  * The callers' steps take the room freed before the forget, so the prune fails as on the full volume. The callers
  * then stop, more room is freed, and the forget and the prune commit.
  *
@@ -94,7 +95,9 @@ const filling = (filename: string, armed: ReadonlyArray<string> = []) =>
     console.log('journal mode:', mode?.journal_mode)
     const handle = yield* deployed(['stalled', 'current'])
     const sendOnce = sending(handle)
-    for (const id of ['n1', 'n2', 'n3']) yield* handle.create(id, { flags: { armed: false }, requestId: `c-${id}`, sender })
+    for (const id of ['n1', 'n2', 'n3']) {
+      yield* handle.create(id, { flags: { armed: false }, requestId: `c-${id}`, sender })
+    }
     for (const id of armed) yield* handle.create(id, { flags: { armed: true }, requestId: `c-${id}`, sender })
     // `stalled` reads once and never acks, so it holds every row of its topic.
     yield* handle.fetch('projection', 'stalled', 1)

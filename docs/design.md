@@ -1025,10 +1025,14 @@ commit again ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-ar
 
 On a disk that is really full, a file of SQLite in WAL mode still commits a forget, and not a prune of many rows,
 which writes a page of the WAL for each page it changes. A prune in batches needs about as much room as one prune,
-since its first batch fails on the full volume too. The operator frees room on the volume first, about a
-twentieth of what the stalled consumer holds, then forgets and prunes. The runtime keeps no room of its own: it does
-not hold the volume, and a file of reserved room is the operator's to keep and drop
-([decision 0223](decisions/0223-a-disk-that-is-really-full.md), [decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)).
+since its first batch fails on the full volume too. The operator stops the callers first, since the steps they
+retry take the room freed within a second. The operator then frees room on the volume, about a twentieth of what the
+stalled consumer holds, and room for the steps the runtime takes of its own: the timers due, the operations stored
+and the steps a crash took out. Then the operator deploys without the consumer, forgets it, prunes, and lets the
+callers in again. The runtime keeps no room of its own: it does not hold the volume, and a file of reserved room is
+the operator's to keep and drop ([decision 0223](decisions/0223-a-disk-that-is-really-full.md),
+[decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md),
+[decision 0278](decisions/0278-on-a-full-volume-the-callers-stop-before-room-is-freed.md)).
 
 ### The sweep
 

@@ -5,7 +5,9 @@ question of a disk that is really full, which
 [decision 0152](archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md) left, and says how that note's
 forget and prune hold in WAL mode. Changed by
 [decision 0245](0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md): a prune deletes in batches, which
-fail on the full volume as one prune did, so the procedure stands.
+fail on the full volume as one prune did, so the procedure stands. Changed by
+[decision 0278](0278-on-a-full-volume-the-callers-stop-before-room-is-freed.md): the operator stops the callers before freeing room, since the steps they retry take the
+room freed, and frees room for the steps the runtime takes of its own too.
 
 ## Context
 
