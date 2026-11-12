@@ -2218,6 +2218,18 @@ describe('renaming a program (decision 0156)', () => {
         expect(yield* provided(standingOf('Joined'))).toEqual({ version: 4, renamedTo: null })
       }).pipe(Effect.orDie)))
 
+  // Premise review, second reading, of Versions and deploys. A caller's creation that `init` rejects stores no entity
+  // and no reply (decision 0182), and its client keeps its Cluster id under the receiver (decision 0171). A rename moves
+  // only a name that holds a row of the tables `holds` reads (decision 0156), and the sweep and `expire` of the new
+  // name delete by the new name (decision 0245).
+  test('FAILING: on Cluster, a rename moves the ids a caller kept under an old name that holds nothing else', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        yield* sql`INSERT INTO effecttea_given_requests (request_id, name, id, until) VALUES (7, 'Asker', 'a', 1)`
+        yield* rename(sql, [['Asker', 'Buyer']], true)
+        expect(yield* sql`SELECT name FROM effecttea_given_requests WHERE request_id = 7`).toEqual([{ name: 'Buyer' }])
+      }).pipe(Effect.orDie)))
+
   test('on Cluster, a rename from a version newer than the new name runs dies, and moves nothing (decision 0176)', () =>
     database((sql) =>
       Effect.gen(function*() {

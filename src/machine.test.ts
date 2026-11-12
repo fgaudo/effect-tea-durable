@@ -2585,6 +2585,26 @@ describe('keys with a parameter', () => {
     expect(flipped?.written?.keys).toEqual([])
   })
 
+  // Premise review, second reading, of Versions and deploys. Decision 0036 lets a deploy change the shape of the
+  // work under way, through a migration of each kind a program's schemas write. Decision 0132 stores a key's parameter
+  // as its schema encodes it, and `Migration` has no kind that reads it: the runtime gives the activation the stored
+  // parameter as version 1 wrote it, as this `Restart` is given it.
+  test('FAILING: a deploy whose key parameter encodes otherwise keeps the operation under way under its key', () => {
+    const { machine } = run([send('+a')])
+    const boxed = {
+      ...lines,
+      keys: { ...lines.keys, charge: Schema.Struct({ line: Schema.String }) },
+      work: (state: L['state']) => ({
+        ...lines.work(state),
+        charge: state.lines.map((line) => [{ line }, { _tag: 'Charge', line }] as const),
+      }),
+    } as unknown as Program<L>
+    const restarted = Machine.step(boxed, machine, { _tag: 'Restart' })
+    expect(restarted.machine.stored.suspension).toBeNull()
+    expect(Object.values(restarted.machine.stored.keys).map(({ key, incarnation }) => [key.name, incarnation]))
+      .toContainEqual(['charge', 1])
+  })
+
   test('a parameter its schema refuses, two that encode alike, or no list under such a key is a defect', () => {
     const work = { _tag: 'Charge', line: 'a' } as const
     const broken: ReadonlyArray<readonly [() => unknown, string]> = [
