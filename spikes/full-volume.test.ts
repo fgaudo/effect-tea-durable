@@ -51,7 +51,7 @@ const notes = program({
   projection: Schema.Struct({ count: Schema.Int, last: Schema.String }),
 })({
   name: 'Notes',
-  keys: [],
+  keys: ['tick'],
   // An armed entity's timer is due an hour after its creation, which only a clock ahead reaches.
   init: ({ armed }, at) => ({ count: 0, at: armed ? DateTime.toEpochMillis(at) + 3_600_000 : null }),
   update: (message) => (state) => ({ count: state.count + 1, at: message._tag === 'Tick' ? null : state.at }),
