@@ -7287,3 +7287,176 @@ changes. The notes marked "in part" or "not at all" are coupled to the area by t
 messages, replies, deploys and Cluster that their own areas read. The list holds 144 notes, past the thirty a session
 reads whole, so the reading went to the notes of the area, the notes that change them and the later notes of the
 brief.
+
+## 2026-11-12: premise review, second reading, of The rehearsal and testing
+
+The session read area 10 of the section Messages, requests and replies, by the brief of
+[`.claude/skills/premise-review/SKILL.md`](../../.claude/skills/premise-review/SKILL.md), and the later notes 0262, 0266,
+0269, 0276 and 0281 against the notes they cite. It read none of the earlier reports of the area. Its tests are on the
+branch `claude/premise-review-2-area-10-a27203`, cut from `main` at `2e17087`.
+
+### The notes read
+
+The list is the area, the notes the index lists as changing one of them, the notes that cite one of them by
+`grep -rlwE`, and the notes `bun scripts/premise-pairs.ts --list` couples to one of them in a declaration of `src/`.
+The code read is `src/rehearse.ts` whole, and `receive`, `requestKey`, `messageKey`, `replied`, `checkWork`,
+`workUnder` and the reply's row of a step in `src/machine.ts`. It also includes `readBack` and `Migration` of
+`src/program.ts`, `projectionViolations` of `src/testing.ts`, and the map of statuses of `examples/server/server.ts`.
+
+| Note | Role | How it was read |
+| ---- | ---- | --------------- |
+| 0131 | of the area | whole, with `src/rehearse.ts` |
+| 0183 | of the area, changes 0131 | whole, with `deployedAs` and `entitiesOf` |
+| 0186 | of the area, changes 0131 | whole, with `given`, `underWay` and `pending` |
+| 0187 | of the area, changes 0131 and 0014 | whole, with `advance`, `dueBy` and `fireOf` |
+| 0188 | of the area | whole; a rule of types, which the compiler holds |
+| 0189 | of the area, changes 0131 | whole, with `Outside` |
+| 0190 | of the area | whole, with the map of `examples/server/server.ts` |
+| 0200 | of the area, changes 0131 | whole, with `send`, `receive` and `keep` |
+| 0201 | of the area, changes 0010 | whole; a rule of types, which the compiler holds |
+| 0211 | of the area, changes 0131 | whole, with `projection` and `readBack` |
+| 0262 | later note of the brief, changes 0131 | whole, with `sendFrom` and `keep` |
+| 0266 | later note of the brief, changes 0187 | whole, with `advance` and `checkWork` |
+| 0269 | later note of the brief, changes 0200 | whole, with `receive` of the machine and of the world |
+| 0276 | later note of the brief, holds the rule of 0211 | whole, with `projectionViolations` |
+| 0281 | later note of the brief, changes 0187 and 0266 | whole, with `startsAt` and `advance` |
+| 0214 | cites 0211, and is coupled to it at `readBack` | whole, with `replied` of `src/machine.ts` |
+| 0212 | cites 0211 | in part: the status and the decision |
+| 0248 | the brief's example | whole |
+| 0009 | cites 0131 in its status | in part: the status |
+| 0010 | cites 0201 in its status | in part: the status |
+| 0014 | cites 0187 in its status | in part: the status |
+| 0021 | coupled to 0200 at `makeWorld.keep` | in part: the rule as 0131 and 0262 state it, with its code in `keep` |
+| 0033 | coupled to 0186 and 0200 at `Acts` | not at all: the comment of `Acts` states its rule |
+| 0040 | coupled to 0211 at `makeWorld.memberOf` | in part: the rule, as `receive` and `send` keep it |
+| 0054 | coupled to 0131 and 0187 at `World` and `Rehearsal` | in part: the rule, where `checkProgram` is called |
+| 0059 | coupled to 0186 and 0200 at `Acts` | not at all: the comment of `requestKey` states its rule |
+| 0075 | coupled to 0131 and 0187 at `World` | in part: the rule as 0131 states it |
+| 0132 | coupled to 0186 and 0200 at `Acts` | in part: the rule of incarnations as 0262 states it |
+| 0182 | coupled to 0131 and 0187 at `World` | in part: the rule, as `born` keeps it |
+| 0204 | coupled to 0211 at `makeWorld.memberOf` | in part: the rule, as `send` keeps it |
+| 0245 | coupled to 0131, 0186, 0187 and 0200 at `World` and `Acts` | in part: the passages on `keep` and on a sender left out |
+
+### Findings
+
+1. **Reproduced: a caller's retry in a rehearsal after a deploy that changes how the message encodes is answered
+   `Reused`, where the runtime gives the stored reply.** The two notes are
+   [decision 0200](0200-a-rehearsal-sends-under-a-request-id-the-test-names.md), whose reply is kept for the whole
+   rehearsal, a deploy included, and
+   [decision 0269](0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md), which compares a retry with
+   what the request carried. Decision 0269 has the runtime read what was carried through the migrations of `inbound`
+   from the version that wrote it. The rehearsal keeps what was carried as the version before encoded it, in `keep`
+   at `src/rehearse.ts:295`, and the machine compares that text with the retry's at `src/machine.ts:975`. So decision
+   0200's rule rests on a premise that decision 0269 took away: what the rehearsal keeps of a request reads alike at
+   every version. The sequence is version 1 taking `Spend { n: 3 }` under the request id `r`, a deploy of a version 2
+   that encodes `n` as text with a migration of `inbound`, and the same message again under `r`. The runtime reads the
+   stored `{ n: 3 }` as `{ n: "3" }`, finds the retry's text, and gives `Accepted`, as `a retry after a deploy is
+   compared with what the caller's request carried, read through the migrations` of `src/runtime.test.ts` tests. The
+   rehearsal gives `Reused`. The other way round, the message as version 1 sent it is given the stored reply by a
+   rehearsal and `Reused` by the runtime. The test `FAILING: a retry after a deploy that encodes the message otherwise
+   is given the stored reply, as the runtime gives it`, in `src/rehearse.test.ts`, reproduces it. It has the form of
+   bug 5, a text of the rehearsal written by the version before, under another piece of the request: what it carried,
+   and not its sender. A fix could begin at `keep` of `src/rehearse.ts`. It would keep the version that wrote
+   `carried`, and read it through the migrations of `inbound` of the program deployed before `receive` compares it,
+   as `src/storage/entities.ts` reads a stored reply.
+2. **Reproduced: a reply a rehearsal keeps across a deploy gives the reason as the version before wrote it, where the
+   runtime reads it through the migrations of `rejection`.** The two notes are decision 0200, which keeps a named
+   request's reply across a deploy "as the runtime keeps one", and
+   [decision 0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md), which keeps an operation's
+   reply while the work that asked holds, across a deploy of the receiver too. The runtime reads a stored reason
+   through the migrations from its version
+   ([decisions 0069](archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md),
+   [0100](archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md)), as `a deploy reads the state, the work
+   under way and the rows through the migrations` of `src/runtime.test.ts` tests.
+   [Decision 0214](0214-a-rejections-reason-is-given-as-a-caller-reads-it.md) holds that a first reply and a retry
+   give the same reason in a rehearsal, which it read in `src/rehearse.ts`. That holds within one version, and fails
+   across a deploy. The rehearsal keeps the reply as a value in `Kept`, at `src/rehearse.ts:296` and `:301`, and
+   gives it back as it is. Two sequences reproduce it, each by a test of `src/rehearse.test.ts`.
+   - A caller's named request is rejected with `{ limit: 10 }`, a deploy's migration of `rejection` multiplies the
+     limit by 100, and the caller retries. The runtime gives `{ limit: 1000 }`, and the rehearsal `{ limit: 10 }`. The
+     test is `FAILING: a retry after a deploy whose migration reads the reason is given the reason as the migration
+     writes it`.
+   - The inventory rejects a booking's hold with `SoldOut`, the booking's run crashes, a `world.deploy` gives an
+     inventory whose migration reads `SoldOut` as `SalesClosed`, and the run goes again. The runtime gives the run
+     `SalesClosed`, and the world gives it `SoldOut`. The test is `FAILING: a run after a crash and a deploy of the
+     receiver is given the stored reason as the migration reads it`.
+
+   A `Rejected` of `init` that the world keeps in `answers`
+   ([decision 0253](0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)) is kept the same
+   way, which was read and not run. A fix could begin at `Kept` of `src/rehearse.ts`. It would keep the encoded reason
+   with its version, and read it through the migrations of the program deployed when a retry or a run is given it.
+   `docs/design.md` says under Rehearsing that a rehearsed deploy exercises no migration, of the state and of the
+   projection. Neither the design nor decision 0200 says that a retry or a run across a deploy is given a reason no
+   caller of the runtime reads, which decision 0211 refused for the projection.
+
+The three tests were run on the branch, and each fails at its assertion, not at its setup: `Reused` for `Accepted`,
+`{ limit: 10 }` for `{ limit: 1000 }`, and `SoldOut` for `SalesClosed`. `bun run typecheck` passes with them. No test
+of concurrency was needed, since a rehearsal runs on one fiber with no scheduler.
+
+### Leads
+
+None, beyond the case of `answers` that finding 2 names.
+
+### Suspects ruled out
+
+- A `sendFrom` under the address of an entity of the world that shares the entity's request
+  ([decision 0262](0262-a-sendfrom-stands-for-a-run-no-entity-draws.md)): ruled out by the tests of `a sendFrom under
+  the address of an entity of the world` of `src/rehearse.test.ts`, and by `every incarnation an entity draws is 1 or
+  more` of `src/machine.test.ts`, which pass. A kept reply of a `sendFrom` asks under the key `rehearsal` at an
+  incarnation below 1, so no end of an entity's work deletes it. It costs memory alone, as decision 0262 says.
+- A drawn request id that meets a named one in a world of several entities. `named` is one set for the world, keyed by
+  `requestKey`, which holds the sender and the id and no receiver. The world keeps the replies by entity, so a name
+  shared by two entities only makes the draw skip an id. Ruled out by `gives a send without a request id no reply of a
+  named request, whatever id it draws` and `gives a named request no reply of a send drawn before it, whatever id that
+  send drew`, which pass.
+- A rehearsal's time between two milliseconds after decision 0281. `startsAt` refuses a start between two, `advance`
+  refuses a duration between two, and `fireOf` moves to a timer's time, which `checkWork` keeps whole. `workUnder`
+  runs `checkWork` wherever the machine computes the work: at the start, at a step and at an activation. Ruled out by
+  `fails on a duration or a start between two milliseconds, and a timer armed after whole microseconds fires` and `a
+  timer due at no whole millisecond is a defect`, which pass.
+- An `advance` of decision 0266 that never ends over a finite set of keys. `dueBy` gives no timer due after `until`,
+  and a key fires again at one time only with a later due time, in whole milliseconds. Ruled out by the tests of `time
+  that passes` and of `a repeating timer that catches up`, which pass. A chain of keys with parameters is the open
+  question A chain of keys that loops in a rehearsal.
+- The order of two timers due at one time ([decision 0187](0187-a-rehearsal-moves-time-by-a-duration.md)). `dueBy`
+  reads `entities` in the order of their creation, and a key's text is a JSON array, which no object of JavaScript
+  reorders as an integer. Ruled out by `fires the timers of two entities due at one time in the order the entities
+  were created`, which passes.
+- A tag that the map of a boundary of [decision 0190](0190-a-boundary-maps-each-answer-to-its-protocol.md) leaves out,
+  once decision 0269 added `Reused`. The map of `examples/server/server.ts` holds `Reused` under `satisfies`, and
+  `bun run typecheck` passes.
+- A projection that `projectionViolations` checks otherwise than a rehearsal gives it
+  ([decision 0211](0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md),
+  [decision 0276](0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md)). Both call `readBack` of
+  `src/program.ts` with the projection's schema of the program given. Ruled out by `gives allows the projection
+  decoded from its JSON, where -0 is 0` of `src/testing.test.ts` and `gives the projection as a caller reads it from
+  its JSON, -0 as 0` of `src/rehearse.test.ts`, which pass.
+- An operation's request in a world answered `Reused` after decision 0269. The machine compares what a request carried
+  for a caller's request alone, at `src/machine.ts:975` and `:986`, and `keep` stores `carried: null` for an
+  operation's reply. Ruled out by `answers a run after a crash that builds another message or other flags with the
+  first one's reply`, which passes.
+
+### Suspects not checked
+
+- After a deploy, a rehearsal's `projection` is the new version's `project(state)`, read back through its schema. The
+  runtime gives the row the version before wrote, read through the migrations of `projection`, until a step or
+  `reindex` writes the row again. `docs/design.md` says under Rehearsing that a rehearsed deploy exercises no
+  migration of the projection, so the difference is documented, and no test was run.
+
+### Where the code does otherwise than the note it cites
+
+- The comment of `send`, at `src/rehearse.ts:81`, says that the reply is kept across a deploy "as the runtime keeps
+  one sent with `keep: 'forever'`". The runtime reads that reply through the migrations, and the rehearsal does not,
+  as findings 1 and 2 show.
+- `docs/design.md`, under Rehearsing, says that `rehearse` reads back only the projection. The machine reads back a
+  rejection's reason too, in `replied` of `src/machine.ts`, as decision 0214 decides.
+
+### The notes not read whole
+
+The fifteen notes of the area and of the brief's later notes were read whole with their code, and so were 0214 and
+the example 0248. The notes 0009, 0010 and 0014 cite a note of the area in their status alone, and were read there.
+The notes 0021, 0033, 0040, 0054, 0059, 0075, 0132, 0182, 0204 and 0245 are coupled to the area only by
+`bun scripts/premise-pairs.ts --list`, through the long declarations `Acts` and `World` of `src/rehearse.ts`, whose
+comments cite every note a rehearsal keeps. Each holds a rule of messages, keys or deploys that its own area read, and
+each rule was read where the rehearsal keeps it. The note 0212 was read in its status and its decision, since it
+decides how a property derives its values, and no rule the rehearsal keeps.

@@ -16,6 +16,7 @@ import { order, type Sender } from './fixtures/order.ts'
 import {
   create,
   type Entities,
+  type Json,
   InvariantDefect,
   isTimer,
   operation,
@@ -672,6 +673,36 @@ describe('a world', () => {
         expect(yield* held.run('hold')).toBe('Delivered')
         expect(told).toEqual(['Created/Accepted/Rejected', 'Created/Accepted/Rejected'])
         expect((yield* seats.state).held).toEqual({ 'booking-1': 2 })
+      }),
+    ))
+  })
+
+  // The world keeps an operation's reply while the work that asked holds (decision 0131), and the runtime reads its
+  // reason through the receiver's migrations of `rejection` from the version that wrote it. A world keeps the value
+  // the version before gave, so a run after a crash and a deploy of the receiver is given a reason no runtime gives.
+  test('FAILING: a run after a crash and a deploy of the receiver is given the stored reason as the migration reads it', () => {
+    const told: Array<string> = []
+    const holding = holdingBy(operation.atLeastOnce(({ event, seats }) =>
+      Effect.gen(function*() {
+        const reply = yield* send(inventory, event, { _tag: 'HoldRequested', seats }, 'hold')
+        told.push(reply._tag === 'Rejected' ? String(reply.reason) : reply._tag)
+        return { _tag: 'SeatsUnavailable', reason: 'SoldOut' } as const
+      })
+    ))
+    // Version 2 reads a `SoldOut` version 1 stored as `SalesClosed`.
+    const renamed: typeof inventory = {
+      ...inventory,
+      migrations: [{ rejection: (json: Json) => (json === 'SoldOut' ? 'SalesClosed' : json) }],
+    }
+    return Effect.runPromise(rehearse.together(
+      at,
+      Effect.fnUntraced(function*(world) {
+        yield* world.create(inventory, 'concert-1', { capacity: 1 })
+        const held = yield* world.create(holding, 'booking-1', flags)
+        yield* held.run('hold', { crash: true })
+        yield* world.deploy(renamed)
+        yield* held.run('hold')
+        expect(told).toEqual(['SoldOut', 'SalesClosed'])
       }),
     ))
   })
@@ -1485,4 +1516,62 @@ describe('a repeating timer that catches up', () => {
         "2026-10-30T15:00:00.000Z, no later than its last firing's 2026-10-30T17:00:00.000Z, and time would never pass",
     )
   })
+})
+
+// A rehearsal keeps a named request's reply across a deploy, as the runtime keeps one sent with `keep: 'forever'`
+// (decision 0200), and compares a retry with what the request carried (decision 0269). The runtime reads both the
+// reason and what was carried through the migrations from the version that wrote them, as `a deploy reads the state,
+// the work under way and the rows through the migrations` and `a retry after a deploy is compared with what the
+// caller's request carried, read through the migrations` of `src/runtime.test.ts` test. A rehearsal keeps both as the
+// version before wrote them, so a retry across a deploy is answered otherwise than the runtime answers it.
+describe('a retry in a rehearsal across a deploy whose migrations read the reply', () => {
+  const purse = declare({
+    state: Schema.Struct({ spent: Schema.Int }),
+    flags: Schema.Null,
+    inbound: Schema.TaggedStruct('Spend', { n: Schema.Int }),
+    rejection: Schema.Struct({ limit: Schema.Int }),
+    projection: Schema.Struct({ spent: Schema.Int }),
+  })({
+    name: 'Purse',
+    init: () => ({ spent: 0 }),
+    update: (message) => (state) =>
+      state.spent + message.n > 10 ? rejectWith({ limit: 10 }) : { spent: state.spent + message.n },
+    project: (state) => state,
+  })
+
+  // Version 2 encodes the amount of a message as text, and reads the message version 1 stored through its migration.
+  const textual: typeof purse = {
+    ...purse,
+    schemas: { ...purse.schemas, inbound: Schema.TaggedStruct('Spend', { n: Schema.NumberFromString }) },
+    migrations: [{
+      inbound: (json: Json) => ({ ...(json as Readonly<Record<string, Json>>), n: String((json as { n: number }).n) }),
+    }],
+  } as unknown as typeof purse
+
+  // Version 2 counts in cents, and reads a reason version 1 stored in units through its migration.
+  const cents: typeof purse = {
+    ...purse,
+    update: (message) => (state) =>
+      state.spent + message.n > 10 ? rejectWith({ limit: 1_000 }) : { spent: state.spent + message.n },
+    migrations: [{ rejection: (json) => ({ limit: (json as { limit: number }).limit * 100 }) }],
+  }
+
+  test('FAILING: a retry after a deploy that encodes the message otherwise is given the stored reply, as the runtime gives it', () =>
+    Effect.runPromise(rehearse(purse, { at: placedAt }, Effect.fnUntraced(function*(rehearsal) {
+      expect(yield* rehearsal.send({ _tag: 'Spend', n: 3 }, { requestId: 'r' })).toEqual({ _tag: 'Accepted' })
+      yield* rehearsal.deploy(textual)
+      // The runtime reads what version 1 carried through the migration, and finds the same text: a retry.
+      expect(yield* rehearsal.send({ _tag: 'Spend', n: 3 }, { requestId: 'r' })).toEqual({ _tag: 'Accepted' })
+      expect(yield* rehearsal.state).toEqual({ spent: 3 })
+    }))))
+
+  test('FAILING: a retry after a deploy whose migration reads the reason is given the reason as the migration writes it', () =>
+    Effect.runPromise(rehearse(purse, { at: placedAt }, Effect.fnUntraced(function*(rehearsal) {
+      expect(yield* rehearsal.send({ _tag: 'Spend', n: 30 }, { requestId: 'r' }))
+        .toEqual({ _tag: 'Rejected', reason: { limit: 10 } })
+      yield* rehearsal.deploy(cents)
+      // The runtime reads the reason version 1 stored through the migration of `rejection`.
+      expect(yield* rehearsal.send({ _tag: 'Spend', n: 30 }, { requestId: 'r' }))
+        .toEqual({ _tag: 'Rejected', reason: { limit: 1_000 } })
+    }))))
 })
