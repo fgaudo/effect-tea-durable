@@ -7,7 +7,7 @@ import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Queue from 'effect/Queue'
 import { activateOnCluster, misplaced } from './doors.ts'
-import { loads } from './loop.ts'
+import { isStopping, loads } from './loop.ts'
 import { type Deployment, end, mark, type Process, reread } from './process.ts'
 import type { Types } from '../program.ts'
 
@@ -32,6 +32,8 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
     // A crash's mark whose time has come is activated whatever its timers, once: the reading leaves it out.
     const worked: Array<string> = []
     for (const [id, { at, works }] of waker.failed) {
+      // An entity whose stop runs is not the waker's: its mark is taken once the stop's end pokes (decision 0274).
+      if (deployed.stopping.has(id)) continue
       if (at > now) next = Math.min(next, at)
       else {
         waker.failed.delete(id)
@@ -44,7 +46,8 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
     // died would end the fiber, and every timer of the program with it. Only the first failure of a run of them is
     // logged, since a database out of reach would log one at every retry (decision 0259).
     const partitions = p.cluster === null ? undefined : held(deployed)
-    const due = yield* deployed.storage.due(now, [...deployed.loaded.keys(), ...hidden, ...worked], partitions).pipe(
+    const excluded = [...deployed.loaded.keys(), ...deployed.stopping.keys(), ...hidden, ...worked]
+    const due = yield* deployed.storage.due(now, excluded, partitions).pipe(
       Effect.tap(() => Effect.sync(() => (failing = false))),
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)
@@ -96,6 +99,13 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
         const activation = p.cluster === null ? loads(p, deployed, id) : activateOnCluster(p, deployed, id)
         yield* activation.pipe(Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.sync(() => {
+            // A refusal for a stop is no failure: the entity is the waker's again at the stop's end, which pokes. The
+            // mark the round took is given back, due, and nothing is hidden. The cause is read, not `stopping`, since
+            // the stop may have ended since the refusal (decision 0274).
+            if (isStopping(cause)) {
+              if (worked.includes(id)) mark(waker, id, now, { works: true })
+              return
+            }
             // An activation of a crash's mark that fails is still the crash's: it is activated at its next time.
             mark(waker, id, now + p.retry, { hides: true, works: worked.includes(id) })
           })

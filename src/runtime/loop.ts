@@ -73,6 +73,13 @@ export const offer = <T extends Types>(p: Process, loaded: Loaded<T>, event: Mac
 export const enter = <T extends Types>(p: Process, deployed: Deployment<T>, loaded: Loaded<T>) =>
   Effect.andThen(stopped(deployed, loaded.machine.stored.id), Effect.map(DateTime.now, (at) => admit(p, deployed, loaded, at)))
 
+/** The defect of an entry refused while the stop of the entity's former run runs (decision 0274). */
+export class Stopping extends InvariantDefect {}
+
+/** Whether `cause` holds a refusal for a stop that runs. */
+export const isStopping = (cause: Cause.Cause<unknown>) =>
+  cause.reasons.some((reason) => Cause.isDieReason(reason) && reason.defect instanceof Stopping)
+
 /**
  * Dies while the stop a crash of the entity `id` forked still runs in this process, so that no run of the entity
  * acts beside the fibers of its former run (decision 0274). Every entry into the process reads it, and a caller, the
@@ -82,7 +89,7 @@ export const stopped = <T extends Types>(deployed: Deployment<T>, id: string) =>
   Effect.suspend(() =>
     deployed.stopping.has(id)
       ? Effect.die(
-        new InvariantDefect({
+        new Stopping({
           reason: `the stop of the former run of the entity ${id} of ${deployed.program.name} is still running`,
         }),
       )
@@ -489,16 +496,24 @@ export const spare = <T extends Types>(loaded: Loaded<T>, now: number) => {
 }
 
 /**
- * The entity leaves this process, and the waker is told in the same step (decision 0068). So there is no
- * moment at which its timers are neither armed here nor counted among the stored ones: a reading of the stored
- * timers that left the entity out as held is made again, and one made after counts them. The waker's flag and
- * its poke are set together, and the waker clears them in one step too, so the process is never settled with a
- * poke nobody has taken.
+ * The entity leaves this process, and the waker is told in the same step (decision 0068): a reading of the stored
+ * timers that left the entity out as held is made again, and one made after counts them. `settled` no longer rests on
+ * the one step, since an unload leaves under its count (decision 0109) and a crash into `stopping` (decision 0274),
+ * which outlast the poke. The waker's flag and its poke are set together, and the waker clears them in one step too,
+ * so the process is never settled with a poke nobody has taken.
  */
-export const leave = <T extends Types>(p: Process, deployed: Deployment<T>, loaded: Loaded<T>) =>
+export const leave = <T extends Types>(
+  p: Process,
+  deployed: Deployment<T>,
+  loaded: Loaded<T>,
+  stopping: Deferred.Deferred<void> | null = null,
+) =>
   Effect.sync(() => {
     const { id } = loaded.machine.stored
     if (deployed.loaded.get(id) === loaded) deployed.loaded.delete(id)
+    // A crash's stop is registered in the step the entity leaves, so that no look finds the entity neither loaded nor
+    // stopping (decisions 0068, 0274).
+    if (stopping !== null) deployed.stopping.set(id, stopping)
     forgetUse(p, loaded)
     deployed.waker.busy = true
     Queue.offerUnsafe(deployed.waker.poke, undefined)
@@ -549,9 +564,9 @@ export const unload = <T extends Types>(
  * retry. What is stored is what its next activation starts from, as after a crash of the process. Called
  * where the entity's lock is held, so that no caller is between finding the entity and offering its event
  * (decisions 0042, 0067). The interruption of its work is forked: it waits for the operations' finalizers,
- * and nothing waits for them under the lock (decision 0056). The fork is kept in `stopping` while it runs, and the
- * entity is not loaded in this process meanwhile (decision 0274). The waker activates the entity again after
- * `retry`, unless the entity leaves for another runner (decision 0252).
+ * and nothing waits for them under the lock (decision 0056). The entity is in `stopping` from the step it leaves to
+ * the step its stop ends, and is not loaded in this process meanwhile (decision 0274). The waker activates the entity
+ * again after `retry`, unless the entity leaves for another runner (decision 0252).
  */
 export const crash = <T extends Types>(
   p: Process,
@@ -565,9 +580,6 @@ export const crash = <T extends Types>(
     // Every crash is marked, whatever the machine held shows: on Cluster it may be a step ahead of what is stored,
     // and the activation reads what is (decision 0252). The mark is set before `leave` wakes the waker.
     if (retried) mark(deployed.waker, id, DateTime.toEpochMillis(yield* DateTime.now) + p.retry, { works: true })
-    // Its stored timers are the waker's again. A crash may run where the step that died cannot be interrupted, as
-    // a creation's `onError` does: `forkApart` keeps it stoppable by the scope (decision 0271).
-    yield* leave(p, deployed, loaded)
     // A stop that outlives `retry` is logged once, by a child the stop's end interrupts.
     const outlives = Effect.andThen(
       Effect.sleep(`${p.retry} millis`),
@@ -575,21 +587,26 @@ export const crash = <T extends Types>(
         'the stop of a crashed entity’s work outlives the retry, and the entity is not loaded on this process until it ends',
       ).pipe(Effect.annotateLogs({ name, id })),
     )
-    // The stop may end before the fork returns, and one that has ended is never kept: it would refuse the entity for
-    // ever. A crash runs only on an entity loaded, which no stop refused, so the stop kept is the only one of `id`.
-    let done = false
-    const stop = yield* forkApart(
-      p.sql,
-      Effect.ensuring(
-        Effect.andThen(forkChildApart(p.sql, outlives), stopAll(loaded)),
-        Effect.sync(() => {
-          done = true
-          deployed.stopping.delete(id)
-        }),
-      ),
-      deployed.scope,
-    )
-    if (!done) deployed.stopping.set(id, stop)
+    // Uninterruptible from the entry in `stopping` to the fork that ends it: an entry with no fork would refuse the
+    // entity for ever. Its stored timers are the waker's once the stop ends.
+    yield* Effect.uninterruptible(Effect.gen(function*() {
+      const stopping = Deferred.makeUnsafe<void>()
+      yield* leave(p, deployed, loaded, stopping)
+      // A crash may run where the step that died cannot be interrupted, as a creation's `onError` does: `forkApart`
+      // keeps the stop stoppable by the scope (decision 0271).
+      const stop = yield* forkApart(p.sql, Effect.andThen(forkChildApart(p.sql, outlives), stopAll(loaded)), deployed.scope)
+      // The end is told by an observer of the stop's exit, which a stop the deployment's scope interrupts before its
+      // first step has too, though it runs no finalizer (decision 0110), and which no scope closed at a shutdown keeps
+      // from running. It leaves `stopping` and pokes the waker in one step, so that no look finds the entity neither
+      // stopping nor the waker's (decisions 0068, 0274).
+      stop.addObserver(() => {
+        deployed.stopping.delete(id)
+        Deferred.doneUnsafe(stopping, Effect.void)
+        deployed.waker.busy = true
+        Queue.offerUnsafe(deployed.waker.poke, undefined)
+        end(p)
+      })
+    }))
     const address = addressOf({ name, id })
     const fail = <A>(waiting: Callers<A>) =>
       Effect.gen(function*() {

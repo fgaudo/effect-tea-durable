@@ -453,11 +453,22 @@ with a requirement that no example has yet.
   process, and a shard lost waits for the stops of the entities it crashed.
 - **An entity a stop that never ends keeps from loading.** Once
   [Decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md) is taken, an entity is not loaded on a process while the stop of its former run is running.
-  An operation that holds a region uninterruptible for ever keeps its entity from loading there for ever, and on
-  Cluster keeps its shard from moving, since Cluster waits for the finalizer of the shard's singleton. The runtime
-  logs it once, and only a restart of the process ends the fiber. It would be decided by:
+  An operation that holds a region uninterruptible for ever keeps its entity from loading there for ever, keeps
+  `settled` from returning, and on Cluster keeps its shard from moving, since Cluster waits for the finalizer of the
+  shard's singleton. The runtime logs it once, and only a restart of the process ends the fiber. It would be decided
+  by:
   - whether an operator needs a reading of the entities whose stop is running, beside `suspended`;
   - whether a process should end itself past a bound, which stops every entity it holds for one operation.
+- **A stop that ends between the waker's refusal and its catch.** Once
+  [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md) is taken, the
+  waker reads an activation refused for a stop from the defect's class, and not from `stopping`. A stop that ended
+  after the refusal and before the catch would otherwise read as a failure, and hide the entity until `retry`, with
+  `settled` free to return. No seed of 2,000 of `settled never returns between a crash and the activation its due timer
+  brings`, in `src/runtime/loop.test.ts`, reaches a stop that ends there: the mutation that reads `stopping` passes
+  every one. It would be decided by:
+  - an explored test whose activation by the waker meets a crash a caller makes after the waker's reading, with a stop
+    that ends within a few steps;
+  - a deviation under `bound` 1 that holds the waker between the refusal and the catch.
 - **An act on the outside world beside the next holder's run.** On Cluster, a runner that lost its lease without
   giving the shard up may still run an operation that calls a service, while the next holder runs the entity. The
   library cannot refuse such an act, and an at-most-once operation's `unknown` may be delivered beside it. Fencing the

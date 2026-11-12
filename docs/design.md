@@ -1292,10 +1292,11 @@ again, as [fibers and locks](#fibers-and-locks) says. An event the runtime canno
 process, its callers are given the defect, and the next one loads it from what is stored
 ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)); nothing else waits
 for its operations to stop ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)).
-The entity is not loaded again in that process while the stop of its work runs. A caller, the waker and a door's step
-are given a defect that says so, to try again, and a stop that outlives `retry` is logged once. On Cluster a shard lost
-is let go only once the stops of the entities it crashed have ended. So the runner that gains the shard runs no entity
-beside a fiber of its former run
+The entity is not loaded again in that process while the stop of its work runs. A caller and a door's step are given
+a defect that says so, to try again, and a stop that outlives `retry` is logged once. The waker leaves the entity out
+of its readings until the stop ends, and the stop's end pokes it. The stop is work of the process, so `settled` does not
+return while it runs. On Cluster a shard lost is let go only once every stop of its entities has ended. So the runner
+that gains the shard runs no entity beside a fiber of its former run
 ([decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md)).
 An activation the waker cannot finish crashes its entity alone too, and the waker tries it again after `retry`
 ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)). The waker's own reading

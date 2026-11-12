@@ -46,15 +46,12 @@ export const pins: ReadonlyArray<Pin> = [
     name: 'callers of an unloaded entity build one machine for it, under prioritized schedules from their arrival',
   },
   {
-    id: '0068 an entity leaves and pokes the waker in one step',
+    id: '0274 the end of a stop pokes the waker in the step it leaves stopping',
     file: 'src/runtime/loop.ts',
-    edits: [
-      [
-        '    forgetUse(p, loaded)\n    deployed.waker.busy = true',
-        '    forgetUse(p, loaded)\n  }).pipe(Effect.andThen(Effect.sync(() => {\n    deployed.waker.busy = true',
-      ],
-      ['    Queue.offerUnsafe(deployed.waker.poke, undefined)\n    end(p)\n  })\n', '    Queue.offerUnsafe(deployed.waker.poke, undefined)\n    end(p)\n  })))\n'],
-    ],
+    edits: [[
+      '        deployed.waker.busy = true\n        Queue.offerUnsafe(deployed.waker.poke, undefined)\n        end(p)\n      })\n    }))',
+      '        end(p)\n      })\n    }))',
+    ]],
     test: 'src/runtime/loop.test.ts',
     name: 'settled never returns between a crash and the activation its due timer brings, under prioritized schedules',
   },
@@ -69,7 +66,7 @@ export const pins: ReadonlyArray<Pin> = [
       ['        return after\n      })\n    )\n', '        return after\n      }))\n    )\n'],
     ],
     test: 'src/runtime/waker.test.ts',
-    name: 'settled never returns while the waker rests from a reading another entity left during, under bounded schedules',
+    name: 'settled never returns while the waker rests from a reading an unloaded entity left during, under bounded schedules',
   },
   {
     id: '0163 a reading\'s count is raised and lowered in one acquisition',

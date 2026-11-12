@@ -3899,6 +3899,45 @@ describe('what the runtime cannot finish', () => {
         }).pipe(Effect.ensuring(Deferred.succeed(released, undefined))))
     })))
 
+  // Decision 0274: the stop of a crashed entity's work is work of the process, since the entity waits for it to be
+  // loaded again, so `settled` does not return while it runs, and returns once it has ended.
+  test('settled does not return while the stop of a crashed entity runs, and returns once it ends', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const released = yield* Deferred.make<void>()
+      const stopping = yield* Deferred.make<void>()
+      // The hands of `b` never come back, and stop only once the test lets them.
+      const layer = Layer.succeed(
+        Hands,
+        Hands.of({
+          act: (key) =>
+            key !== 'b' ? Effect.never : Effect.never.pipe(
+              Effect.onInterrupt(() => Effect.andThen(Deferred.succeed(stopping, undefined), Deferred.await(released))),
+            ),
+        }),
+      )
+      let dies = true
+      yield* process({
+        observe: (entity, event) => {
+          if (entity.id !== 'slow' || event._tag !== 'Receive' || !dies) return Effect.void
+          dies = false
+          return Effect.die('the runtime failed')
+        },
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('slow', { flags: { at }, requestId: 'c-slow', sender: tester })
+          const failed = yield* Effect.exit(toy.send('slow', want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }))
+          expect(Exit.isFailure(failed)).toBe(true)
+          yield* Deferred.await(stopping)
+          const settled = yield* Effect.forkChild(runtime.settled)
+          yield* Effect.repeat(Effect.yieldNow, { until: () => false, times: 1_000 })
+          expect(settled.pollUnsafe()).toBeUndefined()
+          yield* Deferred.succeed(released, undefined)
+          yield* Fiber.join(settled)
+        }).pipe(Effect.ensuring(Deferred.succeed(released, undefined))))
+    })))
+
   // Bug 65 of the roadmap: a crash does not wait for the stop of its operations (decision 0056), and the receiver
   // deletes the reply of a request once the work that sent it ends (decision 0021). So an at-least-once operation
   // that sends from a region it holds uninterruptible, after the operation's new run ended the work, has the

@@ -1312,13 +1312,14 @@ test('a message that arrives as the wait of its entity runs out is handled, unde
 }, 60_000)
 
 test('settled never returns between a crash and the activation its due timer brings, under prioritized schedules', () => {
-  // Decisions 0029 and 0068: the process is not settled while a stored timer of an entity it does not hold is due. A
-  // crash makes its entity leave without counting it as unloading, so it leaves and pokes the waker in one step. A
-  // `settled` that looked between two steps would find the entity neither held nor known to the waker, with its timer
-  // due. The message's commit waits at a gate while the timer comes due, then dies once the window is open. A leave
-  // split in two steps, the entity taken out of the process in one and the waker poked in the next, returns early at
-  // seed 13, pinned. `bun run test:pins` runs it against that form, the pin `0068` of `src/runtime.test_pins.ts`
-  // (decision 0254).
+  // Decisions 0029, 0068 and 0274: the process is not settled while a stored timer of an entity it does not hold is due.
+  // A crash makes its entity leave into the stops of the process in one step, and the stop's end pokes the waker in the
+  // step it leaves them. A `settled` that looked between two steps would find the entity neither held, nor stopping,
+  // nor known to the waker, with its timer due. The message's commit waits at a gate while the timer comes due, then
+  // dies once the window is open. A stop's end that leaves `stopping` without poking the waker returns early at seed
+  // 13, pinned. `bun run test:pins` runs it against that form, the pin `0274` of `src/runtime.test_pins.ts` (decision
+  // 0254). Seeds 106 and 1139, pinned, returned early on two earlier forms of decision 0274's code: one hid an entity
+  // its stop refused until `retry`, and one cleared that hiding at the stop's end, before the waker wrote it.
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
@@ -1356,7 +1357,7 @@ test('settled never returns between a crash and the activation its due timer bri
           yield* runtime.settled
           return { early, restarted }
         }))
-    }), { early: false, restarted: true }, { open: false, pinned: [13] })
+    }), { early: false, restarted: true }, { open: false, pinned: [13, 106, 1139] })
 }, 60_000)
 
 describe('what the runtime tells a tracer (decision 0220)', () => {

@@ -15,6 +15,7 @@ import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import {
   adjusted,
+  ahead,
   database,
   distant,
   explored,
@@ -34,77 +35,85 @@ import {
   unloads,
 } from '../runtime.test_shared.ts'
 
-test('settled never returns while the waker rests from a reading another entity left during, under bounded schedules', () => {
-  // Decision 0068: the waker looks whether a poke waits, and clears its flag, in one step. Two entities crash one after
-  // the other. The first, `later`, has a timer in the future, and its departure wakes the waker, whose reading leaves
-  // out `timed`, still held, with its timer due. Were the look and the clearing two steps, `timed` could leave between
-  // them. The waker would then sleep toward the timer of `later`, and `settled` return with the timer of `timed` known
-  // to nobody. A preemption of the waker between the two steps reaches it: with the look and the clearing split, the
-  // deviation at decision 208, pinned, fails. `bun run test:pins` runs it against that form, the pin `0068 the waker`
-  // of `src/runtime.test_pins.ts` (decision 0254).
+test('settled never returns while the waker rests from a reading an unloaded entity left during, under bounded schedules', () => {
+  // Decision 0068: the waker looks whether a poke waits, and clears its flag, in one step. An unload pokes the waker
+  // under the count it leaves with (decision 0109), and a crash under its stop (decision 0274), so neither keeps
+  // `settled` alone once the poke is made. Here `first` crashes, and its departure wakes the waker, while the wait of
+  // `timed` runs out with its timer due. Were the look and the clearing two steps, the unload of `timed` could poke
+  // between them. The waker would then rest with a poke nobody took, and `settled` return with the timer of `timed`
+  // known to nobody. With the look and the clearing split, the deviation at decision 317, pinned, fails. `bun
+  // run test:pins` runs it against that form, the pin `0068 the waker` of `src/runtime.test_pins.ts` (decision 0254).
   explored((window) =>
     Effect.gen(function*() {
       const { layer } = yield* hands()
+      const clock = ahead()
       const gate = yield* Deferred.make<void>()
-      const crashed = new Set<string>()
+      const left = yield* Deferred.make<void>()
+      let crashed = false
+      let gone = false
+      let armed = false
       let early = false
       let restarted = false
-      return yield* process({
-        // `timed` yields twice after the gate, so that in the run in order the waker reads between the two
-        // departures, and one preemption is enough to put the second inside the waker's step.
+      return yield* clock.around(process({
+        passivate: { millis: 5 },
+        // `first` crashes at its message's commit, once the gate opens.
         at: (point, entity, event) =>
-          point === 'BeforeCommit' && received(event) === `r-${entity.id}` && !crashed.has(entity.id)
-            ? Effect.andThen(
-              Deferred.await(gate),
-              Effect.andThen(
-                entity.id === 'timed' ? Effect.andThen(Effect.yieldNow, Effect.yieldNow) : Effect.void,
-                Effect.suspend(() => {
-                  crashed.add(entity.id)
-                  return Effect.die('the runtime failed')
-                }),
-              ),
-            )
+          point === 'BeforeCommit' && entity.id === 'first' && received(event) === 'r-first' && !crashed
+            ? Effect.andThen(Deferred.await(gate), Effect.suspend(() => {
+              crashed = true
+              return Effect.die('the runtime failed')
+            }))
+            : Effect.void,
+        unloaded: (entity) =>
+          entity.id === 'timed' && armed && !gone
+            ? Effect.andThen(Effect.sync(() => (gone = true)), Effect.asVoid(Deferred.succeed(left, undefined)))
             : Effect.void,
         observe: (entity, event) =>
           Effect.sync(() => {
-            if (entity.id === 'timed' && crashed.has('timed') && event._tag === 'Restart') restarted = true
+            if (entity.id === 'timed' && gone && event._tag === 'Restart') restarted = true
           }),
       }, (runtime) =>
         Effect.gen(function*() {
           const at = yield* DateTime.now
           const toy = yield* Effect.provide(runtime.deploy(timed), layer)
-          // `timed` rings at 40 millis, and `later` at 50.
+          // `timed` rings at 40 millis and `first` at 50. The wait of `timed` runs out as the clock moves, and a
+          // message loads it again.
           yield* toy.create('timed', { flags: { at }, requestId: 'c-timed', sender: tester })
-          yield* adjusted(window, '10 millis')
-          yield* toy.create('later', { flags: { at }, requestId: 'c-later', sender: tester })
           yield* runtime.settled
-          // Once the caller of `timed` is answered, `timed` has left, and the rest runs in order.
-          const want = (entity: string) =>
-            Effect.forkChild(
-              Effect.exit(toy.send(entity, { _tag: 'Want', key: 'a', on: false, nonce: `r-${entity}` }, {
-                requestId: `r-${entity}`,
-                sender: tester,
-                keep: 'forever',
-              })).pipe(Effect.ensuring(Effect.sync(() => {
-                if (entity === 'timed') window.open = false
-              }))),
-            )
-          const sent = [yield* want('later'), yield* want('timed')]
-          // The clock reaches 40 millis while both messages wait at the gate.
-          yield* adjusted(window, '30 millis')
-          yield* opened(window, true)
-          yield* together<void, never, never>([
-            Deferred.succeed(gate, undefined).pipe(Effect.asVoid),
+          yield* clock.adjust('10 millis')
+          yield* toy.create('first', { flags: { at }, requestId: 'c-first', sender: tester })
+          yield* toy.send('timed', { _tag: 'Refuse', nonce: 'm' }, { requestId: 'r-timed', sender: tester, keep: 'forever' })
+          yield* runtime.settled
+          armed = true
+          const sent = yield* Effect.forkChild(Effect.exit(
+            toy.send('first', { _tag: 'Want', key: 'a', on: false, nonce: 'n' }, {
+              requestId: 'r-first',
+              sender: tester,
+              keep: 'forever',
+            }),
+          ))
+          // The message of `first` reaches the gate, and the loop of `timed` its wait, before the clock moves.
+          yield* Effect.yieldNow
+          yield* Effect.yieldNow
+          yield* Effect.yieldNow
+          // The wall clock reaches 40 millis and no sleep fires, as a real clock moves between two steps of a fiber.
+          clock.by.millis = 30
+          const checked = yield* Effect.forkChild(Effect.andThen(
+            Deferred.await(left),
             Effect.andThen(runtime.settled, Effect.sync(() => {
-              if (crashed.has('timed') && !restarted) early = true
+              if (!restarted) early = true
             })),
-          ])
+          ))
+          yield* opened(window, true)
+          // `first` crashes, and the wait of `timed` runs out: `timed` is unloaded with its timer due.
+          yield* together<unknown, never, never>([Deferred.succeed(gate, undefined), clock.adjust('5 millis')])
+          yield* Fiber.join(checked)
           yield* opened(window, false)
-          yield* Effect.forEach(sent, Fiber.join)
+          yield* Fiber.join(sent)
           yield* runtime.settled
           return { early, restarted }
-        }))
-    }), { early: false, restarted: true }, { open: false, bound: 1, pinned: [{ decision: 208, choice: 1 }] })
+        })))
+    }), { early: false, restarted: true }, { open: false, bound: 1, pinned: [{ decision: 317, choice: 1 }] })
 }, 60_000)
 
 test('a clock moved past a timer while the waker reads fires the timer, and settled returns', () =>

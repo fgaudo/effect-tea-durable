@@ -1409,6 +1409,8 @@ const started = (
         const { waker } = deployed
         // The waker has a reading to make, so nothing is known of the stored timers.
         if (waker.busy) return false
+        // A crashed entity's stop is work of the process: the entity waits for it to be loaded (decision 0274).
+        if (deployed.stopping.size > 0) return false
         // A timer of an unloaded entity whose time has come is work the process has not activated yet.
         if (waker.next !== null && waker.next <= now) return false
         for (const loaded of deployed.loaded.values()) {

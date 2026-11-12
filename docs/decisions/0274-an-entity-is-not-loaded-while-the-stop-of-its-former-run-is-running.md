@@ -3,10 +3,18 @@
 **Status:** proposed, 2026-11-12, with the step The bugs the premise review found, fixed by family, of the
 [roadmap](../roadmap.md), as the fix of bugs 31 and 65. Once taken, it changes
 [decision 0056](archive/0056-nothing-waits-for-an-operation-under-the-permit.md): a crash still forks the stop of its
-entity's work, and an entity whose stop is running is not loaded again on that process. It changes
+entity's work, an entity whose stop is running is not loaded again on that process, and `settled` waits for the stop.
+It changes [decision 0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md): an entity enters the stops of
+the process in the step it leaves the process, and leaves them in the step that pokes the waker. `settled` then no
+longer rests on an entity's leave and its poke being one step, and the waker's look for a poke and the clearing of its
+flag stay one step. It changes
+[decision 0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md) and
+[decision 0252](0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md): the waker leaves an entity
+whose stop runs out of its readings and its marks, and an activation refused for a stop is no failure. It changes
 [decision 0162](archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md):
-a shard lost is let go only once the stops of the entities it crashed have ended. The maintainer chose it on
-2026-11-12, after an opinion of a Fable 5.2 agent.
+a shard lost is let go only once every stop of its entities has ended. The maintainer chose it on 2026-11-12, after
+an opinion of a Fable 5.2 agent, and chose on 2026-11-12 its rule of `settled` and the waker, after a second opinion of
+a Fable 5.2 agent.
 
 ## Context
 
@@ -17,11 +25,9 @@ one permit, and a wait under it held every `send` and `create` of the process be
 [Decision 0067](archive/0067-each-entity-is-held-by-its-own-lock.md) gave each entity its own lock, so that premise of
 0056 fell.
 
-The stop still runs apart from the next run of the entity. Since
-[decision 0252](0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md) the waker activates the
-entity again `retry` after the crash, with no caller coming. The activation steps `Restart` from what is stored, while
-the old fiber may still run a region it holds uninterruptible, or a finalizer that acts. Two bugs of the roadmap
-follow:
+The stop still runs apart from the next run of the entity. Since decision 0252 the waker activates the entity again
+`retry` after the crash, with no caller coming. The activation steps `Restart` from what is stored, while the old fiber
+may still run a region it holds uninterruptible, or a finalizer that acts. Two bugs of the roadmap follow:
 
 - **Bug 31.** An at-most-once operation's `unknown` is recorded, and the program's answer to it acts, beside the old
   fiber that still acts.
@@ -31,33 +37,50 @@ follow:
 
 On Cluster a shard lost crashes every entity of it that the runner holds, in `losing` of `src/runtime/doors.ts`, from
 the finalizer of the shard's singleton (decision 0162). Cluster waits for that finalizer before it lets the shard go.
-`losing` returns once each crash has forked its stop, so the runner that gains the shard may run an entity's
+`losing` returned once each crash had forked its stop, so the runner that gains the shard could run an entity's
 operations beside the old runner's fibers.
+
+A first form of this note's code refused the waker's activation of an entity whose stop runs as a failure, which hides
+the entity until `retry` (decision 0077). `settled` then returned with a stored timer of that entity due, which
+decision 0068 forbids. `bun run test:release` found it at seed 106 of `settled never returns between a crash and the
+activation its due timer brings, under prioritized schedules`, of `src/runtime/loop.test.ts`, on 2026-11-12.
 
 ## Decision
 
-- **A crash keeps the stop of its entity's work in the deployment, under the entity's id.** The crash still forks the
-  stop in the deployment's scope, and gives the entity's lock back at once (decision 0056). The fiber of the stop
-  leaves the deployment's map `stopping` when it ends, in one step with the end. A stop that ends before its fork
-  returns is never kept. A crash runs only on an entity loaded, which no stop refused, so the map holds one stop of an
-  entity at most.
+- **An entity whose stop runs is neither loaded nor the waker's, and its stop is work of the process.** A crash
+  registers the entity in the deployment's map `stopping` in the step the entity leaves the process, with a latch the
+  stop's end completes. The crash forks the stop in the deployment's scope, and gives the entity's lock back at once
+  (decision 0056). The registration and the fork are one uninterruptible region, so that no entry is left without the
+  stop that ends it. An observer of the stop's exit leaves `stopping`, completes the latch and pokes the waker, in one
+  step. A stop the deployment's scope interrupts before its first step runs no finalizer
+  ([decision 0110](archive/0110-detached-work-is-counted-until-it-ends-however-it-ends.md)), and its exit is observed
+  all the same. A crash runs only on an entity loaded, which no stop refused, so the map holds one stop of an entity at
+  most.
+- **`settled` does not return while a stop runs.** The entity's next run waits for the stop, so the stop is work of
+  the process, as an entity unloading is
+  ([decision 0109](archive/0109-settled-waits-for-an-entity-unloading.md)). A stop that never ends keeps
+  `settled` from returning, as the same region kept it from returning before the crash, through the operation it held.
 - **An entity whose stop is running is refused at its entry into the process.** The check is one function of
-  `src/runtime/loop.ts`, read by `enter` and `entersHeld`, which every load goes through, and by the creation before
-  its step, since a creation refused after its commit would leave a stored entity unloaded.
-  - **A caller's load dies** with a defect that says the stop of the former run of `<name>/<id>` is still running.
-    The caller is given the defect, and retries as after any crash of the entity. No caller waits for a stop, so a stop
-    that never ends holds no caller.
-  - **The waker's activation fails** the same way, and the waker marks the entity again at `retry`, as it marks an
-    activation that failed (decision 0252). The waker's other entities are activated meanwhile, and the entity is
-    activated at the first `retry` after its stop ends.
+  `src/runtime/loop.ts`, `stopped`, read by `enter` and `entersHeld`, which every load goes through, and by the creation
+  before its step, since a creation refused after its commit would leave a stored entity unloaded. It dies with a
+  defect of its own class, `Stopping`, which says the stop of the former run of the entity is still running.
+  - **A caller's load dies** with the defect. The caller retries as after any crash of the entity. No caller waits for
+    a stop, so a stop that never ends holds no caller.
+  - **The waker leaves an entity whose stop runs out of its readings and of its marks**, as it leaves out the entities
+    the process holds. The stop's end pokes it, and the waker reads the entity's timers and takes its crash's mark
+    then. An activation the waker made just before a crash took the entity out again is refused with `Stopping`. That
+    refusal is no failure, and hides nothing: the waker gives back the crash's mark it took, due, and marks nothing
+    else. The waker reads the refusal from the defect's class, and not from `stopping`, since the stop may have ended
+    since the refusal.
   - **A door's step on Cluster dies** inside its transaction, since `entersHeld` dies with the same defect, and
     Cluster delivers the request again. The transaction rolls back the `Restart` the step made. An activation on
-    Cluster dies alike, and the waker marks it again. No step waits for a stop inside a transaction.
+    Cluster dies alike, and the waker reads it as above. No step waits for a stop inside a transaction.
 - **A stop that outlives `retry` is logged once**, as a warning naming the entity, so that an operator sees an entity
   that a region which never ends keeps from loading.
-- **A shard lost waits for the stops of the entities it crashed.** `losing` crashes each entity of the shard under its
-  own lock, as before, and then, holding no lock, joins the stops those crashes forked. The finalizer of the shard's
-  singleton ends only then, and Cluster lets the shard go after it.
+- **A shard lost waits for every stop of its entities.** `losing` crashes each entity of the shard under its own lock,
+  as before. Then, holding no lock, it waits for the latch of every entity of the shard in `stopping`, the ones a crash
+  before the shard was lost forked too. The finalizer of the shard's singleton ends only then, and Cluster lets the
+  shard go after it.
 
 The rule holds that an incarnation's operations never run beside the next run of their entity on the same runner, and
 on Cluster across an orderly move of the shard. It does not hold across a runner that loses its lease without giving
@@ -72,8 +95,8 @@ The decision leaves out four cases, each held by the [open questions](../open-qu
 - An act on the outside world, as a call to a service, from an old run that a runner which lost its lease still runs.
   The library cannot refuse it, so an at-most-once operation's `unknown` may then be delivered beside it: An act on the
   outside world beside the next holder's run.
-- A region that never ends, which keeps its entity from loading on its process for ever, and on Cluster its shard from
-  moving: An entity a stop that never ends keeps from loading.
+- A region that never ends, which keeps its entity from loading on its process for ever, `settled` from returning, and
+  on Cluster its shard from moving: An entity a stop that never ends keeps from loading.
 - An entity a door loads on a shard whose singleton has not started, whose crash no finalizer makes: bug 90 of the
   roadmap.
 
@@ -90,44 +113,65 @@ The decision leaves out four cases, each held by the [open questions](../open-qu
   no other, and the waker loads it once it ends`, in [`src/runtime.test.ts`](../../src/runtime.test.ts). A second
   entity crashed beside the first is activated by the waker while the first's stop holds.
 - That an entity whose stop ends is activated by the waker, with no caller coming: **tested** by the same test, whose
-  finalizer is let end. That the rule holds where the stop ends between the waker's reading and its activation: to be
-  **tested** by an explored test under the scheduler of `src/testing.ts`, with a seed pinned that ends the stop there.
+  finalizer is let end.
+- That `settled` does not return while a stop runs, and returns once it ends: **tested** by `settled does not return
+  while the stop of a crashed entity runs, and returns once it ends`, in
+  [`src/runtime.test.ts`](../../src/runtime.test.ts), which fails without the check of `stopping` in `quiet`.
 - That `settled` does not return while a stored timer of an entity the process does not hold is due, where the
-  waker's activation of that entity is refused because its stop runs (decisions 0029 and 0068): **fails**, at seed 106
-  of `settled never returns between a crash and the activation its due timer brings, under prioritized schedules`, in
-  [`src/runtime/loop.test.ts`](../../src/runtime/loop.test.ts), under `bun run test:release` on 2026-11-12, at
-  `f658bb3`. `SEED=106 bun test src/runtime/loop.test.ts -t "settled never returns between a crash"` reproduces it.
-  The test fails at `f90a3a3`, the code of this note, and passes from seed 106 at `dcf891c`, the commit before. The
-  test gets `{ early: true, restarted: false }`. The waker's activation dies on `stopped`, and the waker marks the
-  entity hidden until `retry`, so its reading leaves the due timer out. `settled` returns with the timer due, and
-  the test's clock never reaches `retry`, so the entity never restarts. Two changes were tried in a scratch worktree,
-  and neither is in the repository. The first made `quiet` false while `stopping` holds an entity and made the end of
-  a stop call `end`: seed 34 then fails too. The second also cleared the mark's `hides` at the end of the stop and
-  poked the waker: seeds 34 and 106 pass, and seed 1139 fails the same way. A lead for seed 1139 is that the stop ends
-  before the waker writes the mark of the activation it refused. The fix is a choice for the maintainer, as the step
-  says, and seed 106 is pinned in the test once the fix holds it.
+  waker's activation of that entity met its stop (decisions 0029 and 0068): **tested** by `settled never returns
+  between a crash and the activation its due timer brings, under prioritized schedules`, in
+  [`src/runtime/loop.test.ts`](../../src/runtime/loop.test.ts), under every seed of `bun run test:release`'s
+  schedules. Seed 106 failed on the first form of this note's code, which hid the refused entity until `retry`. Seed
+  1139 failed on a form that cleared that hiding at the stop's end, before the waker wrote it. Both are pinned. Seed 13,
+  pinned, fails where the stop's end leaves `stopping` without poking the waker, as the pin `0274` of
+  [`src/runtime.test_pins.ts`](../../src/runtime.test_pins.ts) runs it.
+- That an observer added to a fiber is called once the fiber exits, at once if it has exited, and for a fiber
+  interrupted before its first step: **documented** for `addObserver` by the stable interface `Fiber` of Effect 4.1.3,
+  and **tested** by every test of this note, since each one's stop ends through it and the tests would hang without
+  it. A first form of the code told the stop's end from a fiber forked in the process's scope, which Cluster's teardown
+  closes before it lets the shards go, and every test of a runner on Cluster then hung at its end.
+- That an entity leaves the process only by an unload or a crash, each under a guard that outlasts its poke: **read**
+  in the code, where `leave` of `src/runtime/loop.ts` is the only statement that takes an entity out of
+  `deployed.loaded`, and its callers are `unload`, under the count `p.leaving`
+  ([decision 0109](archive/0109-settled-waits-for-an-entity-unloading.md)), and `crash`, with `stopping`. Every crash,
+  `losing`'s and a door's included, goes through `crash`. **Tested** besides: a leave whose poke is split into a second
+  step passes every seed and deviation of the two explored tests below. So the pin of 0068 for that one step, which
+  could no longer fail, is dropped, and the code keeps the one step, which costs nothing.
+- That the waker's look for a poke and the clearing of its flag must stay one step, since an unload's poke may land
+  between them: **tested** by `settled never returns while the waker rests from a reading an unloaded entity left
+  during, under bounded schedules`, in [`src/runtime/waker.test.ts`](../../src/runtime/waker.test.ts), whose second
+  entity leaves by an unload. With the look and the clearing split, its deviation at decision 317 fails, pinned as the
+  pin `0068 the waker` of [`src/runtime.test_pins.ts`](../../src/runtime.test_pins.ts). The test it replaces made its
+  entities leave by crashes, whose stops keep `settled` from returning through the gap, so no deviation reached it.
+- That the waker reads a refusal for a stop from its cause where the stop ends between the refusal and the catch: a
+  rule no test holds yet. No seed of 2,000 of the explored test above reaches a stop that ends there, and the
+  [open question](../open-questions.md#running) A stop that ends between the waker's refusal and its catch holds it.
 - That a door's step which finds a stop running dies, and that Cluster delivers the request again once the stop ends:
   seen in `a door step that loads an entity and whose commit fails leaves the entity to run its stored operation`, in
   [`src/cluster.test.ts`](../../src/cluster.test.ts). Its next door step came before the stop of the crash ended in
   every run on the maintainer's machine, died, and was answered at Cluster's next delivery. The test accepts a run
   where the stop ends first, so the premise is to be **tested** by a test of its own that holds the stop.
 - That Cluster lets a shard go only after the finalizer of its singleton ends, so that the runner which gains the shard
-  loads none of its entities while their stops run: to be **tested** by `a shard that moves while an operation of the
-  first runner still stops starts it on the second only after`, of
-  [`src/cluster.test.ts`](../../src/cluster.test.ts), with two runners, whose operations' finalizers are held while
-  the shards move. It was a `test.failing` on the code before this note, where the second runner started each moved
-  entity's operation while the first runner's finalizer still waited. It is a test under `slow`, since it lasts about
-  2.4 s. The JSDoc of `registerSingleton` in Effect 4.1.3 promises no such wait.
-  `runShardRelease` of `cluster/Sharding.ts` joins `awaitStoppingSingletons` before the storage's release, which is a
-  behaviour not promised, so the test holds it at every move of Effect.
-- That `losing` joining the stops does not hold up a finalizer of an operation that sends through the door's client to
-  an entity of the shard being let go: to be **tested** by the same test with two runners, whose finalizer sends to
-  such an entity.
+  loads none of its entities while their stops run: **tested** by `a shard that moves while an operation of the first
+  runner still stops starts it on the second only after`, of [`src/cluster.test.ts`](../../src/cluster.test.ts), with
+  two runners, whose operations' finalizers are held while the shards move. It was a `test.failing` on the code before
+  this note, where the second runner started each moved entity's operation while the first runner's finalizer still
+  waited. It is a test under `slow`, since it lasts about 2.4 s. The JSDoc of `registerSingleton` in Effect 4.1.3
+  promises no such wait. `runShardRelease` of `cluster/Sharding.ts` joins `awaitStoppingSingletons` before the
+  storage's release, which is a behaviour not promised, so the test holds it at every move of Effect.
+- That a shard lost waits for the stop of an entity a crash took out before the shard was lost: **tested** by `a shard
+  that moves after a crash of its entity, whose stop still runs, starts its work on the second only after`, of
+  [`src/cluster.test.ts`](../../src/cluster.test.ts), a test under `slow`. It fails where `losing` waits only for the
+  stops of the entities it crashes itself.
+- That `losing` waiting for the stops does not hold up a finalizer of an operation that sends through the door's client
+  to an entity of the shard being let go: to be **tested** by a test with two runners, whose finalizer sends to such an
+  entity.
 - That a caller given a defect during a stop of a few milliseconds loses nothing a retry does not give back: **chosen**
   by the maintainer, on 2026-11-12. A crash has already given every waiting caller the defect, so a caller in the
   window is retrying already.
-- That an entity a region which never ends keeps from loading is better than a run beside the old fiber: **chosen** by
-  the maintainer, on 2026-11-12. Cluster makes the same choice for the finalizer of a singleton.
+- That an entity a region which never ends keeps from loading, and a `settled` that never returns, are better than a
+  run beside the old fiber: **chosen** by the maintainer, on 2026-11-12. Cluster makes the same choice for the
+  finalizer of a singleton, and closing the deployment's scope already waits for the stop.
 
 ## Alternatives
 
@@ -143,12 +187,17 @@ The decision leaves out four cases, each held by the [open questions](../open-qu
   bound a margin the decision rests on.
 - **Fencing alone, by an epoch of the run.** It cannot refuse an act on the outside world, so bug 31 stays. A run
   after a crash keeps its incarnation today, so two runs of one entity cannot be told apart without an epoch stored.
+- **`settled` waits only for the stops of entities with work due.** Every crash retried leaves a mark due at `retry`,
+  so the rule differs from this one only until `retry`. It needs the waker to read the entities whose stop runs and to
+  hold them apart, which is more state for no rule gained.
+- **The waker waits for the stop in its own fiber.** The waker activates its entities one after another, so a stop
+  that never ends would hold every timer of the program.
+- **The waker clears the hiding of a refused entity at the stop's end.** The stop may end before the waker writes the
+  mark, as seed 1139 shows, and the entity is then hidden until `retry`.
 
 ## Consequences
 
-- Decision 0056's consequence that an operation of a crashed entity may still be stopping when the entity is loaded
-  again holds no more on one runner. `settled` still waits for no stop of a crashed entity: the stops are in the
-  deployment's scope, and closing it waits for them. A stop that refuses the waker's activation of a due timer then
-  lets `settled` return before that activation, which decision 0068 forbids. It is the premise of `settled` above that
-  fails, and the note is not taken while it fails.
+- Decision 0056's consequences that an operation of a crashed entity may still be stopping when the entity is loaded
+  again, and that `settled` does not wait for the stop, hold no more on one runner.
 - A crash's callers who retry at once may be given the defect of the stop again, until the stop ends.
+- A test that holds a stop and calls `settled` waits for the stop.

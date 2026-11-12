@@ -1745,6 +1745,54 @@ describe('the shards of a runner on Cluster', () => {
         expect(warningsAndErrors()).toContain(outlivesRetry)
       })), 30_000)
 
+  // Decision 0274: a shard lost waits for every stop of its entities, the ones an earlier crash forked too. Here each
+  // entity crashes before the shard moves, at the commit of a timer's step, with its `Ask` held as it stops, so that no
+  // entity of the shard is loaded when the shard goes.
+  slow('a shard that moves after a crash of its entity, whose stop still runs, starts its work on the second only after', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        let release = () => {}
+        stopping = new Promise<void>((resolve) => {
+          release = resolve
+        })
+        yield* Effect.addFinalizer(() => Effect.sync(() => release()))
+        const ids = Array.from({ length: 8 }, (_, i) => `e${i}`)
+        const crashes = new Set(ids)
+        const first = yield* start(1, (said) => {
+          if (said._tag !== 'Reached' || said.point !== 'BeforeCommit' || said.event._tag !== 'Fire') return
+          if (crashes.delete(said.entity.id)) throw new Error('the runtime failed')
+        })
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        for (const id of ids) {
+          yield* create(first, id)
+          yield* send(first, id, { _tag: 'Ask' }, `m-${id}`)
+        }
+        yield* until(Effect.sync(() => seen.length), (n) => n === ids.length)
+        for (const id of ids) yield* send(first, id, { _tag: 'Ring', at: 0 }, `r-${id}`)
+        yield* until(Effect.sync(() => seen), (lines) => ids.every((id) => lines.includes(`${id} interrupted on 1`)))
+        const second = yield* start(2)
+        // Long enough for the second runner to take a shard Cluster let go, and to activate its entities.
+        yield* until(Effect.sync(second.count), (n) => n > 0).pipe(Effect.timeoutOption('1 second'))
+        yield* Effect.sleep('200 millis')
+        release()
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const moved = ids.filter((id) => second.holds(id))
+        expect(moved.length).toBeGreaterThan(0)
+        yield* until(
+          Effect.sync(() => seen),
+          (lines) => moved.every((id) => lines.includes(`${id} started on 2`) && lines.includes(`${id} stopped on 1`)),
+        )
+        for (const id of moved) {
+          expect(seen.indexOf(`${id} stopped on 1`)).toBeLessThan(seen.indexOf(`${id} started on 2`))
+        }
+        // The crashes and the stops held past `retry` are logged.
+        const logs = warningsAndErrors()
+        expect(logs).toContain(outlivesRetry)
+      })), 30_000)
+
   // An entity stored under a partition that is not the shard Cluster routes its id to is what a release of Effect
   // that changes the hash of Cluster or of the storage leaves (decision 0273). The tests write that partition by hand.
   const storedUnder = (id: string, partition: number) =>
