@@ -114,7 +114,8 @@ family gets a fix of its own.
     ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
     The test `FAILING: an operator’s resume and discard leave no Cluster rows once expire runs past the least time`
     of `src/cluster.test.ts`, a `test.failing` on `main`, finds the two requests and their two replies after `expire`.
-    The `Resumed` a step sends to a waiting sender keeps no id either, and no test reads its rows yet: the
+    The `Resumed` a step sends to a waiting sender is kept as a pending id, whose rows the next step deletes
+    ([decision 0169](decisions/archive/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md)): the
     [open question](open-questions.md#running) The rows of operators' events on Cluster.
 12. **Noticed, not checked: a defect's cause holding U+0000 may reach Cluster's tables unescaped.**
     ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)). It matters once
