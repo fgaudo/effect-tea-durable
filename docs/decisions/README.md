@@ -251,7 +251,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0214](0214-a-rejections-reason-is-given-as-a-caller-reads-it.md) | A rejection's reason is given as a caller reads it, decoded from its JSON |  |
 | [0215](0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md) | The runtime's tables are made in the schema the client's `search_path` names, one runtime per database | [0216](0216-the-tables-are-made-by-effects-migrator.md), [0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md) |
 | [0062](archive/0062-a-row-is-read-through-a-schema.md) | A row is read through a schema, or not at all | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0259](0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md) |
-| [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md) | `reindex` writes a row only over the state it was computed from |  |
+| [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md) | `reindex` writes a row only over the state it was computed from | [9998](9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md) |
+| [9998](9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md) | A statement that writes on a condition reads it from a row it has locked, and `reindex` locks its entity (numbered at its merge) |  |
 | [0072](archive/0072-the-log-shows-what-a-step-changed.md) | The log shows what a step changed, as the program deployed computes it | [0138](archive/0138-the-log-publishes-topics.md) |
 | [0098](archive/0098-json-is-effect-s.md) | `Json` is Effect's |  |
 

@@ -34,10 +34,11 @@ family gets a fix of its own.
 - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39, 54,
   55, 57 to 59, 70, 73, 74, 77, 84, 85, 89 to 91 and 97, as decisions 0248 and 0249 were. Its rule is the step The tests
   of a contract on every backend, of the roadmap: the tests of the runtime run alike on one process and on Cluster.
-- D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78 and 80. Its rule is the same step:
+- D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78 and 80. Its test is the same step:
   a test of rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their
   statements. Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does
-  not read again on the row it then writes.
+  not read again on the row it then writes. Its rule is [decision 9998](decisions/9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md): a statement that writes
+  or deletes a row on a condition reads the condition from a row it has locked. Bug 25 is its first case, fixed.
 - F, B, E and G are fixed. Family F is decided by
   [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), family E by
   [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md), family B by
@@ -189,22 +190,7 @@ family gets a fix of its own.
     `src/cluster.test.ts`, on `claude/premise-review-schemas-2-b06280` at `3e592de`. The fix begins at `forget`
     of `src/storage/log.ts`, or at `enlisted` of `src/runtime.ts`. The
     [open question](open-questions.md#storage-and-reading) The consumers of several runners on Cluster.
-25. **Reproduced on the CI's server: on a pool of PostgreSQL, `reindex` writes the projection of a state over the
-    row a step committed while its statement waited.** Its guard on the state is read from the statement's
-    snapshot, and `ON CONFLICT DO UPDATE` writes the row the step committed
-    ([decisions 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md),
-    [0222](decisions/0222-postgresql-with-many-connections.md)). Under `REPEATABLE READ` the statement fails
-    instead, and `reindex` dies. Two sessions found it. The test of a contract `two calls held at a statement on a
-    pool answer as one order of them`, in `src/contract.test.ts` on `claude/contract-tests-c7e2a1` at `4f8269d`,
-    reproduced it in the job `postgres` of the CI on 2026-11-12, once in 139 runs. A message to an entity was answered
-    `Accepted` while a `reindex` ran beside it, and the entity's projection read after was the one before the
-    message. The todo `a reindex held beside a step on a pool leaves the row the step wrote`, in the same file, holds
-    the case fast-check shrank it to, and the test of a contract leaves `reindex` out until the fix. The tests
-    `FAILING: a reindex beside a step on a pool leaves the row the step wrote`, on
-    `claude/premise-review-schemas-1-0ccf33` at `778b0f2`, and `FAILING: reindex leaves the row a step committed
-    while its statement waited on the row`, on `claude/premise-review-schemas-2-b06280` at `3e592de`, both in
-    `src/postgres.test.ts`, have not run. The fix begins at `reindex` of `src/storage/projections.ts`. The
-    [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its snapshot.
+25. **Fixed by [decision 9998](decisions/9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md)**, under which `reindex` locks the entity's row it reads the state from, so that on a pool it reads the state a step committed while it waited. Reproduced first by the test of a contract of the pool on the CI's server.
 26. **Fixed by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md)**, which refuses a call that runs a step or waits for one within a transaction of the client.
 27. **Reasoned: on Cluster, the ids a process of the old code keeps under a renamed name stay for ever in
     Cluster's tables.** A process with no runner address deploys any program
