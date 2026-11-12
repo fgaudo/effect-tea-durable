@@ -2297,10 +2297,15 @@ describe('readings over generated rows', () => {
   /** What a query compares of a row: its rank, a boolean read as its number, as a query orders it (decision 0150). */
   const key = (value: Scalar) => JSON.stringify(typeof value === 'boolean' ? Number(value) : value)
 
-  const property = <A>(arbitrary: fc.Arbitrary<A>, body: (store: Store, value: A) => Effect.Effect<void>) =>
+  /** Runs `body` on values `arbitrary` draws, after the `examples` given, which every run runs. */
+  const property = <A>(
+    arbitrary: fc.Arbitrary<A>,
+    body: (store: Store, value: A) => Effect.Effect<void>,
+    examples: ReadonlyArray<A> = [],
+  ) =>
     fc.assert(
       fc.asyncProperty(arbitrary, (value) => database((sql) => body(storage(ranked, sql), value))),
-      { numRuns: Bun.env['SCHEDULES'] === 'all' ? 200 : 8 },
+      { numRuns: Bun.env['SCHEDULES'] === 'all' ? 200 : 8, examples: examples.map((example) => [example]) },
     )
 
   test('the pages of a query, read one after the other, give the query read at once, in either order', () =>
@@ -2373,12 +2378,25 @@ describe('readings over generated rows', () => {
         expect(keys(tallies.map(({ value }) => value))).toEqual(keys(found.map(({ indexes }) => indexes.rank)))
         const numbers = found.flatMap(({ indexes }) => typeof indexes.rank === 'number' ? [indexes.rank] : [])
         if (numbers.length === found.filter(({ indexes }) => indexes.rank !== null).length) {
-          const total = yield* store.sum({ index: 'rank', where })
+          const exit = yield* Effect.exit(store.sum({ index: 'rank', where }))
+          // A sum whose units of 2^980 and count of numbers reach 2^44 is refused (decision 0277).
+          const units = numbers.reduce((total, n) => total + Math.trunc(Math.abs(n) * 2 ** -980), 0)
+          if (units + numbers.length >= 2 ** 44) {
+            const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit.value
+            expect(cause instanceof InvariantDefect && cause.reason).toBe(
+              "the total of the index 'rank' may pass the largest double",
+            )
+            return
+          }
+          const total = yield* exit
           const magnitudes = numbers.reduce((total, n) => total + Math.abs(n), 0)
           const exact = numbers.reduce((total, n) => total + n, 0)
           expect(Math.abs(total - exact)).toBeLessThanOrEqual(8 * Number.EPSILON * magnitudes)
         }
-      })), 120_000)
+      }), [
+      // A rank near the largest double, which the CI drew at the push of `9ac2cc7`: its sum is refused.
+      [[['a', -1.7976931348622137e+308]], []],
+    ]), 120_000)
 
   test('numbers are ordered as numbers and text by its bytes of UTF-8, the id breaking ties', () =>
     property(
