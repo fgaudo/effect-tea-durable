@@ -6054,10 +6054,13 @@ session reads whole, so the reading went to the pairs the brief named first.
 The second reading of area 5, by a session that read none of the earlier reports of the area: notes 0101, 0103,
 0109 to 0112, 0116, 0119, 0120, 0134, 0147, 0164, 0177, 0194, 0219 to 0221, 0243 and 0246, against the notes that
 change them, cite them, or are cited beside them in one declaration of `src/`. The later notes the brief named, 0251,
-0254, 0256, 0258, 0259, 0261, 0271, 0272, 0274, 0280 and 0282, were read against them. The reading found one bug,
-reproduced by a test that fails at a pinned seed: a planned stop misses an operation that runs again which a step
-forks as the drain begins, and then waits for it. The branch is `claude/premise-review-2-area-5-51cf0e`, and the test
-is in commit `e24a0f1`, cut from `main` at `ca62547`.
+0254, 0256, 0258, 0259, 0261, 0271, 0272, 0274, 0280 and 0282, were read against them. The session that records the
+reviews sent it back once, to read the notes left in part and to check its two suspects, and this section is the
+report after that second pass. The reading found one bug in three forms, each reproduced by a test that fails at a
+seed it pins: the stop of a planned stop, `quiesce`, misses an operation that runs again or a timer that a step forks
+as the stop runs, on the drain of decision 0119 and on the undo of decision 0280. The branch is
+`claude/premise-review-2-area-5-51cf0e`, cut from `main` at `ca62547`. The tests are in commits `e24a0f1` and
+`d8a98cf`.
 
 ### The notes to read
 
@@ -6099,7 +6102,7 @@ of several roles has each. A note read "in part: the code that cites it" was rea
 | 0061 | Only what the program does is its defect | coupled by the code | not at all |
 | 0063 | The runtime waits for what it waits for, and polls nothing | coupled by the code | in part: the code that cites it, `settled` and `emptied` |
 | 0064 | The program is not the machine's state, and a fix is a deploy | coupled by the code | not at all |
-| 0066 | The runtime's tests move time, and wait for nothing on a clock | cites one | not at all |
+| 0066 | The runtime's tests move time, and wait for nothing on a clock | cites one | in part: as 0101, 0103 and 0104 state its premises |
 | 0067 | Each entity is held by its own lock | coupled by the code | not at all |
 | 0068 | What another fiber reads changes in one step | coupled by the code | in part: the code that cites it, `forkHeld` and `leave` |
 | 0070 | `reindex` writes a row only over the state it was computed from | coupled by the code | not at all |
@@ -6115,18 +6118,18 @@ of several roles has each. A note read "in part: the code that cites it" was rea
 | 0081 | On Cluster, a step commits with its reply | coupled by the code | not at all |
 | 0084 | A step commits only where the commit checks the shard | coupled by the code | not at all |
 | 0092 | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each | coupled by the code | not at all |
-| 0101 | A moved clock gives a fiber it did not wake one turn | of the area | not at all |
+| 0101 | A moved clock gives a fiber it did not wake one turn | of the area | whole, with the helpers `ran`, `running` and `adjusted` of `src/runtime.test_shared.ts` |
 | 0102 | A deploy interrupted before it registers undoes itself whole | coupled by the code | in part: the code that cites it, the undo of `deploy` |
-| 0103 | A test moves the wall clock ahead of the sleeps | of the area | not at all |
-| 0104 | The runtime's tests choose where fibers yield, and none runs under budgets | changes 0101; cites one | not at all |
+| 0103 | A test moves the wall clock ahead of the sleeps | of the area | whole, with a search of `src/` for a clock read outside Effect |
+| 0104 | The runtime's tests choose where fibers yield, and none runs under budgets | changes 0101; cites one | whole; its code, `src/testing.ts`, in its exports and in `explored` of `src/runtime.test_shared.ts` |
 | 0109 | `settled` waits for an entity unloading | of the area | whole, with the code |
 | 0110 | Detached work is counted until it ends, however it ends | of the area | whole, with the code |
 | 0111 | An entity's wait times out its take alone | of the area | whole, with the code |
-| 0112 | A fork from a region that cannot be interrupted says it is interruptible | of the area | in part: the decision and `What it rests on`, with `forkApart` |
+| 0112 | A fork from a region that cannot be interrupted says it is interruptible | of the area | whole, with the code |
 | 0114 | An operator sees the suspended entities, and what a resume or a discard did | coupled by the code | not at all |
 | 0115 | The scheduler of the tests preempts from a run's third step, where Effect first can | cites one | not at all |
-| 0116 | An entity's wait ends with an item of its queue, and nothing races its take | of the area; changes 0111 | in part: the decision and `What it rests on`, with the code of `steps` |
-| 0117 | A fiber on another's stack yields with no task ready | changes 0116; cites one | not at all |
+| 0116 | An entity's wait ends with an item of its queue, and nothing races its take | of the area; changes 0111 | whole, with the code |
+| 0117 | A fiber on another's stack yields with no task ready | changes 0116; cites one | whole; its code, `src/testing.ts`, in its exports and in `explored` of `src/runtime.test_shared.ts` |
 | 0119 | A planned stop drains the at-most-once operations, and stops the rest at once | of the area | whole, with the code |
 | 0120 | The runtime closes a sequential scope of its own, whatever its caller's | of the area; changes 0119 | whole, with the code |
 | 0121 | A read answers from the row of the read model, and calls no `project` | coupled by the code | not at all |
@@ -6134,7 +6137,7 @@ of several roles has each. A note read "in part: the code that cites it" was rea
 | 0124 | The boundary authenticates, and `update` authorizes | coupled by the code | not at all |
 | 0125 | A caller's reply is kept as long as its boundary says, from the step that answers | coupled by the code | not at all |
 | 0128 | An operation that acts on nothing may be dropped or changed while it runs | cites one | in part: the code that cites it, `drop` |
-| 0134 | An entity's loop yields after a step that leaves it more to do, so that a busy entity holds no other for more than a step | of the area; changes 0116 | in part: the decision and `What it rests on`, with the code of `steps` |
+| 0134 | An entity's loop yields after a step that leaves it more to do, so that a busy entity holds no other for more than a step | of the area; changes 0116 | whole, with the code |
 | 0135 | A large state is split by the program, and the runtime warns of a large step | cites one; coupled by the code | not at all |
 | 0137 | The log is ordered within a partition, and a consumer keeps a cursor per partition | coupled by the code | not at all |
 | 0138 | The log publishes topics, and a consumer reads one | coupled by the code | not at all |
@@ -6154,7 +6157,7 @@ of several roles has each. A note read "in part: the code that cites it" was rea
 | 0160 | On Cluster, a door answers as text, and a creation the program dies on waits for a fix | coupled by the code | not at all |
 | 0161 | On Cluster, a step settles the machine by the count of the steps that wrote it, and an entity's lock is taken only inside a transaction | cites one; coupled by the code | not at all |
 | 0162 | On Cluster, an entity's shard is its partition, and each deployment serves its shards from a singleton of each | coupled by the code | not at all |
-| 0164 | Every fork of the runtime drops the transaction, and a count is raised and lowered by one `acquireUseRelease`, as a test reads in the code | of the area | not at all |
+| 0164 | Every fork of the runtime drops the transaction, and a count is raised and lowered by one `acquireUseRelease`, as a test reads in the code | of the area | whole, with the forks and counts of `src/runtime/` and a search of the combinators that fork |
 | 0165 | On Cluster, a caller sends through the door's client, and is never answered `Full` | changes 0147; cites one; coupled by the code | not at all |
 | 0166 | On Cluster, an operator resumes and discards through the door's client, each event a request of its own | coupled by the code | not at all |
 | 0167 | On Cluster, an operation sends through the door's client, and is woken by `Resumed` | coupled by the code | not at all |
@@ -6163,74 +6166,93 @@ of several roles has each. A note read "in part: the code that cites it" was rea
 | 0174 | On Cluster, a runner deploys only the programs its `sharding` names, at the version named | coupled by the code | not at all |
 | 0175 | On Cluster, every step checks the newest version and the shard's lease, a door's, the loop's and an activation's | coupled by the code | not at all |
 | 0176 | On Cluster, a rename marks the old name, which no runner steps again, and keeps a door under it that delivers to the new program | coupled by the code | not at all |
-| 0177 | The runtime's bookkeeping stays in synchronous steps, and not in Effect's `Tx` modules | of the area | not at all |
+| 0177 | The runtime's bookkeeping stays in synchronous steps, and not in Effect's `Tx` modules | of the area | whole, with the code |
 | 0182 | A program's `init` may reject the flags, and the rejection is not stored | coupled by the code | not at all |
 | 0184 | `consume` runs a reader of a consumer, a page and its ack in one transaction | cites one; coupled by the code | not at all |
 | 0185 | `inspect` gives what is stored of one entity, read from one snapshot | coupled by the code | not at all |
 | 0191 | A launch creates the tables, in one transaction, unless it is told they exist | coupled by the code | not at all |
 | 0192 | The digest of an idempotency key is computed by the machine, and `src/program.ts` reaches no module of Node | cites one | not at all |
-| 0194 | A timer months away sleeps on Effect's promise of a duration, which Effect keeps by timers of the host in turn | of the area | not at all |
+| 0194 | A timer months away sleeps on Effect's promise of a duration, which Effect keeps by timers of the host in turn | of the area | whole, with the code |
 | 0204 | A request id is text a database holds, and one that is not is the caller's defect | coupled by the code | not at all |
 | 0208 | A launch checks every option, `retry`, `passivate` and `warn` among them | coupled by the code | not at all |
 | 0209 | A sum is exact on PostgreSQL, and is refused alike on both dialects past the largest double | coupled by the code | not at all |
 | 0216 | The tables are made by Effect's `Migrator`, which records each migration in `tea_migrations` | coupled by the code | not at all |
 | 0219 | A drain holds when an interrupted fiber closes its scope, and on Cluster ends before the runner lets its shards go | of the area; changes 0119, 0120 | whole, with the code |
-| 0220 | The runtime records a span for each step and each operation, linked to what each follows, and three metrics of its entities | of the area | not at all |
-| 0221 | A timer sleeps an hour at most at a time, and reads the wall clock after each sleep | of the area; changes 0194 | in part: the decision and `What it rests on`, with `arm` and the waker |
+| 0220 | The runtime records a span for each step and each operation, linked to what each follows, and three metrics of its entities | of the area | whole, with `traced`, `linkOf` and the span of `start` |
+| 0221 | A timer sleeps an hour at most at a time, and reads the wall clock after each sleep | of the area; changes 0194 | whole, with the code |
 | 0224 | A consumer shows the time of the step it reads next, and the runtime records no metric of its age | changes 0220; cites one; coupled by the code | not at all |
 | 0225 | On PostgreSQL the migrations run at the level the role sets, since `Migrator` locks its table before it reads | cites one | not at all |
-| 0243 | A fork that keeps a transaction it outlives fails where it runs, at Effect 4.1.3, and the runtime still forks without it | of the area; changes 0164 | not at all |
+| 0243 | A fork that keeps a transaction it outlives fails where it runs, at Effect 4.1.3, and the runtime still forks without it | of the area; changes 0164 | whole, with `untransacted` and `forkApart` |
 | 0245 | `send` requires `keep`, an argument that may be left out comes last, a request leaves out a sender and flags that are `null`, and the runtime sweeps what no reader needs, in batches | coupled by the code | not at all |
-| 0246 | A transaction can wait for the time, and the bookkeeping still stays in synchronous steps | of the area; changes 0177 | not at all |
+| 0246 | A transaction can wait for the time, and the bookkeeping still stays in synchronous steps | of the area; changes 0177 | whole, with the code |
 | 0248 | On Cluster, a caller's rows are kept for at least two of Cluster's polls of replies and a second, so that every client of the request reads the answer | coupled by the code | not at all |
-| 0251 | A `retry` and a `passivate` are a millisecond at least, and a launch refuses 0 | later, given by the brief; cites one; coupled by the code | in part: its title, against `passivate` and `retry` in `steps` and `crash` |
+| 0251 | A `retry` and a `passivate` are a millisecond at least, and a launch refuses 0 | later, given by the brief; cites one; coupled by the code | whole, with the code |
 | 0252 | The waker activates an entity a crash took out after the retry, a door's step that loaded an entity and rolled back leaves it unsettled, and an entity is not unloaded while a door's step is uncommitted | coupled by the code | not at all |
 | 0253 | An answer no entity stores, a creation `init` rejected or `NotFound`, is kept for the operation that was given it while its work holds | coupled by the code | not at all |
-| 0254 | A check of the project runs against the case it refuses: a check gets a sample of each case, a list of files is read from the disk, and a pinned seed of an explored test runs against its rule taken out | later, given by the brief; cites one | not at all |
-| 0256 | A call that runs a step or waits for one, `deploy`, `create`, `send`, `resume`, `discard` and a fetch that waits, is refused within a transaction of the client | later, given by the brief; cites one; coupled by the code | not at all |
-| 0258 | The waker measures its sleep from the clock it reads as it rests, and a timer come due meanwhile begins the next round | later, given by the brief; changes 0221; cites one | in part: the code that cites it, in `waking` |
-| 0259 | A reading of the waker that fails, or a stored time it refuses, is logged once and read again after the retry | later, given by the brief; cites one; coupled by the code | in part: the code that cites it, in `waking` |
+| 0254 | A check of the project runs against the case it refuses: a check gets a sample of each case, a list of files is read from the disk, and a pinned seed of an explored test runs against its rule taken out | later, given by the brief; cites one | whole; its checks run by `src/form.test.ts`, not read |
+| 0256 | A call that runs a step or waits for one, `deploy`, `create`, `send`, `resume`, `discard` and a fetch that waits, is refused within a transaction of the client | later, given by the brief; cites one; coupled by the code | whole, with the code |
+| 0258 | The waker measures its sleep from the clock it reads as it rests, and a timer come due meanwhile begins the next round | later, given by the brief; changes 0221; cites one | whole, with the code |
+| 0259 | A reading of the waker that fails, or a stored time it refuses, is logged once and read again after the retry | later, given by the brief; cites one; coupled by the code | whole, with the code |
 | 0261 | The drain stops and waits for every deployment from the claim of its name, and a deploy activates nothing once the drain began | later, given by the brief; changes 0119; cites one; coupled by the code | whole, with the code |
 | 0264 | A launch checks every option before the hold, and a launch that dies gives back what it held | coupled by the code | not at all |
 | 0265 | The operations that wait for a resumption are stored by the step that answers them `Suspended`, and listed on every runner while their run holds | coupled by the code | not at all |
 | 0269 | A caller's request is its sender, its request id and what it carries, and a caller's request that carries another message or other flags under a used id is answered `Reused` | coupled by the code | not at all |
-| 0271 | Every fork of the runtime passes `{ uninterruptible: false }`, through `forkApart` and `forkChildApart`, and the test of the form of `src/` refuses a fork without it | later, given by the brief; changes 0112, 0164; cites one; coupled by the code | in part: the code that cites it, `forkApart` and `detached` |
-| 0272 | A boundary acknowledges an item once `send` answers `Accepted` or `Rejected`, sends it again after `Suspended` or `Full`, and stops at `Reused` | later, given by the brief; cites one | in part: the context and the decision |
+| 0271 | Every fork of the runtime passes `{ uninterruptible: false }`, through `forkApart` and `forkChildApart`, and the test of the form of `src/` refuses a fork without it | later, given by the brief; changes 0112, 0164; cites one; coupled by the code | whole, with the code |
+| 0272 | A boundary acknowledges an item once `send` answers `Accepted` or `Rejected`, sends it again after `Suspended` or `Full`, and stops at `Reused` | later, given by the brief; cites one | whole, with the code |
 | 0273 | The partition is the library's own hash, and the round of a shard and the waker log an entity stored under a partition that is not its shard | coupled by the code | not at all |
-| 0274 | An entity is not loaded while the stop of its former run is running, the stop is work of the process for `settled` and the waker, a shard lost waits for every stop of its entities, and a run whose entity crashed sends nothing | later, given by the brief; changes 0147; cites one; coupled by the code | in part: the code that cites it, in `crash`, `leave`, `quiet` and `waking` |
+| 0274 | An entity is not loaded while the stop of its former run is running, the stop is work of the process for `settled` and the waker, a shard lost waits for every stop of its entities, and a run whose entity crashed sends nothing | later, given by the brief; changes 0147; cites one; coupled by the code | whole, with the code |
 | 0277 | A sum is refused once a count of its magnitudes in units of 2^980, which both dialects make alike, reaches 2^44 | coupled by the code | not at all |
 | 0280 | With a drain, the undo of a deploy drains its own deployment before it closes the scope, so that a planned stop that interrupts a deploy waits for its at-most-once operations | later, given by the brief; cites one; coupled by the code | whole, with the code |
 | 0282 | A caller's message offered before its request is answered is answered by that answer, and not applied | later, given by the brief; cites one; coupled by the code | whole, with the code |
 
 ### Findings
 
-1. **Reproduced: a planned stop misses an operation that runs again which a step forks as the drain begins, and waits
-   for it.** [Decision 0119](archive/0119-a-planned-stop-drains-the-at-most-once-operations.md) stops at once the
-   timers and the operations that run again, and waits for the at-most-once operations alone. Its drain sets
-   `p.draining`, then `quiesce` interrupts each fiber it finds under the ids of `loaded.rerun` and `loaded.timers`
-   (`src/runtime.ts:1477`, `src/runtime.ts:1492`). `start` of `src/runtime/loop.ts` reads `draining` at line 253,
-   adds the operation to `rerun` at line 254, and registers its fiber in `operations` only once `forkHeld` has forked
-   it, at line 199. The comment of `forkHeld` says that the forking fiber may yield between the fork and the
-   registration ([decision 0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md)). So the rule of
-   decision 0119 rests on a premise no note wrote: no step is between its look at `draining` and the registration
-   of the fiber when the drain looks. A drain that runs there finds the operation in `rerun` and no fiber in
-   `operations`, so `stop` does nothing, and the idempotent operation runs on in the drain. `drained` counts
-   `operations`, so the drain waits for it. Where the operation does not end, the drain waits its whole `millis`,
-   though every at-most-once operation has ended, and the process stops that much later. Where it ends in the drain,
-   its completion is committed, which loses nothing. The undo of
-   [decision 0280](0280-the-undo-of-a-deploy-drains-its-deployment.md) calls the same `quiesce`
-   (`src/runtime.ts:1184`) while an activation runs in its wait, so it has the same form, which was not run.
-   [Decision 0261](0261-the-drain-reaches-a-deployment-still-activating.md) extends the same stop to every deployment
-   in `made`. The test `FAILING: a step that starts an operation that runs again as the drain begins has it stopped
-   at once`, in `src/runtime.test.ts` at line 1451, reproduces it at seed 659, pinned, on the branch at `e24a0f1`. It
-   ends the launch's body at the point `AfterReply` of a caller's step that starts `a`, so that the drain begins
-   between the reply and `start`, and lets `b`, the only at-most-once operation, end. At seed 659 the run does not
-   end, and a probe of `drained` showed the drain waiting on `a`. Under `SCHEDULES=all`, 2,000 seeds at depth 4, it
-   fails at seed 659 first. Every seed passes once `start` stops the operation it registered where it then finds
-   `draining` set. That guard was made by hand for the check and not kept. A fix could begin at `start` and `arm` of
-   `src/runtime/loop.ts`, which would read `draining` again once the fiber is registered, or at `forkHeld`, which
-   would register the fiber in the step that forks it. The test pins a seed and has no pin in
-   `src/runtime.test_pins.ts` yet, which a test of `src/form.test.ts` asks for once the test moves to `main`.
+The three findings are one bug of one form, which a fix in one place could hold. A planned stop stops at once the
+timers and the operations that run again, and waits for the at-most-once operations alone
+([decision 0119](archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). The stop is `quiesce` of
+`src/runtime.ts:1477`. It interrupts each fiber it finds in `loaded.timers`, and each fiber in `loaded.operations`
+under the ids of `loaded.rerun`. `start` of `src/runtime/loop.ts` reads `draining` at line 253, adds the operation
+to `rerun` at line 254, and registers its fiber only once `forkHeld` has forked it, at line 199. `arm` reads
+`draining` at line 301, then reads the clock, and registers the timer's fiber through `forkHeld` too. The comment of
+`forkHeld` says that the forking fiber may yield between the fork and the registration
+([decision 0068](archive/0068-what-another-fiber-reads-changes-in-one-step.md)). So the rule of decision 0119 rests
+on a premise no note wrote: no step is between its look at `draining` and the registration of its fiber when the
+stop runs. [Decision 0261](0261-the-drain-reaches-a-deployment-still-activating.md) extends the stop to every
+deployment in `made`, and [decision 0280](0280-the-undo-of-a-deploy-drains-its-deployment.md) calls the same
+`quiesce` from the undo of a deploy (`src/runtime.ts:1185`), while the activation the deploy waited for still runs.
+Each test below was confirmed the same way. Under `SCHEDULES=all`, 2,000 seeds at depth 4, it fails at the seed it
+pins. It passes every seed once the guard is added by hand: `start`, or `arm`, stops the fiber it registered where it
+then finds `draining` set. The guard was not kept. A fix could begin there, at `start` and `arm`, or at `forkHeld`,
+which would register the fiber in the step that forks it. Each test pins a seed and has no pin in
+`src/runtime.test_pins.ts` yet. The test `every explored test that pins a seed has a pin` of `src/form.test.ts`
+therefore fails on the branch, and asks for the three pins once the tests move to `main`.
+
+1. **Reproduced: a drain misses an operation that runs again which a step starts as the drain begins, and waits for
+   it.** The drain finds the operation in `rerun` and no fiber in `operations`, so `stop` does nothing, and the
+   idempotent operation runs on in the drain. `drained` counts `operations`, so the drain waits for it. Where the
+   operation does not end, the drain waits its whole `millis`, though every at-most-once operation has ended, and
+   the process stops that much later. Where it ends in the drain, its completion is committed, which loses nothing.
+   The test `FAILING: a step that starts an operation that runs again as the drain begins has it stopped at once`,
+   in `src/runtime.test.ts` at line 1451, commit `e24a0f1`, reproduces it at seed 659. It ends the launch's body at
+   the point `AfterReply` of a caller's step that starts `a`, so that the drain begins between the reply and
+   `start`, and lets `b`, the only at-most-once operation, end. At seed 659 the run does not end, and a probe of
+   `drained` showed the drain waiting on `a`.
+2. **Reproduced: a drain misses a timer that a step arms as the drain begins, and the timer fires in the drain.**
+   The timer runs on, and fires once its time comes, while an at-most-once operation still holds the drain open. Its
+   `Fire` is stepped in the drain, against decision 0119. That step may start an at-most-once operation, which the
+   drain then waits for, and which delivers `unknown` where the drain's `millis` run out. Without the race, the timer
+   would fire in the next process and the operation would run whole, which is reasoned and was not run. The test
+   `FAILING: a step that arms a timer as the drain begins has it stopped at once`, in `src/runtime.test.ts` at line
+   1505, commit `d8a98cf`, reproduces it at seed 60. The drain begins at `AfterReply` of a caller's step that arms
+   `t`. The interruption of `a` tells the test that `quiesce` is done, and the clock moves past the time of `t` only
+   then, so a `Fire` seen after it is a timer the stop missed. At seed 60 one `Fire` is seen.
+3. **Reproduced: the undo of a deploy misses an operation that runs again which the activation it waits for starts,
+   and waits for it.** The deploy is interrupted as the activation of `toy-2` has replied and is about to start `a`,
+   `b` and `c`. The undo sets `deployed.draining` and runs `quiesce`, which may run between `start`'s look and the
+   registration of `a` or `c`. The undo's wait counts `operations` too, so it waits for the operation that runs again
+   for its whole `millis`, and the caller of the deploy, or the planned stop that interrupted it, waits with it. The
+   test `FAILING: an undo that begins as an activation starts its operations stops those that run again at once`, in
+   `src/runtime.test.ts` at line 2000, commit `d8a98cf`, reproduces it at seed 13, where the run does not end.
 
 ### Leads
 
@@ -6238,10 +6260,10 @@ None.
 
 ### Suspects ruled out
 
-- That the window of the finding is reached by a step that does not straddle the drain's start: the first form of
-  the test sent the message and ended the body at once. It passed under `SCHEDULES=all` at depth 4, 2,000 seeds, and
-  under `bound` 1, every deviation, with the guard and without it. A probe of `drained` showed `a` never registered
-  before the drain in those runs. So the form that reproduces the finding ends the body at `AfterReply`.
+- That the window of the findings is reached by a step that does not straddle the stop: the first form of the test
+  of finding 1 sent the message and ended the body at once. It passed under `SCHEDULES=all` at depth 4, 2,000 seeds,
+  and under `bound` 1, every deviation, with the guard and without it. A probe of `drained` showed `a` never
+  registered before the drain in those runs. So the forms that reproduce the findings hold the stop at `AfterReply`.
 - That a caller's `Receive` skipped by
   [decision 0282](0282-a-callers-message-offered-before-its-answer-is-answered-by-it.md) holds a drain or `settled`:
   `steps` gives the permit back and lowers `pending` in the same `ensuring` as for a step applied
@@ -6254,23 +6276,34 @@ None.
 - That the waker escapes the drain of decision 0119 through the crash's retry of decision 0252: every activation of
   the waker, a crash's mark included, runs in the one fiber `waking`, which `quiesce` interrupts
   (`src/runtime/waker.ts`). By reading.
+- That the waker loses a poke as decision 0116 says a take raced against a timeout loses its item: the waker races
+  `Queue.take(waker.poke)` against its sleep with `raceFirst` (`src/runtime/waker.ts:136`). A poke the losing take
+  consumes is lost, but either end of the race begins a round that reads the storage again after the poke, so
+  nothing the poke stood for is missed. By reading.
+- That the race of an operation's send against its run's latch, `raceFirst` at `src/runtime/callers.ts:443`, loses a
+  reply the run needs: a reply lost there belongs to a run whose entity crashed, which decision 0274 makes send
+  nothing. By reading.
+- That a combinator of Effect forks inside a step's transaction, which decision 0164 leaves out of its check: the
+  only combinators that fork in `src/` are the two `raceFirst` above, `raceAll` of `src/runtime/readings.ts`, and the
+  `timeoutOption` of the drain and of the undo, none of them inside a step's transaction. `Effect.all` in
+  `src/storage/entities.ts:173` runs sequentially. By a search of `src/`.
+- That the runtime reads a clock or sets a timer outside Effect, against the premises of decisions 0103 and 0194: no
+  module of `src/` but the tests calls `Date.now`, `performance.now`, `new Date()`, `setTimeout` or `setInterval`. The
+  waker's read of decision 0258 goes through `Effect.clockWith`, the `Clock` service the test's `ahead` replaces. By a
+  search of `src/`.
 - That `Full` loses an item of a boundary under decision 0147: decision 0272 sends the item again after `Full`, and
-  acknowledges it only after `Accepted` or `Rejected`. By its decision.
+  acknowledges it only after `Accepted` or `Rejected`. A caller held by the drain and interrupted at its end is not
+  acknowledged either, and its source gives it again. By its decision.
+- That the drain of decision 0119 misses the stop of a crashed entity, which decision 0274 makes work of the process
+  for `settled`: `drained` does not read `stopping`, but the stop runs in the deployment's scope, and the scope's
+  close waits for it. An at-most-once operation the crash interrupted delivers `unknown` whether or not the drain
+  waits. By reading.
 
 ### Suspects noticed and not checked
 
-- **A timer armed as the drain begins fires in the drain.** `arm` of `src/runtime/loop.ts` reads `draining` at line
-  301, then reads the clock, and forks the timer in `forkHeld`, which registers it after the fork. It is the form of
-  the finding, for a timer. `drained` does not count timers, so the timer holds no drain open. But a timer due at
-  once fires in the drain, against decision 0119. Its step may start an at-most-once operation, which the drain then
-  waits for, and which delivers `unknown` where the drain's `millis` run out. Without the race the timer would fire
-  in the next process, and the operation would run whole. A test of `a planned stop` would check it, with a program
-  whose `Rang` brings `b`, the drain begun at `AfterReply` of a message that arms a timer due at once, and a probe of
-  `Fire` in the drain.
-- **The undo of decision 0280 against an activation that starts an operation that runs again.** The undo sets
-  `deployed.draining` and calls `quiesce` while the activation the deploy waited for still runs, with the window of
-  the finding. A test of `a deploy that dies as it activates drains its deployment`, held at `AfterReply` of the
-  activation's `Restart`, would check it.
+- What a `Fire` the drain lets through costs, as finding 2 says: an at-most-once operation started in the drain by
+  the timer's step, which delivers `unknown` once the drain's `millis` run out. A test of the form of finding 2, with
+  a program whose `Rang` brings `b` and a drain whose `millis` the clock passes, would show it.
 
 ### Where the code does otherwise than the note it cites
 
@@ -6283,20 +6316,26 @@ None.
   activation to commit and its at-most-once operations to start, and does not close the scope before. What is stored
   stays right, since a step in the drain starts no operation that runs again.
 - `src/runtime/loop.ts:253`, `start`, and `src/runtime/loop.ts:301`, `arm`: their comments say that a planned stop
-  starts no operation that runs again and arms no timer (decisions 0119 and 0280). That holds where the drain began
-  before the look. Where it begins after the look and before the registration, the operation is started and the
-  drain misses it, as the finding says.
+  and the undo of a deploy start no operation that runs again and arm no timer (decisions 0119 and 0280). That holds
+  where the stop began before the look. Where it begins after the look and before the registration, the operation or
+  the timer is started and the stop misses it, as the findings say.
+- `src/runtime/loop.ts:178`, `forkHeld`: [decision 0271](0271-every-fork-of-the-runtime-says-it-is-interruptible.md)
+  rests on the bookkeeping of `forkHeld` being in an `ensuring`, "which runs on interruption". By
+  [decision 0110](archive/0110-detached-work-is-counted-until-it-ends-however-it-ends.md), an `ensuring` runs only
+  once its effect has started. A fiber of `forkHeld` that its scope interrupts before its first step leaves its entry
+  in `operations` or `timers`, and tells no end. Every other interruption of such a fiber goes through `stop` or
+  `drop`, which take the entry out first, and nothing reads the entries once the scope has closed, so no rule is
+  broken today.
 
 ### The notes not read whole
 
-Decisions 0119, 0120, 0219, 0261, 0280, 0147, 0282, 0109, 0110 and 0111 were read whole, with the code of
-`src/runtime.ts`, `src/runtime/loop.ts`, `src/runtime/callers.ts` and `src/runtime/waker.ts` that keeps them.
-Decisions 0116, 0134, 0112 and 0221 were read in their decision and their section `What it rests on`, and decision
-0272 in its context and its decision. Decisions 0251, 0258, 0259, 0271 and 0274 were read only in the code that cites
-them. Decisions 0101 and 0103 are rules of the scheduler and the clock of the tests, which the brief leaves out of
-this area, and were not read. Decisions 0164, 0177, 0194, 0220, 0243, 0246, 0254 and 0256 were not read. The session
-went first to the drain, the callers' bound and the loop's wait, where the later notes change the runtime's state.
-These eight hold the form of the forks, the bookkeeping, the spans and the checks of the project, and are left for the
-step's last session, to read whole. The notes marked "not at all" and coupled by the code hold rules of messages,
-replies, the log, deploys and Cluster, which their own areas read. The list holds 132 notes, past the thirty a session
-reads whole.
+The thirty notes of the area and of the brief were read whole, and so were decisions 0104 and 0117, which change
+notes of the area, each with the code that keeps it in `src/runtime.ts`, `src/runtime/loop.ts`,
+`src/runtime/callers.ts`, `src/runtime/waker.ts` and `src/runtime/process.ts`. The code of decisions 0104 and 0117,
+`src/testing.ts`, was read in its exports and through `explored` of `src/runtime.test_shared.ts`, and not whole. The
+checks of decision 0254 in `src/form.test.ts` were run and not read. Decision 0066, which 0101, 0103 and 0104
+change, was read only as those notes state its premises. The notes marked "in part: the code that cites it" were
+read only in the code of the runtime that keeps their rules beside the area. The notes marked "not at all" are
+coupled to the area by the long declarations of `src/runtime/loop.ts`, `src/runtime/callers.ts` and `src/storage/`, or
+cite a note of the area in passing. They hold rules of messages, replies, the log, deploys and Cluster that their
+own areas read. The list holds 132 notes, past the thirty a session reads whole.
