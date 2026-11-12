@@ -387,8 +387,6 @@ with a requirement that no example has yet.
     of a partition that commits between them. Whether `published` reads each partition only up to the head it read
     first, or runs in `snapshot`, and whether a `fetch` inside a caller's transaction at `READ COMMITTED` keeps the
     finding under the second fix. Its test of a server is written and has not run;
-  - for bug 79, whether the design's advice to begin at `REPEATABLE READ` names `inspect` beside a page of a query
-    ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md));
   - for bug 80, two prunes that drop different rows of one publication at once and each keep it
     ([decision 0154](decisions/archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md)). Whether the trigger locks the
     publication's row first, or a prune takes an advisory lock of the program, and its test of a server, written and

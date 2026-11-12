@@ -610,8 +610,9 @@ each migration: a JSON value a version wrote of one kind, and the JSON value the
 ### Checking a program before its deploy
 
 `check(program, { limit })` finds, before a deploy, the stored entities a new program would not run. It reads each
-entity as an activation reads it, through the new program's migrations and from one snapshot, and steps its
-activation with the machine, in memory. So it runs `work`, `project`, the indexes and the topics on the stored
+entity as an activation reads it, through the new program's migrations and from a snapshot of the entity's own, and
+steps its activation with the machine, in memory. Inside a transaction the caller left open, each entity is read at
+the caller's level, as [Databases](#databases) says. So it runs `work`, `project`, the indexes and the topics on the stored
 state, compares the operations under way with the new `work`, and calls the `unknown` of an at-most-once operation
 that may have run. A suspended entity is stepped as a `resume` by the new program would activate it, and the
 message it died on is not handled. The check launches nothing, holds nothing and writes nothing, so it runs on the
@@ -770,7 +771,8 @@ An operator decides between `resume` and `discard` with `inspect(id)`. It gives 
 state, the mailbox with the next message first, the work under way with the oldest first, and the suspension as
 `suspended` lists it. It reads what is stored and activates nothing, so an entity this process does not hold is
 inspected too. Its rows are read through the migrations from one snapshot, so a step that commits meanwhile is read
-whole or not at all ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)).
+whole or not at all ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)). Inside a
+transaction the caller left open, `inspect` reads at the caller's level, as [Databases](#databases) says.
 
 ## Reading
 
@@ -1261,12 +1263,19 @@ is written once. A launch on a client of any other dialect is the launcher's def
   ([decision 0279](decisions/0279-createtables-dies-within-a-transaction-of-its-client.md)).
 - A step whose transaction PostgreSQL ends with a deadlock crashes its entity, as a write that fails does, and is not
   retried ([decision 0222](decisions/0222-postgresql-with-many-connections.md)).
-- A page of a query reads its ranges in one transaction, begun at `REPEATABLE READ` on PostgreSQL where the
-  transaction is the page's own, so that it gives a row once though a step moves it between its parts. Inside a
-  transaction a caller left open, the page reads at the caller's level: on one connection nothing commits between its
-  parts, and on a server at `READ COMMITTED` a step committed between two parts gives a row twice. A caller that reads
-  pages in its own transaction, and needs each row once, begins it at `REPEATABLE READ`
+- Four readings run several statements in one transaction, begun at `REPEATABLE READ` on PostgreSQL where the
+  transaction is the reading's own: a page of a query, `inspect`, `suspended`, and the reading of each entity by
+  `check`. So a page gives a row once though a step moves it between its parts, and `inspect` reads a step whole or
+  not at all.
+- Inside a transaction a caller left open, each of the four readings runs at the caller's level, since only the
+  outermost transaction states its level. On one connection nothing commits between its statements. On a server at
+  `READ COMMITTED` each statement reads a snapshot of its own, so a step committed between two parts gives a row of a
+  page twice, and `inspect` may read half of a step. A caller that runs one of the four readings in its own
+  transaction, and needs one snapshot, begins that transaction at `REPEATABLE READ`. A test of a page on a server
+  holds this, `a page read in a caller’s transaction gives a row twice at READ COMMITTED, and once at REPEATABLE
+  READ` of `src/postgres.test.ts`, and the four readings begin their transaction alike
   ([decisions 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md),
+  [0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md),
   [0222](decisions/0222-postgresql-with-many-connections.md)).
 - An integer of a row may come from the driver as a number or as a bigint: PGlite gives a number, and
   `@effect/sql-pg` a bigint. Either is read as a number up to 2^53

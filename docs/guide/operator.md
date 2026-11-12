@@ -97,7 +97,9 @@ expect(inspected?.work.map(({ key }) => key.name)).toEqual(['cancellation', 'ema
 the state holds with the oldest first, and its suspension as `suspended` lists it. Here the ride is still
 `Riding`, the end is next, and the email and the cancellation's timer are its work. `inspect` activates nothing,
 so it reads an entity of any process, and an entity that is not suspended too. It reads from one snapshot, through
-the migrations, so a step that commits meanwhile is read whole or not at all.
+the migrations, so a step that commits meanwhile is read whole or not at all. Inside a transaction the operator left
+open, `inspect` reads at the transaction's level. On PostgreSQL at `READ COMMITTED` each of its statements reads a snapshot
+of its own, so an operator who needs one snapshot begins the transaction at `REPEATABLE READ`.
 
 ## Checking a fix before its deploy
 

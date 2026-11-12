@@ -74,7 +74,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     PostgreSQL of the push of `main` that takes it. Bug 67 is fixed by
     [decision 0280](decisions/0280-the-undo-of-a-deploy-drains-its-deployment.md), which the maintainer chose on
     2026-11-12 after an opinion of a Fable 5.2 agent. Decision 0280 changes the runtime, so `bun run test:pins` and
-    `bun run test:release` run again before the step is taken. The part next is bug 79, verified first, as bug 31 was.
+    `bun run test:release` run again before the step is taken. Bug 79, a gap of the guide, is fixed in `docs/design.md` with no note, as the maintainer chose on 2026-11-12
+    after an opinion of a Fable 5.2 agent, since decisions 0185 and 0222 decide it. The bugs noticed are done, and so are the bugs of no family.
+    The part next is the runs before the step is taken, below: `bun run test:pins`, `bun run test:release` and the
+    workflow run by hand.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
     machine.
@@ -523,14 +526,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       first statement read, or run in `snapshot` of `src/storage/held.ts`. The
       [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
       snapshot.
-  79. **Confirmed: the design's advice to begin at `REPEATABLE READ` names a page of a query, and not
-      `inspect`, which reads at the caller's level too.** `inspect` reads inside a caller's transaction at the caller's
-      level ([decision 0185](decisions/0185-inspect-gives-what-is-stored-of-one-entity.md)), as a page does
-      ([decision 0158](decisions/archive/0158-an-older-database-of-sqlite-is-given-request-id-and-a-page-keeps-the-level-of-a-callers-transaction.md)),
-      and under Databases `docs/design.md` names only the page. It is a gap of the guide, not of the code. The
-      [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
-      snapshot.
-      Confirmed by the JSDoc of `withTransaction`: `BeginTransaction` sets only the outermost transaction, and `inspect` runs three statements, so inside a caller's transaction at `READ COMMITTED` each reads a snapshot of its own.
+  79. **Fixed by `docs/design.md`**, under Databases, which says of the four readings of one snapshot what decisions
+      0185 and 0222 decide: inside a caller's transaction each reads at the caller's level.
   80. **Reasoned, its test written: on a pool of PostgreSQL, two prunes at once may each keep a publication no row
       names.** A publication goes with the last row of the outbox that names it, by a trigger of the statement that
       drops the row ([decisions 0154](decisions/archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md),

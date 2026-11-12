@@ -235,13 +235,13 @@ export interface Storage<T extends Types> {
   readonly expire: (at: number) => Effect.Effect<number>
   /**
    * The suspended entities of the program, the longest suspended first, each with its waits, from one snapshot
-   * (decisions 0114, 0265).
+   * outside a transaction the caller left open, and at the caller's level within one (decisions 0114, 0265).
    */
   readonly suspended: Effect.Effect<ReadonlyArray<Suspended>>
   /**
    * What is stored for the entity `id`, read as `load` reads it, with its suspension as `suspended` lists it, or null
    * when there is none. Every row is read from one snapshot, so a step that commits meanwhile is read whole or not
-   * at all (decision 0185).
+   * at all. Within a transaction the caller left open, the rows are read at the caller's level (decision 0185).
    */
   readonly inspect: (id: string) => Effect.Effect<Inspection<T> | null>
   /**

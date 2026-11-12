@@ -53,7 +53,8 @@ export type Checked = Readonly<{
  * Nothing is activated, held or written, so it runs on the database another version holds. On SQLite the client is
  * opened `readonly`, since a writable client begins each transaction with `BEGIN IMMEDIATE`, which waits for the
  * other version's steps even where it only reads (decision 0267). Each entity is read from
- * one snapshot, as `inspect` reads it, and the entities are read by pages of their ids. So the check is a reading of
+ * a snapshot of its own, as `inspect` reads it, and at the caller's level within a transaction the caller left
+ * open. The entities are read by pages of their ids. So the check is a reading of
  * a moment: an entity created while it runs is read or not by its id, and an operation under way that ends before
  * the deploy fails nothing then.
  *

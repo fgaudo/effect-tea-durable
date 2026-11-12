@@ -92,7 +92,8 @@ export { type Suspended, type Waiting } from './storage.ts'
 
 /**
  * An entity, as `Handle.inspect` gives it: what is stored of it, read through the migrations as an activation reads
- * it, from one snapshot (decision 0185).
+ * it, from one snapshot outside a transaction the caller left open, and at the caller's level within one
+ * (decision 0185).
  */
 export type Inspected<T extends Types> = Readonly<{
   id: string
@@ -520,15 +521,18 @@ export interface Handle<T extends Types, C = {}> {
    * when, and the operations that wait for its resumption. Read from what is stored, so an entity this process does
    * not hold is listed too, with the operations of every process and of a process before a restart. An operation is
    * listed from the step that answered it `Suspended` while its run holds, until the entity is taken out of its
-   * suspension (decisions 0114, 0265).
+   * suspension. The list is read from one snapshot outside a transaction the caller left open, and at the caller's
+   * level within one (decisions 0114, 0265).
    */
   readonly suspended: Effect.Effect<ReadonlyArray<Suspended>>
   /**
    * What is stored of the entity `id`, or null when there is none: its state, its mailbox, its work under way and its
    * suspension, as `suspended` lists it. An operator reads it to decide between `resume` and `discard`. It is read from
    * what is stored, so an entity this process does not hold is inspected too, and nothing is activated. The rows are
-   * read from one snapshot, so a step that commits meanwhile is read whole or not at all. A row that no migration
-   * reads is a defect here, as it is at the entity's activation (decision 0185).
+   * read from one snapshot, so a step that commits meanwhile is read whole or not at all. Within a transaction the
+   * caller left open, the rows are read at the caller's level, and on PostgreSQL at `READ COMMITTED` each statement
+   * reads a snapshot of its own. A row that no migration reads is a defect here, as it is at the entity's activation
+   * (decision 0185).
    */
   readonly inspect: (id: string) => Effect.Effect<Inspected<T> | null>
   /**
