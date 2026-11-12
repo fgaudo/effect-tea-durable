@@ -6054,10 +6054,14 @@ session reads whole, so the reading went to the pairs the brief named first.
 The second reading of area 7, by a session that read none of the earlier reports of the area: notes 0121, 0122, 0135,
 0137 to 0140, 0151 to 0155, 0157, 0158, 0184, 0206, 0210, 0213 to 0215 and 0240, against the notes that change them,
 cite them, or are cited beside them in one declaration of `src/`. The later notes the brief named, 0254, 0255, 0256,
-0262, 0263, 0273, 0275 and 0276, were read against them. The reading found three bugs, each reproduced by a test that
+0262, 0263, 0273, 0275 and 0276, were read against them. The reading found four bugs, each reproduced by a test that
 fails on PGlite and passes on SQLite, all of one form: a rule decided on SQLite, which decision 0157 took to
-PostgreSQL, where a column or an index holds less. It found one lead. The tests are in commit `8518b29` of the branch
-`claude/premise-review-2-area-7-746042`, cut from `main` at `ca62547`.
+PostgreSQL, where a column or an index holds less. It found a fifth, measured by a mutation that no test kills: the
+rule of decision 0070 that `reindex` keeps is held by no test. The first three tests are in commit `8518b29`, and the
+fourth in `69a9b9e`, of the branch `claude/premise-review-2-area-7-746042`, cut from `main` at
+`ca62547`. A first version of this section left notes that change notes of the area unread, and was sent back: the
+notes 0179, 0191, 0198, 0222, 0223, 0254, 0162 and 0216, and the rest of 0157 and 0158, were then read whole, and the
+lead of the first version became finding 4.
 
 ### The notes to read
 
@@ -6147,11 +6151,11 @@ the area, and not in its own text.
 | 0154 | A step's projection is stored once in the outbox, in a publication each topic's row names | of the area, changes one | whole, with the code |
 | 0155 | A `forEach` of messages to children by id puts them back once, with the step one message after the other gives | of the area | whole, with the code |
 | 0156 | A program is renamed by its launch, which moves what is stored under its old name, and its entities keep their keys | cites one, coupled by the code | in part: the code of `renamed` |
-| 0157 | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both, of text every database holds | of the area | in part: all but its alternatives and consequences, with the code |
-| 0158 | A database of SQLite made before is given `request_id`, and a page keeps the level of a caller's transaction | of the area, changes one | in part: all but its alternatives and consequences, with the code |
+| 0157 | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both, of text every database holds | of the area | whole, with the code |
+| 0158 | A database of SQLite made before is given `request_id`, and a page keeps the level of a caller's transaction | of the area, changes one | whole, with the code |
 | 0159 | On Cluster, an older version serves no shard once a newer one launches, and a step commits only at the newest version | coupled by the code | not at all |
 | 0161 | On Cluster, a step settles the machine by the count of the steps that wrote it, and an entity's lock is taken only inside a transaction | coupled by the code | not at all |
-| 0162 | On Cluster, an entity's shard is its partition, and each deployment serves its shards from a singleton of each | changes one, cites one, coupled by the code | in part: the code that cites it |
+| 0162 | On Cluster, an entity's shard is its partition, and each deployment serves its shards from a singleton of each | changes one, cites one, coupled by the code | whole, with the code that cites it |
 | 0163 | On Cluster, a reading that waits learns of another runner's commit from the file, read while it waits | coupled by the code | in part: the code of `waited` |
 | 0165 | On Cluster, a caller sends through the door's client, and is never answered `Full` | coupled by the code | not at all |
 | 0167 | On Cluster, an operation sends through the door's client, and is woken by `Resumed` | coupled by the code | not at all |
@@ -6161,14 +6165,14 @@ the area, and not in its own text.
 | 0173 | On Cluster, a reply Cluster saves of its own after its request's rows are gone is left | coupled by the code | not at all |
 | 0174 | On Cluster, a runner deploys only the programs its `sharding` names, at the version named | coupled by the code | not at all |
 | 0176 | On Cluster, a rename marks the old name, which no runner steps again, and keeps a door under it that delivers to the new program | coupled by the code | in part: the code of `renamed` |
-| 0179 | An id is not empty, and an empty id is the defect of whoever gave it | changes one, cites one | not at all |
+| 0179 | An id is not empty, and an empty id is the defect of whoever gave it | changes one, cites one | whole, with the code |
 | 0180 | A program leaves out what it does not have, and each piece left out is empty | coupled by the code | not at all |
 | 0182 | A program's `init` may reject the flags, and the rejection is not stored | coupled by the code | not at all |
 | 0184 | `consume` runs a reader of a consumer, a page and its ack in one transaction | of the area | whole, with the code |
 | 0185 | `inspect` gives what is stored of one entity, read from one snapshot | cites one, coupled by the code | not at all |
-| 0191 | A launch creates the tables, in one transaction, unless it is told they exist | changes one, cites one, coupled by the code | not at all |
+| 0191 | A launch creates the tables, in one transaction, unless it is told they exist | changes one, cites one, coupled by the code | whole, with the code |
 | 0197 | A program lists its keys, and `key` gives one a parameter | coupled by the code | not at all |
-| 0198 | Every table, index, trigger and function the runtime makes is named with `tea_` | changes one, cites one | not at all |
+| 0198 | Every table, index, trigger and function the runtime makes is named with `tea_` | changes one, cites one | whole, with the code |
 | 0204 | A request id is text a database holds, and one that is not is the caller's defect | cites one, coupled by the code | not at all |
 | 0205 | A defect's cause is written as text every database holds, with each character none holds escaped | cites one | not at all |
 | 0206 | An index that is no scalar is the program's defect, and suspends the entity | of the area | whole, with the code |
@@ -6181,13 +6185,13 @@ the area, and not in its own text.
 | 0213 | A projection's `allows` is given the sender, and says whose each action is | of the area | whole, with the code |
 | 0214 | A rejection's reason is given as a caller reads it, decoded from its JSON | of the area | whole, with the code |
 | 0215 | The runtime's tables are made in the schema the client's `search_path` names, one runtime per database | of the area | whole, with the code |
-| 0216 | The tables are made by Effect's `Migrator`, which records each migration in `tea_migrations` | changes one, cites one, coupled by the code | in part: the code of `createTables` |
+| 0216 | The tables are made by Effect's `Migrator`, which records each migration in `tea_migrations` | changes one, cites one, coupled by the code | whole, with the code of `createTables` |
 | 0217 | On PostgreSQL `tea_migrations` is named in the schema the tables are made in | changes one, cites one | in part: its decision and what it rests on |
 | 0218 | The prefix is `effecttea_`, and a launch dies on a name the runtime's objects would take | cites one, coupled by the code | in part: the code of `indexed` |
 | 0219 | A drain holds when an interrupted fiber closes its scope, and on Cluster ends before the runner lets its shards go | coupled by the code | not at all |
 | 0220 | The runtime records a span for each step and each operation, linked to what each follows, and three metrics of its entities | coupled by the code | not at all |
-| 0222 | On a server of PostgreSQL every transaction of the runtime states its level, an integer may come as a bigint, and a deadlock crashes the entity | changes one, cites one | not at all |
-| 0223 | On a disk that is really full an operator frees room first, and the runtime keeps none of its own | changes one, cites one | not at all |
+| 0222 | On a server of PostgreSQL every transaction of the runtime states its level, an integer may come as a bigint, and a deadlock crashes the entity | changes one, cites one | whole, with the code |
+| 0223 | On a disk that is really full an operator frees room first, and the runtime keeps none of its own | changes one, cites one | whole, with the code |
 | 0224 | A consumer shows the time of the step it reads next, and the runtime records no metric of its age | changes one, cites one, coupled by the code | in part: the code of `consumers` |
 | 0240 | A step that tells many children is written with `forEach`, and `andThen` stays a step taken at once | of the area, changes one | whole, with the code |
 | 0245 | `send` requires `keep`, an argument that may be left out comes last, a request leaves out a sender and flags that are `null`, and the runtime sweeps what no reader needs, in batches | cites one, coupled by the code | in part: the code of the sweep and of `pruneBatch` |
@@ -6196,7 +6200,7 @@ the area, and not in its own text.
 | 0249 | On Cluster, a reset of a caller's answer that is no reply deletes the id its client kept, and the retry's answer keeps it anew | coupled by the code | not at all |
 | 0251 | A `retry` and a `passivate` are a millisecond at least, and a launch refuses 0 | coupled by the code | not at all |
 | 0253 | An answer no entity stores, a creation `init` rejected or `NotFound`, is kept for the operation that was given it while its work holds | coupled by the code | not at all |
-| 0254 | A check of the project runs against the case it refuses: a check gets a sample of each case, a list of files is read from the disk, and a pinned seed of an explored test runs against its rule taken out | cites one, later note of the brief | in part: its passage on decision 0157, bug 88 |
+| 0254 | A check of the project runs against the case it refuses: a check gets a sample of each case, a list of files is read from the disk, and a pinned seed of an explored test runs against its rule taken out | cites one, later note of the brief | whole, with the code of `reindex` its pins leave |
 | 0255 | A data directory of PGlite is held in the process while the client a runtime launched on is open | changes one, cites one, later note of the brief | whole, with the code |
 | 0256 | A call that runs a step or waits for one, `deploy`, `create`, `send`, `resume`, `discard` and a fetch that waits, is refused within a transaction of the client | changes one, cites one, coupled by the code, later note of the brief | whole, with the code |
 | 0261 | The drain stops and waits for every deployment from the claim of its name, and a deploy activates nothing once the drain began | coupled by the code | not at all |
@@ -6240,7 +6244,11 @@ the area, and not in its own text.
    `src/storage/projections.ts:196`. A fix could begin at `shownOf` of `src/machine.ts:264` and at the checks of a
    caller's id and sender. They would refuse a text past a bound on both dialects, as the program's or the caller's
    defect, as decision 0206 refuses an index that is no scalar. Or the storage would key by a digest of the text and
-   keep the text beside it, which costs the read model its expression indexes of strings.
+   keep the text beside it, which costs the read model its expression indexes of strings. Decision 0157 weighed this
+   case for a lone surrogate, under its alternative "Strings of an index refused on PostgreSQL alone". It refused that
+   alternative, since a program tested on SQLite would meet the defect only once deployed on PostgreSQL. This bug is
+   that case, with a crash in place of a defect.
+   [Decision 0179](0179-an-id-is-not-empty.md) bounds an id below, as not empty, and nothing bounds it above.
 2. **Reproduced: on PostgreSQL, `reindex` dies whole at an entity whose new index it cannot write, so no `reindex`
    writes the rows of the entities after it.**
    [Decision 0122](archive/0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) passes over an entity
@@ -6257,29 +6265,49 @@ the area, and not in its own text.
 3. **Reproduced: on PostgreSQL, a launch of 2^31 partitions or more dies with an `SqlError` once it has made the
    tables, where SQLite launches.** [Decision 0137](archive/0137-the-log-is-ordered-within-a-partition.md) takes any
    positive integer of partitions, which `checkedOptions` of `src/runtime.ts:965` checks as a safe integer. Decision
-   0157 makes a time, a `seq`, a count and a position bigints on PostgreSQL. It leaves every column `partition`, and
-   `effecttea_log.partitions`, an `INTEGER` of 32 bits (`src/storage/tables.ts:291`, `:352`). So `partitioned` of
-   `src/storage/tables.ts:585` dies on `value "2147483648" is out of range for type integer`, which names no option,
-   after `createTables` has run. [Decision 0264](0264-a-launch-that-dies-gives-back-what-it-held.md) has a launch
-   refused for an option before it stores anything. No deployment needs so many partitions, and on Cluster they are
-   the shards. The test `FAILING: a log of 2^31 partitions launches and creates alike on both dialects`, in
-   `src/runtime.test.ts:2845`, at `8518b29`, passes on SQLite and fails on PGlite. The fix begins at
-   `checkedOptions`, which would refuse more than 2^31 − 1 partitions on both dialects, or at the columns, which
-   would be bigints.
+   0157 makes a time, a `seq`, a count and a position bigints on PostgreSQL, and
+   [decision 0222](0222-postgresql-with-many-connections.md) reads an integer up to 2^53. They leave every column
+   `partition`, and `effecttea_log.partitions`, an `INTEGER` of 32 bits (`src/storage/tables.ts:291`, `:352`). So
+   `partitioned` of `src/storage/tables.ts:585` dies on `value "2147483648" is out of range for type integer`, which
+   names no option, after `createTables` has run.
+   [Decision 0264](0264-a-launch-that-dies-gives-back-what-it-held.md) has a launch refused for an option before it
+   stores anything. No deployment needs so many partitions, and on Cluster they are the shards
+   ([decision 0162](archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)).
+   The test `FAILING: a log of 2^31 partitions launches and creates alike on both dialects`, in
+   `src/runtime.test.ts:2878`, at `8518b29`, passes on SQLite and fails on PGlite. The fix begins at `checkedOptions`,
+   which would refuse more than 2^31 − 1 partitions on both dialects, or at the columns, which would be bigints.
+4. **Reproduced: on PostgreSQL, an operation's completion whose step writes a long index crashes its entity at every
+   activation, and an at-least-once operation acts at each.** This was the lead of the first version of this section.
+   A step that cannot be written crashes its entity
+   ([decision 0042](archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)), and the waker activates
+   it again after `retry` ([decision 0252](0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)).
+   Each rule rests on an unwritten premise: a crash is rare, and the activation after it steps on. Decision 0206 made
+   the case of an index that is no scalar a defect of the program for that reason. Under finding 1 the completion is
+   stored in the mailbox, so each activation steps it first and fails again. The test `FAILING: a completion whose step
+   writes a long index is written alike on both dialects, and acts once`, in `src/runtime.test.ts:2846`, at `69a9b9e`,
+   creates the toy of the runtime's tests with an index that is a long text once `a` is done. On SQLite the entity
+   steps through every operation and its timer, and `c` acts once. On PGlite, within one second of the test's clock,
+   the entity's state never moves past its creation, its timer never rings, the at-most-once `b` delivers `unknown`,
+   the at-least-once `c` acts 13 times, and the entity is not suspended, so `suspended` names nothing. `check`
+   ([decision 0247](0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)) steps the machine and
+   writes nothing, so it names no such entity before a deploy, which was read and not run. The fix is finding 1's: a
+   bound in `shownOf` makes it a defect that suspends the entity, as decision 0206 has an index that is no scalar.
+5. **Measured by a mutation: no test holds the guard of `reindex` that writes a row only over the state it was
+   computed from.** [Decision 0070](archive/0070-reindex-writes-a-row-only-over-its-state.md) keeps the guard, and
+   decision 0122 keeps it beside its own rule. [Decision 0254](0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)
+   pins a seed in each explored test whose comment names an interleaving, and lists `reindex leaves no row a step has
+   moved past` among the tests that name none. That test's comment names one: the step lands in the walk, between the
+   reading of the state of `t-3` and the writing of its row (`src/runtime.test.ts:2204`). With `AND state =
+   ${held.state}` taken out of `reindex` (`src/storage/projections.ts:515`), the test passes under the sample of `bun
+   test`, and under `SCHEDULES=all`, which runs its 200 seeds from seed 0. So no seed it runs reaches the interleaving,
+   and the rule is one no test holds. The mutation was made in the working copy for the two runs and taken back, and
+   no test was written. Where a fix could begin: the procedure of `AGENTS.md`, `bun run test:explore -t <test>` on the
+   mutation until a seed fails, and that seed pinned with a pin in `src/runtime.test_pins.ts`. If no seed of 2 000
+   finds it, a deviation under `bound` 1, or an open question.
 
 ### Leads
 
-1. **On PostgreSQL, an operation's completion or a timer whose step writes a long text may crash its entity at every
-   activation, with nothing suspended, and `check` does not name it.** Finding 1 reproduces the statement in the
-   storage, and not through the runtime. A caller's message whose step fails gives the caller the defect, and leaves
-   the entity as it was. A completion or a firing is stepped again from what is stored at the next activation, which
-   reaches the same state. So the entity crashes, and the waker activates it again after `retry`
-   ([decisions 0042](archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md),
-   [0252](0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)). `check`
-   ([decision 0247](0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)) steps the machine and
-   writes nothing, so it names no such entity before a deploy. A test of `src/runtime.test.ts` under `onBoth` would
-   reproduce it: an operation completes with a long string that the state's index shows, and the test expects the
-   entity written or suspended on both dialects. On PGlite the entity would crash at each activation.
+None. The lead of the first version is finding 4.
 
 ### Suspects ruled out
 
@@ -6295,16 +6323,25 @@ the area, and not in its own text.
   and the projection `allows` checks as a caller reads them
   ([decisions 0214](0214-a-rejections-reason-is-given-as-a-caller-reads-it.md),
   [0276](0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md)). Held by the tests the notes name.
+- That decision 0223 takes a condition of decision 0152 away: its operator frees room before the forget and the prune,
+  and the forget commits on a full volume, which decision 0152's way out needs. Seen by the spike the note names, and
+  changed since by decision 0278, which bug 50 holds.
+- That decisions 0191, 0198 and 0216 take a condition of decision 0158 away: 0158 added `request_id` to an older
+  database of SQLite, 0191 made that one transaction, and 0198 named every table anew so that no database needs the
+  column added. 0216 then runs the one migration under `Migrator`. Nothing of 0158 is left but its page in a caller's
+  transaction, which decision 0222 keeps and the design says. Read.
 
-No suspect of concurrency was ruled out by a test, so this section names no seed and no `SCHEDULES`.
+No suspect of concurrency was ruled out by a test, so this section names no seed and no `SCHEDULES`. The one test of
+concurrency run under `SCHEDULES=all`, in finding 5, found a rule no test holds.
 
 ### Suspects noticed and not checked
 
 - On a pool of PostgreSQL, that `position` rises with `seq` within a partition
   ([decision 0137](archive/0137-the-log-is-ordered-within-a-partition.md), only reasoned there). `write` of
   `src/storage/entities.ts:527` moves the head before it inserts the rows of the outbox. So the identity of a row is
-  drawn under the head's lock, and the next step of the partition draws its own after the commit. No server ran it.
-  Bug 78 is the reading's side of the same order.
+  drawn under the head's lock, and the next step of the partition draws its own after the commit. Decision 0222 tests
+  that two writers of one partition commit in the order of their `seq`, on the CI's server, and was not read for
+  `position`. Bug 78 is the reading's side of the same order.
 - On Cluster, a deploy of one runner may store a consumer while another runner's sweep prunes, which the comment of
   `pruneBatch` and [decision 0152](archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md) say cannot happen.
   A batch reads the consumers and the cursors in its one statement. So it drops only rows committed before the
@@ -6320,6 +6357,13 @@ No suspect of concurrency was ruled out by a test, so this section names no seed
 - The bound of finding 1 for the other keys that hold a request or a name: `effecttea_answers` and
   `effecttea_waiting` (`src/storage/tables.ts:506`, `:541`), the index `effecttea_replies_by_request_id`, and the
   names of the consumers. Read, and not run.
+- [Decision 0179](0179-an-id-is-not-empty.md) rests on every id entering by a handle, `Entities` or a world. On Cluster
+  a door is reached by Cluster's address of the entity, which a client of Cluster built apart from the library could
+  give as `''`. Not read in the code of the door.
+- [Decision 0216](0216-the-tables-are-made-by-effects-migrator.md) says that a release older than a database's latest
+  migration launches on it and runs nothing, and nothing refuses it. Since [decision 0247](0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)
+  `tablesMade` refuses tables made by another set of migrations for `check`, and a launch does not. Read, and not run;
+  no release has a second migration yet.
 
 ### Where the code does otherwise than the note it cites
 
@@ -6331,19 +6375,19 @@ No suspect of concurrency was ruled out by a test, so this section names no seed
 - `src/storage/log.ts:227`: the comment of `pruneBatch` says that a cursor only rises and that a consumer is stored
   only by a deploy. `forget` deletes a consumer's cursors, and on Cluster another runner's deploy stores a consumer
   during a prune. The batch still drops nothing that a cursor it read holds, as the second suspect above reads.
+- `src/runtime.test.ts:2204`: the comment names an interleaving, and decision 0254 lists the test among those whose
+  comments name none, so it pins no seed. That is finding 5.
 
 ### The notes not read whole
 
-The 21 notes of the area were read whole, but for the alternatives and the consequences of decisions 0157 and 0158.
-They were read with the code of `src/storage/projections.ts` and `src/storage/log.ts`, the write of
+The 21 notes of the area were read whole, decisions 0157 and 0158 with their alternatives and consequences after the
+first version. They were read with the code of `src/storage/projections.ts` and `src/storage/log.ts`, the write of
 `src/storage/entities.ts`, the rename and the tables of `src/storage/tables.ts`, `forEach` and `readBack` of
-`src/program.ts`, and `src/runtime/readings.ts` with the handle's readings of `src/runtime.ts`. The later notes 0255,
-0256, 0262, 0263, 0273, 0275 and 0276 were read whole. Decision 0254 was read in its passage on decision 0157, the one
-that meets the area, since its other bugs are checks of the project. Decisions 0179, 0191, 0198, 0222 and 0223 change
-notes of the area and were not read. Decision 0222 holds family D of `docs/bugs.md`, the bugs of a pool. The others
-are an id that is not empty, the launch's creation of the tables, the prefix of the names and a full disk, which their
-own areas read. Decisions 0162 and 0216 were read only in the code that cites them. The notes marked "not at all" are
-coupled to the area by the long declarations of `src/storage/`, `src/runtime.ts` and `src/program.ts`, or cite it in
-passing. They hold rules of messages, replies, deploys and Cluster that their own areas read. The list holds 144
-notes, past the thirty a session reads whole, so the reading went to the notes of the area and the later notes of the
-brief first.
+`src/program.ts`, and `src/runtime/readings.ts` with the handle's readings of `src/runtime.ts`. The later notes 0254,
+0255, 0256, 0262, 0263, 0273, 0275 and 0276 were read whole. The notes that change notes of the area, 0162, 0179,
+0191, 0198, 0216, 0222 and 0223, were read whole after the first version, each against the notes of the area it
+changes. The notes marked "in part" or "not at all" are coupled to the area by the long declarations of
+`src/storage/`, `src/runtime.ts` and `src/program.ts`, or cite a note of the area in passing. They hold rules of
+messages, replies, deploys and Cluster that their own areas read. The list holds 144 notes, past the thirty a session
+reads whole, so the reading went to the notes of the area, the notes that change them and the later notes of the
+brief.
