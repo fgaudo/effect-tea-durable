@@ -31,7 +31,7 @@ import * as Option from 'effect/Option'
 import * as Schedule from 'effect/Schedule'
 import * as Schema from 'effect/Schema'
 import * as Scope from 'effect/Scope'
-import { SqlClient } from 'effect/sql'
+import { SqlClient, Statement } from 'effect/sql'
 import fc from 'fast-check'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -519,17 +519,64 @@ const history = (
     return { answers, again, read: read.map(outcome), counted }
   })
 
-/** The answers of `held` on a new database of SQLite, with the pair in the order `first`, then the other. */
-const serially = (run: string, held: Held, first: 0 | 1) =>
-  Effect.runPromise(
+/** What the statements of one call of a pair name of the library's tables, and which of them they write. */
+type Touched = Readonly<{ named: ReadonlySet<string>; written: ReadonlySet<string> }>
+
+/**
+ * The answers of `held` on a new database of SQLite, with the pair in the order `first`, then the other, and the
+ * tables each call of the pair touched, by its place in the pair. A statement is given to the call that runs while
+ * it runs. The transformer is provided around the launch, since an entity's statements run in fibers the runtime
+ * forks, which take the context of the launch and not of the caller.
+ */
+const serially = (run: string, held: Held, first: 0 | 1) => {
+  const touched = [0, 1].map(() => ({ named: new Set<string>(), written: new Set<string>() }))
+  let current: 0 | 1 | undefined
+  const recording: Statement.Transformer = (statement) =>
+    Effect.sync(() => {
+      const of = current === undefined ? undefined : touched[current]
+      if (of !== undefined) {
+        const [text] = statement.compile()
+        for (const [table] of text.matchAll(/effecttea_\w+/g)) of.named.add(table)
+        for (const [, table] of text.matchAll(/(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+"?(effecttea_\w+)/gi)) {
+          of.written.add(table!)
+        }
+      }
+      return statement
+    })
+  const during = (at: 0 | 1, call: Effect.Effect<unknown>) =>
+    Effect.ensuring(
+      Effect.andThen(Effect.sync(() => (current = at)), call),
+      Effect.sync(() => (current = undefined)),
+    )
+  return Effect.runPromise(
     Effect.scoped(Effect.gen(function*() {
       const items = yield* (yield* launch({ sweep: 'none' })).deploy(item)
-      return yield* history(items, run, held, ([zero, one]) =>
+      const answered = yield* history(items, run, held, ([zero, one]) =>
         first === 0
-          ? Effect.all([zero, one])
-          : Effect.map(Effect.all([one, zero]), ([b, a]) => [a, b]))
-    })).pipe(Effect.provide(client('sqlite')), Effect.orDie),
+          ? Effect.all([during(0, zero), during(1, one)])
+          : Effect.map(Effect.all([during(1, one), during(0, zero)]), ([b, a]) => [a, b]))
+      return { answered, touched: touched as ReadonlyArray<Touched> }
+    })).pipe(
+      Effect.provideService(Statement.CurrentTransformer, recording),
+      Effect.provide(client('sqlite')),
+      Effect.orDie,
+    ),
   )
+}
+
+/**
+ * The tables a gate drawn as a number is drawn among, for a pair whose calls touched `touched`: those both calls
+ * write, else those both name, else every table of the library. A lock of a table both calls write holds both at a
+ * statement of their transactions, where a lock of any table holds both at once in few runs.
+ */
+const gated = (tables: ReadonlyArray<string>, [zero, one]: ReadonlyArray<Touched>) => {
+  const both = (of: (touched: Touched) => ReadonlySet<string>) =>
+    tables.filter((table) => of(zero!).has(table) && of(one!).has(table))
+  const written = both(({ written }) => written)
+  if (written.length > 0) return written
+  const named = both(({ named }) => named)
+  return named.length > 0 ? named : tables
+}
 
 /**
  * Runs the histories `histories` on a pool of the server, `runs` of them, with `examples` first, and checks that each
@@ -570,11 +617,14 @@ const onPool = (histories: fc.Arbitrary<Held>, runs: number, examples: ReadonlyA
         fc.asyncProperty(histories, async (held) => {
           const run = `p${ran++}`
           const { gate: drawn } = held
+          // The two orders run first, so that the gate is drawn among the tables their calls touched.
+          const orders = [await serially(run, held, 0), await serially(run, held, 1)]
+          const among = gated(tables, orders[0]!.touched)
           // A reply's row is locked by a reading of it `FOR UPDATE`, which a step that deletes the row waits for.
           const lock = typeof drawn === 'object'
             ? `SELECT 1 FROM effecttea_replies WHERE id = '${run}/${drawn.of}' AND request_id = '${run}/${drawn.reply}'
                 FOR UPDATE`
-            : `LOCK TABLE ${typeof drawn === 'string' ? drawn : tables[drawn % tables.length]!} IN ACCESS EXCLUSIVE MODE`
+            : `LOCK TABLE ${typeof drawn === 'string' ? drawn : among[drawn % among.length]!} IN ACCESS EXCLUSIVE MODE`
           const answered = await Effect.runPromise(history(items, run, held, (calls) =>
             Effect.scoped(Effect.gen(function*() {
               const locked = yield* Deferred.make<void>()
@@ -591,8 +641,7 @@ const onPool = (histories: fc.Arbitrary<Held>, runs: number, examples: ReadonlyA
               yield* Fiber.join(holder)
               return yield* Effect.forEach(fibers, Fiber.join)
             })).pipe(Effect.orDie)))
-          const orders = [await serially(run, held, 0), await serially(run, held, 1)]
-          expect(orders).toContainEqual(answered)
+          expect(orders.map(({ answered }) => answered)).toContainEqual(answered)
         }),
         { numRuns: runs, examples: examples.map((example) => [example]) },
       )

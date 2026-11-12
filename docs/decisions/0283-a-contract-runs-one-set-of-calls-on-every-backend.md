@@ -42,8 +42,13 @@ waited: a creation whose projection holds U+0000 in an index.
   family D of [`docs/bugs.md`](../bugs.md). The test `two calls held at a statement on a pool answer as one order of
   them` makes two entities, runs a few messages one at a time, then runs two calls at once. Each call is a message,
   a creation, `expire`, `reindex` or `prune`. A connection of its own holds a lock of one of the library's tables,
-  which fast-check draws, so that each call that reaches a statement of that table waits there. The lock is let go
-  once both calls wait, or after a second. Then each request of the pair is sent again, and every entity is read.
+  so that each call that reaches a statement of that table waits there. The lock is let go once both calls wait, or
+  after a second.
+- **The table locked is drawn among the tables both calls of the pair write.** The history runs first on SQLite in
+  both orders, and a transformer of the statements, `Statement.CurrentTransformer` of Effect, records which tables
+  each call names and writes. fast-check draws the gate among the tables both calls write, else among those both
+  name, else among every table of the library. A gate drawn among every table held both calls at once in 6 and in
+  13 of a hundred runs. Then each request of the pair is sent again, and every entity is read.
 - **The answers on the pool must be those of one of the two orders the calls run in one at a time**, as SQLite runs
   them on a new database. An operator's call is compared by whether it succeeds, since what it counts depends on the
   rows of the other runs. A message of the pair adds to an index, so that a message applied twice shows in the
@@ -84,9 +89,15 @@ waited: a creation whose projection holds U+0000 in an index.
 - That two calls held at a statement on a pool answer as one order of them: **tested**, by a hundred runs in the job
   `postgres` of the CI, on the push of `claude/contract-tests-c7e2a1` with decision 0284. Before that decision, with
   `reindex` among the pairs, it **failed**, which is bug 25.
-- That some pairs are held at once: **seen**, in 6 of the hundred runs of the CI, where both calls waited at the
-  lock. The other runs still run their two calls at once on two connections, unaligned. The test fails a run of 50
-  or more in which no pair waited at once.
+- That some pairs are held at once: **seen**, with a gate drawn among every table, in 6 and in 13 of the hundred
+  runs of the CI, where both calls waited at the lock. The other runs still run their two calls at once on two
+  connections, unaligned. The test fails a run of 50 or more in which no pair waited at once.
+- That a gate drawn among the tables both calls write holds more pairs at once: **open**, until the job `postgres`
+  of the CI prints its count on the push that takes it.
+- That the recording gives a call every statement it runs, those of the fibers the runtime forks for its entity
+  among them: **seen**, on SQLite in five pairs run while the test was written. A message's call recorded its writes
+  of `effecttea_entities` and `effecttea_outbox`, which its entity's loop runs. A statement the recording misses
+  only narrows the tables the gate is drawn among.
 - That a lock of a table held by another connection makes a call wait at its first statement of that table:
   **documented** by PostgreSQL, whose `ACCESS EXCLUSIVE` lock conflicts with every other lock of the table.
 - That an operator's call answers alike in either order, but for what it counts: **chosen** by this note. `expire`,

@@ -412,9 +412,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     2. Done, on 2026-11-12, bug 3, a reply to another entity's operation that stays for ever, fixed by
        [decision 0289](decisions/0289-expire-deletes-what-work-that-ended-was-given.md): `expire` deletes the replies
        and the answers kept for work that has ended. The maintainer chose the sweep over a lock of the asker's key.
-  - Next, the pool's gate. Both calls waited at the lock in 6 and in 13 of a hundred runs, since `gate` draws the
-    table among every table of the library. A gate drawn among the tables both calls of the pair write holds more
-    pairs at once. The test fails a run of 50 or more in which no pair waited at once.
+  - Under way, the pool's gate. Both calls waited at the lock in 6 and in 13 of a hundred runs, since `gate` drew the
+    table among every table of the library. The test now runs each history on SQLite first, records the tables each
+    call of the pair writes, and draws the gate among those both write, as decision 0283 says. Left: read on the CI's
+    job `postgres` the count `two calls held at once in N of M runs`, and write it in decision 0283 in place of its
+    premise `open`. The test fails a run of 50 or more in which no pair waited at once.
   - Then the calls of the contract grow, on every backend: an operator's `resume`, `discard`, `inspect` and
     `suspended`, an operation that sends to another entity, a timer, `expire` and `prune`. Bugs 10 and 11 are their
     first cases on Cluster. The pool's histories grow too, with a deploy that declares a consumer and an ack between
