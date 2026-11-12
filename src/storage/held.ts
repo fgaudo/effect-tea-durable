@@ -156,6 +156,12 @@ export const heldOf = <T extends Types>(
    * (decision 0284). On SQLite one transaction writes at a time, and the clause is empty.
    */
   const lockingTheCondition = sql.literal(dialect === 'pg' ? 'FOR UPDATE' : '')
+  /**
+   * The clause of `lockingTheCondition` for a batch of a sweep, which skips a row another transaction holds rather
+   * than waiting for it. A row skipped is read again by a later batch or sweep, and a row a transaction committed
+   * meanwhile is read again on the row committed (decision 0285). On SQLite the clause is empty.
+   */
+  const lockingTheConditionSkipping = sql.literal(dialect === 'pg' ? 'FOR UPDATE SKIP LOCKED' : '')
 
   return {
     program,
@@ -176,5 +182,6 @@ export const heldOf = <T extends Types>(
     readWork,
     snapshot,
     lockingTheCondition,
+    lockingTheConditionSkipping,
   }
 }

@@ -94,6 +94,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
 > => {
   const { program, sql, partitions, onCluster, name, version, upsert, rows, up, upRequest, upReason, readWork, snapshot } =
     held
+  const { lockingTheConditionSkipping } = held
   const { state, inbound, internal, flags, request, reason, suspended } = held.codecs
   const row = rowOf(held)
   const encodeReason = Schema.encodeSync(reasonOf(program.schemas.rejection))
@@ -556,7 +557,9 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
   // Each batch is a transaction of its own, so that a sweep holds SQLite's one writer for a batch at a time
   // (decision 0245). Cluster's rows under an id go with the id, in its batch's transaction, so that a crash leaves no
   // request of Cluster's without its replies (decision 0171). A batch is read in the order of the times, by the
-  // index of each table by program and time.
+  // index of each table by program and time. A batch locks the rows it selects and skips those a step holds, so that
+  // a reply a step wrote again with a new time is read again on the row committed (decision 0285). A batch may then
+  // give fewer rows than `batch` with rows left, so the sweep ends at a batch that deletes nothing.
   const expire = (at: number) =>
     Effect.gen(function*() {
       let count = 0
@@ -567,7 +570,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
             WHERE name = ${name} AND (id, request, version) IN (
               SELECT id, request, version FROM effecttea_replies
               WHERE name = ${name} AND until IS NOT NULL AND until <= ${at}
-              ORDER BY until LIMIT ${batch}
+              ORDER BY until LIMIT ${batch} ${lockingTheConditionSkipping}
             )
             RETURNING id
           `)
@@ -580,7 +583,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
           return [gone.length, given] as const
         }))
         count += replies
-        if (replies < batch && given < batch) return count
+        if (replies === 0 && given === 0) return count
       }
     }).pipe(Effect.orDie)
 
