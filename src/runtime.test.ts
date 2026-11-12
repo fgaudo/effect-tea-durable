@@ -1775,44 +1775,213 @@ describe('a planned stop', () => {
       expect(unknown(published.filter((row) => row.id !== 'toy-2'))).toEqual([])
     })))
 
-  test.failing('FAILING: a planned stop that interrupts the deploy of the main fiber waits for its at-most-once operations', () =>
-    database(Effect.gen(function*() {
-      // Bug 67: the main fiber deploys, and is interrupted while the deploy is held at the activation of `toy-2`.
-      // The activation of `toy-1` started the at-most-once `b`, which ends well within the drain's time once let go.
-      yield* leftUnderWay
-      const gate = yield* Deferred.make<void>()
-      const reached = yield* Deferred.make<void>()
-      const acted: Array<string> = []
-      const layer = Layer.succeed(
+  /**
+   * Hands for the deploy of `program` over `leftUnderWay`: the activation of `toy-1` starts the at-most-once `b`,
+   * which comes back once `open` is run, and every other act never comes back.
+   */
+  const gated = Effect.sync(() => {
+    const acted: Array<string> = []
+    const gate = Deferred.makeUnsafe<void>()
+    return {
+      acted,
+      open: Deferred.succeed(gate, undefined),
+      layer: Layer.succeed(
         Hands,
         Hands.of({
-          act: (key) =>
-            Effect.andThen(Effect.sync(() => acted.push(key)), key === 'b' ? Deferred.await(gate) : Effect.never),
+          act: (key, idempotencyKey) =>
+            Effect.andThen(
+              Effect.sync(() => acted.push(idempotencyKey === null ? key : `${key}:${idempotencyKey}`)),
+              key === 'b' ? Deferred.await(gate) : Effect.never,
+            ),
         }),
+      ),
+    }
+  })
+  /**
+   * A probe that holds the first activation of `toy-2` once committed, done once it holds, and then runs `then`.
+   * Later activations go on.
+   */
+  const atToy2 = (reached: Deferred.Deferred<void>, then: Effect.Effect<void>): NonNullable<Hooks['at']> => {
+    let first = true
+    return (point, entity, event) => {
+      if (!first || point !== 'AfterCommit' || event._tag !== 'Restart' || entity.id !== 'toy-2') return Effect.void
+      first = false
+      return Effect.andThen(Deferred.succeed(reached, undefined), then)
+    }
+  }
+  /** What the entities published, read by a process with no drain, which activates them again. */
+  const republished = process({}, (runtime) =>
+    Effect.gen(function*() {
+      const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
+      yield* runtime.settled
+      return yield* toy.published('projection', [], all)
+    }))
+
+  test('a planned stop that interrupts the deploy of the main fiber waits for its at-most-once operations', () =>
+    database(Effect.gen(function*() {
+      // Bug 67, fixed by decision 0280: the main fiber deploys, and is interrupted while the deploy waits for the
+      // activation of `toy-2`. The interruption reaches the deploy before the drain begins. The undo drains the
+      // deployment: the activation of `toy-2` runs in the deployment's scope, and ends in the undo's wait, which
+      // starts its at-most-once `b` and none of the others. The undo waits for the `b` of both entities.
+      yield* leftUnderWay
+      const given = yield* gated
+      const reached = yield* Deferred.make<void>()
+      const held = yield* Deferred.make<void>()
+      const main = yield* Effect.forkChild(
+        process({ drain: { millis: 100 }, at: atToy2(reached, Deferred.await(held)) }, (runtime) =>
+          Effect.provide(runtime.deploy(program), given.layer)),
       )
-      const main = yield* Effect.forkChild(process({
-        drain: { millis: 100 },
-        at: (point, entity, event) =>
-          point === 'AfterCommit' && event._tag === 'Restart' && entity.id === 'toy-2'
-            ? Effect.andThen(Deferred.succeed(reached, undefined), Effect.never)
-            : Effect.void,
-      }, (runtime) => Effect.provide(runtime.deploy(program), layer)))
       yield* Deferred.await(reached)
       const stopping = yield* Effect.forkChild(Fiber.interrupt(main))
       yield* TestClock.adjust('1 millis')
-      yield* Deferred.succeed(gate, undefined)
+      yield* Deferred.succeed(held, undefined)
       yield* TestClock.adjust('1 millis')
-      yield* TestClock.adjust('100 millis')
+      // The undo waits for `b`.
+      expect(stopping.pollUnsafe()).toBeUndefined()
+      yield* given.open
+      yield* TestClock.adjust('1 millis')
+      // Once `b` ends, the undo and then the drain end at once, and neither waits out its 100 millis.
+      expect(stopping.pollUnsafe()).toBeDefined()
       yield* Fiber.join(stopping)
-      expect(acted.filter((key) => key === 'b').length).toBeGreaterThan(0)
-      const published = yield* process({}, (runtime) =>
+      expect(given.acted.map((act) => act.split(':')[0]).sort()).toEqual(['a', 'b', 'b', 'c'])
+      expect(unknown(yield* republished)).toEqual([])
+    })))
+
+  test('a deploy that dies as it activates drains its deployment, while the process goes on', () =>
+    database(Effect.gen(function*() {
+      // Decision 0280: a deploy that fails while the process goes on drains its deployment too. Its caller waits for
+      // the at-most-once `b`, a caller of another program is not held meanwhile, and the name is free once it fails.
+      yield* leftUnderWay
+      const given = yield* gated
+      const reached = yield* Deferred.make<void>()
+      const other: Program<T> = { ...program, name: 'Other' }
+      const at = yield* DateTime.now
+      const seen = yield* process({ drain: { millis: 100 }, at: atToy2(reached, Effect.die('broken')) }, (runtime) =>
         Effect.gen(function*() {
+          const others = yield* Effect.provide(runtime.deploy(other), (yield* hands()).layer)
+          const failing = yield* Effect.forkChild(Effect.exit(Effect.provide(runtime.deploy(program), given.layer)))
+          yield* Deferred.await(reached)
+          yield* TestClock.adjust('1 millis')
+          const waited = failing.pollUnsafe() === undefined
+          const created = yield* others.create('o', { flags: { at }, requestId: 'o', sender: tester })
+          yield* given.open
+          yield* TestClock.adjust('1 millis')
+          const exit = yield* Fiber.join(failing)
+          // The name was given back: the program deploys again in the same process.
           const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
           yield* runtime.settled
-          return yield* toy.published('projection', [], all)
+          return { waited, created, died: Exit.hasDies(exit), published: yield* toy.published('projection', [], all) }
         }))
-      // `b` of `toy-1` was let go within the drain's time, so the next process does not deliver it `unknown`.
-      expect(unknown(published.filter((row) => row.id === 'toy-1'))).toEqual([])
+      expect(seen.waited).toBe(true)
+      expect(seen.created).toEqual({ _tag: 'Created' })
+      expect(seen.died).toBe(true)
+      expect(given.acted.filter((key) => key === 'b').length).toBe(1)
+      expect(unknown(seen.published.filter((row) => row.id === 'toy-1'))).toEqual([])
+    })))
+
+  for (const millis of [0, 100]) {
+    test(`a deploy whose at-most-once operation outlasts the undo's ${millis} millis fails after them, and delivers unknown`, () =>
+      database(Effect.gen(function*() {
+        // Decision 0280: the undo waits the drain's time at most, as the drain does, and then stops what runs as a
+        // crash does. Its caller is answered once that time is over, and not before.
+        yield* leftUnderWay
+        const given = yield* gated
+        const reached = yield* Deferred.make<void>()
+        const ends = yield* process({ drain: { millis }, at: atToy2(reached, Effect.die('broken')) }, (runtime) =>
+          Effect.gen(function*() {
+            const failing = yield* Effect.forkChild(Effect.exit(Effect.provide(runtime.deploy(program), given.layer)))
+            yield* Deferred.await(reached)
+            const before: Array<boolean> = []
+            if (millis > 0) {
+              yield* TestClock.adjust(`${millis - 1} millis`)
+              before.push(failing.pollUnsafe() === undefined)
+              yield* TestClock.adjust('1 millis')
+            }
+            return { before, died: Exit.hasDies(yield* Fiber.join(failing)) }
+          }))
+        expect(ends).toEqual({ before: millis > 0 ? [true] : [], died: true })
+        const published = yield* republished
+        expect(unknown(published.filter((row) => row.id === 'toy-1'))).toEqual([{ _tag: 'Unknown', key: 'b' }])
+      })))
+  }
+
+  test("a completion in the undo's wait starts no operation that runs again, and arms no timer", () =>
+    database(Effect.gen(function*() {
+      // Decision 0280: `b`'s completion brings `a`, and `t` due at once, while the undo of the deploy waits. Neither
+      // starts: the deployment is drained. The activation of `toy-2`, held, keeps the undo's wait open after `b`
+      // ends, so that an operation or a timer started there would run before the scope closes.
+      const at = yield* DateTime.now
+      const init: Program<T>['init'] = (_flags, since) => ({ want: ['b', 'c'], applied: [], since, rings: since })
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy({ ...withoutB, init }), (yield* hands({ holds: true })).layer)
+          for (const id of ['toy-1', 'toy-2']) {
+            yield* ran(toy.create(id, { flags: { at }, requestId: id, sender: tester }))
+          }
+        }))
+      const chained: Program<T> = {
+        ...program,
+        init,
+        update: (message, meta) => (state) =>
+          message._tag === 'Done' && message.key === 'b'
+            ? { ...state, want: ['c', 'a', 't'] }
+            : program.update(message, meta)(state),
+      }
+      const given = yield* gated
+      const reached = yield* Deferred.make<void>()
+      const held = yield* Deferred.make<void>()
+      const { events, observe } = log()
+      const main = yield* Effect.forkChild(
+        process({ drain: { millis: 100 }, observe, at: atToy2(reached, Deferred.await(held)) }, (runtime) =>
+          Effect.provide(runtime.deploy(chained), given.layer)),
+      )
+      yield* Deferred.await(reached)
+      const stopping = yield* Effect.forkChild(Fiber.interrupt(main))
+      yield* TestClock.adjust('1 millis')
+      yield* given.open
+      yield* TestClock.adjust('1 millis')
+      yield* TestClock.adjust('1 millis')
+      const early = {
+        a: given.acted.filter((act) => act.startsWith('a:')).length,
+        fired: events.filter((event) => event._tag === 'Fire').length,
+      }
+      yield* Deferred.succeed(held, undefined)
+      yield* TestClock.adjust('1 millis')
+      yield* Fiber.join(stopping)
+      expect(given.acted.filter((act) => act === 'b').length).toBe(2)
+      expect(early).toEqual({ a: 0, fired: 0 })
+      expect(given.acted.filter((act) => act.startsWith('a:')).length).toBe(0)
+      expect(events.filter((event) => event._tag === 'Fire').length).toBe(0)
+    })))
+
+  test('a drain under way ends once the undo of a deploy that died in it ends', () =>
+    database(Effect.gen(function*() {
+      // Decision 0280: the drain begins while a deploy runs detached, and the deploy then dies. The drain counts the
+      // deployment while its undo waits, and what the undo's closing of the scope ends tells the drain to look again,
+      // so the drain ends with the undo and does not wait out its 100 millis.
+      yield* leftUnderWay
+      const given = yield* gated
+      const reached = yield* Deferred.make<void>()
+      const dying = yield* Deferred.make<void>()
+      const stopping = yield* Effect.forkChild(process({
+        drain: { millis: 100 },
+        at: atToy2(reached, Effect.andThen(Deferred.await(dying), Effect.die('broken'))),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          yield* Effect.forkDetach(Effect.provide(runtime.deploy(program), given.layer))
+          yield* Deferred.await(reached)
+        })))
+      yield* Deferred.await(reached)
+      // The closing fiber reaches the drain's wait, then the deploy dies and its undo waits for `b`.
+      yield* TestClock.adjust('1 millis')
+      yield* Deferred.succeed(dying, undefined)
+      yield* TestClock.adjust('1 millis')
+      expect(stopping.pollUnsafe()).toBeUndefined()
+      yield* given.open
+      yield* TestClock.adjust('1 millis')
+      expect(stopping.pollUnsafe()).toBeDefined()
+      yield* Fiber.join(stopping)
+      expect(unknown((yield* republished).filter((row) => row.id === 'toy-1'))).toEqual([])
     })))
 
   test('a drain that looks while a deploy activates closes on no at-most-once operation the deploy stores, under every deviation', () => {
@@ -1852,7 +2021,7 @@ describe('a planned stop', () => {
             return yield* toy.published('projection', [], all)
           }))
         return unknown(published)
-      }), [], { open: false, bound: 1, pinned: [{ decision: 80, choice: 1 }] })
+      }), [], { open: false, bound: 1, pinned: [{ decision: 82, choice: 1 }] })
   }, 60_000)
 
   test('a drain of no whole number of millis is the caller defect, and a drain of 0 millis is not', () =>

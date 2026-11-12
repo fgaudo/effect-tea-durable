@@ -2,7 +2,9 @@
 
 **Status:** accepted, 2026-11-01. Corrects [decision 0078](0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)
 on what a deploy interrupted before it registers leaves, and makes [decision 0051](0051-a-deploy-that-fails-leaves-nothing-running.md)
-hold of an interruption too. Found by the review of 0076 to 0079.
+hold of an interruption too. Found by the review of 0076 to 0079. With a drain, the undo waits for the deployment's
+at-most-once operations before it closes the scope, by
+[decision 0280](../0280-the-undo-of-a-deploy-drains-its-deployment.md).
 
 ## Context
 

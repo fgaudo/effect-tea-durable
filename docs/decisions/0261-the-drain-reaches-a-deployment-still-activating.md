@@ -3,7 +3,10 @@
 **Status:** accepted, 2026-11-11, with the step The bugs the premise review found, fixed by family, of the
 [roadmap](../roadmap.md), as the fix of bug 66. It changes
 [decision 0119](archive/0119-a-planned-stop-drains-the-at-most-once-operations.md): the drain stops and counts every
-deployment from the claim of its name, and not only the deployments registered.
+deployment from the claim of its name, and not only the deployments registered. The case it leaves out of a deploy
+that fails during the drain, or that the planned stop interrupts, is decided by
+[decision 0280](0280-the-undo-of-a-deploy-drains-its-deployment.md), which moves the deviation its test pins to
+`{ decision: 82, choice: 1 }`.
 
 ## Context
 

@@ -71,9 +71,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     opinion of a Fable 5.2 agent. Bug 51 is fixed by
     [decision 0279](decisions/0279-createtables-dies-within-a-transaction-of-its-client.md), which the maintainer chose on 2026-11-12 after an
     opinion of a Fable 5.2 agent. Its test of the migrations in `src/postgres.test.ts` runs first in the job of
-    PostgreSQL of the push of `main` that takes it. The part under way is bug 67, reproduced by a test of
-    `src/runtime.test.ts`, whose fix is proposed to the maintainer before any code. Bug 79 is next, verified first, as bug
-    31 was.
+    PostgreSQL of the push of `main` that takes it. Bug 67 is fixed by
+    [decision 0280](decisions/0280-the-undo-of-a-deploy-drains-its-deployment.md), which the maintainer chose on
+    2026-11-12 after an opinion of a Fable 5.2 agent. Decision 0280 changes the runtime, so `bun run test:pins` and
+    `bun run test:release` run again before the step is taken. The part next is bug 79, verified first, as bug 31 was.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
     machine.
@@ -415,16 +416,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   64. **Fixed by [decision 0273](decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md)**, whose partition is the library's own hash, and whose round and waker log an entity stored under another.
   65. **Fixed by [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md)**, whose run of a crashed entity sends nothing, and whose shard lost waits for every stop of its entities.
   66. **Fixed by [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)**, whose drain reaches a deployment still activating.
-  67. **Reproduced: a planned stop while the main fiber deploys undoes the deploy, and its at-most-once
-      operations deliver `unknown`.** The interruption reaches the deploy before the scope's finalizers run, so the
-      deploy undoes itself ([decision 0102](decisions/archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md))
-      and stops its at-most-once operations before the drain of
-      [decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md) begins. They
-      deliver `unknown`, as after a crash. Whether a planned stop waits for them is a choice no note makes. The
-      [open question](open-questions.md#running) A deploy that the planned stop interrupts or that fails in the drain.
-      The test `FAILING: a planned stop that interrupts the deploy of the main fiber waits for its at-most-once
-      operations`, in `src/runtime.test.ts`, reproduces it on `main` as a `test.failing`. Run with the undo's
-      `Scope.close` taken out, it passes, so the undo of `deploy` in `src/runtime.ts` is where the fix begins.
+  67. **Fixed by [decision 0280](decisions/0280-the-undo-of-a-deploy-drains-its-deployment.md)**, whose undo of a deploy drains its deployment before it closes the scope.
   68. **Reasoned: on Cluster, a deploy that adds no migration does not outrank the runners it replaces, and an older
       runner steps the rows of the newer code.** A version is the count of a program's migrations plus one
       ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)), and an older runner is kept

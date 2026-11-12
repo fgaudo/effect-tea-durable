@@ -544,6 +544,8 @@ export const activating = <T extends Types>(
   const round = Effect.gen(function*() {
     let failed = false
     for (const id of yield* deployed.storage.interruptedIn(shard)) {
+      // A deploy that undoes itself drains its deployment, and starts no activation in its wait (decision 0280).
+      if (deployed.draining) break
       // The activation goes on: it runs where this runner holds the shard Cluster routes the entity to
       // (decision 0273).
       const routed = p.cluster!.shardOf(id)

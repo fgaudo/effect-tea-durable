@@ -569,26 +569,16 @@ with a requirement that no example has yet.
   no test reaches it yet. It would be decided by:
   - what a migration of an index does when the index it drops or keeps has a name of another hash;
   - whether the name takes the library's own hash of decision 0273, as the partition does.
-- **A deploy that the planned stop interrupts or that fails in the drain.** The drain reaches a deploy still
-  activating, and the deploy activates nothing once the drain began
-  ([decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)), which fixes bug 66 of the
-  [roadmap](roadmap.md). A deploy that fails before it registers still closes its scope at once
-  ([decision 0051](decisions/archive/0051-a-deploy-that-fails-leaves-nothing-running.md)), and its at-most-once
-  operations are interrupted and deliver `unknown`. A planned stop while the main fiber deploys is such a failure: the
-  interruption undoes the deploy
-  ([decision 0102](decisions/archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)) before the drain
-  begins, which is bug 67, reproduced by `FAILING: a planned stop that interrupts the deploy of the main fiber waits
-  for its at-most-once operations`, in `src/runtime.test.ts`. It would be decided by:
-  - whether an undo leaves the deployment's scope to the drain when the launch has `drain`, so that the drain waits
-    for its at-most-once operations;
-  - whether the undo of a deploy drains its own deployment, within the drain's time, before it closes the scope.
 - **A drain on Cluster with a deploy under way.** On Cluster, the singleton of a shard activates the entities of the
   shard before the deployment registers. The drain reaches them through the deployments it holds from the claim of
   the name, as on one process ([decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)),
   but no test runs a drain on Cluster with a deploy under way. The round of a shard's activation goes on in the
   drain, and may start an at-most-once operation there, which the drain then waits for. It would be decided by:
   - a test of `src/cluster.test.ts` that stops a runner while a shard's round activates its entities;
-  - whether the round stops at the next entity once the drain began, as the activations of one process do.
+  - whether the round stops at the next entity once the drain began, as the activations of one process do;
+  - a test that fails a deploy between its singletons and its registration while a round activates an entity, which
+    checks that the round starts no activation once the undo began
+    ([decision 0280](decisions/0280-the-undo-of-a-deploy-drains-its-deployment.md)).
 - **Two programs of one version on Cluster.** A version is the count of a program's migrations plus one
   ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)), and an older runner is kept from
   every shard by the version recorded

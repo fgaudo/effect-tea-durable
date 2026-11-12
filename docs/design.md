@@ -1355,6 +1355,14 @@ holds whether that scope is closed by `Scope.close` or by the interruption of th
 launched in a layer built over the runner's `Sharding`
 ([decision 0219](decisions/0219-a-drain-holds-when-an-interrupted-fiber-closes-its-scope.md)).
 
+A signal often reaches a process while its main fiber still deploys. The interruption then reaches the deploy before
+the drain begins, and the deploy undoes itself. With a drain, the undo of a deploy drains its own deployment first: it
+stops the deployment's timers, waker and operations that run again, and waits up to `millis` for its at-most-once
+operations, then closes the deployment's scope. The same holds of a deploy that fails while the process goes on, and
+the process's other callers are not held meanwhile. So a stop during a deploy may wait `millis` twice, once in the
+undo and once in the drain
+([decision 0280](decisions/0280-the-undo-of-a-deploy-drains-its-deployment.md)).
+
 ### What a tracer sees
 
 The runtime records spans and metrics through Effect's `Tracer` and `Metric`, which an application exports with

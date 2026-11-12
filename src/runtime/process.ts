@@ -390,6 +390,11 @@ export interface Deployment<T extends Types> {
   readonly waker: Waker
   /** The waker's fiber, once it is forked: a planned stop interrupts it (decision 0119). */
   waking: Fiber.Fiber<void, never> | null
+  /**
+   * The undo of a deploy drains the deployment: it arms no timer and starts no operation that runs again, as in a
+   * planned stop, while the process goes on (decision 0280).
+   */
+  draining: boolean
   /** How many operations of the deployment run in this process: what `tea.operations.running` reads (decision 0220). */
   operating: number
   /**

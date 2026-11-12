@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-10-31. Its consequence that an operation sending to its own program retries until the
 deploy is done is changed by [decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md): the deploy wakes it. That it holds of a
 deploy interrupted anywhere before it registers, which it did not, is
-[decision 0102](0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)'s.
+[decision 0102](0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)'s. With a drain, a deploy that fails
+waits for its at-most-once operations before it leaves nothing running, by
+[decision 0280](../0280-the-undo-of-a-deploy-drains-its-deployment.md).
 
 ## Context
 

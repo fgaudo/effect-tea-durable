@@ -104,8 +104,8 @@ export const pins: ReadonlyArray<Pin> = [
     file: 'src/runtime.ts',
     edits: [
       [
-        '      const next = p.ended\n      return drained() ? Effect.void : Effect.flatMap(Deferred.await(next), () => emptied)\n',
-        '      return Effect.flatMap(Effect.sync(drained), (empty) =>\n        empty ? Effect.void : Effect.flatMap(Effect.sync(() => p.ended), (next) => Effect.flatMap(Deferred.await(next), () => emptied)))\n',
+        '        const next = p.ended\n        return drained(deployments, detached)\n          ? Effect.void\n          : Effect.flatMap(Deferred.await(next), () => emptied(deployments, detached))\n',
+        '        return Effect.flatMap(Effect.sync(() => drained(deployments, detached)), (empty) =>\n          empty ? Effect.void : Effect.flatMap(Effect.sync(() => p.ended), (next) => Effect.flatMap(Deferred.await(next), () => emptied(deployments, detached))))\n',
       ],
     ],
     test: 'src/runtime.test.ts',
@@ -194,7 +194,10 @@ export const pins: ReadonlyArray<Pin> = [
   {
     id: '0261 the drain counts the entities of a deployment still activating',
     file: 'src/runtime.ts',
-    edits: [['      for (const deployed of p.made) {\n', '      for (const deployed of p.deployments.values()) {\n']],
+    edits: [[
+      'yield* Effect.timeoutOption(emptied(p.made, true),',
+      'yield* Effect.timeoutOption(emptied({ [Symbol.iterator]: () => p.deployments.values() }, true),',
+    ]],
     test: 'src/runtime.test.ts',
     name: 'a drain that looks while a deploy activates closes on no at-most-once operation the deploy stores, under every deviation',
   },

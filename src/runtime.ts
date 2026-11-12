@@ -1164,20 +1164,28 @@ const started = (
               // Nothing is known of the stored timers until the waker has read them once.
               waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1), failed: new Map() },
               waking: null,
+              draining: false,
               operating: 0,
               shards: new Map(),
               run: (operation) => Effect.provideContext(operation, services) as Effect.Effect<void>,
             }
             p.made.add(deployed as unknown as Deployment<never>)
+            // With a drain, the undo first drains its own deployment, as a planned stop does, so that an
+            // at-most-once operation an activation started ends before the scope closes: the interruption of a
+            // planned stop reaches the deploy of the main fiber before the drain begins (decision 0280). Its wait
+            // is uninterruptible, as the drain's is (decision 0219). The name stays claimed until the scope closes.
             return yield* Effect.onError(restore(deploying<T, C>(deployed)), () =>
-              p.deployments.has(program.name) ? Effect.void : Effect.andThen(
-                Scope.close(deployed.scope, Exit.void),
-                Effect.sync(() => {
-                  deployed.loaded.forEach((loaded) => forgetUse(p, loaded))
-                  p.made.delete(deployed as unknown as Deployment<never>)
-                  names.delete(program.name)
-                }),
-              ))
+              p.deployments.has(program.name) ? Effect.void : Effect.gen(function*() {
+                if (drain !== undefined) {
+                  deployed.draining = true
+                  yield* quiesce(deployed as unknown as Deployment<never>)
+                  yield* Effect.timeoutOption(emptied([deployed as unknown as Deployment<never>], false), `${drain} millis`)
+                }
+                yield* Scope.close(deployed.scope, Exit.void)
+                deployed.loaded.forEach((loaded) => forgetUse(p, loaded))
+                p.made.delete(deployed as unknown as Deployment<never>)
+                names.delete(program.name)
+              }))
           })
         )
       }))
@@ -1441,9 +1449,9 @@ const started = (
      * still running are at most once, since the drain stopped the others. A completion recorded in a mailbox is
      * committed, and is handled at the next activation (decision 0119).
      */
-    const drained = () => {
-      if (p.detachments > 0) return false
-      for (const deployed of p.made) {
+    const drained = (deployments: Iterable<Deployment<never>>, detached: boolean) => {
+      if (detached && p.detachments > 0) return false
+      for (const deployed of deployments) {
         for (const loaded of deployed.loaded.values()) {
           if (loaded.applying || loaded.pending > 0 || loaded.operations.size > 0) return false
         }
@@ -1451,11 +1459,25 @@ const started = (
       return true
     }
 
-    // The signal is taken before the look, as `settled` takes it: whatever ends after it completes it.
-    const emptied: Effect.Effect<void> = Effect.suspend(() => {
-      const next = p.ended
-      return drained() ? Effect.void : Effect.flatMap(Deferred.await(next), () => emptied)
-    })
+    // The signal is taken before the look, as `settled` takes it: whatever ends after it completes it. The undo of a
+    // deploy waits for its deployment alone, and not for what runs detached in the rest of the process (decision 0280).
+    const emptied = (deployments: Iterable<Deployment<never>>, detached: boolean): Effect.Effect<void> =>
+      Effect.suspend(() => {
+        const next = p.ended
+        return drained(deployments, detached)
+          ? Effect.void
+          : Effect.flatMap(Deferred.await(next), () => emptied(deployments, detached))
+      })
+
+    /** What a planned stop stops at once of a deployment: its waker, its timers and its operations that run again. */
+    const quiesce = (deployed: Deployment<never>) =>
+      Effect.gen(function*() {
+        if (deployed.waking !== null) yield* Fiber.interrupt(deployed.waking)
+        for (const loaded of [...deployed.loaded.values()]) {
+          for (const id of [...loaded.timers.keys()]) yield* stop(loaded.timers, id)
+          for (const id of [...loaded.rerun]) yield* stop(loaded.operations, id)
+        }
+      })
 
     // A planned stop, added after `running` and so run before it closes (decision 0119). Its wait stays as
     // uninterruptible as the finalizer: a scope closed by an interrupted fiber, as `runMain` closes it on a signal,
@@ -1464,14 +1486,8 @@ const started = (
     if (drain !== undefined) {
       yield* Scope.addFinalizer(scope, Effect.gen(function*() {
         p.draining = true
-        for (const deployed of [...p.made]) {
-          if (deployed.waking !== null) yield* Fiber.interrupt(deployed.waking)
-          for (const loaded of [...deployed.loaded.values()]) {
-            for (const id of [...loaded.timers.keys()]) yield* stop(loaded.timers, id)
-            for (const id of [...loaded.rerun]) yield* stop(loaded.operations, id)
-          }
-        }
-        yield* Effect.timeoutOption(emptied, `${drain} millis`)
+        for (const deployed of [...p.made]) yield* quiesce(deployed)
+        yield* Effect.timeoutOption(emptied(p.made, true), `${drain} millis`)
         Deferred.doneUnsafe(stopped, Effect.interrupt)
       }))
     }

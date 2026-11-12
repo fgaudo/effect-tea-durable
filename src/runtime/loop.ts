@@ -248,9 +248,9 @@ export const start = <T extends Types>(
     const id = under(key, incarnation)
     // An operation that runs again at the next activation is not started during a planned stop: it is stored,
     // and starts there. An at-most-once one is started, since one stored and never started would deliver its
-    // `unknown` without having run (decision 0119).
+    // `unknown` without having run (decision 0119). The undo of a deploy drains its deployment alike (decision 0280).
     if (runner.delivery !== 'AtMostOnce') {
-      if (p.draining) return
+      if (p.draining || deployed.draining) return
       loaded.rerun.add(id)
     }
     yield* forkHeld(p, 
@@ -296,8 +296,9 @@ export const arm = <T extends Types>(
 ) =>
   Effect.gen(function*() {
     const { key, incarnation, timer } = output
-    // A planned stop arms no timer: the stored time wakes the entity in the next process (decision 0119).
-    if (p.draining) return
+    // A planned stop arms no timer: the stored time wakes the entity in the next process (decision 0119). Nor does
+    // the undo of a deploy, whose deployment the next deploy activates (decision 0280).
+    if (p.draining || deployed.draining) return
     const until = DateTime.toEpochMillis(timer.at)
     let left = Math.max(0, until - DateTime.toEpochMillis(yield* DateTime.now))
     yield* forkHeld(p, 
