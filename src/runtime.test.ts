@@ -4134,6 +4134,65 @@ describe('what the runtime cannot finish', () => {
         }).pipe(Effect.ensuring(Deferred.succeed(gate, undefined))))
     })))
 
+  // Decisions 0274 and 0004: the completion of a droppable operation dropped before a crash, which ends in a
+  // region its interruption waits for, lands once the entity runs again. It is offered under an incarnation the next
+  // run never draws, so it is not applied: an applied `Done` of `c` would be a defect of the program, since the state
+  // no longer holds `c`, and would suspend the entity.
+  test('a droppable operation dropped before a crash, completing after the next run started, changes nothing', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const gate = yield* Deferred.make<void>()
+      const inRegion = yield* Deferred.make<void>()
+      let completed = false
+      const dropping: Program<T> = {
+        ...program,
+        name: 'Dropping',
+        init: (_flags, at) => ({ want: ['c'], applied: [], since: at, rings: at }),
+        operations: {
+          ...program.operations,
+          C: operation.droppable(({ key }) =>
+            Effect.uninterruptible(
+              Deferred.succeed(inRegion, undefined).pipe(
+                Effect.andThen(Deferred.await(gate)),
+                Effect.andThen(Effect.sync(() => void (completed = true))),
+                Effect.as(done(key)),
+              ),
+            )
+          ),
+        },
+      }
+      const { layer } = yield* hands()
+      // The second message the entity receives crashes it.
+      let received = 0
+      const observe = (entity: { readonly name: string }, event: { readonly _tag: string }) =>
+        entity.name === 'Dropping' && event._tag === 'Receive' && ++received === 2
+          ? Effect.die('the runtime failed')
+          : Effect.void
+      yield* process({ observe }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(dropping), layer)
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
+          yield* Deferred.await(inRegion)
+          const message = (key: 'a' | 'c', nonce: string) =>
+            toy.send(id, { _tag: 'Want', key, on: key === 'a', nonce }, { requestId: nonce, sender: tester, keep: 'forever' })
+          // The step drops `c`, whose region waits on the gate.
+          expect(yield* message('c', 'off')).toEqual({ _tag: 'Accepted' })
+          // The next message crashes the entity, and the next one loads it again.
+          expect(Exit.isFailure(yield* Effect.exit(message('a', 'crash')))).toBe(true)
+          expect(yield* afterTheStop(message('a', 'after'))).toEqual({ _tag: 'Accepted' })
+          // `c` completes now, beside the next run.
+          yield* Deferred.succeed(gate, undefined)
+          expect(yield* turnsUntil(() => completed)).toBe(true)
+          yield* runtime.settled
+          expect(yield* toy.suspended).toEqual([])
+          const inspected = yield* toy.inspect(id)
+          expect(inspected?.state.applied).toEqual(['off', 'crash', 'after'])
+          const handled = (yield* toy.published('projection', [], all))
+            .flatMap((row) => (row.message === null ? [] : [row.message]))
+          expect(handled).not.toContainEqual({ _tag: 'Done', key: 'c' })
+        }).pipe(Effect.ensuring(Deferred.succeed(gate, undefined))))
+    })))
+
   /**
    * Crashes a sender whose `c`, in its first run, waits in `sent` inside a region the crash cannot interrupt, bounded
    * by `released`, once `ready` has readied the receiver. Gives whether the send ended with the defect, and whether the

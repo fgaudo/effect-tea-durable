@@ -442,6 +442,19 @@ with a requirement that no example has yet.
     shard, or whether `drained` counts a door's step from its start;
   - a reading of Cluster's teardown in `entityManager.ts`, for the order of the loops and the door;
   - a test of a runtime and `Sharding` built in one parallel scope.
+- **A droppable operation dropped before a crash, still stopping beside the next run.** A step that drops a
+  droppable operation forks its interruption and waits for none of its finalizers
+  ([decision 0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)). The stop of a later
+  crash interrupts only the operations the entity still holds, so
+  [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md) leaves the
+  dropped one out: its finalizer may run while the entity runs again, and on Cluster while the runner that gains the
+  shard runs it. A droppable operation acts on nothing and sends nothing, so nothing the library keeps is touched, and
+  its late completion is offered under an incarnation no step draws again. A runner declared droppable that acts in
+  its finalizer would act beside the next run, as it already acts beside the next step without a crash. It would be
+  decided by:
+  - whether a runner may be declared droppable and act in its finalizer, which no type and no check refuses;
+  - whether the stop of a crash, `losing` and an unload wait for the finalizers of the operations dropped before, at
+    the cost of a wait decision 0128 refused.
 - **An entity a stop that never ends keeps from loading.** Since
   [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), an entity is not loaded on a process while the stop of its former run is running.
   An operation that holds a region uninterruptible for ever keeps its entity from loading there for ever, keeps

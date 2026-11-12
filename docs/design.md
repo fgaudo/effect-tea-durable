@@ -1296,7 +1296,10 @@ The entity is not loaded again in that process while the stop of its work runs. 
 a defect that says so, to try again, and a stop that outlives `retry` is logged once. The waker leaves the entity out
 of its readings until the stop ends, and the stop's end pokes it. The stop is work of the process, so `settled` does not
 return while it runs. On Cluster a shard lost is let go only once every stop of its entities has ended. So the runner
-that gains the shard runs no entity beside a fiber of its former run
+that gains the shard runs no entity beside a fiber of its former run. A run whose entity crashed sends nothing: its
+operations' `send` and `create` die, and one already waiting ends with the defect, so that no stop waits for a load
+or a shard its own stop holds back. A droppable operation dropped before the crash is the exception. Its stop is not
+the crash's, and its finalizer may still run beside the next run, as it may beside the next step without a crash
 ([decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md)).
 An activation the waker cannot finish crashes its entity alone too, and the waker tries it again after `retry`
 ([decision 0077](decisions/archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md)). The waker's own reading
