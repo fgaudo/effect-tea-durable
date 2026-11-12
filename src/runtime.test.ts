@@ -1775,6 +1775,46 @@ describe('a planned stop', () => {
       expect(unknown(published.filter((row) => row.id !== 'toy-2'))).toEqual([])
     })))
 
+  test.failing('FAILING: a planned stop that interrupts the deploy of the main fiber waits for its at-most-once operations', () =>
+    database(Effect.gen(function*() {
+      // Bug 67: the main fiber deploys, and is interrupted while the deploy is held at the activation of `toy-2`.
+      // The activation of `toy-1` started the at-most-once `b`, which ends well within the drain's time once let go.
+      yield* leftUnderWay
+      const gate = yield* Deferred.make<void>()
+      const reached = yield* Deferred.make<void>()
+      const acted: Array<string> = []
+      const layer = Layer.succeed(
+        Hands,
+        Hands.of({
+          act: (key) =>
+            Effect.andThen(Effect.sync(() => acted.push(key)), key === 'b' ? Deferred.await(gate) : Effect.never),
+        }),
+      )
+      const main = yield* Effect.forkChild(process({
+        drain: { millis: 100 },
+        at: (point, entity, event) =>
+          point === 'AfterCommit' && event._tag === 'Restart' && entity.id === 'toy-2'
+            ? Effect.andThen(Deferred.succeed(reached, undefined), Effect.never)
+            : Effect.void,
+      }, (runtime) => Effect.provide(runtime.deploy(program), layer)))
+      yield* Deferred.await(reached)
+      const stopping = yield* Effect.forkChild(Fiber.interrupt(main))
+      yield* TestClock.adjust('1 millis')
+      yield* Deferred.succeed(gate, undefined)
+      yield* TestClock.adjust('1 millis')
+      yield* TestClock.adjust('100 millis')
+      yield* Fiber.join(stopping)
+      expect(acted.filter((key) => key === 'b').length).toBeGreaterThan(0)
+      const published = yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), (yield* hands()).layer)
+          yield* runtime.settled
+          return yield* toy.published('projection', [], all)
+        }))
+      // `b` of `toy-1` was let go within the drain's time, so the next process does not deliver it `unknown`.
+      expect(unknown(published.filter((row) => row.id === 'toy-1'))).toEqual([])
+    })))
+
   test('a drain that looks while a deploy activates closes on no at-most-once operation the deploy stores, under every deviation', () => {
     // Decision 0261: the drain counts the entities of a deployment still activating. The deploy runs detached, and
     // the launch's scope closes once `toy-1` is activated, so that the drain looks while the deploy loads `toy-2` or

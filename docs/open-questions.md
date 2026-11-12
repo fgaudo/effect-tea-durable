@@ -577,11 +577,11 @@ with a requirement that no example has yet.
   operations are interrupted and deliver `unknown`. A planned stop while the main fiber deploys is such a failure: the
   interruption undoes the deploy
   ([decision 0102](decisions/archive/0102-a-deploy-interrupted-before-it-registers-undoes-itself.md)) before the drain
-  begins, which is bug 67, not checked. It would be decided by:
+  begins, which is bug 67, reproduced by `FAILING: a planned stop that interrupts the deploy of the main fiber waits
+  for its at-most-once operations`, in `src/runtime.test.ts`. It would be decided by:
   - whether an undo leaves the deployment's scope to the drain when the launch has `drain`, so that the drain waits
     for its at-most-once operations;
-  - a test that interrupts the main fiber while its deploy waits at an activation, with an at-most-once operation of
-    an earlier entity under way.
+  - whether the undo of a deploy drains its own deployment, within the drain's time, before it closes the scope.
 - **A drain on Cluster with a deploy under way.** On Cluster, the singleton of a shard activates the entities of the
   shard before the deployment registers. The drain reaches them through the deployments it holds from the claim of
   the name, as on one process ([decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)),
