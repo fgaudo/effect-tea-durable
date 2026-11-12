@@ -7287,3 +7287,151 @@ changes. The notes marked "in part" or "not at all" are coupled to the area by t
 messages, replies, deploys and Cluster that their own areas read. The list holds 144 notes, past the thirty a session
 reads whole, so the reading went to the notes of the area, the notes that change them and the later notes of the
 brief.
+
+## 2026-11-12: premise review, second reading, of The project and what enters the library
+
+Read on the branch `claude/premise-review-2-area-12-b78dd1`, cut from `main` at `2e17087`, by a session that read
+none of the earlier reports of the area. The failing tests are in `42f0832`, run on Windows at Bun 1.4.4.
+
+### The notes read
+
+The list is the area, the later notes of the brief, the notes the index lists as changing a note of the area, the
+notes that cite one (`grep -rlwE`), and the notes `bun scripts/premise-pairs.ts --list` couples to one in a
+declaration of `src/`.
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0007 | of the area | whole, with the code |
+| 0019 | of the area | whole |
+| 0052 | of the area | whole, with `checkProgram` and `encodings` |
+| 0053 | of the area | whole, with `texted`, `requested`, `counted` and `cursored` of `src/runtime.ts` |
+| 0054 | of the area | whole, with `checkProgram` and `check` of `src/check.ts` |
+| 0055 | of the area | whole, with the four entries |
+| 0080 | of the area | whole, with `hold` of `src/storage/tables.ts` and the launch |
+| 0099 | of the area | whole |
+| 0179 | of the area | whole, with `idFault`, the pages from `''` of `src/storage/entities.ts`, `src/storage/projections.ts` and `src/check.ts`, and the world of `src/rehearse.ts` |
+| 0193 | of the area | whole, with the entries and their form tests |
+| 0195 | of the area | whole |
+| 0196 | of the area | whole, with its form test |
+| 0203 | of the area | whole, with its form test |
+| 0204 | of the area | whole, with `requestIdFault`, its callers, `expire` and `forgetGiven` |
+| 0208 | of the area | whole, with `checkedOptions` |
+| 0212 | of the area | whole, with `src/fixtures.property.test.ts` |
+| 0241 | of the area | whole, with the imports of `src/runtime/` and `src/storage/` |
+| 0242 | of the area | whole, with `ci.yml` and the workflow's form tests |
+| 0250 | later, of the brief; changes 0242 | whole, with `slow`, `share`, the samples it cut and `package.json` |
+| 0251 | later, of the brief; changes 0208 | whole, with `checkedOptions` and the reader of Cluster's version |
+| 0254 | later, of the brief; changes 0212, 0241 and 0242 | whole, with `src/form.test.ts` |
+| 0255 | later, of the brief | whole, with `directoryOf` and `hold` |
+| 0264 | later, of the brief; changes 0208 | whole, with the launch's scope |
+| 0267 | later, of the brief; changes 0080 | whole, with `hold` |
+| 0081 | changes 0007 | whole |
+| 0084 | changes 0080 | whole |
+| 0120 | changes 0080 | whole |
+| 0157 | changes 0007 | whole, with `hold` and `isText` |
+| 0141 | changes 0053 | whole |
+| 0207 | changes 0053 | whole |
+| 0064 | changes 0054 | whole |
+| 0132 | changes 0054 | whole |
+| 0136 | changes 0054 | whole |
+| 0191 | changes 0055 | whole |
+| 0192 | changed by 0193 | in part: its decision, against 0193 |
+| 0003, 0028, 0030, 0038, 0039, 0057, 0073, 0075, 0104, 0125, 0138, 0142, 0143, 0152, 0153, 0156, 0176, 0185, 0198, 0211, 0215, 0221, 0245, 0247, 0262 | cite a note of the area | in part: the passage that cites it |
+| 0006, 0014, 0017, 0029, 0032, 0037, 0040, 0041, 0043, 0044, 0045, 0046, 0047, 0049, 0051, 0060, 0063, 0065, 0070, 0071, 0076, 0078, 0085, 0092, 0102, 0109, 0114, 0119, 0121, 0122, 0128, 0131, 0135, 0137, 0140, 0145, 0147, 0148, 0150, 0151, 0154, 0161, 0162, 0165, 0167, 0169, 0170, 0171, 0174, 0182, 0184, 0187, 0209, 0216, 0219, 0224, 0248, 0249, 0253, 0256, 0261, 0265, 0266, 0269, 0271, 0273, 0274, 0277, 0280 | coupled to a note of the area by a declaration of `src/` | in part: the comment of the declaration, and the note's decision where the pair met a rule of the area. Most are coupled by four long declarations, `Options`, `Handle` and `started` of `src/runtime.ts` and `Storage` of `src/storage.ts`, which cite 0053, 0054, 0080 or 0204 beside some forty notes each |
+
+### Findings
+
+1. **Two runtimes launch on one database of SQLite in memory that clients share.** Decisions 0080 and 0267. Decision
+   0267 holds a database in memory by its client alone, since "it names no file, and no other connection opens it".
+   That premise fell. A URI of SQLite with `mode=memory&cache=shared`, as `file:x?mode=memory&cache=shared`, names
+   one database in memory that every client of the process opens. `pragma_database_list` gives the main database of
+   such a client an empty file, so `hold` of `src/storage/tables.ts:126` returns at `main.file === ''` and takes no
+   hold file. The register `held` holds each client, not the database. So a second runtime on a second client of the
+   same URI launches beside the first, and loads the entities the first holds in memory. That is the loss of steps
+   decision 0080 was made for. The test of 0267, `two runtimes launch at once on two databases in memory`, checks
+   only that two private databases are not held as one. The test `FAILING: a second runtime on another client of a
+   database in memory that clients share dies as it launches`, in `src/runtime.test.ts:5007`, reproduces it at
+   `42f0832`. Its two clients read one table, and the second launch succeeds, where it should die with `the database
+   is held by another runtime`. The fix could begin at `hold`. A database in memory whose client opened a URI that
+   shares its cache would be held by the URI in a register of the process, as `directories` holds a data directory of
+   PGlite (decision 0255). Or the launch would refuse such a database as the launcher's defect.
+
+2. **Decision 0250 took the cases past the sample off the server of PostgreSQL, and no job runs them there.**
+   Decisions 0250, 0212 and 0242, with decision 0222 and the rule of `AGENTS.md` that a change of the storage passes
+   the job of PostgreSQL, since PGlite hides what a pool does. Decision 0250 cut the cases a sampled test runs under
+   `bun test`. The property of the fixtures went from 30 to 8, the dialects' property from 40 to 8, the queries'
+   property from 20 to 8, and the test of the names of the tables to one name in four. Decision 0250 says the release
+   runs every case it ran before, which holds on PGlite alone. The job `postgres` of `ci.yml` runs `test:postgres`
+   with no `SCHEDULES`, so the server runs the sample, and the job `release` has no server. Before 0250 the server ran
+   30, 40 and 20 cases and every name at each push. It now runs 8, 8 and 8 and a quarter of the names, and the rest
+   runs on no server. Decision 0212 still says 30, and the index does not list 0250 among the notes that change it.
+   No bug of the library is shown. The premise that fell is the coverage on a server that decisions 0222 and 0254 rely
+   on. The test `FAILING: a job runs on a server of PostgreSQL every case of the files of test:postgres, as the
+   release runs them on PGlite`, in `src/form.test.ts:723`, reproduces it at `42f0832`. It has the form of family G,
+   as bug 99 does. The fix could begin at `test:postgres` of `package.json`, run under `SCHEDULES=all` where the job
+   of the server has the time. Or the job `release` would get the service of PostgreSQL and `POSTGRES_URL`.
+
+### Leads
+
+- **The reader of Cluster's version sleeps on a time no launch checks.** Decisions 0208 and 0251. Decision 0208 rests
+  on every time the runtime sleeps on being read from the options the launch checks. Decision 0251 rests on every
+  wait that would spin reading a value the launch refuses at 0. The reader of Cluster's version, in `started` of
+  `src/runtime.ts:1083`, sleeps `${millis} millis`. Its `millis` is `entityReplyPollInterval` of Cluster's
+  configuration (`src/cluster.ts:436`), which no check reads. Under `Duration.infinity` the text is `Infinity millis`,
+  which Effect does not read, as decision 0208 saw, so the forked reader dies at its first sleep, and no reading is
+  woken by another runner's commit. Under 0 the reader spins while a reading waits. Cluster's own poll of replies may
+  spin at 0 too, so that case may be Cluster's rather than the library's. A test in `src/cluster.test.ts` whose
+  `start` is given `entityReplyPollInterval: Duration.infinity`, with a reader of `consume` under `wait: true` that a
+  commit of the other runner should wake, would reproduce the first case.
+- **The checks of the guide's code and of the quick start read only the blocks fenced `ts`.** Decisions 0196, 0203
+  and 0254. Decision 0203 compares each block of TypeScript of the guide, and the test at `src/form.test.ts:424`
+  takes the blocks fenced exactly `ts`. A block fenced `typescript` or `tsx`, or `ts` with an info string, is compared
+  with no example, and passes. Decision 0254 asks that a check be a function of what it reads, given a sample of each
+  case it refuses. Neither test is such a function, and neither has samples. No page holds such a block today. A test
+  that makes the check a function and gives it a block fenced `typescript` that no example holds would reproduce it.
+
+### Suspects ruled out
+
+- A `retry` or a `passivate` past 2^31 − 1 milliseconds, which `setTimeout` cannot hold, under the bound of decision
+  0208 at `Number.MAX_SAFE_INTEGER`. Effect's clock divides such a sleep: `sleepMillis` of `internal/effect.ts`, read
+  in the source at 4.1.3. A script run at Bun 1.4.4 raced a sleep of 2^31 + 1000 ms with one of 300 ms, and the short
+  one won. The script was not kept.
+- Decision 0204's premise that nothing pages by a request id. The batched `expire` of `src/storage/entities.ts:560`
+  deletes by `until`, and `forgetGiven` deletes by Cluster's id, which `keepGiven` keeps unique. Read in the code.
+- Decision 0179's premise that nothing stores an entity under `''`, from which `due`, `reindex`, `entities` and
+  `check` page. Every call of the handle that takes an id passes `texted`, an operation's `named` asks `idFault`, and
+  a world asks it in `create` and in an operation's sends (`src/rehearse.ts:523` and `:738`). A door on Cluster is
+  the open question On Cluster, a door reached by an empty id. Read in the code.
+- Decision 0054's rule that what a deploy refuses is refused before any row is read, against `check` of decision
+  0247. `check` runs `checkProgram` and `renamesOf` first, at `src/check.ts:73`. Read in the code.
+- Decision 0241's rule that a module of a group imports its own entry for types alone. Every import of
+  `../runtime.ts` in `src/runtime/` is `import type`, and `src/storage/` imports `../storage.ts` for the type
+  `Storage` alone. Read in the imports.
+
+### Suspects noticed and not checked
+
+- A launch within a transaction of its client may die at the hold's `ATTACH`, which SQLite refuses within a
+  transaction, with an `SqlError` where decision 0279 gives `createTables` a defect that says why. A test that
+  launches within `sql.withTransaction` on a file would tell which defect it dies with. The hold's `onError` detaches,
+  so nothing would stay held. Left, since a defect dies in both forms.
+- `slow` skips a test under `bun test` and under `SCHEDULES=pinned`, and `test:postgres` runs with no `SCHEDULES`.
+  Three tests in the files of `test:postgres` are `slow`, and none needs a server today. A test of the server declared
+  `slow` would run on no server, as finding 2 says of the samples. Left, since no such test exists.
+
+### Where the code does otherwise than the note it cites
+
+- `src/fixtures.property.test.ts:135` runs 8 scenarios under `bun test`, where decision 0212 says 30. Decision 0250
+  changed the count, and 0212's status line and the index name decision 0254 alone.
+- Decision 0255 says that a file of SQLite is refused in the same way while another connection has it open. Since
+  decision 0267 a file of SQLite refuses another runtime alone, and no reader, and 0255's status line does not link
+  0267.
+- `src/form.test.ts:413` and `src/form.test.ts:424`, the checks of the quick start and of the guide's code, have no
+  sample of a case they refuse, which decision 0254 asks of a check of the project. That is the second lead.
+
+### The notes not read whole
+
+The 18 notes of the area, the six later notes of the brief, and the notes that change a note of the area, 0064, 0081,
+0084, 0120, 0132, 0136, 0141, 0157, 0191 and 0207, were read whole. Decision 0192, which 0193 changes, was read in
+its decision. The notes marked "in part" cite a note of the area in passing, or are coupled to it by the long
+declarations of `src/runtime.ts` and `src/storage.ts`. They hold rules of messages, replies, deploys and Cluster that
+their own areas read. The list holds some 130 notes, past the thirty a session reads whole.
