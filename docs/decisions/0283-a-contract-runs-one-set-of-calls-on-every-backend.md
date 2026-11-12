@@ -92,8 +92,9 @@ waited: a creation whose projection holds U+0000 in an index.
 - That some pairs are held at once: **seen**, with a gate drawn among every table, in 6 and in 13 of the hundred
   runs of the CI, where both calls waited at the lock. The other runs still run their two calls at once on two
   connections, unaligned. The test fails a run of 50 or more in which no pair waited at once.
-- That a gate drawn among the tables both calls write holds more pairs at once: **open**, until the job `postgres`
-  of the CI prints its count on the push that takes it.
+- That a gate drawn among the tables both calls write holds more pairs at once: **seen**, in 40 of the hundred runs
+  of the job `postgres` of the CI, on the push of `claude/pool-gate`, where a gate drawn among every table held 6 and
+  13.
 - That the recording gives a call every statement it runs, those of the fibers the runtime forks for its entity
   among them: **seen**, on SQLite in five pairs run while the test was written. A message's call recorded its writes
   of `effecttea_entities` and `effecttea_outbox`, which its entity's loop runs. A statement the recording misses

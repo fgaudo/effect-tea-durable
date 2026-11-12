@@ -557,6 +557,17 @@ with a requirement that no example has yet.
   - runs of `bun run test:slow` and of `bun run test:release` again and again, which find it failing again, or not;
   - a log of the runner's Cluster rows when it fails, which says whether the answer `Suspended` was ever saved, or
     whether the storage saw it and did not withhold it.
+- **A test of a rename on Cluster that missed its log once on the CI.** `` a rename stops the runners of the old
+  name, and its door delivers what Cluster saved under it (decision 0176) ``, in
+  [`src/cluster.test.ts`](../src/cluster.test.ts), failed once on 2026-11-12 in the job `test (4)` of the CI, on the
+  push of `claude/pool-gate`, whose change touched only `src/contract.test.ts`. The log of the run held no
+  `Defect in entity, restarting` for the rename, where the test expects one. The job passed when it ran again, and the
+  test passed five runs alone and a run of its shard on the maintainer's machine. A lead, from a reading of the test
+  alone: the older runner logs the defect only if it steps the message `m1` before the newer runner takes the shards,
+  and the test does not hold that order. It would be decided by:
+  - runs of the test again and again under the load of its shard, which find it failing again, or not;
+  - a test that holds the older runner's step of `m1` until it logs, as `withholding` of the same file holds a reply,
+    which fails before a fix and makes the order the test's own.
 - **A drain across a deploy of a newer version on Cluster.** A planned stop waits for the at-most-once operations
   under way, so that a deploy does not deliver `unknown`
   ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)), and the drain
