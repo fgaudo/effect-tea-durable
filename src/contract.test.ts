@@ -515,6 +515,8 @@ const serially = (run: string, held: Held, first: 0 | 1) =>
     })).pipe(Effect.provide(client('sqlite')), Effect.orDie),
   )
 
+const RUNS = 200 // WIP: Bun.env['SCHEDULES'] === 'all' ? 200 : 2
+
 test.skipIf(server === undefined)('two calls held at a statement on a pool answer as one order of them', () =>
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const url = yield* database(server ?? '')
@@ -530,7 +532,7 @@ test.skipIf(server === undefined)('two calls held at a statement on a pool answe
       ORDER BY tablename
     `).map(({ tablename }) => tablename)
     // Waits until `count` sessions wait for a lock, or a second has passed, since a call that reaches no statement of
-    // the table locked does not wait.
+    // the table locked does not wait. Gives whether they waited.
     const waiting = (count: number) =>
       Effect.gen(function*() {
         for (;;) {
@@ -538,11 +540,13 @@ test.skipIf(server === undefined)('two calls held at a statement on a pool answe
             SELECT count(*)::int AS count FROM pg_stat_activity
             WHERE datname = current_database() AND wait_event_type = 'Lock'
           `
-          if ((row?.count ?? 0) >= count) return
+          if ((row?.count ?? 0) >= count) return true
           yield* Effect.sleep('10 millis')
         }
-      }).pipe(Effect.timeout('1 second'), Effect.ignore)
+      }).pipe(Effect.timeoutOrElse({ duration: '1 second', orElse: () => Effect.succeed(false) }), Effect.orDie)
     let runs = 0
+    // The runs whose two calls both waited at the lock, so that a pass is known to have held some pair at once.
+    let both = 0
     yield* Effect.promise(() =>
       fc.assert(
         fc.asyncProperty(held, async (held) => {
@@ -559,7 +563,7 @@ test.skipIf(server === undefined)('two calls held at a statement on a pool answe
               })))
               yield* Deferred.await(locked)
               const fibers = yield* Effect.forEach(calls, (call) => Effect.forkChild(call))
-              yield* waiting(2)
+              if (yield* waiting(2)) both++
               yield* Deferred.succeed(open, undefined)
               yield* Fiber.join(holder)
               return yield* Effect.forEach(fibers, Fiber.join)
@@ -567,8 +571,10 @@ test.skipIf(server === undefined)('two calls held at a statement on a pool answe
           const orders = [await serially(run, held, 0), await serially(run, held, 1)]
           expect(orders).toContainEqual(onPool)
         }),
-        // `bun test` on a server runs ten, and a release twenty times as many (decision 0250).
-        { numRuns: Bun.env['SCHEDULES'] === 'all' ? 200 : 10 },
+        // `bun test` on a server runs two, and a release a hundred times as many (decision 0250).
+        { numRuns: RUNS },
       )
     )
+    console.log(`two calls held at once in ${both} of ${runs} runs`)
+    if (runs >= 50) expect(both).toBeGreaterThan(0)
   })).pipe(Effect.orDie)), 1_200_000)
