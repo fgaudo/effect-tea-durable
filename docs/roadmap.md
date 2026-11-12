@@ -410,7 +410,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
        batch that waits for a reply's row. `forgetUnder` of [`src/storage/cluster.ts`](../src/storage/cluster.ts),
        which runs only on Cluster, stays an open question.
     2. Bug 3, a reply to another entity's operation that stays for ever: the `NOT EXISTS` on the asker's row of
-       `effecttea_entity_keys` is read unlocked. Locking that row `FOR SHARE` first fixes it. Two entities that end
+       `effecttea_entity_keys` is read unlocked. Reproduced on 2026-11-12, for a reply and an answer, by the tests of
+       `claude/bug3-a-reply-left` in `src/postgres.test.ts`; its fix waits for the maintainer's choice. Locking that row `FOR SHARE` first fixes it. Two entities that end
        their work and answer each other in one step may then close a cycle, which decision 0222 turns into a crash,
        so it needs a note of its own that decides the order.
   - Then the pool's gate. Both calls waited at the lock in 6 and in 13 of a hundred runs, since `gate` draws the

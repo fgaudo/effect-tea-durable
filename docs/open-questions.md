@@ -613,9 +613,8 @@ with a requirement that no example has yet.
   own `send` does. An answer no entity stores, kept for an operation in `effecttea_answers`, is kept and deleted by
   the same two statements
   ([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)), and may
-  stay for ever in the same way. It is only reasoned: no test runs it. It would be decided by:
-  - a test in [`src/postgres.test.ts`](../src/postgres.test.ts), on the CI's server, that holds the two steps at
-    their statements and finds the row, of a reply and of an answer;
+  stay for ever in the same way. It is bug 3 of [`docs/bugs.md`](bugs.md), reproduced on the CI's server for a reply and
+  for an answer, whichever step opens first. It would be decided by:
   - whether the receiver's step locks the asker's key as it reads it, or a sweep deletes the replies whose asker's
     work is gone.
 - **A step of a drain that changes a droppable operation.** A planned stop drains the at-most-once operations, and
