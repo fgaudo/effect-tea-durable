@@ -5,7 +5,16 @@ import type * as Exit from 'effect/Exit'
 import type * as Fiber from 'effect/Fiber'
 import type * as Scheduler from 'effect/Scheduler'
 import * as Schema from 'effect/Schema'
-import { isRejected, type Json, type Migrated, migrationOf, type Program, type Types, versionOf } from './program.ts'
+import {
+  isRejected,
+  type Json,
+  type Migrated,
+  migrationOf,
+  type Program,
+  readBack,
+  type Types,
+  versionOf,
+} from './program.ts'
 
 type TagOf<Message> = Message extends Readonly<{ _tag: infer Tag extends string }> ? Tag : never
 
@@ -39,6 +48,9 @@ export type ProjectionViolation<T extends Types> = Readonly<{ _tag: 'Rejected' |
  * order, sent by its customer and by the warehouse. Each is sent as a caller at `at`. A candidate
  * the projection allows to its sender must be accepted, and one it does not allow must be rejected. Candidates of a
  * kind `allows` leaves out are skipped. A retry is answered from the stored reply, so nothing here checks that a message acts once.
+ * `allows` is given the projection as a caller reads it, decoded from its JSON, where `-0` is `0`. A projection that
+ * does not encode throws the defect the runtime suspends the entity on, since no caller reads it. `update` is given
+ * `state` and each candidate as the test gives them (decision 0276).
  * Returns every violation, so that a test can assert there are none, for generated states.
  */
 export const projectionViolations = <T extends Types>(program: Program<T>, allows: NoInfer<Allows<T>>) =>
@@ -47,7 +59,7 @@ export const projectionViolations = <T extends Types>(program: Program<T>, allow
   candidates: Iterable<Candidate<T>>,
   at: DateTime.Utc,
 ): ReadonlyArray<ProjectionViolation<T>> => {
-  const projection = program.project(state)
+  const projection = readBack(program.schemas.projection, program.project(state), 'projection')
   const violations: Array<ProjectionViolation<T>> = []
   for (const { message, sender } of candidates) {
     // `Allows` has a predicate for some tags of `T['inbound']`, which TypeScript cannot index by a tag it holds.

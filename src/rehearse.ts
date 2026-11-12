@@ -12,6 +12,7 @@ import {
   Entities,
   type IdempotencyKey,
   idFault,
+  readBack,
   requestIdFault,
   InvariantDefect,
   type Key,
@@ -663,8 +664,7 @@ const makeWorld = (at: DateTime.Utc) => {
       // A caller reads the projection the storage holds, decoded from its JSON, where `-0` is `0` (decision 0211).
       projection: Effect.sync(() => {
         const program = programOf(entity)
-        const json = encode(program.schemas.projection, program.project(entity.machine.stored.state), 'projection')
-        return Schema.decodeUnknownSync(program.schemas.projection)(JSON.parse(JSON.stringify(json)))
+        return readBack(program.schemas.projection, program.project(entity.machine.stored.state), 'projection')
       }),
       send: (message, ...[given]: SentBy<T>) =>
         Effect.suspend(() => {

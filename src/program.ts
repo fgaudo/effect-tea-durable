@@ -118,6 +118,15 @@ export const encode = <A>(codec: Schema.Codec<A, Json>, value: A, what: string):
 }
 
 /**
+ * A value as a caller reads it: encoded by its schema, written as JSON, read back and decoded, so `-0` is `0`. One
+ * that does not encode is a defect, as `encode` says, and one its schema does not decode back throws the schema's
+ * error. The rehearsal's projection, a rejection's reason and the projection `projectionViolations` checks are read
+ * by it (decisions 0211, 0214, 0276).
+ */
+export const readBack = <A>(codec: Schema.Codec<A, Json>, value: A, what: string): A =>
+  Schema.decodeUnknownSync(codec)(JSON.parse(JSON.stringify(encode(codec, value, what))))
+
+/**
  * How the JSON one version of a program wrote is read by the next, by kind of stored value. Each kind is a pure
  * function from the JSON a version wrote to the JSON the one after it reads, and a kind left out is unchanged. It
  * works on the JSON, not on decoded values, because every schema encodes to what JSON holds (decision 0030): the

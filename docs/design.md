@@ -1080,7 +1080,9 @@ Most of a program is pure, so most tests need no runtime:
   the messages its readers could send, once the test says which field of the projection stands for which message,
   and for which sender
   ([decision 0026](decisions/archive/0026-the-test-maps-a-projection-to-its-messages.md),
-  [decision 0213](decisions/0213-a-projections-allows-is-given-the-sender.md)).
+  [decision 0213](decisions/0213-a-projections-allows-is-given-the-sender.md)). The test is given the projection as
+  a caller reads it, decoded from its JSON, so that `-0` is `0`
+  ([decision 0276](decisions/0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md)).
   [`examples/order/order.test.ts`](../examples/order/order.test.ts) checks it for generated states;
 - **the migrations**: each migration still reads the cases recorded when it was written, and what a version wrote is
   still read at the program's version. `migrationViolations` checks it, and names a migration no case records

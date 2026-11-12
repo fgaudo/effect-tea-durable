@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-09. Changes `allows` of
 [decision 0026](archive/0026-the-test-maps-a-projection-to-its-messages.md), which gave each function the projection
-and the message alone.
+and the message alone. Changed by [decision 0276](0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md): each function is given the projection as a caller
+reads it, decoded from its JSON.
 
 ## Context
 

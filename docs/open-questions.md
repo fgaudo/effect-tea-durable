@@ -152,6 +152,17 @@ with a requirement that no example has yet.
 
 ## Running
 
+- **A message and a sender given to `update` as sent, or decoded from their JSON.** On one process `send` of
+  `src/runtime/callers.ts` gives the machine a caller's message and sender as the caller sent them. On Cluster the
+  door decodes both from the JSON the client sent, and a message reloaded after a crash is decoded from its row. So
+  `update` may be given `-0` on one process and `0` on Cluster or after a crash, for the same message
+  ([decision 0210](decisions/0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md)). A schema whose
+  decoding is not the inverse of its encoding gives two values that differ more. It was found while bug 38 was read,
+  by a reading of `send` and of `delivered` in `src/storage/entities.ts`, and no test reaches it yet
+  ([decision 0276](decisions/0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md)). It would be decided by:
+  - a test that sends a message holding `-0` on one process and on Cluster, and compares what `update` is given;
+  - whether the runtime gives `update` on one process the message decoded from what it stores, at the cost of a
+    decoding for each message.
 - **A timer due, which no test of the capacity reaches.** An entity whose timer is due is not spare, and is not told
   to leave a process over its capacity before the timer fires
   ([decision 0078](decisions/archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)). The test `entities woken past the
@@ -717,12 +728,6 @@ with a requirement that no example has yet.
   - a rule that fails a key's name only when a firing at the time reached armed it, which needs the rehearsal to
     keep what each firing armed;
   - whether a program needs a chain of parameters at one time at all.
-- **What a test of a projection gives `allows`.** `projectionViolations` checks a projection's `allows` with the
-  sender ([decision 0213](decisions/0213-a-projections-allows-is-given-the-sender.md)). It gives `allows` the
-  projection as `project` returns it, not as a caller reads it from its JSON, and gives `update` the sender
-  unmigrated. A projection that holds `-0` is then checked as no caller reads it. It is bug 38 of the
-  [roadmap](roadmap.md), not checked. It would be decided by:
-  - a case of `src/testing.test.ts` whose projection holds `-0`, and one whose sender a migration changes.
 - **A source that gives each item once.** A boundary acknowledges an item once its answer is stored, and the source
   gives the item again until then
   ([decision 0272](decisions/0272-a-boundary-acknowledges-an-item-once-its-answer-is-stored.md)). A source that keeps

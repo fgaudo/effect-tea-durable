@@ -61,7 +61,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     and its verification found bug 92, fixed by
     [decision 0275](decisions/0275-on-cluster-a-doors-commit-tells-the-readings-itself.md), which the maintainer chose on
     2026-11-12 after an opinion of a Fable 5.2 agent. Decision 0275 changes the runtime, so `bun run test:pins` and
-    `bun run test:release` run again before the step is taken. The part next is the bugs noticed after 37: 38, 40, 50, 51, 67 and 79, each verified first, as bug 31 was.
+    `bun run test:release` run again before the step is taken. Bug 38 is fixed by
+    [decision 0276](decisions/0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md), which the maintainer chose on 2026-11-12 after an
+    opinion of a Fable 5.2 agent. The part next is the bugs noticed after 38: 40, 50, 51, 67 and 79, each verified
+    first, as bug 31 was, beginning with bug 40 and its `test.failing` in `src/dialects.test.ts`.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
     machine.
@@ -297,12 +300,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       [0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). The
       [open question](open-questions.md#storage-and-reading) A reader with no time that misses a commit says why.
       The reading found bug 92, a reader left waiting by a crash instead of an interruption.
-  38. **Reproduced: `projectionViolations` gives `allows` the projection as `project` returns it, not as a
-      caller reads it from its JSON, and gives `update` the sender unmigrated.**
-      ([decision 0213](decisions/0213-a-projections-allows-is-given-the-sender.md)). A projection that holds `-0` is
-      checked as no caller reads it. The [open question](open-questions.md#programs) What a test of a projection
-      gives `allows`.
-      Half reproduced by `projectionViolations gives allows the projection as a caller reads it, where -0 is 0`, a `test.failing` of `src/testing.test.ts`. The half of the sender unmigrated is not checked.
+  38. **Fixed by [decision 0276](decisions/0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md)**, which gives `allows` the projection as a caller reads it; its half of the sender unmigrated is false, as the note says.
   39. **Noticed, not checked: on Cluster, a reader of `consume` with `wait: true` may wait for ever for another
       runner's rows, once Cluster runs on PostgreSQL, or where `PRAGMA data_version` cannot be read.**
       ([decisions 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md),

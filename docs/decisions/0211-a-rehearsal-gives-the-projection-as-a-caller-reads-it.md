@@ -5,7 +5,8 @@
 `rehearse` gives its entity. It holds of the projection what
 [decision 0210](0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md) decides of `-0`. Its open
 question of a rejection's reason is decided by
-[decision 0214](0214-a-rejections-reason-is-given-as-a-caller-reads-it.md).
+[decision 0214](0214-a-rejections-reason-is-given-as-a-caller-reads-it.md). [Decision 0276](0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md) holds it of
+`projectionViolations`.
 
 ## Context
 

@@ -13,6 +13,7 @@ import {
   type Creation,
   type Piece,
   encode,
+  readBack,
   type IdempotencyKey,
   idempotencyKey,
   indexesOf,
@@ -81,9 +82,7 @@ const encodeBy = <A>(codec: Schema.Codec<A, Json>, value: A, what: string): Json
  * (decision 0214). A reason its schema refuses is a defect.
  */
 const replied = <Reason>(codec: Schema.Codec<Reason, Json>, reason: Reason | null): Reason | null =>
-  reason === null ? null : byProgram(() =>
-    Schema.decodeUnknownSync(codec)(JSON.parse(JSON.stringify(encode(codec, reason, 'reason of the rejection'))))
-  )
+  reason === null ? null : byProgram(() => readBack(codec, reason, 'reason of the rejection'))
 
 /** The schema of each key's parameter, or null for a key without one, by its name. */
 const declaredKeys = <T extends Types>(program: Program<T>) =>

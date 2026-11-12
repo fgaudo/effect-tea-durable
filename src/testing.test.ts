@@ -2,7 +2,7 @@
  * The scheduler the runtime's tests run under (decision 0104): its rules are its spike's,
  * `spikes/effect-scheduler-controlled.test.ts`, which tests them one by one; here, what the explorations add.
  * Then the check of a program's migrations against the cases a test recorded (decision 0126), and of a projection
- * against `update`, by sender (decision 0213).
+ * against `update`, by sender (decision 0213), read as a caller reads it (decision 0276).
  */
 import { describe, expect, test } from 'bun:test'
 import * as DateTime from 'effect/DateTime'
@@ -628,32 +628,43 @@ describe('projectionViolations (decision 0213)', () => {
   })
 })
 
-// Bug 38 of the roadmap: `projectionViolations` gives `allows` the projection as `project` returns it. A caller
-// reads it from its JSON, where `-0` is `0` (decision 0211), so a check of the value `project` returns passes where
-// the caller's reading breaks the agreement.
-test.failing('projectionViolations gives allows the projection as a caller reads it, where -0 is 0', () => {
+describe('projectionViolations reads the projection as a caller does (decision 0276)', () => {
   const at = DateTime.makeUnsafe('2026-10-30T10:00:00Z')
-  const signed = declareProgram({
-    state: Schema.Struct({ x: Schema.Number }),
-    flags: Schema.Null,
-    inbound: Schema.TaggedStruct('Act', {}),
-    internal: Schema.Never,
-    operation: Schema.Never,
-    rejection: Schema.Never,
-    projection: Schema.Struct({ x: Schema.Number }),
-  })({
-    name: 'Signed',
-    keys: [],
-    init: () => ({ x: -0 }),
-    update: () => (state) => (Object.is(state.x, -0) ? state : rejectStep),
-    work: () => noWork,
-    operations: {},
-    project: (state) => state,
-    indexes: {},
+  const signed = (project: (state: { readonly x: number }) => { readonly x: number }) =>
+    declareProgram({
+      state: Schema.Struct({ x: Schema.Number }),
+      flags: Schema.Null,
+      inbound: Schema.TaggedStruct('Act', {}),
+      internal: Schema.Never,
+      operation: Schema.Never,
+      rejection: Schema.Never,
+      projection: Schema.Struct({ x: Schema.Number }),
+    })({
+      name: 'Signed',
+      keys: [],
+      init: () => ({ x: -0 }),
+      update: () => (state) => (Object.is(state.x, -0) ? state : rejectStep),
+      work: () => noWork,
+      operations: {},
+      project,
+      indexes: {},
+    })
+
+  // A caller reads the projection from its JSON, where `-0` is `0` (decision 0211). Given the value `project`
+  // returns, `allows` would allow the message, and the check would pass where a caller is not allowed to act.
+  test('gives allows the projection decoded from its JSON, where -0 is 0', () => {
+    const check = projectionViolations(signed((state) => state), { Act: (projection) => Object.is(projection.x, -0) })
+    // A caller reads `{ x: 0 }`, is not allowed to act, and `update` accepts the message: a `Missing`.
+    expect(check({ x: -0 }, [{ message: { _tag: 'Act' }, sender: null }], at)).toEqual([
+      { _tag: 'Missing', message: { _tag: 'Act' }, sender: null },
+    ])
   })
-  const check = projectionViolations(signed, { Act: (projection) => Object.is(projection.x, -0) })
-  // A caller reads `{ x: 0 }`, is not allowed to act, and `update` accepts the message: a `Missing`.
-  expect(check({ x: -0 }, [{ message: { _tag: 'Act' }, sender: null }], at)).toEqual([
-    { _tag: 'Missing', message: { _tag: 'Act' }, sender: null },
-  ])
+
+  // The runtime suspends an entity whose projection does not encode, so no caller reads it, and the check throws.
+  test('throws the defect of a projection that does not encode', () => {
+    const check = projectionViolations(signed(() => ({ x: Number.NaN })), { Act: () => true })
+    expect(() => check({ x: -0 }, [{ message: { _tag: 'Act' }, sender: null }], at)).toThrow(
+      'the projection encodes to what JSON does not hold',
+    )
+  })
 })

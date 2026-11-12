@@ -120,7 +120,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0200](0200-a-rehearsal-sends-under-a-request-id-the-test-names.md) | A rehearsal sends under a request id the test names, and a retry is given the stored reply | [0269](0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md) |
 | [0269](0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md) | A caller's request is its sender, its request id and what it carries, and a caller's request that carries another message or other flags under a used id is answered `Reused` |  |
 | [0201](0201-rejectwith-keeps-the-literal-of-its-reason.md) | `rejectWith` keeps the literal of its reason, with a `const` type parameter |  |
-| [0211](0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md) | A rehearsal gives the projection as a caller reads it, decoded from its JSON |  |
+| [0211](0211-a-rehearsal-gives-the-projection-as-a-caller-reads-it.md) | A rehearsal gives the projection as a caller reads it, decoded from its JSON | [0276](0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md) |
 | [0262](0262-a-sendfrom-stands-for-a-run-no-entity-draws.md) | A world's `sendFrom` stands for a run under an incarnation below 1, which no entity draws |  |
 
 ## Operations and timers
@@ -232,7 +232,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0218](0218-the-prefix-is-effecttea-and-a-launch-dies-on-a-name-taken.md) | The prefix is `effecttea_`, and a launch dies on a name the runtime's objects would take |  |
 | [0025](archive/0025-operations-and-projections-have-schemas.md) | A program gives the schemas of its operations and of its projection | [0058](archive/0058-work-is-compared-by-what-is-stored.md) |
 | [0026](archive/0026-the-test-maps-a-projection-to-its-messages.md) | The test says which messages a projection's actions stand for | [0213](0213-a-projections-allows-is-given-the-sender.md) |
-| [0213](0213-a-projections-allows-is-given-the-sender.md) | A projection's `allows` is given the sender, and says whose each action is |  |
+| [0213](0213-a-projections-allows-is-given-the-sender.md) | A projection's `allows` is given the sender, and says whose each action is | [0276](0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md) |
+| [0276](0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md) | A projection's `allows` is given the projection as a caller reads it, decoded from its JSON |  |
 | [0027](archive/0027-a-program-gives-the-schema-of-its-senders.md) | A program gives the schema of its senders |  |
 | [0030](archive/0030-a-schema-encodes-to-json.md) | A schema encodes to what JSON holds | [0098](archive/0098-json-is-effect-s.md) |
 | [0032](archive/0032-a-projection-is-a-row.md) | A projection is a row, and a program declares the indexes a query uses | [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md), [0139](archive/0139-the-projection-is-json.md), [0141](archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md), [0143](archive/0143-a-query-pages-after-the-last-row-it-gave.md), [0148](archive/0148-a-count-and-a-sum-are-read-in-one-statement.md), [0206](0206-an-index-that-is-no-scalar-is-the-programs-defect.md) |
