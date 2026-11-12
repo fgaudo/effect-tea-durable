@@ -14,6 +14,7 @@
  *
  * A second test, for bug 50 of the roadmap, fills the volume again, and frees the room while callers retry their
  * steps. The operator forgets and prunes a second after the room is freed, and the callers go on beside the prune.
+ * The callers' steps take the room freed before the forget, so the prune fails as on the full volume.
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
@@ -223,9 +224,13 @@ test.skipIf(volume === undefined)('the room freed on a full volume, beside the s
     await run(createTables)
     const full = await run(filling(filename))
     const beside = await run(freedBesideSteps(filename, ballast))
-    // Bug 50 is not decided yet: this run only shows what the callers take of the room freed.
+    // Bug 50: no step commits on the full volume, the steps take the room freed within a second, and the prune of
+    // the procedure of decision 0223 then fails though the forget commits.
     expect(full.sent).toBeGreaterThan(0)
     expect(beside.beforeFree.committed).toBe(0)
+    expect(beside.beforeProcedure.committed).toBeGreaterThan(0)
+    expect(Exit.isSuccess(beside.forgotten)).toBe(true)
+    expect(Exit.isFailure(beside.pruned)).toBe(true)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

@@ -130,9 +130,13 @@ with a requirement that no example has yet.
   - whether `createTables` refuses a transaction it is given, or its JSDoc names the rule.
 - **A full volume beside the steps.** An operator frees room on a full volume, then forgets a consumer and prunes
   ([decision 0223](decisions/0223-a-disk-that-is-really-full.md)). The spike of 0223 ran no step beside the
-  procedure, so the room freed may be taken first by the steps that callers retry. It is bug 50 of the
-  [roadmap](roadmap.md), not checked. It would be decided by:
-  - a run of `spikes/full-volume.test.ts` on the CI's volume, with steps beside the procedure.
+  procedure. A second test of `spikes/full-volume.test.ts` saw, on the CI's volume, three callers retrying take the
+  1 MB freed within a second, after which the forget committed and the prune failed again. It is bug 50 of the
+  [roadmap](roadmap.md), seen. It would be decided by:
+  - whether a prune that fails on a full volume tries again with fewer rows a batch, down to one, which a step's
+    room in the WAL may hold with no room freed, as a forget commits there. No spike has tried it yet.
+  - or whether the procedure stops the callers first, which the runtime offers no call for.
+  - or whether the operator frees room enough for both, which the spike says is no bound an operator can know.
 
 - **A consumer of a topic a newer version dropped.** A consumer that is gone leaves by `forget`
   ([decision 0039](decisions/archive/0039-a-consumer-of-the-outbox-keeps-its-cursor.md)), and a deploy keeps a stored consumer it no
