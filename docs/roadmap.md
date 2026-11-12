@@ -76,8 +76,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     2026-11-12 after an opinion of a Fable 5.2 agent. Decision 0280 changes the runtime, so `bun run test:pins` and
     `bun run test:release` run again before the step is taken. Bug 79, a gap of the guide, is fixed in `docs/design.md` with no note, as the maintainer chose on 2026-11-12
     after an opinion of a Fable 5.2 agent, since decisions 0185 and 0222 decide it. The bugs noticed are done, and so are the bugs of no family.
-    The part next is the runs before the step is taken, below: `bun run test:pins`, `bun run test:release` and the
-    workflow run by hand.
+    The part next is the workflow run by hand, before the step is taken, below.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
     machine.
@@ -94,7 +93,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
     hand has not run yet. Family G was fixed after `07cb3fb`, so both run again. At `f658bb3`, on 2026-11-12, on the
     maintainer's machine, `bun run test:release` ran 792 tests in 798 s, and failed one, the seed 106 of decision
-    0274's part above.
+    0274's part above. At `feb757a`, on 2026-11-12, on the maintainer's machine, `bun run test:pins` held its 16
+    pins, and `bun run test:release` ran 820 tests in 979 s, with 802 passed and none failed. The workflow run by hand
+    is what is left.
   - A family's rule is proposed to the maintainer before any code, with the alternatives, and the code waits for the
     maintainer's choice. The maintainer may ask for the opinion of a subagent first, as a Fable 5.2 agent gave for F
     and E.
