@@ -39,9 +39,9 @@ import { join } from 'node:path'
 import { launch as launchOnCluster, sharding } from './cluster.ts'
 import { start } from './machine.ts'
 import { launch } from './index.ts'
-import { defect, program } from './index.program.ts'
+import { defect, type Entities, noWork, operation, program, type Receiver, send, timer } from './index.program.ts'
 import { idFault, requestIdFault, type TypesOf } from './program.ts'
-import type { Handle, Keep } from './runtime.ts'
+import type { Handle, Inspected, Keep } from './runtime.ts'
 import type { Comparison, Dialect } from './storage.ts'
 import { client, database, pool, server } from './storage.test_databases.ts'
 
@@ -52,30 +52,77 @@ const fields = {
   note: Schema.NullOr(Schema.String),
 }
 
+/** The work of an item: an `Add` to another item under way, and a timer due. */
+const pending = {
+  forward: Schema.NullOr(Schema.Struct({ to: Schema.String, n: Schema.Number })),
+  ticking: Schema.Boolean,
+}
+const Forward = Schema.TaggedStruct('Forward', { to: Schema.String, n: Schema.Number })
+
+/**
+ * An item's operation: an `Add` of `n` sent to the item `to`, whose reply's tag the item keeps in its note. It sends
+ * under one name, so that a run again after a crash is answered the stored reply.
+ */
+const forward = ({ to, n }: typeof Forward.Type): Effect.Effect<Forwarded, never, Entities> =>
+  Effect.map(
+    send(item as Receiver<Item>, to, { _tag: 'Add', label: 'forwarded', n }, 'forward'),
+    (reply) => ({ _tag: 'Forwarded', reply: reply._tag }),
+  )
+type Forwarded = Readonly<{ _tag: 'Forwarded'; reply: string }>
+
 /**
  * The program every backend runs. Its index `run` holds the run of the property that made the entity, and every
- * reading names it, so that the runs that share one Cluster read only their own entities.
+ * reading names it, so that the runs that share one Cluster read only their own entities. `Forward` starts an
+ * operation that sends to another item, and `Tick` a timer due at once, which adds 1 when it fires.
  */
 const item = program({
-  state: Schema.Struct({ ...fields, run: Schema.String }),
+  state: Schema.Struct({ ...fields, run: Schema.String, ...pending }),
   flags: Schema.Struct({ ...fields, run: Schema.String }),
   sender: Schema.String,
   inbound: Schema.Union([
     Schema.TaggedStruct('Set', fields),
     Schema.TaggedStruct('Boom', { note: Schema.String }),
     Schema.TaggedStruct('Add', { label: Schema.String, n: Schema.Number }),
+    Forward,
+    Schema.TaggedStruct('Tick', {}),
   ]),
+  internal: Schema.Union([
+    Schema.TaggedStruct('Forwarded', { reply: Schema.String }),
+    Schema.TaggedStruct('Ticked', {}),
+  ]),
+  operation: Forward,
   projection: Schema.Struct({ ...fields, run: Schema.String }),
 })({
   name: 'Item',
-  init: (flags) => flags,
+  keys: ['forward', 'tick'],
+  init: (flags) => ({ ...flags, forward: null, ticking: false }),
   update: (message) => (state) => {
-    if (message._tag === 'Boom') return defect(`cannot handle ${message.note}`)
-    if (message._tag === 'Add') return { ...state, label: message.label, amount: state.amount + message.n }
-    const { _tag, ...set } = message
-    return { ...state, ...set }
+    switch (message._tag) {
+      case 'Boom':
+        return defect(`cannot handle ${message.note}`)
+      case 'Add':
+        return { ...state, label: message.label, amount: state.amount + message.n }
+      // A forward under way is replaced, and its operation's reply then lands on the new one.
+      case 'Forward':
+        return { ...state, forward: { to: message.to, n: message.n } }
+      case 'Forwarded':
+        return { ...state, forward: null, note: message.reply }
+      case 'Tick':
+        return { ...state, ticking: true }
+      case 'Ticked':
+        return { ...state, ticking: false, amount: state.amount + 1 }
+      case 'Set': {
+        const { _tag, ...set } = message
+        return { ...state, ...set }
+      }
+    }
   },
-  project: (state) => state,
+  work: (state) => ({
+    ...(state.forward === null ? noWork : { forward: Forward.make(state.forward) }),
+    ...(state.ticking ? { tick: timer(DateTime.makeUnsafe(0), { _tag: 'Ticked' as const }) } : noWork),
+  }),
+  operations: { Forward: operation.atLeastOnce(forward) },
+  project: ({ forward: _, ticking: __, ...projected }) => projected,
   indexes: {
     label: (p) => p.label,
     amount: (p) => p.amount,
@@ -124,6 +171,8 @@ const calls = (ids: ReadonlyArray<string>, requests: ReadonlyArray<string>) => {
     create,
     fc.record({ _tag: fc.constant('Set' as const), id, set: values, request }),
     fc.record({ _tag: fc.constant('Boom' as const), id, note: text, request }),
+    fc.record({ _tag: fc.constant('Forward' as const), id, to: id, n: fc.integer({ min: 1, max: 3 }), request }),
+    fc.record({ _tag: fc.constant('Tick' as const), id, request }),
     fc.record({ _tag: fc.constant('Read' as const), id }),
     fc.record({
       _tag: fc.constant('Query' as const),
@@ -144,9 +193,20 @@ const calls = (ids: ReadonlyArray<string>, requests: ReadonlyArray<string>) => {
       { _tag: 'Boom' as const, id, note, request },
       { _tag: operator, id },
     ])
+  // A forward to an entity a message suspends, then an operator's call on the receiver, so that an operation meets a
+  // suspended receiver and waits for its resumption.
+  const operator = fc.constantFrom('Inspect' as const, 'Resume' as const, 'Discard' as const)
+  const waitingFor = fc.tuple(id, id, text, request, request, operator)
+    .map(([id, to, note, boom, request, operator]) => [
+      { _tag: 'Boom' as const, id: to, note, request: boom },
+      { _tag: 'Forward' as const, id, to, n: 1, request },
+      { _tag: 'Inspect' as const, id: to },
+      { _tag: operator, id: to },
+    ])
   const some = fc.oneof(
     { arbitrary: call.map((one) => [one]), weight: 4 },
     { arbitrary: suspending, weight: 1 },
+    { arbitrary: waitingFor, weight: 1 },
   )
   // The entities are made first, so that the readings after them have rows to compare.
   return fc.tuple(fc.array(create, { minLength: 1, maxLength: 6 }), fc.array(some, { minLength: 1, maxLength: 12 }))
@@ -211,6 +271,10 @@ const answer = (
     const within = (where: ReadonlyArray<Readonly<{ index: Index; is: Comparison; value: unknown }>>) =>
       [{ index: 'run' as const, is: '=' as const, value: run }, ...where] as never
     const answers: Array<unknown> = []
+    const ids = [...new Set(calls.flatMap((call) => [
+      ...('id' in call ? [own(call.id)] : []),
+      ...('to' in call ? [own(call.to)] : []),
+    ]))]
     for (const [at, call] of calls.entries()) {
       const items = handles[at % handles.length]!
       if (call._tag === 'Sum') {
@@ -241,6 +305,10 @@ const answer = (
         ? items.send(own(call.id), { _tag: 'Set', ...call.set }, { ...request!, keep: 'forever' })
         : call._tag === 'Boom'
         ? items.send(own(call.id), { _tag: 'Boom', note: call.note }, { ...request!, keep: 'forever' })
+        : call._tag === 'Forward'
+        ? items.send(own(call.id), { _tag: 'Forward', to: own(call.to), n: call.n }, { ...request!, keep: 'forever' })
+        : call._tag === 'Tick'
+        ? items.send(own(call.id), { _tag: 'Tick' }, { ...request!, keep: 'forever' })
         : call._tag === 'Read'
         ? items.read(own(call.id))
         : call._tag === 'Query'
@@ -255,10 +323,8 @@ const answer = (
         ? items.countBy({ index: call.index, where: within(call.where), limit: call.limit })
         : call._tag === 'Inspect'
         ? Effect.map(items.inspect(own(call.id)), settledOf)
-        : call._tag === 'Resume'
-        ? Effect.tap(Effect.map(items.resume(own(call.id)), settledOf), () => quiet(items, own(call.id)))
-        : call._tag === 'Discard'
-        ? Effect.tap(Effect.map(items.discard(own(call.id)), settledOf), () => quiet(items, own(call.id)))
+        : call._tag === 'Resume' || call._tag === 'Discard'
+        ? operated(items, call._tag, own(call.id))
         // What an operator's sweep counts covers every run that shares a backend, so only its success is compared.
         : call._tag === 'Expire'
         ? Effect.as(items.expire, 'done')
@@ -277,6 +343,7 @@ const answer = (
       answers.push(
         waiting.has(at) && Exit.isFailure(exit) && Cause.hasDies(exit.cause) ? waitsForAFix : outcome(exit),
       )
+      if (writes.has(call._tag)) yield* quiet(items, ids)
     }
     return answers
   })
@@ -302,17 +369,79 @@ const settledOf = (value: unknown): unknown =>
     : value
 
 /**
- * Waits until the entity `id` is quiet: suspended, or with no message in its mailbox. An operator's `resume` or
- * `discard` answers before the entity handles the message it died on or the next one, so a call after it would meet
- * the entity at a point each backend reaches in its own time. On Cluster a message sent then was queued behind the
- * step and answered `Suspended` when the entity suspended again, where SQLite had suspended it before the message
- * came. A wait past its time is left to the next call, which then differs.
+ * The calls after which an entity may go on stepping: those that send it a message, create it or take it out of a
+ * suspension.
  */
-const quiet = (items: Handle<Item>, id: string) =>
-  Effect.repeat(Effect.orDie(items.inspect(id)), {
+const writes = new Set<string>(['Create', 'Set', 'Boom', 'Forward', 'Tick', 'Resume', 'Discard'])
+
+/**
+ * Waits until every entity of `ids` is quiet. A missing entity is quiet. An entity that is not suspended is quiet
+ * with no message in its mailbox, and a suspended one whatever its mailbox holds. Its work is quiet where each forward
+ * waits for the resumption of its receiver, which lists the wait, or has its completion queued, or is the operation
+ * the entity died in. A timer is quiet only in a suspended entity, whose timers are disarmed. The operations of a
+ * suspended entity go on, so a forward of it sent its `Add` once its receiver was discarded. A call answers before its entity handles
+ * what follows from it: the message an operator's `resume` or `discard` takes the entity past, an operation's
+ * completion, a timer's firing. So a call after it would meet the entities at a point each backend reaches in its
+ * own time. On Cluster a message sent after a `resume` was queued behind the step and answered `Suspended` when the
+ * entity suspended again, where SQLite had suspended it before the message came. A wait past its time is left to
+ * the next call, which then differs.
+ */
+const quiet = (items: Handle<Item>, ids: ReadonlyArray<string>) => {
+  // A forward to an id the library refuses dies, and suspends its entity: it is waited for until it does. A forward
+  // to a suspended receiver stores its wait after the step that started it, so it is waited for until it is listed.
+  const waits = (to: string, of: string) =>
+    idFault(to) !== undefined
+      ? Effect.succeed(false)
+      : Effect.map(
+        items.inspect(to),
+        (inspected) => inspected?.suspension?.waiting.some(({ entity }) => entity.id === of) === true,
+      )
+  const still = (id: string) =>
+    Effect.gen(function*() {
+      const inspected = yield* items.inspect(id)
+      if (inspected === null) return true
+      const { suspension, mailbox } = inspected
+      if (suspension === null && mailbox.length > 0) return false
+      for (const { key, work } of inspected.work) {
+        if (!('_tag' in work)) {
+          if (suspension === null) return false
+          continue
+        }
+        const completed = mailbox.some((queued) => queued._tag === 'Internal' && queued.key.name === key.name)
+        const died = suspension?.on._tag === 'Operation' && suspension.on.key.name === key.name
+        if (!completed && !died && !(yield* waits(work.to, id))) return false
+      }
+      return true
+    })
+  // An id the library refuses holds no entity, and `inspect` dies on it.
+  const held = ids.filter((id) => idFault(id) === undefined)
+  return Effect.repeat(Effect.orDie(Effect.forEach(held, still)), {
     schedule: Schedule.spaced('10 millis'),
-    until: (inspected) => inspected === null || inspected.suspension !== null || inspected.mailbox.length === 0,
+    until: (all) => all.every(Boolean),
   }).pipe(Effect.timeoutOrElse({ duration: '5 seconds', orElse: () => Effect.void }), Effect.ignore)
+}
+
+/**
+ * Whether an operator's `resume` or `discard` of the entity `inspected` races the senders that wait for it. The step
+ * that takes the entity out of its suspension wakes them, and the entity may die again on the message it is resumed
+ * past, or on the next one a discard leaves in its mailbox. A woken sender's message then lands in the mailbox before
+ * the entity dies, or is answered `Suspended` after, and the sender waits again. Both are answers the design allows,
+ * and the order is the backend's own, so the test does not send such a call, on any backend. It reads the
+ * suspension before, at a point `quiet` made every backend reach.
+ */
+const races = (operator: 'Resume' | 'Discard', inspected: Inspected<Item> | null) =>
+  inspected?.suspension != null && inspected.suspension.waiting.length > 0 &&
+  (operator === 'Resume' || inspected.mailbox.length > 1)
+
+/** An operator's `resume` or `discard` of `id`, unless it `races`. */
+const operated = (items: Handle<Item>, operator: 'Resume' | 'Discard', id: string) =>
+  Effect.flatMap(items.inspect(id), (inspected) =>
+    races(operator, inspected)
+      ? Effect.succeed(racing)
+      : Effect.map(operator === 'Resume' ? items.resume(id) : items.discard(id), settledOf))
+
+/** What a call `races` holds back is answered. */
+const racing = "an operator's call that races the senders waiting for its entity"
 
 /** What a call is answered that has no answer within its time. */
 const unanswered = 'no answer within 5 s'
@@ -443,8 +572,8 @@ test('every backend answers every call alike', () =>
       alike(await onDialect('pg', run, calls, waiting), sqlite)
       alike(await Effect.runPromise(answer(cluster.handles, run, calls, waiting, false)), sqlite)
     }),
-    // `bun test` runs four within its budget of two seconds, and a release 300 (decision 0250).
-    { numRuns: Bun.env['SCHEDULES'] === 'all' ? 300 : 4 },
+    // `bun test` runs three within its budget of two seconds, and a release 300 (decision 0250).
+    { numRuns: Bun.env['SCHEDULES'] === 'all' ? 300 : 3 },
   ), 1_200_000)
 
 // SQLite adds doubles, and its partial total may round up past the largest double where the exact total, which

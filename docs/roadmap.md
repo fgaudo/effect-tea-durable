@@ -419,10 +419,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     `expire`, `prune` and `reindex` beside `suspended`, and a `Boom` followed by an operator's call on its entity. The
     first run of 300 found a race of the test, which decision 0283 says, and none of the backends. Two runs of 300
     passed after it.
-  - Next, the calls of the contract grow by an operation that sends to another entity and a timer, on every backend.
-    The program `item` of `src/contract.test.ts` declares neither yet. Bugs 10 and 11 are their first cases on
-    Cluster: a creation `init` dies on, sent by an operation, and the rows of Cluster an operator's resume or discard
-    leaves after `expire`, which the answers alone do not show. The pool's histories grow too, with a deploy that declares a consumer and an ack between
+  - Done, on 2026-11-12, an operation that sends to another entity and a timer in the contract, on every backend: a
+    message `Forward` of the program `item`, which sends `Add`, and a message `Tick`, whose timer is due at once. The
+    runs of 300 found three races of the test, which decision 0283 says, and none of the backends. Three runs of 300
+    passed after them.
+  - Next, bugs 10 and 11 of `docs/bugs.md`, the first cases of an operation and an operator on Cluster that the
+    answers alone do not show. Bug 10 is a creation that `init` dies on, sent by an operation, which needs an
+    operation of `item` that creates. Bug 11 is the rows of Cluster that an operator's resume or discard leaves after
+    `expire`, which a reading of Cluster's tables shows. The pool's histories grow too, with a deploy that declares a consumer and an ack between
     the snapshot of a batch of `prune` and its commit, so that the pool reaches bug 80, which a scenario holds now.
     A difference of Cluster that a note decides is marked beside `diesOn`, as decision 0283
     says, and a difference no note decides is a bug.

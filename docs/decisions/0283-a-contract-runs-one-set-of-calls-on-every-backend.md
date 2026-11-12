@@ -43,13 +43,28 @@ waited: a creation whose projection holds U+0000 in an index.
   `resume` and `discard` give is compared without `since`, a time of the runtime's clock, and with a cause kept only
   as whether it is the defect of a `Boom`. `expire`, `prune` and `reindex` count over every run that shares a backend,
   so only their success is compared.
-- **After a `resume` or a `discard`, the test waits until the entity is suspended or its mailbox is empty.** The
-  operator is answered before the entity handles the message it died on. A message sent then on Cluster was queued
-  behind that step and answered `Suspended` when the entity suspended again, while on SQLite the entity had suspended
-  before the message came. Both are answers the design allows, so the test waits rather than compare a race.
+- **The program `item` sends to another entity and arms a timer.** A message `Forward` starts an at-least-once
+  operation that sends `Add` to another item and keeps the reply's tag in its note. A message `Tick` arms a timer due
+  at once, which adds 1 when it fires. The generated calls send both, and a `Forward` to an entity a `Boom` suspends,
+  followed by an operator's call on that entity, so that an operation waits for a resumption.
+- **After each call that writes, the test waits until every entity of the run is quiet**, for five seconds at most.
+  A call answers before its entity handles what follows from it: the message a `resume` or a `discard` takes the
+  entity past, an operation's completion, a timer's firing. So a call after it would meet the entities where each
+  backend has come in its own time. An entity is quiet when it is missing, or suspended, or not suspended with an
+  empty mailbox. Each forward of its work must also wait for its receiver, which lists the wait, or have its
+  completion queued, or be the operation the entity died in. A timer is quiet only in a suspended entity, whose
+  timers are disarmed. The operations of a suspended entity go on, so the test waits for them too.
+- **An operator's `resume` or `discard` that races the senders waiting for its entity is not sent**, on any
+  backend, and is answered with a mark. Such a call is a `resume` of an entity some operation waits for, or a
+  `discard` of one that also holds a second message. The step wakes the senders, and the entity may die again on the
+  message it is resumed past or on the next one. A sender's message then lands in the mailbox before the entity
+  dies, or is answered `Suspended` after it, and the sender waits again. Both are answers the design allows, and
+  the order is the backend's own. The test reads the suspension at a point every backend reached by the wait above,
+  so each backend marks the same calls.
 - **A call with no answer within 5 s is answered so**, which fails the test rather than holding it.
-- **`bun test` runs four runs of the property, and `SCHEDULES=all` runs 300**, so that the test stays within two
-  seconds. Six runs took 1.9 to 2.0 s once the operator's calls were among them, and four take 1.3 to 1.5 s ([decision 0250](0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md)).
+- **`bun test` runs three runs of the property, and `SCHEDULES=all` runs 300**, so that the test stays within two
+  seconds. Six runs took 1.9 to 2.0 s once the operator's calls were among them. Four took 1.6 to 1.9 s once the
+  test waited for operations and timers, and three take 1.0 to 1.7 s ([decision 0250](0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md)).
 - **On a pool of PostgreSQL, two calls run at once, held at a statement.** It is the second part of the step, for
   family D of [`docs/bugs.md`](../bugs.md). The test `two calls held at a statement on a pool answer as one order of
   them` makes two entities, runs a few messages one at a time, then runs two calls at once. Each call is a message,
@@ -80,7 +95,7 @@ waited: a creation whose projection holds U+0000 in an index.
 ## What it rests on
 
 - That one process and Cluster answer alike every call of the generated runs, the creations the program dies on
-  aside: **tested**, by `every backend answers every call alike`, in four runs under `bun test` and in 300 under
+  aside: **tested**, by `every backend answers every call alike`, in three runs under `bun test` and in 300 under
   `SCHEDULES=all`, which passed on 2026-11-12 on SQLite, PGlite and Cluster, with the operator's calls among them
   twice. The job `postgres` of the CI runs it on
   the server.
@@ -101,6 +116,18 @@ waited: a creation whose projection holds U+0000 in an index.
 - That an operator's `resume` and `discard` answer before the entity handles the message it died on, on Cluster:
   **seen**, on 2026-11-12, in three of five runs of the history that sends a `Boom` again after a `resume`. The wait
   after them made ten runs of ten alike.
+- That an operation of a suspended entity goes on and sends once its receiver is discarded, on one process and on
+  Cluster alike: **seen**, on 2026-11-12, in three runs of each backend of a history that suspends the sender while
+  its forward waits. Both applied the `Add` within two seconds of the discard.
+- That a forward stores its wait after the step that started it, so that `inspect` may read the receiver before the
+  wait is listed: **seen**, on 2026-11-12, in a run of 300 that Cluster answered with the wait and SQLite without it.
+  The same history passed once the test waited for the wait to be listed.
+- That a sender woken by a `resume` races its receiver's next death: **seen**, on 2026-11-12, in a run of 300 where
+  Cluster queued the sender's `Add` in the mailbox and SQLite answered it `Suspended`. Once the calls that race are
+  held back, three runs of 300 passed, which held back 13 calls in the first of them, and no wait of the test passed
+  its five seconds.
+- That the test meets an operation and a timer: **seen**, in a run of 300 counted on 2026-11-12, where 30 forwards
+  and 27 ticks were answered `Accepted` and five readings held the forward's reply in the note.
 - That the generated runs meet suspensions: **seen**, in one run of 300 counted on 2026-11-12, where `inspect` read a
   suspended entity 131 times, `discard` answered `Discarded` 47 times and `resume` answered `Resumed` 39 times. No
   `resume` answered `StillSuspended`, since the program deployed is the one that died.
