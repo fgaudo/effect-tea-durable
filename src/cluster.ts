@@ -237,14 +237,22 @@ const noReply = Schema.fromJsonString(Schema.Union([
   Schema.TaggedStruct('Reused', {}),
 ]))
 
-/** The text of what an operator's event did (decision 0166). */
+/**
+ * The Cluster id of the request a door answers an operator's event, which the operator's client keeps so that a step
+ * or `expire` deletes Cluster's rows of it: the event has no primary key to find the id by (decision 0290). The key is
+ * optional, so that a client decodes the answer of a door of a release before it, and a client of that release
+ * decodes this answer, whose key it strips.
+ */
+const answered = { request: Schema.optionalKey(Schema.String) }
+
+/** The text of what an operator's event did, with the Cluster id of its request (decisions 0166, 0290). */
 export const operatedCodec = Schema.fromJsonString(Schema.Union([
-  Schema.TaggedStruct('Resumed', {}),
-  Schema.TaggedStruct('Discarded', {}),
-  Schema.TaggedStruct('NotDiscarded', {}),
-  Schema.TaggedStruct('StillSuspended', { cause: Schema.String }),
-  Schema.TaggedStruct('NotSuspended', {}),
-  Schema.TaggedStruct('NotFound', {}),
+  Schema.TaggedStruct('Resumed', answered),
+  Schema.TaggedStruct('Discarded', answered),
+  Schema.TaggedStruct('NotDiscarded', answered),
+  Schema.TaggedStruct('StillSuspended', { cause: Schema.String, ...answered }),
+  Schema.TaggedStruct('NotSuspended', answered),
+  Schema.TaggedStruct('NotFound', answered),
 ]))
 
 /**
@@ -444,7 +452,7 @@ export const onCluster: Effect.Effect<
             stepped._tag === 'Create'
               ? created(stepped.answer)
               : stepped._tag === 'Operated'
-              ? operated(stepped.answer)
+              ? operated({ ...stepped.answer, request: requestId })
               : answer(stepped.answer)).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
             ), resumed)
@@ -517,9 +525,19 @@ export const onCluster: Effect.Effect<
           sharding.makeClient(doorOf(sender.name)),
           (clientOf) => clientOf(sender.id).Resumed({ name: receiver.name, id: receiver.id }, { discard: true }),
         ).pipe(Effect.orDie),
-      operate: (program, { _tag, id }) =>
-        Effect.flatMap(sharding.makeClient(doorOf(program.name)), (clientOf) =>
-          Effect.flatMap(clientOf(id)[_tag](), Schema.decodeEffect(operatedCodec))).pipe(Effect.orDie),
+      // The id is kept once the answer is given, and without interruption, as `keptGiven` keeps a caller's
+      // (decisions 0248, 0290).
+      operate: (program, { _tag, id }, given) =>
+        Effect.uninterruptibleMask((restore) =>
+          Effect.flatMap(
+            restore(Effect.flatMap(
+              sharding.makeClient(doorOf(program.name)),
+              (clientOf) => Effect.flatMap(clientOf(id)[_tag](), Schema.decodeEffect(operatedCodec)),
+            )),
+            ({ request, ...operated }) =>
+              request === undefined ? Effect.succeed(operated) : Effect.as(given(request, least), operated),
+          )
+        ).pipe(Effect.orDie),
     }
   },
 )

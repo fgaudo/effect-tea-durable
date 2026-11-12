@@ -665,20 +665,23 @@ with a requirement that no example has yet.
     runtime stores the defect in its own tables and frees the id.
 - **The rows of operators' events on Cluster.** An operator resumes and discards through the door's client on
   Cluster ([decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
-  Cluster's rows of those requests are never deleted, since the door's client keeps no id of them: a test of
-  `src/cluster.test.ts` finds them after `expire`, which is bug 11 of [`docs/bugs.md`](bugs.md), reproduced. The
-  `Resumed` a step sends to a sender that waits is kept as a pending id, and the next step of any entity deletes its
-  rows (decision 0169). `expire` deletes no pending id, and a `Resumed` no runner delivers stays: both are reasoned
-  by a reading, and no test reaches them yet. A caller's rows are deleted only under an id its client
-  keeps, once it is given the answer
+  The client keeps the Cluster id its door's answer carries once it has the answer, and a step or `expire` deletes
+  the rows past the least time
+  ([decision 0290](decisions/0290-on-cluster-an-operators-client-keeps-the-id-the-doors-answer-carries.md)), which
+  fixes bug 11 of [`docs/bugs.md`](bugs.md). Three cases leave rows for ever still. An operator that stops waiting
+  before the answer keeps no id, as a caller does under bug 59, reproduced. A failure Cluster saved without running
+  the door's handler carries no id. The `Resumed` a step sends to a sender that waits is kept as a pending id, and the
+  next step of any entity deletes its rows (decision 0169), but `expire` deletes no pending id, and a `Resumed` no
+  runner delivers stays: both are reasoned by a reading, and no test reaches them yet. A caller's rows are deleted
+  only under an id its client keeps, once it is given the answer
   ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
   So a caller that stops waiting, as an HTTP boundary's timeout does, keeps its rows for ever, and a retry under its
   request id is answered from Cluster's saved reply past its `keep`, which is bug 59, reproduced. It would be
   decided by:
-  - whether the door's client of an operator keeps the id of its request, as a caller's does, so that a step or
-    `expire` deletes its rows past the least time;
   - whether a client keeps the id when its caller is interrupted, with a deletion that spares a request Cluster has
     not marked processed, or the guide says such rows stay;
+  - a test where Cluster saves a failure of its own for an operator's event, and of a `Resumed` that no runner
+    delivers, read after `expire`;
   - for bug 91, reasoned by a reading, whether a second client's `reset` drops only a keep whose answer it read
     ([decision 0249](decisions/0249-on-cluster-a-reset-drops-the-id-a-callers-client-kept.md)), since it may drop the
     keep of the first client's reply and, interrupted then, leave the rows for ever.

@@ -423,11 +423,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     message `Forward` of the program `item`, which sends `Add`, and a message `Tick`, whose timer is due at once. The
     runs of 300 found three races of the test, which decision 0283 says, and none of the backends. Three runs of 300
     passed after them.
-  - Done, on 2026-11-13, bug 11 reproduced: the test `FAILING: an operator’s resume and discard leave no Cluster rows
-    once expire runs past the least time` of `src/cluster.test.ts`, a `test.failing`. Its fix is a choice of the
-    maintainer's, not made yet, as `docs/bugs.md` says of every fix.
+  - Done, on 2026-11-13, bug 11, the rows of an operator's resume or discard that Cluster kept for ever: reproduced
+    by a test of `src/cluster.test.ts`, and fixed by
+    [decision 0290](decisions/0290-on-cluster-an-operators-client-keeps-the-id-the-doors-answer-carries.md).
   - Next, bug 10 of `docs/bugs.md`, a creation that `init` dies on, sent by an operation, which needs an operation
-    of `item` that creates, and the fix of bug 11 once the maintainer chooses it. The pool's histories grow too, with a deploy that declares a consumer and an ack between
+    of `item` that creates. The pool's histories grow too, with a deploy that declares a consumer and an ack between
     the snapshot of a batch of `prune` and its commit, so that the pool reaches bug 80, which a scenario holds now.
     A difference of Cluster that a note decides is marked beside `diesOn`, as decision 0283
     says, and a difference no note decides is a bug.

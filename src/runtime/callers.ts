@@ -171,7 +171,15 @@ export const operate = <T extends Types>(
   id: string,
   event: Extract<Machine.Offered<T>, { _tag: 'Resume' | 'Discard' }>,
 ): Effect.Effect<Operated> =>
-  p.cluster !== null ? p.cluster.operate(deployed.program, { _tag: event._tag, id }) : Effect.flatMap(
+  // On Cluster the event keeps its Cluster id for the least time, as a caller's creation does, so that a step or
+  // `expire` deletes Cluster's rows of it (decision 0290).
+  p.cluster !== null
+    ? p.cluster.operate(deployed.program, { _tag: event._tag, id }, (requestId, least) =>
+      Effect.flatMap(
+        DateTime.now,
+        (now) => deployed.storage.keepGiven(requestId, id, DateTime.toEpochMillis(now) + least),
+      ))
+    : Effect.flatMap(
     withEntity(p, deployed, id, (loaded): Effect.Effect<Deferred.Deferred<Operated> | null> =>
       loaded === null ? Effect.succeed(null) : Effect.uninterruptible(Effect.gen(function*() {
         // Registered and offered under the entity's lock, and in one step: the line keeps the order of the

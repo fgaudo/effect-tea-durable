@@ -836,28 +836,33 @@ describe('the runtime on Cluster', () => {
       expect(yield* handle!.discard('one')).toEqual({ _tag: 'NotSuspended' })
     })), 30_000)
 
-  // Bug 11 of docs/bugs.md: an operator's request keeps no id for the runtime to delete Cluster's rows by, as a caller's
-  // does (decisions 0166, 0171).
-  test.failing('FAILING: an operator’s resume and discard leave no Cluster rows once expire runs past the least time', () =>
-    onRunner(Effect.gen(function*() {
-      const sql = yield* SqlClient.SqlClient
-      const sender = { user: 'u' }
-      const operators = sql<{ held: number }>`
-        SELECT (SELECT COUNT(*) FROM cluster_messages WHERE tag IN ('Resume', 'Discard'))
-          + (SELECT COUNT(*) FROM cluster_replies WHERE request_id IN (
-            SELECT request_id FROM cluster_messages WHERE tag IN ('Resume', 'Discard')
-          )) AS held
-      `
-      yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
-      expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Suspended' })
-      expect(yield* handle!.resume('one')).toEqual({ _tag: 'Resumed' })
-      yield* eventually(handle!.suspended, (listed) => listed.length === 1)
-      expect(yield* handle!.discard('one')).toEqual({ _tag: 'Discarded' })
-      expect(Number((yield* operators)[0]?.held)).toBe(4)
-      yield* Effect.sleep(least)
-      yield* handle!.expire
-      expect(Number((yield* operators)[0]?.held)).toBe(0)
-    })), 30_000)
+  // An operator's request keeps its Cluster id, which the door's answer carries, for the least time, so that `expire`
+  // or a later step of its entity deletes Cluster's rows of it (decision 0290). Bug 11 of docs/bugs.md.
+  for (const by of ['expire', 'a step'] as const) {
+    test(`an operator’s resume and discard leave no Cluster rows past the least time, by ${by}`, () =>
+      onRunner(Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const sender = { user: 'u' }
+        const operators = sql<{ held: number }>`
+          SELECT (SELECT COUNT(*) FROM cluster_messages WHERE tag IN ('Resume', 'Discard'))
+            + (SELECT COUNT(*) FROM cluster_replies WHERE request_id IN (
+              SELECT request_id FROM cluster_messages WHERE tag IN ('Resume', 'Discard')
+            )) AS held
+        `
+        yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
+        expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Suspended' })
+        expect(yield* handle!.resume('one')).toEqual({ _tag: 'Resumed' })
+        yield* eventually(handle!.suspended, (listed) => listed.length === 1)
+        expect(yield* handle!.discard('one')).toEqual({ _tag: 'Discarded' })
+        expect(Number((yield* operators)[0]?.held)).toBe(4)
+        const [kept] = yield* sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_given_requests`
+        expect(Number(kept?.held)).toBe(3)
+        yield* Effect.sleep(least)
+        if (by === 'expire') yield* handle!.expire
+        else yield* handle!.send('one', { _tag: 'Add', n: 1 }, { requestId: 'm2', sender, keep: 'forever' })
+        expect(Number((yield* operators)[0]?.held)).toBe(0)
+      })), 30_000)
+  }
 
   test('a caller’s keep reaches the door, and its reply is kept until the time it gives', () =>
     onRunner(Effect.gen(function*() {
@@ -2526,6 +2531,38 @@ describe('the shards of a runner on Cluster', () => {
         }))
     }, 30_000)
   }
+
+  // An operator on a runner that does not hold the entity's shard reads the answer from Cluster's table at its poll.
+  // Its storage withholds every answer until a later step of the entity has run, which deletes Cluster's rows past
+  // their time. The operator's id is kept only once it has the answer, so its rows stay until it reads them
+  // (decisions 0248, 0290).
+  slow("an operator's discard on another runner is answered after a later step", () => {
+    let withholding = true
+    const answers = (reply: Reply.Reply<any>) => withholding && reply._tag === 'WithExit'
+    return onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        const second = yield* start(2, undefined, answers)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const who = Array.from({ length: 64 }, (_, i) => `o${i}`).find((id) => first.holds(id))!
+        const sender = { user: 'u' }
+        yield* first.bell.create(who, { flags: { who }, requestId: 'c', sender })
+        yield* first.bell.send(who, { _tag: 'Break' }, { requestId: 'b', sender, keep: 'forever' })
+        const late = yield* Effect.forkChild(second.bell.discard(who))
+        yield* until(first.bell.suspended, (listed) => listed.length === 0)
+        // Past the least time: two polls of replies, 200 ms by default, and a second (decision 0248).
+        yield* Effect.sleep(Duration.millis(2 * 200 + 1_000 + 50))
+        // A later step that stores a reply deletes Cluster's rows of the requests past their time.
+        yield* first.bell.send(who, { _tag: 'Poke' }, { requestId: 'q', sender, keep: 'forever' })
+        withholding = false
+        expect(yield* Fiber.join(late).pipe(Effect.timeoutOption('6 seconds'))).toEqual(
+          Option.some({ _tag: 'Discarded' }),
+        )
+      }))
+  }, 30_000)
 
   test('a consumer that waits is woken by a commit of another runner, within its poll', () =>
     onFile((start) =>

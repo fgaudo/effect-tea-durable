@@ -689,9 +689,14 @@ export interface OnCluster {
   ) => Effect.Effect<Reply<T['rejection']> | Readonly<{ _tag: 'Suspended' }> | Reused>
   /**
    * An operator's `Resume` or `Discard`, sent through the program's door by Cluster's client, from whatever runner
-   * the operator is on: what the door's step answered it (decision 0166).
+   * the operator is on: what the door's step answered it (decision 0166). `given` is called as for a caller's
+   * `create`, with the request's Cluster id, which the door's answer carries, and `least` (decision 0290).
    */
-  readonly operate: <T extends Types>(program: Program<T>, operating: Operating) => Effect.Effect<Operated>
+  readonly operate: <T extends Types>(
+    program: Program<T>,
+    operating: Operating,
+    given: (requestId: string, least: number) => Effect.Effect<void>,
+  ) => Effect.Effect<Operated>
   /**
    * Tells the door of the entity `sender` that the entity `receiver` is out of its suspension, from the transaction
    * of the step that took it out, without waiting for the door: Cluster saves the request in that transaction, and

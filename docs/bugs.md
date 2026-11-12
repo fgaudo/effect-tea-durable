@@ -34,6 +34,7 @@ family gets a fix of its own.
 - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39, 54,
   55, 57 to 59, 70, 73, 74, 77, 84, 85, 89 to 91 and 97, as decisions 0248 and 0249 were. Its rule is the step The tests
   of a contract on every backend, of the roadmap: the tests of the runtime run alike on one process and on Cluster.
+  Bug 11 is fixed by decision 0290.
 - D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78, 80 and 111. Its test is the same step:
   a test of rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their
   statements. Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does
@@ -107,16 +108,7 @@ family gets a fix of its own.
     The sender is not suspended and the receiver does not exist, so `suspended` lists nothing. Verified by a test
     of `src/cluster.test.ts`, which would hang today: the [open question](open-questions.md#running) A creation
     that `init` dies on, on Cluster.
-11. **Reproduced: on Cluster, the rows of an operator's resume or discard are never deleted.** An operator's
-    `Resume` and `Discard` go through the door's client
-    ([decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)),
-    and the client keeps no Cluster id of them, so neither a step nor `expire` deletes their rows
-    ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
-    The test `FAILING: an operator’s resume and discard leave no Cluster rows once expire runs past the least time`
-    of `src/cluster.test.ts`, a `test.failing` on `main`, finds the two requests and their two replies after `expire`.
-    The `Resumed` a step sends to a waiting sender is kept as a pending id, whose rows the next step deletes
-    ([decision 0169](decisions/archive/0169-on-cluster-an-operations-request-ids-are-kept-under-its-work-and-deleted-with-it.md)): the
-    [open question](open-questions.md#running) The rows of operators' events on Cluster.
+11. **Fixed by [decision 0290](decisions/0290-on-cluster-an-operators-client-keeps-the-id-the-doors-answer-carries.md)**, whose operator's client keeps the Cluster id its door's answer carries, so that a step or `expire` deletes Cluster's rows of the event.
 12. **Noticed, not checked: a defect's cause holding U+0000 may reach Cluster's tables unescaped.**
     ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)). It matters once
     Cluster runs on PostgreSQL. Verified by reading what Cluster stores of a defect: the
