@@ -141,6 +141,30 @@ with a requirement that no example has yet.
 
 ## Running
 
+- **A retry that waits in the runtime past its reply's `keep`.** Bug 94 of [`docs/bugs.md`](bugs.md) applies a
+  message twice on one process under a `keep` of 0: a retry sent before the answer reads the reply at its own step,
+  past the reply's time. The same race may hold under a `keep` above 0, where a retry's `Receive` waits behind a
+  slow step or a long mailbox past the first reply's time. The second reading of the premise review found it by a
+  reading, on 2026-11-12, and wrote no test.
+  - A test that holds the first step at its commit, by the points of the crash table, moves `TestClock` past the
+    `keep`, and counts `applied`, would decide it.
+  - The fix of bug 94 decides it too, if its rule holds every `keep`.
+
+- **A retry in flight when an operator resumes the entity.** A suspended entity's head message is handled by the step
+  of the resume. A caller answered `Suspended` that sends again at that moment reads the reply after that step, and
+  under a short `keep` may find none and have the message applied again, as bug 94 does. The second reading of the
+  premise review found it by a reading, on 2026-11-12, and wrote no test.
+  - A test that resumes an entity whose head message has a `keep` of 0, while its caller sends again, and counts
+    `applied`, would decide it.
+
+- **On Cluster, a duplicate of a request on the runner that holds its shard, under a `keep` of 0.** The test of
+  [decision 0248](decisions/0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md) runs the second client
+  on another runner. A second client on the runner that holds the shard is expected to join the first request, as
+  `saveRequest` of Cluster does, so that the message is applied once. The second reading of the premise review
+  noticed it on 2026-11-12, and did not run it.
+  - The test of decision 0248, with both clients on the runner that holds the shard and a `keep` of 0, would decide
+    it.
+
 - **A boundary's clock against the runtime's, for a reply's `keep`.** A caller's reply is kept for the window its
   boundary gives, counted on the runtime's clock alone
   ([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). A boundary

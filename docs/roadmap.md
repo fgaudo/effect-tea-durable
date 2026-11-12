@@ -181,7 +181,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     did. The sample stands for areas 2 and 11, as the maintainer chose. What it finds is a bug of
     [`docs/bugs.md`](bugs.md), from 93 on. The step leaves this file once the second reading is done. Its areas, by the numbers of the list
     above, each marked `Done, ` here once its session is recorded:
-    1. Area 1, Messages, requests and replies.
+    1. Done, area 1, Messages, requests and replies.
     2. Done, by the sample above: area 2, Effect Cluster.
     3. Area 3, Versions and deploys.
     4. Area 4, The runtime, a first part.
@@ -236,8 +236,16 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     operation's send to an entity whose stop runs, a `Reused` reset by two clients on Cluster, and a door's step in
     the undo's wait, under A drain on Cluster with a deploy under way. Not reached: nothing of the area. Its report is
     recorded whole in [`reviews.md`](decisions/reviews.md).
-  - Every area of the list, every last session and the sample are `Done`. So the step goes on with area 1 of the
-    second reading. A session that records a review writes `Done, ` before what it read, and adds a
+  - Done, in a session of 2026-11-12 that read none of the reports: area 1 of the second reading, Messages, requests
+    and replies, its fifteen notes read whole with the code, against the later notes that change them, 0269 among them.
+    Its finding is bug 94 of [`docs/bugs.md`](bugs.md), reproduced on `claude/premise-review-2-area-1-a39f5b` at
+    `9f74448`, cut from `main` at `5ea1dcc`, and again on `main`. Its two leads and the suspect it did not check are
+    [open questions](open-questions.md#running): a retry that waits past its reply's `keep`, a retry in flight at a
+    resume, and a duplicate on the runner that holds the shard. Not reached: the notes of Cluster other than 0171, 0248
+    and 0249, the rehearsal's 0131 and 0200, and the notes the code alone couples to the area, as its table in
+    [`reviews.md`](decisions/reviews.md) says.
+  - Every area of the first list but area 14, every last session and the sample are `Done`. So the step goes on with
+    area 3 of the second reading. A session that records a review writes `Done, ` before what it read, and adds a
     bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
     reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
     a last session and read whole by no other review.

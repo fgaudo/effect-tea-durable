@@ -5286,3 +5286,256 @@ None beyond the suspects noticed and not checked, below.
 ### Notes not read whole
 
 The earlier notes of the table, read in part as it says. Each lies in an area another review read whole.
+
+## 2026-11-12: premise review, second reading, of Messages, requests and replies
+
+The notes read are 0004, 0009, 0010, 0015, 0021, 0023, 0047, 0048, 0059, 0060, 0065, 0069, 0124, 0125 and 0245, with
+the notes that change or cite them. The reviewer read none of the earlier reports of the area. The review found one
+bug, reproduced on one process, and two leads of the same form.
+
+### The notes read
+
+The list holds the notes of the area, the notes the index lists as changing one of them, the notes that cite one of
+them by `grep -rlwE`, and the notes that `bun scripts/premise-pairs.ts --list` finds beside one of them in a
+declaration of `src/`. The last group is long, since `src/machine.ts` and `src/storage/entities.ts` cite many notes in
+one declaration, and most of it was not read.
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0004 | of the area | whole, with the code |
+| 0009 | of the area | whole, with the code |
+| 0010 | of the area | whole, with the code |
+| 0015 | of the area | whole, with the code |
+| 0021 | of the area | whole, with the code |
+| 0023 | of the area | whole, with the code |
+| 0047 | of the area | whole, with the code |
+| 0048 | of the area | whole, with the code |
+| 0059 | of the area | whole, with the code |
+| 0060 | of the area | whole, with the code |
+| 0065 | of the area | whole, with the code |
+| 0069 | of the area | whole, with the code |
+| 0124 | of the area | whole, with the code |
+| 0125 | of the area | whole, with the code |
+| 0245 | of the area | whole, with the code |
+| 0022 | changes a note of the area | not at all |
+| 0057 | changes a note of the area | in part: the code only, `writes` of `src/machine.ts` and `src/storage/` |
+| 0090 | changes a note of the area | in part: the decision, with `write` of `src/storage/entities.ts` |
+| 0123 | changes a note of the area | not at all |
+| 0131 | changes a note of the area | not at all |
+| 0132 | changes a note of the area | in part: the code only, `writes` of `src/machine.ts` and `src/storage/` |
+| 0157 | changes a note of the area | in part: the code only, `writes` of `src/machine.ts` and `src/storage/` |
+| 0165 | changes a note of the area | in part: the decision and its premises, with `send` of `src/cluster.ts` |
+| 0182 | changes a note of the area | not at all |
+| 0201 | changes a note of the area | not at all |
+| 0248 | changes a note of the area | whole, with the code |
+| 0253 | changes a note of the area | whole, with the code |
+| 0269 | changes a note of the area | whole, with the code |
+| 0274 | changes a note of the area | in part: the code only, `writes` of `src/machine.ts` and `src/storage/` |
+| 0008 | cites a note of the area | not at all |
+| 0012 | cites a note of the area | not at all |
+| 0013 | cites a note of the area | not at all |
+| 0014 | cites a note of the area | not at all |
+| 0017 | cites a note of the area | not at all |
+| 0020 | cites a note of the area | not at all |
+| 0028 | cites a note of the area | not at all |
+| 0038 | cites a note of the area | not at all |
+| 0045 | cites a note of the area | not at all |
+| 0046 | cites a note of the area | not at all |
+| 0049 | cites a note of the area | not at all |
+| 0085 | cites a note of the area | not at all |
+| 0092 | cites a note of the area | not at all |
+| 0100 | cites a note of the area | whole, with the code |
+| 0126 | cites a note of the area | not at all |
+| 0127 | cites a note of the area | not at all |
+| 0129 | cites a note of the area | not at all |
+| 0133 | cites a note of the area | not at all |
+| 0141 | cites a note of the area | not at all |
+| 0156 | cites a note of the area | in part: the code only, `renamed` of `src/storage/tables.ts` |
+| 0160 | cites a note of the area | not at all |
+| 0171 | cites a note of the area | whole, with the code |
+| 0178 | cites a note of the area | not at all |
+| 0200 | cites a note of the area | not at all |
+| 0214 | cites a note of the area | not at all |
+| 0223 | cites a note of the area | not at all |
+| 0260 | cites a note of the area | not at all |
+| 0262 | cites a note of the area | not at all |
+| 0272 | cites a note of the area | whole, with the code |
+| 0278 | cites a note of the area | not at all |
+| 0006 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0007 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0029 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0032 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0033 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0039 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0040 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0041 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0042 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0043 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0044 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0050 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0051 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0053 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0054 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0061 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0062 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0063 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0064 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0067 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0070 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0071 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0073 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0074 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0075 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0076 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0078 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0079 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0080 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0102 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0109 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0110 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0113 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0114 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0119 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0121 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0122 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0128 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0135 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0136 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0137 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0138 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0140 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0142 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0143 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0145 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0147 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0148 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0150 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0151 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0152 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0153 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0154 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0159 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0161 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0162 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0167 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0169 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0170 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0173 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0174 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0176 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0179 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0184 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0185 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0186 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0187 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0191 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0204 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0208 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0209 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0216 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0219 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0220 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0224 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0247 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0249 | cited by `src/` in a declaration beside a note of the area | in part: the decision and its premises, with `reset` of `src/cluster.ts` |
+| 0251 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0256 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0261 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0265 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0266 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0271 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0277 | cited by `src/` in a declaration beside a note of the area | not at all |
+| 0280 | cited by `src/` in a declaration beside a note of the area | not at all |
+
+### Findings
+
+- **Two callers of one request, sent before it is answered, have its message applied twice on one process under a
+  short `keep`.** The notes are [decision 0125](archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md),
+  with [decision 0245](0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md), against
+  [decision 0248](0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md).
+  - The premise that fell: decision 0125 counts a reply's time from the step that answers, so that a message that
+    waits loses none of its time. It rests, without saying so, on a retry read no later than its caller sent it. A
+    retry sent before the answer waits in the runtime too, and its reply is read when its `Receive` is applied, which
+    may be past the reply's `until`. Decision 0248 found this race on Cluster, as two clients of one request, and
+    kept Cluster's rows for every client's poll. On one process nothing covers it, and a `keep` of 0 is past at the
+    step that answers.
+  - The sequence: an entity with an empty mailbox. Two callers send the same message under one sender and request id,
+    with `keep: { millis: 0 }`, at once. The first `Receive` is handled as it arrives, and its step writes the reply
+    with `until` at its own time, then deletes it as past (`src/storage/entities.ts:514`). The second `Receive` reads
+    the reply at the same time (`src/runtime/loop.ts:426`), and `until > at` finds none
+    (`src/storage/entities.ts:243`). The mailbox holds no message of the request (`src/machine.ts:992`), so the
+    message is queued and applied again. Both callers are answered `Accepted`. On Cluster the second client joins the
+    first's rows, which `src/runtime/callers.ts:335` keeps for at least two polls and a second, and the message is
+    applied once.
+  - The test: `FAILING: two callers of one request at once under a keep of 0 have its message applied once`, in
+    `src/runtime.test.ts:3496`, on the branch `claude/premise-review-2-area-1-a39f5b`. It fails at its last
+    assertion: `applied` is `['w', 'w']`.
+  - The chosen premise of decision 0245, that only the boundary knows how long its callers retry for, does not cover
+    it. A boundary knows its protocol's window, not how long the runtime holds a retry before it reads the reply.
+  - Where a fix could begin: in `receive` of `src/machine.ts` and the loop, a `Receive` could read the reply at the
+    time its caller offered it rather than at its step. Or a reply could be kept, for the runtime's reading, for a
+    least time beside `keep`, as decision 0248 does for Cluster's rows. Or the design could say that a `keep` covers
+    the runtime's wait, with a least `keep` the launch checks.
+
+### Leads
+
+- **The same race under a `keep` above 0.** A retry whose `Receive` waits behind a slow step or a long mailbox past
+  the first reply's `until` is applied again in the same way. The test would hold the first step at its commit, by
+  the points of the crash table, move `TestClock` past the `keep`, and count `applied`. Not written.
+- **A retry in flight when an operator resumes the entity.** The message the entity died on is handled by the step of
+  the resume, and a caller's retry answered `Suspended` that is sent again at that moment reads after that step. The
+  test would resume an entity whose head message has a `keep` of 0 while its caller sends again. Not written.
+
+### Suspects ruled out
+
+- A retry at the moment of `until` itself is neither read nor kept: the reading takes `until > at` and the deletion
+  `until <= at` (`src/storage/entities.ts:243`, `:514`, `:569`). Ruled out by `another message under a caller's
+  request id after the reply's keep is a new request, and is applied` and `a retry within the keep its boundary gives
+  is answered from storage, and one after it is applied again`, in `src/runtime.test.ts`, which pass. Neither is a
+  test of concurrency.
+- A message applied again at the version of a reply past its time conflicts with that row: the row is written by an
+  upsert on `(name, id, request, version)`. Ruled out by the same second test, whose third send passes.
+- A rename leaves the text of the replies' requests under the old name, so a sender's retry after it finds no reply:
+  `renamed` of `src/storage/tables.ts` rewrites the request of `effecttea_replies` and `effecttea_answers`. Ruled out
+  by `a launch moves the entities of the old name, which keep their work's keys and their callers' replies`, in
+  `src/runtime.test.ts`, which passes.
+
+### Suspects noticed and not checked
+
+- On Cluster, a duplicate on the runner that holds the shard, under a `keep` of 0. The test of decision 0248 runs the
+  second client on another runner. A duplicate on the same runner is expected to join the first request, as
+  `saveRequest` of Cluster does, and is not run.
+- A boundary's clock against the runtime's, and two runners' clocks against one `until`, are open questions already,
+  and were not checked again.
+
+### The chosen premises, against the code as it is now
+
+- Decision 0245, only the boundary knows how long its callers retry for, and decision 0125, a boundary knows how long
+  its protocol retries for: both are made insufficient by the finding above. The runtime adds a wait the boundary
+  cannot see, and decision 0248 gives Cluster alone a margin for it.
+- Decision 0124, a boundary exists in every deployment and authenticates: no later note makes it false. A program
+  whose sender is `null` ([decision 0180](0180-a-program-leaves-out-what-it-does-not-have.md)) has a boundary that
+  authenticates nothing the runtime sees, and
+  [decision 0269](0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md) says what holds of it.
+- Decision 0124, a sender as fine as an identity keeps request ids apart: false for a program whose sender is `null`,
+  since decision 0180. Decision 0269 says so, and answers `Reused` to another message under a used id. Two callers
+  that send the same message under one id are still one request.
+- Decision 0125, the runtime's clock and the boundary's agree well enough: the open question A boundary's clock
+  against the runtime's, for a reply's `keep`, holds it. Nothing changed it.
+
+### Where the code does otherwise than the note it cites
+
+- `src/runtime/callers.ts:327-328` says that the client's clock reads after the step's, citing decision 0171.
+  Decision 0171 calls that premise only reasoned and not needed, and the least time of decision 0248 is what the code
+  relies on.
+- `src/storage/entities.ts:514` deletes the replies past their time after the step writes its own, so a reply under a
+  `keep` of 0 is deleted by the step that writes it. Decision 0125 says a step deletes its entity's replies past
+  their time, and leaves this order unsaid. Decision 0171 says it.
+
+### Notes of the table not read whole
+
+The notes changed or cited by the area that hold Cluster's rules other than 0171, 0248 and 0249, the rehearsal's notes
+(0131, 0200), and every note the code couples alone were not read whole. The area is fifteen notes, and the code
+couples over a hundred more to them through a few long declarations of `src/machine.ts` and
+`src/storage/entities.ts`. The reading went where the area's rules are kept: the reply's time, its reading, its
+deletion, and Cluster's rows of a caller's request.
