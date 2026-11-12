@@ -578,13 +578,15 @@ describe('the migrations of createTables (decision 0216)', () => {
     }))
 })
 
-describe('the publications of steps pruned by two transactions at once (decisions 0154, 0245)', () => {
+describe('the publications of steps pruned by two transactions at once (decisions 0154, 0245, 0286)', () => {
   // Two batches of two prunes at once may drop different rows of one publication: two snapshots that differ by a
   // deploy that declares a consumer and by an ack select different rows. Each statement that drops rows of the
   // outbox runs the trigger, which drops a publication no other row names. The deletes below are what the two
   // batches' statements do, the second while the first transaction is open, on two publications in opposite orders.
-  // No pair of calls of the test of a contract reaches it, since two prunes of one view select the same rows.
-  onServer('FAILING: a publication goes with the last row that names it, though two transactions drop its rows at once', (url, sql) =>
+  // No pair of calls of the test of a contract reaches it, since two prunes of one view select the same rows. The
+  // trigger locks the publications in the order of their keys, so the second statement waits for the first
+  // transaction, and then sees its rows gone (decision 0286).
+  onServer('a publication goes with the last row that names it, though two transactions drop its rows at once', (url, sql) =>
     Effect.gen(function*() {
       yield* on(sql)(createTables)
       const other = yield* connect(url)

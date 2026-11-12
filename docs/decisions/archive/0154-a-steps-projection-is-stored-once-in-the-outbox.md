@@ -7,7 +7,7 @@ of a topic stores the projection, and
 [decision 0135](0135-a-large-state-is-split-by-the-program-and-the-runtime-warns-of-it.md), whose warning counts the
 projection once per topic since decision 0138. Changed by
 [decision 0224](../0224-a-consumer-shows-the-time-of-the-step-it-reads-next.md): a publication also holds the time of
-its step.
+its step. On PostgreSQL the trigger runs once for each statement and locks the publications of its rows in order first, by [decision 0286](../0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md).
 
 ## Context
 

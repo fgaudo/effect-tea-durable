@@ -11,7 +11,7 @@ An id is not empty either, by [decision 0179](../0179-an-id-is-not-empty.md). An
 up to 2^53, and every transaction of the runtime on PostgreSQL states its level, by
 [decision 0222](../0222-postgresql-with-many-connections.md), which ran the tests on a server. A runtime on PGlite
 holds the client's data directory too, while the client is open, by
-[decision 0255](../0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md).
+[decision 0255](../0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md). The trigger of the outbox runs once for each statement on PostgreSQL, by [decision 0286](../0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md).
 
 ## Context
 

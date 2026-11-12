@@ -399,22 +399,34 @@ const tables = Effect.gen(function*() {
   yield* sql`CREATE INDEX effecttea_outbox_publication ON effecttea_outbox (name, partition, seq)`
   // A publication goes with the last row of the outbox that names it, in the statement that drops the row, so that
   // no statement that drops rows of the outbox leaves a publication no topic reads (decision 0154). A trigger of
-  // PostgreSQL runs a function, and one for each row runs once the statement has dropped every row (decision 0157).
+  // PostgreSQL runs a function, here once for each statement, on the rows it dropped (decision 0157). The function
+  // locks the publications of those rows in the order of their keys before it reads whether a row still names one.
+  // On a pool, a statement that dropped another row of a publication then waits for the transaction that holds it,
+  // and its reading, a statement of its own, sees that transaction's rows gone. The order of the keys keeps two
+  // statements from locking two publications in opposite orders (decision 0286).
   if (dialect === 'pg') {
     yield* sql.unsafe(`
       CREATE FUNCTION effecttea_outbox_drops_its_publication() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM effecttea_outbox WHERE name = OLD.name AND partition = OLD.partition AND seq = OLD.seq
-        ) THEN
-          DELETE FROM effecttea_publications WHERE name = OLD.name AND partition = OLD.partition AND seq = OLD.seq;
-        END IF;
+        PERFORM 1 FROM effecttea_publications
+        WHERE (name, partition, seq) IN (SELECT name, partition, seq FROM effecttea_outbox_dropped)
+        ORDER BY name, partition, seq
+        FOR UPDATE;
+        DELETE FROM effecttea_publications
+        WHERE (name, partition, seq) IN (SELECT name, partition, seq FROM effecttea_outbox_dropped)
+          AND NOT EXISTS (
+            SELECT 1 FROM effecttea_outbox
+            WHERE effecttea_outbox.name = effecttea_publications.name
+              AND effecttea_outbox.partition = effecttea_publications.partition
+              AND effecttea_outbox.seq = effecttea_publications.seq
+          );
         RETURN NULL;
       END $$
     `)
     yield* sql`
       CREATE TRIGGER effecttea_outbox_drops_its_publication AFTER DELETE ON effecttea_outbox
-      FOR EACH ROW EXECUTE FUNCTION effecttea_outbox_drops_its_publication()
+      REFERENCING OLD TABLE AS effecttea_outbox_dropped
+      FOR EACH STATEMENT EXECUTE FUNCTION effecttea_outbox_drops_its_publication()
     `
   } else {
     yield* sql`
