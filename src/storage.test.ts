@@ -1995,8 +1995,9 @@ test('a row that commits after one a consumer has read is read then, from its pa
 // statement of its own. On a server, a step of one partition may take its place before a step of another partition
 // that commits, and commit itself between the reading's first two statements. The next step of its partition then
 // takes its place after both and commits too. The rows are written here by hand in that order, between the
-// statements, as a server would commit them (decisions 0038, 0137, 0157).
-test('FAILING: a reading of the log gives no row of a partition past a row of it that committed between its statements', () =>
+// statements, as a server would commit them. The reading leaves out a row past the head its partition had when the
+// heads were read (decisions 0038, 0137, 0157, 0287).
+test('a reading of the log gives no row of a partition past a row of it that committed between its statements', () =>
   database((sql) =>
     Effect.gen(function*() {
       const store = storage(receiver, sql)
@@ -2026,8 +2027,8 @@ test('FAILING: a reading of the log gives no row of a partition past a row of it
 
 // The same holds between two pages of one reading, for a consumer behind by more than a page: a row with its place
 // in the first page commits after the first page is read, and the next step of its partition before the second
-// (decisions 0038, 0137, 0157).
-test('FAILING: a reading of the log gives no row of a partition past a row of it that committed between two pages', () =>
+// (decisions 0038, 0137, 0157, 0287).
+test('a reading of the log gives no row of a partition past a row of it that committed between two pages', () =>
   database((sql) =>
     Effect.gen(function*() {
       const store = storage(receiver, sql)

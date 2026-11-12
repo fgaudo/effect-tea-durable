@@ -112,10 +112,18 @@ export const logOf = <T extends Types>(held: Held<T>): Pick<
       const cursors = cursorsOf(after)
       const read = partitions === undefined ? undefined : new Set(partitions)
       const behind: Array<readonly [number, number]> = []
+      // The head each partition behind had when the heads were read. On a pool each statement of the reading reads a
+      // snapshot of its own, so a row past that head, or of a partition not behind then, may have committed after a
+      // row of its partition the reading passed: such a row is left to a later reading. A row up to the head
+      // committed before the heads were read, since a step holds its head until it commits (decision 0287).
+      const upTo = new Map<number, number>()
       for (const [partition, head] of yield* heads) {
         if (read !== undefined && !read.has(partition)) continue
         const cursor = cursors.get(partition) ?? 0
-        if (head > cursor) behind.push([partition, cursor])
+        if (head > cursor) {
+          behind.push([partition, cursor])
+          upTo.set(partition, head)
+        }
       }
       if (behind.length === 0 || limit === 0) return []
       // The partitions behind are given as one JSON array, which each dialect reads as rows (decision 0157).
@@ -158,7 +166,7 @@ export const logOf = <T extends Types>(held: Held<T>): Pick<
           ORDER BY effecttea_outbox.position LIMIT ${batch}
         `)
         for (const row of page) {
-          if (row.seq <= (cursors.get(row.partition) ?? 0)) continue
+          if (row.seq <= (cursors.get(row.partition) ?? 0) || row.seq > (upTo.get(row.partition) ?? 0)) continue
           // The selector of the program deployed, on the row at the program's version: one that dies gives the
           // defect to the reader, as the schema does (decisions 0121, 0140).
           const shown = projection.read(row.projection, up('projection', row.version))

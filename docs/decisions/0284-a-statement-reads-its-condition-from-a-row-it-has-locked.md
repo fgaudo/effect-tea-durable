@@ -4,7 +4,7 @@
 Its test is the test of the pool of [decision 0283](0283-a-contract-runs-one-set-of-calls-on-every-backend.md). It changes
 [decision 0070](archive/0070-reindex-writes-a-row-only-over-its-state.md), whose guard on the state did not hold on a
 pool of PostgreSQL. The maintainer chose the rule on 2026-11-12, after an opinion of a Fable 5.2 agent. Its case of `expire`, bug 13, is
-[decision 0285](0285-a-batch-of-expire-skips-the-replies-a-step-holds.md), whose batch locks the replies it selects and skips those a step holds. Its case of the trigger of the outbox, bug 80, is [decision 0286](0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md), whose trigger locks the publications of a statement's rows in order.
+[decision 0285](0285-a-batch-of-expire-skips-the-replies-a-step-holds.md), whose batch locks the replies it selects and skips those a step holds. Its case of the trigger of the outbox, bug 80, is [decision 0286](0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md), whose trigger locks the publications of a statement's rows in order. Its second half, of the reading of the log, bug 78, is [decision 0287](0287-a-reading-of-the-log-gives-each-partition-up-to-its-first-head.md), whose reading gives each partition up to the head its first statement read.
 
 ## Context
 

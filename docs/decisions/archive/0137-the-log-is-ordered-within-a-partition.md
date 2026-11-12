@@ -8,7 +8,7 @@ share its `seq`. Its consumer stored on its first reading is changed by
 [decision 0152](0152-the-consumers-of-a-topic-are-declared-at-deploy.md): a consumer is stored by the deploy that declares it.
 Its partition on Cluster's formula on `Hash.string` is changed by
 [decision 0273](../0273-the-partition-of-an-entity-is-the-librarys-own-hash.md): the formula is the library's own
-hash, which gives the values of `Hash.string` in Effect 4.1.3.
+hash, which gives the values of `Hash.string` in Effect 4.1.3. A reading of the log gives of each partition only the rows up to the head its first statement read, so that on a pool it skips no row, by [decision 0287](../0287-a-reading-of-the-log-gives-each-partition-up-to-its-first-head.md).
 
 ## Context
 

@@ -205,8 +205,9 @@ describe('the order of a partition (decision 0137)', () => {
   // statement of its own. A step of partition 1 that drew its position before a step of partition 2 committed, and
   // commits between the first two statements, is past no cursor the reading counts, and its row lies before the
   // page's first position. The next step of partition 1 commits before the page and is given, so a consumer that acks
-  // the page passes the first step's row and never reads it (decisions 0038, 0137, 0157).
-  onServer('FAILING: a reading of the log gives no row of a partition past one it skipped', (_, sql) =>
+  // the page passes the first step's row and never reads it, unless the reading leaves out a row past the head its
+  // partition had when the heads were read (decisions 0038, 0137, 0157, 0287).
+  onServer('a reading of the log gives no row of a partition past one it skipped', (_, sql) =>
     Effect.gen(function*() {
       yield* on(sql)(createTables)
       // 'a' and 'c' are of partition 1, 'b' of partition 2, of two.
