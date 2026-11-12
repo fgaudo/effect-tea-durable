@@ -426,12 +426,11 @@ const set = fc.record({
   requestId: fc.constantFrom('s1', 's2', 's3'),
 })
 const create = fc.record({ _tag: fc.constant('Create' as const), id: own, requestId: fc.constantFrom('c1', 'c2') })
-// `reindex` is left out until bug 25 of `docs/bugs.md` is fixed: on a pool it writes the projection of a state over
-// the row a step committed while its statement waited. The todo below holds it.
 const paired: fc.Arbitrary<Paired> = fc.oneof(
   set,
   create,
   fc.constant({ _tag: 'Expire' as const }),
+  fc.constant({ _tag: 'Reindex' as const }),
   fc.constant({ _tag: 'Prune' as const }),
 )
 type Paired =
@@ -445,8 +444,9 @@ const heldOf = (pairs: fc.Arbitrary<readonly [Paired, Paired]>) =>
   fc.record({
     before: fc.array(set, { maxLength: 4 }),
     pair: pairs,
-    // Which of the library's tables is locked, by its place among them in the order of their names.
-    gate: fc.nat(),
+    // Which of the library's tables is locked, by its place among them in the order of their names. A case pinned
+    // names the table.
+    gate: fc.nat() as fc.Arbitrary<number | string>,
   })
 const held = heldOf(fc.tuple(paired, paired))
 type Held = typeof held extends fc.Arbitrary<infer H> ? H : never
@@ -558,7 +558,7 @@ const onPool = (histories: fc.Arbitrary<Held>, runs: number, examples: ReadonlyA
       fc.assert(
         fc.asyncProperty(histories, async (held) => {
           const run = `p${ran++}`
-          const table = tables[held.gate % tables.length]!
+          const table = typeof held.gate === 'string' ? held.gate : tables[held.gate % tables.length]!
           const answered = await Effect.runPromise(history(items, run, held, (calls) =>
             Effect.scoped(Effect.gen(function*() {
               const locked = yield* Deferred.make<void>()
@@ -587,23 +587,17 @@ const onPool = (histories: fc.Arbitrary<Held>, runs: number, examples: ReadonlyA
 
 // Only `bun run test:postgres` reaches this test, since `bun test` on one machine has no server, so it holds the
 // budget of the job `postgres` rather than of `bun test`: a hundred runs, a minute or two (decision 0250).
+// Its examples are the history of bug 25 of `docs/bugs.md`, as fast-check shrank it on the CI's server: a `reindex`
+// beside a message wrote the projection of the state before the message (decision 9998). They lock the table of
+// projections, where the message's step waits holding its entity's row, and the `reindex` waits after reading the
+// state. Whichever of the two then takes the table first, the code before decision 9998 fails when the step does.
+const bug25: Held = {
+  before: [],
+  pair: [{ _tag: 'Reindex' }, { _tag: 'Set', id: 'a', label: 'x', keep: 'forever', requestId: 's1' }],
+  gate: 'effecttea_projections',
+}
 test.skipIf(server === undefined)(
   'two calls held at a statement on a pool answer as one order of them',
-  () => onPool(held, Bun.env['SCHEDULES'] === 'all' ? 500 : 100),
+  () => onPool(held, Bun.env['SCHEDULES'] === 'all' ? 500 : 100, Array.from({ length: 8 }, () => bug25)),
   1_200_000,
 )
-
-// A todo: `bun test --todo` runs it on a server, and it fails until bug 25 of `docs/bugs.md` is fixed. Its example is
-// the history fast-check shrank the first failure to, on the CI's server, which failed once in 139 runs.
-test.todo('a reindex held beside a step on a pool leaves the row the step wrote', async () => {
-  if (server === undefined) return
-  await onPool(
-    heldOf(fc.tuple(fc.constant({ _tag: 'Reindex' } as const), set)),
-    200,
-    [{
-      before: [],
-      pair: [{ _tag: 'Reindex' }, { _tag: 'Set', id: 'a', label: 'x', keep: 'forever', requestId: 's1' }],
-      gate: 1879048180,
-    }],
-  )
-}, 1_200_000)
