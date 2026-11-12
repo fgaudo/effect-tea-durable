@@ -92,7 +92,7 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A review reports a finding only once it is reproduced by a test that fails, or ruled out by a test that passes or
   by the documentation of the version pinned. A reading of the code alone gives a lead, not a finding, and the
   session that holds the lead turns it into a test or drops it. A lead no test can reach yet goes in
-  `docs/open-questions.md`, with what would decide it, and not in the roadmap as a bug.
+  `docs/open-questions.md`, with what would decide it, and not in `docs/bugs.md` as a bug.
 - A test of `src/form.test.ts` refuses the words `reasoned` and `not run` in the section `What it rests on` of every
   note numbered 0258 or above. The notes taken before keep their premises as written, and a review reads those
   first.

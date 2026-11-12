@@ -29,7 +29,7 @@ state, in the brief of a reading of one shared state, which finds what the pairs
    report then says what it did not reach. A section of the index longer than that is divided, in the roadmap's
    step, before its session starts.
 4. Fill the brief's three places: the area, with its notes; the later notes not reached that the roadmap gives to
-   this area; and the bugs the roadmap's step of bugs already lists, so that the reviewer does not report them again.
+   this area; and the bugs [`docs/bugs.md`](../../../docs/bugs.md) already lists, so that the reviewer does not report them again.
 
 ## The reviewer's brief
 
@@ -49,7 +49,7 @@ read it as the example, and do not report it again.
 WHAT TO READ: <the area, with its notes>. Also these later notes, against the notes of the areas already read that
 they cite: <the notes not reached that the roadmap gives to this area, or none>.
 
-ALREADY FOUND, not to report again: <the bugs of the roadmap's step of bugs, one line each>. A bug of the same form
+ALREADY FOUND, not to report again: <the bugs of docs/bugs.md, one line each>. A bug of the same form
 under another sequence is a new finding, and so is a fix of a bug of the list that does not hold.
 
 HOW:
@@ -121,9 +121,9 @@ all, as its table says. Read that report first, with what it ruled out, and the 
 notes. A suspect that report ruled out by reading alone, or by a test of concurrency that names no seeds and
 `SCHEDULES`, is not ruled out for you: check it again where your pairs meet it.
 
-ALREADY FOUND, not to report again: every bug of the step "The bugs the premise review found, fixed by family" of
-docs/roadmap.md, and the open questions of docs/open-questions.md. Read that step before you start. A bug of the same
-form under another sequence is a new finding, and so is a fix of a bug of the step that does not hold.
+ALREADY FOUND, not to report again: every bug of docs/bugs.md, and the open questions of docs/open-questions.md. Read that file before you
+start. A bug of the same form under another sequence is a new finding, and so is a fix of a bug of the file that does
+not hold.
 
 HOW:
 1. List the pairs before you read any: for each note of your list, the notes it meets of the area, found by the
@@ -197,9 +197,9 @@ again.
 WHAT TO READ: the state <the state>, with these places of src/: <the writers and readers, with their notes, from
 `bun scripts/premise-pairs.ts --tables`, or the fields of the runtime and the modules that touch them>.
 
-ALREADY FOUND, not to report again: every bug of the step "The bugs the premise review found, fixed by family" of
-docs/roadmap.md, and the open questions of docs/open-questions.md. Read that step before you start. A bug of the same
-form under another sequence is a new finding, and so is a fix of a bug of the step that does not hold.
+ALREADY FOUND, not to report again: every bug of docs/bugs.md, and the open questions of docs/open-questions.md. Read that file before you
+start. A bug of the same form under another sequence is a new finding, and so is a fix of a bug of the file that does
+not hold.
 
 HOW:
 1. List every place of src/ that writes the state, deletes from it or reads it, before you read any note: by the
@@ -255,17 +255,17 @@ docs/decisions/reviews.md of the branch.
 - A suspect the report rules out by a test of concurrency names the test's seeds and `SCHEDULES`. One that names
   none, or that ran under the sample of `bun test`, is a lead: run the test under `SCHEDULES=all` before you record
   it as ruled out.
-- Two reviewers may find one bug. It is one bug of the step, with both tests.
+- Two reviewers may find one bug. It is one bug of `docs/bugs.md`, with both tests.
 - Run each test again on the last commit of `main` where the reviewer's branch was cut before it.
-- Every finding is a bug of the step of bugs of [`docs/roadmap.md`](../../../docs/roadmap.md), fixed by family,
-  reproduced. A bug names the branch, the commit and the tests, and where the fix begins. Its fix is a note that
+- Every finding is a bug of [`docs/bugs.md`](../../../docs/bugs.md), reproduced, added at the end of its
+  list and to a family where it has the family's form. A bug names the branch, the commit and the tests, and where the fix begins. Its fix is a note that
   changes the earlier one, with the test, taken as `AGENTS.md` says.
 - A lead, and a suspect the reviewer noticed and did not check, are no bugs yet. Write the test that would reproduce
   each, here or in a session of its own, and run it, in the CI's job of PostgreSQL where it needs a server: a test
-  that fails makes it a bug of the step, and one that passes rules it out. A lead no test can reach yet, and a
+  that fails makes it a bug of `docs/bugs.md`, and one that passes rules it out. A lead no test can reach yet, and a
   finding whose fix is a choice of the design, are questions of
-  [`docs/open-questions.md`](../../../docs/open-questions.md), with what would decide them, and not bugs of the
-  roadmap (`AGENTS.md`, under Notes).
+  [`docs/open-questions.md`](../../../docs/open-questions.md), with what would decide them, and not bugs of
+  `docs/bugs.md` (`AGENTS.md`, under Notes).
 - Copy the report's section to [`docs/decisions/reviews.md`](../../../docs/decisions/reviews.md) of `main`, whole,
   so that what the review ruled out stays when the branch goes.
 - Write what the review read and what it did not reach in the roadmap's step of the review, so that the next

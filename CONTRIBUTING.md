@@ -56,6 +56,7 @@ bun run build
   they decide in [its index](docs/decisions/README.md). The reviews of the notes are in
   [`docs/decisions/reviews.md`](docs/decisions/reviews.md).
 - [`docs/open-questions.md`](docs/open-questions.md): what is not decided yet, and what would decide it.
+- [`docs/bugs.md`](docs/bugs.md): the bugs the premise review found, numbered, with the rule of each family.
 - [`docs/roadmap.md`](docs/roadmap.md): the steps from this design to a library, in order.
 - [`docs/cluster.md`](docs/cluster.md): a study of Effect Cluster as the runtime meets it, with what each move of
   Effect's version changed in it.
