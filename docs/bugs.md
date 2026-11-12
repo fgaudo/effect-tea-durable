@@ -34,12 +34,12 @@ family gets a fix of its own.
 - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39, 54,
   55, 57 to 59, 70, 73, 74, 77, 84, 85, 89 to 91 and 97, as decisions 0248 and 0249 were. Its rule is the step The tests
   of a contract on every backend, of the roadmap: the tests of the runtime run alike on one process and on Cluster.
-- D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78 and 80. Its test is the same step:
+- D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78, 80 and 111. Its test is the same step:
   a test of rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their
   statements. Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does
   not read again on the row it then writes. Its rule is [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md): a statement that writes
-  or deletes a row on a condition reads the condition from a row it has locked. Bugs 25, 13, 80 and 78 are its
-  first cases, fixed.
+  or deletes a row on a condition reads the condition from a row it has locked. Bugs 25, 13, 80, 78 and 111 are
+  its first cases, fixed.
 - F, B, E and G are fixed. Family F is decided by
   [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), family E by
   [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md), family B by
@@ -741,3 +741,4 @@ family gets a fix of its own.
     them on PGlite`, in `src/form.test.ts`, reproduces it on the branch `claude/premise-review-2-area-12-b78dd1`, at
     `42f0832`. The fix begins at `test:postgres` of `package.json`, run under `SCHEDULES=all` where the job of the
     server has the time, or at the job `release`, which would get the service of PostgreSQL and `POSTGRES_URL`.
+111. **Fixed by [decision 0288](decisions/0288-a-batch-of-prune-skips-the-rows-another-batch-holds.md)**, whose batch of `prune` locks the rows it selects and skips those another batch holds. On a pool of PostgreSQL two prunes at once locked rows of the outbox in opposite orders, and PostgreSQL ended one as a deadlock. Found by the test of a contract of the pool on the CI's server, for the pair of two prunes.

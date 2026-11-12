@@ -398,6 +398,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0286](decisions/0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md). No pair of the pool
     reaches it, so a scenario of `src/postgres.test.ts` holds it, as the note says.
   - Done, on 2026-11-12, bug 78, the reading of the log: [decision 0287](decisions/0287-a-reading-of-the-log-gives-each-partition-up-to-its-first-head.md).
+  - Done, on 2026-11-12, bug 111, a deadlock of two prunes at once that the pool found:
+    [decision 0288](decisions/0288-a-batch-of-prune-skips-the-rows-another-batch-holds.md).
   - Next, the other cases of the rule of decision 0284, one at a time, since each changes `src/storage/` and pins its
     case in `src/contract.test.ts`. Each is a note of its own that cites decision 0284 and adds itself to that note's
     status line. Its case is pinned in the test of the pool, and fails on the CI before the fix. The opinion of a
