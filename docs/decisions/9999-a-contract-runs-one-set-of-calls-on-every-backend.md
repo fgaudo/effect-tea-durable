@@ -39,6 +39,18 @@ waited: a creation whose projection holds U+0000 in an index.
 - **A call with no answer within 5 s is answered so**, which fails the test rather than holding it.
 - **`bun test` runs six runs of the property, and `SCHEDULES=all` runs 300**, so that the test stays within two
   seconds ([decision 0250](0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md)).
+- **On a pool of PostgreSQL, two calls run at once, held at a statement.** It is the second part of the step, for
+  family D of [`docs/bugs.md`](../bugs.md). The test `two calls held at a statement on a pool answer as one order of
+  them` makes two entities, runs a few messages one at a time, then runs two calls at once. Each call is a message,
+  a creation, `expire`, `reindex` or `prune`. A connection of its own holds a lock of one of the library's tables,
+  which fast-check draws, so that each call that reaches a statement of that table waits there. The lock is let go
+  once both calls wait, or after a second. Then each request of the pair is sent again, and every entity is read.
+- **The answers on the pool must be those of one of the two orders the calls run in one at a time**, as SQLite runs
+  them on a new database. An operator's call is compared by whether it succeeds, since what it counts depends on the
+  rows of the other runs. A message of the pair adds to an index, so that a message applied twice shows in the
+  readings.
+- **The runs on the pool share one database and one runtime**, as the runs on Cluster share their runners, with the
+  same prefix of a run. The test runs only on a server, ten runs under `bun test` and 200 under `SCHEDULES=all`.
 
 ## What it rests on
 
@@ -48,6 +60,8 @@ waited: a creation whose projection holds U+0000 in an index.
   the server.
 - That on Cluster a creation the program dies on waits: **tested** by the test of decision 0160 in
   [`src/cluster.test.ts`](../../src/cluster.test.ts), and **seen** in the first run of this test.
+- That the history of the pool runs on SQLite in both orders: **tested**, by a run of 30 histories on SQLite made
+  while the test was written, and by each run of the test on a server.
 - That a later request to its entity is not answered on Cluster as one process answers it: **seen**, in the first
   run of this test. A message after such a creation was given no `NotFound` within 5 s, while the runner logged the
   creation's restarts. Were it answered, the decision would only compare fewer calls than it could.
@@ -59,6 +73,12 @@ waited: a creation whose projection holds U+0000 in an index.
 - That runs that share two runners read only their own entities: **tested**, since each run's readings on Cluster
   equal those of a new database.
 - That the runners start within a minute: **seen**, in the runs of the test on the maintainer's machine.
+- That two calls held at a statement on a pool answer as one order of them: **open**. The test runs only on a
+  server, and runs in the job `postgres` of the CI on the push of the step's branch.
+- That a lock of a table held by another connection makes a call wait at its first statement of that table:
+  **documented** by PostgreSQL, whose `ACCESS EXCLUSIVE` lock conflicts with every other lock of the table.
+- That an operator's call answers alike in either order, but for what it counts: **chosen** by this note. `expire`,
+  `reindex` and `prune` give counts over every run of the database, which the readings after the pair replace.
 - That the prefix of a run leaves an id's refusal as it was: **chosen** by this note. A prefix makes no text a
   database does not hold into text it holds, and the empty id is left empty.
 
@@ -74,5 +94,5 @@ waited: a creation whose projection holds U+0000 in an index.
 
 - [`src/contract.test.ts`](../../src/contract.test.ts) holds the backends, the shared runners and the decided
   answers of Cluster.
-- The next parts of the step are in the [roadmap](../roadmap.md): the pool of PostgreSQL with two steps held at
-  their statements, and the tests of the runtime that hold a rule of one process, run on Cluster too.
+- The next parts of the step are in the [roadmap](../roadmap.md): more calls in the contract, and the tests of the
+  runtime that hold a rule of one process, run on Cluster too.

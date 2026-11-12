@@ -375,9 +375,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     renamed from `src/dialects.test.ts`. Its property `every backend answers every call alike` runs the calls
     fast-check generates on SQLite, on PostgreSQL and on Cluster with two runners that the runs share, and Cluster's
     answer to a creation the program dies on is written there once. It passed 300 runs under `SCHEDULES=all`.
-  - Next, the pool: a test of rows of two entities whose two steps are held at their statements, on the CI's server,
-    for family D. It begins in [`src/postgres.test.ts`](../src/postgres.test.ts), whose test of decision 0256 holds a
-    step within a transaction of a pool. Bugs 3, 13 and 25 are its first cases.
+  - Under way, the pool, for family D: the test `two calls held at a statement on a pool answer as one order of them`
+    of `src/contract.test.ts`, written on 2026-11-12, runs two calls at once while a connection of its own holds a
+    lock of a table of the library. It runs only on a server. The branch is pushed so that the job `postgres` of the
+    CI runs it, since the maintainer's machine has no server. Its premise is `open` in the note until that job
+    passes. A failure the job shows is a bug of `docs/bugs.md`, held by the case fast-check shrinks it to. Bugs 3,
+    13, 25 and 80 are the cases it should meet, whose tests on the reviewers' branches have not run.
   - Then the calls of the contract grow: an operator's `resume`, `discard` and readings, an operation that sends to
     another entity, a timer, and `expire`, each on every backend. Bugs 10 and 11 are their first cases on Cluster.
   - Then the tests of the runtime that hold a rule of one process, which `src/runtime.test.ts` holds, run on Cluster

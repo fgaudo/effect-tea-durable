@@ -18,16 +18,20 @@ import {
   SqlRunnerStorage,
 } from 'effect/cluster'
 import * as Cause from 'effect/Cause'
+import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
 import { Digest } from 'effect/crypto'
+import * as Deferred from 'effect/Deferred'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Schedule from 'effect/Schedule'
 import * as Schema from 'effect/Schema'
 import * as Scope from 'effect/Scope'
+import { SqlClient } from 'effect/sql'
 import fc from 'fast-check'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -37,9 +41,9 @@ import { start } from './machine.ts'
 import { launch } from './index.ts'
 import { defect, program } from './index.program.ts'
 import { idFault, requestIdFault, type TypesOf } from './program.ts'
-import type { Handle } from './runtime.ts'
+import type { Handle, Keep } from './runtime.ts'
 import type { Comparison, Dialect } from './storage.ts'
-import { client } from './storage.test_databases.ts'
+import { client, database, pool, server } from './storage.test_databases.ts'
 
 const fields = {
   label: Schema.String,
@@ -59,6 +63,7 @@ const item = program({
   inbound: Schema.Union([
     Schema.TaggedStruct('Set', fields),
     Schema.TaggedStruct('Boom', { note: Schema.String }),
+    Schema.TaggedStruct('Add', { label: Schema.String, n: Schema.Number }),
   ]),
   projection: Schema.Struct({ ...fields, run: Schema.String }),
 })({
@@ -66,6 +71,7 @@ const item = program({
   init: (flags) => flags,
   update: (message) => (state) => {
     if (message._tag === 'Boom') return defect(`cannot handle ${message.note}`)
+    if (message._tag === 'Add') return { ...state, label: message.label, amount: state.amount + message.n }
     const { _tag, ...set } = message
     return { ...state, ...set }
   },
@@ -108,7 +114,7 @@ const comparison = fc.constantFrom<Comparison>('=', '<>', '<', '<=', '>', '>=')
 const criteria = fc.array(fc.record({ index, is: comparison, value: scalar }), { maxLength: 2 })
 
 /** A few ids and request ids, drawn again and again, so that calls meet the same entity and the same request. */
-const pool = fc.uniqueArray(text, { minLength: 1, maxLength: 5 })
+const names = fc.uniqueArray(text, { minLength: 1, maxLength: 5 })
 
 const calls = (ids: ReadonlyArray<string>, requests: ReadonlyArray<string>) => {
   const id = fc.constantFrom(...ids)
@@ -135,7 +141,7 @@ const calls = (ids: ReadonlyArray<string>, requests: ReadonlyArray<string>) => {
     .map(([made, rest]) => [...made, ...rest])
 }
 
-const scenario = fc.tuple(pool, pool).chain(([ids, requests]) => calls(ids, requests))
+const scenario = fc.tuple(names, names).chain(([ids, requests]) => calls(ids, requests))
 
 type Call = typeof scenario extends fc.Arbitrary<ReadonlyArray<infer C>> ? C : never
 
@@ -400,3 +406,169 @@ test('a sum whose exact total of magnitudes reads back as the largest double is 
   const [pg, sqlite] = [await summed('pg'), await summed('sqlite')]
   expect({ pg, sqlite }).toEqual({ pg, sqlite: pg })
 })
+
+/**
+ * Two calls at once on a pool of PostgreSQL, held at their statements: family D of `docs/bugs.md`, rules that hold
+ * only of one transaction at a time. On SQLite one transaction writes at a time, and on a pool two run at once, each
+ * reading its own snapshot (decision 0222). A connection of its own holds a lock of one of the library's tables, so
+ * that each call that reaches a statement of that table waits there, and both go on at once when the lock is let go.
+ * The answers, and the readings after, must be those of one of the two orders the calls run in one at a time, as
+ * SQLite runs them. It runs only on a server, which the job `postgres` of the CI gives.
+ */
+const keep = fc.constantFrom<Keep>('forever', { millis: 0 }, { millis: 60_000 })
+const label = fc.constantFrom('x', 'y', 'z')
+const own = fc.constantFrom('a', 'b', 'c')
+const set = fc.record({
+  _tag: fc.constant('Set' as const),
+  id: own,
+  label,
+  keep,
+  requestId: fc.constantFrom('s1', 's2', 's3'),
+})
+const paired: fc.Arbitrary<Paired> = fc.oneof(
+  set,
+  fc.record({ _tag: fc.constant('Create' as const), id: own, requestId: fc.constantFrom('c1', 'c2') }),
+  fc.constant({ _tag: 'Expire' as const }),
+  fc.constant({ _tag: 'Reindex' as const }),
+  fc.constant({ _tag: 'Prune' as const }),
+)
+type Paired =
+  | Readonly<{ _tag: 'Set'; id: string; label: string; keep: Keep; requestId: string }>
+  | Readonly<{ _tag: 'Create'; id: string; requestId: string }>
+  | Readonly<{ _tag: 'Expire' }>
+  | Readonly<{ _tag: 'Reindex' }>
+  | Readonly<{ _tag: 'Prune' }>
+const held = fc.record({
+  before: fc.array(set, { maxLength: 4 }),
+  pair: fc.tuple(paired, paired),
+  // Which of the library's tables is locked, by its place among them in the order of their names.
+  gate: fc.nat(),
+})
+type Held = typeof held extends fc.Arbitrary<infer H> ? H : never
+
+/**
+ * Runs `call` of the run `run` on `items`, and gives its answer: `done` for an operator's call that succeeds. A `Set`
+ * of the pair sends `Add`, which adds to `amount`, so that a message applied twice shows in the readings.
+ */
+const pairedOn = (items: Handle<Item>, run: string, call: Paired): Effect.Effect<unknown> => {
+  const id = (name: string) => `${run}/${name}`
+  const answered = (effect: Effect.Effect<unknown, unknown>, done = false) =>
+    Effect.map(
+      Effect.exit(effect.pipe(Effect.timeoutOrElse({ duration: '5 seconds', orElse: () => Effect.succeed(unanswered) }))),
+      (exit) => done && Exit.isSuccess(exit) && exit.value !== unanswered ? 'done' : outcome(exit),
+    )
+  switch (call._tag) {
+    case 'Set':
+      return answered(items.send(
+        id(call.id),
+        { _tag: 'Add', label: call.label, n: 1 },
+        { requestId: id(call.requestId), sender: 's', keep: call.keep },
+      ))
+    case 'Create':
+      return answered(items.create(id(call.id), {
+        flags: { label: 'start', amount: 0, flag: false, note: null, run },
+        requestId: id(call.requestId),
+        sender: 's',
+      }))
+    case 'Expire':
+      return answered(items.expire, true)
+    case 'Reindex':
+      return answered(items.reindex, true)
+    case 'Prune':
+      return answered(items.prune, true)
+  }
+}
+
+/**
+ * Runs a held history of the run `run` on `items`: the entities `a` and `b` are made, the calls `before` run one at a
+ * time, then `pair` runs through `together`, then each request of the pair is sent again and every entity is read.
+ * Gives the answers of the pair, of the requests sent again, and of the readings.
+ */
+const history = (
+  items: Handle<Item>,
+  run: string,
+  { before, pair }: Held,
+  together: (calls: readonly [Effect.Effect<unknown>, Effect.Effect<unknown>]) => Effect.Effect<ReadonlyArray<unknown>>,
+) =>
+  Effect.gen(function*() {
+    for (const name of ['a', 'b']) yield* pairedOn(items, run, { _tag: 'Create', id: name, requestId: `made-${name}` })
+    for (const call of before) yield* pairedOn(items, run, call)
+    const answers = yield* together([pairedOn(items, run, pair[0]), pairedOn(items, run, pair[1])])
+    const again = yield* Effect.forEach(
+      pair.filter((call) => call._tag === 'Set' || call._tag === 'Create'),
+      (call) => pairedOn(items, run, call),
+    )
+    const read = yield* Effect.forEach(['a', 'b', 'c'], (name) => Effect.exit(items.read(`${run}/${name}`)))
+    const counted = yield* items.count({ where: [{ index: 'run', is: '=', value: run }] })
+    return { answers, again, read: read.map(outcome), counted }
+  })
+
+/** The answers of `held` on a new database of SQLite, with the pair in the order `first`, then the other. */
+const serially = (run: string, held: Held, first: 0 | 1) =>
+  Effect.runPromise(
+    Effect.scoped(Effect.gen(function*() {
+      const items = yield* (yield* launch({ sweep: 'none' })).deploy(item)
+      return yield* history(items, run, held, ([zero, one]) =>
+        first === 0
+          ? Effect.all([zero, one])
+          : Effect.map(Effect.all([one, zero]), ([b, a]) => [a, b]))
+    })).pipe(Effect.provide(client('sqlite')), Effect.orDie),
+  )
+
+test.skipIf(server === undefined)('two calls held at a statement on a pool answer as one order of them', () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    const url = yield* database(server ?? '')
+    const connected = (options: Parameters<typeof pool>[1] = {}) =>
+      Effect.map(Layer.build(pool(url, options)), (context) => Context.get(context, SqlClient.SqlClient))
+    const sql = yield* connected()
+    const gate = yield* connected({ maxConnections: 1 })
+    const runtime = yield* Effect.provideService(launch({ sweep: 'none' }), SqlClient.SqlClient, sql)
+    const items = yield* runtime.deploy(item)
+    const tables = (yield* sql<{ tablename: string }>`
+      SELECT tablename FROM pg_tables
+      WHERE schemaname = current_schema() AND tablename LIKE 'effecttea%'
+      ORDER BY tablename
+    `).map(({ tablename }) => tablename)
+    // Waits until `count` sessions wait for a lock, or a second has passed, since a call that reaches no statement of
+    // the table locked does not wait.
+    const waiting = (count: number) =>
+      Effect.gen(function*() {
+        for (;;) {
+          const [row] = yield* sql<{ count: number }>`
+            SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'
+          `
+          if ((row?.count ?? 0) >= count) return
+          yield* Effect.sleep('10 millis')
+        }
+      }).pipe(Effect.timeout('1 second'), Effect.ignore)
+    let runs = 0
+    yield* Effect.promise(() =>
+      fc.assert(
+        fc.asyncProperty(held, async (held) => {
+          const run = `p${runs++}`
+          const table = tables[held.gate % tables.length]!
+          const onPool = await Effect.runPromise(history(items, run, held, (calls) =>
+            Effect.scoped(Effect.gen(function*() {
+              const locked = yield* Deferred.make<void>()
+              const open = yield* Deferred.make<void>()
+              const holder = yield* Effect.forkChild(gate.withTransaction(Effect.gen(function*() {
+                yield* gate.unsafe(`LOCK TABLE ${table} IN ACCESS EXCLUSIVE MODE`)
+                yield* Deferred.succeed(locked, undefined)
+                yield* Deferred.await(open)
+              })))
+              yield* Deferred.await(locked)
+              const fibers = yield* Effect.forEach(calls, (call) => Effect.forkChild(call))
+              yield* waiting(2)
+              yield* Deferred.succeed(open, undefined)
+              yield* Fiber.join(holder)
+              return yield* Effect.forEach(fibers, Fiber.join)
+            })).pipe(Effect.orDie)))
+          const orders = [await serially(run, held, 0), await serially(run, held, 1)]
+          expect(orders).toContainEqual(onPool)
+        }),
+        // `bun test` on a server runs ten, and a release twenty times as many (decision 0250).
+        { numRuns: Bun.env['SCHEDULES'] === 'all' ? 200 : 10 },
+      )
+    )
+  })).pipe(Effect.orDie)), 1_200_000)
