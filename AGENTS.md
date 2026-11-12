@@ -70,7 +70,10 @@ This repository is a design and its pure core, not a library yet: read [`README.
   is tested (naming the test), documented, seen in a spike, read in a dependency's source, or chosen. A
   rule that holds only by a margin, such as a time longer than an interval, lists the margin as a premise, with the
   value it depends on. A note that changes another reads the premises of the note changed, and says of each whether
-  it still holds. A review of the notes already taken, for a premise a later note took away, follows
+  it still holds. A note that adds a wait, a refusal or a delay to code that other notes decide finds those notes by
+  the citations of that code, as `waker`, `settled` or `quiet`, and reads their premises as if it changed them, even
+  where it does not say it changes them. Decision 0274 refused the waker's activation until `retry` and took away a
+  premise of decision 0068 that no note wrote, which only `bun run test:release` found. A review of the notes already taken, for a premise a later note took away, follows
   [`.claude/skills/premise-review/SKILL.md`](.claude/skills/premise-review/SKILL.md).
 - A premise about what code does when it runs is never only reasoned, whether the code is the library's, a
   dependency's or a database's. Before its note is taken, the premise is tested, documented in the version pinned,
@@ -168,7 +171,9 @@ This repository is a design and its pure core, not a library yet: read [`README.
   the change holds. A test under `explored` runs one seed in twenty, from seed 0, so that the suite runs in seconds;
   `bun run test:release` runs them all, and a release passes it. A step of the roadmap that changes the runtime
   or `src/testing.ts` passes `bun run test:release` before it is taken, since some rules of concurrency fail only
-  past the first hundred seeds. A schedule under `bound` 1 is exhaustive within its bound under the release, which
+  past the first hundred seeds. A commit that changes the runtime or `src/testing.ts` first runs, under
+  `SCHEDULES=all`, the files of the tests of the modules it changes, and `bun run test:slow` where it changes what
+  Cluster runs, since `bun test` runs a sample and skips the tests under `slow`. A schedule under `bound` 1 is exhaustive within its bound under the release, which
   runs every deviation; any other run runs one in twenty, from the first, and the deviations listed under `pinned`,
   as `{ decision, choice }`. `bun test` and the release start from seed 0, so that each of their runs
   replays the same schedules. `bun run test:explore` looks for the bugs those schedules miss: it runs every seed of
