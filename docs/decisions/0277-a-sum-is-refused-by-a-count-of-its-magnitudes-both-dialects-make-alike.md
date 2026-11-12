@@ -51,7 +51,7 @@ still read apart, and it loses the low bits of the numbers under the least norma
   SQLite and on PGlite, which fails against the code before the change. Its cases cut fractions of a unit, and mix
   signs. On a server of PostgreSQL, it runs in the job of PostgreSQL of the push of `main` that takes this note.
 - That the amounts of bug 40 are refused alike: **tested**, by `a sum whose exact total of magnitudes reads back as
-  the largest double is answered alike on both dialects` in [`src/dialects.test.ts`](../../src/dialects.test.ts),
+  the largest double is answered alike on both dialects` in [`src/contract.test.ts`](../../src/contract.test.ts),
   which failed before the change.
 - That a cast of a `jsonb` number to `DOUBLE PRECISION` gives the double JavaScript wrote: **tested**, by the cases at
   the bound above, whose units differ by one where the double differs.

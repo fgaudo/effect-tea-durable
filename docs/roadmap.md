@@ -365,16 +365,23 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 - **The tests of a contract on every backend.** It is the fourth kind of test of `AGENTS.md`, and the rule of
   families C and D of [`docs/bugs.md`](bugs.md). One set of requests runs alike on each way the library runs, and the
   answers, the projections and what an operator reads must be the same on each. The ways are SQLite and PostgreSQL
-  on one process, PostgreSQL with a pool on the CI's server, and Cluster with two runners on one file.
-  [`src/dialects.test.ts`](../src/dialects.test.ts) is where it begins. It runs the calls fast-check generates on
-  SQLite and on PostgreSQL, and compares each answer
-  ([decision 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)), but it holds neither Cluster nor a
-  pool. The step adds Cluster, with the helpers `onFile`, `start` and `withholding` of
-  [`src/cluster.test.ts`](../src/cluster.test.ts), and the pool, with two steps held at their statements, as the
-  job `postgres` of the CI runs it. A test of the runtime that holds a rule of one process then runs on Cluster too,
-  where the rule is said to hold there, so that a rule of one process that holds otherwise on Cluster fails a test.
-  Bugs 2, 3, 10, 11 and 12 are cases of it. The step comes before the test of invariants, which runs on Cluster and
-  on a pool through it.
+  on one process, PostgreSQL with a pool on the CI's server, and Cluster with two runners on one file. Its note is
+  [decision 9999](decisions/9999-a-contract-runs-one-set-of-calls-on-every-backend.md), `proposed`, whose number is
+  given when the step's branch is merged into `main`. A test of the runtime that holds a rule of one process then
+  runs on Cluster too, where the rule is said to hold there, so that a rule of one process that holds otherwise on
+  Cluster fails a test. Bugs 2, 3, 10, 11 and 12 are cases of it. The step comes before the test of invariants,
+  which runs on Cluster and on a pool through it.
+  - Done, on 2026-11-12, on the branch `claude/contract-tests-c7e2a1`: [`src/contract.test.ts`](../src/contract.test.ts),
+    renamed from `src/dialects.test.ts`. Its property `every backend answers every call alike` runs the calls
+    fast-check generates on SQLite, on PostgreSQL and on Cluster with two runners that the runs share, and Cluster's
+    answer to a creation the program dies on is written there once. It passed 300 runs under `SCHEDULES=all`.
+  - Next, the pool: a test of rows of two entities whose two steps are held at their statements, on the CI's server,
+    for family D. It begins in [`src/postgres.test.ts`](../src/postgres.test.ts), whose test of decision 0256 holds a
+    step within a transaction of a pool. Bugs 3, 13 and 25 are its first cases.
+  - Then the calls of the contract grow: an operator's `resume`, `discard` and readings, an operation that sends to
+    another entity, a timer, and `expire`, each on every backend. Bugs 10 and 11 are their first cases on Cluster.
+  - Then the tests of the runtime that hold a rule of one process, which `src/runtime.test.ts` holds, run on Cluster
+    too where the rule is said to hold there.
 
 - **A test of invariants over generated histories.** It is the second kind of test of `AGENTS.md`, which the library
   does not have yet. fast-check generates histories of commands: a message under a new request id or a retried one,

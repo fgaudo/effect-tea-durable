@@ -8,7 +8,7 @@ count of its magnitudes in units of 2^980, since the total of magnitudes read as
 
 `sum` added the numbers of an index with `TOTAL` on SQLite, and with `SUM` over `DOUBLE PRECISION` on PostgreSQL
 ([decision 0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). The test
-`both dialects answer every call alike` of [`src/dialects.test.ts`](../../src/dialects.test.ts) runs the same calls
+`every backend answers every call alike` of [`src/contract.test.ts`](../../src/contract.test.ts) runs the same calls
 on a database of each dialect, and found two answers that differ.
 
 - **The last digits.** Over the amounts `1`, `0.1` and `-1`, SQLite gave `0.1` and PostgreSQL
@@ -47,7 +47,7 @@ on a database of each dialect, and found two answers that differ.
 - That `Number` reads the text of a decimal as the nearest double: **documented**, by ECMAScript's conversion of a
   string to a number.
 - That both dialects refuse the same sums, and give totals within the bound: **tested**, by
-  `both dialects answer every call alike`, and by `a sum whose magnitudes pass the largest double is its caller's
+  `every backend answers every call alike`, and by `a sum whose magnitudes pass the largest double is its caller's
   defect` in [`src/storage.test.ts`](../../src/storage.test.ts), which fails against the code before the change.
 
 ## Alternatives
