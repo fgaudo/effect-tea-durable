@@ -1429,6 +1429,66 @@ const ranked: Program<Ranked> = {
   indexes: { rank: (projection) => JSON.parse(projection) as Scalar },
 }
 
+// Both dialects hold the same tables, and a program tested on SQLite meets there what PostgreSQL refuses
+// (decision 0157). A step that cannot be written crashes its entity at every step that reaches the state, which
+// decision 0206 made a defect of the program for an index that is no scalar. PostgreSQL caps an entry of a B-tree
+// index at about a third of a page, and SQLite caps none: a text that compresses little, past that, is the case.
+test('FAILING: a step whose key, index or request holds a long text is written alike on both dialects', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      // Text that compresses little, so that no index of PostgreSQL holds it by compressing it.
+      let seed = 1
+      const long = Array.from({ length: 4000 }, () => {
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        return String.fromCharCode(33 + (seed % 94))
+      }).join('')
+      const outcome = (effect: Effect.Effect<unknown>) =>
+        Effect.map(Effect.exit(effect), (exit) => {
+          if (Exit.isSuccess(exit)) return 'written'
+          const said = Cause.pretty(exit.cause)
+          return said.match(/index row[^\n]*/)?.[0] ?? said.split('\n')[0]
+        })
+      const store = storage(ranked, sql)
+      yield* store.indexed
+      const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
+      const caller = JSON.stringify({ _tag: 'Caller', sender: long, id: 'asked' })
+      expect({
+        index: yield* outcome(store.write('index', created({ shown: { projection: '1', indexes: { rank: long } } }), 0)),
+        key: yield* outcome(storage(asker, sql).write('key', created({
+          keys: [{ key: { name: 'ask', parameter: long }, incarnation: 1, work, delivery: 'Idempotent', due: null }],
+        }), 0)),
+        request: yield* outcome(store.write('request', created({
+          replies: [{ request: caller, carried: null, tag: 'Accepted', reason: null, asked: null, until: null }],
+        }), 0)),
+        id: yield* outcome(store.write(long, created(), 0)),
+      }).toEqual({ index: 'written', key: 'written', request: 'written', id: 'written' })
+    })))
+
+// `reindex` passes over an entity whose row it cannot compute, so that no entity holds back the rows of those after
+// it, and only what the runtime throws fails the whole call (decision 0122). On PostgreSQL the statement that writes
+// a row the program computed may fail too, for a long text in an index (decision 0157).
+test('FAILING: reindex passes over an entity whose new index PostgreSQL cannot hold, and writes the rest', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      let seed = 1
+      const long = Array.from({ length: 4000 }, () => {
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        return String.fromCharCode(33 + (seed % 94))
+      }).join('')
+      const store = storage(ranked, sql)
+      yield* store.indexed
+      // Each row was written by a version before, with no index: the state of `a` now ranks it by the long text.
+      const old = (last: string) =>
+        created({ entity: { state: { last }, creation, flags: null }, shown: { projection: '0', indexes: {} } })
+      yield* store.write('a', old(JSON.stringify(long)), 0)
+      yield* store.write('b', old('1'), 0)
+      const exit = yield* Effect.exit(store.reindex)
+      // SQLite writes both rows. Whether PostgreSQL passes over `a` or holds it, the call goes on to `b`.
+      expect(Exit.isSuccess(exit) ? 'reindexed' : Cause.pretty(exit.cause).match(/index row[^\n]*/)?.[0] ?? 'died')
+        .toBe('reindexed')
+      expect((yield* store.query({ limit: all })).find(({ id }) => id === 'b')?.indexes).toEqual({ rank: 1 })
+    })))
+
 test('a query pages past the last row it gave, through ties and nulls, in either order', () =>
   database((sql) =>
     Effect.gen(function*() {

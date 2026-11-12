@@ -2840,6 +2840,20 @@ describe('publishing what happened', () => {
         .toBe('the log has 1.5 partitions, which is no positive integer')
     })))
 
+  // A positive integer of partitions is the launcher's to choose (decision 0137), and both dialects hold the same
+  // tables (decision 0157). A column `partition` of PostgreSQL holds 32 bits, where SQLite's holds 64.
+  test('FAILING: a log of 2^31 partitions launches and creates alike on both dialects', () =>
+    onBoth(Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const at = yield* DateTime.now
+      const exit = yield* Effect.exit(process({ log: { partitions: 2 ** 31 } }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          return yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
+        })))
+      expect(Exit.isSuccess(exit) ? exit.value : Cause.pretty(exit.cause)).toEqual({ _tag: 'Created' })
+    })))
+
   test('a consumer reads from its cursors through indexes, and never scans the log', () =>
     database(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
