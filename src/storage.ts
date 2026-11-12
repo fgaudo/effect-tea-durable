@@ -70,6 +70,7 @@ export {
   type Dialect,
   dialectOf,
   hold,
+  migrate,
   partitioned,
   partitionOf,
   renamed,

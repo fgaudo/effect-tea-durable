@@ -120,14 +120,6 @@ with a requirement that no example has yet.
   ([decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md)), so the two no longer part, but
   Cluster's side was only read in `node_modules/effect/src/sql/Migrator.ts`. It would be decided by:
   - a test of `src/storage.test.ts` with `SqlMessageStorage.layer` on PGlite, under a `search_path` of two schemas.
-- **The migrations inside an operator's transaction.** The migrations lock their table before they read
-  ([decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md)). An operator who
-  calls `createTables` inside a transaction of their own, at `REPEATABLE READ` with a query before it, makes the
-  migrations' transaction a savepoint, whose lock comes after the snapshot. Nothing of the runtime calls it so, and
-  the JSDoc of `createTables` does not say a caller must not. It is bug 51 of the [roadmap](roadmap.md), not
-  checked. It would be decided by:
-  - a test of `src/postgres.test.ts` on the CI's server;
-  - whether `createTables` refuses a transaction it is given, or its JSDoc names the rule.
 - **The room a full volume needs freed.** On a disk that is really full the operator stops the callers, then frees
   room for the prune and for the steps the runtime takes of its own
   ([decision 0278](decisions/0278-on-a-full-volume-the-callers-stop-before-room-is-freed.md)). The spike freed 1 MB once for about 1200 rows and thirty timers due.

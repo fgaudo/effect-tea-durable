@@ -6,6 +6,7 @@
  */
 import { resolve } from 'node:path'
 import * as Effect from 'effect/Effect'
+import * as Option from 'effect/Option'
 import * as Schema from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import { Migrator, SqlClient, type SqlError, type Statement } from 'effect/sql'
@@ -177,8 +178,24 @@ const djb2 = (id: string): number => {
  * launches on one database run each migration once (decision 0216). On SQLite the transaction takes the file's write
  * lock as it begins, which the driver does by default and this asks for by name, since a transaction begun without
  * it dies while another runs; on PostgreSQL `Migrator` locks its table.
+ *
+ * Dies within a transaction of its client, and makes nothing. Within one, the migrations' transaction would be a
+ * savepoint, which begins after the caller's snapshot and does not take SQLite's write lock (decision 0279).
  */
 export const createTables: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.gen(function*() {
+  const sql = yield* SqlClient.SqlClient
+  if (Option.isSome(yield* Effect.serviceOption(sql.transactionService))) {
+    const reason = 'createTables runs within a transaction of its client: run it on the client outside any transaction'
+    return yield* Effect.die(new InvariantDefect({ reason }))
+  }
+  yield* migrate
+})
+
+/**
+ * The migrations of `createTables`, run on the transaction they are given. Only tests call it so, where a
+ * `SET LOCAL` of a caller's transaction gives the migrations a `search_path` (decision 0279).
+ */
+export const migrate: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
   const dialect = dialectOf(sql)
   // `Migrator` looks for its table in every schema of the `search_path`, and would take the history of a schema

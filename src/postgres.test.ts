@@ -16,11 +16,11 @@ import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
 import * as Scope from 'effect/Scope'
-import { SqlClient, SqlError, Statement } from 'effect/sql'
+import { Migrator, SqlClient, SqlError, Statement } from 'effect/sql'
 import type * as Machine from './machine.ts'
 import { InvariantDefect, noWork, operation, type Program, type Scalar } from './program.ts'
 import { launch } from './runtime.ts'
-import { createTables, storage, transaction } from './storage.ts'
+import { createTables, migrate, storage, transaction } from './storage.ts'
 import { database, pool, server } from './storage.test_databases.ts'
 
 type T = {
@@ -470,14 +470,15 @@ describe('a role under the default search_path (decision 0263)', () => {
         yield* handle.create('a', { requestId: 'create-a', sender: null })
       }))
       yield* sql.unsafe(`CREATE SCHEMA ${role} AUTHORIZATION ${role}`)
-      // Each of the pool's connections is held at once, so that each is read apart.
+      // Each of the pool's connections is held at once, so that each is read apart. `createTables` dies within a
+      // transaction, so each runs `migrate`, which holds the check of decision 0263 (decision 0279).
       const all = yield* Deferred.make<void>()
       let entered = 0
       const seen = yield* Effect.forEach(
         Array.from({ length: connections }, (_, index) => index),
         () =>
           owned.withTransaction(Effect.gen(function*() {
-            const reason = reasonOf(yield* Effect.exit(on(owned)(createTables)))
+            const reason = reasonOf(yield* Effect.exit(on(owned)(migrate)))
             const [row] = yield* owned<{ pid: number }>`SELECT pg_backend_pid() AS pid`
             if (++entered === connections) yield* Deferred.succeed(all, undefined)
             yield* Deferred.await(all)
@@ -543,24 +544,26 @@ describe('a call that waits for a step, within a transaction of a pool (decision
 })
 
 describe('the migrations of createTables (decision 0216)', () => {
-  onServer('a second run waits on the lock of effecttea_migrations until the first commits, and runs none', (url, sql) =>
+  // `createTables` dies within a transaction (decision 0279), so the test holds the lock of `effecttea_migrations`
+  // itself, on a table `Migrator` made with no migration, and two runs of `createTables` wait on it.
+  onServer('two runs that wait on the lock of effecttea_migrations make the tables once, and both succeed', (url, sql) =>
     Effect.gen(function*() {
-      const other = yield* connect(url)
-      const migrated = yield* Deferred.make<void>()
+      yield* on(sql)(Migrator.make({})({ loader: Migrator.fromRecord({}), table: 'effecttea_migrations' }))
+      const runners = [yield* connect(url), yield* connect(url)]
+      const locked = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
-      // The first run is held open inside a transaction of the test's, so that it holds the table's lock.
-      const first = yield* Effect.forkChild(sql.withTransaction(Effect.gen(function*() {
-        yield* on(sql)(createTables)
-        yield* Deferred.succeed(migrated, undefined)
+      const holder = yield* Effect.forkChild(sql.withTransaction(Effect.gen(function*() {
+        yield* sql`LOCK TABLE effecttea_migrations IN ACCESS EXCLUSIVE MODE`
+        yield* Deferred.succeed(locked, undefined)
         yield* Deferred.await(release)
       })))
-      yield* Deferred.await(migrated)
-      const second = yield* Effect.forkChild(Effect.exit(on(other)(createTables)))
-      yield* waitingOnLocks(sql, 1)
+      yield* Deferred.await(locked)
+      const runs = yield* Effect.forEach(runners, (runner) => Effect.forkChild(Effect.exit(on(runner)(createTables))))
+      yield* waitingOnLocks(sql, 2)
       yield* Deferred.succeed(release, undefined)
-      yield* Fiber.join(first)
-      // A second run of the first migration would die on a table it made already (decision 0218).
-      expect(Exit.isSuccess(yield* Fiber.join(second))).toBe(true)
+      yield* Fiber.join(holder)
+      // A second run of the first migration would die on a table the first made already (decision 0218).
+      for (const run of runs) expect(Exit.isSuccess(yield* Fiber.join(run))).toBe(true)
       expect(yield* sql`SELECT migration_id FROM effecttea_migrations`).toEqual([{ migration_id: 1 }])
     }))
 

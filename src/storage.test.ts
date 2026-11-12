@@ -21,6 +21,7 @@ import {
   type Dialect,
   dialectOf,
   type Found,
+  migrate,
   outranked,
   partitionOf,
   type Query,
@@ -800,9 +801,30 @@ test('every table, index, trigger and function the runtime makes is named with e
       expect(names.map(({ name }) => name).filter((name) => !name.startsWith('effecttea_'))).toEqual([])
     }).pipe(Effect.orDie)))
 
+// Within an operator's transaction the migrations were a savepoint. On PostgreSQL its lock came after the caller's
+// snapshot, which a second launch could read without the history the first had committed: bug 51 of the roadmap
+// (decision 0279).
+test('createTables dies within a transaction of its client and makes nothing, and runs outside one', () =>
+  onEach(['sqlite', 'pg'], (dialect) =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        expect(yield* diesWith(sql.withTransaction(createTables))).toBe(
+          'createTables runs within a transaction of its client: run it on the client outside any transaction',
+        )
+        const made = dialect === 'sqlite'
+          ? yield* sql`SELECT name FROM sqlite_master WHERE name LIKE 'effecttea%'`
+          : yield* sql`SELECT relname FROM pg_class WHERE relname LIKE 'effecttea%'`
+        expect(made).toEqual([])
+        yield* createTables
+        yield* tablesMade
+      }).pipe(Effect.provide(client(dialect)), Effect.orDie),
+    )))
+
 /**
  * Runs `body` in one transaction, so that a setting made with `SET LOCAL` holds for each of its statements: a server
- * runs each statement outside a transaction on any connection of its pool.
+ * runs each statement outside a transaction on any connection of its pool. `createTables` dies there, so the tests
+ * within one run `migrate`, the migrations it runs once it has checked (decision 0279).
  */
 const inOneTransaction = <A, E, R>(body: Effect.Effect<A, E, R>) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(body))
@@ -815,7 +837,7 @@ test('on PostgreSQL every object the runtime makes is in the schema its clientâ€
       const sql = yield* SqlClient.SqlClient
       yield* sql`CREATE SCHEMA runtime`
       yield* sql`SET LOCAL search_path TO runtime`
-      yield* createTables
+      yield* migrate
       yield* storage(ranked, sql).indexed
       yield* storage(receiver, sql).write('r', created(), 0)
       const placed = yield* sql<{ schema: string; name: string }>`
@@ -868,11 +890,11 @@ test('on PostgreSQL a launch dies where a schema further on the search_path hold
   Effect.runPromise(
     inOneTransaction(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
-      yield* createTables
+      yield* migrate
       const held = (yield* objectsIn(sql, 'public')).length
       yield* sql`CREATE SCHEMA runtime`
       yield* sql`SET LOCAL search_path TO runtime, public`
-      expect(yield* diesWith(createTables)).toBe(
+      expect(yield* diesWith(migrate)).toBe(
         "the tables are in the schema 'public', and the search_path names 'runtime' before it, where a launch would " +
           "make tables of its own: set the role's search_path to the schema that holds the tables, or move the " +
           "tables into 'runtime'",
@@ -881,7 +903,7 @@ test('on PostgreSQL a launch dies where a schema further on the search_path hold
       expect((yield* objectsIn(sql, 'public')).length).toBe(held)
       // With the search_path set to the schema that holds the tables, the launch runs on them.
       yield* sql`SET LOCAL search_path TO public`
-      yield* createTables
+      yield* migrate
     })).pipe(Effect.provide(client('pg')), Effect.orDie),
   ))
 
@@ -893,13 +915,13 @@ test('on PostgreSQL a schema of the roleâ€™s name made after the tables makes th
     inOneTransaction(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       yield* sql`SET LOCAL search_path TO "$user", public`
-      yield* createTables
+      yield* migrate
       yield* storage(receiver, sql).write('r', created(), 0)
       expect(yield* sql`SELECT current_schema() AS schema`).toEqual([{ schema: 'public' }])
       // An operator, or the application, makes a schema for the role, as `CREATE SCHEMA AUTHORIZATION` names it.
       yield* sql`CREATE SCHEMA AUTHORIZATION CURRENT_USER`
       const role = (yield* sql<{ role: string }>`SELECT current_user AS role`)[0]?.role ?? ''
-      expect(yield* diesWith(createTables)).toContain(
+      expect(yield* diesWith(migrate)).toContain(
         `the tables are in the schema 'public', and the search_path names '${role}' before it`,
       )
       expect(yield* objectsIn(sql, role)).toEqual([])
@@ -914,7 +936,7 @@ test('on PostgreSQL tablesMade dies where a schema further on the search_path ho
   Effect.runPromise(
     inOneTransaction(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
-      yield* createTables
+      yield* migrate
       yield* tablesMade
       yield* sql`CREATE SCHEMA runtime`
       yield* sql`SET LOCAL search_path TO runtime, public`

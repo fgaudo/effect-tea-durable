@@ -68,8 +68,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     opinion of a Fable 5.2 agent. Its test of `src/storage.test.ts` runs on PostgreSQL first in the job of PostgreSQL
     of the push of `main` that takes it. Bug 50 is fixed by
     [decision 0278](decisions/0278-on-a-full-volume-the-callers-stop-before-room-is-freed.md), which the maintainer chose on 2026-11-12 after an
-    opinion of a Fable 5.2 agent. The part next is the bugs noticed after 50: 51, 67 and 79, each verified first, as
-    bug 31 was, beginning with bug 51.
+    opinion of a Fable 5.2 agent. Bug 51 is fixed by
+    [decision 0279](decisions/0279-createtables-dies-within-a-transaction-of-its-client.md), which the maintainer chose on 2026-11-12 after an
+    opinion of a Fable 5.2 agent. Its test of the migrations in `src/postgres.test.ts` runs first in the job of
+    PostgreSQL of the push of `main` that takes it. The part next is the bugs noticed after 51: 67 and 79, each
+    verified first, as bug 31 was, beginning with bug 67.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
     machine.
@@ -327,12 +330,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       PostgreSQL ends the step's transaction, the entity crashes. The
       [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its snapshot.
   50. **Fixed by [decision 0278](decisions/0278-on-a-full-volume-the-callers-stop-before-room-is-freed.md)**, under which the callers stop before an operator frees room on a full volume.
-  51. **Noticed, not checked: `createTables` called by an operator inside a transaction of their own, at `REPEATABLE
-      READ` with a query before it, locks after its snapshot.**
-      [Decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md) rests on the
-      lock coming first, and the JSDoc of `createTables` does not say so. It needs a server. The
-      [open question](open-questions.md#storage-and-reading) The migrations inside an operator's transaction.
-      Not checked: it needs a server of PostgreSQL, which PGlite's one session does not stand for.
+  51. **Fixed by [decision 0279](decisions/0279-createtables-dies-within-a-transaction-of-its-client.md)**, under which `createTables` dies within a transaction of its client.
   52. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, which pins a seed in each explored test whose comment names an interleaving, and runs it against the rule taken out.
   53. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose property reads its fixtures from `src/fixtures/`.
   54. **Reproduced: on Cluster, a runner keeps Cluster's bound of resident entities, and a caller past it waits.**

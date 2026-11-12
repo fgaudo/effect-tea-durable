@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-11-10, by the review of 0194 to 0224. Changes
 [decision 0222](0222-postgresql-with-many-connections.md), whose rule that every transaction of the runtime states
-its level did not name the transaction of the migrations.
+its level did not name the transaction of the migrations. Changed by [decision 0279](0279-createtables-dies-within-a-transaction-of-its-client.md), under which `createTables` dies within a transaction of
+its client, so that the migrations' transaction is always their own.
 
 ## Context
 

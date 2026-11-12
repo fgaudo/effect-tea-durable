@@ -1256,6 +1256,9 @@ is written once. A launch on a client of any other dialect is the launcher's def
   ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The migrations run in `Migrator`'s
   transaction, at the level the role sets. Any level holds, since `Migrator` locks its table before it reads the
   history ([decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md)).
+  `createTables` dies within a transaction of its client, where the migrations' transaction would be a savepoint
+  begun after the caller's snapshot
+  ([decision 0279](decisions/0279-createtables-dies-within-a-transaction-of-its-client.md)).
 - A step whose transaction PostgreSQL ends with a deadlock crashes its entity, as a write that fails does, and is not
   retried ([decision 0222](decisions/0222-postgresql-with-many-connections.md)).
 - A page of a query reads its ranges in one transaction, begun at `REPEATABLE READ` on PostgreSQL where the
