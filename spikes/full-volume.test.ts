@@ -14,10 +14,17 @@
  *
  * A second test, for bug 50 of the roadmap, fills the volume again, and frees the room while callers retry their
  * steps. The operator forgets and prunes a second after the room is freed, and the callers go on beside the prune.
- * The callers' steps take the room freed before the forget, so the prune fails as on the full volume.
+ * The callers' steps take the room freed before the forget, so the prune fails as on the full volume. The callers
+ * then stop, more room is freed, and the forget and the prune are tried again.
+ *
+ * A third test arms entities with a timer due an hour after their creation, and launches the second process with a
+ * clock two hours ahead, with no callers. The timers fire on the full volume, and their steps are retried once room
+ * is freed: the steps the runtime takes of its own, which a procedure that stops the callers does not stop.
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
+import * as Clock from 'effect/Clock'
+import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Logger from 'effect/Logger'
@@ -27,16 +34,17 @@ import * as Ref from 'effect/Ref'
 import { SqlClient } from 'effect/sql'
 import { existsSync, mkdtempSync, rmSync, statfsSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createTables, launch, noWork, program } from '../src/index.ts'
+import { createTables, launch, noWork, program, timer } from '../src/index.ts'
 
 // An empty value names no volume: taken as a path, it would fill the folder the run starts in.
 const volume = Bun.env['FULL_VOLUME'] || undefined
 
 const notes = program({
-  state: Schema.Struct({ count: Schema.Int }),
-  flags: Schema.Struct({}),
+  // `at` is the time of an armed entity's timer, in millis.
+  state: Schema.Struct({ count: Schema.Int, at: Schema.NullOr(Schema.Int) }),
+  flags: Schema.Struct({ armed: Schema.Boolean }),
   inbound: Schema.TaggedUnion({ Add: { text: Schema.String } }),
-  internal: Schema.Never,
+  internal: Schema.TaggedUnion({ Tick: {} }),
   operation: Schema.Never,
   rejection: Schema.Never,
   sender: Schema.Struct({ id: Schema.String }),
@@ -44,9 +52,11 @@ const notes = program({
 })({
   name: 'Notes',
   keys: [],
-  init: () => ({ count: 0 }),
-  update: () => (state) => ({ count: state.count + 1 }),
-  work: () => noWork,
+  // An armed entity's timer is due an hour after its creation, which only a clock ahead reaches.
+  init: ({ armed }, at) => ({ count: 0, at: armed ? DateTime.toEpochMillis(at) + 3_600_000 : null }),
+  update: (message) => (state) => ({ count: state.count + 1, at: message._tag === 'Tick' ? null : state.at }),
+  work: (state) =>
+    state.at === null ? noWork : { tick: timer(DateTime.makeUnsafe(state.at), { _tag: 'Tick' as const }) },
   operations: {},
   // Each step changes the projection, so each writes a row of about 16 KB in the topic `projection`.
   project: (state) => ({ count: state.count, last: 'x'.repeat(16_000) }),
@@ -76,14 +86,15 @@ const deployed = (consumers: ReadonlyArray<'stalled' | 'current'>) =>
     runtime.deploy(notes, { consumers: { projection: consumers } }))
 
 /** The first process: it fills the volume under a consumer that stalled. */
-const filling = (filename: string) =>
+const filling = (filename: string, armed: ReadonlyArray<string> = []) =>
   Effect.scoped(Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     const [mode] = yield* sql<{ journal_mode: string }>`PRAGMA journal_mode`
     console.log('journal mode:', mode?.journal_mode)
     const handle = yield* deployed(['stalled', 'current'])
     const sendOnce = sending(handle)
-    for (const id of ['n1', 'n2', 'n3']) yield* handle.create(id, { flags: {}, requestId: `c-${id}`, sender })
+    for (const id of ['n1', 'n2', 'n3']) yield* handle.create(id, { flags: { armed: false }, requestId: `c-${id}`, sender })
+    for (const id of armed) yield* handle.create(id, { flags: { armed: true }, requestId: `c-${id}`, sender })
     // `stalled` reads once and never acks, so it holds every row of its topic.
     yield* handle.fetch('projection', 'stalled', 1)
     let sent = 0
@@ -150,7 +161,7 @@ const freed = (filename: string, ballast: string) =>
  * The second process once room is freed while callers retry: one caller for each entity sends for ever, the room is
  * freed, and a second later the operator forgets and prunes. The callers stop once the prune ends.
  */
-const freedBesideSteps = (filename: string, ballast: string) =>
+const freedBesideSteps = (filename: string, ballast: string, second: string) =>
   Effect.scoped(Effect.gen(function*() {
     const handle = yield* deployed(['current'])
     const sendOnce = sending(handle)
@@ -173,8 +184,55 @@ const freedBesideSteps = (filename: string, ballast: string) =>
     const afterProcedure = { committed: yield* Ref.get(committed), refused: yield* Ref.get(refused) }
     console.log('forget beside the callers:', shown(forgotten))
     console.log('a prune beside the callers:', shown(pruned), sizes(filename), afterProcedure)
-    return { beforeFree, beforeProcedure, afterProcedure, forgotten, pruned }
+    // The procedure with the callers stopped: room freed again, then the forget and the prune.
+    rmSync(second)
+    console.log('the callers stopped, room freed again:', sizes(filename))
+    const forgottenStopped = yield* Effect.exit(handle.forget('projection', 'stalled'))
+    const prunedStopped = yield* Effect.exit(handle.prune)
+    console.log('a prune with the callers stopped:', shown(prunedStopped), sizes(filename))
+    return { beforeFree, beforeProcedure, afterProcedure, forgotten, pruned, forgottenStopped, prunedStopped }
   }))
+
+/** A clock `millis` ahead of the real one, whose sleeps are the real clock's. */
+const ahead = (real: Clock.Clock, millis: number): Clock.Clock => ({
+  currentTimeMillisUnsafe: () => real.currentTimeMillisUnsafe() + millis,
+  currentTimeMillis: Effect.sync(() => real.currentTimeMillisUnsafe() + millis),
+  currentTimeNanosUnsafe: () => real.currentTimeNanosUnsafe() + BigInt(millis) * 1_000_000n,
+  currentTimeNanos: Effect.sync(() => real.currentTimeNanosUnsafe() + BigInt(millis) * 1_000_000n),
+  monotonicTimeNanosUnsafe: () => real.monotonicTimeNanosUnsafe(),
+  monotonicTimeNanos: real.monotonicTimeNanos,
+  sleep: (duration) => real.sleep(duration),
+})
+
+/**
+ * The second process two hours ahead, with no callers: the armed entities' timers are due at launch. A second after
+ * the launch room is freed, and a second later the operator forgets and prunes.
+ */
+const freedBesideTimers = (filename: string, ballast: string, armed: ReadonlyArray<string>) =>
+  Effect.scoped(Effect.gen(function*() {
+    const handle = yield* deployed(['current'])
+    // How many armed entities have stored their tick.
+    const ticked = Effect.map(
+      Effect.forEach(armed, (id) => Effect.map(handle.read(id), (entity) => JSON.stringify(entity))),
+      (entities) => entities.filter((entity) => entity.includes('"at":null')).length,
+    )
+    yield* Effect.sleep('1 second')
+    const beforeFree = yield* Effect.exit(ticked)
+    rmSync(ballast)
+    console.log('the timers due, room freed:', sizes(filename), 'ticked:', shown(beforeFree))
+    yield* Effect.sleep('1 second')
+    const beforeProcedure = yield* Effect.exit(ticked)
+    console.log('a second later, before the forget:', sizes(filename), 'ticked:', shown(beforeProcedure))
+    const forgotten = yield* Effect.exit(handle.forget('projection', 'stalled'))
+    const pruned = yield* Effect.exit(handle.prune)
+    const afterProcedure = yield* Effect.exit(ticked)
+    console.log('forget beside the timers:', shown(forgotten))
+    console.log('a prune beside the timers:', shown(pruned), sizes(filename), 'ticked:', shown(afterProcedure))
+    return { beforeFree, beforeProcedure, forgotten, pruned }
+  }).pipe(Effect.provideServiceEffect(
+    Clock.Clock,
+    Effect.map(Effect.service(Clock.Clock), (real) => ahead(real, 7_200_000)),
+  )))
 
 test.skipIf(volume === undefined)('a volume that is really full stops the steps, and what frees room for them', async () => {
   const directory = mkdtempSync(join(volume ?? '', 'full-volume-'))
@@ -215,7 +273,9 @@ test.skipIf(volume === undefined)('the room freed on a full volume, beside the s
   const directory = mkdtempSync(join(volume ?? '', 'full-volume-steps-'))
   const filename = join(directory, 'full.db')
   const ballast = join(directory, 'ballast')
+  const second = join(directory, 'second')
   writeFileSync(ballast, Buffer.alloc(1024 * 1024, 1))
+  writeFileSync(second, Buffer.alloc(1024 * 1024, 1))
   const client = SqliteClient.layer({ filename })
   const quiet = Logger.layer([])
   try {
@@ -223,7 +283,7 @@ test.skipIf(volume === undefined)('the room freed on a full volume, beside the s
       Effect.runPromise(effect.pipe(Effect.provide([client, quiet]), Effect.orDie))
     await run(createTables)
     const full = await run(filling(filename))
-    const beside = await run(freedBesideSteps(filename, ballast))
+    const beside = await run(freedBesideSteps(filename, ballast, second))
     // Bug 50: no step commits on the full volume, the steps take the room freed within a second, and the prune of
     // the procedure of decision 0223 then fails though the forget commits.
     expect(full.sent).toBeGreaterThan(0)
@@ -231,6 +291,31 @@ test.skipIf(volume === undefined)('the room freed on a full volume, beside the s
     expect(beside.beforeProcedure.committed).toBeGreaterThan(0)
     expect(Exit.isSuccess(beside.forgotten)).toBe(true)
     expect(Exit.isFailure(beside.pruned)).toBe(true)
+    // Not decided yet: whether the procedure holds once the callers stop.
+    console.log('with the callers stopped:', shown(beside.forgottenStopped), shown(beside.prunedStopped))
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}, 300_000)
+
+test.skipIf(volume === undefined)('the room freed on a full volume, beside the timers the runtime fires', async () => {
+  const directory = mkdtempSync(join(volume ?? '', 'full-volume-timers-'))
+  const filename = join(directory, 'full.db')
+  const ballast = join(directory, 'ballast')
+  writeFileSync(ballast, Buffer.alloc(1024 * 1024, 1))
+  // Thirty steps of about 16 KB each: about half the room freed, if each commits once.
+  const armed = Array.from({ length: 30 }, (_, index) => `t${index}`)
+  const client = SqliteClient.layer({ filename })
+  const quiet = Logger.layer([])
+  try {
+    const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      Effect.runPromise(effect.pipe(Effect.provide([client, quiet]), Effect.orDie))
+    await run(createTables)
+    const full = await run(filling(filename, armed))
+    const beside = await run(freedBesideTimers(filename, ballast, armed))
+    // Not decided yet: this run only shows what the runtime's own steps take of the room freed.
+    expect(full.sent).toBeGreaterThan(0)
+    console.log('beside the timers:', shown(beside.forgotten), shown(beside.pruned))
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
