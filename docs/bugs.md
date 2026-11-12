@@ -49,8 +49,8 @@ family gets a fix of its own.
   once, and A timer due, which no test of the capacity reaches.
 - Of no family: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 75, 79, 81, 82, 86, 87 and
   92. Each is fixed by a note of its own or verified false, as its entry says. Bug 79, a gap of the guide, is fixed in
-  `docs/design.md` with no note, since decisions 0185 and 0222 decide it. Bug 93 is of no family either, and is
-  not fixed yet. It has the form of bug 42: a rehearsal that refuses a program the runtime runs.
+  `docs/design.md` with no note, since decisions 0185 and 0222 decide it. Bug 93 is of no family either, and has
+  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281.
 
 ## The list
 
@@ -539,15 +539,4 @@ family gets a fix of its own.
     rows for ever, as bug 59 does. Nothing is lost. The [open question](open-questions.md#running) The rows of
     operators' events on Cluster.
 92. Fixed by [decision 0275](decisions/0275-on-cluster-a-doors-commit-tells-the-readings-itself.md).
-93. **Reproduced: a rehearsal advanced by less than a millisecond makes a program's timer a defect.** A rehearsal
-    moves its time by any finite duration
-    ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)), and a timer due between two
-    milliseconds is a defect of the program
-    ([decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md)). Decision 0266
-    rests on a premise it does not write: a message is handled at a whole millisecond, as the runtime's clock gives.
-    After `advance(Duration.micros(1500n))`, a timer due in the past fires at the rehearsal's time, and a program that
-    arms the next period from the time of the firing arms a timer between two milliseconds, so the rehearsal dies.
-    The runtime runs the same program. The test `FAILING: a timer armed from a time an advance of microseconds
-    reached fires, as the runtime would run it`, in `src/rehearse.test.ts`, on `claude/premise-review-area-13-fe5765`
-    at `2d0fe63`, cut from `main` at `f7c6076`. The fix begins at `advance` of `src/rehearse.ts`, which would refuse
-    or round a duration that is no whole number of milliseconds, and at the time `rehearse` starts at.
+93. **Fixed by [decision 0281](decisions/0281-a-rehearsals-time-is-a-whole-millisecond.md)**, whose rehearsal refuses a duration and a start time between two milliseconds.

@@ -228,7 +228,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - Done, in a session of 2026-11-12 that wrote none of its notes: area 13, each of its notes read whole with the
     code that keeps it, and the notes they change or cite read in part, each of them read whole by the review of its
     own area. Its finding is bug 93 of `docs/bugs.md`, reproduced on `claude/premise-review-area-13-fe5765`, cut from
-    `main` at `f7c6076`. Its three suspects not checked are [open questions](open-questions.md#running): an
+    `main` at `f7c6076`, and fixed by
+    [decision 0281](decisions/0281-a-rehearsals-time-is-a-whole-millisecond.md). Its three suspects not checked are [open questions](open-questions.md#running): an
     operation's send to an entity whose stop runs, a `Reused` reset by two clients on Cluster, and a door's step in
     the undo's wait, under A drain on Cluster with a deploy under way. Not reached: nothing of the area. Its report is
     recorded whole in [`reviews.md`](decisions/reviews.md).

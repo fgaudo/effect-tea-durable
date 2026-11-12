@@ -141,6 +141,17 @@ with a requirement that no example has yet.
 
 ## Running
 
+- **A runtime under a clock moved by less than a millisecond.** The runtime reads its time from `DateTime.now`, and
+  the live clock gives `Date.now()`, which is whole. `TestClock.adjust` adds `Duration.toMillis` of its duration
+  unrounded, and the JSDoc of `Clock` promises no integer. So a runtime under a `TestClock` moved by
+  `Duration.micros(1500n)` may hand the machine a time between two milliseconds, and a program that arms a timer
+  from it would be a defect, as bug 93 was in a rehearsal
+  ([decision 0281](decisions/0281-a-rehearsals-time-is-a-whole-millisecond.md)). It was found by the Fable 5.2
+  agent's opinion on bug 93, by a reading, and was not run.
+  - A test of the runtime under `TestClock.adjust(Duration.micros(1500n))` that arms a timer from the time of a
+    message would decide it.
+  - A guard would floor the time where the runtime reads it, or refuse a clock that is not whole.
+
 - **A message and a sender given to `update` as sent, or decoded from their JSON.** On one process `send` of
   `src/runtime/callers.ts` gives the machine a caller's message and sender as the caller sent them. On Cluster the
   door decodes both from the JSON the client sent, and a message reloaded after a crash is decoded from its row. So

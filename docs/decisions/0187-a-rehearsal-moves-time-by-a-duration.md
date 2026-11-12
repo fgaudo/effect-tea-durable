@@ -5,6 +5,8 @@ what [decision 0014](archive/0014-rules-the-machine-settled.md) says of time in 
 world of [decision 0131](archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md).
 Changed by [decision 0266](0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md): at one time, a key fails
 the test only when it fires again with a due time no later than its last, so a repeating timer catches up.
+Changed by [decision 0281](0281-a-rehearsals-time-is-a-whole-millisecond.md): `advance` takes a duration of whole
+milliseconds only.
 
 ## Context
 

@@ -3,7 +3,9 @@
 **Status:** accepted, 2026-11-11, with the step The bugs the premise review found, fixed by family, of the
 [roadmap](../roadmap.md), as the fix of bug 42. It changes
 [decision 0187](0187-a-rehearsal-moves-time-by-a-duration.md): a rehearsal fails a key that fires again at one time
-only when its due time is no later than the due time it last fired with.
+only when its due time is no later than the due time it last fired with. Changed by
+[decision 0281](0281-a-rehearsals-time-is-a-whole-millisecond.md), which writes the premise this note missed: a
+rehearsal handles every message at a whole millisecond.
 
 ## Context
 

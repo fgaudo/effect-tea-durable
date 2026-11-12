@@ -1082,6 +1082,32 @@ describe('time that passes', () => {
       }),
     )))
 
+  // Bug 93: a time between two milliseconds made a timer armed from it a defect, though the runtime, whose clock
+  // reads whole milliseconds, runs the program. The rehearsal's time stays at a whole millisecond (decision 0281).
+  test('fails on a duration or a start between two milliseconds, and a timer armed after whole microseconds fires', async () => {
+    const between = await Effect.runPromiseExit(rehearse(
+      meter('Meter'),
+      { flags: {}, at: placedAt },
+      (rehearsal) => rehearsal.advance(Duration.micros(1500n)),
+    ))
+    expect(failure(between)).toStartWith('time passes by whole milliseconds, not ')
+    const startedBetween = DateTime.addDuration(placedAt, Duration.micros(500n))
+    const start = await Effect.runPromiseExit(rehearse(meter('Meter'), { flags: {}, at: startedBetween }, () => Effect.void))
+    expect(failure(start)).toBe(`a rehearsal starts at a whole millisecond, not ${DateTime.toEpochMillis(startedBetween)}`)
+    const world = await Effect.runPromiseExit(rehearse.together(startedBetween, () => Effect.void))
+    expect(failure(world)).toBe(`a rehearsal starts at a whole millisecond, not ${DateTime.toEpochMillis(startedBetween)}`)
+    await Effect.runPromise(rehearse(
+      meter('Meter'),
+      { flags: {}, at: placedAt },
+      Effect.fnUntraced(function*(rehearsal) {
+        yield* rehearsal.advance(Duration.micros(2000n))
+        yield* rehearsal.send({ _tag: 'Arm', key: 'a', at: placedAt, every: 1000, next: null }, { sender: tester })
+        yield* rehearsal.advance('2 seconds')
+        expect((yield* rehearsal.state).seen.length).toBeGreaterThan(2)
+      }),
+    ))
+  })
+
   test('fails on a duration below zero or infinite, and on a timer armed again at a time already reached', async () => {
     const backwards = await Effect.runPromiseExit(rehearse(
       meter('Meter'),

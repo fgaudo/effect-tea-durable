@@ -225,6 +225,14 @@ const addressKey = ({ name, id }: Address) => JSON.stringify([name, id])
 /** A program's own deaths, with the reason the runtime gives them. */
 const invariant = (reason: string) => Effect.die(new InvariantDefect({ reason }))
 
+/** A rehearsal starts at a whole millisecond, as `advance` moves by whole milliseconds (decision 0281). */
+const startsAt = (at: DateTime.Utc): Effect.Effect<void> =>
+  Effect.suspend(() =>
+    Number.isInteger(DateTime.toEpochMillis(at))
+      ? Effect.void
+      : Effect.die(`a rehearsal starts at a whole millisecond, not ${DateTime.toEpochMillis(at)}`)
+  )
+
 /**
  * The world of a rehearsal: the entities, the programs they run by name, and the time, which every entity shares.
  * Nothing happens by itself: after each act of the test, every mailbox it reached is handled to its end.
@@ -453,6 +461,11 @@ const makeWorld = (at: DateTime.Utc) => {
       const length = Duration.fromInputUnsafe(duration)
       if (Duration.isNegative(length) || !Duration.isFinite(length)) {
         return Effect.die(`time passes by a finite duration of zero or more, not ${Duration.format(length)}`)
+      }
+      // The rehearsal's time stays at a whole millisecond, as the runtime's clock reads it, so that a timer a program
+      // arms from the time a message is handled at is due at a whole millisecond (decision 0281).
+      if (!Number.isInteger(Duration.toMillis(length))) {
+        return Effect.die(`time passes by whole milliseconds, not ${Duration.format(length)}`)
       }
       const until = DateTime.addDuration(now, length)
       // At one time, a key fires again only with a due time later than the one it last fired with. A repeating
@@ -763,7 +776,7 @@ const rehearseOne = <T extends Types, E>(
   scenario: (rehearsal: Rehearsal<T>) => Effect.Effect<void, E>,
 ): Effect.Effect<void, E> =>
   // A program the runtime would refuse is refused here too, before the scenario runs (decision 0054).
-  Effect.andThen(Effect.sync(() => checkProgram(program)), () => {
+  Effect.andThen(Effect.andThen(Effect.sync(() => checkProgram(program)), startsAt(start.at)), () => {
     const world = makeWorld(start.at)
     const flags = (start.flags === undefined ? null : start.flags) as T['flags']
     return Effect.flatMap(world.create(program, 'rehearsal', ...[flags] as Flagged<T>), ({ run: _, ...acts }) =>
@@ -786,7 +799,7 @@ const rehearseOne = <T extends Types, E>(
  * the test, and so does a run that sends twice under one name to one entity.
  */
 const together = <E, R>(at: DateTime.Utc, scenario: (world: World) => Effect.Effect<void, E, R>): Effect.Effect<void, E, R> =>
-  Effect.suspend(() => scenario(makeWorld(at)))
+  Effect.andThen(startsAt(at), Effect.suspend(() => scenario(makeWorld(at))))
 
 /**
  * Runs a scenario of one entity of `program`, created from `start.flags` at `start.at`, without a database or a

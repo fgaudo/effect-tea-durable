@@ -1128,7 +1128,9 @@ time passes, and when the process dies:
   state as the entity holds it;
 - `advance(duration)` moves time forward, and fires each timer due within it at its time, in the order of the
   times. A message after it is handled at the time reached. A world advances the one time of all its entities
-  ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)). A repeating timer armed from its own
+  ([decision 0187](decisions/0187-a-rehearsal-moves-time-by-a-duration.md)). Time moves by whole milliseconds, as
+  the runtime's clock reads it: a duration between two, as `Duration.micros(1500n)`, fails the test, and so does a
+  start time between two ([decision 0281](decisions/0281-a-rehearsals-time-is-a-whole-millisecond.md)). A repeating timer armed from its own
   last due time catches up after a downtime: it fires once for each period missed, at once, as the runtime fires it.
   At one time, a key fires again only with a due time later than the one it last fired with. A key armed again at a
   due time no later would fire at once, turn after turn, and fails the test
