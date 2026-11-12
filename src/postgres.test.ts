@@ -201,6 +201,45 @@ describe('the order of a partition (decision 0137)', () => {
       expect(rows.map(({ id, seq }) => [id, seq])).toEqual([['a', 1], ['b', 2]])
     }))
 
+  // A reading of the log reads the heads, then the position of the first row past each cursor, then its pages, each a
+  // statement of its own. A step of partition 1 that drew its position before a step of partition 2 committed, and
+  // commits between the first two statements, is past no cursor the reading counts, and its row lies before the
+  // page's first position. The next step of partition 1 commits before the page and is given, so a consumer that acks
+  // the page passes the first step's row and never reads it (decisions 0038, 0137, 0157).
+  onServer('FAILING: a reading of the log gives no row of a partition past one it skipped', (_, sql) =>
+    Effect.gen(function*() {
+      yield* on(sql)(createTables)
+      // 'a' and 'c' are of partition 1, 'b' of partition 2, of two.
+      const store = storage(ranked, sql, 2)
+      for (const id of ['a', 'b', 'c']) yield* transaction(sql, store.write(id, created(), 0))
+      const drawn = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const first = yield* Effect.forkChild(transaction(
+        sql,
+        Effect.andThen(store.write('a', handled('one'), 0), Effect.andThen(Deferred.succeed(drawn, undefined), Deferred.await(release))),
+      ))
+      yield* Deferred.await(drawn)
+      yield* transaction(sql, store.write('b', handled('two'), 0))
+      let selects = 0
+      const moving: Statement.Transformer = (statement) =>
+        Effect.gen(function*() {
+          const [text] = statement.compile()
+          if (text.trimStart().startsWith('SELECT') && ++selects === 2) {
+            yield* Effect.gen(function*() {
+              yield* Deferred.succeed(release, undefined)
+              yield* Fiber.join(first)
+              yield* transaction(sql, store.write('c', handled('three'), 0))
+            }).pipe(Effect.provideService(Statement.CurrentTransformer, undefined), Effect.orDie)
+          }
+          return statement
+        })
+      const page = yield* store.published('projection', [], all)
+        .pipe(Effect.provideService(Statement.CurrentTransformer, moving))
+      expect(selects).toBeGreaterThan(2)
+      const next = yield* store.published('projection', page.map(({ partition, seq }) => ({ partition, seq })), all)
+      expect([...page, ...next].map(({ id }) => id).sort()).toEqual(['a', 'b', 'c'])
+    }))
+
   // At a level above `READ COMMITTED`, PostgreSQL fails the second update of a row two transactions changed at once:
   // a step that drew its `seq` behind another would crash its entity (decision 0222).
   onServer('two writers of one partition commit under a database whose default level is serializable', (url, sql) =>
