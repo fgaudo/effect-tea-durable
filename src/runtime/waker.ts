@@ -72,12 +72,11 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
     }
     next = Math.min(next, due.next ?? Infinity)
     waker.next = next === Infinity ? null : next
-    // The entities just activated are this process's, and the reading of the next round leaves them out, as
-    // it leaves out the ones that failed until their time.
     // An entity read under a partition this runner holds, which Cluster routes to a shard it does not, would be
-    // refused as unheld at every reading: it is left out until `retry`, and logged once (decision 0273).
-    const ready: Array<string> = []
-    for (const id of [...worked, ...due.ready]) {
+    // refused as unheld at every reading: it is left out until `retry`, and logged once (decision 0273). A crash's
+    // mark is read under no partition, and its shard may have left this runner since, so it is not checked.
+    const ready: Array<string> = [...worked]
+    for (const id of due.ready) {
       const shard = partitions === undefined ? null : p.cluster!.shardOf(id)
       if (shard === null || partitions!.includes(shard)) {
         ready.push(id)
@@ -90,6 +89,8 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
       refused.add(id)
       yield* misplaced(deployed, id, null, shard)
     }
+    // The entities just activated are this process's, and the reading of the next round leaves them out, as
+    // it leaves out the ones that failed until their time.
     if (ready.length > 0) {
       for (const id of ready) {
         const activation = p.cluster === null ? loads(p, deployed, id) : activateOnCluster(p, deployed, id)

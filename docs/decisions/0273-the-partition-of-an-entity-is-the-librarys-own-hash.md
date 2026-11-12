@@ -36,7 +36,8 @@ entities and Cluster agree, and the entities stored before are lost.
   shard, and its activation goes on, since it runs where this runner holds both. The waker reads the timers due
   under every partition this runner holds. An entity that Cluster routes to a shard this runner does not hold is
   logged once in the process, and left out of the readings until `retry`, since its activation would be refused at
-  every reading. Neither costs a statement.
+  every reading. An entity a crash's mark brings is not checked, since it is read under no partition, and its shard
+  may have left the runner since the crash. Neither check costs a statement.
 - **A move of Effect at which the partition is not Cluster's formula on `Hash.string` is not taken.** The test
   `the partition of an id is Cluster’s formula on Hash.string at the pinned version, for ids of every script`, of
   `src/storage.test.ts`, fails at such a move. The pinned values of the partition are never updated to pass. The move
@@ -70,7 +71,10 @@ message under a partition not its shard holds it.
 - That the waker reads such an entity's timer under a partition its runner holds, and logs it once: **tested** by `a
   timer the waker reads of an entity stored under a partition not its shard is logged, once`, in
   [`src/cluster.test.ts`](../../src/cluster.test.ts), with two runners, which fails on the code before this note. It
-  runs under `bun run test:slow`, since it lasts about two seconds.
+  runs under `bun run test:slow`, since it lasts about two seconds. That an entity a crash's mark brings, whose
+  shard another runner holds, is not logged: **tested** by `a step of an older version dies and saves no reply, and a
+  runner of the newest version steps its requests`, in [`src/cluster.test.ts`](../../src/cluster.test.ts), which
+  fails when the waker checks it, under `bun run test:slow`.
 - That `Hash.string` does not promise its values across a release: **documented** by its JSDoc in Effect 4.1.3, which
   gives values for a few strings and promises none for a later release. Cluster's `hashString` is `@internal`.
 - That stopping every deploy on Cluster is better than losing the work of the entities stored before: **chosen** by
