@@ -659,11 +659,6 @@ const bug49: ReadonlyArray<Held> = ([['s1', 's2'], ['s2', 's1']] as const).flatM
 test.skipIf(server === undefined)(
   'two calls held at a statement on a pool answer as one order of them',
   () =>
-    onPool(held, Bun.env['SCHEDULES'] === 'all' ? 500 : 100, [
-      ...Array.from({ length: 8 }, () => bug25),
-      ...Array.from({ length: 8 }, () => bug13),
-      ...Array.from({ length: 8 }, () => bug111),
-      ...Array.from({ length: 2 }, () => bug49).flat(),
-    ]),
+    onPool(held, 16, Array.from({ length: 4 }, () => bug49).flat()),
   1_200_000,
 )

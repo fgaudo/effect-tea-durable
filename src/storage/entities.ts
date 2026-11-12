@@ -570,7 +570,7 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
             WHERE name = ${name} AND (id, request, version) IN (
               SELECT id, request, version FROM effecttea_replies
               WHERE name = ${name} AND until IS NOT NULL AND until <= ${at}
-              ORDER BY until LIMIT ${batch} ${lockingTheConditionSkipping}
+              ORDER BY until LIMIT ${batch}
             )
             RETURNING id
           `)
