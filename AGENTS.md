@@ -96,6 +96,11 @@ This repository is a design and its pure core, not a library yet: read [`README.
 - A test of `src/form.test.ts` refuses the words `reasoned` and `not run` in the section `What it rests on` of every
   note numbered 0258 or above. The notes taken before keep their premises as written, and a review reads those
   first.
+- Each premise of the section `What it rests on` writes its state in bold, as one word of a closed set: `tested`,
+  `documented`, `seen`, `read`, `read in the source`, `chosen`, `failed` or `open`. A premise not checked yet is
+  `open`, and says what would check it. It is never written `to be **tested**`, which a reader who scans the bold
+  words reads as tested. A test of `src/form.test.ts` checks it for every note numbered 0259 or above, and the notes
+  taken before keep their premises as written.
 - A premise about a dependency is looked up first in the documentation of the version pinned, for Effect its JSDoc
   in `node_modules/effect/src`: found, it is documented; not found, the note says so. A rule that loses data in
   silence if a behaviour not promised changes does not rest on it alone, where a guard of the library's is cheap;

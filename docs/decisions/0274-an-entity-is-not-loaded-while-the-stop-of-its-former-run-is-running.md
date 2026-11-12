@@ -143,8 +143,8 @@ The decision leaves out four cases, each held by the [open questions](../open-qu
   entity leaves by an unload. With the look and the clearing split, its deviation at decision 317 fails, pinned as the
   pin `0068 the waker` of [`src/runtime.test_pins.ts`](../../src/runtime.test_pins.ts). The test it replaces made its
   entities leave by crashes, whose stops keep `settled` from returning through the gap, so no deviation reached it.
-- That the waker reads a refusal for a stop from its cause where the stop ends between the refusal and the catch: a
-  rule no test holds yet. No seed of 2,000 of the explored test above reaches a stop that ends there, and the
+- That the waker reads a refusal for a stop from its cause where the stop ends between the refusal and the catch:
+  **open**, a rule no test holds yet. No seed of 2,000 of the explored test above reaches a stop that ends there, and the
   [open question](../open-questions.md#running) A stop that ends between the waker's refusal and its catch holds it.
 - That a door's step which finds a stop running dies, and that Cluster delivers the request again once the stop ends:
   **tested** by `a door step that finds the stop of its entity running dies, and is answered at a delivery after the

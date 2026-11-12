@@ -612,6 +612,33 @@ export const premisesUnchecked = (notes: ReadonlyMap<string, string>, from: numb
       .map((word) => `${file}: ${word}`)
   })
 
+/** The words a premise's state is written in, in bold, in the section `What it rests on` (AGENTS.md, under Notes). */
+export const premiseStates = ['tested', 'documented', 'seen', 'read', 'read in the source', 'chosen', 'failed', 'open']
+
+/**
+ * The premises of the notes from decision `from` on that write no state, or a state outside `premiseStates`, as
+ * `file: what is wrong: the premise's start`. A premise is a bullet of the section `What it rests on`, and its state
+ * is a word in bold. A state after the words `to be` is refused, since a reader who scans the bold words reads it as
+ * the state reached.
+ */
+export const premisesWithoutState = (notes: ReadonlyMap<string, string>, from: number): ReadonlyArray<string> =>
+  [...notes].filter(([file]) => Number(/(\d{4})-[^/]*\.md$/.exec(file)?.[1] ?? 0) >= from).flatMap(([file, text]) => {
+    const section = /^## What it rests on\s*$([\s\S]*?)(?=^#{1,2} |(?![\s\S]))/m.exec(text)?.[1] ?? ''
+    return section.split(/\n(?=- )/).map((bullet) => bullet.trim()).filter((bullet) => bullet.startsWith('- '))
+      .flatMap((bullet) => {
+        const start = bullet.slice(2, 50).replace(/\s+/g, ' ')
+        const bold = [...bullet.matchAll(/(\bto be\s+)?\*\*([^*]+)\*\*/gi)]
+        if (bold.length === 0) return [`${file}: no state: ${start}`]
+        return bold.flatMap(([, toBe, word]) =>
+          toBe !== undefined
+            ? [`${file}: to be **${word}**: ${start}`]
+            : premiseStates.includes(word!.toLowerCase())
+            ? []
+            : [`${file}: **${word}** is no state: ${start}`]
+        )
+      })
+  })
+
 const notesOfTheRepository = () => {
   const folder = join(import.meta.dir, '..', 'docs', 'decisions')
   return new Map(readdirSync(folder, { recursive: true, encoding: 'utf8' })
@@ -627,6 +654,12 @@ describe('the form of the notes', () => {
     const notes = notesOfTheRepository()
     expect(notes.size).toBeGreaterThan(200)
     expect(premisesUnchecked(notes, 258)).toEqual([])
+  })
+
+  // A premise's state is a word of a closed set, in bold, so that a reader who scans the bold words reads every
+  // state; the notes before 0259 keep what they wrote (AGENTS.md, under Notes).
+  test('every premise of a note numbered 0259 or above states its state, in bold, as a word of the set', () => {
+    expect(premisesWithoutState(notesOfTheRepository(), 259)).toEqual([])
   })
 })
 
@@ -829,6 +862,24 @@ describe('the check of the form', () => {
       '0258-reasoned.md: reasoned',
       'archive/0259-not-run.md: not run',
       '0261-last.md: reasoned',
+    ])
+  })
+
+  test('a premise with no state, a state outside the set, or a state to be reached is found from the note given on', () => {
+    const note = (...premises: ReadonlyArray<string>) =>
+      ['# A note', '', 'Out of the section: **fine**.', '', '## What it rests on', '',
+        ...premises.map((premise) => `- ${premise}`), '', '## Later', '', 'Also **fine**.'].join('\n')
+    const notes = new Map([
+      ['0258-before.md', note('That it holds: to be **tested**.')],
+      ['0259-good.md', note('That it holds: **Tested** by `a test`,\n  and **read in the source**.', 'That it is: **open**.')],
+      ['0260-none.md', note('That it holds, since it does.')],
+      ['archive/0261-other.md', note('That it holds: **reasoned**.')],
+      ['0262-later.md', note('That it holds: to be **tested** by a test.')],
+    ])
+    expect(premisesWithoutState(notes, 259)).toEqual([
+      '0260-none.md: no state: That it holds, since it does.',
+      'archive/0261-other.md: **reasoned** is no state: That it holds: **reasoned**.',
+      '0262-later.md: to be **tested**: That it holds: to be **tested** by a test.',
     ])
   })
 
