@@ -391,22 +391,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     should fail before a fix is pushed first on a branch of its own, `claude/<name>`, without the fix, so that `main`
     stays green. The fix is then committed on that branch and pushed, and the branch is fast-forwarded into `main` once
     its CI passes. A note written on such a branch takes the next free number of `main` when it is merged.
+  - Done, on 2026-11-12, bug 13, `expire`: [decision 0285](decisions/0285-a-batch-of-expire-skips-the-replies-a-step-holds.md).
+    Its case in the test of the pool is `bug13`. Its `gate` locks the row of one reply, and not a table, since a
+    message's step reads its reply before its transaction, and a table locked would stop the step there.
   - Next, the other cases of the rule of decision 0284, one at a time, since each changes `src/storage/` and pins its
     case in `src/contract.test.ts`. Each is a note of its own that cites decision 0284 and adds itself to that note's
     status line. Its case is pinned in the test of the pool, and fails on the CI before the fix. The opinion of a
     Fable 5.2 agent of 2026-11-12, behind decision 0284, proposed each fix below, and each is reasoned until its test
     passes on the server.
-    1. Bug 13, `expire` of [`src/storage/entities.ts`](../src/storage/entities.ts). Its batch selects the replies by a
-       subquery read from its snapshot, and deletes a reply a step wrote again with a new time. The fix proposed: the
-       subquery ends `ORDER BY until LIMIT <batch> FOR UPDATE SKIP LOCKED`, and so does the subquery of
-       `effecttea_given_requests`. A row a step committed is read again and fails `until <= at`, and a row a step
-       holds is skipped. A batch may then give fewer rows than `batch`, so the loop must not end a sweep on
-       `replies < batch` alone. `lockingTheCondition` of `src/storage/held.ts` grows a form with `SKIP LOCKED`, so
-       that the rule keeps one place. The test `FAILING: expire keeps a reply a step wrote again with a new time
-       while its batch waited`, in `src/postgres.test.ts` on `claude/premise-review-messages-975dd7` at `38db98d`,
-       shows the sequence. The pool's pairs need a message whose retry comes with another `keep`, so that a step
-       writes its reply again with a new time.
-    2. Bug 80, the trigger of the publications in [`src/storage/tables.ts`](../src/storage/tables.ts). Two prunes at
+    1. Bug 80, the trigger of the publications in [`src/storage/tables.ts`](../src/storage/tables.ts). Two prunes at
        once each see the other's row of the outbox, and both keep a publication no row names. The fix proposed: the
        trigger's function locks the publication's row `FOR UPDATE` before its `NOT EXISTS`, and `pruneBatch` of
        [`src/storage/log.ts`](../src/storage/log.ts) locks its rows `ORDER BY position ... FOR UPDATE` first, so that
@@ -414,7 +407,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
        publish nothing. The case needs a program with a topic, and a reading of `effecttea_publications` after the
        pair. The test `FAILING: a publication goes with the last row that names it, though two transactions drop its
        rows at once`, on `claude/premise-pairs-queries-tables-b4f457` at `bc445fb`, shows the sequence.
-    3. Bug 78, `published` of `src/storage/log.ts`, the second half of the rule: a reading of several statements gives
+    2. Bug 78, `published` of `src/storage/log.ts`, the second half of the rule: a reading of several statements gives
        of a partition only what its first statement saw committed. The fix proposed takes no lock. It keeps the map
        that `heads` gives, and drops from each page a row whose partition is not behind or whose `seq` passes that
        head. Two tests of `src/storage.test.ts` on `claude/premise-pairs-schemas-2-5e31db`, at `6730434` and
@@ -422,11 +415,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
        that committed between its statements`, and the same between two pages. The test of a server `FAILING: a
        reading of the log gives no row of a partition past one it skipped`, in `src/postgres.test.ts` at `6730434`,
        holds the steps.
-    4. Bug 49, a deadlock of the sweep's batch and a step's deletion of its entity's replies. It may follow from
-       `SKIP LOCKED` of bug 13. `forgetUnder` of [`src/storage/cluster.ts`](../src/storage/cluster.ts) deletes
+    3. Bug 49, a deadlock of the sweep's batch and a step's deletion of its entity's replies. Under decision
+       0285 a batch never waits for a reply's row, and a step may still wait for a batch's. `forgetUnder` of [`src/storage/cluster.ts`](../src/storage/cluster.ts) deletes
        Cluster's rows in an order of its own, and is checked apart. Its test holds the two at their rows and expects
        no `DeadlockError`.
-    5. Bug 3, a reply to another entity's operation that stays for ever: the `NOT EXISTS` on the asker's row of
+    4. Bug 3, a reply to another entity's operation that stays for ever: the `NOT EXISTS` on the asker's row of
        `effecttea_entity_keys` is read unlocked. Locking that row `FOR SHARE` first fixes it. Two entities that end
        their work and answer each other in one step may then close a cycle, which decision 0222 turns into a crash,
        so it needs a note of its own that decides the order.

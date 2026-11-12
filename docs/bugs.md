@@ -38,7 +38,8 @@ family gets a fix of its own.
   a test of rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their
   statements. Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does
   not read again on the row it then writes. Its rule is [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md): a statement that writes
-  or deletes a row on a condition reads the condition from a row it has locked. Bug 25 is its first case, fixed.
+  or deletes a row on a condition reads the condition from a row it has locked. Bugs 25 and 13 are its first cases,
+  fixed.
 - F, B, E and G are fixed. Family F is decided by
   [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), family E by
   [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md), family B by
@@ -121,16 +122,7 @@ family gets a fix of its own.
     ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)). It matters once
     Cluster runs on PostgreSQL. Verified by reading what Cluster stores of a defect: the
     [open question](open-questions.md#running) A cause holding U+0000 in Cluster's tables.
-13. **Reasoned, its test written: on a pool of PostgreSQL, the batched `expire` deletes a reply a step wrote
-    again with a new time.** The batch selects its rows by a subquery read from its snapshot, and PostgreSQL reads
-    again only the outer `WHERE`, which holds no time
-    ([decisions 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md),
-    [0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)). A retry within the
-    new `keep` is then applied again. The test `FAILING: expire keeps a reply a step wrote again with a new time
-    while its batch waited`, in `src/postgres.test.ts`, on `claude/premise-review-messages-975dd7` at `38db98d`,
-    runs only on a server, and has not run. The fix begins in `expire` of `src/storage/entities.ts`, which keeps
-    the time in the outer `WHERE`. The [open question](open-questions.md#running) A statement whose condition
-    PostgreSQL reads from its snapshot.
+13. **Fixed by [decision 0285](decisions/0285-a-batch-of-expire-skips-the-replies-a-step-holds.md)**, under which a batch of `expire` locks the replies it selects and skips those a step holds, so that on a pool it never deletes a reply a step wrote again with a new time. Reproduced first by the test of a contract of the pool on the CI's server.
 14. **Fixed by [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)**, whose waker activates an entity a crash took out.
 15. **Reproduced: an entity created under a name a rename left draws the idempotency keys of the renamed entity
     of the same id.** A renamed entity keeps the keys of its old name

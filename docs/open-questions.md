@@ -717,12 +717,17 @@ with a requirement that no example has yet.
   ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). They are bugs 13 and 25 of
   the [roadmap](roadmap.md), each with a test of `src/postgres.test.ts` that no run has reached. Bug 25 is fixed by
   [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md), whose rule is that a statement that writes or deletes a row on a condition
-  reads the condition from a row it has locked. The other bugs are later cases of that rule, each with a note of its
-  own. What is left would be decided by:
+  reads the condition from a row it has locked. Bug 13 is fixed by
+  [decision 0285](decisions/0285-a-batch-of-expire-skips-the-replies-a-step-holds.md), whose batch skips the
+  replies a step holds. The other bugs are later cases of that rule, each with a note of its own. What is left would
+  be decided by:
   - the tests run against the CI's server, from the reviewers' branches;
   - a reading of every statement of `src/storage/` whose guard stands in a subquery or in an `INSERT … SELECT`, for
     the same form;
   - whether a fix keeps the guard in the outer `WHERE`, or locks the rows first with `FOR UPDATE`;
+  - for the batch of Cluster's ids of `expire`, in `effecttea_given_requests`, which decision 0285 leaves as it is:
+    `forgetUnder` reads its subquery with a `LIMIT` once in each of three statements, each at a snapshot of its own on
+    a pool. Whether the three read the same ids once Cluster runs on PostgreSQL, a test of Cluster on a pool;
   - for bug 49, not checked, a test that holds the sweep's batch and a step's deletion of its entity's replies at
     their rows, and sees whether PostgreSQL ends one of them as a deadlock;
   - for bug 78, a reading of the log that runs several statements, each with a snapshot of its own, and skips a row
