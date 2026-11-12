@@ -158,6 +158,61 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
         yield* Fiber.interrupt(consuming)
       }), 200, false))), 10_000)
 
+  // A door's step leaves its machine uncommitted, and its readings are told by the loop's `Settle` once it commits
+  // (decision 0161). A crash before that `Settle` drops the uncommitted machine and tells nobody, so a reading of this
+  // runner waits for the row the door committed until another commit of its topic. Here the loop's `Settle` is
+  // refused by the guard, as under a lease that expired after the door's step (decision 0175), and no other runner
+  // commits. It is the lead of bug 37 of `docs/roadmap.md`.
+  test.failing('a reading is told of the row a door committed, though its entity crashes before the loop settles it', () =>
+    database(Effect.scoped(Effect.gen(function*() {
+      let step: ((delivered: Delivered) => Effect.Effect<unknown>) | null = null
+      let refusing = false
+      let refused = 0
+      const cluster: OnCluster = {
+        shards: 1,
+        versions: null,
+        shardOf: () => 1,
+        guard: () =>
+          refusing ? Effect.andThen(Effect.sync(() => void refused++), Effect.die('the lease expired')) : Effect.void,
+        holds: () => true,
+        singleton: (_name, run) => Effect.asVoid(Effect.forkScoped(Effect.scoped(Effect.andThen(run, Effect.never)))),
+        register: (_program, given) =>
+          Effect.sync(() => {
+            step = given as (delivered: Delivered) => Effect.Effect<unknown>
+          }),
+        others: { version: Effect.succeed(0), millis: 200 },
+        // This test steps the door directly, and sends nothing through Cluster's client.
+        create: () => Effect.die('no creation is sent through the client here'),
+        send: () => Effect.die('no message is sent through the client here'),
+        operate: () => Effect.die('no operator’s event is sent through the client here'),
+        resume: () => Effect.die('no sender is told of a resumption here'),
+      }
+      yield* clusterTables
+      const sql = yield* SqlClient.SqlClient
+      const reader = yield* Effect.flatMap(launchWith({}, cluster), (runtime) => runtime.deploy(count, queue))
+      const door = (delivered: Omit<Delivered, 'id' | 'version'>, then: Effect.Effect<void>) =>
+        Effect.orDie(Effect.asVoid(sql.withTransaction(
+          Effect.tap(step!({ ...delivered, id: 'one', version: versionOf(count) }), () => then),
+        )))
+      yield* door({ _tag: 'Create', request: caller('c1'), message: '{}' }, Effect.void)
+      yield* TestClock.adjust('1 millis')
+      yield* reader.ack('projection', 'queue', yield* reader.fetch('projection', 'queue', all))
+      const waiting = yield* running(reader.fetch('projection', 'queue', all, { wait: { millis: 60_000 } }))
+      // The guard refuses from inside the door's transaction, after the door's own check, so the door commits and the
+      // loop's `Settle` dies.
+      yield* door(
+        { _tag: 'Message', request: caller('m1'), message: JSON.stringify({ _tag: 'Add' }) },
+        Effect.sync(() => {
+          refusing = true
+        }),
+      )
+      yield* TestClock.adjust('1 second')
+      expect(refused, "the loop's settle was refused").toBeGreaterThan(0)
+      expect((yield* reader.fetch('projection', 'queue', all)).map(({ value }) => value)).toEqual([1])
+      expect(waiting.pollUnsafe(), 'the reading was told of the row').toBeDefined()
+      yield* Fiber.interrupt(waiting)
+    }))), 10_000)
+
   test('a reading interrupted as it begins its wait leaves the watcher still, under every schedule of one deviation', () => {
     // The count of the readings that wait is raised before the wait and lowered by its finalizer. A fiber may yield
     // between the two, and an interruption there would leave the count raised: the watcher would read the version

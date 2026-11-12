@@ -57,8 +57,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     bugs noticed, from bug 31, each verified first, by a test that fails or by a reading that rules it out, and its fix
     proposed to the maintainer before any code. Bugs 31 and 65 are fixed by
     [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), which the
-    maintainer chose on 2026-11-12 after three opinions of a Fable 5.2 agent. The part next is the bugs noticed after
-    them: 37, 38, 40, 50, 51, 67 and 79, each verified first, as bug 31 was.
+    maintainer chose on 2026-11-12 after three opinions of a Fable 5.2 agent. Bug 37 is verified false by a reading,
+    and its verification found bug 92, reproduced, whose fix is proposed to the maintainer next. The part after it is
+    the bugs noticed after 37: 38, 40, 50, 51, 67 and 79, each verified first, as bug 31 was.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
     machine.
@@ -102,7 +103,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     of the form, of the CI and of the explored tests is run against the case it refuses, as
     [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) says. Every bug of it
     is fixed, or verified false.
-  - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 75, 79, 81, 82, 86 and 87.
+  - Of no family yet: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 75, 79, 81, 82, 86, 87 and 92.
   1. **Reproduced: a droppable operation that a new program delivers at most once never runs.** A deploy that
      declares a `Droppable` operation stored under a key as `operation.atMostOnce` keeps its incarnation
      ([decision 0128](decisions/archive/0128-an-operation-that-acts-on-nothing-may-be-dropped.md)), since the
@@ -288,12 +289,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       step holds the write lock, and die.**
       ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). It loses no row. The
       [open question](open-questions.md#storage-and-reading) A reindex on Cluster.
-  37. **Noticed, not checked: a step interrupted between its commit and `tell` leaves a reader of `consume` with
+  37. **Verified false by a reading: a step interrupted between its commit and `tell` leaves a reader of `consume` with
       `wait: true` waiting until its topic's next commit.**
       ([decisions 0142](decisions/archive/0142-a-consumer-waits-for-a-row-of-its-topic.md),
       [0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). The
-      [open question](open-questions.md#storage-and-reading) A reader with no time that misses a commit.
-      Not reproduced yet. Effect commits under `uninterruptibleMask`, so an interruption during the COMMIT lands after it and before `tell`. On one process nothing was found that interrupts a step and leaves a reader waiting, so the test needs Cluster or the scheduler.
+      [open question](open-questions.md#storage-and-reading) A reader with no time that misses a commit says why.
+      The reading found bug 92, a reader left waiting by a crash instead of an interruption.
   38. **Reproduced: `projectionViolations` gives `allows` the projection as `project` returns it, not as a
       caller reads it from its JSON, and gives `update` the sender unmigrated.**
       ([decision 0213](decisions/0213-a-projections-allows-is-given-the-sender.md)). A projection that holds `-0` is
@@ -618,6 +619,17 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       keep. Its own send keeps the id again once answered, so only a second client interrupted in that send leaves the
       rows for ever, as bug 59 does. Nothing is lost. The [open question](open-questions.md#running) The rows of
       operators' events on Cluster.
+  92. **Reproduced: on Cluster, a crash between a door's commit and the loop's `Settle` tells no reading of the rows
+      the door committed.** A door's step leaves its machine uncommitted, and the loop's `Settle` tells the readings
+      once the commit is proved ([decision 0161](decisions/archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md)).
+      `crash` of `src/runtime/loop.ts` drops `loaded.uncommitted` and tells nobody, so a reading of this runner that
+      waits, as a reader of `consume` with `wait: true`, waits for the row until another commit of its topic. Only a
+      commit of another runner wakes it, through the watcher, which reads nothing on PostgreSQL (bug 39). The
+      `test.failing` `a reading is told of the row a door committed, though its entity crashes before the loop settles
+      it`, of `src/runtime/readings.test.ts`, reproduces it, with the loop's `Settle` refused by the guard
+      ([decision 0175](decisions/archive/0175-on-cluster-every-step-checks-the-newest-version-and-the-shards-lease.md)). A shard let go before the
+      `Settle` crashes the entity the same way. The fix begins in `crash`. The
+      [open question](open-questions.md#storage-and-reading) A reader with no time that misses a commit.
 
 - **A review of every note that changes another, for a premise the later note takes away.** A rule of an earlier
   note is safe under conditions, some never written, and a later note that changes or reuses the rule may take one

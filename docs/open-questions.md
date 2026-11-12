@@ -77,14 +77,24 @@ with a requirement that no example has yet.
     row's version is not newer than its own, and a test of the index a newer version adds.
 - **A reader with no time that misses a commit.** A reader of `consume` with `wait: true` waits until a commit tells
   its topic ([decision 0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). Before it, a timed wait cost
-  only its time ([decision 0142](decisions/archive/0142-a-consumer-waits-for-a-row-of-its-topic.md)). A step
-  interrupted between its commit and `tell` leaves such a reader waiting, which is bug 37 of the
-  [roadmap](roadmap.md). On Cluster another runner's commit is learned from `PRAGMA data_version`
+  only its time ([decision 0142](decisions/archive/0142-a-consumer-waits-for-a-row-of-its-topic.md)). Bug 37 of the
+  [roadmap](roadmap.md), a step interrupted between its commit and `tell`, is verified false by a reading:
+  - On one process, a step and its `tell` run in a fiber of the deployment's scope: the loop's, or the fiber that
+    `detached` forks for a creation or an activation. Nothing interrupts that fiber but the closing of that scope.
+  - The scope of a deployment closes when the runtime stops, or when a deploy fails. A failed deploy gives no
+    handle, so no reading of it waits. At a stop, `closing` is completed before `running` closes, since the scope
+    runs its finalizers in the reverse order of their adding, and every reading ends at `closing` with no page.
+  - On Cluster a door's step tells nobody itself. It offers the loop's `Settle` by `afterCommit`, whose callbacks run
+    uninterruptibly after the `COMMIT`, as the JSDoc of `SqlClient` says at the version pinned. An activation on
+    Cluster is uninterruptible.
+
+  The reading found bug 92: on Cluster, a crash between a door's commit and the loop's `Settle` drops the machine
+  uncommitted and tells nobody, as a `test.failing` of `src/runtime/readings.test.ts` reproduces. On Cluster another
+  runner's commit is learned from `PRAGMA data_version`
   ([decision 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)),
-  which reads nothing on PostgreSQL and may fail to be read, which is bug 39. Neither is checked. It would be decided
-  by:
-  - a reading of whether the loop can be interrupted between its commit and `tell`, other than when the runtime
-    stops;
+  which reads nothing on PostgreSQL and may fail to be read, which is bug 39, not checked. They would be decided by:
+  - whether `crash` tells the readings of the topics the uncommitted machine wrote, at the cost of a reading woken
+    for a step that rolled back, which reads again and waits again;
   - whether `wait: true` keeps a bound of its own, as the timed wait of 0142 did.
 - **A sum at the edge of the largest double.** A sum is refused past the largest double, alike on both dialects
   ([decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md)). SQLite adds
