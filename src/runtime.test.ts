@@ -3361,6 +3361,19 @@ describe('a schema that changes', () => {
 describe('what the runtime cannot finish', () => {
   const tester = { _tag: 'Tester' } as const
   const want = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: true, nonce })
+  /** Whether `exit` is the defect of an entity refused while the stop of its former run runs (decision 0274). */
+  const refusedWhileStopping = (exit: Exit.Exit<unknown, unknown>) =>
+    Exit.isFailure(exit) && /the stop of the former run of the entity .* is still running/.test(Cause.pretty(exit.cause))
+  /** Runs `request` again while it is refused for a stop that runs, a few thousand turns at most. */
+  const afterTheStop = <A, E, R>(request: Effect.Effect<A, E, R>) =>
+    Effect.gen(function*() {
+      for (let turn = 0; turn < 10_000; turn++) {
+        const exit = yield* Effect.exit(request)
+        if (!refusedWhileStopping(exit)) return yield* exit
+        yield* Effect.yieldNow
+      }
+      return yield* Effect.die('the stop never ended')
+    })
 
   test('an event it cannot finish crashes its entity alone, and the next caller finds it again', () =>
     database(Effect.gen(function*() {
@@ -3428,8 +3441,10 @@ describe('what the runtime cannot finish', () => {
           const toy = yield* Effect.provide(runtime.deploy(program), layer)
           const failed = yield* Effect.exit(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
           expect(Exit.isFailure(failed)).toBe(true)
-          // The entity left the process: the next caller loads it from what the creation stored.
-          expect(yield* toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
+          // The entity left the process: the next caller loads it from what the creation stored, once the stop of
+          // its work has ended (decision 0274).
+          expect(yield* afterTheStop(toy.send(id, want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' })))
+            .toEqual({ _tag: 'Accepted' })
           expect(activated).toEqual([id])
           yield* runtime.settled
         }))
@@ -3772,10 +3787,10 @@ describe('what the runtime cannot finish', () => {
         })))
     })))
 
-  // Bug 31 of the roadmap: a crash forks the stop of its operations and gives the lock back (decision 0056), so the
-  // next activation records an at-most-once operation's `unknown` while the old fiber still runs its finalizer, which
-  // acts. The program's answer to `unknown` may then act beside it.
-  test.failing('an at-most-once operation a crash stops delivers its unknown once its finalizer has run', () =>
+  // Bug 31 of the roadmap: a crash forks the stop of its operations and gives the lock back (decision 0056). The next
+  // activation recorded an at-most-once operation's `unknown` while the old fiber still ran its finalizer, which acts.
+  // The entity is refused while the stop runs (decision 0274).
+  test('an at-most-once operation a crash stops delivers its unknown once its finalizer has run', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const released = yield* Deferred.make<void>()
@@ -3812,8 +3827,12 @@ describe('what the runtime cannot finish', () => {
           const failed = yield* Effect.exit(toy.send('slow', want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }))
           expect(Exit.isFailure(failed)).toBe(true)
           yield* Deferred.await(stopping)
-          // The next caller loads the entity again, and its activation records `b`'s `unknown`.
-          yield* toy.send('slow', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' })
+          // The next caller is refused while `b`'s finalizer runs, and loads the entity once it has ended: its
+          // activation records `b`'s `unknown`.
+          const second = () => toy.send('slow', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' })
+          expect(refusedWhileStopping(yield* Effect.exit(second()))).toBe(true)
+          yield* Deferred.succeed(released, undefined)
+          yield* afterTheStop(second())
           for (let turn = 0; turn < 1_000; turn++) {
             const inspected = yield* toy.inspect('slow')
             if (inspected !== null && !inspected.state.want.includes('b')) return finalized
@@ -3824,11 +3843,67 @@ describe('what the runtime cannot finish', () => {
       expect(finalizedWhenKnown).toBe(true)
     })))
 
+  // Decision 0274 at its end value: a stop that never ends refuses its entity's callers at once, and holds up no other
+  // entity, since the waker activates another crashed entity meanwhile. Once the stop ends, the waker activates the
+  // entity with no caller coming.
+  test('a stop that never ends refuses its entity at once and holds up no other, and the waker loads it once it ends', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const released = yield* Deferred.make<void>()
+      const stopping = yield* Deferred.make<void>()
+      // The hands of `b` never come back. The first, `slow`'s, created first, stop only once the test lets them.
+      let acts = 0
+      const layer = Layer.succeed(
+        Hands,
+        Hands.of({
+          act: (key) =>
+            key !== 'b' || ++acts !== 1 ? Effect.never : Effect.never.pipe(
+              Effect.onInterrupt(() => Effect.andThen(Deferred.succeed(stopping, undefined), Deferred.await(released))),
+            ),
+        }),
+      )
+      const dying = new Set(['slow', 'quick'])
+      yield* process({
+        // A `retry` the test passes in one step of the clock, so that the waker tries `slow` once at each.
+        retry: { millis: 1_000 },
+        observe: (entity, event) => {
+          if (event._tag !== 'Receive' || !dying.delete(entity.id)) return Effect.void
+          return Effect.die('the runtime failed')
+        },
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          const unknownHandled = (entity: string) =>
+            Effect.map(toy.inspect(entity), (inspected) => inspected !== null && !inspected.state.want.includes('b'))
+          for (const entity of ['slow', 'quick']) {
+            yield* toy.create(entity, { flags: { at }, requestId: `c-${entity}`, sender: tester })
+            const failed = yield* Effect.exit(
+              toy.send(entity, want('n-1'), { requestId: `r-1-${entity}`, sender: tester, keep: 'forever' }),
+            )
+            expect(Exit.isFailure(failed)).toBe(true)
+          }
+          yield* Deferred.await(stopping)
+          const again = toy.send('slow', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' })
+          expect(refusedWhileStopping(yield* Effect.exit(again))).toBe(true)
+          // Past `retry`, the waker activates `quick`, whose `unknown` of `b` is handled, and is refused `slow`.
+          yield* TestClock.adjust('1500 millis')
+          yield* Effect.repeat(Effect.yieldNow, { until: () => false, times: 1_000 })
+          expect(yield* unknownHandled('quick')).toBe(true)
+          expect(yield* unknownHandled('slow')).toBe(false)
+          expect(refusedWhileStopping(yield* Effect.exit(again))).toBe(true)
+          // Once the stop ends, the waker activates `slow` at its next `retry`, with no caller coming.
+          yield* Deferred.succeed(released, undefined)
+          yield* TestClock.adjust('1500 millis')
+          for (let turn = 0; turn < 10_000 && !(yield* unknownHandled('slow')); turn++) yield* Effect.yieldNow
+          expect(yield* unknownHandled('slow')).toBe(true)
+        }).pipe(Effect.ensuring(Deferred.succeed(released, undefined))))
+    })))
+
   // Bug 65 of the roadmap: a crash does not wait for the stop of its operations (decision 0056), and the receiver
   // deletes the reply of a request once the work that sent it ends (decision 0021). So an at-least-once operation
   // that sends from a region it holds uninterruptible, after the operation's new run ended the work, has the
   // receiver apply the request twice.
-  test.failing('a send of an operation a crash could not interrupt, after its new run ended the work, is applied once', () =>
+  test('a send of an operation a crash could not interrupt, after its new run ended the work, is applied once', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const gate = yield* Deferred.make<void>()
@@ -3872,15 +3947,17 @@ describe('what the runtime cannot finish', () => {
             from.send('sender', { _tag: 'Want', key: 't', on: false, nonce }, { requestId: nonce, sender: tester, keep: 'forever' })
           // The crash cannot interrupt `c`'s first run, which waits in its region.
           expect(Exit.isFailure(yield* Effect.exit(poke('p-1')))).toBe(true)
-          // The next caller loads the sender again, and `c` runs again, sends, and ends the work.
-          yield* poke('p-2')
+          // The next caller is refused while `c`'s first run waits in its region. Once the region has sent and ended,
+          // the caller loads the sender again, and `c` runs again, sends, and ends the work.
+          expect(refusedWhileStopping(yield* Effect.exit(poke('p-2')))).toBe(true)
+          yield* Deferred.succeed(gate, undefined)
+          yield* Deferred.await(oldSent)
+          yield* afterTheStop(poke('p-2'))
           for (let turn = 0; turn < 1_000; turn++) {
             const inspected = yield* from.inspect('sender')
             if (inspected !== null && !inspected.state.want.includes('c')) break
             yield* Effect.yieldNow
           }
-          yield* Deferred.succeed(gate, undefined)
-          yield* Deferred.await(oldSent)
           yield* runtime.settled
           const received = yield* toy.inspect(id)
           expect(runs).toBe(2)
@@ -3888,7 +3965,7 @@ describe('what the runtime cannot finish', () => {
         }))
     })))
 
-  test('a crash does not wait for its operations to stop: nothing waits for them under its entity’s lock', () =>
+  test('a crash does not wait for its operations to stop: its entity is refused meanwhile, at once, and others answered', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const released = yield* Deferred.make<void>()
@@ -3923,9 +4000,11 @@ describe('what the runtime cannot finish', () => {
           // reports.
           const failed = yield* Effect.exit(toy.send('slow', want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }))
           expect(Exit.isFailure(failed)).toBe(true)
-          // Meanwhile, the entity is loaded again and answered, and so is every other one (decision 0067).
-          expect(yield* toy.send('slow', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' }))
-            .toEqual({ _tag: 'Accepted' })
+          // Meanwhile, the entity is refused at once while its stop runs (decision 0274), and every other one is
+          // answered (decision 0067).
+          expect(refusedWhileStopping(
+            yield* Effect.exit(toy.send('slow', want('n-2'), { requestId: 'r-2', sender: tester, keep: 'forever' })),
+          )).toBe(true)
           expect(yield* toy.send('other', want('n-3'), { requestId: 'r-3', sender: tester, keep: 'forever' }))
             .toEqual({ _tag: 'Accepted' })
           // The crash did interrupt it: it is stopping, and stops once the test lets it.

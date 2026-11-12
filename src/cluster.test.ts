@@ -125,6 +125,12 @@ const warningsAndErrors = () => [...new Set(logged.splice(0))].sort()
 
 /** What Cluster logs as it restarts an entity that died with `reason`. */
 const restarted = (reason: string) => `Defect in entity, restarting: ${reason}`
+/** The reason a door's step dies with while the stop of its entity's former run runs (decision 0274). */
+const stillStopping = (name: string, id: string) =>
+  `the stop of the former run of the entity ${id} of ${name} is still running`
+/** What the runtime logs of a stop that outlives `retry` (decision 0274). */
+const outlivesRetry =
+  'the stop of a crashed entity’s work outlives the retry, and the entity is not loaded on this process until it ends'
 
 afterEach(() => {
   expect(warningsAndErrors()).toEqual([])
@@ -1201,7 +1207,11 @@ describe('the runtime on Cluster', () => {
       },
       // The waker would load the crashed entity again after `retry`, before the door of m2 does.
       { sweep: 'none', retry: { millis: 3_600_000 } },
-    ).then(() => expect(warningsAndErrors()).toEqual([restarted('Failed to execute statement')]))
+    ).then(() =>
+      // The door of m2 may come before the stop of the crash ends, and die once: Cluster delivers it again.
+      expect(warningsAndErrors().filter((line) => line !== restarted(stillStopping('Tally', 'one'))))
+        .toEqual([restarted('Failed to execute statement')])
+    )
   }, 30_000)
 })
 
@@ -1697,7 +1707,7 @@ describe('the shards of a runner on Cluster', () => {
 
   // Decision 0274: a shard lost waits for the stops of the entities it crashed, and Cluster lets the shard go only
   // after the finalizer of its singleton, so the runner that gains it never runs an operation beside the old fiber.
-  test.failing('a shard that moves while an operation of the first runner still stops starts it on the second only after', () =>
+  slow('a shard that moves while an operation of the first runner still stops starts it on the second only after', () =>
     onFile((start) =>
       Effect.gen(function*() {
         let release = () => {}
@@ -1716,7 +1726,7 @@ describe('the shards of a runner on Cluster', () => {
         const second = yield* start(2)
         yield* until(Effect.sync(() => seen), (lines) => lines.some((line) => line.endsWith('interrupted on 1')))
         // Long enough for the second runner to take a shard Cluster let go, and to activate its entities.
-        yield* Effect.sleep('500 millis')
+        yield* Effect.sleep('200 millis')
         release()
         yield* until(
           Effect.sync(() => [first.count(), second.count()] as const),
@@ -1731,6 +1741,8 @@ describe('the shards of a runner on Cluster', () => {
         for (const id of moved) {
           expect(seen.indexOf(`${id} stopped on 1`)).toBeLessThan(seen.indexOf(`${id} started on 2`))
         }
+        // The stops held past `retry` are logged.
+        expect(warningsAndErrors()).toContain(outlivesRetry)
       })), 30_000)
 
   // An entity stored under a partition that is not the shard Cluster routes its id to is what a release of Effect

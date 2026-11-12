@@ -38,8 +38,9 @@ operations beside the old runner's fibers.
 
 - **A crash keeps the stop of its entity's work in the deployment, under the entity's id.** The crash still forks the
   stop in the deployment's scope, and gives the entity's lock back at once (decision 0056). The fiber of the stop
-  leaves the deployment's map when it ends, in one step with the end, and only where the map still holds that fiber.
-  Its end pokes the waker.
+  leaves the deployment's map `stopping` when it ends, in one step with the end. A stop that ends before its fork
+  returns is never kept. A crash runs only on an entity loaded, which no stop refused, so the map holds one stop of an
+  entity at most.
 - **An entity whose stop is running is refused at its entry into the process.** The check is one function of
   `src/runtime/loop.ts`, read by `enter` and `entersHeld`, which every load goes through, and by the creation before
   its step, since a creation refused after its commit would leave a stored entity unloaded.
@@ -47,9 +48,11 @@ operations beside the old runner's fibers.
     The caller is given the defect, and retries as after any crash of the entity. No caller waits for a stop, so a stop
     that never ends holds no caller.
   - **The waker's activation fails** the same way, and the waker marks the entity again at `retry`, as it marks an
-    activation that failed (decision 0252). The waker's other entities are activated meanwhile.
-  - **A door's step on Cluster dies** inside its transaction, since `entersHeld` gives that the entity did not enter,
-    and Cluster delivers the request again. No step waits for a stop inside a transaction.
+    activation that failed (decision 0252). The waker's other entities are activated meanwhile, and the entity is
+    activated at the first `retry` after its stop ends.
+  - **A door's step on Cluster dies** inside its transaction, since `entersHeld` dies with the same defect, and
+    Cluster delivers the request again. The transaction rolls back the `Restart` the step made. An activation on
+    Cluster dies alike, and the waker marks it again. No step waits for a stop inside a transaction.
 - **A stop that outlives `retry` is logged once**, as a warning naming the entity, so that an operator sees an entity
   that a region which never ends keeps from loading.
 - **A shard lost waits for the stops of the entities it crashed.** `losing` crashes each entity of the shard under its
@@ -77,24 +80,30 @@ The decision leaves out four cases, each held by the [open questions](../open-qu
 ## What it rests on
 
 - That an activation which finds the stop running records no `unknown` beside the old fiber, and that a new run never
-  ends the work before the old fiber's send: to be **tested** by the two tests of bugs 31 and 65 in
+  ends the work before the old fiber's send: **tested** by the two tests of bugs 31 and 65 in
   [`src/runtime.test.ts`](../../src/runtime.test.ts), `an at-most-once operation a crash stops delivers its unknown
   once its finalizer has run` and `a send of an operation a crash could not interrupt, after its new run ended the
-  work, is applied once`, each a `test.failing` that fails on the code before this note, and made a `test`.
+  work, is applied once`. Each was a `test.failing` on the code before this note, and is a `test`, which checks that
+  the caller is refused while the stop runs and served once it has ended.
 - That a stop which never ends keeps the waker activating the other entities of its program, and fails each caller of
-  its entity with the defect, at once: to be **tested** by a test of `src/runtime.test.ts` at that end value, with an
-  operation whose finalizer never ends and a timer of another entity due after the crash.
-- That an entity whose stop ends is activated by the waker, with no caller coming: to be **tested** by the same test,
-  whose finalizer is let end, and under the scheduler of `src/testing.ts` with a seed pinned that ends the stop
-  between the waker's reading and its activation.
+  its entity with the defect, at once: **tested** by `a stop that never ends refuses its entity at once and holds up
+  no other, and the waker loads it once it ends`, in [`src/runtime.test.ts`](../../src/runtime.test.ts). A second
+  entity crashed beside the first is activated by the waker while the first's stop holds.
+- That an entity whose stop ends is activated by the waker, with no caller coming: **tested** by the same test, whose
+  finalizer is let end. That the rule holds where the stop ends between the waker's reading and its activation: to be
+  **tested** by an explored test under the scheduler of `src/testing.ts`, with a seed pinned that ends the stop there.
 - That a door's step which finds a stop running dies, and that Cluster delivers the request again once the stop ends:
-  to be **tested** by a test of `src/cluster.test.ts`.
+  seen in `a door step that loads an entity and whose commit fails leaves the entity to run its stored operation`, in
+  [`src/cluster.test.ts`](../../src/cluster.test.ts). Its next door step came before the stop of the crash ended in
+  every run on the maintainer's machine, died, and was answered at Cluster's next delivery. The test accepts a run
+  where the stop ends first, so the premise is to be **tested** by a test of its own that holds the stop.
 - That Cluster lets a shard go only after the finalizer of its singleton ends, so that the runner which gains the shard
   loads none of its entities while their stops run: to be **tested** by `a shard that moves while an operation of the
-  first runner still stops starts it on the second only after`, a `test.failing` of
-  [`src/cluster.test.ts`](../../src/cluster.test.ts) with two runners, whose operations' finalizers are held while the
-  shards move. On the code before this note it fails: the second runner starts each moved entity's operation while
-  the first runner's finalizer still waits, so the case across runners is reproduced. The JSDoc of `registerSingleton` in Effect 4.1.3 promises no such wait.
+  first runner still stops starts it on the second only after`, of
+  [`src/cluster.test.ts`](../../src/cluster.test.ts), with two runners, whose operations' finalizers are held while
+  the shards move. It was a `test.failing` on the code before this note, where the second runner started each moved
+  entity's operation while the first runner's finalizer still waited. It is a test under `slow`, since it lasts about
+  2.4 s. The JSDoc of `registerSingleton` in Effect 4.1.3 promises no such wait.
   `runShardRelease` of `cluster/Sharding.ts` joins `awaitStoppingSingletons` before the storage's release, which is a
   behaviour not promised, so the test holds it at every move of Effect.
 - That `losing` joining the stops does not hold up a finalizer of an operation that sends through the door's client to

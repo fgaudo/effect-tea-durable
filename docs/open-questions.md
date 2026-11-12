@@ -446,7 +446,7 @@ with a requirement that no example has yet.
   back ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)). The next
   activation records an at-most-once operation's `unknown` while the old fiber may still run a region that cannot be
   interrupted, or a finalizer that acts. The program's answer to the `unknown` may then act beside it. It is bug 31
-  of the [roadmap](roadmap.md), reproduced by a `test.failing` of `src/runtime.test.ts`. It would be decided by:
+  of the [roadmap](roadmap.md), reproduced by a test of `src/runtime.test.ts`, a `test` since the code of decision 0274. It would be decided by:
   - a test, under the scheduler of `src/testing.ts`, of an operation whose finalizer acts after the crash;
   - whether the activation waits for the stop of the operations a crash forked.
   [Decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), `proposed`, decides it once taken: an entity whose stop is running is refused at its entry into the
@@ -497,7 +497,7 @@ with a requirement that no example has yet.
   bug 57, reasoned. On one process, a crashed entity's operation that sends from a region it holds uninterruptible
   may send after the new run ended the work
   ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)), which is bug 65,
-  reproduced by a `test.failing` of `src/runtime.test.ts`. [Decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), `proposed`, decides bug 65 on one runner
+  reproduced by a test of `src/runtime.test.ts`, a `test` since the code of decision 0274. [Decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), `proposed`, decides bug 65 on one runner
   and across an orderly move of a shard once taken, and leaves bug 57 to a receiver that refuses the request. Either way the receiver applies the request twice. They are of the [roadmap](roadmap.md). It would be
   decided by:
   - whether a receiver refuses a request whose asker's work no longer holds, by the asker's key row it already reads;

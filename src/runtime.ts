@@ -1158,6 +1158,7 @@ const started = (
               storage: storage(program, sql, partitions, cluster !== null),
               scope: yield* Scope.fork(running),
               loaded: new Map(),
+              stopping: new Map(),
               // Nothing is known of the stored timers until the waker has read them once.
               waker: { busy: true, next: null, poke: yield* Queue.sliding<void>(1), failed: new Map() },
               waking: null,

@@ -44,7 +44,7 @@ import {
   forkChildApart,
   untransacted,
 } from './process.ts'
-import { type Address, Entities, isTimer, runnerOf, type Types } from '../program.ts'
+import { type Address, Entities, InvariantDefect, isTimer, runnerOf, type Types } from '../program.ts'
 import { tell } from './readings.ts'
 import { transaction } from '../storage.ts'
 
@@ -71,7 +71,23 @@ export const offer = <T extends Types>(p: Process, loaded: Loaded<T>, event: Mac
  * (decisions 0067, 0076).
  */
 export const enter = <T extends Types>(p: Process, deployed: Deployment<T>, loaded: Loaded<T>) =>
-  Effect.map(DateTime.now, (at) => admit(p, deployed, loaded, at))
+  Effect.andThen(stopped(deployed, loaded.machine.stored.id), Effect.map(DateTime.now, (at) => admit(p, deployed, loaded, at)))
+
+/**
+ * Dies while the stop a crash of the entity `id` forked still runs in this process, so that no run of the entity
+ * acts beside the fibers of its former run (decision 0274). Every entry into the process reads it, and a caller, the
+ * waker and a door are given the defect, to try again: none waits for a stop that may never end.
+ */
+export const stopped = <T extends Types>(deployed: Deployment<T>, id: string) =>
+  Effect.suspend(() =>
+    deployed.stopping.has(id)
+      ? Effect.die(
+        new InvariantDefect({
+          reason: `the stop of the former run of the entity ${id} of ${deployed.program.name} is still running`,
+        }),
+      )
+      : Effect.void
+  )
 
 /**
  * On Cluster, the entity enters the process only where its shard may be loaded here, which gives whether it
@@ -79,11 +95,14 @@ export const enter = <T extends Types>(p: Process, deployed: Deployment<T>, load
  * reads the entities held, so an entity either entered before the mark and is read, or finds the mark.
  */
 export const entersHeld = <T extends Types>(p: Process, deployed: Deployment<T>, loaded: Loaded<T>) =>
-  Effect.map(DateTime.now, (at) => {
-    if (!loadable(p, deployed, loaded.machine.stored.id)) return false
-    admit(p, deployed, loaded, at)
-    return true
-  })
+  Effect.andThen(
+    stopped(deployed, loaded.machine.stored.id),
+    Effect.map(DateTime.now, (at) => {
+      if (!loadable(p, deployed, loaded.machine.stored.id)) return false
+      admit(p, deployed, loaded, at)
+      return true
+    }),
+  )
 
 /** The entity enters the process at `at`, as `enter` says. */
 export const admit = <T extends Types>(p: Process, deployed: Deployment<T>, loaded: Loaded<T>, at: DateTime.Utc) => {
@@ -530,7 +549,8 @@ export const unload = <T extends Types>(
  * retry. What is stored is what its next activation starts from, as after a crash of the process. Called
  * where the entity's lock is held, so that no caller is between finding the entity and offering its event
  * (decisions 0042, 0067). The interruption of its work is forked: it waits for the operations' finalizers,
- * and nothing else waits for them under the lock (decision 0056). The waker activates the entity again after
+ * and nothing waits for them under the lock (decision 0056). The fork is kept in `stopping` while it runs, and the
+ * entity is not loaded in this process meanwhile (decision 0274). The waker activates the entity again after
  * `retry`, unless the entity leaves for another runner (decision 0252).
  */
 export const crash = <T extends Types>(
@@ -548,7 +568,28 @@ export const crash = <T extends Types>(
     // Its stored timers are the waker's again. A crash may run where the step that died cannot be interrupted, as
     // a creation's `onError` does: `forkApart` keeps it stoppable by the scope (decision 0271).
     yield* leave(p, deployed, loaded)
-    yield* forkApart(p.sql, stopAll(loaded), deployed.scope)
+    // A stop that outlives `retry` is logged once, by a child the stop's end interrupts.
+    const outlives = Effect.andThen(
+      Effect.sleep(`${p.retry} millis`),
+      Effect.logWarning(
+        'the stop of a crashed entity’s work outlives the retry, and the entity is not loaded on this process until it ends',
+      ).pipe(Effect.annotateLogs({ name, id })),
+    )
+    // The stop may end before the fork returns, and one that has ended is never kept: it would refuse the entity for
+    // ever. A crash runs only on an entity loaded, which no stop refused, so the stop kept is the only one of `id`.
+    let done = false
+    const stop = yield* forkApart(
+      p.sql,
+      Effect.ensuring(
+        Effect.andThen(forkChildApart(p.sql, outlives), stopAll(loaded)),
+        Effect.sync(() => {
+          done = true
+          deployed.stopping.delete(id)
+        }),
+      ),
+      deployed.scope,
+    )
+    if (!done) deployed.stopping.set(id, stop)
     const address = addressOf({ name, id })
     const fail = <A>(waiting: Callers<A>) =>
       Effect.gen(function*() {

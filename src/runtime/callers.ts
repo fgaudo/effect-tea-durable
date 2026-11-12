@@ -9,7 +9,7 @@ import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as MutableList from 'effect/MutableList'
-import { activate, crash, detached, enter, fresh, loop, offer, perform, warnOfSize, withEntity } from './loop.ts'
+import { activate, crash, detached, enter, fresh, loop, offer, perform, stopped, warnOfSize, withEntity } from './loop.ts'
 import * as Machine from '../machine.ts'
 import {
   addressOf,
@@ -248,6 +248,9 @@ export const create = <T extends Types>(
         const loaded = yield* activate(p, deployed, stored)
         return { _tag: 'Asked', asked: yield* ask(p, p.creations, loaded, entity, waited, creating) } as const
       }
+      // Before the step, which commits: a creation refused by `enter` after its write would leave the entity stored
+      // and unloaded (decision 0274).
+      yield* stopped(deployed, id)
       // The creation is a step of its own, linked to its caller's span (decision 0220). The entity's loop is forked
       // past the step's span, which would otherwise parent what the loop runs outside its steps.
       const made = yield* traced(entity, { _tag: 'Create' }, yield* spanHere)(Effect.gen(function*() {

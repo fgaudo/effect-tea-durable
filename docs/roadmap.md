@@ -57,11 +57,19 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     bugs noticed, from bug 31, each verified first, by a test that fails or by a reading that rules it out, and its fix
     proposed to the maintainer before any code. Bugs 31 and 65 have one cause, and their fix is
     [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md),
-    `proposed`, which the maintainer chose on 2026-11-12 after an opinion of a Fable 5.2 agent. No code of it is
-    written yet. The case across runners is reproduced by a `test.failing` of `src/cluster.test.ts`, `a shard that
-    moves while an operation of the first runner still stops starts it on the second only after`. The part next is
-    the code, in `crash`, `enter` and `entersHeld` of `src/runtime/loop.ts` and in `losing` of
-    `src/runtime/doors.ts`, with the tests of the other premises its note names. After bugs 31 and 65 come 37, 38,
+    `proposed`, which the maintainer chose on 2026-11-12 after an opinion of a Fable 5.2 agent. Its code is written:
+    `crash`, `stopped`, `enter` and `entersHeld` of `src/runtime/loop.ts`, the creation of `src/runtime/callers.ts`,
+    and `losing` of `src/runtime/doors.ts`. The tests of bugs 31 and 65, and of the case across runners in
+    `src/cluster.test.ts`, are `test`s. Four pins lost their interleaving to the steps the code adds, and were pinned
+    again, and `bun run test:pins` holds the 16. The part next is the three premises the note still says are to be
+    tested. They are a door's step refused while a stop the test holds runs, in `src/cluster.test.ts`; the stop ending
+    between the waker's reading and its activation, an explored test with a seed pinned; and `losing` with a
+    finalizer that sends to an entity of the shard let go, with two runners. The note is taken once they pass.
+  - `bun run test:slow` fails on `main` since `bae8ae1`, the commit of decision 0273, at `a step of an older version
+    dies and saves no reply, and a runner of the newest version steps its requests`, of `src/cluster.test.ts`. The
+    waker logs the entities `one` and `two` of Toy as stored under a partition it reads that is not their shard, and
+    the test refuses every log it does not expect. The code before decision 0274's passes no better, so the failure is
+    decision 0273's. It is the next commit's work, before any other part of this step. After bugs 31 and 65 come 37, 38,
     40, 50, 51, 67 and 79.
     Decisions 0269, 0271 and 0273 change the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
     taken, and the tests of decision 0269 of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of

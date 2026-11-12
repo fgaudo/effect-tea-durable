@@ -8,6 +8,7 @@ import * as Data from 'effect/Data'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
 import * as Queue from 'effect/Queue'
 import * as Schedule from 'effect/Schedule'
 import { wake } from './callers.ts'
@@ -562,8 +563,9 @@ export const activating = <T extends Types>(
  * The shard is lost: marked so, and read by the waker no more, and then every entity of it this process holds
  * crashes, each under its own lock (decision 0092). The mark and the reading of the entities held are one step,
  * so that an entity a door or an activation loads either is read here or finds the mark. A crash forks the
- * interruption of the entity's operations, and waits for none of them: Cluster waits for this finalizer with no
- * bound, and keeps the shard from every runner while it runs (decision 0056).
+ * interruption of the entity's operations, and waits for none of them under the entity's lock (decision 0056). The
+ * stops are awaited once every lock is given back: the runner that gains the shard runs none of its entities while a
+ * fiber of their former run still acts here (decision 0274).
  */
 export const losing = <T extends Types>(p: Process, on: OnCluster, deployed: Deployment<T>, shard: number) =>
   Effect.gen(function*() {
@@ -573,6 +575,7 @@ export const losing = <T extends Types>(p: Process, on: OnCluster, deployed: Dep
       return [...deployed.loaded.values()].filter((loaded) => on.shardOf(loaded.machine.stored.id) === shard)
     })
     const left = new InvariantDefect({ reason: `the shard ${shard} left this runner` })
+    const stops: Array<Fiber.Fiber<void>> = []
     for (const loaded of leaving) {
       const { name, id } = loaded.machine.stored
       yield* holding(p, { name, id })(Effect.suspend(() =>
@@ -581,9 +584,15 @@ export const losing = <T extends Types>(p: Process, on: OnCluster, deployed: Dep
             // The shard's new runner loads it, so the waker here does not try it again (decision 0252).
             crash(p, deployed, loaded, Cause.die(left), false),
             // The loop is woken, finds the entity gone, and ends.
-            Effect.sync(() => Queue.offerUnsafe(loaded.events, { _tag: 'Settle' })),
+            Effect.sync(() => {
+              Queue.offerUnsafe(loaded.events, { _tag: 'Settle' })
+              const stop = deployed.stopping.get(id)
+              if (stop !== undefined) stops.push(stop)
+            }),
           )
           : Effect.void
       ))
     }
+    // Cluster lets the shard go once this finalizer ends, with no bound, so a stop that never ends keeps the shard here.
+    yield* Effect.forEach(stops, Fiber.await, { discard: true })
   })

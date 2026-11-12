@@ -377,6 +377,11 @@ export interface Deployment<T extends Types> {
    */
   readonly scope: Scope.Closeable
   readonly loaded: Map<string, Loaded<T>>
+  /**
+   * The stop a crash forked of an entity's work, by the entity's id, while it runs: the entity is not loaded in this
+   * process meanwhile (decision 0274).
+   */
+  readonly stopping: Map<string, Fiber.Fiber<void>>
   readonly waker: Waker
   /** The waker's fiber, once it is forked: a planned stop interrupts it (decision 0119). */
   waking: Fiber.Fiber<void, never> | null
