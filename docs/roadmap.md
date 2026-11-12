@@ -426,7 +426,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - Done, on 2026-11-13, bug 11, the rows of an operator's resume or discard that Cluster kept for ever: reproduced
     by a test of `src/cluster.test.ts`, and fixed by
     [decision 0290](decisions/0290-on-cluster-an-operators-client-keeps-the-id-the-doors-answer-carries.md).
-  - Next, bug 10 of `docs/bugs.md`, a creation that `init` dies on, sent by an operation, which needs an operation
+  - Done, on 2026-11-13, bug 10 reproduced: the test `FAILING: an operation’s creation init dies on suspends the
+    sender, as on one process` of `src/cluster.test.ts`, a `test.failing`, whose operation `Relay` of `bell` creates
+    an entity whose `init` dies. Its fix is a choice of the maintainer's, not made yet, as `docs/bugs.md` says of
+    every fix.
+  - Next, the fix of bug 10 once the maintainer chooses it, and the case in the contract, which needs an operation
     of `item` that creates. The pool's histories grow too, with a deploy that declares a consumer and an ack between
     the snapshot of a batch of `prune` and its commit, so that the pool reaches bug 80, which a scenario holds now.
     A difference of Cluster that a note decides is marked beside `diesOn`, as decision 0283

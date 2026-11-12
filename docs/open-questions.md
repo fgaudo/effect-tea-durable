@@ -655,11 +655,10 @@ with a requirement that no example has yet.
   exist, so `suspended` lists nothing, and only Cluster's log of restarts shows it. The sender's entity stays busy,
   and is never unloaded. An operator cannot see what waits. Neither 0160 nor
   [decision 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)
-  says what holds of 0046's rule on Cluster. The premise review of 2026-11-11 reasoned it, as bug 10 of the
-  [roadmap](roadmap.md). Cluster replays the creation first at each restart of the door, so another creator of the
+  says what holds of 0046's rule on Cluster. A test of `src/cluster.test.ts` finds `suspended` empty while Cluster
+  restarts the door, which is bug 10 of [`docs/bugs.md`](bugs.md), reproduced. Cluster replays the creation first at each restart of the door, so another creator of the
   id, whose flags `init` accepts, waits for ever behind it, where one process answers it `Created`, which is bug 58,
   reproduced. A message to the id waits the same way. It would be decided by:
-  - a test of `src/cluster.test.ts` where an operation creates an entity whose `init` dies, which would hang today;
   - whether an operator is meant to see such a creation, and through which call;
   - whether the door answers such a creation with an answer the creator's client resets, as for `Rejected`, or the
     runtime stores the defect in its own tables and frees the id.

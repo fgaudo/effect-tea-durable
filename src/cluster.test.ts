@@ -1343,10 +1343,13 @@ describe('the shards of a runner on Cluster', () => {
       sender: Schema.Struct({ user: Schema.String }),
       projection: Schema.Int,
     },
-    // An id that starts with `closed` is rejected, so that an operation's creation can be answered `Rejected`.
+    // An id that starts with `closed` is rejected, so that an operation's creation can be answered `Rejected`, and an
+    // id that starts with `dying` dies, so that an operation's creation is one the program dies on.
     init: ({ who }) =>
       who.startsWith('closed')
         ? reject
+        : who.startsWith('dying')
+        ? defect('a bell named dying cannot ring')
         : { who, asking: false, ring: null, rung: false, n: 0, relay: null, relayed: null, haunt: null },
     update: (message) => (state) => {
       switch (message._tag) {
@@ -2425,6 +2428,25 @@ describe('the shards of a runner on Cluster', () => {
         `)).toBe(0)
         expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_sent_requests`)).toBe(0)
       })), 30_000)
+
+  // Bug 10 of docs/bugs.md: on one process an operation's creation that `init` dies on suspends the sender (decision
+  // 0046). On Cluster the door dies and Cluster delivers the creation again without end (decision 0160), so the
+  // operation's `create` waits, Cluster logs a restart at each delivery, and `suspended` lists nothing.
+  test.failing('FAILING: an operation’s creation init dies on suspends the sender, as on one process', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const runner = yield* start(1)
+        yield* until(Effect.sync(runner.count), (n) => n === shardsPerGroup)
+        yield* create(runner, 'one')
+        yield* send(runner, 'one', { _tag: 'Relay', to: 'dying' }, 'm-relay')
+        // One process suspends the sender at the creation's first step, and Cluster polls every 100 ms.
+        const listed = yield* Effect.repeat(runner.bell.suspended, {
+          schedule: Schedule.spaced('25 millis'),
+          until: (listed) => listed.length > 0,
+        }).pipe(Effect.timeoutOption('1500 millis'))
+        expect(Option.match(listed, { onNone: () => [], onSome: (listed) => listed.map(({ id }) => id) })).toEqual(['one'])
+        expect(yield* stateOf('dying')).toBeUndefined()
+      })).finally(() => void warningsAndErrors()), 30_000)
 
   slow('a request Cluster failed, its type registered by no runner in time, is reset, and handled once it is', () =>
     onFile((start) =>

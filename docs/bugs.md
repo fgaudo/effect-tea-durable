@@ -100,14 +100,16 @@ family gets a fix of its own.
    suspended.
 8. **Fixed by [decision 0270](decisions/0270-a-childs-name-is-never-an-own-tag.md)**, which refuses an own tag that may be a child's, and tries a child's wrapper first.
 9. **Fixed by [decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)**, which keeps an operation's `Rejected` of `init` and its `NotFound` for its work.
-10. **Reasoned: on Cluster, a creation that `init` dies on, sent by an operation, waits for ever and no operator
+10. **Reproduced: on Cluster, a creation that `init` dies on, sent by an operation, waits for ever and no operator
     sees it.** On one process the sender is suspended
     ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). On Cluster the door dies
     and Cluster delivers the creation again without end
     ([decision 0160](decisions/archive/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)).
-    The sender is not suspended and the receiver does not exist, so `suspended` lists nothing. Verified by a test
-    of `src/cluster.test.ts`, which would hang today: the [open question](open-questions.md#running) A creation
-    that `init` dies on, on Cluster.
+    The sender is not suspended and the receiver does not exist, so `suspended` lists nothing. The test
+    `FAILING: an operation’s creation init dies on suspends the sender, as on one process` of `src/cluster.test.ts`,
+    a `test.failing` on `main`, finds `suspended` empty after 1.5 s, while Cluster logs a restart of the door at each
+    delivery. Its fix is a choice of the design: the [open question](open-questions.md#running) A creation that
+    `init` dies on, on Cluster.
 11. **Fixed by [decision 0290](decisions/0290-on-cluster-an-operators-client-keeps-the-id-the-doors-answer-carries.md)**, whose operator's client keeps the Cluster id its door's answer carries, so that a step or `expire` deletes Cluster's rows of the event.
 12. **Noticed, not checked: a defect's cause holding U+0000 may reach Cluster's tables unescaped.**
     ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)). It matters once
