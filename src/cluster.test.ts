@@ -55,7 +55,7 @@ import {
 } from './program.ts'
 import { type Handle, type Options, Probe, type Said } from './runtime.ts'
 import { createTables, leased, newestVersion, outranked, partitionOf, recordVersions } from './storage.ts'
-import { slow } from './runtime.test_shared.ts'
+import { slow, slowFailing } from './runtime.test_shared.ts'
 import { client, onEach } from './storage.test_databases.ts'
 
 type T = {
@@ -1260,6 +1260,8 @@ describe('the shards of a runner on Cluster', () => {
   let answers = false
   /** While set, the finalizer of an interrupted `Ask` waits for it, and says `stopped` once it ends. */
   let stopping: Promise<void> | null = null
+  /** The entity the finalizer of an interrupted `Ask` of an entity pokes once its wait ends, if any. */
+  let farewell: (who: string) => string | null = () => null
   const bell: Program<Bell> = {
     name: 'Bell',
     keys: { ask: null, ring: null, relay: null, haunt: null },
@@ -1363,6 +1365,21 @@ describe('the shards of a runner on Cluster', () => {
               Effect.onInterrupt(() =>
                 Effect.sync(() => void seen.push(`${who} interrupted on ${port}`)).pipe(
                   Effect.andThen(Effect.suspend(() => stopping === null ? Effect.void : Effect.promise(() => stopping!))),
+                  Effect.andThen(Effect.suspend(() => {
+                    const to = farewell(who)
+                    // Bounded, so that a send never answered ends the stop and lets the test's runners close.
+                    return to === null ? Effect.void : sendFrom(bell, to, { _tag: 'Poke' }, 'farewell').pipe(
+                      Effect.timeoutOption('3 seconds'),
+                      Effect.matchCause({
+                        onFailure: (cause) => void seen.push(`${who} poked ${to} on ${port}: ${Cause.pretty(cause)}`),
+                        onSuccess: (reply) =>
+                          void seen.push(`${who} poked ${to} on ${port}: ${Option.match(reply, {
+                            onNone: () => 'no answer',
+                            onSome: (answer) => answer._tag,
+                          })}`),
+                      }),
+                    )
+                  })),
                   Effect.andThen(Effect.sync(() => void seen.push(`${who} stopped on ${port}`))),
                 )
               ),
@@ -1486,6 +1503,7 @@ describe('the shards of a runner on Cluster', () => {
     seen = []
     answers = false
     stopping = null
+    farewell = () => null
     try {
       await Effect.runPromise(
         Effect.scoped(run(start)).pipe(Effect.provide([store, collected])) as Effect.Effect<void, unknown>,
@@ -1792,6 +1810,93 @@ describe('the shards of a runner on Cluster', () => {
         const logs = warningsAndErrors()
         expect(logs).toContain(outlivesRetry)
       })), 30_000)
+
+  // Decision 0274: a shard lost waits for the stops of its entities. A stop's finalizer that sends through the door's
+  // client to an entity of that shard is never answered: the first runner no longer serves the shard, and the second
+  // does not hold it until the stop ends. The finalizer's send is bounded at 3 s, so that the test ends.
+  slowFailing('a stop that sends to an entity of the shard being let go is answered, and the shard moves after it', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        const ids = Array.from({ length: 8 }, (_, i) => `e${i}`)
+        // One partner of each shard, which the entities of that shard poke as they stop.
+        const partners = new Map<number, string>()
+        for (let k = 0; partners.size < shardsPerGroup; k++) {
+          const shard = partitionOf(`p${k}`, shardsPerGroup)
+          if (!partners.has(shard)) partners.set(shard, `p${k}`)
+        }
+        const partnerOf = (who: string) => partners.get(partitionOf(who, shardsPerGroup))!
+        for (const partner of partners.values()) yield* create(first, partner)
+        for (const id of ids) {
+          yield* create(first, id)
+          yield* send(first, id, { _tag: 'Ask' }, `m-${id}`)
+        }
+        yield* until(Effect.sync(() => seen.length), (n) => n === ids.length)
+        farewell = (who) => who.startsWith('e') ? partnerOf(who) : null
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const moved = ids.filter((id) => second.holds(id))
+        expect(moved.length).toBeGreaterThan(0)
+        yield* until(
+          Effect.sync(() => seen),
+          (lines) => moved.every((id) => lines.includes(`${id} started on 2`) && lines.includes(`${id} stopped on 1`)),
+        )
+        farewell = () => null
+        // A stop past `retry` is logged, and nothing else is.
+        expect(warningsAndErrors().filter((line) => line !== outlivesRetry)).toEqual([])
+        for (const id of moved) {
+          expect(seen).toContain(`${id} poked ${partnerOf(id)} on 1: Accepted`)
+          expect(seen.indexOf(`${id} stopped on 1`)).toBeLessThan(seen.indexOf(`${id} started on 2`))
+        }
+        for (const partner of new Set(moved.map(partnerOf))) {
+          const pokes = moved.filter((id) => partnerOf(id) === partner).length
+          expect((yield* stateOf(partner))?.n).toBe(pokes)
+        }
+      })), 30_000)
+
+  // Decision 0274: a door's step whose entity's stop runs dies inside its transaction, and Cluster delivers the request
+  // again. The entity crashes at the commit of a timer's step, with its `Ask` held as it stops, and the door's step of
+  // a `Poke` comes while the stop is held.
+  test('a door step that finds the stop of its entity running dies, and is answered at a delivery after the stop', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        let release = () => {}
+        stopping = new Promise<void>((resolve) => {
+          release = resolve
+        })
+        yield* Effect.addFinalizer(() => Effect.sync(() => release()))
+        let crashes = true
+        const first = yield* start(1, (said) => {
+          if (said._tag !== 'Reached' || said.point !== 'BeforeCommit' || said.event._tag !== 'Fire') return
+          if (crashes) {
+            crashes = false
+            throw new Error('the runtime failed')
+          }
+        })
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        yield* create(first, 'e')
+        yield* send(first, 'e', { _tag: 'Ask' }, 'm-ask')
+        yield* until(Effect.sync(() => seen), (lines) => lines.includes('e started on 1'))
+        yield* send(first, 'e', { _tag: 'Ring', at: 0 }, 'm-ring')
+        yield* until(Effect.sync(() => seen), (lines) => lines.includes('e interrupted on 1'))
+        let answered = false
+        const poke = yield* Effect.forkChild(
+          send(first, 'e', { _tag: 'Poke' }, 'm-poke').pipe(Effect.tap(() => Effect.sync(() => void (answered = true)))),
+        )
+        const refused = restarted(stillStopping('Bell', 'e'))
+        yield* until(Effect.sync(() => logged.filter((line) => line === refused).length), (n) => n >= 2)
+        expect({ answered, n: (yield* stateOf('e'))?.n, stopped: seen.includes('e stopped on 1') })
+          .toEqual({ answered: false, n: 0, stopped: false })
+        release()
+        expect(yield* Fiber.join(poke).pipe(Effect.timeout('5 seconds'))).toBe('{"_tag":"Accepted"}')
+        expect(seen.indexOf('e stopped on 1')).toBeGreaterThan(-1)
+        expect((yield* stateOf('e'))?.n).toBe(1)
+        expect(warningsAndErrors()).toEqual([refused])
+      }), { retry: { millis: 3_600_000 } }), 30_000)
 
   // An entity stored under a partition that is not the shard Cluster routes its id to is what a release of Effect
   // that changes the hash of Cluster or of the storage leaves (decision 0273). The tests write that partition by hand.

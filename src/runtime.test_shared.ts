@@ -337,6 +337,9 @@ export const share = Bun.env['SCHEDULES'] === 'all' ? 1 : Bun.env['SCHEDULES'] =
  */
 export const slow = Bun.env['SCHEDULES'] === 'all' ? test : test.skip
 
+/** A test under `slow` of a bug reproduced and not fixed yet, which passes while the test fails. */
+export const slowFailing = Bun.env['SCHEDULES'] === 'all' ? test.failing : test.skip
+
 /**
  * The seed a test under `explored` starts from: 0, so that `bun test` and the release replay the same schedules,
  * unless `SEED` names another. `bun run test:explore` draws it at random, so that each of its runs tries new schedules.

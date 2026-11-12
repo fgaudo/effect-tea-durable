@@ -147,10 +147,10 @@ The decision leaves out four cases, each held by the [open questions](../open-qu
   rule no test holds yet. No seed of 2,000 of the explored test above reaches a stop that ends there, and the
   [open question](../open-questions.md#running) A stop that ends between the waker's refusal and its catch holds it.
 - That a door's step which finds a stop running dies, and that Cluster delivers the request again once the stop ends:
-  seen in `a door step that loads an entity and whose commit fails leaves the entity to run its stored operation`, in
-  [`src/cluster.test.ts`](../../src/cluster.test.ts). Its next door step came before the stop of the crash ended in
-  every run on the maintainer's machine, died, and was answered at Cluster's next delivery. The test accepts a run
-  where the stop ends first, so the premise is to be **tested** by a test of its own that holds the stop.
+  **tested** by `a door step that finds the stop of its entity running dies, and is answered at a delivery after the
+  stop`, in [`src/cluster.test.ts`](../../src/cluster.test.ts). The entity crashes with its operation's finalizer
+  held, and the door's step of a message is refused twice while the finalizer waits. The message is answered once the
+  finalizer ends. The test fails where `entersHeld` does not read `stopped`.
 - That Cluster lets a shard go only after the finalizer of its singleton ends, so that the runner which gains the shard
   loads none of its entities while their stops run: **tested** by `a shard that moves while an operation of the first
   runner still stops starts it on the second only after`, of [`src/cluster.test.ts`](../../src/cluster.test.ts), with
@@ -164,14 +164,33 @@ The decision leaves out four cases, each held by the [open questions](../open-qu
   [`src/cluster.test.ts`](../../src/cluster.test.ts), a test under `slow`. It fails where `losing` waits only for the
   stops of the entities it crashes itself.
 - That `losing` waiting for the stops does not hold up a finalizer of an operation that sends through the door's client
-  to an entity of the shard being let go: to be **tested** by a test with two runners, whose finalizer sends to such an
-  entity.
+  to an entity of the shard being let go: **failed**, on 2026-11-12, as `a stop that sends to an entity of the shard
+  being let go is answered, and the shard moves after it`, a `test.failing` under `slow` of
+  [`src/cluster.test.ts`](../../src/cluster.test.ts), reproduces. The first runner no longer serves the shard it
+  lets go, and the second does not hold the shard until the finalizer ends. So the finalizer's send is never
+  answered, and the shard never moves. The test bounds the send at 3 s so that it ends. The premise falls, and the
+  rule of `losing` waits for a fix the maintainer chooses: the section Premise failed below.
 - That a caller given a defect during a stop of a few milliseconds loses nothing a retry does not give back: **chosen**
   by the maintainer, on 2026-11-12. A crash has already given every waiting caller the defect, so a caller in the
   window is retrying already.
 - That an entity a region which never ends keeps from loading, and a `settled` that never returns, are better than a
   run beside the old fiber: **chosen** by the maintainer, on 2026-11-12. Cluster makes the same choice for the
   finalizer of a singleton, and closing the deployment's scope already waits for the stop.
+
+## Premise failed
+
+A stop that waits for Cluster closes a cycle. `losing` holds the shard until every stop of its entities ends, and a
+stop whose finalizer sends to an entity of that shard waits for the runner that gains it. Before this note the shard
+went at once, and the send was answered by the second runner. The fix is not chosen yet. The ones considered:
+
+- **A run whose entity crashed sends nothing.** A `send` or a `create` of an operation whose entity is in `stopping`
+  fails at once with a defect, so that no stop waits for Cluster. Every cycle through a stop's send breaks, on one
+  runner and across two, and the old fiber's send of bug 65 is refused at its sender too. A finalizer's compensating
+  send is lost, and the next run of the entity runs the operation again, or delivers `unknown` to the program.
+- **`losing` waits for the stops for a bounded time.** The shard goes once the bound passes, so the overlap of the
+  two runs comes back past it, and the bound is a margin the decision rests on.
+- **A send from a stop to a shard being let go fails at once.** It breaks this cycle alone, and leaves a cycle of
+  two shards let go by two runners at once, each stop sending to the other's.
 
 ## Alternatives
 

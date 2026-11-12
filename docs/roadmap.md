@@ -65,9 +65,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     refused it until `retry`, and `settled` returned with its timer due. The maintainer chose the fix on 2026-11-12,
     after a second opinion of a Fable 5.2 agent: an entity whose stop runs is neither loaded nor the waker's, its stop
     is work of the process, and every stop of a shard's entities holds the shard. The note says the rule, and seeds 106
-    and 1139 are pinned. The part next is the two premises the note still says are to be tested: a door's step refused
-    while a stop the test holds runs, in `src/cluster.test.ts`, and `losing` with a finalizer that sends to an entity of
-    the shard let go, with two runners. The note is taken once they pass, with `bun run test:release`.
+    and 1139 are pinned. A door's step refused while a stop runs is tested. The premise that `losing` holds up no
+    finalizer that sends to an entity of the shard let go failed on 2026-11-12: such a send is never answered, and the
+    shard never moves, as `a stop that sends to an entity of the shard being let go is answered, and the shard moves
+    after it`, a `test.failing` under `slow` of `src/cluster.test.ts`, reproduces. The part next is the maintainer's
+    choice of its fix, among the ones the note's section Premise failed lists, then its code, and the test made a
+    `slow`. The note is taken once it passes, with `bun run test:pins`, `bun run test:slow` and
+    `bun run test:release`.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
     machine. After bugs 31 and 65 come 37, 38, 40, 50, 51, 67 and 79.
