@@ -1690,10 +1690,53 @@ describe('a count and a sum over the entities that match (decision 0148)', () =>
         yield* ranking(store, { a: Number.MAX_VALUE, b: Number.MAX_VALUE, c: -Number.MAX_VALUE, d: 1, e: 0.1, f: -1 })
         const exit = yield* Effect.exit(store.sum({ index: 'rank' }))
         const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
-        expect(cause instanceof InvariantDefect && cause.reason).toBe("the total of the index 'rank' is past the largest double")
+        expect(cause instanceof InvariantDefect && cause.reason).toBe("the total of the index 'rank' may pass the largest double")
         // Each partial total of these is a double, so the sum is given.
         const small = [{ index: 'rank', is: '>', value: -2 }, { index: 'rank', is: '<', value: 2 }] as const
         expect(yield* store.sum({ index: 'rank', where: small })).toBe(0.1)
+      })))
+
+  // A sum is refused once its magnitudes, in units of 2^980 cut to integers, and one unit for each number, reach
+  // 2^44, alike on both dialects (decision 0277).
+  test('a sum is answered one unit under the bound of its magnitudes, and refused at it', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const unit = 2 ** 980
+        type Sets = Omit<T, 'index'> & { index: 'rank' | 'set' }
+        const sets: Program<Sets> = {
+          ...(named('Sets') as unknown as Program<Sets>),
+          indexes: { rank: (projection) => JSON.parse(projection) as Scalar, set: () => null },
+        }
+        const store = storage(sets, sql)
+        let sums = 0
+        // Each set of rows is summed apart, by a rank of its own that holds its number as a string.
+        const summed = (ranks: Readonly<Record<string, number>>) =>
+          Effect.gen(function*() {
+            const set = `s${sums++}`
+            yield* Effect.forEach(Object.entries(ranks), ([id, rank]) =>
+              store.write(
+                `${set}${id}`,
+                created({ shown: { projection: JSON.stringify(rank), indexes: { rank, set } } }),
+                0,
+              ))
+            const exit = yield* Effect.exit(store.sum({ index: 'rank', where: [{ index: 'set', is: '=', value: set }] }))
+            if (Exit.isSuccess(exit)) return exit.value
+            const cause = Cause.squash(exit.cause)
+            return cause instanceof InvariantDefect ? cause.reason : cause
+          })
+        const refused = "the total of the index 'rank' may pass the largest double"
+        expect(yield* summed({ a: (2 ** 44 - 2) * unit })).toBe((2 ** 44 - 2) * unit)
+        expect(yield* summed({ a: (2 ** 44 - 1) * unit })).toBe(refused)
+        expect(yield* summed({ a: Number.MAX_VALUE })).toBe(refused)
+        // Each magnitude is cut to its units: these hold 2^44 - 2 units, and count 2^44 - 3 of them and two numbers.
+        expect(yield* summed({ a: (2 ** 43 - 0.5) * unit, b: (2 ** 43 - 1.5) * unit })).toBe((2 ** 44 - 2) * unit)
+        expect(yield* summed({ a: (2 ** 43 - 1) * unit, b: (2 ** 43 - 1) * unit })).toBe(refused)
+        // A sign changes the total, and not the magnitudes.
+        expect(yield* summed({ a: (2 ** 43 - 1) * unit, b: -(2 ** 43 - 1) * unit })).toBe(refused)
+        expect(yield* summed({ a: (2 ** 43 - 1) * unit, b: -(2 ** 43 - 2) * unit })).toBe(unit)
+        // A magnitude under the least normal double counts no unit, and adds as it did.
+        const least = Number.MIN_VALUE
+        expect(yield* summed({ a: least, b: least, c: 3 * least })).toBe(5 * least)
       })))
 
   test('a count or a sum by an index the program does not declare dies, naming it', () =>

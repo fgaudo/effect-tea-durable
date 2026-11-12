@@ -384,9 +384,11 @@ export interface Handle<T extends Types, C = {}> {
    * The total of `index` over the entities whose indexes match `where`, as `count` finds them: a double, `0` over no
    * entity. A row whose index holds null, or no value at all, adds nothing. A row whose index holds a string or a
    * boolean is the caller's defect: the call dies, naming the index and the least id of such a row, and gives no
-   * total (decision 0148). So is a sum whose numbers, taken without their sign, add up past the largest double.
-   * PostgreSQL adds exactly and SQLite with a compensated sum of doubles, so the two may differ in the last digits,
-   * by at most a rounding of that total without signs (decision 0209).
+   * total (decision 0148). So is a sum whose numbers, taken without their sign, may add up past the largest double:
+   * each is counted in units of 2^980, cut to an integer, and the sum is refused once those units and the count of
+   * numbers reach 2^44, alike on both dialects (decision 0277). PostgreSQL adds exactly and SQLite with a compensated
+   * sum of doubles, so the two may differ in the last digits, by at most a rounding of that total without signs
+   * (decision 0209).
    */
   readonly sum: (summed: Summed<T>) => Effect.Effect<number>
   /**

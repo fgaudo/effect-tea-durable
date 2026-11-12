@@ -1,7 +1,8 @@
 # 0209. A sum is exact on PostgreSQL, and is refused alike on both dialects past the largest double
 
 **Status:** accepted, 2026-11-09. Changes [decision 0148](archive/0148-a-count-and-a-sum-are-read-in-one-statement.md),
-whose sum is a double that `TOTAL` adds.
+whose sum is a double that `TOTAL` adds. Its refusal is changed by [decision 0277](0277-a-sum-is-refused-by-a-count-of-its-magnitudes-both-dialects-make-alike.md), which refuses a sum by a
+count of its magnitudes in units of 2^980, since the total of magnitudes read as a double is refused apart at the edge.
 
 ## Context
 

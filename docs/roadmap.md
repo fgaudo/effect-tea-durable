@@ -63,8 +63,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     2026-11-12 after an opinion of a Fable 5.2 agent. Decision 0275 changes the runtime, so `bun run test:pins` and
     `bun run test:release` run again before the step is taken. Bug 38 is fixed by
     [decision 0276](decisions/0276-a-projections-allows-is-given-the-projection-as-a-caller-reads-it.md), which the maintainer chose on 2026-11-12 after an
-    opinion of a Fable 5.2 agent. The part next is the bugs noticed after 38: 40, 50, 51, 67 and 79, each verified
-    first, as bug 31 was, beginning with bug 40 and its `test.failing` in `src/dialects.test.ts`.
+    opinion of a Fable 5.2 agent. Bug 40 is fixed by
+    [decision 0277](decisions/0277-a-sum-is-refused-by-a-count-of-its-magnitudes-both-dialects-make-alike.md), which the maintainer chose on 2026-11-12 after an
+    opinion of a Fable 5.2 agent. Its test of `src/storage.test.ts` runs on PostgreSQL first in the job of PostgreSQL
+    of the push of `main` that takes it. The part next is the bugs noticed after 40: 50, 51, 67 and 79, each verified
+    first, as bug 31 was, beginning with bug 50 and its spike `spikes/full-volume.test.ts`.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
     machine.
@@ -306,11 +309,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       ([decisions 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md),
       [0184](decisions/0184-consume-runs-a-reader-of-a-consumer.md)). The
       [open question](open-questions.md#storage-and-reading) A reader with no time that misses a commit.
-  40. **Reproduced: a sum whose exact total of magnitudes is just under the largest double may be refused
-      on SQLite and accepted on PostgreSQL.**
-      ([decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md)). The
-      [open question](open-questions.md#storage-and-reading) A sum at the edge of the largest double.
-      Reproduced by `a sum whose exact total of magnitudes reads back as the largest double is answered alike on both dialects`, a `test.failing` of `src/dialects.test.ts`: PGlite gives `Number.MAX_VALUE` and SQLite refuses the sum.
+  40. **Fixed by [decision 0277](decisions/0277-a-sum-is-refused-by-a-count-of-its-magnitudes-both-dialects-make-alike.md)**, which refuses a sum by a count of its magnitudes in units of 2^980 that both dialects make alike.
   41. **Fixed by [decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md)**, whose launch dies, and makes nothing, where a schema further on the `search_path` holds the tables.
   42. **Fixed by [decision 0266](decisions/0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md)**, whose key fires again at one time only with a later due time, so a timer catches up.
   43. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, which pins seed 661 and runs it against the lock dropped by any user.

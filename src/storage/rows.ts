@@ -255,12 +255,14 @@ export const Rows = {
   /** A count of the rows that match. */
   count: decoder(Schema.Struct({ count: Count })),
   /**
-   * A total of an index and of its magnitudes, a double on SQLite and the text of a `NUMERIC` on PostgreSQL, and the
-   * least id of a row whose index holds a value that is no number, or null for none (decisions 0148, 0209).
+   * A total of an index, a double on SQLite and the text of a `NUMERIC` on PostgreSQL, the total of its magnitudes in
+   * units of 2^980 cut to integers, alike, how many rows hold a number, and the least id of a row whose index holds a
+   * value that is no number, or null for none (decisions 0148, 0209, 0277).
    */
   total: decoder(Schema.Struct({
     total: Schema.Union([Schema.Number, Schema.String]),
-    magnitude: Schema.Union([Schema.Number, Schema.String]),
+    units: Schema.Union([Schema.Number, Schema.String]),
+    numbers: Count,
     refused: Schema.NullOr(Schema.String),
   })),
   /**

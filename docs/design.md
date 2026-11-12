@@ -830,8 +830,11 @@ SQLite would read the string as `0` and `true` as `1`, and the total would look 
 index and the least id of such a row. Both read the rows as they stand while `reindex` runs, as a query does
 ([decision 0148](decisions/archive/0148-a-count-and-a-sum-are-read-in-one-statement.md)).
 
-A sum is also the caller's defect when the numbers it adds, taken without their sign, add up past the largest
-double. Below that bound no partial total overflows, in whatever order the rows are added. PostgreSQL adds the
+A sum is also the caller's defect when the numbers it adds, taken without their sign, may add up past the largest
+double. Each number without its sign is counted in units of 2^980, cut to an integer, and the sum is refused once
+those units and the count of numbers reach 2^44. Both dialects compute that count exactly, so both refuse the same
+sums, and below the bound no partial total overflows, in whatever order the rows are added
+([decision 0277](decisions/0277-a-sum-is-refused-by-a-count-of-its-magnitudes-both-dialects-make-alike.md)). PostgreSQL adds the
 numbers exactly and rounds the total once. SQLite adds doubles with a compensated sum. So the two dialects may give
 totals that differ in the last digits, by a few units of the last place of the total without signs
 ([decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md)).

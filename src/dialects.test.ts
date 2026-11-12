@@ -185,10 +185,10 @@ test('both dialects answer every call alike', () =>
     { numRuns: Bun.env['SCHEDULES'] === 'all' ? 400 : 8 },
   ), 1_200_000)
 
-// Bug 40 of the roadmap: SQLite adds the magnitudes as doubles, and its partial total may round up past the largest
-// double where the exact total, which PostgreSQL adds, stays under it. One ulp below the largest double, and two of
-// 0.6 of an ulp: the exact total is 0.2 of an ulp over it, which reads back as the largest double.
-test.failing('a sum whose exact total of magnitudes reads back as the largest double is answered alike on both dialects', async () => {
+// SQLite adds doubles, and its partial total may round up past the largest double where the exact total, which
+// PostgreSQL adds, stays under it. One ulp below the largest double, and two of 0.6 of an ulp: the exact total is 0.2
+// of an ulp over it, which reads back as the largest double. Both dialects refuse it (decision 0277).
+test('a sum whose exact total of magnitudes reads back as the largest double is answered alike on both dialects', async () => {
   const ulp = 2 ** 971
   const amounts = [Number.MAX_VALUE - ulp, 0.6 * ulp, 0.6 * ulp]
   const summed = (dialect: Dialect) =>

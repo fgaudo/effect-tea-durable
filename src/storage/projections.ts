@@ -373,25 +373,36 @@ export const projectionsOf = <T extends Types>(held: Held<T>): Pick<
   /** Whether an index holds a boolean on PostgreSQL: false where the row lacks the index, as for JSON's null. */
   const boolean = (index: string) => sql`coalesce(${typed(index)} = 'boolean', FALSE)`
 
+  /** What turns a magnitude into units of 2^980, bound as a parameter so that it reaches the database exactly. */
+  const unit = 2 ** -980
+
   const sum = ({ index, where = [] }: Summed<T>) =>
     Effect.gen(function*() {
       // On SQLite `json_type` tells `true` from `1`, which `json_extract` gives alike, and is NULL where the row
       // lacks the index. `TOTAL` gives a double and never fails on an overflow of SQLite's integers, where `SUM` does
       // (decision 0148). On PostgreSQL the numbers are added exactly as `NUMERIC`, and read as text, since a total
       // of doubles there fails the statement on an overflow and depends on the order of the rows (decision 0209).
+      // `units` adds each magnitude's double in units of 2^980, cut to an integer, which both dialects compute
+      // exactly, so both refuse the same sums (decision 0277). On PostgreSQL a magnitude under 1e290 counts no unit,
+      // and is not multiplied, since a product under the least double fails the statement there.
       const [summed] = yield* rows('effecttea_projections', Rows.total)(
         dialect === 'pg'
           ? sql`
             SELECT CAST(COALESCE(SUM(CASE WHEN ${typed(index)} = 'number' THEN CAST(${value(index)} AS NUMERIC) END),
                      0) AS TEXT) AS total,
-                   CAST(COALESCE(SUM(CASE WHEN ${typed(index)} = 'number' THEN ABS(CAST(${value(index)} AS NUMERIC)) END),
-                     0) AS TEXT) AS magnitude,
+                   CAST(COALESCE(SUM(CASE WHEN ${typed(index)} = 'number'
+                     AND ABS(CAST(${value(index)} AS NUMERIC)) >= 1e290
+                     THEN CAST(TRUNC(ABS(CAST(${value(index)} AS DOUBLE PRECISION))
+                       * CAST(${unit} AS DOUBLE PRECISION)) AS NUMERIC) END), 0) AS TEXT) AS units,
+                   COUNT(CASE WHEN ${typed(index)} = 'number' THEN 1 END) AS numbers,
                    MIN(CASE WHEN ${typed(index)} NOT IN ('number', 'null') THEN id END) AS refused
             FROM effecttea_projections WHERE ${sql.and(criteria(where))}
           `
           : sql`
             SELECT TOTAL(CASE WHEN ${kind(index)} IN ('integer', 'real') THEN ${columnOf(index)} END) AS total,
-                   TOTAL(CASE WHEN ${kind(index)} IN ('integer', 'real') THEN ABS(${columnOf(index)}) END) AS magnitude,
+                   TOTAL(CASE WHEN ${kind(index)} IN ('integer', 'real')
+                     THEN CAST(ABS(${columnOf(index)}) * ${unit} AS INTEGER) END) AS units,
+                   COUNT(CASE WHEN ${kind(index)} IN ('integer', 'real') THEN 1 END) AS numbers,
                    MIN(CASE WHEN ${kind(index)} NOT IN ('integer', 'real', 'null') THEN id END) AS refused
             FROM effecttea_projections WHERE ${sql.and(criteria(where))}
           `,
@@ -402,11 +413,11 @@ export const projectionsOf = <T extends Types>(held: Held<T>): Pick<
           new InvariantDefect({ reason: `the index '${index}' of '${summed.refused}' holds no number, and is no sum's` }),
         )
       }
-      // A total of the magnitudes that is a double bounds every partial total, in whatever order SQLite adds the
-      // rows, so both dialects refuse the same sums (decision 0209).
-      if (!Number.isFinite(Number(summed.magnitude))) {
+      // Each cut loses less than a unit, so the magnitudes add up to less than `units + numbers` units, and no
+      // partial total of either dialect overflows below 2^44 units, which is 2^1024 (decision 0277).
+      if (Number(summed.units) + summed.numbers >= 2 ** 44) {
         return yield* Effect.die(
-          new InvariantDefect({ reason: `the total of the index '${index}' is past the largest double` }),
+          new InvariantDefect({ reason: `the total of the index '${index}' may pass the largest double` }),
         )
       }
       return Number(summed.total)

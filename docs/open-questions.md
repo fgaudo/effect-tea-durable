@@ -101,12 +101,6 @@ with a requirement that no example has yet.
   They would be decided by:
   - a test of a `COMMIT` whose outcome is unknown, as a connection lost during the `COMMIT`, followed by a crash;
   - whether `wait: true` keeps a bound of its own, as the timed wait of 0142 did.
-- **A sum at the edge of the largest double.** A sum is refused past the largest double, alike on both dialects
-  ([decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md)). SQLite adds
-  the magnitudes as doubles, and PostgreSQL adds them exactly and rounds once. So a set of rows whose exact total of
-  magnitudes is just under `Number.MAX_VALUE` might be refused on SQLite and accepted on PostgreSQL. It is bug 40 of
-  the [roadmap](roadmap.md), not checked. It would be decided by:
-  - a case of `src/dialects.test.ts` with such rows.
 - **A set of tables the `search_path` no longer names.** A launch dies where a schema further on the `search_path`
   holds the tables ([decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md)). A launch whose
   `search_path` no longer names the schema that holds them, as `runtime` alone where the tables are in `public`, finds
