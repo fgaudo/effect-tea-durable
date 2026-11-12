@@ -67,7 +67,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0277](decisions/0277-a-sum-is-refused-by-a-count-of-its-magnitudes-both-dialects-make-alike.md), which the maintainer chose on 2026-11-12 after an
     opinion of a Fable 5.2 agent. Its test of `src/storage.test.ts` runs on PostgreSQL first in the job of PostgreSQL
     of the push of `main` that takes it. Bug 50 is seen by a second test of `spikes/full-volume.test.ts`, on the
-    CI's volume, and its fix is proposed to the maintainer next. The bugs noticed after it, 51, 67 and 79, are each
+    CI's volume. The maintainer chose on 2026-11-12, after an opinion of a Fable 5.2 agent, that its fix is the
+    procedure of decision 0223 with the callers stopped before the room is freed, in a note that changes 0223. Before
+    the note, the spike checks on the CI's volume that the procedure holds with the callers stopped, and what the
+    steps the runtime takes of its own, as a timer due, take of the room freed. The bugs noticed after it, 51, 67 and 79, are each
     verified first, as bug 31 was.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
