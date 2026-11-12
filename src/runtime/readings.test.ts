@@ -222,9 +222,15 @@ describe('a consumer on Cluster, woken by another runner’s commit (decision 01
             }),
         )
         if (losing !== null) yield* Fiber.join(losing)
-        yield* TestClock.adjust('1 second')
-        if (crashing === 'refused') expect(refused, "the loop's settle was refused").toBeGreaterThan(0)
+        // On a pool of PostgreSQL the loop's `Settle` and the reading's next page wait for statements on connections of
+        // their own, which the test clock does not move. So the test waits on the real clock, for five seconds at most.
+        const real = Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 20)))
+        if (crashing === 'refused') {
+          for (let tries = 0; refused === 0 && tries < 250; tries++) yield* real
+          expect(refused, "the loop's settle was refused").toBeGreaterThan(0)
+        }
         expect((yield* reader.fetch('projection', 'queue', all)).map(({ value }) => value)).toEqual([1])
+        for (let tries = 0; waiting.pollUnsafe() === undefined && tries < 250; tries++) yield* real
         expect(waiting.pollUnsafe(), 'the reading was told of the row').toBeDefined()
         expect((yield* Fiber.join(waiting)).map(({ value }) => value)).toEqual([1])
       }))), 10_000)
