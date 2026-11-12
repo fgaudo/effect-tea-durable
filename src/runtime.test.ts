@@ -1498,6 +1498,65 @@ describe('a planned stop', () => {
       }), 'stopped', { open: false, pinned: [659] })
   }, 60_000)
 
+  // The premise review's second reading of area 5, the same form for a timer. `arm` reads `draining`, then the clock,
+  // and registers the timer's fiber in `timers` only once `forkHeld` has forked it. The drain's `quiesce` stops the
+  // timers, then `a`, whose interruption tells the test that the stop is done. The clock moves only after it, so a
+  // `Fire` the drain lets through is a timer the stop missed.
+  test('FAILING: a step that arms a timer as the drain begins has it stopped at once', () => {
+    const raced: Program<T> = {
+      ...program,
+      name: 'Raced',
+      init: (_flags, at) => ({ want: ['a', 'b'], applied: [], since: at, rings: DateTime.addDuration(at, '50 millis') }),
+    }
+    explored((window) =>
+      Effect.gen(function*() {
+        const gate = Deferred.makeUnsafe<void>()
+        const quiesced = Deferred.makeUnsafe<void>()
+        const layer = Layer.succeed(
+          Hands,
+          Hands.of({
+            act: (key) =>
+              key === 'b'
+                ? Deferred.await(gate)
+                : Effect.onInterrupt(Effect.never, () => Deferred.succeed(quiesced, undefined)),
+          }),
+        )
+        let fired = 0
+        const observe = (_entity: Address, event: Machine.Event<never>) =>
+          Effect.sync(() => {
+            if (event._tag === 'Fire' && Deferred.isDoneUnsafe(quiesced)) fired += 1
+          })
+        const at = yield* DateTime.now
+        const handle = Deferred.makeUnsafe<Library.Handle<T>>()
+        const release = Deferred.makeUnsafe<void>()
+        // The body ends as the caller's step has replied and is about to arm `t`, so the drain begins there.
+        const at_ = (point: Point, _entity: Address, event: Machine.Event<never>) =>
+          point === 'AfterReply' && event._tag === 'Receive' ? Deferred.succeed(release, undefined) : Effect.void
+        const stopping = yield* Effect.forkChild(process({ drain: { millis: 1_000 }, at: at_, observe }, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(raced), layer)
+            yield* ran(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
+            yield* Deferred.succeed(handle, toy)
+            yield* Deferred.await(release)
+          })))
+        const toy = yield* Deferred.await(handle)
+        yield* opened(window, true)
+        yield* Effect.forkChild(
+          toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'n' }, {
+            requestId: 'want',
+            sender: tester,
+            keep: 'forever',
+          }),
+        )
+        yield* Deferred.await(quiesced)
+        // Past the time of `t`, within the drain's.
+        yield* adjusted(window, '100 millis')
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(stopping)
+        return fired
+      }), 0, { open: false, pinned: [60] })
+  }, 60_000)
+
   test('a completion in the drain starts no operation that runs again, and arms no timer', () =>
     database(Effect.gen(function*() {
       // `b`'s completion brings `a`, and `t`, due at once: both wait for the next activation.
@@ -1932,6 +1991,34 @@ describe('a planned stop', () => {
       expect(given.acted.filter((key) => key === 'b').length).toBe(1)
       expect(unknown(seen.published.filter((row) => row.id === 'toy-1'))).toEqual([])
     })))
+
+  // The premise review's second reading of area 5, the form of `a step that starts an operation that runs again as the
+  // drain begins` in the undo of decision 0280. The deploy is interrupted as the activation of `toy-2` has replied and
+  // is about to start `a`, `b` and `c`. The undo's `quiesce` may run between `start`'s look at `draining` and the
+  // registration of `a` or `c`, which then run on in its wait. They never end, so the undo would wait its whole
+  // `millis`, which the clock never reaches, though `b` has ended.
+  test('FAILING: an undo that begins as an activation starts its operations stops those that run again at once', () =>
+    explored((window) =>
+      Effect.gen(function*() {
+        yield* leftUnderWay
+        const given = yield* gated
+        const reached = Deferred.makeUnsafe<void>()
+        let first = true
+        const at_ = (point: Point, entity: Address, event: Machine.Event<never>) => {
+          if (!first || point !== 'AfterReply' || event._tag !== 'Restart' || entity.id !== 'toy-2') return Effect.void
+          first = false
+          return Deferred.succeed(reached, undefined)
+        }
+        const main = yield* Effect.forkChild(
+          process({ drain: { millis: 100 }, at: at_ }, (runtime) => Effect.provide(runtime.deploy(program), given.layer)),
+        )
+        yield* opened(window, true)
+        yield* Deferred.await(reached)
+        yield* Effect.forkChild(Fiber.interrupt(main))
+        yield* given.open
+        yield* Fiber.await(main)
+        return 'undone'
+      }), 'undone', { open: false, pinned: [13] }), 60_000)
 
   for (const millis of [0, 100]) {
     test(`a deploy whose at-most-once operation outlasts the undo's ${millis} millis fails after them, and delivers unknown`, () =>
