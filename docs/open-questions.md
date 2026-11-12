@@ -460,16 +460,6 @@ with a requirement that no example has yet.
   - an explored test whose activation by the waker meets a crash a caller makes after the waker's reading, with a stop
     that ends within a few steps;
   - a deviation under `bound` 1 that holds the waker between the refusal and the catch.
-- **A wait for an interruption in a crashed run's send.** On Cluster, an operation's request whose asker's work has
-  ended waits until the operation is interrupted, in `resettingSavedFailure` of `src/cluster.ts`
-  ([decision 0170](decisions/archive/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md)).
-  A crashed run's send in a region held uninterruptible would wait there for ever, and hold its stop. The race of
-  the request with the run's latch ([decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md))
-  ends it, as it ends every other wait of the request, and no test reaches that wait in a stop. It would be decided
-  by:
-  - a test of `src/cluster.test.ts` whose crashed run sends, from a region held uninterruptible, a request whose
-    work a step has ended;
-  - whether a crashed run's work can be found ended before its stop ends.
 - **An act on the outside world beside the next holder's run.** On Cluster, a runner that lost its lease without
   giving the shard up may still run an operation that calls a service, while the next holder runs the entity. The
   library cannot refuse such an act, and an at-most-once operation's `unknown` may be delivered beside it. Fencing the

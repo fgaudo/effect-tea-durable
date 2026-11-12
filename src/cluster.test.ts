@@ -1266,6 +1266,8 @@ describe('the shards of a runner on Cluster', () => {
   let inRegion: (who: string) => string | null = () => null
   /** While set, the region of an `Ask` waits for it before it pokes. */
   let regionGate: Promise<void> | null = null
+  /** Whether the region of an `Ask` sends its poke to an entity of `ghost` instead of `bell`. */
+  let haunting = false
   /** What an `Ask` of `who` on `port` saw of its poke of `to`, as a line of `seen`. */
   const poked = (what: string, who: string, to: string, port: number) =>
     Effect.matchCause({
@@ -1378,7 +1380,11 @@ describe('the shards of a runner on Cluster', () => {
           if (to !== null) {
             yield* Effect.uninterruptible(
               Effect.suspend(() => regionGate === null ? Effect.void : Effect.promise(() => regionGate!)).pipe(
-                Effect.andThen(sendFrom(bell, to, { _tag: 'Poke' }, 'region')),
+                Effect.andThen(
+                  haunting
+                    ? Effect.as(sendFrom(ghost, to, { _tag: 'Add' }, 'region'), { _tag: 'Added' } as { readonly _tag: string })
+                    : Effect.map(sendFrom(bell, to, { _tag: 'Poke' }, 'region'), (reply): { readonly _tag: string } => reply),
+                ),
                 Effect.timeoutOption('3 seconds'),
                 poked('poked in its region', who, to, port),
               ),
@@ -1523,6 +1529,7 @@ describe('the shards of a runner on Cluster', () => {
     farewell = () => null
     inRegion = () => null
     regionGate = null
+    haunting = false
     // Cluster may log that no runner is healthy as its runners shut down, between a runner's unregistration and the
     // interruption of its loop of assignments. What the teardown logs of it is Cluster's, and is dropped.
     let ended = -1
@@ -2014,6 +2021,63 @@ describe('the shards of a runner on Cluster', () => {
         const logs = warningsAndErrors().filter((line) => line !== outlivesRetry)
         expect(logs).toEqual([])
       }), { retry: { millis: 3_600_000 } }), 30_000)
+
+  // Decisions 0170 and 0274: an operation's request that Cluster failed, sent after its asker's work ended, waits
+  // until the operation is interrupted, and a crash of its entity ends that wait in a region the crash cannot
+  // interrupt. The sender's region sends to an entity of `Ghost` the second runner holds and does not deploy, so
+  // Cluster saves a failure. The test deletes the sender's key row first, so that the client finds the work ended.
+  slow("a request Cluster failed after its asker's work ended ends with the defect once its entity crashes", () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const crashes = new Set<string>()
+        const first = yield* start(1, (said) => {
+          if (said._tag !== 'Reached' || said.point !== 'BeforeCommit' || said.event._tag !== 'Fire') return
+          if (crashes.delete(said.entity.id)) throw new Error('the runtime failed')
+        })
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const named = (prefix: string, held: (id: string) => boolean) =>
+          Array.from({ length: 64 }, (_, i) => `${prefix}${i}`).filter(held)
+        const sender = named('e', first.holds)[0]!
+        const haunted = named('g', second.holds)[0]!
+        yield* first.deployGhost
+        let open = () => {}
+        regionGate = new Promise<void>((resolve) => {
+          open = resolve
+        })
+        yield* Effect.addFinalizer(() => Effect.sync(() => open()))
+        haunting = true
+        inRegion = (who) => who === sender ? haunted : null
+        yield* create(first, sender)
+        yield* send(first, sender, { _tag: 'Ask' }, 'm-ask')
+        yield* until(Effect.sync(() => seen), (lines) => lines.includes(`${sender} started on 1`))
+        // The asker's work ends for the client alone: the run goes on, and `kept` finds no row of its key.
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`DELETE FROM effecttea_entity_keys WHERE name = 'Bell' AND id = ${sender} AND key = 'ask'`
+        open()
+        // The client keeps the request's id pending where it finds the work ended, and then waits.
+        yield* until(
+          Effect.map(
+            sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_sent_requests WHERE sender_name IS NULL`,
+            ([row]) => Number(row?.held ?? 0),
+          ),
+          (held) => held > 0,
+        )
+        crashes.add(sender)
+        yield* send(first, sender, { _tag: 'Ring', at: 0 }, 'm-ring')
+        const crashed = `${sender} poked in its region ${haunted} on 1: `
+        yield* until(Effect.sync(() => seen), (lines) => lines.some((line) => line.startsWith(crashed)))
+        expect(seen.find((line) => line.startsWith(crashed))).toMatch(/after its entity crashed/)
+        // The next run is loaded only once the stop has ended (decision 0274), and answers the `Poke`.
+        inRegion = () => null
+        yield* send(first, sender, { _tag: 'Poke' }, 'm-poke')
+        expect((yield* stateOf(sender))?.n).toBe(1)
+        yield* until(Effect.sync(() => seen), (lines) => lines.filter((line) => line === `${sender} started on 1`).length === 2)
+      }), { retry: { millis: 3_600_000 } }, Duration.millis(300)), 30_000)
 
   // Decision 0274: a door's step whose entity's stop runs dies inside its transaction, and Cluster delivers the request
   // again. The entity crashes at the commit of a timer's step, with its `Ask` held as it stops, and the door's step of

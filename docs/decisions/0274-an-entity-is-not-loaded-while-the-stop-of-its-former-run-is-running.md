@@ -212,9 +212,12 @@ The decision leaves out four cases more, each held by the [open questions](../op
   send waiting for its reply in the client when its entity crashes ends with the defect, and is applied once`, and for
   a shard lost by `a send waiting in a region when its shard is lost ends with the defect, the shard moves, and it is
   applied once`, both under `slow` in [`src/cluster.test.ts`](../../src/cluster.test.ts). Each failed on the code of
-  `7d06c22`. The wait of `resettingSavedFailure` of `src/cluster.ts` for an interruption (decision 0170) is one more
-  wait of the request, which the same race ends, and no test reaches it in a stop: the case is **open**, in the
-  [open question](../open-questions.md#running) A wait for an interruption in a crashed run's send.
+  `7d06c22`. The wait of `resettingSavedFailure` of `src/cluster.ts` for an interruption, where `kept` finds the
+  asker's work ended (decision 0170), is one more wait of the request, which the same race ends: **tested** by `a
+  request Cluster failed after its asker's work ended ends with the defect once its entity crashes`, under `slow` in
+  [`src/cluster.test.ts`](../../src/cluster.test.ts). The test deletes the sender's row of `effecttea_entity_keys`
+  by hand, so that `kept` finds the work ended while the run goes on. Without the race of `untilCrashed`, the wait
+  ends only at the region's bound of three seconds, with no answer, and the test fails.
 - That a race inside an uninterruptible region, or in the finalizer of a fiber interrupted, ends at its first side
   and interrupts the other: **seen** in [`spikes/effect-race-in-uninterruptible-region.test.ts`](../../spikes/effect-race-in-uninterruptible-region.test.ts),
   at Effect 4.1.3. The JSDoc of `raceFirst` and `interruptible` says nothing of a region.
