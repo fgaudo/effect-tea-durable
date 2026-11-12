@@ -15,11 +15,12 @@
  * A second test, for bug 50 of the roadmap, fills the volume again, and frees the room while callers retry their
  * steps. The operator forgets and prunes a second after the room is freed, and the callers go on beside the prune.
  * The callers' steps take the room freed before the forget, so the prune fails as on the full volume. The callers
- * then stop, more room is freed, and the forget and the prune are tried again.
+ * then stop, more room is freed, and the forget and the prune commit.
  *
  * A third test arms entities with a timer due an hour after their creation, and launches the second process with a
  * clock two hours ahead, with no callers. The timers fire on the full volume, and their steps are retried once room
- * is freed: the steps the runtime takes of its own, which a procedure that stops the callers does not stop.
+ * is freed: the steps the runtime takes of its own, which a procedure that stops the callers does not stop. They are
+ * as many as the work stored as due, so they take part of the room freed, and the forget and the prune commit.
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
@@ -211,10 +212,10 @@ const ahead = (real: Clock.Clock, millis: number): Clock.Clock => ({
 const freedBesideTimers = (filename: string, ballast: string, armed: ReadonlyArray<string>) =>
   Effect.scoped(Effect.gen(function*() {
     const handle = yield* deployed(['current'])
-    // How many armed entities have stored their tick.
+    // How many armed entities have stored their tick: the projection counts it, and nothing else steps them.
     const ticked = Effect.map(
-      Effect.forEach(armed, (id) => Effect.map(handle.read(id), (entity) => JSON.stringify(entity))),
-      (entities) => entities.filter((entity) => entity.includes('"at":null')).length,
+      Effect.forEach(armed, handle.read),
+      (projections) => projections.filter((projection) => projection !== null && projection.count > 0).length,
     )
     yield* Effect.sleep('1 second')
     const beforeFree = yield* Effect.exit(ticked)
@@ -228,7 +229,7 @@ const freedBesideTimers = (filename: string, ballast: string, armed: ReadonlyArr
     const afterProcedure = yield* Effect.exit(ticked)
     console.log('forget beside the timers:', shown(forgotten))
     console.log('a prune beside the timers:', shown(pruned), sizes(filename), 'ticked:', shown(afterProcedure))
-    return { beforeFree, beforeProcedure, forgotten, pruned }
+    return { beforeFree, beforeProcedure, afterProcedure, forgotten, pruned }
   }).pipe(Effect.provideServiceEffect(
     Clock.Clock,
     Effect.map(Effect.service(Clock.Clock), (real) => ahead(real, 7_200_000)),
@@ -291,8 +292,9 @@ test.skipIf(volume === undefined)('the room freed on a full volume, beside the s
     expect(beside.beforeProcedure.committed).toBeGreaterThan(0)
     expect(Exit.isSuccess(beside.forgotten)).toBe(true)
     expect(Exit.isFailure(beside.pruned)).toBe(true)
-    // Not decided yet: whether the procedure holds once the callers stop.
-    console.log('with the callers stopped:', shown(beside.forgottenStopped), shown(beside.prunedStopped))
+    // With the callers stopped, the room freed again holds the forget and the prune.
+    expect(Exit.isSuccess(beside.forgottenStopped)).toBe(true)
+    expect(Exit.isSuccess(beside.prunedStopped) && beside.prunedStopped.value).toBeGreaterThan(0)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
@@ -313,9 +315,13 @@ test.skipIf(volume === undefined)('the room freed on a full volume, beside the t
     await run(createTables)
     const full = await run(filling(filename, armed))
     const beside = await run(freedBesideTimers(filename, ballast, armed))
-    // Not decided yet: this run only shows what the runtime's own steps take of the room freed.
+    // The timers fire on the full volume and commit nothing, then their retries take part of the room freed, and
+    // the forget and the prune commit beside them.
     expect(full.sent).toBeGreaterThan(0)
-    console.log('beside the timers:', shown(beside.forgotten), shown(beside.pruned))
+    expect(Exit.isSuccess(beside.beforeFree) && beside.beforeFree.value).toBe(0)
+    expect(Exit.isSuccess(beside.afterProcedure) && beside.afterProcedure.value).toBeGreaterThan(0)
+    expect(Exit.isSuccess(beside.forgotten)).toBe(true)
+    expect(Exit.isSuccess(beside.pruned) && beside.pruned.value).toBeGreaterThan(0)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
