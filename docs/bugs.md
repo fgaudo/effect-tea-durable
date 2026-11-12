@@ -189,16 +189,21 @@ family gets a fix of its own.
     `src/cluster.test.ts`, on `claude/premise-review-schemas-2-b06280` at `3e592de`. The fix begins at `forget`
     of `src/storage/log.ts`, or at `enlisted` of `src/runtime.ts`. The
     [open question](open-questions.md#storage-and-reading) The consumers of several runners on Cluster.
-25. **Reasoned, its tests written: on a pool of PostgreSQL, `reindex` writes the projection of a state over the
+25. **Reproduced on the CI's server: on a pool of PostgreSQL, `reindex` writes the projection of a state over the
     row a step committed while its statement waited.** Its guard on the state is read from the statement's
     snapshot, and `ON CONFLICT DO UPDATE` writes the row the step committed
     ([decisions 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md),
     [0222](decisions/0222-postgresql-with-many-connections.md)). Under `REPEATABLE READ` the statement fails
-    instead, and `reindex` dies. Two sessions found it. The tests `FAILING: a reindex beside a step on a pool
-    leaves the row the step wrote`, on `claude/premise-review-schemas-1-0ccf33` at `778b0f2`, and `FAILING:
-    reindex leaves the row a step committed while its statement waited on the row`, on
-    `claude/premise-review-schemas-2-b06280` at `3e592de`, both in `src/postgres.test.ts`, run only on a server,
-    and have not run. The fix begins at `reindex` of `src/storage/projections.ts`. The
+    instead, and `reindex` dies. Two sessions found it. The test of a contract `two calls held at a statement on a
+    pool answer as one order of them`, in `src/contract.test.ts` on `claude/contract-tests-c7e2a1` at `4f8269d`,
+    reproduced it in the job `postgres` of the CI on 2026-11-12, once in 139 runs. A message to an entity was answered
+    `Accepted` while a `reindex` ran beside it, and the entity's projection read after was the one before the
+    message. The todo `a reindex held beside a step on a pool leaves the row the step wrote`, in the same file, holds
+    the case fast-check shrank it to, and the test of a contract leaves `reindex` out until the fix. The tests
+    `FAILING: a reindex beside a step on a pool leaves the row the step wrote`, on
+    `claude/premise-review-schemas-1-0ccf33` at `778b0f2`, and `FAILING: reindex leaves the row a step committed
+    while its statement waited on the row`, on `claude/premise-review-schemas-2-b06280` at `3e592de`, both in
+    `src/postgres.test.ts`, have not run. The fix begins at `reindex` of `src/storage/projections.ts`. The
     [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its snapshot.
 26. **Fixed by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md)**, which refuses a call that runs a step or waits for one within a transaction of the client.
 27. **Reasoned: on Cluster, the ids a process of the old code keeps under a renamed name stay for ever in

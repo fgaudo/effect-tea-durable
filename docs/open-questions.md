@@ -715,8 +715,9 @@ with a requirement that no example has yet.
   ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)), and `reindex`
   writes the projection of a state over the row a step committed
   ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). They are bugs 13 and 25 of
-  the [roadmap](roadmap.md), each with a test of `src/postgres.test.ts` that no run has reached. It would be decided
-  by:
+  the [roadmap](roadmap.md), each with a test of `src/postgres.test.ts` that no run has reached. Bug 25 is
+  reproduced on the CI's server by the test of a contract of `src/contract.test.ts`, which holds a `reindex` and a
+  step at a statement, on 2026-11-12. It would be decided by:
   - the tests run against the CI's server, from the reviewers' branches;
   - a reading of every statement of `src/storage/` whose guard stands in a subquery or in an `INSERT … SELECT`, for
     the same form;

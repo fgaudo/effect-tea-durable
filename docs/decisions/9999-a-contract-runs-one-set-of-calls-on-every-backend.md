@@ -50,7 +50,14 @@ waited: a creation whose projection holds U+0000 in an index.
   rows of the other runs. A message of the pair adds to an index, so that a message applied twice shows in the
   readings.
 - **The runs on the pool share one database and one runtime**, as the runs on Cluster share their runners, with the
-  same prefix of a run. The test runs only on a server, ten runs under `bun test` and 200 under `SCHEDULES=all`.
+  same prefix of a run.
+- **The test of the pool runs a hundred runs, and 500 under `SCHEDULES=all`.** Only `bun run test:postgres`
+  reaches it, since `bun test` on one machine has no server. So it holds the budget of the job `postgres`, a minute or
+  two, rather than the two seconds of a test of `bun test`.
+- **`reindex` is left out of the pairs until bug 25 of [`docs/bugs.md`](../bugs.md) is fixed.** The first run of 200
+  on the CI's server failed at the 139th: a `reindex` beside a message wrote the projection of the state before the
+  message over the row its step committed. The todo `a reindex held beside a step on a pool leaves the row the step
+  wrote` holds the case fast-check shrank it to, and the fix puts `reindex` back.
 
 ## What it rests on
 
@@ -73,8 +80,12 @@ waited: a creation whose projection holds U+0000 in an index.
 - That runs that share two runners read only their own entities: **tested**, since each run's readings on Cluster
   equal those of a new database.
 - That the runners start within a minute: **seen**, in the runs of the test on the maintainer's machine.
-- That two calls held at a statement on a pool answer as one order of them: **open**. The test runs only on a
-  server, and runs in the job `postgres` of the CI on the push of the step's branch.
+- That two calls held at a statement on a pool answer as one order of them, `reindex` aside: **tested**, by a hundred
+  runs in the job `postgres` of the CI, on the push of `claude/contract-tests-c7e2a1` at `0e7155d`. With `reindex`,
+  it **failed**, which is bug 25.
+- That some pairs are held at once: **seen**, in 6 of the hundred runs of the CI, where both calls waited at the
+  lock. The other runs still run their two calls at once on two connections, unaligned. The test fails a run of 50
+  or more in which no pair waited at once.
 - That a lock of a table held by another connection makes a call wait at its first statement of that table:
   **documented** by PostgreSQL, whose `ACCESS EXCLUSIVE` lock conflicts with every other lock of the table.
 - That an operator's call answers alike in either order, but for what it counts: **chosen** by this note. `expire`,

@@ -375,12 +375,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     renamed from `src/dialects.test.ts`. Its property `every backend answers every call alike` runs the calls
     fast-check generates on SQLite, on PostgreSQL and on Cluster with two runners that the runs share, and Cluster's
     answer to a creation the program dies on is written there once. It passed 300 runs under `SCHEDULES=all`.
-  - Under way, the pool, for family D: the test `two calls held at a statement on a pool answer as one order of them`
-    of `src/contract.test.ts`, written on 2026-11-12, runs two calls at once while a connection of its own holds a
-    lock of a table of the library. It runs only on a server. The branch is pushed so that the job `postgres` of the
-    CI runs it, since the maintainer's machine has no server. Its premise is `open` in the note until that job
-    passes. A failure the job shows is a bug of `docs/bugs.md`, held by the case fast-check shrinks it to. Bugs 3,
-    13, 25 and 80 are the cases it should meet, whose tests on the reviewers' branches have not run.
+  - Done, on 2026-11-12, the pool, for family D: the test `two calls held at a statement on a pool answer as one
+    order of them` of `src/contract.test.ts` runs two calls at once while a connection of its own holds a lock of a
+    table of the library. It runs only on a server, so the branch was pushed for the job `postgres` of the CI, which
+    passed a hundred runs. It reproduced bug 25 of `docs/bugs.md`, and leaves `reindex` out of its pairs until the
+    fix, which a todo holds.
+  - Next, the pool's gate: both calls waited at the lock in only 6 of a hundred runs, since the table locked is drawn
+    among every table of the library. A gate drawn among the tables both calls of a pair write would hold more pairs
+    at once. The fix of bug 25, and of bugs 13, 78 and 80 of the same form, is the open question A statement whose
+    condition PostgreSQL reads from its snapshot, a choice of the maintainer.
   - Then the calls of the contract grow: an operator's `resume`, `discard` and readings, an operation that sends to
     another entity, a timer, and `expire`, each on every backend. Bugs 10 and 11 are their first cases on Cluster.
   - Then the tests of the runtime that hold a rule of one process, which `src/runtime.test.ts` holds, run on Cluster
