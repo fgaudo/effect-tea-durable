@@ -17,7 +17,7 @@ import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import { Migrator, SqlClient, SqlError, Statement } from 'effect/sql'
-import type * as Machine from './machine.ts'
+import * as Machine from './machine.ts'
 import { InvariantDefect, noWork, operation, type Program, type Scalar } from './program.ts'
 import { launch } from './runtime.ts'
 import { createTables, migrate, storage, transaction } from './storage.ts'
@@ -661,4 +661,73 @@ describe('the publications of steps pruned by two transactions at once (decision
       expect(yield* sql`SELECT seq FROM effecttea_outbox WHERE name = 'Ranked'`).toEqual([])
       expect(yield* sql`SELECT seq FROM effecttea_publications WHERE name = 'Ranked'`).toEqual([])
     }))
+})
+
+describe('a reply to work that ends while its receiver stores it (decisions 0021, 0090, 0253)', () => {
+  const asker: Program<T> = { ...ranked, name: 'Asker' }
+  const receiver: Program<T> = { ...ranked, name: 'Receiver' }
+  const asked = { _tag: 'Operation', entity: { name: 'Asker', id: 'a' }, key: { name: 'ask' }, incarnation: 1, name: 'n' } as const
+  const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
+  // The receiver's step stores the reply where the asker's key holds, and the asker's step that ends the work
+  // deletes the replies to it. Each statement reads the other's row only once it is committed, so the two steps run at
+  // once on two connections, one of them held open while the other runs. Whichever opens first, the reply or the
+  // answer must go with the work: no `expire` ever deletes a row kept with no time.
+  const cases = [
+    ['a reply', 'the receiver first'],
+    ['a reply', 'the asker first'],
+    ['an answer', 'the receiver first'],
+    ['an answer', 'the asker first'],
+  ] as const
+  for (const [kept, first] of cases) {
+    onServer(`${kept} kept while the work ends at once, ${first}, goes with the work`, (url, sql) =>
+      Effect.gen(function*() {
+        yield* on(sql)(createTables)
+        const other = yield* connect(url)
+        const asking = storage(asker, sql, 1)
+        yield* transaction(sql, asking.write('a', {
+          ...created(),
+          keys: [{ key: { name: 'ask' }, incarnation: 1, work, delivery: 'Idempotent', due: null }],
+        }, 0))
+        yield* transaction(sql, storage(receiver, sql, 1).write('r', created(), 0))
+        const receiving = (client: SqlClient.SqlClient) => {
+          const store = storage(receiver, client, 1)
+          return kept === 'a reply'
+            ? store.write('r', written({
+              replies: [{
+                request: Machine.requestKey(receiver, asked),
+                carried: null,
+                tag: 'Accepted',
+                reason: null,
+                asked: { name: 'Asker', id: 'a', key: { name: 'ask' }, incarnation: 1 },
+                until: null,
+              }],
+            }), 0)
+            : store.keepAnswer('r', 'Message', asked, { _tag: 'NotFound' })
+        }
+        const ending = (client: SqlClient.SqlClient) =>
+          storage(asker, client, 1).write('a', written({
+            gone: [{ name: 'ask' }],
+            ended: [{ key: { name: 'ask' }, incarnation: 1 }],
+          }), 0)
+        const [opened, then] = first === 'the receiver first'
+          ? [receiving(sql), ending(other)]
+          : [ending(sql), receiving(other)]
+        const stepped = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const opening = yield* Effect.forkChild(transaction(sql, Effect.gen(function*() {
+          yield* opened
+          yield* Deferred.succeed(stepped, undefined)
+          yield* Deferred.await(release)
+        })))
+        yield* Deferred.await(stepped)
+        // The second step runs while the first is open: it commits, or waits for a lock the first holds.
+        const second = yield* Effect.forkChild(transaction(other, then))
+        yield* Effect.raceFirst(Fiber.await(second), waitingOnLocks(sql, 1))
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(opening)
+        yield* Fiber.join(second)
+        const table = kept === 'a reply' ? 'effecttea_replies' : 'effecttea_answers'
+        expect(yield* sql`SELECT request FROM ${sql(table)} WHERE name = 'Receiver'`).toEqual([])
+      }))
+  }
 })
