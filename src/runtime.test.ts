@@ -2840,6 +2840,39 @@ describe('publishing what happened', () => {
         .toBe('the log has 1.5 partitions, which is no positive integer')
     })))
 
+  // A step that cannot be written crashes its entity, and an event stepped again from what is stored reaches the same
+  // state (decision 0042), which decision 0206 made a defect for an index that is no scalar. PostgreSQL caps an entry
+  // of a B-tree index at about a third of a page, where SQLite caps none (decision 0157).
+  test('FAILING: a completion whose step writes a long index is written alike on both dialects, and acts once', () =>
+    onBoth(Effect.gen(function*() {
+      let seed = 1
+      const long = Array.from({ length: 4000 }, () => {
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        return String.fromCharCode(33 + (seed % 94))
+      }).join('')
+      // The index is the long text once the work of `a` is done, which only its completion makes.
+      const indexed = {
+        ...program,
+        project: (state: T['state']) => (state.want.includes('a') ? 1 : 0),
+        indexes: { wanted: (projection: number) => (projection === 0 ? long : projection) },
+      } as unknown as Program<T>
+      const { layer, acted } = yield* hands()
+      const at = yield* DateTime.now
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(indexed), layer)
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
+          for (let tick = 0; tick < 20; tick++) yield* TestClock.adjust('50 millis')
+          const found = yield* toy.query({ limit: all })
+          // The at-least-once `c` acts once, and the timer of `t` rings, where the entity's step goes through.
+          expect({
+            c: acted.filter((act) => act === 'c').length,
+            long: found.map(({ indexes }) => indexes.wanted === (long as never)),
+            want: (yield* toy.inspect(id))?.state.want,
+          }).toEqual({ c: 1, long: [true], want: [] })
+        }))
+    })))
+
   // A positive integer of partitions is the launcher's to choose (decision 0137), and both dialects hold the same
   // tables (decision 0157). A column `partition` of PostgreSQL holds 32 bits, where SQLite's holds 64.
   test('FAILING: a log of 2^31 partitions launches and creates alike on both dialects', () =>
