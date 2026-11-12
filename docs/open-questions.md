@@ -6,6 +6,12 @@ with a requirement that no example has yet.
 
 ## Storage and reading
 
+- **A launch within a transaction of its client, on a file of SQLite.** SQLite refuses an `ATTACH` within a
+  transaction, so a launch within `sql.withTransaction` on a file may die at the hold's `ATTACH` with an `SqlError`,
+  where [decision 0279](decisions/0279-createtables-dies-within-a-transaction-of-its-client.md) gives `createTables`
+  a defect that says why. The hold's `onError` detaches, so nothing would stay held. The second reading of the
+  premise review noticed it on 2026-11-12.
+  - A test that launches within `sql.withTransaction` on a file, and reads which defect it dies with, would decide it.
 - **On a pool of PostgreSQL, a `position` that rises with `seq` within a partition.** The log is ordered within a
   partition ([decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md), only reasoned there).
   `write` of `src/storage/entities.ts` moves the head before it inserts the rows of the outbox, so the identity of a
@@ -262,6 +268,19 @@ with a requirement that no example has yet.
   - what a reader of `consume` of the dropped topic does on an older runner, which acks on.
 
 ## Running
+
+- **The reader of Cluster's version sleeps on a time no launch checks.** Every time the runtime sleeps on is read
+  from the options the launch checks ([decision 0208](decisions/0208-a-launch-checks-every-option.md)), and no wait
+  spins on a value the launch refuses at 0
+  ([decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)). The reader of Cluster's
+  version, in `started` of `src/runtime.ts`, sleeps `${millis} millis`, where `millis` is
+  `entityReplyPollInterval` of Cluster's configuration, read in `src/cluster.ts`, which no check reads. Under
+  `Duration.infinity` the text is `Infinity millis`, which Effect does not read, as decision 0208 saw, so the reader
+  dies at its first sleep and no reading is woken by another runner's commit. Under 0 the reader spins while a reading
+  waits, as Cluster's own poll of replies may. The second reading of the premise review found it by a reading on
+  2026-11-12.
+  - A test of `src/cluster.test.ts` whose `start` is given `entityReplyPollInterval: Duration.infinity`, with a reader
+    of `consume` under `wait: true` that a commit of the other runner should wake, would decide the first case.
 
 - **What a timer's `Fire` that a planned stop lets through costs.** A timer armed as the drain begins fires in the
   drain, which is bug 101. Its step may start an at-most-once operation, which delivers `unknown` once the drain's
@@ -992,6 +1011,16 @@ with a requirement that no example has yet.
 
 ## Programs
 
+- **A rehearsal that reads back a reason, and a projection after a deploy.** `docs/design.md`, under Rehearsing,
+  says that `rehearse` reads back only the projection, and that a rehearsed deploy exercises no migration of the state
+  and of the projection. The machine reads back a rejection's reason too, in `replied` of `src/machine.ts`
+  ([decision 0214](decisions/0214-a-rejections-reason-is-given-as-a-caller-reads-it.md)). After a deploy, a
+  rehearsal's `projection` is the new version's `project(state)`, where the runtime gives the row the version before
+  wrote, read through the migrations of `projection`, until a step or `reindex` writes it again. The difference is
+  documented, and no test runs it. Bugs 107 and 108 are a rehearsal that keeps a request's text and reason across a
+  deploy. The second reading of the premise review noticed it on 2026-11-12.
+  - Whether the fixes of bugs 107 and 108 read the projection through its migrations too, or the guide says which
+    readings a rehearsed deploy skips, would decide it.
 - **A deploy that changes a child's wrapper or the name of a key.** Bug 96 of [`docs/bugs.md`](bugs.md) suspends an
   entity whose key's parameter a deploy encodes otherwise. A deploy that changes the form of a child's wrapper, or the
   name of a key with work under way, may fail the same way. The second reading of the premise review noticed both on
@@ -1091,6 +1120,29 @@ with a requirement that no example has yet.
 
 ## The surface
 
+- **The checks of the guide's code and of the quick start read only the blocks fenced `ts`.**
+  [Decision 0203](decisions/0203-the-guides-code-is-found-in-the-examples.md) compares each block of TypeScript of the
+  guide with the examples, and [decision 0196](decisions/0196-the-quick-start-is-an-example-the-readme-shows-whole.md)
+  the quick start. The tests at `src/form.test.ts:413` and `:424` take the blocks fenced exactly `ts`, so a block
+  fenced `typescript` or `tsx`, or `ts` with an info string, is compared with no example and passes. Decision 0254
+  asks that a check be a function of what it reads, given a sample of each case it refuses, and neither test is such
+  a function. No page holds such a block today. The second reading of the premise review found it by a reading on
+  2026-11-12.
+  - A test that makes the check a function, and gives it a block fenced `typescript` that no example holds, would
+    decide it.
+- **A test of the server of PostgreSQL declared `slow`.** `slow` skips a test under `bun test` and under
+  `SCHEDULES=pinned`, and `test:postgres` runs with no `SCHEDULES`. Three tests in the files of `test:postgres` are
+  `slow`, and none needs a server today. A test of the server declared `slow` would run on no server, as bug 110 says
+  of the samples. The second reading of the premise review noticed it on 2026-11-12.
+  - The fix of bug 110, if it runs `test:postgres` under `SCHEDULES=all`, would decide it too.
+- **Status lines that miss a later note.** The status line of
+  [decision 0212](decisions/0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md) and the
+  index name decision 0254 alone, though decision 0250 changed its count of 30 to 8, at
+  `src/fixtures.property.test.ts:135`. The status line of
+  [decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md) says a file of SQLite
+  is refused while another connection has it open, and does not link decision 0267, by which a file refuses another
+  runtime alone. The second reading of the premise review found both by a reading on 2026-11-12.
+  - A commit that adds the two links, as `AGENTS.md` asks of a note that changes another, would settle it.
 - **A reason an operator gives to a discard.** A discard of a message an operation sent stores a rejection with a
   reason of `null` ([decision 0260](decisions/0260-a-discard-of-a-message-an-operation-sent-stores-a-rejection.md)).
   The sender cannot tell it from a bare `reject` of the receiver, though a discard says the receiver had a bug and

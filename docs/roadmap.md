@@ -190,9 +190,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     7. Done, area 7, Schemas and projections, a second part.
     8. Done, area 8, The queries and their pages.
     9. Done, area 9, The tables and migrations.
-    10. Area 10, The rehearsal and testing.
+    10. Done, area 10, The rehearsal and testing.
     11. Done, by the sample above: area 11, The scheduler of the tests.
-    12. Area 12, The project and what enters the library.
+    12. Done, area 12, The project and what enters the library.
   - The second reading starts from the inventory of the premises only reasoned, the section of 2026-11-11 at the
     end of [`reviews.md`](decisions/reviews.md). It sorts 125 premises of 85 notes against the rule of `AGENTS.md`
     that no premise of what code does is only reasoned. The six cases it finds left out and in no open question
@@ -292,8 +292,23 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [open questions](open-questions.md), under Storage and reading and Running. Not reached: the notes the long
     declarations of the runtime and the storage couple to each area, as their tables in
     [`reviews.md`](decisions/reviews.md) say.
-  - Every area of the first list but area 14, every last session and the sample are `Done`. So the step goes on with
-    areas 10 and 12 of the second reading. A session that records a review writes `Done, ` before what it read, and adds a
+  - Done, in two sessions of 2026-11-12 run at once, that read none of the reports, each cut from `main` at
+    `2e17087`: areas 10 and 12 of the second reading, the last of its areas. Area 10, The rehearsal and testing, read
+    its ten notes and the five later notes of its brief whole with the code. Its findings are bugs 107 and 108 of
+    [`docs/bugs.md`](bugs.md), of family A, reproduced on `claude/premise-review-2-area-10-a27203` at `84e2446`: a
+    rehearsal that keeps a request's text and a reply's reason across a deploy as the version before wrote them.
+    Area 12, The project and what enters the library, read its eighteen notes, the six later notes of its brief and
+    the ten notes that change its notes whole with the code. Its findings are bugs 109 and 110, reproduced on
+    `claude/premise-review-2-area-12-b78dd1` at `42f0832`: two runtimes on one database of SQLite in memory that
+    clients share, and the cases past the sample of `bun test` that no job runs on a server of PostgreSQL, of family
+    G. Each test was run again on its branch, whose `src/` is `main`'s, and fails at its assertion. Their leads, their
+    suspects not checked and the places where the code does otherwise than its note are
+    [open questions](open-questions.md). Not reached: the notes the long declarations of `src/rehearse.ts`,
+    `src/runtime.ts` and `src/storage.ts` couple to each area, as their tables in
+    [`reviews.md`](decisions/reviews.md) say.
+  - Every area of the first list but area 14, every last session, the sample and every area of the second reading
+    are `Done`. So the step goes on with area 14, then the pairs the sessions of the second reading read in part, then
+    the readings of one shared state. A session that records a review writes `Done, ` before what it read, and adds a
     bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
     reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
     a last session and read whole by no other review.

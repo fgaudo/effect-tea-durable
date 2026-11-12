@@ -28,7 +28,7 @@ a fix for each bug. Each bug's test passes under the rule, as the proof that the
 family gets a fix of its own.
 
 - A, a newer version against what an older one stored or runs: bugs 1, 5, 7, 15, 16, 28 to 30, 56, 62, 68, 76,
-  77 and 96, and the door of the step A door that changes between two releases of the library, of the
+  77, 96, 107 and 108, and the door of the step A door that changes between two releases of the library, of the
   [roadmap](roadmap.md). A rename is such a change. Its rule is the step What a deploy may change of a program,
   against what is stored, of the roadmap.
 - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39, 54,
@@ -46,12 +46,12 @@ family gets a fix of its own.
   [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md). What each left
   unverified is an [open question](open-questions.md#running): A sender and Cluster's round at the least retry, The
   cases of a crash's retry not run yet, An operation's kept answer on Cluster across a crash, and under two runs at
-  once, and A timer due, which no test of the capacity reaches. Bugs 99 and 106 have the form of family G, found
+  once, and A timer due, which no test of the capacity reaches. Bugs 99, 106 and 110 have the form of family G, found
   after its fix, and are not fixed yet.
 - Of no family: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 75, 79, 81, 82, 86, 87 and
   92. Each is fixed by a note of its own or verified false, as its entry says. Bug 79, a gap of the guide, is fixed in
   `docs/design.md` with no note, since decisions 0185 and 0222 decide it. Bug 93 is of no family either, and has
-  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281. Bug 94 is of no family, and is fixed by decision 0282. Bug 95 is of no family, and not fixed yet. Bugs 98 and 100 are of no family, and not fixed yet. Bugs 101 to 105 are of no family, and not fixed yet. Bugs 102, 103 and 105 share one cause, a text PostgreSQL cannot hold in a key or an index, and a bound in `shownOf` could fix the three.
+  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281. Bug 94 is of no family, and is fixed by decision 0282. Bug 95 is of no family, and not fixed yet. Bugs 98 and 100 are of no family, and not fixed yet. Bugs 101 to 105 are of no family, and not fixed yet. Bugs 102, 103 and 105 share one cause, a text PostgreSQL cannot hold in a key or an index, and a bound in `shownOf` could fix the three. Bug 109 is of no family, and not fixed yet.
 
 ## The list
 
@@ -729,3 +729,65 @@ family gets a fix of its own.
     whose `src/` is `main`'s at `ca62547`. It has the form of family G. No test was written. The fix runs `bun run
     test:explore -t <test>` on the mutation until a seed fails, and pins that seed with its pin in
     `src/runtime.test_pins.ts`. If no seed of 2,000 finds it, a deviation under `bound` 1 holds it, or an open question.
+107. **Reproduced: a caller's retry in a rehearsal after a deploy that changes how the message encodes is answered
+    `Reused`, where the runtime gives the stored reply.** A rehearsal keeps a named request's reply for the whole
+    rehearsal, a deploy included
+    ([decision 0200](decisions/0200-a-rehearsal-sends-under-a-request-id-the-test-names.md)).
+    [Decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md) compares a retry
+    with what the request carried, and the runtime reads what was carried through the migrations of `inbound` from
+    the version that wrote it. The rehearsal keeps what was carried as the version before encoded it, in `keep` of
+    `src/rehearse.ts`, and the machine compares that text with the retry's. So decision 0200's rule rests on a premise
+    decision 0269 took away: what the rehearsal keeps of a request reads alike at every version. Version 1 takes
+    `Spend { n: 3 }` under the request id `r`, version 2 encodes `n` as text with a migration of `inbound`, and the
+    same message comes again under `r`. The runtime gives `Accepted`, and the rehearsal `Reused`. It has the form of
+    bug 5, under what the request carried. The test `FAILING: a retry after a deploy that encodes the message
+    otherwise is given the stored reply, as the runtime gives it`, in `src/rehearse.test.ts`, reproduces it on the
+    branch `claude/premise-review-2-area-10-a27203`, at `84e2446`, cut from `main` at `2e17087`. The fix begins at
+    `keep` of `src/rehearse.ts`, which would keep the version that wrote `carried`, and read it through the migrations
+    of `inbound` of the program deployed before `receive` compares it.
+108. **Reproduced: a reply a rehearsal keeps across a deploy gives the reason as the version before wrote it, where the
+    runtime reads it through the migrations of `rejection`.** Decision 0200 keeps a named request's reply across a
+    deploy as the runtime keeps one, and
+    [decision 0131](decisions/archive/0131-a-rehearsal-runs-the-entities-an-operation-sends-to.md) keeps an
+    operation's reply while the work that asked holds, across a deploy of the receiver too. The runtime reads a stored
+    reason through the migrations from its version
+    ([decisions 0069](decisions/archive/0069-a-reply-is-keyed-by-the-version-that-wrote-it.md),
+    [0100](decisions/archive/0100-a-reason-is-kept-as-long-as-a-reply-of-its-version.md)). The rehearsal keeps the
+    reply as a value in `Kept` of `src/rehearse.ts`, and gives it back as it is, so
+    [decision 0214](decisions/0214-a-rejections-reason-is-given-as-a-caller-reads-it.md) holds within one version and
+    fails across a deploy. Two tests of `src/rehearse.test.ts` reproduce it on the branch
+    `claude/premise-review-2-area-10-a27203`, at `84e2446`. `FAILING: a retry after a deploy whose migration reads the
+    reason is given the reason as the migration writes it` gives `{ limit: 10 }` where the runtime gives
+    `{ limit: 1000 }`. `FAILING: a run after a crash and a deploy of the receiver is given the stored reason as the
+    migration reads it` gives `SoldOut` where the runtime gives `SalesClosed`. A `Rejected` of `init` that a world
+    keeps in `answers` ([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md))
+    is kept the same way, read and not run. The fix begins at `Kept` of `src/rehearse.ts`, which would keep the encoded
+    reason with its version, and read it through the migrations of the program deployed when a retry or a run is
+    given it.
+109. **Reproduced: two runtimes launch on one database of SQLite in memory that clients share.**
+    [Decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md) holds a
+    database in memory by its client alone, since it names no file and no other connection opens it. A URI of SQLite
+    with `mode=memory&cache=shared`, as `file:x?mode=memory&cache=shared`, names one database in memory that every
+    client of the process opens. `pragma_database_list` gives the main database of such a client an empty file, so
+    `hold` of `src/storage/tables.ts` takes no hold file, and the register `held` holds each client, not the
+    database. So a second runtime on a second client of the same URI launches beside the first, which is the loss of
+    steps [decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md) was made for. The test `FAILING:
+    a second runtime on another client of a database in memory that clients share dies as it launches`, in
+    `src/runtime.test.ts`, reproduces it on the branch `claude/premise-review-2-area-12-b78dd1`, at `42f0832`, cut
+    from `main` at `2e17087`. The fix begins at `hold`, which would hold such a database by its URI in a register of
+    the process, as a data directory of PGlite is held
+    ([decision 0255](decisions/0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md)), or the launch
+    would refuse such a database as the launcher's defect.
+110. **Reproduced: no job runs on a server of PostgreSQL the cases past the sample of `bun test`.**
+    [Decision 0250](decisions/0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md) cut the cases a
+    sampled test runs under `bun test`: the property of the fixtures from 30 to 8, the dialects' property from 40 to 8,
+    the queries' property from 20 to 8, and the test of the names of the tables to one name in four. It says the
+    release runs every case it ran before, which holds on PGlite alone. The job `postgres` of `ci.yml` runs
+    `test:postgres` with no `SCHEDULES`, so the server runs the sample, and the job `release` has no server. So the
+    rest runs on no server, where decision 0222 and the rule of `AGENTS.md` that a change of the storage passes the
+    job of PostgreSQL rely on it. [Decision 0212](decisions/0212-the-property-tests-of-the-fixtures-derive-their-values-from-the-schemas.md)
+    still says 30, and the index does not list 0250 among the notes that change it. It has the form of family G. The
+    test `FAILING: a job runs on a server of PostgreSQL every case of the files of test:postgres, as the release runs
+    them on PGlite`, in `src/form.test.ts`, reproduces it on the branch `claude/premise-review-2-area-12-b78dd1`, at
+    `42f0832`. The fix begins at `test:postgres` of `package.json`, run under `SCHEDULES=all` where the job of the
+    server has the time, or at the job `release`, which would get the service of PostgreSQL and `POSTGRES_URL`.
