@@ -454,6 +454,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - The pieces it reuses are written: the prefix of a run and the shared runners of `src/contract.test.ts`, `onPool`
     for two commands at once on a pool, and the scheduler of `src/testing.ts` with its strategies. Its note is a
     `proposed` note of its own, made with its first part.
+  - Between its first part and its layer on the runtime, a spike moves the writes of `src/runtime/callers.ts` into
+    synchronous functions of a module that imports no `Effect`, and counts the seeds `bun run test:pins` loses. The
+    [open question](open-questions.md#running) The state of a process written only by synchronous functions lists
+    what the spike decides. Such a module would let an invariant of a process's state be tested with no scheduler,
+    which changes how the layer on the runtime is written. The spike comes sooner if the review of the first step
+    finds two bugs of a state read halfway.
 
 - **The tests pruned by the mutations.** Once the test of invariants exists, `scripts/mutate.ts` takes out each
   rule the notes decide, one at a time. A test of a scenario that fails only where a test of the four kinds of
@@ -480,6 +486,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The step also decides whether the runtime
   checks its advisory lock, which a server that ends its session gives back
   ([open question](open-questions.md#running)).
+
+- **The state of a process written only by synchronous functions**, if the spike of the step A test of invariants
+  over generated histories decides for it. The fields of `Process`, `Deployment` and `Loaded` are then written by
+  plain functions of one module, a test of `src/form.test.ts` refuses a write of them elsewhere, and the rule of
+  [`AGENTS.md`](../AGENTS.md) on two fields written in one step gives way to the note that decides it. The
+  [open questions](open-questions.md#running) on a count kept by an observer of a fiber's exit, and on one primitive
+  for a look that waits, are decided with it. It changes no surface, so it does not hold the release up. It moves
+  yields, so it is taken with the move of `holding` to `RcMap` of the step below, and the two find their pinned
+  seeds again and pass `bun run test:release` once.
 
 - **Code written by hand where a module of Effect does the same**, of low priority. A review of `src/` against
   the rule of [`AGENTS.md`](../AGENTS.md) on Effect's modules found four places, on 2026-11-11:

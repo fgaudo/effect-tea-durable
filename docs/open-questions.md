@@ -1019,6 +1019,40 @@ with a requirement that no example has yet.
   The decision leaves the case out. It would be decided by:
   - a test of two runtimes on one file by two names, and whether SQLite's own path of the file resolves a symbolic
     link on each system.
+- **The state of a process written only by synchronous functions.** A transition of what a process holds is often a
+  generator with a `yield*` between two of its writes, kept whole by the entity's lock or by an uninterruptible
+  region. The scheduler of `src/testing.ts` asks of a preemption at every operation from a run's second, when another
+  task is ready, so each such `yield*` is a point where another fiber may read the state halfway. A reading of the
+  runtime on 2026-11-12 found these: `ask`, `operate` and the permit of `send` in `src/runtime/callers.ts`; what
+  follows the commit in `applyInProcess`, the replies of `perform`, the callers failed by `crash`, and `unload`, in
+  `src/runtime/loop.ts`; the registration of a deployment and the drain, in `src/runtime.ts`. No test reproduced a
+  bug at any of them. Whether the fields of `Process`, `Deployment` and `Loaded` are written only by plain functions
+  of a module that imports no `Effect`, as `src/machine.ts` is, is not decided. No yield and no interruption could
+  then fall within a transition, and the invariants the comments state, as that no look finds an entity neither
+  loaded nor stopping, would be tested with no scheduler. A fork, a scope and a finalizer stay outside it, and so
+  does the order of two transitions with a statement between them. Until it is decided, a rule of
+  [`AGENTS.md`](../AGENTS.md) holds the changes to come: two fields another fiber reads together are written in one
+  synchronous step. It waits for the spike the step A test of invariants over generated histories of the
+  [roadmap](roadmap.md) names. It would be decided by:
+  - a spike that moves the writes of `src/runtime/callers.ts` into such functions, and how many seeds
+    `bun run test:pins` loses to it;
+  - whether a test of `src/form.test.ts` can refuse a write of those fields anywhere else;
+  - whether `Semaphore` gives a permit without a step of Effect, or the bound of callers is counted by hand.
+- **A count of the process kept by an observer of a fiber's exit.** `pending`, `detachments`, `leaving`, `operating`
+  and the count of the readings are each raised by one fiber and lowered by another, and a release that did not run
+  left one raised ([decision 0110](decisions/archive/0110-detached-work-is-counted-until-it-ends-however-it-ends.md),
+  [decision 0163](decisions/archive/0163-on-cluster-a-reading-that-waits-learns-of-another-runners-commit-from-the-file.md)). `crash` of `src/runtime/loop.ts` ends its stop by an observer of the stop's exit instead, which a
+  fiber interrupted before its first step has too. Whether the other counts are kept the same way, which would take
+  out the flag `done` of `forkHeld` and the fiber of `detached` that waits, is not decided. It would be decided by:
+  - what the source of Effect at the version pinned does with an observer added to a fiber that has ended, and
+    whether `addObserver` is a stable API;
+  - a test under the scheduler that ends the fiber between its fork and the observer.
+- **One primitive for a look that waits.** Five places take a signal before they look, so that no change between the
+  look and the wait is missed: `settled` and `emptied` in `src/runtime.ts`, the waker's poke, `awaitResumption` in
+  `src/runtime/callers.ts`, and `commitOf` in `src/runtime/readings.ts`. Each is written by hand, with a test of its
+  own. Whether one function holds the rule for all five is not decided. It would be decided by:
+  - whether a module of Effect at the version pinned does the same, among the unstable ones too;
+  - whether the five take their signal alike, or the waker's flag and the readings' count need more than one form.
 
 ## Programs
 

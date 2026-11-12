@@ -196,6 +196,11 @@ This repository is a design and its pure core, not a library yet: read [`README.
   makes the pin's mutation, runs `bun run test:explore -t <test>` until a seed fails, and pins that seed, with the
   comment saying the form of the code it fails against. An interleaving that no seed of 2,000 finds is held by a
   deviation under `bound` 1, by a greater depth, or goes in `docs/open-questions.md` as a rule no test holds.
+- A change to the runtime that writes two fields which another fiber reads together writes them in one synchronous
+  step, with no `yield*` between the two writes, so that no yield and no interruption falls between them. Where a
+  statement or a fork must come between the two writes, a comment says what keeps them together: a lock, a count, or
+  a region that cannot be interrupted. The code written before this rule is not rewritten for it. Whether the state
+  of a process is written only by synchronous functions is an [open question](docs/open-questions.md#running).
 - A change that deletes rows of Cluster's, or moves the time they are deleted at, has a test with a second client,
   on another runner, that waits for the request whose rows go. The runtime deletes those rows by statements of its
   own, and a client of another runner reads its reply from them at an interval.
