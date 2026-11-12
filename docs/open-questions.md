@@ -141,6 +141,68 @@ with a requirement that no example has yet.
 
 ## Running
 
+- **On Cluster, an entity crashed by a shard lost, crashed again by its own loop.** An entity is not loaded while the
+  stop of its former run is running, and a crash runs only on an entity loaded, so the map `stopping` holds one stop of
+  an entity at most ([decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md)). The
+  sentence is not a premise of the note. `losing` of `src/runtime/doors.ts` crashes an entity only where it is still
+  the one loaded, and the catch of `loop` in `src/runtime/loop.ts` crashes its entity with no such check
+  ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)). A step of the loop whose
+  `BEGIN`, `forgetPending` or `COMMIT` fails after `losing` crashed the entity crashes it again. The second stop
+  replaces the first's latch in `stopping` and ends at once, so `losing` may let the shard go while the first stop's
+  finalizer still runs, and another runner starts the operation beside it, as bugs 31 and 65 did. The second reading of
+  the premise review found it by a reading on 2026-11-12, and wrote no test.
+  - A test of `src/cluster.test.ts`, on `onFile` with two runners, from `a shard that moves while an operation of the
+    first runner still stops starts it on the second only after`, with a probe that holds the loop's step at
+    `Applied` until the first stop began and then dies, would decide it. `start` gives no probe that can wait yet.
+  - A guard in the catch of `loop` that crashes only the entity still loaded, as `losing` does, or a `crash` that keeps
+    the latch of a stop already registered, would fix it.
+
+- **A caller's span left linked after its `Receive` is skipped.** `ask` of `src/runtime/callers.ts` records a
+  caller's `Receive` with its caller, then reads the span and sets the link
+  ([decision 0282](decisions/0282-a-callers-message-offered-before-its-answer-is-answered-by-it.md)). A step that replies to the key
+  between the two deletes no link, since none is set yet. The `Receive` is then skipped, so nothing deletes the link,
+  and a later request of the same key, past its `keep`, would be linked to the old span until the entity unloads. It
+  costs tracing, and changes nothing applied. The second reading of the premise review noticed it on 2026-11-12.
+  - An explored test that replies to a key while a second caller of the key is between its offer and its link, then
+    reads `loaded.links`, would decide it. Setting the link before the record would avoid it.
+
+- **A second crash on one process after a probe that dies at `Unloaded`.** `unload` leaves, stops the timers and tells
+  the probe under the entity's lock, and a probe that dies there is a crash
+  ([decision 0073](decisions/archive/0073-what-the-runtime-did-is-told-to-a-probe.md)). The loop's catch then crashes an entity that
+  has left. A reading of the lock's order finds no harm, but rests on the order `Semaphore` gives its takers, which was
+  not checked. Only the tests' probe dies there. The second reading of the premise review noticed it on 2026-11-12.
+  - A test whose probe dies at `Unloaded` while a caller waits for the entity would decide it.
+
+- **The waker's marks against a stop that ends during a reading.** A stop that ends while the waker reads its marks
+  leaves a poke, and the round reads the entity again before it rests, by `src/runtime/waker.ts`. A reading found no
+  round that rests with a mark due, and no explored test runs the case under `SCHEDULES=all`. The second reading of the
+  premise review noticed it on 2026-11-12.
+  - An explored test that ends a stop between the waker's reading of its marks and its rest would decide it.
+
+- **A `Settle` offered to an entity that has left lowers its count of events below 0.** `src/runtime/doors.ts` offers a
+  `Settle` to the queue of an entity that has left by `Queue.offerUnsafe`, not by `offer`, so `pending` is not
+  raised, and the loop lowers it once it takes the `Settle`. An event is counted from its offer to its step
+  ([decision 0063](decisions/archive/0063-the-runtime-waits-for-what-it-waits-for.md)). The old run is read by no look of `settled`
+  or of the drain, so nothing hangs. The second reading of the premise review found it by a reading on 2026-11-12.
+  - A rule that every event is offered through `offer`, or a test that reads `pending` of a run that has left, would
+    decide it.
+
+- **A door's step that finds its entity unsettled, since decision 0274.** The comment of `src/runtime/doors.ts` and
+  [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md) say that the step crashes the
+  entity and loads it again in the same step. Since decision 0274, the load reads `stopped`, and the crash has just put
+  the entity in `stopping`. So the step loads it again only where the stop ended first, and otherwise dies with
+  `Stopping`, for Cluster to deliver again. The second reading of the premise review found it by a reading on
+  2026-11-12.
+  - A test of a door's step on an unsettled entity with an operation that stops slowly would show which holds, and the
+    comment or the note would follow it.
+
+- **A passivation due before a timer, under a `passivate` of a millisecond.** A timer due sleeps 0 milliseconds and a
+  passivation 1. A host that runs both as timers of a millisecond fires them in the order they were armed, and the
+  timer is armed first. Were it not, the entity would be unloaded with its time stored and woken again, which costs an
+  activation and loses nothing ([decision 0078](decisions/archive/0078-a-timer-due-is-no-spare-entity-and-a-registered-deploy-keeps-its-name.md)).
+  The second reading of the premise review noticed it on 2026-11-12.
+  - A spike of Bun's timers of one millisecond armed in order would decide it.
+
 - **A `check` that runs while a launch renames, on one process.** A launch of the new version renames the old name's
   rows in one transaction, and a file of SQLite refuses no reader
   ([decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)). `check`

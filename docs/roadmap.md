@@ -184,7 +184,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     1. Done, area 1, Messages, requests and replies.
     2. Done, by the sample above: area 2, Effect Cluster.
     3. Done, area 3, Versions and deploys.
-    4. Area 4, The runtime, a first part.
+    4. Done, area 4, The runtime, a first part.
     5. Area 5, The runtime, a second part.
     6. Area 6, Schemas and projections, a first part.
     7. Area 7, Schemas and projections, a second part.
@@ -255,8 +255,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     of the read model after a rename, and a deploy that changes a child's wrapper or a key's name. Not reached: the
     notes of other areas that the long declarations of the runtime and the storage cite beside the area, as its table
     in [`reviews.md`](decisions/reviews.md) says.
+  - Done, in a session of 2026-11-12 that read none of the reports: area 4 of the second reading, The runtime, a first
+    part, its thirteen notes read whole with the code, against 0274 read whole and the decisions of 0252, 0259, 0261, 0280
+    and 0282. It reproduced nothing. Its lead, its suspects not checked and the three places where the code does
+    otherwise than its note are [open questions](open-questions.md#running), the first of them an entity crashed
+    again by its own loop on Cluster. Not reached: the notes the long declarations of the runtime and the storage
+    couple to the area, and 0081, 0092, 0162 and 0163 beyond `src/runtime/doors.ts`, as its table in
+    [`reviews.md`](decisions/reviews.md) says.
   - Every area of the first list but area 14, every last session and the sample are `Done`. So the step goes on with
-    area 4 of the second reading. A session that records a review writes `Done, ` before what it read, and adds a
+    area 5 of the second reading. A session that records a review writes `Done, ` before what it read, and adds a
     bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
     reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
     a last session and read whole by no other review.
