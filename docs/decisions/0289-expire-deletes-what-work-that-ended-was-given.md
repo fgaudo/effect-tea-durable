@@ -51,10 +51,13 @@ commit, and the row stays for ever, since it has no time for `expire`. It is a r
 - That an incarnation is never drawn again for one key of one entity: **tested**, by `a key that leaves loses its
   row, and comes back in an incarnation no run of it had`, of [`src/machine.test.ts`](../../src/machine.test.ts).
 - That an entity's row, which holds the count of its incarnations, is never deleted, so the count never starts
-  again: **read in the source**, since no statement of `src/` deletes a row of `effecttea_entities`.
-- That an asker's key is committed before its request reaches the receiver: **read in the source**, in
-  [`src/runtime/loop.ts`](../../src/runtime/loop.ts), whose step commits its write before it runs the outputs. Where
-  it did not hold, the receiver's own statement would delete the row as it stores it, as it does for work that ended.
+  again: **tested**, by `no statement of src deletes the row of an entity`, of
+  [`src/form.test.ts`](../../src/form.test.ts), whose check is run against the statements it refuses.
+- That an asker's key is committed before its request reaches the receiver: **tested**, by `an operation’s request
+  reaches its receiver only once the step that started the operation is committed`, of
+  [`src/runtime/callers.test.ts`](../../src/runtime/callers.test.ts). It fails against a loop that runs the outputs
+  before the commit. Where this premise fell, the sweep would delete a reply the work still waits for, and so would
+  the receiver's own statement as it stores the reply.
 - That PostgreSQL skips a row another transaction locks under `SKIP LOCKED`, and that a statement at `READ
   COMMITTED` reads a snapshot taken as it starts: **documented**, in the locking clause of `SELECT` and in the section
   Transaction Isolation of PostgreSQL 17, the version of the CI's server.

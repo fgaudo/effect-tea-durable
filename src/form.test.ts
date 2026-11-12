@@ -16,7 +16,9 @@
  *   files of the folder (decision 0241);
  * - a module imports no file of the tests: a test, named `.test.ts`, or a file only tests import, named
  *   `<module>.test_<role>.ts`, which the other rules do not read (decision 0241);
- * - `bun test` runs no file only tests import, so no role ends in `_test` or `_spec` (decision 0254).
+ * - `bun test` runs no file only tests import, so no role ends in `_test` or `_spec` (decision 0254);
+ * - no statement deletes the row of an entity, which holds the count of its incarnations, so that an incarnation is
+ *   never drawn again and a sweep reads a key gone as work that has ended (decision 0289).
  *
  * A fork that must keep the transaction is preceded by a line comment that says `Keeps the transaction:` and why,
  * and still passes the option, which no comment excuses. A
@@ -193,6 +195,15 @@ export const forksAmiss = (text: string): ReadonlyArray<string> => {
   return found
 }
 
+/**
+ * The lines of `text` that delete or truncate rows of `effecttea_entities`. The statements stand in the text of
+ * templates, so the whole text is read, comments too.
+ */
+export const entitiesDeleted = (text: string): ReadonlyArray<string> =>
+  [...text.matchAll(/\b(?:DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?)\s+effecttea_entities\b/giu)].map((match) =>
+    `${lineOf(text, match.index)}: ${match[0].replace(/\s+/gu, ' ')}`
+  )
+
 /** The raises and lowerings of a count in `text` that no `Effect.acquireUseRelease` pairs and none says why. */
 export const countsSplit = (text: string): ReadonlyArray<string> => {
   const code = codeOf(text)
@@ -325,6 +336,11 @@ describe('the form of src', () => {
 
   test('every count of src is raised and lowered by one Effect.acquireUseRelease', () => {
     expect(each(countsSplit)).toEqual([])
+  })
+
+  test('no statement of src deletes the row of an entity', () => {
+    expect(modules).toContain('storage/entities.ts')
+    expect(each(entitiesDeleted)).toEqual([])
   })
 
   // `index.program.ts` is the entry a browser imports a program's module through (decision 0193).
@@ -1009,6 +1025,17 @@ describe('the check of the form', () => {
       '2: users raised outside one acquireUseRelease',
       '3: users lowered outside one acquireUseRelease',
     ])
+  })
+
+  test('a deletion of the rows of effecttea_entities is found, and one of another table passes', () => {
+    const text = [
+      'yield* sql`DELETE FROM effecttea_entity_keys WHERE name = ${name}`',
+      'yield* sql`delete from',
+      '  effecttea_entities WHERE name = ${name}`',
+      'yield* sql`TRUNCATE TABLE effecttea_entities`',
+      'yield* sql`DELETE FROM effecttea_entities_old`',
+    ].join('\n')
+    expect(entitiesDeleted(text)).toEqual(['2: delete from effecttea_entities', '4: TRUNCATE TABLE effecttea_entities'])
   })
 
   test('a count paired by one acquireUseRelease, one that says why, and a name only raised pass', () => {

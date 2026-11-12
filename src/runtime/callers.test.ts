@@ -124,6 +124,54 @@ describe('two entities that talk', () => {
       expect((yield* repliesToBookings)[0]?.count).toBe(0)
     })))
 
+  // The step that starts an operation commits its write before the operation runs, so the asker's key is committed
+  // before its request reaches the receiver. A sweep that reads the key as gone then reads a work that has ended
+  // (decision 0289). Each incarnation of the booking committed is read as its step's commit ends. Each request the
+  // inventory receives names an incarnation read so before.
+  test('an operation’s request reaches its receiver only once the step that started the operation is committed', () =>
+    database(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const committed = new Set<number>()
+      const received: Array<readonly [number, boolean]> = []
+      yield* process({
+        at: (point, entity, event) => {
+          // The booking's step yields before it commits, so that a request sent before the commit would be received.
+          if (point === 'BeforeCommit' && entity.name === 'Booking') {
+            return Effect.repeat(Effect.yieldNow, { times: 100 })
+          }
+          if (point === 'AfterCommit' && entity.name === 'Booking') {
+            return sql<{ incarnation: number }>`
+              SELECT incarnation FROM effecttea_entity_keys WHERE name = 'Booking' AND id = ${entity.id}
+            `.pipe(
+              Effect.orDie,
+              Effect.map((rows) => rows.forEach(({ incarnation }) => committed.add(incarnation))),
+            )
+          }
+          if (point === 'BeforeCommit' && entity.name === 'Inventory' && event._tag === 'Receive') {
+            const { request } = event
+            if (request._tag === 'Operation') {
+              return Effect.sync(() => received.push([request.incarnation, committed.has(request.incarnation)]))
+            }
+          }
+          return Effect.void
+        },
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const inventories = yield* runtime.deploy(inventory)
+          const bookings = yield* runtime.deploy(booking)
+          yield* inventories.create('gig', { flags: { capacity: 10 }, requestId: 'c-gig', sender: organizer })
+          yield* bookings.create('b1', { flags: { customer: 'ann', event: 'gig', seats: 3 }, requestId: 'c-b1', sender: ann })
+          yield* runtime.settled
+          yield* bookings.send('b1', { _tag: 'ConfirmRequested' }, { requestId: 'r-b1', sender: ann, keep: 'forever' })
+          yield* runtime.settled
+          expect(yield* bookings.read('b1')).toMatchObject({ status: 'Confirmed' })
+        }))
+      // The hold and the confirmation, each in an incarnation of its own.
+      expect(received.length).toBeGreaterThanOrEqual(2)
+      expect(new Set(received.map(([incarnation]) => incarnation)).size).toBeGreaterThanOrEqual(2)
+      expect(received.filter(([, before]) => !before)).toEqual([])
+    })))
+
   test('a booking whose hold a crash interrupted holds its seats, whichever program is deployed first', () =>
     database(Effect.gen(function*() {
       const crashed = yield* Deferred.make<void>()
