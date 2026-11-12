@@ -39,7 +39,7 @@ family gets a fix of its own.
   statements. Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does
   not read again on the row it then writes. Its rule is [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md): a statement that writes
   or deletes a row on a condition reads the condition from a row it has locked. Bugs 25, 13, 80, 78 and 111 are
-  its first cases, fixed. Bug 49 is fixed by the note of bug 13.
+  its first cases, fixed. Bug 49 is fixed by the note of bug 13, and bug 3 by decision 0289.
 - F, B, E and G are fixed. Family F is decided by
   [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), family E by
   [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md), family B by
@@ -77,16 +77,7 @@ family gets a fix of its own.
    todo `a rolling deploy to a newer version drains the at-most-once operation under way on the older runner`, in
    `src/cluster.test.ts`, expects `done` and gets `unknown`. Its fix is a choice of the design, which the
    [open question](open-questions.md#running) A drain across a deploy of a newer version on Cluster lists.
-3. **Reproduced: a reply to another entity's operation stays for ever on a pool of PostgreSQL.** The two statements
-   that delete it see each other's rows only once committed, and two steps on a pool run at once
-   ([decisions 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md),
-   [0222](decisions/0222-postgresql-with-many-connections.md)). It is a row left, and no wrong answer. An answer
-   kept for an operation in `effecttea_answers` is kept and deleted by the same two statements, and may stay the
-   same way ([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)).
-   Reproduced by the four tests of `a reply to work that ends while its receiver stores it`, of
-   `src/postgres.test.ts`, on the CI's server at `1193de3` of `claude/bug3-a-reply-left`: a reply and an answer each stay,
-   whichever of the two steps opens first. The [open question](open-questions.md#running) The deletions of a reply on
-   a pool of PostgreSQL holds the choice of its fix.
+3. **Fixed by [decision 0289](decisions/0289-expire-deletes-what-work-that-ended-was-given.md)**, whose `expire` deletes the replies and the answers kept for work that has ended, which two steps at once on a pool leave.
 4. **Fixed by [decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md)**, whose caller's request carries its message, and a reused id with another is answered `Reused`.
 5. **Reasoned: a rehearsal may apply a retry twice after a deploy that changes how the sender is written.** The
    rehearsal keys a reply by the request's text, and the runtime finds a request by its id

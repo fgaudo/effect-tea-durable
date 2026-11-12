@@ -183,6 +183,37 @@ test('an answer kept for work that no longer holds goes as it is kept, and a cre
       expect(yield* store.answer('r', 'Message', asked('ended', 2))).toBeNull()
     })))
 
+// A reply or an answer whose asker's step did not see it outlives its work, as two steps at once on a pool leave it.
+// The test takes the asker's key out by hand, as that step does without deleting the reply, and renews it to a
+// later incarnation, as a step that starts the work again does. `expire` deletes what the ended work was given, more
+// rows than a batch, and keeps what the work that holds was given (decision 0289).
+test('expire deletes the replies and the answers kept for work that has ended, and keeps those of work that holds', () =>
+  database((sql) =>
+    Effect.gen(function*() {
+      const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
+      const key: Machine.KeyRow = { key: { name: 'ask' }, incarnation: 1, work, delivery: 'Idempotent', due: null }
+      yield* storage(asker, sql).write('a', created({ keys: [key] }), 0)
+      const store = storage(receiver, sql)
+      const held = Array.from({ length: 300 }, (_, at) => reply(`held-${at}`, 1))
+      yield* store.write('q', created({ replies: held }), 0)
+      yield* store.write('r', created({ replies: [reply('renewed', 1)] }), 0)
+      yield* store.keepAnswer('r', 'Message', asked('renewed', 1), { _tag: 'NotFound' })
+      yield* store.keepAnswer('r', 'Create', asked('held', 1), { _tag: 'NotFound' })
+      expect(yield* store.expire(0)).toBe(0)
+      // The work starts again in its second incarnation: what the first was given goes.
+      yield* sql`UPDATE effecttea_entity_keys SET incarnation = 2 WHERE name = 'Asker' AND id = 'a'`
+      yield* store.write('s', created({ replies: [reply('again', 2)] }), 0)
+      yield* store.keepAnswer('s', 'Message', asked('again', 2), { _tag: 'NotFound' })
+      expect(yield* store.expire(0)).toBe(300 + 1 + 2)
+      expect((yield* store.reply('s', asked('again', 2), 0))?.reply ?? null).toEqual({ _tag: 'Accepted' })
+      expect(yield* store.answer('s', 'Message', asked('again', 2))).toEqual({ _tag: 'NotFound' })
+      // The work ends: its key is gone, and so is what it was given.
+      yield* sql`DELETE FROM effecttea_entity_keys WHERE name = 'Asker' AND id = 'a'`
+      expect(yield* store.expire(0)).toBe(2)
+      expect(yield* sql`SELECT id FROM effecttea_replies`).toEqual([])
+      expect(yield* sql`SELECT id FROM effecttea_answers`).toEqual([])
+    }).pipe(Effect.orDie)))
+
 // A key without a parameter has none, which no parameter's JSON is: its row and its parameter's never meet
 // (decision 0136).
 test('a key is stored as its name and its parameter, apart from a key of the same name without one', () =>

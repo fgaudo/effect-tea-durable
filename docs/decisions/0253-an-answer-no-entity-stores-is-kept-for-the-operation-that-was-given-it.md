@@ -7,7 +7,8 @@ operation. It changes [decision 0010](archive/0010-a-rejection-may-carry-a-reaso
 kept too. It extends [decision 0021](archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md), whose rule now
 holds of these answers as well. It restores the premise of
 [decision 0009](archive/0009-entities-talk-through-operations.md), that a run after a crash is given every answer the
-run before it acted on.
+run before it acted on. Completed by [decision 0289](0289-expire-deletes-what-work-that-ended-was-given.md) on a pool of PostgreSQL, where two steps at once leave an
+answer of work that ended: `expire` deletes it.
 
 ## Context
 

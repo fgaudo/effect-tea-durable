@@ -431,7 +431,8 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
       // entity that ended takes the replies to its requests with it. A reply stored for work of another entity
       // that already ended goes as it is stored, since only the storage sees the asker's keys: an at-most-once
       // operation that delivered `unknown` while its request waited in the mailbox. No machine holds a reply, so
-      // none is told (decision 0065).
+      // none is told (decision 0065). On a pool the asker's step may run at once and miss the row, which `expire`
+      // then deletes (decision 0289).
       for (const reply of written.replies) {
         const { asked } = reply
         const asking = asked === null ? null : keyRow(asked.key)
@@ -583,9 +584,50 @@ export const entitiesOf = <T extends Types>(held: Held<T>): Pick<
           return [gone.length, given] as const
         }))
         count += replies
-        if (replies === 0 && given === 0) return count
+        if (replies === 0 && given === 0) break
       }
+      return count + (yield* ended('effecttea_replies', ['id', 'request', 'version'], Rows.replyKey)) +
+        (yield* ended('effecttea_answers', ['id', 'request', 'kind'], Rows.answerKey))
     }).pipe(Effect.orDie)
+
+  // The replies and the answers kept for work that has ended, which the asker's step did not see: on a pool its step
+  // and the receiver's run at once, and each reads the other's row only once committed (decision 0289). A work that
+  // ended never holds again, so a key absent from what is committed stays absent. The first statement locks a batch
+  // and skips the rows a step holds. The second deletes them on the condition read again from its own snapshot, taken
+  // once the rows are locked, so that a row whose sender was written again after the first snapshot is read as
+  // committed. The sweep ends at a batch that deletes nothing, since a batch whose rows another holds may delete fewer.
+  const ended = <K extends Readonly<{ id: string; request: string }>>(
+    table: 'effecttea_replies' | 'effecttea_answers',
+    keys: ReadonlyArray<string>,
+    decode: (held: unknown) => Effect.Effect<ReadonlyArray<K>, Schema.SchemaError>,
+  ) =>
+    Effect.gen(function*() {
+      const gone = sql`NOT EXISTS (
+        SELECT 1 FROM effecttea_entity_keys AS asking
+        WHERE asking.name = kept.sender_name AND asking.id = kept.sender_id AND asking.key = kept.sender_key
+          AND asking.parameter = kept.sender_parameter AND asking.incarnation = kept.sender_incarnation
+      )`
+      let count = 0
+      while (true) {
+        const deleted = yield* transaction(sql, Effect.gen(function*() {
+          const locked = yield* rows(table, decode)(sql`
+            SELECT ${sql.literal(keys.join(', '))} FROM ${sql(table)} AS kept
+            WHERE name = ${name} AND sender_name IS NOT NULL AND ${gone}
+            ORDER BY ${sql.literal(keys.join(', '))} LIMIT ${batch} ${lockingTheConditionSkipping}
+          `)
+          if (locked.length === 0) return 0
+          const these = sql.or(locked.map((row) =>
+            sql.and(keys.map((key) => sql`${sql(key)} = ${(row as Record<string, string | number>)[key]!}`))
+          ))
+          const removed = yield* sql`
+            DELETE FROM ${sql(table)} AS kept WHERE name = ${name} AND (${these}) AND ${gone} RETURNING 1 AS gone
+          `
+          return removed.length
+        }))
+        count += deleted
+        if (deleted === 0) return count
+      }
+    })
 
   /** The entities of the program an operator has to resume: nothing of theirs is handled, and no timer of theirs fires. */
   const onHold = sql`(SELECT id FROM effecttea_entities WHERE name = ${name} AND suspended_on IS NOT NULL)`

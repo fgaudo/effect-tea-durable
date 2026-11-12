@@ -229,8 +229,8 @@ export interface Storage<T extends Types> {
   /** Drops a consumer and its cursors, so that the next prune passes what it never read (decision 0039). */
   readonly forget: (topic: Topic<T>, consumer: string) => Effect.Effect<void>
   /**
-   * `Handle.expire`: deletes the callers' replies past their time at `at`, in milliseconds, in batches, and counts
-   * them (decision 0245).
+   * `Handle.expire`: deletes the callers' replies past their time at `at`, in milliseconds, and the replies and the
+   * answers kept for work that has ended, in batches, and counts them (decisions 0245, 0289).
    */
   readonly expire: (at: number) => Effect.Effect<number>
   /**

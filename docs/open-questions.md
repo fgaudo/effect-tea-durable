@@ -600,23 +600,6 @@ with a requirement that no example has yet.
   - a door of one RPC whose payload names the kind of request as text, so that Cluster decodes every request, and an
     older runner's step dies on a kind it does not know, which saves no reply;
   - a sentence of the design that excludes a rolling deploy across two releases of the library that change the door.
-- **The deletions of a reply on a pool of PostgreSQL.** A reply to another entity's operation is kept while the
-  work that asked holds ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)).
-  Two statements keep it: the receiver's step deletes the reply it stores where the asker's key is gone, and the
-  asker's step deletes the replies to the work that ends. They rely on transactions that come one after the other
-  ([decision 0090](decisions/archive/0090-on-cluster-a-reply-is-deleted-as-on-one-process.md)). On a server of
-  PostgreSQL with a pool the steps of two entities run at once, at `READ COMMITTED`
-  ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The receiver's step still sees the asker's
-  key, whose deletion is not committed, and the asker's step does not see the reply, whose insertion is not
-  committed. Both commit, and the reply stays for ever, since it has no time for `expire`. It is a row left, and no
-  wrong answer. It happens where work ends while its request is still handled, as an operation that times out its
-  own `send` does. An answer no entity stores, kept for an operation in `effecttea_answers`, is kept and deleted by
-  the same two statements
-  ([decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)), and may
-  stay for ever in the same way. It is bug 3 of [`docs/bugs.md`](bugs.md), reproduced on the CI's server for a reply and
-  for an answer, whichever step opens first. It would be decided by:
-  - whether the receiver's step locks the asker's key as it reads it, or a sweep deletes the replies whose asker's
-    work is gone.
 - **A step of a drain that changes a droppable operation.** A planned stop drains the at-most-once operations, and
   starts no other work
   ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). A step during the
@@ -730,7 +713,8 @@ with a requirement that no example has yet.
   [decision 0286](decisions/0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md), whose trigger locks
   the publications in order, and bug 78 by
   [decision 0287](decisions/0287-a-reading-of-the-log-gives-each-partition-up-to-its-first-head.md), whose reading of the log gives each partition up to
-  its first head. Bug 49 is fixed by decision 0285 too. The other bugs are later cases of that rule, each with a note of its own. What is left would
+  its first head. Bug 49 is fixed by decision 0285 too, and bug 3 by
+  [decision 0289](decisions/0289-expire-deletes-what-work-that-ended-was-given.md), whose `expire` deletes what work that ended was given. The other bugs are later cases of that rule, each with a note of its own. What is left would
   be decided by:
   - the tests run against the CI's server, from the reviewers' branches;
   - a reading of every statement of `src/storage/` whose guard stands in a subquery or in an `INSERT … SELECT`, for

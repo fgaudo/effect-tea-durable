@@ -247,6 +247,9 @@ export const Rows = {
     }),
   ])),
   id: decoder(Schema.Struct({ id: Schema.String })),
+  /** The primary key of a reply under its program, and of an answer: the receiver, the request, and the version or kind. */
+  replyKey: decoder(Schema.Struct({ id: Schema.String, request: Schema.String, version: Version })),
+  answerKey: decoder(Schema.Struct({ id: Schema.String, request: Schema.String, kind: Schema.String })),
   /** An entity's id, and 1 where it is suspended: PostgreSQL gives a boolean where SQLite gives an integer. */
   listed: decoder(Schema.Struct({ id: Schema.String, suspended: Count })),
   /** A timer's time, in milliseconds: one before 1970 is a time too. */

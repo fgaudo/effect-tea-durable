@@ -6,7 +6,9 @@ replies are deleted is given by the machine's step since [decision 0057](0057-th
 storage checks only another entity's keys. How long a caller's replies are kept, which this note left open, is decided
 by [decision 0125](0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md): as long as its boundary says.
 [Decision 0253](../0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md) keeps by the same
-rule the answers no entity stores: a creation `init` rejected, and `NotFound`.
+rule the answers no entity stores: a creation `init` rejected, and `NotFound`. Completed by
+[decision 0289](../0289-expire-deletes-what-work-that-ended-was-given.md) on a pool of PostgreSQL, where two steps at once leave a reply of work that ended: `expire`
+deletes it.
 
 ## Context
 

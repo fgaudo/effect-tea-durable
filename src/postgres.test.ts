@@ -663,15 +663,16 @@ describe('the publications of steps pruned by two transactions at once (decision
     }))
 })
 
-describe('a reply to work that ends while its receiver stores it (decisions 0021, 0090, 0253)', () => {
+describe('a reply to work that ends while its receiver stores it (decisions 0021, 0090, 0253, 0289)', () => {
   const asker: Program<T> = { ...ranked, name: 'Asker' }
   const receiver: Program<T> = { ...ranked, name: 'Receiver' }
   const asked = { _tag: 'Operation', entity: { name: 'Asker', id: 'a' }, key: { name: 'ask' }, incarnation: 1, name: 'n' } as const
   const work = { _tag: 'Operation', operation: { _tag: 'Ask' } }
   // The receiver's step stores the reply where the asker's key holds, and the asker's step that ends the work
   // deletes the replies to it. Each statement reads the other's row only once it is committed, so the two steps run at
-  // once on two connections, one of them held open while the other runs. Whichever opens first, the reply or the
-  // answer must go with the work: no `expire` ever deletes a row kept with no time.
+  // once on two connections, one of them held open while the other runs, and both commit with the row left. A sweep
+  // that runs while the first is open waits for neither, and deletes nothing the work still holds. The sweep after
+  // both commit deletes the row (decision 0289). Before that note no sweep did, so the row stayed for ever.
   const cases = [
     ['a reply', 'the receiver first'],
     ['a reply', 'the asker first'],
@@ -679,7 +680,7 @@ describe('a reply to work that ends while its receiver stores it (decisions 0021
     ['an answer', 'the asker first'],
   ] as const
   for (const [kept, first] of cases) {
-    onServer(`${kept} kept while the work ends at once, ${first}, goes with the work`, (url, sql) =>
+    onServer(`${kept} kept while the work ends at once, ${first}, goes at the next sweep`, (url, sql) =>
       Effect.gen(function*() {
         yield* on(sql)(createTables)
         const other = yield* connect(url)
@@ -723,11 +724,16 @@ describe('a reply to work that ends while its receiver stores it (decisions 0021
         // The second step runs while the first is open: it commits, or waits for a lock the first holds.
         const second = yield* Effect.forkChild(transaction(other, then))
         yield* Effect.raceFirst(Fiber.await(second), waitingOnLocks(sql, 1))
+        const sweeping = storage(receiver, yield* connect(url), 1)
+        expect(yield* sweeping.expire(0).pipe(Effect.timeout('5 seconds'))).toBe(0)
         yield* Deferred.succeed(release, undefined)
         yield* Fiber.join(opening)
         yield* Fiber.join(second)
         const table = kept === 'a reply' ? 'effecttea_replies' : 'effecttea_answers'
-        expect(yield* sql`SELECT request FROM ${sql(table)} WHERE name = 'Receiver'`).toEqual([])
+        const left = sql`SELECT request FROM ${sql(table)} WHERE name = 'Receiver'`
+        expect(yield* left).toHaveLength(1)
+        expect(yield* sweeping.expire(0)).toBe(1)
+        expect(yield* left).toEqual([])
       }))
   }
 })

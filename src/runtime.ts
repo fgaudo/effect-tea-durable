@@ -510,9 +510,10 @@ export interface Handle<T extends Types, C = {}> {
    */
   readonly forget: (topic: Topic<T>, consumer: string) => Effect.Effect<void>
   /**
-   * Deletes the callers' replies of the program past their time, and gives how many went. A reply past its time is
-   * never read, so this frees only their rows: those of an entity that answers no message, since a step that stores a
-   * reply deletes its own entity's (decision 0125). The replies go in batches, each a transaction of its own, so the count is the sum of the
+   * Deletes the callers' replies of the program past their time, and the replies and the answers kept for another
+   * entity's work that has ended, and gives how many went. Neither is ever read again, so this frees only their rows:
+   * the replies of an entity that answers no message, since a step that stores a reply deletes its own entity's
+   * (decision 0125), and the rows two steps at once on a pool leave (decision 0289). The replies go in batches, each a transaction of its own, so the count is the sum of the
    * batches, and an expire that fails keeps the batches it committed before (decision 0245).
    */
   readonly expire: Effect.Effect<number>

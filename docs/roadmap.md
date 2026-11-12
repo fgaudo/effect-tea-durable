@@ -400,7 +400,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - Done, on 2026-11-12, bug 78, the reading of the log: [decision 0287](decisions/0287-a-reading-of-the-log-gives-each-partition-up-to-its-first-head.md).
   - Done, on 2026-11-12, bug 111, a deadlock of two prunes at once that the pool found:
     [decision 0288](decisions/0288-a-batch-of-prune-skips-the-rows-another-batch-holds.md).
-  - Next, the other cases of the rule of decision 0284, one at a time, since each changes `src/storage/` and pins its
+  - Done, the other cases of the rule of decision 0284, one at a time, since each changes `src/storage/` and pins its
     case in `src/contract.test.ts`. Each is a note of its own that cites decision 0284 and adds itself to that note's
     status line. Its case is pinned in the test of the pool, and fails on the CI before the fix. The opinion of a
     Fable 5.2 agent of 2026-11-12, behind decision 0284, proposed each fix below, and each is reasoned until its test
@@ -409,12 +409,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
        fixed by decision 0285 with no note of its own. Its case `bug49` passes on the pool, and deadlocked against a
        batch that waits for a reply's row. `forgetUnder` of [`src/storage/cluster.ts`](../src/storage/cluster.ts),
        which runs only on Cluster, stays an open question.
-    2. Bug 3, a reply to another entity's operation that stays for ever: the `NOT EXISTS` on the asker's row of
-       `effecttea_entity_keys` is read unlocked. Reproduced on 2026-11-12, for a reply and an answer, by the tests of
-       `claude/bug3-a-reply-left` in `src/postgres.test.ts`; its fix waits for the maintainer's choice. Locking that row `FOR SHARE` first fixes it. Two entities that end
-       their work and answer each other in one step may then close a cycle, which decision 0222 turns into a crash,
-       so it needs a note of its own that decides the order.
-  - Then the pool's gate. Both calls waited at the lock in 6 and in 13 of a hundred runs, since `gate` draws the
+    2. Done, on 2026-11-12, bug 3, a reply to another entity's operation that stays for ever, fixed by
+       [decision 0289](decisions/0289-expire-deletes-what-work-that-ended-was-given.md): `expire` deletes the replies
+       and the answers kept for work that has ended. The maintainer chose the sweep over a lock of the asker's key.
+  - Next, the pool's gate. Both calls waited at the lock in 6 and in 13 of a hundred runs, since `gate` draws the
     table among every table of the library. A gate drawn among the tables both calls of the pair write holds more
     pairs at once. The test fails a run of 50 or more in which no pair waited at once.
   - Then the calls of the contract grow, on every backend: an operator's `resume`, `discard`, `inspect` and

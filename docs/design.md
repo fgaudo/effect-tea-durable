@@ -1048,14 +1048,19 @@ fails logs a warning with its cause, and the next one runs at the next interval,
 launcher's defect. On Effect Cluster one runner sweeps a program, as a singleton of Cluster named
 `@fgaudo/effect-tea-persistent/<program>/sweep`, so that runners do not contend for the same rows.
 
-A sweep changes no answer. It deletes only the replies past their `keep` and the rows of the log that every stored
-consumer has read. A topic no consumer is stored for keeps no rows under a sweep, so a deployment that wants a
+A sweep changes no answer. It deletes only the replies past their `keep`, the replies and the answers kept for work
+of another entity that has ended, and the rows of the log that every stored consumer has read. The step of the work
+that ends deletes those replies and answers itself, and a sweep takes those it leaves where it runs beside the step
+that stores them, on a pool of PostgreSQL
+([decision 0289](decisions/0289-expire-deletes-what-work-that-ended-was-given.md)). A topic no consumer is stored for keeps no rows under a sweep, so a deployment that wants a
 topic's history declares its consumer before the topic's first step, or sweeps with `prune: false`. `forget` stays
 an operator's call. SQLite gives no room back to the volume once rows are deleted, so a sweep bounds the growth of
 the file and shrinks nothing.
 
 `prune` and `expire` delete in batches of 256 rows, read in the order of an index, and repeat until a batch deletes
-fewer. Each batch is a transaction of its own. A short transaction holds SQLite's one writer for less time, so a
+nothing. A batch skips the rows a step or another batch holds
+([decisions 0285](decisions/0285-a-batch-of-expire-skips-the-replies-a-step-holds.md),
+[0288](decisions/0288-a-batch-of-prune-skips-the-rows-another-batch-holds.md)). Each batch is a transaction of its own. A short transaction holds SQLite's one writer for less time, so a
 sweep does not stall the steps. The count each gives is the sum of its batches. A batch of `prune` reads the cursors
 in its own transaction, and a batch of `expire` on Cluster deletes Cluster's rows under each id it takes. The runtime
 calls neither Cluster's `deleteProcessed` nor its `MessageRetention`, since neither spares an operation's request
