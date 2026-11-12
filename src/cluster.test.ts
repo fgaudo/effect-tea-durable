@@ -836,6 +836,29 @@ describe('the runtime on Cluster', () => {
       expect(yield* handle!.discard('one')).toEqual({ _tag: 'NotSuspended' })
     })), 30_000)
 
+  // Bug 11 of docs/bugs.md: an operator's request keeps no id for the runtime to delete Cluster's rows by, as a caller's
+  // does (decisions 0166, 0171).
+  test.failing('FAILING: an operator’s resume and discard leave no Cluster rows once expire runs past the least time', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const sender = { user: 'u' }
+      const operators = sql<{ held: number }>`
+        SELECT (SELECT COUNT(*) FROM cluster_messages WHERE tag IN ('Resume', 'Discard'))
+          + (SELECT COUNT(*) FROM cluster_replies WHERE request_id IN (
+            SELECT request_id FROM cluster_messages WHERE tag IN ('Resume', 'Discard')
+          )) AS held
+      `
+      yield* handle!.create('one', { flags: { start: 0 }, requestId: 'c1', sender })
+      expect(yield* handle!.send('one', { _tag: 'Break' }, { requestId: 'm1', sender, keep: 'forever' })).toEqual({ _tag: 'Suspended' })
+      expect(yield* handle!.resume('one')).toEqual({ _tag: 'Resumed' })
+      yield* eventually(handle!.suspended, (listed) => listed.length === 1)
+      expect(yield* handle!.discard('one')).toEqual({ _tag: 'Discarded' })
+      expect(Number((yield* operators)[0]?.held)).toBe(4)
+      yield* Effect.sleep(least)
+      yield* handle!.expire
+      expect(Number((yield* operators)[0]?.held)).toBe(0)
+    })), 30_000)
+
   test('a caller’s keep reaches the door, and its reply is kept until the time it gives', () =>
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient

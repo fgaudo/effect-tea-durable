@@ -107,9 +107,14 @@ family gets a fix of its own.
     The sender is not suspended and the receiver does not exist, so `suspended` lists nothing. Verified by a test
     of `src/cluster.test.ts`, which would hang today: the [open question](open-questions.md#running) A creation
     that `init` dies on, on Cluster.
-11. **Noticed, not checked: on Cluster, the rows of an operator's resume or discard may never be deleted.**
-    ([decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
-    Verified by a test that resumes an entity on Cluster and reads Cluster's tables after `expire`: the
+11. **Reproduced: on Cluster, the rows of an operator's resume or discard are never deleted.** An operator's
+    `Resume` and `Discard` go through the door's client
+    ([decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)),
+    and the client keeps no Cluster id of them, so neither a step nor `expire` deletes their rows
+    ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
+    The test `FAILING: an operator’s resume and discard leave no Cluster rows once expire runs past the least time`
+    of `src/cluster.test.ts`, a `test.failing` on `main`, finds the two requests and their two replies after `expire`.
+    The `Resumed` a step sends to a waiting sender keeps no id either, and no test reads its rows yet: the
     [open question](open-questions.md#running) The rows of operators' events on Cluster.
 12. **Noticed, not checked: a defect's cause holding U+0000 may reach Cluster's tables unescaped.**
     ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)). It matters once

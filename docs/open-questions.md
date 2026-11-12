@@ -665,14 +665,16 @@ with a requirement that no example has yet.
     runtime stores the defect in its own tables and frees the id.
 - **The rows of operators' events on Cluster.** An operator resumes and discards through the door's client on
   Cluster ([decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
-  The premise review of 2026-11-11 noticed that Cluster's rows of those requests may never be deleted, and did not
-  check it, which is bug 11 of the [roadmap](roadmap.md). A caller's rows are deleted only under an id its client
+  Cluster's rows of those requests are never deleted, since the door's client keeps no id of them: a test of
+  `src/cluster.test.ts` finds them after `expire`, which is bug 11 of [`docs/bugs.md`](bugs.md), reproduced. The
+  `Resumed` a step sends to a sender that waits keeps no id either, and no test reads its rows yet. A caller's rows are deleted only under an id its client
   keeps, once it is given the answer
   ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
   So a caller that stops waiting, as an HTTP boundary's timeout does, keeps its rows for ever, and a retry under its
   request id is answered from Cluster's saved reply past its `keep`, which is bug 59, reproduced. It would be
   decided by:
-  - a test that resumes an entity on Cluster and reads Cluster's tables after `expire`;
+  - whether the door's client of an operator keeps the id of its request, as a caller's does, so that a step or
+    `expire` deletes its rows past the least time, and whether a `Resumed` is kept so too;
   - whether a client keeps the id when its caller is interrupted, with a deletion that spares a request Cluster has
     not marked processed, or the guide says such rows stay;
   - for bug 91, reasoned by a reading, whether a second client's `reset` drops only a keep whose answer it read
