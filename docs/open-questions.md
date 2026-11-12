@@ -6,6 +6,44 @@ with a requirement that no example has yet.
 
 ## Storage and reading
 
+- **On a pool of PostgreSQL, a `position` that rises with `seq` within a partition.** The log is ordered within a
+  partition ([decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md), only reasoned there).
+  `write` of `src/storage/entities.ts` moves the head before it inserts the rows of the outbox, so the identity of a
+  row is drawn under the head's lock, and the next step of the partition draws its own after the commit. Decision
+  0222 tests that two writers of one partition commit in the order of their `seq`, on the CI's server, and was not
+  read for `position`. Bug 78 is the reading's side of the same order. The second reading of the premise review
+  noticed it on 2026-11-12.
+  - A test of `src/postgres.test.ts` with two writers of one partition, held at their statements, that reads
+    `position` and `seq` of their rows, would decide it.
+- **On Cluster, a deploy that stores a consumer while another runner's sweep prunes.** The comment of `pruneBatch` in
+  `src/storage/log.ts` and [decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)
+  say that a cursor only rises and that a consumer is stored only by a deploy. `forget` deletes a consumer's cursors,
+  and on Cluster another runner's deploy stores a consumer during a prune. A batch reads the consumers and the cursors
+  in its one statement, so it drops only rows committed before the consumer was stored, which the consumer does not
+  hold. It was not run with two runners. The second reading of the premise review noticed it on 2026-11-12.
+  - A test of `src/cluster.test.ts` whose second runner deploys a consumer while the first runner's sweep prunes the
+    topic would decide it, and the comment of `pruneBatch` would follow it.
+- **A selector that dies on one stored row stops every reader of its topic there.** A selector of the program deployed
+  that dies on a row gives the defect to whoever reads the row
+  ([decision 0140](decisions/archive/0140-a-row-of-a-topic-gives-its-value.md)). So every reader of `consume` of its
+  topic stops at that row, and its consumer holds the topic from that row under every prune
+  ([decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md)). Only a deploy that
+  fixes the selector, or a `forget`, frees the topic, and no note says so. The second reading of the premise review
+  noticed it on 2026-11-12.
+  - Whether the guide says how an operator frees a topic held by such a row would decide it.
+- **An array with an own property besides its indices.** `isJson` of `src/program.ts` reads only the indices of an
+  array, and `JSON.stringify` drops any other own property
+  ([decisions 0040](decisions/archive/0040-what-is-stored-encodes-to-json-as-it-is.md),
+  [0210](decisions/0210-a-sparse-array-is-no-json-and-negative-zero-is-read-as-zero.md)). So what is stored would
+  differ from what the schema encoded. Only a schema whose encoding gives such an array reaches it, and none was
+  tried. The second reading of the premise review noticed it on 2026-11-12.
+  - A test of `src/program.test.ts` that gives `isJson` such an array would decide it.
+- **The comment of `warn`, which counts a projection in each topic.** The comment of `warn` in `src/runtime.ts` says
+  that a step's characters are counted in the read model and in each topic of the outbox, and cites decision 0138.
+  Since [decision 0154](decisions/archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md) the projection is
+  counted once in the outbox, as `write` of `src/storage/entities.ts` counts it. The second reading of the premise
+  review found it by a reading on 2026-11-12.
+  - A reading of `write` against the comment, and a comment that cites decision 0154, would settle it.
 - **A state written back to the text `reindex` read, at the version it read.** `reindex` writes a row only where the
   stored state and version are those it computed from
   ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). A step that changes a state
@@ -224,6 +262,43 @@ with a requirement that no example has yet.
   - what a reader of `consume` of the dropped topic does on an older runner, which acks on.
 
 ## Running
+
+- **What a timer's `Fire` that a planned stop lets through costs.** A timer armed as the drain begins fires in the
+  drain, which is bug 101. Its step may start an at-most-once operation, which delivers `unknown` once the drain's
+  `millis` run out, where without the race the timer would fire in the next process and the operation would run
+  whole. That cost is reasoned, and was not run. The second reading of the premise review noticed it on 2026-11-12.
+  - A test of the form of bug 101's timer, with a program whose `Rang` brings `b` and a drain whose `millis` the clock
+    passes, would show it.
+
+- **A planned stop that waits for a deploy's activation to commit.**
+  [Decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md) says that a drain that looks
+  while a deploy loads an entity closes the scope before the entity's activation commits, so that the drain needs no
+  count of the activations. The planned stop calls `drained` of `src/runtime.ts` with `detached` true, which waits
+  while `p.detachments` is above 0, and an activation of a deploy is counted there, since `loads` of
+  `src/runtime/loop.ts` runs the load in `detached`
+  ([decision 0079](decisions/archive/0079-what-a-caller-sets-going-is-finished-without-it.md)). So the drain waits for
+  the activation to commit and its at-most-once operations to start. What is stored stays right. The second reading
+  of the premise review found it by a reading on 2026-11-12.
+  - A test of a planned stop that begins while a deploy loads an entity, reading whether the activation commits
+    before the scope closes, would show which holds, and the note or the code would follow it.
+
+- **A fiber of `forkHeld` interrupted before its first step.**
+  [Decision 0271](decisions/0271-every-fork-of-the-runtime-says-it-is-interruptible.md) rests on the bookkeeping of
+  `forkHeld` of `src/runtime/loop.ts` being in an `ensuring`, which runs on interruption. By
+  [decision 0110](decisions/archive/0110-detached-work-is-counted-until-it-ends-however-it-ends.md), an `ensuring`
+  runs only once its effect has started. So a fiber that its scope interrupts before its first step leaves its entry
+  in `operations` or `timers`, and tells no end. Every other interruption of such a fiber goes through `stop` or
+  `drop`, which take the entry out first, and nothing reads the entries once the scope has closed, so no rule is
+  broken today. The second reading of the premise review found it by a reading on 2026-11-12.
+  - An explored test that closes a deployment's scope between a fork of `forkHeld` and the fiber's first step, then
+    reads `operations`, would decide it.
+
+- **On Cluster, a door reached by an empty id.** [Decision 0179](decisions/0179-an-id-is-not-empty.md) rests on every
+  id entering by a handle, `Entities` or a world. On Cluster a door is reached by Cluster's address of the entity, which
+  a client of Cluster built apart from the library could give as `''`. It was not read in the code of the door. The
+  second reading of the premise review noticed it on 2026-11-12.
+  - A reading of the doors of `src/runtime/doors.ts`, or a test of `src/cluster.test.ts` that sends to a door under
+    the address `''`, would decide it.
 
 - **One set of the waker for two warnings.** The set `refused` of `waking`, at `src/runtime/waker.ts:26`, keeps the
   ids whose refused time is logged once

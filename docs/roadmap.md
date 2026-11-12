@@ -185,9 +185,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     2. Done, by the sample above: area 2, Effect Cluster.
     3. Done, area 3, Versions and deploys.
     4. Done, area 4, The runtime, a first part.
-    5. Area 5, The runtime, a second part.
+    5. Done, area 5, The runtime, a second part.
     6. Done, area 6, Schemas and projections, a first part.
-    7. Area 7, Schemas and projections, a second part.
+    7. Done, area 7, Schemas and projections, a second part.
     8. Done, area 8, The queries and their pages.
     9. Done, area 9, The tables and migrations.
     10. Area 10, The rehearsal and testing.
@@ -276,13 +276,24 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     the code does otherwise than its note are [open questions](open-questions.md), under Storage and reading and
     Running. Not reached: the notes the long declarations of the storage and the runtime couple to each area, and the
     notes that change or cite them read in part, as their tables in [`reviews.md`](decisions/reviews.md) say.
-  - Areas 5 and 7 of the second reading were read on 2026-11-12 in the same batch, and sent back to their branches,
-    `claude/premise-review-2-area-5-51cf0e` and `claude/premise-review-2-area-7-746042`, to read whole the notes of the
-    brief they read in part. Area 5 reports a drain that misses an operation that runs again which a step forks as the
-    drain begins, at a pinned seed. Area 7 reports three bugs of PostgreSQL. Neither is checked or recorded yet: each
-    is, once its session ends.
+  - Done, in two sessions of the same batch, each sent back once to read whole the notes of its brief it had read in
+    part: areas 5 and 7 of the second reading. Area 5, The runtime, a second part, read its nineteen notes and the
+    eleven later notes of its brief whole with the code, and 0104 and 0117. Its finding is bug 101 of
+    [`docs/bugs.md`](bugs.md), a planned stop or an undo that misses an operation that runs again or a timer a step
+    starts as the stop begins, in three forms, reproduced at seeds 659, 60 and 13 on
+    `claude/premise-review-2-area-5-51cf0e` at `d8a98cf`. Area 7, Schemas and projections, a second part, read its
+    21 notes whole with the code, the later notes of its brief but 0254 whole, and the notes that change its notes,
+    0162, 0179, 0191, 0198, 0216, 0222 and 0223. Its findings are bugs 102 to 106, reproduced on
+    `claude/premise-review-2-area-7-746042` at `69a9b9e`: a long text PostgreSQL cannot hold in a key or an index, a
+    `reindex` that dies whole on it, 2^31 partitions on PostgreSQL, a completion that crashes its entity at every
+    activation, and a guard of `reindex` no test holds, measured by a mutation under `SCHEDULES=all` and measured
+    again. Each test was run again on its branch, whose `src/` is `main`'s, and fails at its assertion. Their suspects
+    not checked and the places where the code does otherwise than its note are
+    [open questions](open-questions.md), under Storage and reading and Running. Not reached: the notes the long
+    declarations of the runtime and the storage couple to each area, as their tables in
+    [`reviews.md`](decisions/reviews.md) say.
   - Every area of the first list but area 14, every last session and the sample are `Done`. So the step goes on with
-    areas 5 and 7 of the second reading, then 10 and 12. A session that records a review writes `Done, ` before what it read, and adds a
+    areas 10 and 12 of the second reading. A session that records a review writes `Done, ` before what it read, and adds a
     bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
     reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
     a last session and read whole by no other review.

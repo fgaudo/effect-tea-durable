@@ -46,12 +46,12 @@ family gets a fix of its own.
   [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md). What each left
   unverified is an [open question](open-questions.md#running): A sender and Cluster's round at the least retry, The
   cases of a crash's retry not run yet, An operation's kept answer on Cluster across a crash, and under two runs at
-  once, and A timer due, which no test of the capacity reaches. Bug 99 has the form of family G, found after its
-  fix, and is not fixed yet.
+  once, and A timer due, which no test of the capacity reaches. Bugs 99 and 106 have the form of family G, found
+  after its fix, and are not fixed yet.
 - Of no family: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 75, 79, 81, 82, 86, 87 and
   92. Each is fixed by a note of its own or verified false, as its entry says. Bug 79, a gap of the guide, is fixed in
   `docs/design.md` with no note, since decisions 0185 and 0222 decide it. Bug 93 is of no family either, and has
-  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281. Bug 94 is of no family, and is fixed by decision 0282. Bug 95 is of no family, and not fixed yet. Bugs 98 and 100 are of no family, and not fixed yet.
+  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281. Bug 94 is of no family, and is fixed by decision 0282. Bug 95 is of no family, and not fixed yet. Bugs 98 and 100 are of no family, and not fixed yet. Bugs 101 to 105 are of no family, and not fixed yet. Bugs 102, 103 and 105 share one cause, a text PostgreSQL cannot hold in a key or an index, and a bound in `shownOf` could fix the three.
 
 ## The list
 
@@ -635,3 +635,97 @@ family gets a fix of its own.
     runtime`, in `src/runtime.test.ts`, reproduces it under a busy timeout of 0 on the branch
     `claude/premise-review-2-area-9-f72a79`, at `375a5f3`. The fix begins at `take`, whose transaction would lock the
     hold file alone, or which would tell a lock of the hold file from a lock of the main file before it says `held`.
+101. **Reproduced: a planned stop, or the undo of a deploy, misses an operation that runs again or a timer that a step
+    starts as the stop begins.** A planned stop stops at once the timers and the operations that run again, and waits
+    for the at-most-once operations alone
+    ([decision 0119](decisions/archive/0119-a-planned-stop-drains-the-at-most-once-operations.md)). The stop is
+    `quiesce` of `src/runtime.ts`, which interrupts each fiber it finds in `loaded.timers`, and each fiber in
+    `loaded.operations` under the ids of `loaded.rerun`. `start` of `src/runtime/loop.ts` reads `draining`, adds the
+    operation to `rerun`, and registers its fiber only once `forkHeld` has forked it, and `arm` registers a timer's
+    fiber the same way. The forking fiber may yield between the fork and the registration
+    ([decision 0068](decisions/archive/0068-what-another-fiber-reads-changes-in-one-step.md)). So the rule of decision
+    0119 rests on a premise no note wrote: no step is between the look at `draining` and the registration of its fiber
+    when the stop runs. [Decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md) extends the
+    stop to every deployment in `made`, and [decision 0280](decisions/0280-the-undo-of-a-deploy-drains-its-deployment.md)
+    calls the same `quiesce` from the undo of a deploy. The bug has three forms, each with its test in
+    `src/runtime.test.ts` on the branch `claude/premise-review-2-area-5-51cf0e`, cut from `main` at `ca62547`. An
+    operation that runs again holds the drain open for its whole `millis`: `FAILING: a step that starts an operation
+    that runs again as the drain begins has it stopped at once`, at `e24a0f1`, seed 659. A timer fires in the drain,
+    and its step may start an at-most-once operation that then delivers `unknown`: `FAILING: a step that arms a timer
+    as the drain begins has it stopped at once`, at `d8a98cf`, seed 60. The undo of a deploy waits for an operation
+    that runs again, and the caller of the deploy with it: `FAILING: an undo that begins as an activation starts its
+    operations stops those that run again at once`, at `d8a98cf`, seed 13. Each fails at its pinned seed, and passes
+    every seed of `SCHEDULES=all` once `start` and `arm` stop the fiber they registered where they then find
+    `draining` set. The fix begins at `start` and `arm`, which would read `draining` again once the fiber is
+    registered, or at `forkHeld`, which would register the fiber in the step that forks it. Each test pins a seed, so
+    each needs a pin in `src/runtime.test_pins.ts` once it moves to `main`.
+102. **Reproduced: on PostgreSQL, a step whose index, key parameter, request or id holds a long text cannot be written,
+    where SQLite writes it.** Decision 0157 holds the same tables on both dialects, so that a program tested on SQLite
+    meets there what PostgreSQL refuses
+    ([decision 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). A reply is keyed by the text
+    of its request ([decision 0065](decisions/archive/0065-the-machine-holds-no-replies.md)), a key by its parameter's
+    JSON ([decision 0136](decisions/archive/0136-a-key-is-a-name-and-a-parameter-as-data.md)), an entity by its id, and
+    an index of the read model is an expression index of the program's value
+    ([decision 0032](decisions/archive/0032-a-projection-is-a-row.md)). Each rests on a premise no note wrote: the
+    database holds any text in a key or an index, which SQLite does. An entry of a B-tree index of PostgreSQL holds
+    2,704 bytes at most, once compressed, so the step's statement fails for a sender, a request id, a key's parameter,
+    an id or a string index of a few kilobytes that compress little. A step that cannot be written crashes its entity
+    ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)).
+    [Decision 0206](decisions/0206-an-index-that-is-no-scalar-is-the-programs-defect.md) made a defect of the program
+    of an index that is no scalar for that reason. The test `FAILING: a step whose key, index or request holds a long
+    text is written alike on both dialects`, in `src/storage.test.ts`, reproduces it on PGlite on the branch
+    `claude/premise-review-2-area-7-746042`, at `8518b29`, cut from `main` at `ca62547`, and passes on SQLite. The keys
+    of `effecttea_answers` and `effecttea_waiting`, the index `effecttea_replies_by_request_id` and the names of the
+    consumers have the same bound, read and not run. The fix begins at `shownOf` of `src/machine.ts` and at the checks
+    of a caller's id and sender, which would refuse a text past a bound on both dialects as decision 0206 refuses an
+    index that is no scalar, or at the storage, which would key by a digest of the text and keep the text beside it.
+103. **Reproduced: on PostgreSQL, `reindex` dies whole at an entity whose new index it cannot write, so no `reindex`
+    writes the rows of the entities after it.**
+    [Decision 0122](decisions/archive/0122-reindex-leaves-a-row-it-cannot-compute-and-names-its-entity.md) passes over
+    an entity whose row the program cannot compute, so that one entity holds back no other. Only what the runtime
+    throws fails the whole call, as a statement that fails. That rests on a premise the note did not write: a statement
+    fails for the database's reasons, and never for the program's data, which bug 102 takes away. So a deploy whose
+    index gives a long text of one entity's state makes every `reindex` die at that entity, with an `SqlError` that
+    names an index and no entity, and the entities after it keep the rows of the version before. The test `FAILING:
+    reindex passes over an entity whose new index PostgreSQL cannot hold, and writes the rest`, in
+    `src/storage.test.ts`, reproduces it on PGlite on the branch `claude/premise-review-2-area-7-746042`, at `8518b29`,
+    and passes on SQLite. The fix of bug 102 in `shownOf` would list the entity in `failed`, with no change of
+    `reindex` of `src/storage/projections.ts`.
+104. **Reproduced: on PostgreSQL, a launch of 2^31 partitions or more dies with an `SqlError` once it has made the
+    tables, where SQLite launches.** [Decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md)
+    takes any positive integer of partitions, which `checkedOptions` of `src/runtime.ts` checks as a safe integer.
+    Decision 0157 makes a time, a `seq`, a count and a position bigints on PostgreSQL, and
+    [decision 0222](decisions/0222-postgresql-with-many-connections.md) reads an integer up to 2^53. Every column
+    `partition`, and `effecttea_log.partitions`, stays an `INTEGER` of 32 bits, so `partitioned` of
+    `src/storage/tables.ts` dies on `value "2147483648" is out of range for type integer`, which names no option,
+    after `createTables` has run. [Decision 0264](decisions/0264-a-launch-that-dies-gives-back-what-it-held.md) has a
+    launch refused for an option before it stores anything. No deployment needs so many partitions. The test `FAILING:
+    a log of 2^31 partitions launches and creates alike on both dialects`, in `src/runtime.test.ts`, reproduces it on
+    PGlite on the branch `claude/premise-review-2-area-7-746042`, at `8518b29`, and passes on SQLite. The fix begins at
+    `checkedOptions`, which would refuse more than 2^31 − 1 partitions on both dialects, or at the columns.
+105. **Reproduced: on PostgreSQL, an operation's completion whose step writes a long index crashes its entity at every
+    activation, and an at-least-once operation acts at each.** A step that cannot be written crashes its entity
+    ([decision 0042](decisions/archive/0042-an-event-the-runtime-cannot-finish-crashes-its-entity.md)), and the waker
+    activates it again after `retry`
+    ([decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)). Each rule
+    rests on an unwritten premise: a crash is rare, and the activation after it steps on. Under bug 102 the completion
+    is stored in the mailbox, so each activation steps it first and fails again. The entity's state never moves past
+    its creation, its timer never rings, an at-most-once operation delivers `unknown`, an at-least-once operation acts
+    again at each activation, and the entity is not suspended, so `suspended` names nothing. The test `FAILING: a
+    completion whose step writes a long index is written alike on both dialects, and acts once`, in
+    `src/runtime.test.ts`, reproduces it on PGlite on the branch `claude/premise-review-2-area-7-746042`, at `69a9b9e`,
+    where `c` acts 13 times within a second of the test's clock, and passes on SQLite. The fix is bug 102's: a bound in
+    `shownOf` makes the case a defect that suspends the entity, as decision 0206 has an index that is no scalar.
+106. **Measured by a mutation: no test holds the guard of `reindex` that writes a row only over the state it was
+    computed from.** [Decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md) keeps the
+    guard, and decision 0122 keeps it beside its own rule.
+    [Decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) pins a seed in each
+    explored test whose comment names an interleaving, and lists `reindex leaves no row a step has moved past` among
+    the tests whose comments name none. That test's comment names one: the step lands between the reading of the state
+    of `t-3` and the writing of its row. With `AND state = ${held.state}` taken out of `reindex` of
+    `src/storage/projections.ts`, the test passes under `SCHEDULES=all`, which runs its 200 seeds from seed 0, and so
+    does every other test of `reindex` in `src/storage.test.ts` and `src/runtime.test.ts`. The area 7 review measured
+    it on the branch `claude/premise-review-2-area-7-746042`, and it was measured again the same way on that branch,
+    whose `src/` is `main`'s at `ca62547`. It has the form of family G. No test was written. The fix runs `bun run
+    test:explore -t <test>` on the mutation until a seed fails, and pins that seed with its pin in
+    `src/runtime.test_pins.ts`. If no seed of 2,000 finds it, a deviation under `bound` 1 holds it, or an open question.
