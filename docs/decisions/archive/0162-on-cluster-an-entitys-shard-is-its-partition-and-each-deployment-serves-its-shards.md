@@ -7,7 +7,7 @@ the waker and an activation read carry their entity's shard through the entity's
 question of whether a partition of the log is Cluster's shard
 ([decision 0137](0137-the-log-is-ordered-within-a-partition.md)), and says how that note's order of a partition holds
 on Cluster. [Decision 0273](../0273-the-partition-of-an-entity-is-the-librarys-own-hash.md) adds that the round of a
-shard and the waker log an entity stored under a partition that is not its shard.
+shard and the waker log an entity stored under a partition that is not its shard. A shard lost is let go only once every stop of its entities has ended, by [decision 0274](../0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
 
 ## Context
 

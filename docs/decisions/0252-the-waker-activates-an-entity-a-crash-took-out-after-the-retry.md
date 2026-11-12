@@ -6,7 +6,7 @@
 crash. It changes [decision 0029](archive/0029-an-idle-entity-is-unloaded.md), whose unload now waits for a door's
 step to commit. It changes
 [decision 0161](archive/0161-on-cluster-a-step-settles-the-machine-by-the-count-of-the-steps-that-wrote-it.md), whose
-settling no longer keeps a machine that a rolled-back load left without its `Restart`.
+settling no longer keeps a machine that a rolled-back load left without its `Restart`. The waker leaves an entity whose stop runs out of its readings and its marks, by [decision 0274](0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
 
 ## Context
 

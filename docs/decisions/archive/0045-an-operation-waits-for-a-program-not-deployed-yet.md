@@ -1,7 +1,7 @@
 # 0045. An operation waits for a program not deployed yet
 
 **Status:** accepted, 2026-10-31. Its wait every `retry` milliseconds is replaced by
-[decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md).
+[decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md). An operation's wait for a deploy ends once its entity crashes, by [decision 0274](../0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
 
 ## Context
 

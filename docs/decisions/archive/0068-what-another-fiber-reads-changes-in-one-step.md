@@ -1,7 +1,7 @@
 # 0068. What another fiber reads changes in one step
 
 **Status:** accepted, 2026-10-31. Its tests under budgets of steps run under the scheduler of the tests of
-[decision 0104](0104-the-runtimes-tests-choose-where-fibers-yield.md) instead.
+[decision 0104](0104-the-runtimes-tests-choose-where-fibers-yield.md) instead. An entity enters the stops of the process in the step it leaves the process, and leaves them in the step that pokes the waker, by [decision 0274](../0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
 
 ## Context
 

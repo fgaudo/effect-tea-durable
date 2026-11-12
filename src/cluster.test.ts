@@ -55,7 +55,7 @@ import {
 } from './program.ts'
 import { type Handle, type Options, Probe, type Said } from './runtime.ts'
 import { createTables, leased, newestVersion, outranked, partitionOf, recordVersions } from './storage.ts'
-import { slow, slowFailing } from './runtime.test_shared.ts'
+import { slow } from './runtime.test_shared.ts'
 import { client, onEach } from './storage.test_databases.ts'
 
 type T = {
@@ -1262,6 +1262,19 @@ describe('the shards of a runner on Cluster', () => {
   let stopping: Promise<void> | null = null
   /** The entity the finalizer of an interrupted `Ask` of an entity pokes once its wait ends, if any. */
   let farewell: (who: string) => string | null = () => null
+  /** The entity an `Ask` pokes as it starts, from a region its interruption waits for, if any. */
+  let inRegion: (who: string) => string | null = () => null
+  /** While set, the region of an `Ask` waits for it before it pokes. */
+  let regionGate: Promise<void> | null = null
+  /** What an `Ask` of `who` on `port` saw of its poke of `to`, as a line of `seen`. */
+  const poked = (what: string, who: string, to: string, port: number) =>
+    Effect.matchCause({
+      onFailure: (cause: Cause.Cause<unknown>) => void seen.push(`${who} ${what} ${to} on ${port}: ${Cause.pretty(cause)}`),
+      onSuccess: (reply: Option.Option<{ readonly _tag: string }>) =>
+        void seen.push(`${who} ${what} ${to} on ${port}: ${
+          Option.match(reply, { onNone: () => 'no answer', onSome: (answer) => answer._tag })
+        }`),
+    })
   const bell: Program<Bell> = {
     name: 'Bell',
     keys: { ask: null, ring: null, relay: null, haunt: null },
@@ -1360,6 +1373,17 @@ describe('the shards of a runner on Cluster', () => {
         Effect.gen(function*() {
           const { port } = yield* Where
           seen.push(`${who} started on ${port}`)
+          const to = inRegion(who)
+          // Bounded, so that a send never answered ends the region and lets the test's runners close.
+          if (to !== null) {
+            yield* Effect.uninterruptible(
+              Effect.suspend(() => regionGate === null ? Effect.void : Effect.promise(() => regionGate!)).pipe(
+                Effect.andThen(sendFrom(bell, to, { _tag: 'Poke' }, 'region')),
+                Effect.timeoutOption('3 seconds'),
+                poked('poked in its region', who, to, port),
+              ),
+            )
+          }
           if (!answers) {
             yield* Effect.never.pipe(
               Effect.onInterrupt(() =>
@@ -1370,14 +1394,7 @@ describe('the shards of a runner on Cluster', () => {
                     // Bounded, so that a send never answered ends the stop and lets the test's runners close.
                     return to === null ? Effect.void : sendFrom(bell, to, { _tag: 'Poke' }, 'farewell').pipe(
                       Effect.timeoutOption('3 seconds'),
-                      Effect.matchCause({
-                        onFailure: (cause) => void seen.push(`${who} poked ${to} on ${port}: ${Cause.pretty(cause)}`),
-                        onSuccess: (reply) =>
-                          void seen.push(`${who} poked ${to} on ${port}: ${Option.match(reply, {
-                            onNone: () => 'no answer',
-                            onSome: (answer) => answer._tag,
-                          })}`),
-                      }),
+                      poked('poked', who, to, port),
                     )
                   })),
                   Effect.andThen(Effect.sync(() => void seen.push(`${who} stopped on ${port}`))),
@@ -1504,10 +1521,19 @@ describe('the shards of a runner on Cluster', () => {
     answers = false
     stopping = null
     farewell = () => null
+    inRegion = () => null
+    regionGate = null
+    // Cluster may log that no runner is healthy as its runners shut down, between a runner's unregistration and the
+    // interruption of its loop of assignments. What the teardown logs of it is Cluster's, and is dropped.
+    let ended = -1
     try {
       await Effect.runPromise(
-        Effect.scoped(run(start)).pipe(Effect.provide([store, collected])) as Effect.Effect<void, unknown>,
+        Effect.scoped(Effect.tap(run(start), () => Effect.sync(() => void (ended = logged.length)))).pipe(
+          Effect.provide([store, collected]),
+        ) as Effect.Effect<void, unknown>,
       )
+      const teardown = logged.splice(ended).filter((line) => line !== 'No healthy runners available')
+      logged.push(...teardown)
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -1811,10 +1837,11 @@ describe('the shards of a runner on Cluster', () => {
         expect(logs).toContain(outlivesRetry)
       })), 30_000)
 
-  // Decision 0274: a shard lost waits for the stops of its entities. A stop's finalizer that sends through the door's
-  // client to an entity of that shard is never answered: the first runner no longer serves the shard, and the second
-  // does not hold it until the stop ends. The finalizer's send is bounded at 3 s, so that the test ends.
-  slowFailing('a stop that sends to an entity of the shard being let go is answered, and the shard moves after it', () =>
+  // Decision 0274: a shard lost waits for the stops of its entities. A stop's finalizer that sent through the door's
+  // client to an entity of that shard would never be answered: the first runner no longer serves the shard, and the
+  // second does not hold it until the stop ends. A run whose entity crashed sends nothing, so the send is refused, and
+  // the shard moves. The finalizer's send is bounded at 3 s, so that the test ends on the code before the refusal.
+  slow('a stop that sends to an entity of the shard being let go is refused, and the shard moves after it', () =>
     onFile((start) =>
       Effect.gen(function*() {
         const first = yield* start(1)
@@ -1849,14 +1876,144 @@ describe('the shards of a runner on Cluster', () => {
         // A stop past `retry` is logged, and nothing else is.
         expect(warningsAndErrors().filter((line) => line !== outlivesRetry)).toEqual([])
         for (const id of moved) {
-          expect(seen).toContain(`${id} poked ${partnerOf(id)} on 1: Accepted`)
+          expect(seen.find((line) => line.startsWith(`${id} poked ${partnerOf(id)} on 1: `))).toMatch(
+            /after its entity crashed/,
+          )
           expect(seen.indexOf(`${id} stopped on 1`)).toBeLessThan(seen.indexOf(`${id} started on 2`))
         }
-        for (const partner of new Set(moved.map(partnerOf))) {
-          const pokes = moved.filter((id) => partnerOf(id) === partner).length
-          expect((yield* stateOf(partner))?.n).toBe(pokes)
-        }
+        for (const partner of new Set(moved.map(partnerOf))) expect((yield* stateOf(partner))?.n).toBe(0)
       })), 30_000)
+
+  // Decision 0274: a run whose entity crashed sends nothing. On one runner, a stop whose finalizer sends to its own
+  // entity would wait for a door's step that the stop refuses, so the send is refused at once, and the stop ends.
+  test('a stop that sends to its own entity on a runner is refused at once, and the stop ends', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        let crashes = true
+        const first = yield* start(1, (said) => {
+          if (said._tag !== 'Reached' || said.point !== 'BeforeCommit' || said.event._tag !== 'Fire') return
+          if (crashes) {
+            crashes = false
+            throw new Error('the runtime failed')
+          }
+        })
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        yield* create(first, 'e')
+        yield* send(first, 'e', { _tag: 'Ask' }, 'm-ask')
+        yield* until(Effect.sync(() => seen), (lines) => lines.includes('e started on 1'))
+        farewell = (who) => who
+        yield* send(first, 'e', { _tag: 'Ring', at: 0 }, 'm-ring')
+        yield* until(Effect.sync(() => seen), (lines) => lines.includes('e stopped on 1'))
+        const line = seen.find((line) => line.startsWith('e poked e on 1: '))
+        expect(line).toMatch(/after its entity crashed/)
+        expect(warningsAndErrors()).toEqual([])
+      }), { retry: { millis: 3_600_000 } }), 30_000)
+
+  // Decision 0274: a send already waiting when its entity's shard is lost, in a region the crash cannot interrupt,
+  // ends with the defect, so that the stop ends and the shard moves. Each entity pokes the partner of its shard, which
+  // is suspended, so the poke waits for the partner's resumption. Once the partners resume, each is poked once by each
+  // sender, since the next run sends under the same request.
+  slow('a send waiting in a region when its shard is lost ends with the defect, the shard moves, and it is applied once', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        const ids = Array.from({ length: 8 }, (_, i) => `e${i}`)
+        const partners = new Map<number, string>()
+        for (let k = 0; partners.size < shardsPerGroup; k++) {
+          const shard = partitionOf(`p${k}`, shardsPerGroup)
+          if (!partners.has(shard)) partners.set(shard, `p${k}`)
+        }
+        const partnerOf = (who: string) => partners.get(partitionOf(who, shardsPerGroup))!
+        for (const partner of partners.values()) {
+          yield* create(first, partner)
+          yield* send(first, partner, { _tag: 'Break' }, `b-${partner}`)
+        }
+        inRegion = (who) => who.startsWith('e') ? partnerOf(who) : null
+        for (const id of ids) {
+          yield* create(first, id)
+          yield* send(first, id, { _tag: 'Ask' }, `m-${id}`)
+        }
+        yield* until(Effect.sync(() => seen.length), (n) => n === ids.length)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const moved = ids.filter((id) => second.holds(id))
+        expect(moved.length).toBeGreaterThan(0)
+        yield* until(Effect.sync(() => seen), (lines) => moved.every((id) => lines.includes(`${id} started on 2`)))
+        for (const id of moved) {
+          const region = seen.findIndex((line) => line.startsWith(`${id} poked in its region ${partnerOf(id)} on 1: `))
+          expect(seen[region]).toMatch(/after its entity crashed/)
+          expect(region).toBeLessThan(seen.indexOf(`${id} started on 2`))
+        }
+        // The partners of the shards moved resume, and the next run of each sender moved is answered.
+        const resumed = new Set(moved.map(partnerOf))
+        for (const partner of resumed) yield* second.bell.discard(partner)
+        yield* until(
+          Effect.sync(() => seen),
+          (lines) => moved.every((id) => lines.includes(`${id} poked in its region ${partnerOf(id)} on 2: Accepted`)),
+        )
+        inRegion = () => null
+        for (const partner of resumed) {
+          expect((yield* stateOf(partner))?.n).toBe(moved.filter((id) => partnerOf(id) === partner).length)
+        }
+        const logs = warningsAndErrors().filter((line) => line !== outlivesRetry && line !== restarted('broken'))
+        expect(logs).toEqual([])
+      })), 30_000)
+
+  // Decision 0274: a send already waiting in Cluster's client when its entity crashes, in a region the crash cannot
+  // interrupt, ends with the defect, so that the stop ends. The sender's poke goes to a partner the second runner
+  // holds, which handles it, and the first runner holds the reply back from the client. The next run of the sender
+  // sends under the same request, is answered, and the partner applied it once.
+  slow('a send waiting for its reply in the client when its entity crashes ends with the defect, and is applied once', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        let holding = false
+        const crashes = new Set<string>()
+        const first = yield* start(1, (said) => {
+          if (said._tag !== 'Reached' || said.point !== 'BeforeCommit' || said.event._tag !== 'Fire') return
+          if (crashes.delete(said.entity.id)) throw new Error('the runtime failed')
+        }, () => holding)
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const named = (prefix: string, held: (id: string) => boolean) =>
+          Array.from({ length: 64 }, (_, i) => `${prefix}${i}`).filter(held)
+        const sender = named('e', first.holds)[0]!
+        const partner = named('p', second.holds)[0]!
+        yield* create(second, partner)
+        let open = () => {}
+        regionGate = new Promise<void>((resolve) => {
+          open = resolve
+        })
+        yield* Effect.addFinalizer(() => Effect.sync(() => open()))
+        inRegion = (who) => who === sender ? partner : null
+        yield* create(first, sender)
+        yield* send(first, sender, { _tag: 'Ask' }, 'm-ask')
+        yield* until(Effect.sync(() => seen), (lines) => lines.includes(`${sender} started on 1`))
+        // From here the first runner's client is given no reply, and the poke waits in it once the partner handled it.
+        holding = true
+        open()
+        yield* until(stateOf(partner), (state) => state?.n === 1)
+        crashes.add(sender)
+        yield* send(first, sender, { _tag: 'Ring', at: 0 }, 'm-ring')
+        const crashed = `${sender} poked in its region ${partner} on 1: `
+        yield* until(Effect.sync(() => seen), (lines) => lines.some((line) => line.startsWith(crashed)))
+        expect(seen.find((line) => line.startsWith(crashed))).toMatch(/after its entity crashed/)
+        // The next run sends the poke again under the same request, and is answered what the partner stored.
+        holding = false
+        yield* send(first, sender, { _tag: 'Poke' }, 'm-poke')
+        yield* until(Effect.sync(() => seen), (lines) => lines.includes(`${sender} poked in its region ${partner} on 1: Accepted`))
+        inRegion = () => null
+        expect((yield* stateOf(partner))?.n).toBe(1)
+        const logs = warningsAndErrors().filter((line) => line !== outlivesRetry)
+        expect(logs).toEqual([])
+      }), { retry: { millis: 3_600_000 } }), 30_000)
 
   // Decision 0274: a door's step whose entity's stop runs dies inside its transaction, and Cluster delivers the request
   // again. The entity crashes at the commit of a timer's step, with its `Ask` held as it stops, and the door's step of

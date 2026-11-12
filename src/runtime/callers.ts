@@ -401,7 +401,9 @@ export const unlessCrashed = <A, B>(delivery: Effect.Effect<A, Faulted>, none: B
  * suspended receiver has no reply yet, and `send` waits for its resumption instead of giving up (decisions 0023,
  * 0063). A receiver that crashed has none either, and is sent to again after `retry` (decision 0046). So is a
  * full receiver, which stored nothing of the message, and the operation is never given `Full` (decision 0147).
- * `send` and `create` wait for the deploy of a program not deployed yet (decisions 0045, 0063).
+ * `send` and `create` wait for the deploy of a program not deployed yet (decisions 0045, 0063). A run whose entity
+ * crashed sends and creates nothing, and each of these waits ends with the run's defect once the entity crashes
+ * (decision 0274).
  */
 /**
  * The runtime's defect where an operation's request is answered `Reused`: what an operation's request carries is never
@@ -410,8 +412,28 @@ export const unlessCrashed = <A, B>(delivery: Effect.Effect<A, Faulted>, none: B
 const notReused = (name: string, id: string) =>
   new InvariantDefect({ reason: `an operation's request to ${name} '${id}' was answered Reused` })
 
-export const entities = (p: Process, entity: Address, key: Key, incarnation: number, droppable: boolean) => {
+export const entities = (
+  p: Process,
+  entity: Address,
+  key: Key,
+  incarnation: number,
+  droppable: boolean,
+  crashed: Deferred.Deferred<void>,
+) => {
   const used = { message: new Set<string>(), creation: new Set<string>() }
+  /** The defect of a request of this run once its entity crashed, to `program`'s entity `id`. */
+  const afterCrash = (program: string, id: string) =>
+    new InvariantDefect({
+      reason: `the operation under '${Machine.shownKey(key)}' of ${entity.name} '${entity.id}' ` +
+        `sent to ${program} '${id}' after its entity crashed`,
+    })
+  /**
+   * `attempts` until they give a reply, or the run's defect once its entity crashes. The race ends a wait the crash
+   * cannot interrupt, in a finalizer or a region the operation holds uninterruptible: for a reply, a resumption, a
+   * `retry` or a deploy. So no stop waits for what the stop itself holds back (decision 0274).
+   */
+  const untilCrashed = <A>(program: string, id: string, attempts: Effect.Effect<A, Faulted>) =>
+    Effect.raceFirst(attempts, Effect.andThen(Deferred.await(crashed), Effect.die(afterCrash(program, id))))
   /** The request named `name` to the entity `id` of `program`, or the run's defect if it made it already. */
   const named = <T extends Types>(
     kind: keyof typeof used,
@@ -429,6 +451,9 @@ export const entities = (p: Process, entity: Address, key: Key, incarnation: num
           }),
         )
       }
+      // A run whose entity crashed sends nothing. The race of `untilCrashed` starts the request beside the crash's
+      // side, so a crash that came before is read here, before the request starts (decision 0274).
+      if (Deferred.isDoneUnsafe(crashed)) return Effect.die(afterCrash(program.name, id))
       // An id an operation gives is held as a caller's is (decisions 0157, 0179).
       const fault = idFault(id)
       if (fault !== undefined) return Effect.die(new InvariantDefect({ reason: fault }))
@@ -446,8 +471,8 @@ export const entities = (p: Process, entity: Address, key: Key, incarnation: num
       }))
     })
   return Entities.of({
-    send: <T extends Types>(program: Receiver<T>, id: string, message: T['inbound'], name: string) =>
-      Effect.flatMap(named('message', program, id, name), ({ deployed, request }) => {
+    send: <T extends Types>(program: Receiver<T>, id: string, message: T['inbound'], name: string) => {
+      const attempts = Effect.flatMap(named('message', program, id, name), ({ deployed, request }) => {
         // `null` is no reply yet: the receiver crashed, or is suspended and has been resumed since.
         const attempt = Effect.flatMap(awaitResumption(p, { name: program.name, id }), ({ resumed, forget }) =>
           Effect.flatMap(
@@ -461,10 +486,12 @@ export const entities = (p: Process, entity: Address, key: Key, incarnation: num
                 ? Effect.die(notReused(program.name, id))
                 : Effect.succeed(reply),
           ).pipe(Effect.ensuring(forget)))
-        return faulted(Effect.repeat(attempt, { until: (reply) => reply !== null }))
-      }),
-    create: <T extends Types>(program: Receiver<T>, id: string, name: string, ...[flags]: Flagged<T>) =>
-      Effect.flatMap(named('creation', program, id, name), ({ deployed, request }) => {
+        return Effect.repeat(attempt, { until: (reply) => reply !== null })
+      })
+      return faulted(untilCrashed(program.name, id, attempts))
+    },
+    create: <T extends Types>(program: Receiver<T>, id: string, name: string, ...[flags]: Flagged<T>) => {
+      const attempts = Effect.flatMap(named('creation', program, id, name), ({ deployed, request }) => {
         const attempt = Effect.flatMap(
           unlessCrashed(create(p, deployed, id, flags === undefined ? null : flags, request), null),
           (creation): Effect.Effect<Creation<T['rejection']> | null> =>
@@ -474,7 +501,9 @@ export const entities = (p: Process, entity: Address, key: Key, incarnation: num
               ? Effect.die(notReused(program.name, id))
               : Effect.succeed(creation),
         )
-        return faulted(Effect.repeat(attempt, { until: (creation) => creation !== null }))
-      }),
+        return Effect.repeat(attempt, { until: (creation) => creation !== null })
+      })
+      return faulted(untilCrashed(program.name, id, attempts))
+    },
   })
 }

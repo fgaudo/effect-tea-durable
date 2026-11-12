@@ -1,7 +1,7 @@
 # 0023. `Suspended` means no reply yet
 
 **Status:** accepted, 2026-10-30. Replaces what [decision 0010](0010-a-rejection-may-carry-a-reason.md) and
-[decision 0014](0014-rules-the-machine-settled.md) said a caller of a suspended entity is answered.
+[decision 0014](0014-rules-the-machine-settled.md) said a caller of a suspended entity is answered. An operation's wait for a resumption ends once its entity crashes, by [decision 0274](../0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
 
 ## Context
 

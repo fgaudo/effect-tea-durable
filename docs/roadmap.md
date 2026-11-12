@@ -55,26 +55,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0273](decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md), which the maintainer
     chose on 2026-11-12 after an opinion of a Fable 5.2 agent. The bugs reasoned are done. The part under way is the
     bugs noticed, from bug 31, each verified first, by a test that fails or by a reading that rules it out, and its fix
-    proposed to the maintainer before any code. Bugs 31 and 65 have one cause, and their fix is
-    [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md),
-    `proposed`, which the maintainer chose on 2026-11-12 after an opinion of a Fable 5.2 agent. Its code is written:
-    `crash`, `stopped`, `enter` and `entersHeld` of `src/runtime/loop.ts`, the creation of `src/runtime/callers.ts`,
-    `losing` of `src/runtime/doors.ts`, the waker's readings and refusals in `src/runtime/waker.ts`, and `quiet` in
-    `src/runtime.ts`. `bun run test:release` at `f658bb3` failed at seed 106 of `settled never returns between a crash
-    and the activation its due timer brings`, of `src/runtime/loop.test.ts`: the waker hid an entity whose stop
-    refused it until `retry`, and `settled` returned with its timer due. The maintainer chose the fix on 2026-11-12,
-    after a second opinion of a Fable 5.2 agent: an entity whose stop runs is neither loaded nor the waker's, its stop
-    is work of the process, and every stop of a shard's entities holds the shard. The note says the rule, and seeds 106
-    and 1139 are pinned. A door's step refused while a stop runs is tested. The premise that `losing` holds up no
-    finalizer that sends to an entity of the shard let go failed on 2026-11-12: such a send is never answered, and the
-    shard never moves, as `a stop that sends to an entity of the shard being let go is answered, and the shard moves
-    after it`, a `test.failing` under `slow` of `src/cluster.test.ts`, reproduces. The part next is the maintainer's
-    choice of its fix, among the ones the note's section Premise failed lists, then its code, and the test made a
-    `slow`. The note is taken once it passes, with `bun run test:pins`, `bun run test:slow` and
-    `bun run test:release`.
+    proposed to the maintainer before any code. Bugs 31 and 65 are fixed by
+    [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), which the
+    maintainer chose on 2026-11-12 after three opinions of a Fable 5.2 agent. The part next is the bugs noticed after
+    them: 37, 38, 40, 50, 51, 67 and 79, each verified first, as bug 31 was.
   - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
     longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
-    machine. After bugs 31 and 65 come 37, 38, 40, 50, 51, 67 and 79.
+    machine.
     Decisions 0269, 0271 and 0273 change the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
     taken, and the tests of decision 0269 of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of
     PostgreSQL of the push of `main` that takes it.
@@ -281,15 +268,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       through the migrations of the other.**
       ([decision 0176](decisions/archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md)). The
       [open question](open-questions.md#running) A name a rename left.
-  31. **Reproduced: a crash records an at-most-once operation's `unknown` while the operation's fiber may
-      still run a region that acts.** The crash forks the stop and does not wait for it
-      ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)), so the program's
-      answer to `unknown` may act beside the old fiber. Since
-      [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md) the waker
-      activates the entity again `retry` after the crash, with no caller coming, so the window is reached more
-      often. The [open question](open-questions.md#running) An operation still stopping beside its `unknown`.
-      Reproduced by `an at-most-once operation a crash stops delivers its unknown once its finalizer has run`, a `test.failing` of `src/runtime.test.ts`: the `unknown` is handled while the old finalizer still waits.
-      Its fix is proposed in [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
+  31. **Fixed by [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md)**, whose entity is not loaded while the stop of its former run is running.
   32. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
   33. **Noticed, not checked: on Cluster, the waker's map of entities it failed to activate may outlive a move of
       the shard to another runner.**
@@ -437,17 +416,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       newer version answers an older one on Cluster.
   63. **Fixed by [decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md)**, whose waits are stored, and read on every runner.
   64. **Fixed by [decision 0273](decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md)**, whose partition is the library's own hash, and whose round and waker log an entity stored under another.
-  65. **Reproduced: an at-least-once operation of a crashed entity that sends from a region it holds
-      uninterruptible, after its new run ended the work, has the receiver apply the request twice.** The crash does
-      not wait for the stop ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)),
-      and the reply is deleted once the work ends
-      ([decision 0021](decisions/archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md)). Bug 31 is the
-      at-most-once case. Two sessions noticed it. The [open question](open-questions.md#running) A send after the
-      work it belongs to ended.
-      Reproduced by `a send of an operation a crash could not interrupt, after its new run ended the work, is applied once`, a `test.failing` of `src/runtime.test.ts`: the receiver applies the message twice.
-      On Cluster, a shard that moves starts the operation on the runner that gains it while the first runner's
-      finalizer still runs, as a `test.failing` of `src/cluster.test.ts` reproduces.
-      Its fix on one runner is proposed in [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
+  65. **Fixed by [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md)**, whose run of a crashed entity sends nothing, and whose shard lost waits for every stop of its entities.
   66. **Fixed by [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)**, whose drain reaches a deployment still activating.
   67. **Noticed, not checked: a planned stop while the main fiber deploys undoes the deploy, and its at-most-once
       operations deliver `unknown`.** The interruption reaches the deploy before the scope's finalizers run, so the

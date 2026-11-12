@@ -2,7 +2,7 @@
 
 **Status:** accepted, 2026-10-31. Its permit is replaced by a lock of the entity's own in
 [decision 0067](0067-each-entity-is-held-by-its-own-lock.md): a crash still forks the interruption of its work, so
-that nothing waits for it under that lock, and an unload stops its timers under it.
+that nothing waits for it under that lock, and an unload stops its timers under it. An entity whose stop is running is not loaded again on that process, and `settled` waits for the stop, by [decision 0274](../0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
 
 ## Context
 

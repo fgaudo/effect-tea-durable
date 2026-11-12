@@ -289,8 +289,8 @@ with a requirement that no example has yet.
     receiver, and checks the next run, which family C of the roadmap makes possible;
   - whether two runs of one incarnation at once may act on different answers, as they may act twice on any answer,
     or the answer is read and kept under the receiver's lock.
-  [Decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), `proposed`, keeps two runs of one incarnation apart on one runner and across an orderly move of a
-  shard once taken, so the second bullet is left to a runner that lost its lease.
+  [Decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md) keeps two runs of one incarnation apart on one runner and across an orderly move of a
+  shard, so the second bullet is left to a runner that lost its lease.
 - **A creation that `init` dies on, on Cluster.** On one process, an operation's creation that `init` dies on
   suspends the sender ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). On
   Cluster the door dies, and Cluster delivers the creation again without end
@@ -442,25 +442,16 @@ with a requirement that no example has yet.
     shard, or whether `drained` counts a door's step from its start;
   - a reading of Cluster's teardown in `entityManager.ts`, for the order of the loops and the door;
   - a test of a runtime and `Sharding` built in one parallel scope.
-- **An operation still stopping beside its `unknown`.** A crash forks the stop of its operations and gives the lock
-  back ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)). The next
-  activation records an at-most-once operation's `unknown` while the old fiber may still run a region that cannot be
-  interrupted, or a finalizer that acts. The program's answer to the `unknown` may then act beside it. It is bug 31
-  of the [roadmap](roadmap.md), reproduced by a test of `src/runtime.test.ts`, a `test` since the code of decision 0274. It would be decided by:
-  - a test, under the scheduler of `src/testing.ts`, of an operation whose finalizer acts after the crash;
-  - whether the activation waits for the stop of the operations a crash forked.
-  [Decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), `proposed`, decides it once taken: an entity whose stop is running is refused at its entry into the
-  process, and a shard lost waits for the stops of the entities it crashed.
-- **An entity a stop that never ends keeps from loading.** Once
-  [Decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md) is taken, an entity is not loaded on a process while the stop of its former run is running.
+- **An entity a stop that never ends keeps from loading.** Since
+  [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), an entity is not loaded on a process while the stop of its former run is running.
   An operation that holds a region uninterruptible for ever keeps its entity from loading there for ever, keeps
   `settled` from returning, and on Cluster keeps its shard from moving, since Cluster waits for the finalizer of the
   shard's singleton. The runtime logs it once, and only a restart of the process ends the fiber. It would be decided
   by:
   - whether an operator needs a reading of the entities whose stop is running, beside `suspended`;
   - whether a process should end itself past a bound, which stops every entity it holds for one operation.
-- **A stop that ends between the waker's refusal and its catch.** Once
-  [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md) is taken, the
+- **A stop that ends between the waker's refusal and its catch.** Since
+  [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), the
   waker reads an activation refused for a stop from the defect's class, and not from `stopping`. A stop that ended
   after the refusal and before the catch would otherwise read as a failure, and hide the entity until `retry`, with
   `settled` free to return. No seed of 2,000 of `settled never returns between a crash and the activation its due timer
@@ -469,6 +460,16 @@ with a requirement that no example has yet.
   - an explored test whose activation by the waker meets a crash a caller makes after the waker's reading, with a stop
     that ends within a few steps;
   - a deviation under `bound` 1 that holds the waker between the refusal and the catch.
+- **A wait for an interruption in a crashed run's send.** On Cluster, an operation's request whose asker's work has
+  ended waits until the operation is interrupted, in `resettingSavedFailure` of `src/cluster.ts`
+  ([decision 0170](decisions/archive/0170-on-cluster-an-operations-client-keeps-the-request-id-before-it-resets-a-saved-failure.md)).
+  A crashed run's send in a region held uninterruptible would wait there for ever, and hold its stop. The race of
+  the request with the run's latch ([decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md))
+  ends it, as it ends every other wait of the request, and no test reaches that wait in a stop. It would be decided
+  by:
+  - a test of `src/cluster.test.ts` whose crashed run sends, from a region held uninterruptible, a request whose
+    work a step has ended;
+  - whether a crashed run's work can be found ended before its stop ends.
 - **An act on the outside world beside the next holder's run.** On Cluster, a runner that lost its lease without
   giving the shard up may still run an operation that calls a service, while the next holder runs the entity. The
   library cannot refuse such an act, and an at-most-once operation's `unknown` may be delivered beside it. Fencing the
@@ -508,11 +509,10 @@ with a requirement that no example has yet.
   bug 57, reasoned. On one process, a crashed entity's operation that sends from a region it holds uninterruptible
   may send after the new run ended the work
   ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)), which is bug 65,
-  reproduced by a test of `src/runtime.test.ts`, a `test` since the code of decision 0274. [Decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), `proposed`, decides bug 65 on one runner
-  and across an orderly move of a shard once taken, and leaves bug 57 to a receiver that refuses the request. Either way the receiver applies the request twice. They are of the [roadmap](roadmap.md). It would be
+  fixed by [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), whose run of a crashed entity sends nothing, on one runner and across an orderly move of a shard.
+  Bug 57 is left to a receiver that refuses the request, and there the receiver still applies the request twice. They are of the [roadmap](roadmap.md). It would be
   decided by:
   - whether a receiver refuses a request whose asker's work no longer holds, by the asker's key row it already reads;
-  - a test of bug 65 with an operation that sends from an uninterruptible finalizer;
   - a helper of `src/cluster.test.ts` that keeps a runner's operation running after another runner took its shard,
     which exists for a shard moved in order, by a finalizer the test holds, and not for a runner frozen past its lease;
   - for bug 90, reasoned, whether a door loads an entity of a shard whose singleton has not started, since no

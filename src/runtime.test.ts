@@ -3938,15 +3938,15 @@ describe('what the runtime cannot finish', () => {
         }).pipe(Effect.ensuring(Deferred.succeed(released, undefined))))
     })))
 
-  // Bug 65 of the roadmap: a crash does not wait for the stop of its operations (decision 0056), and the receiver
+  // Bug 65 of the roadmap: a crash did not wait for the stop of its operations (decision 0056), and the receiver
   // deletes the reply of a request once the work that sent it ends (decision 0021). So an at-least-once operation
-  // that sends from a region it holds uninterruptible, after the operation's new run ended the work, has the
-  // receiver apply the request twice.
+  // that sent from a region it holds uninterruptible, after the operation's new run ended the work, had the
+  // receiver apply the request twice. The old run's send is now refused, since its entity crashed (decision 0274).
   test('a send of an operation a crash could not interrupt, after its new run ended the work, is applied once', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
       const gate = yield* Deferred.make<void>()
-      const oldSent = yield* Deferred.make<void>()
+      const oldSent = yield* Deferred.make<Exit.Exit<unknown>>()
       const inRegion = yield* Deferred.make<void>()
       let runs = 0
       const sent = send(program, id, { _tag: 'Want', key: 'a', on: false, nonce: 'sent' }, 'want')
@@ -3959,8 +3959,8 @@ describe('what the runtime cannot finish', () => {
               ? Effect.uninterruptible(
                 Deferred.succeed(inRegion, undefined).pipe(
                   Effect.andThen(Deferred.await(gate)),
-                  Effect.andThen(sent),
-                  Effect.andThen(Deferred.succeed(oldSent, undefined)),
+                  Effect.andThen(Effect.exit(sent)),
+                  Effect.flatMap((exit) => Deferred.succeed(oldSent, exit)),
                 ),
               ).pipe(Effect.as(done(key)))
               : Effect.as(sent, done(key))
@@ -3986,11 +3986,11 @@ describe('what the runtime cannot finish', () => {
             from.send('sender', { _tag: 'Want', key: 't', on: false, nonce }, { requestId: nonce, sender: tester, keep: 'forever' })
           // The crash cannot interrupt `c`'s first run, which waits in its region.
           expect(Exit.isFailure(yield* Effect.exit(poke('p-1')))).toBe(true)
-          // The next caller is refused while `c`'s first run waits in its region. Once the region has sent and ended,
-          // the caller loads the sender again, and `c` runs again, sends, and ends the work.
+          // The next caller is refused while `c`'s first run waits in its region. The region's send is refused, the
+          // region ends, and the caller loads the sender again, and `c` runs again, sends, and ends the work.
           expect(refusedWhileStopping(yield* Effect.exit(poke('p-2')))).toBe(true)
           yield* Deferred.succeed(gate, undefined)
-          yield* Deferred.await(oldSent)
+          expect(refusedAfterCrash(yield* Deferred.await(oldSent))).toBe(true)
           yield* afterTheStop(poke('p-2'))
           for (let turn = 0; turn < 1_000; turn++) {
             const inspected = yield* from.inspect('sender')
@@ -4002,6 +4002,234 @@ describe('what the runtime cannot finish', () => {
           expect(runs).toBe(2)
           expect(received?.state.applied.filter((nonce) => nonce === 'sent')).toEqual(['sent'])
         }))
+    })))
+
+  /** Whether `exit` is the defect of a send or a creation of a run whose entity crashed (decision 0274). */
+  const refusedAfterCrash = (exit: Exit.Exit<unknown, unknown> | undefined) =>
+    exit !== undefined && Exit.isFailure(exit) && /after its entity crashed/.test(Cause.pretty(exit.cause))
+  /** Yields until `ready` holds, a few thousand turns at most, and gives whether it does. */
+  const turnsUntil = (ready: () => boolean) =>
+    Effect.gen(function*() {
+      for (let turn = 0; turn < 10_000 && !ready(); turn++) yield* Effect.yieldNow
+      return ready()
+    })
+  type Sends = Omit<T, 'services'> & { services: Entities }
+  /**
+   * A sender named `name` whose `c` waits, in its first run, until it is interrupted. Its finalizer then runs
+   * `farewell`, bounded by `released`, and keeps how it ended in `ended`. Its later runs end at once.
+   */
+  const farewelling = (name: string, released: Deferred.Deferred<void>, farewell: () => Effect.Effect<unknown, never, Entities>) => {
+    const seen: { runs: number; ended: Exit.Exit<unknown, unknown> | undefined } = { runs: 0, ended: undefined }
+    const self: Program<Sends> = {
+      ...sending,
+      name,
+      operations: {
+        ...sending.operations,
+        C: operation.atLeastOnce(({ key }) =>
+          ++seen.runs > 1 ? Effect.succeed(done(key)) : Effect.never.pipe(Effect.onInterrupt(() =>
+            Effect.exit(Effect.raceFirst(Effect.suspend(farewell), Deferred.await(released))).pipe(
+              Effect.flatMap((exit) => Effect.sync(() => void (seen.ended = exit))),
+            )
+          ))
+        ),
+      },
+    }
+    return { self, seen }
+  }
+  /** Crashes the entities of the programs named in `names` at their next `Receive`, each once. */
+  const crashing = (names: Iterable<string>) => {
+    const dying = new Set(names)
+    return (entity: { readonly name: string }, event: { readonly _tag: string }) =>
+      event._tag === 'Receive' && dying.delete(entity.name) ? Effect.die('the runtime failed') : Effect.void
+  }
+  const poke = (handle: Handle<Sends>, nonce: string) =>
+    handle.send('sender', { _tag: 'Want', key: 't', on: false, nonce }, { requestId: nonce, sender: tester, keep: 'forever' })
+  const wanted = (nonce: string): Inbound => ({ _tag: 'Want', key: 't', on: false, nonce })
+
+  // Decision 0274: a run whose entity crashed sends nothing. A stop whose finalizer sends to its own entity would wait
+  // for a load that its own stop refuses, so the send is refused at once, and the stop ends.
+  test('a stop that sends to its own entity is refused at once, and the entity loads again after', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const released = yield* Deferred.make<void>()
+      const { self, seen } = farewelling('Selfish', released, () => send(self, 'sender', wanted('self'), 'self'))
+      yield* process({ observe: crashing(['Selfish']) }, (runtime) =>
+        Effect.gen(function*() {
+          const from = yield* runtime.deploy(self)
+          yield* from.create('sender', { flags: { at }, requestId: 'creation', sender: tester })
+          yield* turnsUntil(() => seen.runs === 1)
+          expect(Exit.isFailure(yield* Effect.exit(poke(from, 'p-1')))).toBe(true)
+          expect(yield* turnsUntil(() => seen.ended !== undefined)).toBe(true)
+          expect(refusedAfterCrash(seen.ended)).toBe(true)
+          expect(yield* afterTheStop(poke(from, 'p-2'))).toEqual({ _tag: 'Accepted' })
+        }).pipe(Effect.ensuring(Deferred.succeed(released, undefined))))
+    })))
+
+  // Decision 0274: two crashed entities whose stops send to each other would each wait for the other's load, which
+  // the other's stop refuses. Each send is refused at once, and both stops end.
+  test('two stops that send to each other are refused at once, and both entities load again after', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const released = yield* Deferred.make<void>()
+      const both = yield* Deferred.make<void>()
+      const one: { self: Program<Sends>; seen: { runs: number; ended: Exit.Exit<unknown, unknown> | undefined } } =
+        farewelling('One', released, () => Effect.andThen(Deferred.await(both), send(other.self, 'sender', wanted('one'), 'other')))
+      const other: typeof one =
+        farewelling('Other', released, () => Effect.andThen(Deferred.await(both), send(one.self, 'sender', wanted('other'), 'other')))
+      yield* process({ observe: crashing(['One', 'Other']) }, (runtime) =>
+        Effect.gen(function*() {
+          const handles = [yield* runtime.deploy(one.self), yield* runtime.deploy(other.self)]
+          for (const handle of handles) yield* handle.create('sender', { flags: { at }, requestId: 'creation', sender: tester })
+          yield* turnsUntil(() => one.seen.runs === 1 && other.seen.runs === 1)
+          for (const handle of handles) expect(Exit.isFailure(yield* Effect.exit(poke(handle, 'p-1')))).toBe(true)
+          yield* Deferred.succeed(both, undefined)
+          expect(yield* turnsUntil(() => one.seen.ended !== undefined && other.seen.ended !== undefined)).toBe(true)
+          expect([refusedAfterCrash(one.seen.ended), refusedAfterCrash(other.seen.ended)]).toEqual([true, true])
+          for (const handle of handles) expect(yield* afterTheStop(poke(handle, 'p-2'))).toEqual({ _tag: 'Accepted' })
+        }).pipe(Effect.ensuring(Deferred.succeed(released, undefined))))
+    })))
+
+  // Decision 0274 leaves a dropped droppable operation out: the step that drops it does not wait for its finalizers
+  // (decision 0128), and nor does the stop of a crash after it, since a droppable operation acts on nothing and sends
+  // nothing. So the entity loads again while the finalizer of the operation dropped before the crash still runs.
+  test('a droppable operation dropped before a crash is no stop of it, and the entity loads while its finalizer runs', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const gate = yield* Deferred.make<void>()
+      const interrupted: Array<string> = []
+      const dropping: Program<T> = {
+        ...program,
+        name: 'Dropping',
+        init: (_flags, at) => ({ want: ['c'], applied: [], since: at, rings: at }),
+        operations: {
+          ...program.operations,
+          C: operation.droppable(({ key }) =>
+            Effect.andThen(acts(key, null), Effect.never).pipe(
+              Effect.onInterrupt(() => Effect.andThen(Effect.sync(() => interrupted.push(key)), Deferred.await(gate))),
+            )
+          ),
+        },
+      }
+      const { acted, layer } = yield* hands()
+      // The second message the entity receives crashes it.
+      let received = 0
+      const observe = (entity: { readonly name: string }, event: { readonly _tag: string }) =>
+        entity.name === 'Dropping' && event._tag === 'Receive' && ++received === 2
+          ? Effect.die('the runtime failed')
+          : Effect.void
+      yield* process({ observe }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(dropping), layer)
+          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
+          yield* turnsUntil(() => acted.length === 1)
+          const message = (key: 'a' | 'c', nonce: string) =>
+            toy.send(id, { _tag: 'Want', key, on: key === 'a', nonce }, { requestId: nonce, sender: tester, keep: 'forever' })
+          // The step drops `c`, whose finalizer waits on the gate.
+          expect(yield* message('c', 'off')).toEqual({ _tag: 'Accepted' })
+          expect(yield* turnsUntil(() => interrupted.length === 1)).toBe(true)
+          // The next message crashes the entity, whose stop has nothing of `c` to wait for.
+          expect(Exit.isFailure(yield* Effect.exit(message('a', 'crash')))).toBe(true)
+          expect(yield* afterTheStop(message('a', 'after'))).toEqual({ _tag: 'Accepted' })
+          expect(interrupted).toEqual(['c'])
+        }).pipe(Effect.ensuring(Deferred.succeed(gate, undefined))))
+    })))
+
+  /**
+   * Crashes a sender whose `c`, in its first run, waits in `sent` inside a region the crash cannot interrupt, bounded
+   * by `released`, once `ready` has readied the receiver. Gives whether the send ended with the defect, and whether the
+   * sender loaded again, both before the release.
+   */
+  const crashedWhileSending = (
+    sent: Effect.Effect<unknown, never, Entities>,
+    ready: (runtime: Runtime, released: Deferred.Deferred<void>) => Effect.Effect<void, unknown>,
+    crashes: ReadonlyArray<string> = [],
+  ) =>
+    Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const released = yield* Deferred.make<void>()
+      const inRegion = yield* Deferred.make<void>()
+      let ended: Exit.Exit<unknown, unknown> | undefined
+      let runs = 0
+      const sender: Program<Sends> = {
+        ...sending,
+        operations: {
+          ...sending.operations,
+          C: operation.atLeastOnce(({ key }) =>
+            ++runs > 1 ? Effect.succeed(done(key)) : Effect.uninterruptible(
+              Deferred.succeed(inRegion, undefined).pipe(
+                Effect.andThen(Effect.exit(Effect.raceFirst(sent, Deferred.await(released)))),
+                Effect.flatMap((exit) => Effect.sync(() => void (ended = exit))),
+              ),
+            ).pipe(Effect.as(done(key)))
+          ),
+        },
+      }
+      return yield* process({ observe: crashing(['Sender', ...crashes]) }, (runtime) =>
+        Effect.gen(function*() {
+          yield* ready(runtime, released)
+          const from = yield* runtime.deploy(sender)
+          yield* from.create('sender', { flags: { at }, requestId: 'creation', sender: tester })
+          yield* Deferred.await(inRegion)
+          yield* Effect.repeat(Effect.yieldNow, { until: () => false, times: 1_000 })
+          const waiting = ended === undefined
+          expect(Exit.isFailure(yield* Effect.exit(poke(from, 'p-1')))).toBe(true)
+          const reloaded = Exit.isSuccess(yield* Effect.exit(afterTheStop(poke(from, 'p-2'))))
+          return { waiting, refused: refusedAfterCrash(ended), reloaded }
+        }).pipe(Effect.ensuring(Deferred.succeed(released, undefined))))
+    })
+  const inFlight = { waiting: true, refused: true, reloaded: true }
+
+  // Decision 0274: a send already waiting when its entity crashes, in a region the crash cannot interrupt, ends with
+  // the defect, so that its stop ends. Here the receiver is stopping itself, and the send waits for a `retry`.
+  test('a send waiting for a retry when its entity crashes ends with the defect, and its stop ends', () =>
+    database(Effect.gen(function*() {
+      const outcome = yield* crashedWhileSending(
+        send(program, 'slow', wanted('sent'), 'want'),
+        (runtime, released) =>
+          Effect.gen(function*() {
+            const at = yield* DateTime.now
+            // The receiver's `b` stops only once the test releases it, and the receiver crashes at its first message.
+            const layer = Layer.succeed(
+              Hands,
+              Hands.of({
+                act: (key) =>
+                  key !== 'b' ? Effect.never : Effect.never.pipe(Effect.onInterrupt(() => Deferred.await(released))),
+              }),
+            )
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            yield* toy.create('slow', { flags: { at }, requestId: 'c-slow', sender: tester })
+            yield* Effect.exit(toy.send('slow', want('n-1'), { requestId: 'r-1', sender: tester, keep: 'forever' }))
+          }),
+        ['Toy'],
+      )
+      expect(outcome).toEqual(inFlight)
+    })))
+
+  // Decision 0274: as above, where the receiver is suspended, and the send waits for its resumption.
+  test('a send waiting for a resumption when its entity crashes ends with the defect, and its stop ends', () =>
+    database(Effect.gen(function*() {
+      const outcome = yield* crashedWhileSending(
+        send(program, 'broken', wanted('sent'), 'want'),
+        (runtime) =>
+          Effect.gen(function*() {
+            const at = yield* DateTime.now
+            const { layer } = yield* hands()
+            const toy = yield* Effect.provide(runtime.deploy(program), layer)
+            yield* toy.create('broken', { flags: { at }, requestId: 'c-broken', sender: tester })
+            yield* toy.send('broken', { _tag: 'Break', nonce: 'b' }, { requestId: 'r-b', sender: tester, keep: 'forever' })
+          }),
+      )
+      expect(outcome).toEqual(inFlight)
+    })))
+
+  // Decision 0274: as above, where the receiver's program is not deployed, and the send waits for its deploy.
+  test('a send waiting for a deploy when its entity crashes ends with the defect, and its stop ends', () =>
+    database(Effect.gen(function*() {
+      const outcome = yield* crashedWhileSending(
+        send({ ...program, name: 'Absent' }, 'nobody', wanted('sent'), 'want'),
+        () => Effect.void,
+      )
+      expect(outcome).toEqual(inFlight)
     })))
 
   test('a crash does not wait for its operations to stop: its entity is refused meanwhile, at once, and others answered', () =>

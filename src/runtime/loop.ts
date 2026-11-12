@@ -274,7 +274,10 @@ export const start = <T extends Types>(
         }).pipe(
           // The requests it sends are this run's: an entity cannot pass for another, nor an operation for
           // another (decisions 0009, 0060).
-          Effect.provideService(Entities, entities(p, entity, key, incarnation, runner.delivery === 'Droppable')),
+          Effect.provideService(
+            Entities,
+            entities(p, entity, key, incarnation, runner.delivery === 'Droppable', loaded.crashed),
+          ),
         ),
       ),
     )
@@ -592,6 +595,9 @@ export const crash = <T extends Types>(
     yield* Effect.uninterruptible(Effect.gen(function*() {
       const stopping = Deferred.makeUnsafe<void>()
       yield* leave(p, deployed, loaded, stopping)
+      // Before the stop is forked: a send of the run ends with its defect, so that no stop waits for a load its own
+      // stop refuses, or for a shard `losing` holds until the stop ends (decision 0274).
+      Deferred.doneUnsafe(loaded.crashed, Effect.void)
       // A crash may run where the step that died cannot be interrupted, as a creation's `onError` does: `forkApart`
       // keeps the stop stoppable by the scope (decision 0271).
       const stop = yield* forkApart(p.sql, Effect.andThen(forkChildApart(p.sql, outlives), stopAll(loaded)), deployed.scope)
@@ -733,6 +739,7 @@ export const fresh = <T extends Types>(p: Process, machine: Machine.Machine<T>, 
     links: new Map(),
     steps,
     uncommitted: null,
+    crashed: Deferred.makeUnsafe<void>(),
   }))
 
 /** Registers an entity in this process, and activates what was stored, as after a crash. */

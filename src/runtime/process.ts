@@ -322,6 +322,11 @@ export interface Loaded<T extends Types> {
    * until a step replies to it (decision 0220).
    */
   readonly links: Map<string, Tracer.AnySpan>
+  /**
+   * Done by a crash of this run, in the step the entity enters the stops of its deployment. An operation of the run
+   * sends nothing once it is done, and a send under way ends (decision 0274).
+   */
+  readonly crashed: Deferred.Deferred<void>
 }
 
 /**

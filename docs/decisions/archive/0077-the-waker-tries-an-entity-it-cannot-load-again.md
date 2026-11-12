@@ -1,6 +1,6 @@
 # 0077. The waker tries an entity it cannot load again, after the retry
 
-**Status:** accepted, 2026-10-31. Decides [an entity the waker cannot load](../../open-questions.md#running). Its retry follows every crash too, whatever the entity's timers, in [decision 0252](../0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md). The waker goes on past its own reading that fails, and past a row it refuses, in [decision 0259](../0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md).
+**Status:** accepted, 2026-10-31. Decides [an entity the waker cannot load](../../open-questions.md#running). Its retry follows every crash too, whatever the entity's timers, in [decision 0252](../0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md). The waker goes on past its own reading that fails, and past a row it refuses, in [decision 0259](../0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md). The waker leaves an entity whose stop runs out of its readings, and an activation refused for a stop is no failure, by [decision 0274](../0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
 
 ## Context
 

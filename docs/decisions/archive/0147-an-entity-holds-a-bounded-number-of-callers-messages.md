@@ -5,7 +5,7 @@
 the server in front of the process bounds a burst, and
 [decision 0046](0046-a-receiver-that-crashes-is-sent-again.md), whose sender sends again only to a receiver
 that crashed. On Effect Cluster a caller is never answered `Full`, and its message waits in Cluster's table, by
-[decision 0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md).
+[decision 0165](0165-on-cluster-a-caller-sends-through-the-doors-client-and-is-never-answered-full.md). A sender to a full receiver sends again only while its entity has not crashed, by [decision 0274](../0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
 
 ## Context
 

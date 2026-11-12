@@ -1890,7 +1890,9 @@ export class Entities extends Context.Service<Entities, {
  * (decision 0253). One that sends twice under the same name to the
  * same entity dies. While the receiver is suspended, it waits, and it sends again when the receiver crashes
  * (decision 0046). It sends again too when the receiver holds as many callers' messages as its bound, and is never
- * given `Full` (decision 0147).
+ * given `Full` (decision 0147). Once the operation's entity crashes, the run sends nothing: a send dies, and a send
+ * that waits, in a finalizer or in a region held uninterruptible, ends with the defect. The next run of the entity
+ * sends under the same request again (decision 0274).
  */
 export const send = <T extends Types>(
   program: Receiver<T>,
@@ -1905,7 +1907,8 @@ export const send = <T extends Types>(
  * stored apart from messages, so the same operation may then send the entity a message under the same name
  * (decisions 0017, 0050, 0060). A restarted operation is given the rejection of `init` the run before it was given,
  * though the entity may exist since (decision 0253). The flags come last, and are left out where the program's flags
- * are `null` (decision 0245).
+ * are `null` (decision 0245). Once the operation's entity crashes, the run creates nothing, as it sends nothing
+ * (decision 0274).
  */
 export const create = <T extends Types>(
   program: Receiver<T>,
