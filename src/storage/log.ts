@@ -76,7 +76,7 @@ export const logOf = <T extends Types>(held: Held<T>): Pick<
   Storage<T>,
   'published' | 'declare' | 'fetch' | 'ack' | 'prune' | 'consumers' | 'forget'
 > => {
-  const { sql, name, dialect, topics, rows, up } = held
+  const { sql, name, dialect, topics, rows, up, lockingTheConditionSkipping } = held
   const { inbound, internal, projection } = held.codecs
 
   /** The cursors of a list, one per partition: a partition named twice is read from the higher. */
@@ -236,7 +236,10 @@ export const logOf = <T extends Types>(held: Held<T>): Pick<
   // and a consumer is stored only by a deploy, so a batch drops nothing that the cursors read by the batch before
   // still hold (decision 0152). The trigger of the outbox drops each publication with the last row that names it, in
   // the statement that drops the row. The transaction is a guard: it commits the rows and the publications together
-  // even if a trigger ran outside the statement that fired it (decision 0154).
+  // even if a trigger ran outside the statement that fired it (decision 0154). A batch locks the rows it selects and
+  // skips those another batch holds, so that two prunes at once on a pool wait for no row of each other's, and never
+  // lock rows in opposite orders. A batch may then delete fewer than a batch with rows left, so a prune ends at a
+  // batch that deletes nothing (decision 0288).
   const pruneBatch = transaction(sql, Effect.gen(function*() {
     const gone = yield* rows('effecttea_outbox', Rows.seq)(sql`
       WITH floors AS (
@@ -255,7 +258,7 @@ export const logOf = <T extends Types>(held: Held<T>): Pick<
             SELECT through FROM floors WHERE floors.topic = effecttea_outbox.topic AND floors.partition = effecttea_outbox.partition
           )
         )
-        ORDER BY position LIMIT ${batch}
+        ORDER BY position LIMIT ${batch} ${lockingTheConditionSkipping}
       )
       RETURNING seq
     `)
@@ -267,7 +270,7 @@ export const logOf = <T extends Types>(held: Held<T>): Pick<
     while (true) {
       const gone = yield* pruneBatch
       count += gone
-      if (gone < batch) return count
+      if (gone === 0) return count
     }
   }).pipe(Effect.orDie)
 

@@ -11,7 +11,7 @@ Cluster id for at least two of Cluster's polls of replies and a second, so that 
 the answer first. A request under a reply's sender and request id that carries another message is answered `Reused`
 while the reply is kept, by [decision 0269](0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md).
 Changed by [decision 0285](0285-a-batch-of-expire-skips-the-replies-a-step-holds.md): a batch of `expire` skips the replies a step holds, and `expire` repeats its batches until a
-batch deletes nothing.
+batch deletes nothing. Changed by [decision 0288](0288-a-batch-of-prune-skips-the-rows-another-batch-holds.md): a batch of `prune` skips the rows another batch holds, and `prune` repeats its batches until a batch deletes nothing.
 
 ## Context
 

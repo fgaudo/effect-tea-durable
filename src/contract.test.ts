@@ -627,12 +627,24 @@ const bug13: Held = {
   pair: [{ _tag: 'Expire' }, { _tag: 'Set', id: 'a', label: 'x', keep: { millis: 60_000 }, requestId: 's1' }],
   gate: { reply: 's2', of: 'a' },
 }
+// The examples of bug 111 are two prunes at once, as fast-check found them on the CI's server: their batches locked
+// rows of the outbox in opposite orders, and PostgreSQL ended one as a deadlock (decision 0288). The table locked is
+// one no prune reads, so the two run at once.
+const bug111: Held = {
+  before: [
+    { _tag: 'Set', id: 'a', label: 'y', keep: brief, requestId: 's1' },
+    { _tag: 'Set', id: 'a', label: 'z', keep: brief, requestId: 's1' },
+  ],
+  pair: [{ _tag: 'Prune' }, { _tag: 'Prune' }],
+  gate: 'effecttea_projections',
+}
 test.skipIf(server === undefined)(
   'two calls held at a statement on a pool answer as one order of them',
   () =>
     onPool(held, Bun.env['SCHEDULES'] === 'all' ? 500 : 100, [
       ...Array.from({ length: 8 }, () => bug25),
       ...Array.from({ length: 8 }, () => bug13),
+      ...Array.from({ length: 8 }, () => bug111),
     ]),
   1_200_000,
 )
