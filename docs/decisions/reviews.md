@@ -6048,3 +6048,226 @@ and hold rules of messages, replies, the log, deploys and Cluster that their own
 Decisions 0081, 0092, 0162 and 0163, which change decisions 0063, 0074 and 0079 on Cluster, were read only in the
 code of `src/runtime/doors.ts`, and lead 1 is where they meet the area. The list holds 136 notes, past the thirty a
 session reads whole, so the reading went to the pairs the brief named first.
+
+## 2026-11-12: premise review, second reading, of The queries and their pages
+
+The second reading of area 8, by a session that read none of the earlier reports of the area: notes 0141 to 0146,
+0148 to 0150, 0207 and 0209, against the notes that change them, cite them, or are cited beside them in one
+declaration of `src/`. The later notes the brief named, 0254, 0256, 0275 and 0277, were read against the notes of the
+area they cite. The reading found one bug, reproduced by a test that fails on SQLite and passes on PGlite. It left no
+lead that a test could not reach. The branch is `claude/premise-review-2-area-8-0b997d`, cut from `main` at
+`ca62547`.
+
+### The notes to read
+
+The list joins the eleven notes of the area, every note the index lists as changing one of them, every note whose
+text cites one of them (`grep -rlwE` over `docs/decisions`), and every note `bun scripts/premise-pairs.ts --list
+--note=<the area>` couples to one of them in a declaration of `src/`. A note of several roles has each. Most notes
+coupled by the code are coupled only by the long declarations `Handle` of `src/runtime.ts`, `Storage` of
+`src/storage.ts`, `Rows` of `src/storage/rows.ts`, `started` of `src/runtime.ts` and `Process` of
+`src/runtime/process.ts`, which cite nearly every rule of the storage. The declarations of
+`src/storage/projections.ts` couple the area only to decisions 0032, 0157, 0218 and 0277, and `src/fixtures/order.ts`
+couples it to decisions 0138 to 0140.
+
+| Note | Title | Role | How it was read |
+| ---- | ----- | ---- | --------------- |
+| 0006 | A defect suspends the entity | coupled by the code | not at all |
+| 0007 | One process with SQL first, Effect Cluster later | coupled by the code | not at all |
+| 0010 | A rejection may carry a reason, an acceptance never carries data | coupled by the code | not at all |
+| 0014 | The rules the pure machine settled | coupled by the code | not at all |
+| 0017 | Creation is part of the machine | coupled by the code | not at all |
+| 0023 | `Suspended` means no reply yet | coupled by the code | not at all |
+| 0029 | An idle entity is unloaded, and what is stored wakes it | coupled by the code | not at all |
+| 0032 | A projection is a row, and a program declares the indexes a query uses | cites one, coupled by the code | in part: its status line |
+| 0038 | What happened is published through an outbox | coupled by the code | not at all |
+| 0039 | A consumer of the outbox keeps its cursor | cites one, coupled by the code | in part: its status line |
+| 0041 | A completion is not discarded | coupled by the code | not at all |
+| 0042 | An event the runtime cannot finish crashes its entity | coupled by the code | not at all |
+| 0043 | A row no version reads fails what reads it, not the process | coupled by the code | not at all |
+| 0044 | A timer's firing is not discarded | coupled by the code | not at all |
+| 0045 | An operation waits for a program not deployed yet | coupled by the code | not at all |
+| 0050 | A creation is answered apart from a message | coupled by the code | not at all |
+| 0051 | A deploy that fails leaves nothing running | coupled by the code | not at all |
+| 0053 | What a handle is given is checked | cites one, coupled by the code | in part: its status line |
+| 0054 | A program is checked where it enters | coupled by the code | not at all |
+| 0057 | The machine gives what is written | coupled by the code | not at all |
+| 0062 | A row is read through a schema, or not at all | coupled by the code | not at all |
+| 0063 | The runtime waits for what it waits for, and polls nothing | coupled by the code | not at all |
+| 0064 | The program is not the machine's state, and a fix is a deploy | coupled by the code | not at all |
+| 0065 | The machine holds no replies, and a receive is given the one it asks for | coupled by the code | not at all |
+| 0067 | Each entity is held by its own lock | coupled by the code | not at all |
+| 0070 | `reindex` writes a row only over the state it was computed from | coupled by the code | in part: the code of reindex |
+| 0071 | A process starts the entities whose mailbox holds a message | coupled by the code | not at all |
+| 0073 | What the runtime did is told to a probe, out of its options | coupled by the code | not at all |
+| 0075 | A name is deployed once in a process | coupled by the code | not at all |
+| 0076 | A process over its capacity unloads the least recently used | coupled by the code | not at all |
+| 0078 | A timer due is no spare entity, and a registered deploy keeps its name | coupled by the code | not at all |
+| 0079 | What a caller sets going is finished without it | coupled by the code | not at all |
+| 0080 | A database is held by one runtime | coupled by the code | not at all |
+| 0085 | On Cluster, a request is keyed and answered as on one process | coupled by the code | not at all |
+| 0092 | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each | coupled by the code | not at all |
+| 0102 | A deploy interrupted before it registers undoes itself whole | coupled by the code | not at all |
+| 0109 | `settled` waits for an entity unloading | coupled by the code | not at all |
+| 0114 | An operator sees the suspended entities, and what a resume or a discard did | coupled by the code | not at all |
+| 0119 | A planned stop drains the at-most-once operations, and stops the rest at once | coupled by the code | not at all |
+| 0121 | A read answers from the row of the read model, and calls no `project` | coupled by the code | not at all |
+| 0122 | `reindex` leaves a row it cannot compute, and names its entity | coupled by the code | in part: the code of reindex |
+| 0125 | A caller's reply is kept as long as its boundary says, from the step that answers | coupled by the code | not at all |
+| 0135 | A large state is split by the program, and the runtime warns of a large step | coupled by the code | not at all |
+| 0137 | The log is ordered within a partition, and a consumer keeps a cursor per partition | coupled by the code | in part: the code of published, ack and prune |
+| 0138 | The log publishes topics, and a consumer reads one | coupled by the code | not at all |
+| 0139 | The projection is JSON, and `project` converts | coupled by the code | not at all |
+| 0140 | A row of a topic gives the value the topic selects | coupled by the code | not at all |
+| 0141 | A query and a reading of the log take a limit, and one left out is the caller's defect | of the area | whole, with the code |
+| 0142 | A consumer waits for a row of its topic, woken by the commit that writes it | of the area | whole, with the code |
+| 0143 | A query pages after the last row it gave, by the index it orders by and the id | of the area | whole, with the code |
+| 0144 | A page reads the rows of its program before its cursor, and decision 0143 stands on its other reasons | of the area | whole, with the code |
+| 0145 | A page is read as ranges of an index of the value and the id, and a descending order reverses the ids | of the area | whole, with the code |
+| 0146 | An index that is an integer beyond 2^53 is written with the exact digits of its double | of the area | whole, with the code |
+| 0147 | An entity holds a bounded number of callers' messages, and a `send` past it is answered `Full` | coupled by the code | not at all |
+| 0148 | A count and a sum over the entities that match are read in one statement, and a sum that meets no number is its caller's defect | of the area | whole, with the code |
+| 0149 | The read model answers what a program acts on, in three forms, and any other question is a report fed from the log | of the area | in part: its context, decision and premises |
+| 0150 | A count per value of an index is read in one statement, and an ack joins the caller's transaction | of the area | whole, with the code |
+| 0151 | A process holds ten thousand entities by default | coupled by the code | not at all |
+| 0152 | The consumers of a topic are declared at deploy, and a topic no consumer holds is pruned whole | coupled by the code | not at all |
+| 0153 | A reader of a consumer names the partitions it reads, and the division is the caller's | changes one | in part: its decision and premises, with fetch and published |
+| 0154 | A step's projection is stored once in the outbox, in a publication each topic's row names | coupled by the code | not at all |
+| 0156 | A program is renamed by its launch, which moves what is stored under its old name, and its entities keep their keys | coupled by the code | not at all |
+| 0157 | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both, of text every database holds | cites one, coupled by the code | in part: Indexes and queries, and the code of src/storage/projections.ts |
+| 0158 | A database of SQLite made before is given `request_id`, and a page keeps the level of a caller's transaction | cites one | whole |
+| 0161 | On Cluster, a step settles the machine by the count of the steps that wrote it, and an entity's lock is taken only inside a transaction | coupled by the code | not at all |
+| 0162 | On Cluster, an entity's shard is its partition, and each deployment serves its shards from a singleton of each | coupled by the code | not at all |
+| 0163 | On Cluster, a reading that waits learns of another runner's commit from the file, read while it waits | changes one | in part: its decision and premises, with the watcher of src/runtime.ts |
+| 0164 | Every fork of the runtime drops the transaction, and a count is raised and lowered by one `acquireUseRelease`, as a test reads in the code | cites one | in part: the sentence that cites 0150 |
+| 0165 | On Cluster, a caller sends through the door's client, and is never answered `Full` | coupled by the code | not at all |
+| 0167 | On Cluster, an operation sends through the door's client, and is woken by `Resumed` | coupled by the code | not at all |
+| 0169 | On Cluster, an operation's request ids are kept under its work, and Cluster's rows deleted with it | coupled by the code | not at all |
+| 0170 | On Cluster, an operation's client keeps the request's id before it resets a failure Cluster saved | coupled by the code | not at all |
+| 0171 | On Cluster, a caller's rows go once its client has the answer and its time is past | coupled by the code | not at all |
+| 0174 | On Cluster, a runner deploys only the programs its `sharding` names, at the version named | coupled by the code | not at all |
+| 0176 | On Cluster, a rename marks the old name, which no runner steps again, and keeps a door under it that delivers to the new program | coupled by the code | not at all |
+| 0177 | The runtime's bookkeeping stays in synchronous steps, and not in Effect's `Tx` modules | cites one | in part: the sentence that cites 0142 |
+| 0182 | A program's `init` may reject the flags, and the rejection is not stored | coupled by the code | not at all |
+| 0184 | `consume` runs a reader of a consumer, a page and its ack in one transaction | changes one | whole, with the code |
+| 0185 | `inspect` gives what is stored of one entity, read from one snapshot | coupled by the code | not at all |
+| 0191 | A launch creates the tables, in one transaction, unless it is told they exist | coupled by the code | not at all |
+| 0198 | Every table, index, trigger and function the runtime makes is named with `tea_` | changes one | in part: its status and context |
+| 0204 | A request id is text a database holds, and one that is not is the caller's defect | coupled by the code | not at all |
+| 0207 | A criterion's value and a cursor are scalars both dialects compare alike, and anything else is the caller's defect | of the area | whole, with the code |
+| 0209 | A sum is exact on PostgreSQL, and is refused alike on both dialects past the largest double | of the area | whole, with the code |
+| 0218 | The prefix is `effecttea_`, and a launch dies on a name the runtime's objects would take | coupled by the code | in part: the code of indexed that cites it |
+| 0219 | A drain holds when an interrupted fiber closes its scope, and on Cluster ends before the runner lets its shards go | coupled by the code | not at all |
+| 0224 | A consumer shows the time of the step it reads next, and the runtime records no metric of its age | coupled by the code | not at all |
+| 0245 | `send` requires `keep`, an argument that may be left out comes last, a request leaves out a sender and flags that are `null`, and the runtime sweeps what no reader needs, in batches | coupled by the code | not at all |
+| 0247 | `check` reads the stored entities as a deploy of a new program would activate them, and writes nothing | cites one, coupled by the code | in part: the passage that cites 0141 |
+| 0248 | On Cluster, a caller's rows are kept for at least two of Cluster's polls of replies and a second, so that every client of the request reads the answer | coupled by the code | not at all |
+| 0249 | On Cluster, a reset of a caller's answer that is no reply deletes the id its client kept, and the retry's answer keeps it anew | coupled by the code | not at all |
+| 0253 | An answer no entity stores, a creation `init` rejected or `NotFound`, is kept for the operation that was given it while its work holds | coupled by the code | not at all |
+| 0254 | A check of the project runs against the case it refuses: a check gets a sample of each case, a list of files is read from the disk, and a pinned seed of an explored test runs against its rule taken out | cites one, named by the brief | in part: the passages on the pins of 0142 and 0163 |
+| 0256 | A call that runs a step or waits for one, `deploy`, `create`, `send`, `resume`, `discard` and a fetch that waits, is refused within a transaction of the client | cites one, named by the brief | whole, with the code |
+| 0261 | The drain stops and waits for every deployment from the claim of its name, and a deploy activates nothing once the drain began | coupled by the code | not at all |
+| 0265 | The operations that wait for a resumption are stored by the step that answers them `Suspended`, and listed on every runner while their run holds | coupled by the code | not at all |
+| 0269 | A caller's request is its sender, its request id and what it carries, and a caller's request that carries another message or other flags under a used id is answered `Reused` | coupled by the code | not at all |
+| 0271 | Every fork of the runtime passes `{ uninterruptible: false }`, through `forkApart` and `forkChildApart`, and the test of the form of `src/` refuses a fork without it | coupled by the code | not at all |
+| 0274 | An entity is not loaded while the stop of its former run is running, the stop is work of the process for `settled` and the waker, a shard lost waits for every stop of its entities, and a run whose entity crashed sends nothing | coupled by the code | not at all |
+| 0275 | On Cluster, a door's commit tells the readings that wait itself, from its callback, and `settle` tells them again | cites one, named by the brief | whole, with the code |
+| 0277 | A sum is refused once a count of its magnitudes in units of 2^980, which both dialects make alike, reaches 2^44 | changes one, named by the brief, coupled by the code | whole, with the code |
+| 0280 | With a drain, the undo of a deploy drains its own deployment before it closes the scope, so that a planned stop that interrupts a deploy waits for its at-most-once operations | coupled by the code | not at all |
+
+### Findings
+
+1. **Reproduced: on SQLite, a sum over an index that holds -2^63 dies with an `SqlError`, where PostgreSQL answers
+   it.** [Decision 0146](archive/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md) writes an integer
+   beyond 2^53 with the exact digits of its double. So -2^63 is stored as `-9223372036854775808`, which SQLite's
+   `json_extract` reads as its least integer. Before that note, the digits `JSON.stringify` writes,
+   `-9223372036854776000`, were read as a real.
+   [Decision 0209](0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md) added the magnitudes of a
+   sum with `ABS`, and [decision 0277](0277-a-sum-is-refused-by-a-count-of-its-magnitudes-both-dialects-make-alike.md)
+   keeps `ABS` in its count of units, at `src/storage/projections.ts:404`. SQLite's `abs()` throws `integer overflow`
+   on -9223372036854775808, as SQLite's page on its core functions says, so the statement fails. On PostgreSQL the
+   same value is a `NUMERIC`, and the sum is answered. The premise that fell is decision 0209's, kept by decision
+   0277: both dialects refuse the same sums, and SQLite meets no overflow on the way to a total the rule lets
+   through. Decision 0146's premise, that the exact digits read as the same number, still holds. What changed is the
+   kind SQLite gives that number. The test `FAILING: a sum over an index that holds -2^63 is answered alike on both
+   dialects`, in `src/storage.test.ts:1766`, fails on SQLite with `SqlError: Failed to execute statement` and passes
+   on PGlite. A probe of `bun:sqlite` at SQLite 3.53.4 gives `integer overflow` for that `ABS`, and the kind `real`
+   for the digits `JSON.stringify` writes. A query, a count and `countBy` over the same row answer, since none of
+   them applies `ABS`. The fix begins at `sum` of `src/storage/projections.ts`, which would take the magnitude of a
+   real, as `ABS(CAST(x AS REAL))` does. It could also begin at `indexesText`, which would write -2^63 as digits
+   SQLite reads as a real.
+
+### Leads
+
+None. Each suspect below was either checked by a test or a probe, or is listed as not checked.
+
+### Suspects ruled out
+
+- **A page that repeats a row because SQLite reads the shortest digits of a double as another double.** It is the
+  form of the bug decision 0146 fixed, for the doubles under 2^53 that `JSON.stringify` still writes. Ruled out by a
+  probe of `bun:sqlite` at SQLite 3.53.4, kept in the session's scratchpad and not in the repository. It wrote
+  217,339 doubles, of random bit patterns and of random magnitudes from 1e-20 to 1e20, as `JSON.stringify` writes
+  them, and compared what `json_extract` read with the double bound. None differed. Decision 0146's spike covers the
+  integers beyond 2^53.
+- **A partial total of `TOTAL` that overflows below the bound of decision 0277**, where every number rounds the
+  running total up by nearly half an ulp. Ruled out by a probe of `bun:sqlite` at SQLite 3.53.4. It summed one number
+  of `(2^44 - 2 - n) × 2^980 + 2^980 - 2^971` and `n` numbers of `2^980 - 2^970 + 2^960`, each counting no unit, for
+  `n` of 10, 100, 1,000 and 3,000. Each sum is under the bound, and is answered with a finite total. The running
+  total of SQLite's compensated sum is the plain sum. Each number stays under its next whole unit, which is a
+  multiple of every ulp, so no rounding passes the sum of those units.
+- **A reader of `consume` with a limit of 0 and `wait: true`, which would wait for ever on empty pages** under
+  decision 0141's limit of 0 and decision 0142's wait. Decision 0184 refuses it before it reads, and `a reader of
+  consume within a transaction, of a limit of 0, or of a wait that is not true is refused` in `src/runtime.test.ts`
+  tests it. A `fetch` with a limit of 0 and a wait reads once and does not wait, at `src/runtime.ts:1323`.
+- **A page of a query on a pool of PostgreSQL that gives a row twice.** Decision 0145's one transaction holds one
+  snapshot only on SQLite's one connection. Decision 0157 begins the page's own transaction at `REPEATABLE READ`, in
+  `snapshot` of `src/storage/held.ts:145`, and decision 0158 says what a page in a caller's transaction reads. The
+  test `a page read in its own transaction gives a row once though a step moves it between its parts` and the two
+  tests after it, in `src/postgres.test.ts`, hold it. They run in the CI's job of PostgreSQL, and were not run here.
+- **A page on Cluster's shared file of SQLite, where another runner's connection commits between the parts of the
+  page.** Ruled out by the JSDoc of `SqliteClient` of `@effect/sql-sqlite-bun` at the version pinned: an explicit
+  transaction takes the write lock for its length, though it only reads. So no other connection commits during the
+  page.
+- **The pin of decision 0142 that decision 0254 names**, on `a consumer that waits is given the row a step commits
+  while it reads`. The test passes under `SCHEDULES=pinned` here. `bun scripts/pins.ts --only 0142` could not run in
+  this worktree: its copy links the worktree's `node_modules`, which a worktree lacks, so every pin gives `fails on
+  the code as it is` at once. The CI's job of `bun run test:pins` runs it.
+- **An order of booleans, nulls, numbers and strings that a page and `countBy` split between the two dialects.**
+  Ruled out by reading the clauses of `parts` and `countBy` against the orders of decisions 0145 and 0150, and by the
+  tests of `src/storage.test.ts` under `a count per value of an index` and on a query that pages past its last row,
+  which pass. These tests run no schedule, so `SCHEDULES` does not apply.
+
+### Suspects noticed and not checked
+
+- **A long index name on PostgreSQL that changes with a move of Effect.** `indexName`, at
+  `src/storage/projections.ts:107`, ends a name past 63 bytes with `Hash.string` of the whole name. The comment at
+  `src/storage/tables.ts:160` says that `Hash.string` does not promise its values across a release. A move of Effect
+  that changes the hash gives the index a new name. `CREATE INDEX IF NOT EXISTS` then builds a second index at a
+  launch, on a table of any size, and the old index is kept and written at every step for ever. No test reaches it
+  before such a move. It loses no row.
+- **A query on Cluster that takes SQLite's write lock.** Every page runs in `snapshot`, and an explicit transaction of
+  the client takes the write lock. So a page of one runner that waits past the busy timeout of 5 s for another
+  runner's lock dies with `SQLITE_BUSY`. It is the form of bug 36, for a reading. It was not run.
+
+### Where the code does otherwise than the note it cites
+
+- `docs/design.md:977` and decision 0141 say that a caller of `published` reads again past the last row it was
+  given, from the cursors of that row. A row carries the cursor of its own partition alone. `cursorsOf`, at
+  `src/storage/log.ts:83`, reads a partition with no cursor in `after` from 0, as the comment of `Handle.published`
+  says. So a caller that passes only the last row of a page reads again the rows of the other partitions that the
+  page gave. The caller has to pass the highest cursor of each partition among the rows given.
+- `src/storage/projections.ts:107`: `indexName` keeps `Hash.string` in a name the database keeps, where
+  `src/storage/tables.ts:160` writes a hash of its own because `Hash.string` does not promise its values across a
+  release.
+- Decisions 0145 and 0146 name `src/storage.ts` for `query`, `indexed` and `indexesText`, which lie in
+  `src/storage/projections.ts` since decision 0241. The rules are kept as the notes say.
+
+### The notes not read whole
+
+The eleven notes of the area were read whole, with the code of `src/storage/projections.ts`, `src/storage/held.ts`,
+`src/storage/log.ts`, `src/runtime/readings.ts` and the readings of the handle in `src/runtime.ts`. Decision 0149 is
+the exception: its alternatives and its consequences were not read, since it decides no code. Decisions 0184, 0256,
+0275 and 0277 were read whole, with their code. Decisions 0153 and 0163 were read in their decision and their
+premises, with the code of `fetch`, `published` and the watcher of other runners, since the readings of the log on
+Cluster are the area of Effect Cluster. Decisions 0157, 0198, 0218, 0247, 0254, 0164 and 0177 were read in the
+passages that cite the area. The notes marked "not at all" are coupled to the area only by the long declarations
+named above, and hold rules of messages, replies, deploys and Cluster that their own areas read.

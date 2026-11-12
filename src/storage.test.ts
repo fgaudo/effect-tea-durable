@@ -1761,6 +1761,17 @@ describe('a count and a sum over the entities that match (decision 0148)', () =>
         expect(yield* summed({ a: least, b: least, c: 3 * least })).toBe(5 * least)
       })))
 
+  // Decision 0146 writes -2^63 with its exact digits, which SQLite reads as its least integer, and `ABS` of that
+  // integer fails the statement on SQLite, where PostgreSQL's `NUMERIC` answers (decisions 0209, 0277).
+  test('FAILING: a sum over an index that holds -2^63 is answered alike on both dialects', () =>
+    database((sql) =>
+      Effect.gen(function*() {
+        const store = storage(ranked, sql)
+        yield* ranking(store, { a: -(2 ** 63), b: 1 })
+        const exit = yield* Effect.exit(store.sum({ index: 'rank' }))
+        expect(Exit.isSuccess(exit) ? exit.value : String(Cause.squash(exit.cause))).toBe(-(2 ** 63) + 1)
+      })))
+
   test('a count or a sum by an index the program does not declare dies, naming it', () =>
     database((sql) =>
       Effect.gen(function*() {
