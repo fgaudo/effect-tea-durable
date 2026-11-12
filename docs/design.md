@@ -249,7 +249,9 @@ A message is one of two kinds, and the rule for a message that does not apply fo
   ([decision 0010](decisions/archive/0010-a-rejection-may-carry-a-reason.md)). A caller that retries with the same id
   gets the same answer, and the message is applied once. The boundary gives `send` a `keep`, the time its
   protocol retries for, and `keep` is required, since only the boundary knows that time. The reply is then kept for
-  that time from the step that answers, and a retry after it is a new request, applied again. A `keep` of
+  that time from the step that answers, and a retry after it is a new request, applied again. A retry sent before
+  the answer is answered by it and is not applied, however short the `keep`
+  ([decision 0282](decisions/0282-a-callers-message-offered-before-its-answer-is-answered-by-it.md)). A `keep` of
   `'forever'` keeps the reply for ever. A step that stores a reply deletes its entity's replies past their time, and
   `Handle.expire` those of the whole program, which [the sweep](#the-sweep) runs at an interval
   ([decisions 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md),

@@ -2,7 +2,8 @@
 
 **Status:** accepted, 2026-10-31. Decides [the replies an entity holds](../../open-questions.md#storage-and-reading).
 A caller's request a version before stored is found by a column of its id, and not by its JSON, by
-[decision 0157](0157-the-storage-speaks-sqlite-and-postgresql.md).
+[decision 0157](0157-the-storage-speaks-sqlite-and-postgresql.md). Changed by [decision 0282](../0282-a-callers-message-offered-before-its-answer-is-answered-by-it.md): a caller's retry offered before
+its request is answered is not stepped with the reply stored, since the answer reached its caller.
 
 ## Context
 

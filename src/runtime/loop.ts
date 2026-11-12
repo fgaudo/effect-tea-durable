@@ -333,6 +333,12 @@ export const perform = <T extends Types>(
         ? Machine.messageKey(deployed.program, output.request, output.message)
         : Machine.creationKey(deployed.program, output.request, output.flags)
       loaded.links.delete(linkKey(output._tag === 'CreationReplied', request))
+      // A caller's message offered before this reply had its caller registered first, so `answer` gives it this
+      // reply, and the loop does not apply it again (decision 0282).
+      if (output._tag === 'Replied') {
+        for (const offered of loaded.offers.get(request) ?? []) loaded.answered.add(offered)
+        loaded.offers.delete(request)
+      }
       yield* output._tag === 'Replied'
         ? answer(p, p.messages, entity, request, output.reply)
         : answer(p, p.creations, entity, request, output.reply)
@@ -704,8 +710,20 @@ export const steps = <T extends Types>(p: Process, deployed: Deployment<T>, load
               return gone ? Effect.void : next
             }))
         }
+        // A caller's message whose key a step replied to after its offer is not applied: its caller has the reply,
+        // which under a short `keep` may be deleted by now (decision 0282). Its permit and its count go back as
+        // after a step.
+        let skipped = false
+        if (event._tag === 'Receive' && event.request._tag === 'Caller') {
+          const key = Machine.messageKey(deployed.program, event.request, event.message)
+          const offers = loaded.offers.get(key)
+          offers?.delete(event)
+          if (offers?.size === 0) loaded.offers.delete(key)
+          skipped = loaded.answered.has(event)
+          loaded.answered.delete(event)
+        }
         return Effect.flatMap(
-          apply(p, deployed, loaded, event).pipe(Effect.ensuring(Effect.andThen(
+          (skipped ? Effect.void : apply(p, deployed, loaded, event)).pipe(Effect.ensuring(Effect.andThen(
             // The permit first: a process settled holds no permit of a message applied (decision 0147).
             event._tag === 'Receive' ? loaded.callers.release(1) : Effect.void,
             Effect.sync(() => {
@@ -738,6 +756,8 @@ export const fresh = <T extends Types>(p: Process, machine: Machine.Machine<T>, 
     callers: Semaphore.makeUnsafe(p.bound),
     refused: false,
     links: new Map(),
+    offers: new Map(),
+    answered: new WeakSet(),
     steps,
     uncommitted: null,
     crashed: Deferred.makeUnsafe<void>(),

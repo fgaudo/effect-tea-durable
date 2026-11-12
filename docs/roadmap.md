@@ -64,7 +64,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
         was taken on 2026-11-12, and the area runs first of the second reading below, in a session that did not write
         them. The other notes of those fixes lie in sections already read, and the second
         reading reads them with their areas.
-    14. The notes taken after area 13: 0281. Each note taken while the second reading runs joins this area. It is
+    14. The notes taken after area 13: 0281 and 0282. Each note taken while the second reading runs joins this area. It is
         read by a session that did not write its notes, once they are fifteen, or after the last area of the second
         reading.
   - Each area also reads, against the notes of the areas already read, every later note of its own that cites
@@ -239,7 +239,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - Done, in a session of 2026-11-12 that read none of the reports: area 1 of the second reading, Messages, requests
     and replies, its fifteen notes read whole with the code, against the later notes that change them, 0269 among them.
     Its finding is bug 94 of [`docs/bugs.md`](bugs.md), reproduced on `claude/premise-review-2-area-1-a39f5b` at
-    `9f74448`, cut from `main` at `5ea1dcc`, and again on `main`. Its two leads and the suspect it did not check are
+    `9f74448`, cut from `main` at `5ea1dcc`, and again on `main`, and fixed by
+    [decision 0282](decisions/0282-a-callers-message-offered-before-its-answer-is-answered-by-it.md). Its two leads and the suspect it did not check are
     [open questions](open-questions.md#running): a retry that waits past its reply's `keep`, a retry in flight at a
     resume, and a duplicate on the runner that holds the shard. Not reached: the notes of Cluster other than 0171, 0248
     and 0249, the rehearsal's 0131 and 0200, and the notes the code alone couples to the area, as its table in

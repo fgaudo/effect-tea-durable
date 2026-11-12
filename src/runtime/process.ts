@@ -323,6 +323,13 @@ export interface Loaded<T extends Types> {
    */
   readonly links: Map<string, Tracer.AnySpan>
   /**
+   * The `Receive` of each caller's message offered and not yet taken by the loop, by its request's key: recorded as
+   * its caller is registered, and taken out as the loop takes it or a step replies to the key (decision 0282).
+   */
+  readonly offers: Map<string, Set<Machine.Offered<T>>>
+  /** The offers of `offers` whose key a step replied to: their callers have the reply, and the loop skips them. */
+  readonly answered: WeakSet<Machine.Offered<T>>
+  /**
    * Done by a crash of this run, in the step the entity enters the stops of its deployment. An operation of the run
    * sends nothing once it is done, and a send under way ends (decision 0274).
    */

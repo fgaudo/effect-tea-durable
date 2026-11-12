@@ -148,7 +148,9 @@ with a requirement that no example has yet.
   reading, on 2026-11-12, and wrote no test.
   - A test that holds the first step at its commit, by the points of the crash table, moves `TestClock` past the
     `keep`, and counts `applied`, would decide it.
-  - The fix of bug 94 decides it too, if its rule holds every `keep`.
+  - The fix of bug 94, [decision 0282](decisions/0282-a-callers-message-offered-before-its-answer-is-answered-by-it.md),
+    holds a retry sent before the answer, under any `keep`, and leaves out a retry sent after the answer and
+    stepped past its `keep`, which is what this question is left with.
 
 - **A retry in flight when an operator resumes the entity.** A suspended entity's head message is handled by the step
   of the resume. A caller answered `Suspended` that sends again at that moment reads the reply after that step, and

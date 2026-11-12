@@ -50,7 +50,7 @@ family gets a fix of its own.
 - Of no family: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 75, 79, 81, 82, 86, 87 and
   92. Each is fixed by a note of its own or verified false, as its entry says. Bug 79, a gap of the guide, is fixed in
   `docs/design.md` with no note, since decisions 0185 and 0222 decide it. Bug 93 is of no family either, and has
-  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281. Bug 94 is of no family yet.
+  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281. Bug 94 is of no family, and is fixed by decision 0282.
 
 ## The list
 
@@ -540,20 +540,4 @@ family gets a fix of its own.
     operators' events on Cluster.
 92. Fixed by [decision 0275](decisions/0275-on-cluster-a-doors-commit-tells-the-readings-itself.md).
 93. **Fixed by [decision 0281](decisions/0281-a-rehearsals-time-is-a-whole-millisecond.md)**, whose rehearsal refuses a duration and a start time between two milliseconds.
-94. **Reproduced: on one process, two callers of one request sent before it is answered have its message applied
-    twice under a short `keep`.** A caller's reply is kept for its `keep`, counted from the step that answers
-    ([decisions 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md),
-    [0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)). Decision 0125 rests on a
-    premise it does not write: a retry is read no later than its caller sent it. A retry sent before the answer
-    waits in the runtime too, and its `Receive` reads the reply at its own step, which may be past the reply's time.
-    [Decision 0248](decisions/0248-on-cluster-a-callers-rows-are-kept-for-every-clients-poll.md) found this race on
-    Cluster and keeps Cluster's rows for every client's poll, but on one process nothing covers it. Under a `keep` of
-    0, the first step writes the reply and deletes it as past (`src/storage/entities.ts`, the deletion after the
-    step's write), the second `Receive` reads none, and the message is applied again. The test `FAILING: two callers
-    of one request at once under a keep of 0 have its message applied once`, in `src/runtime.test.ts`, reproduces it
-    on the branch `claude/premise-review-2-area-1-a39f5b`, at `9f74448`, cut from `main` at `5ea1dcc`, and again on
-    `main` at `5ea1dcc`. The fix begins at `receive` of `src/machine.ts` and the loop of `src/runtime/loop.ts`: a
-    `Receive` would read the reply at the time its caller offered it, or a reply would be kept for a least time
-    beside its `keep` as decision 0248 does on Cluster, or a launch would refuse a `keep` below a least one. The
-    [open question](open-questions.md#running) A retry that waits in the runtime past its reply's `keep` holds the
-    same race under a `keep` above 0.
+94. **Fixed by [decision 0282](decisions/0282-a-callers-message-offered-before-its-answer-is-answered-by-it.md)**, whose caller's message offered before its request is answered is answered by that answer, and not applied.

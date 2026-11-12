@@ -94,6 +94,13 @@ export const ask = <T extends Types, A>(
     callers.add(caller)
     requests.set(request, callers)
     waiting.set(address, requests)
+    // Recorded with its caller, with nothing between the two that yields: a reply between them would reach the
+    // caller and leave its message to be applied again (decision 0282).
+    if (event._tag === 'Receive' && event.request._tag === 'Caller') {
+      const offers = loaded.offers.get(request) ?? new Set<Machine.Offered<T>>()
+      offers.add(event)
+      loaded.offers.set(request, offers)
+    }
     // A caller that gives up leaves nothing behind: its message is applied once, whichever retry finds it.
     const forget = Effect.sync(() => {
       const current = waiting.get(address)

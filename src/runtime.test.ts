@@ -515,9 +515,10 @@ describe('the runtime on SQLite', () => {
         }))
     })))
 
-  // A message is given the reply stored under its request and the time just before its step, not as it is offered:
-  // one that waits behind another is handled at the time it reaches the front (decisions 0065, 0074).
-  test('a message that waits behind another is given its time and its reply as its step begins', () =>
+  // A message is given the time just before its step, not as it is offered: one that waits behind another is handled
+  // at the time it reaches the front (decisions 0065, 0074). A retry offered before its request is answered is
+  // answered by the step that answers, and is not applied (decision 0282).
+  test('a message that waits behind another is given its time as its step begins, and a retry before the answer is answered by it', () =>
     database(Effect.gen(function*() {
       const { layer } = yield* hands()
       const { events, observe } = log()
@@ -542,18 +543,16 @@ describe('the runtime on SQLite', () => {
           const released = DateTime.toEpochMillis(yield* DateTime.now)
           yield* Deferred.succeed(gate, undefined)
           for (const fiber of [first, second, retry]) expect(yield* Fiber.join(fiber)).toEqual({ _tag: 'Accepted' })
-          // The retry may be answered before its own message is applied, so the events are read once it is.
           yield* runtime.settled
           const times = events.flatMap((event) =>
             event._tag === 'Receive' && event.request._tag === 'Caller'
               ? [[event.request.id, DateTime.toEpochMillis(event.at), event.reply]]
               : []
           )
-          // The retry finds the reply the first stored, and `update` saw the message once.
+          // The retry is answered by the first's step and never stepped, and `update` saw the message once.
           expect(times).toEqual([
             ['first', DateTime.toEpochMillis(at) + 1, null],
             ['second', released, null],
-            ['first', released, { _tag: 'Accepted' }],
           ])
           expect((yield* storage(program, yield* SqlClient.SqlClient).load(id))?.state.applied).toEqual(['n1', 'n2'])
         }))
@@ -3486,6 +3485,72 @@ describe('a schema that changes', () => {
           yield* runtime.settled
           const stored = yield* storage(program, yield* SqlClient.SqlClient).load('m-7')
           expect(stored?.state.applied).toHaveLength(1)
+        }))
+    })))
+
+  // Bug 94: two callers of one request, both sent before it is answered, are one request. The step that answers the
+  // first answers the second's caller too, and the second's `Receive` is not applied, though a `keep` of 0 deleted
+  // the reply at that step (decision 0282).
+  test('two callers of one request at once under a keep of 0 have its message applied once', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const want = { _tag: 'Want', key: 'a', on: true, nonce: 'w' } as const
+      const sent = { requestId: 'r-9', sender: tester, keep: { millis: 0 } } as const
+      const gate = yield* Deferred.make<void>()
+      yield* process({
+        callers: { messages: 2 },
+        at: (point, _entity, event) =>
+          point === 'BeforeCommit' && received(event) === 'h-9' ? Deferred.await(gate) : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('m-9', { flags: { at }, requestId: 'c-9', sender: tester })
+          const replies = yield* Effect.all([toy.send('m-9', want, sent), toy.send('m-9', want, sent)], {
+            concurrency: 'unbounded',
+          })
+          expect(replies.map((reply) => reply._tag)).toEqual(['Accepted', 'Accepted'])
+          yield* runtime.settled
+          const stored = yield* storage(program, yield* SqlClient.SqlClient).load('m-9')
+          expect(stored?.state.applied).toEqual(['w'])
+          // The skipped `Receive` gave its permit back: with one message held, a second still fits the bound of two.
+          const other = (nonce: string, requestId: string) =>
+            toy.send('m-9', { ...want, nonce }, { requestId, sender: tester, keep: 'forever' })
+          const held = yield* running(other('h', 'h-9'))
+          const fits = yield* running(other('k', 'k-9'))
+          yield* Deferred.succeed(gate, undefined)
+          expect(yield* Fiber.join(held)).toEqual({ _tag: 'Accepted' })
+          expect(yield* Fiber.join(fits)).toEqual({ _tag: 'Accepted' })
+        }))
+    })))
+
+  // A caller that gives up after its offer leaves its `Receive` queued and no caller registered. A retry sent then is
+  // answered by the step of the first `Receive`, and its own is not applied, under a `keep` of 0 (decision 0282). A
+  // join of the retry to a caller still registered would miss it, since none is.
+  test('a retry after a caller gave up behind another message is answered by the first offer, and applied once', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const gate = yield* Deferred.make<void>()
+      const want = (nonce: string) => ({ _tag: 'Want', key: 'a', on: true, nonce }) as const
+      const sent = { requestId: 'r-10', sender: tester, keep: { millis: 0 } } as const
+      yield* process({
+        at: (point, _entity, event) =>
+          point === 'BeforeCommit' && received(event) === 'g-10' ? Deferred.await(gate) : Effect.void,
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const { layer } = yield* hands()
+          const toy = yield* Effect.provide(runtime.deploy(program), layer)
+          yield* toy.create('m-10', { flags: { at }, requestId: 'c-10', sender: tester })
+          const held = yield* running(toy.send('m-10', want('g'), { requestId: 'g-10', sender: tester, keep: 'forever' }))
+          const first = yield* running(toy.send('m-10', want('w'), sent))
+          yield* Fiber.interrupt(first)
+          const retry = yield* running(toy.send('m-10', want('w'), sent))
+          yield* Deferred.succeed(gate, undefined)
+          expect(yield* Fiber.join(held)).toEqual({ _tag: 'Accepted' })
+          expect(yield* Fiber.join(retry)).toEqual({ _tag: 'Accepted' })
+          yield* runtime.settled
+          const stored = yield* storage(program, yield* SqlClient.SqlClient).load('m-10')
+          expect(stored?.state.applied).toEqual(['g', 'w'])
         }))
     })))
 
