@@ -115,7 +115,11 @@ This repository is a design and its pure core, not a library yet: read [`README.
   found of Cluster in `docs/cluster.md` and the rest in the commit's body, runs the spikes, writes the fixture of the
   new release with `scripts/write-cluster-fixture.ts` and commits it, and reads Effect's release policy again, naming
   the commit read in the script's comment. Until the first release, a move may drop the fixtures older than the
-  release it leaves; from then on every fixture stays. A move to a new major reads every premise again.
+  release it leaves; from then on every fixture stays. A move to a new major reads every premise again. A move at
+  which a test of `src/storage.test.ts` finds the partition of an id apart from Cluster's formula on `Hash.string` is
+  not taken, and the pinned values of the partition are never updated to pass. The move waits for a note that decides
+  a migration of the partitions
+  ([decision 0273](docs/decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md)).
 - Once fifteen notes are taken since the last review, a review reads them before the next step starts, from
   `reasoned` up, in a session that did not write them. What it finds is a note, a test, a fix or an open question,
   and the review is a section of [`docs/decisions/reviews.md`](docs/decisions/reviews.md): its date and the notes

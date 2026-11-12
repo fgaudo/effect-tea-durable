@@ -51,10 +51,12 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0271](decisions/0271-every-fork-of-the-runtime-says-it-is-interruptible.md), which the maintainer chose on 2026-11-12
     after an opinion of a Fable 5.2 agent, and bug 60 by
     [decision 0272](decisions/0272-a-boundary-acknowledges-an-item-once-its-answer-is-stored.md), which the maintainer
-    chose on 2026-11-12 after an opinion of a Fable 5.2 agent. The part next is bug 64, the next of the bugs reasoned,
-    which needs a release of Effect whose hash differs: it is verified first, or left with its open question, and
-    its fix is proposed to the maintainer before any code.
-    Decisions 0269 and 0271 change the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
+    chose on 2026-11-12 after an opinion of a Fable 5.2 agent, and bug 64 by
+    [decision 0273](decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md), which the maintainer
+    chose on 2026-11-12 after an opinion of a Fable 5.2 agent. The bugs reasoned are done. The part next is the bugs
+    noticed, from bug 31: each is verified first, by a test that fails or by a reading that rules it out, and its fix
+    is proposed to the maintainer before any code.
+    Decisions 0269, 0271 and 0273 change the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
     taken, and the tests of decision 0269 of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of
     PostgreSQL of the push of `main` that takes it.
     The spikes of decision 0267, `spikes/sqlite-hold-file.test.ts` and `spikes/full-volume.test.ts`, passed on Linux
@@ -412,15 +414,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       `answerCodec` and `creationCodec` of `src/cluster.ts`. The [open question](open-questions.md#running) What a
       newer version answers an older one on Cluster.
   63. **Fixed by [decision 0265](decisions/0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md)**, whose waits are stored, and read on every runner.
-  64. **Reasoned: a release of Effect that changes its hash moves the shards away from the stored partitions.**
-      [Decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md) stores a partition so that a
-      change of `Hash.string` moves nothing, and
-      [decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)
-      makes the partition the shard, which Cluster computes from the id at every delivery. An entity created before
-      the move is read by the round and the waker of its old shard, and dropped with no log. A test of
-      `src/storage.test.ts` fails at such a move of Effect's version, and nothing says what a deployment does then.
-      The [open question](open-questions.md#running) A hash of Effect that moves the shards.
-      Not checked: it needs a release of Effect whose hash differs, and a dependency is never changed by hand.
+  64. **Fixed by [decision 0273](decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md)**, whose partition is the library's own hash, and whose round and waker log an entity stored under another.
   65. **Reproduced: an at-least-once operation of a crashed entity that sends from a region it holds
       uninterruptible, after its new run ended the work, has the receiver apply the request twice.** The crash does
       not wait for the stop ([decision 0056](decisions/archive/0056-nothing-waits-for-an-operation-under-the-permit.md)),

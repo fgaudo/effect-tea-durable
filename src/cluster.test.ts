@@ -54,7 +54,7 @@ import {
   versionOf,
 } from './program.ts'
 import { type Handle, type Options, Probe, type Said } from './runtime.ts'
-import { createTables, leased, newestVersion, outranked, recordVersions } from './storage.ts'
+import { createTables, leased, newestVersion, outranked, partitionOf, recordVersions } from './storage.ts'
 import { slow } from './runtime.test_shared.ts'
 import { client, onEach } from './storage.test_databases.ts'
 
@@ -1686,6 +1686,76 @@ describe('the shards of a runner on Cluster', () => {
           expect(seen).not.toContain(`${id} started on 2`)
         }
       })), 30_000)
+
+  // An entity stored under a partition that is not the shard Cluster routes its id to is what a release of Effect
+  // that changes the hash of Cluster or of the storage leaves (decision 0273). The tests write that partition by hand.
+  const storedUnder = (id: string, partition: number) =>
+    Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) =>
+      sql`UPDATE effecttea_entities SET partition = ${partition} WHERE id = ${id}`)
+  /** What a runner logs of an entity `id` stored under `partition` while Cluster routes it to `shard`. */
+  const misplaced = (id: string, partition: number | null, shard: number) =>
+    `an entity is stored under a partition that is not its shard, and its work waits until a migration moves it: ` +
+    `the entity ${id} of Bell is stored under ${
+      partition === null ? 'a partition this runner reads' : `the partition ${partition}`
+    }, and Cluster routes it to the shard ${shard}`
+
+  test('Cluster’s shard of an id is the storage’s partition, for ids of every script (decision 0273)', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const runner = yield* start(1)
+        const held = Context.get(runner.context, Sharding.Sharding)
+        const ids = ['one', 'é', 'é', '日本', '😀', 'a😀b', '', 'x'.repeat(300)]
+        expect(ids.map((id) => held.getShardId(EntityId.make(id), 'default').id))
+          .toEqual(ids.map((id) => partitionOf(id, shardsPerGroup)))
+      })), 30_000)
+
+  test('a round that reads an entity stored under a partition not its shard logs it, and activates it where it may', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const scope = yield* Scope.make()
+        const first = yield* Scope.provide(start(1), scope)
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        yield* create(first, 'one')
+        yield* send(first, 'one', { _tag: 'Ask' }, 'm1')
+        yield* until(Effect.sync(() => seen), (lines) => lines.includes('one started on 1'))
+        yield* Scope.close(scope, Exit.void)
+        const shard = partitionOf('one', shardsPerGroup)
+        const partition = shard % shardsPerGroup + 1
+        yield* storedUnder('one', partition)
+        answers = true
+        const second = yield* start(2)
+        yield* until(Effect.sync(second.count), (n) => n === shardsPerGroup)
+        // The round of the stored partition reads the entity, and this runner holds its shard too.
+        yield* until(Effect.sync(() => seen), (lines) => lines.includes('one started on 2'))
+        expect(warningsAndErrors()).toEqual([misplaced('one', partition, shard)])
+      })), 30_000)
+
+  slow('a timer the waker reads of an entity stored under a partition not its shard is logged, once', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const names = Array.from({ length: 64 }, (_, i) => `t${i}`)
+        const there = names.find((id) => second.holds(id))!
+        const here = names.find((id) => first.holds(id))!
+        const partition = partitionOf(here, shardsPerGroup)
+        yield* create(second, there)
+        yield* send(second, there, { _tag: 'Ring', at: DateTime.toEpochMillis(yield* DateTime.now) + 500 }, 'm1')
+        yield* storedUnder(there, partition)
+        // An entity of the first runner that is unloaded pokes its waker, which reads the partition again.
+        yield* create(first, here)
+        const message = misplaced(there, null, partitionOf(there, shardsPerGroup))
+        yield* until(Effect.sync(() => logged), (lines) => lines.includes(message))
+        // The waker reads it again after each `retry`, and logs it once.
+        yield* Effect.sleep('300 millis')
+        expect(logged).toEqual([message])
+        expect(warningsAndErrors()).toEqual([message])
+      }), { passivate: { millis: 100 }, retry: { millis: 50 } }), 30_000)
 
   slow('an operation creates and sends through the door, and a resumption on another runner wakes it', () =>
     onFile((start) =>

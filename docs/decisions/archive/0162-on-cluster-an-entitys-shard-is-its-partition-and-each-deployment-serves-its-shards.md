@@ -6,7 +6,8 @@ from a singleton of each, and changes two of its rules: each deployment register
 the waker and an activation read carry their entity's shard through the entity's row. Decides the roadmap's
 question of whether a partition of the log is Cluster's shard
 ([decision 0137](0137-the-log-is-ordered-within-a-partition.md)), and says how that note's order of a partition holds
-on Cluster.
+on Cluster. [Decision 0273](../0273-the-partition-of-an-entity-is-the-librarys-own-hash.md) adds that the round of a
+shard and the waker log an entity stored under a partition that is not its shard.
 
 ## Context
 

@@ -494,16 +494,30 @@ with a requirement that no example has yet.
   - a test of the runtime whose operation sends to one entity, crashes, and sends to another once run again;
   - whether an operator is misled by such a wait, or reads it as the history of the run;
   - whether a run's wait could be dropped by the run's next send, at the cost of a write per send.
-- **A hash of Effect that moves the shards.** An entity's partition is stored, so that a change of `Hash.string`
-  moves nothing ([decision 0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md)). On Cluster the
-  partition is the shard
-  ([decision 0162](decisions/archive/0162-on-cluster-an-entitys-shard-is-its-partition-and-each-deployment-serves-its-shards.md)),
-  which Cluster computes from the id at each delivery. A release of Effect that changes the hash leaves an entity
-  under a partition no round of its shard reads, and it is dropped with no log. A test of `src/storage.test.ts`
-  fails at such a move. It is bug 64 of the [roadmap](roadmap.md), reasoned. It would be decided by:
-  - what the rule of `AGENTS.md` for a move of Effect's version does when that test fails;
-  - whether a launch on Cluster checks that the stored partitions of a sample of entities are the shards Cluster
-    gives their ids.
+- **The partitions after a release of Effect whose hash of Cluster differs.** The storage's partition of an entity
+  is the library's own formula, and Cluster's shard is Cluster's
+  ([decision 0273](decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md)). A release of Effect whose
+  hash differs makes every deploy on Cluster die, and the move of Effect waits for a note that decides a migration.
+  No such release exists, so the migration is not designed. It would be decided by:
+  - a release of Effect whose hash of an entity's id differs from the one of 4.1.3;
+  - whether a migration rewrites each entity's partition, and what it does to the order of the log within a
+    partition and to the cursors of its consumers;
+  - whether a runner of the release before and one of the release after may serve shards at once during it.
+- **An entity reached by a message under a partition not its shard.** The round of a shard and the waker log an
+  entity stored under a partition that is not its shard on Cluster
+  ([decision 0273](decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md)). A door loads an entity by
+  its id, and reads no partition, so an entity that only messages reach is never logged. Its steps run, and its
+  publications go to the stored partition, which no consumer misses. Its timers and its operations after a crash
+  wait for the runner that holds both shards. No test reaches it yet. It would be decided by:
+  - whether the loading of an entity reads its partition, at the cost of a column in the reading of every load;
+  - a test whose entity, stored under another partition, holds a timer and is reached by a message first.
+- **The name of a long index after a release whose `Hash.string` differs.** On PostgreSQL a name of an index longer
+  than 63 bytes ends with `Hash.string` of the whole name
+  ([decision 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)). A release whose
+  `Hash.string` differs would name the same index otherwise. It is a lead read in `src/storage/projections.ts`, and
+  no test reaches it yet. It would be decided by:
+  - what a migration of an index does when the index it drops or keeps has a name of another hash;
+  - whether the name takes the library's own hash of decision 0273, as the partition does.
 - **A deploy that the planned stop interrupts or that fails in the drain.** The drain reaches a deploy still
   activating, and the deploy activates nothing once the drain began
   ([decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)), which fixes bug 66 of the

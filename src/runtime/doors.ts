@@ -452,12 +452,33 @@ export const activateOnCluster = <T extends Types>(
 }
 
 /**
+ * Logs as an error the entity `id`, stored under the partition `partition`, which Cluster routes to the shard
+ * `shard`. A partition of null is one of those the waker reads, which reads no partition of an entity. The shard's
+ * round and the waker read the entity by the partition and Cluster routes it by the shard, so its work runs only
+ * where one runner holds both (decision 0273).
+ */
+export const misplaced = <T extends Types>(
+  deployed: Deployment<T>,
+  id: string,
+  partition: number | null,
+  shard: number,
+) => {
+  const { name } = deployed.program
+  const under = partition === null ? 'a partition this runner reads' : `the partition ${partition}`
+  const reason = `the entity ${id} of ${name} is stored under ${under}, and Cluster routes it to the shard ${shard}`
+  return Effect.logError(
+    'an entity is stored under a partition that is not its shard, and its work waits until a migration moves it',
+    Cause.die(new InvariantDefect({ reason })),
+  ).pipe(Effect.annotateLogs({ name, id }))
+}
+
+/**
  * The name of a singleton of the program `name` for each shard: the first of
  * `@fgaudo/effect-tea-persistent/<name>/<n>`, for `n` from 0, that Cluster routes to the shard (decision 0162). The
  * prefix stays as it is from the first release on, since a runner of an older release would otherwise run other
  * singletons for the same shards (decision 0195). Each name found is checked against the partition the storage gives
  * it, so that a hash of Cluster's that came to differ from the storage's is a defect at deploy, and not an entity
- * whose timers no runner reads.
+ * whose timers no runner reads (decision 0273).
  */
 export const singletonsOf = (on: OnCluster, name: string): ReadonlyMap<number, string> => {
   const found = new Map<number, string>()
@@ -511,6 +532,10 @@ export const activating = <T extends Types>(
   const round = Effect.gen(function*() {
     let failed = false
     for (const id of yield* deployed.storage.interruptedIn(shard)) {
+      // The activation goes on: it runs where this runner holds the shard Cluster routes the entity to
+      // (decision 0273).
+      const routed = p.cluster!.shardOf(id)
+      if (routed !== shard) yield* misplaced(deployed, id, shard, routed)
       const exit = yield* Effect.exit(activateOnCluster(p, deployed, id))
       if (Exit.isFailure(exit)) failed = true
     }

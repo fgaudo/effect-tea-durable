@@ -6,7 +6,7 @@ import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Queue from 'effect/Queue'
-import { activateOnCluster } from './doors.ts'
+import { activateOnCluster, misplaced } from './doors.ts'
 import { loads } from './loop.ts'
 import { type Deployment, end, mark, type Process, reread } from './process.ts'
 import type { Types } from '../program.ts'
@@ -43,11 +43,8 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
     // A reading that fails is read again after `retry`, as the sweep goes on past a sweep that fails: a reading that
     // died would end the fiber, and every timer of the program with it. Only the first failure of a run of them is
     // logged, since a database out of reach would log one at every retry (decision 0259).
-    const due = yield* deployed.storage.due(
-      now,
-      [...deployed.loaded.keys(), ...hidden, ...worked],
-      p.cluster === null ? undefined : held(deployed),
-    ).pipe(
+    const partitions = p.cluster === null ? undefined : held(deployed)
+    const due = yield* deployed.storage.due(now, [...deployed.loaded.keys(), ...hidden, ...worked], partitions).pipe(
       Effect.tap(() => Effect.sync(() => (failing = false))),
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)
@@ -77,7 +74,22 @@ export const waking = <T extends Types>(p: Process, deployed: Deployment<T>) => 
     waker.next = next === Infinity ? null : next
     // The entities just activated are this process's, and the reading of the next round leaves them out, as
     // it leaves out the ones that failed until their time.
-    const ready = [...worked, ...due.ready]
+    // An entity read under a partition this runner holds, which Cluster routes to a shard it does not, would be
+    // refused as unheld at every reading: it is left out until `retry`, and logged once (decision 0273).
+    const ready: Array<string> = []
+    for (const id of [...worked, ...due.ready]) {
+      const shard = partitions === undefined ? null : p.cluster!.shardOf(id)
+      if (shard === null || partitions!.includes(shard)) {
+        ready.push(id)
+        continue
+      }
+      mark(waker, id, now + p.retry, { hides: true })
+      next = Math.min(next, now + p.retry)
+      waker.next = next
+      if (refused.has(id)) continue
+      refused.add(id)
+      yield* misplaced(deployed, id, null, shard)
+    }
     if (ready.length > 0) {
       for (const id of ready) {
         const activation = p.cluster === null ? loads(p, deployed, id) : activateOnCluster(p, deployed, id)

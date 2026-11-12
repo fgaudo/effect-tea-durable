@@ -6,7 +6,6 @@
  */
 import { resolve } from 'node:path'
 import * as Effect from 'effect/Effect'
-import * as Hash from 'effect/Hash'
 import * as Schema from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import { Migrator, SqlClient, type SqlError, type Statement } from 'effect/sql'
@@ -150,11 +149,23 @@ export const hold: Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope>
 export const defaultPartitions = 300
 
 /**
- * The partition of the log the entity `id` belongs to, among `partitions`: Cluster's formula for a shard, on
- * `Hash.string`. It is computed once, when the entity is created, and stored, so that a hash that changes in a later
- * release of Effect moves no entity's rows (decision 0137).
+ * The partition of the log the entity `id` belongs to, among `partitions`: Cluster's formula for a shard. It is
+ * computed once, when the entity is created, and stored (decision 0137). On Cluster the partition is the shard
+ * (decision 0162).
  */
-export const partitionOf = (id: string, partitions: number): number => Math.abs(Hash.string(id) % partitions) + 1
+export const partitionOf = (id: string, partitions: number): number => Math.abs(djb2(id) % partitions) + 1
+
+/**
+ * The hash of `id` that `Hash.string` and Cluster's hash of an entity's id give in Effect 4.1.3, written here so
+ * that it never changes. `Hash.string` does not promise its values across a release, and Cluster's hash is internal
+ * to it. A release whose hash differs is then seen at every deploy on Cluster, by `singletonsOf`, and not as entities
+ * no runner reads (decision 0273).
+ */
+const djb2 = (id: string): number => {
+  let h = 5381
+  for (let i = id.length; i > 0;) h = (h * 33) ^ id.charCodeAt(--i)
+  return (h & 0xbfffffff) | ((h >>> 1) & 0x40000000)
+}
 
 /**
  * The tables, made by the migrations not yet recorded in `effecttea_migrations`. Every entity of every program sits in

@@ -21,7 +21,10 @@ An RPC annotated `ClusterSchema.Persisted` is stored before it is delivered; one
 network and lost with its runner.
 
 A runner is a process that serves entities. Each entity id hashes to a shard (`shardsPerGroup`, 300 by default),
-and each shard is served by one runner. `SingleRunner.layer` is a cluster of one process, with SQL storage and no
+and each shard is served by one runner. The hash is `hashString` of `cluster/internal/hash.ts`, marked `@internal`.
+The runtime stores an entity's partition by its own copy of that hash, as it is in Effect 4.1.3. So a release whose
+hash differs makes every deploy on Cluster die, and the entities stored before keep their partitions
+([decision 0273](decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md)). `SingleRunner.layer` is a cluster of one process, with SQL storage and no
 network; `TestRunner.layer` keeps everything in memory.
 
 Cluster stores messages and replies, never an entity's state: what a handler keeps between messages is lost when

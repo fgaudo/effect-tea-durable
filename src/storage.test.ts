@@ -8,6 +8,7 @@ import * as Cause from 'effect/Cause'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Hash from 'effect/Hash'
 import * as Schema from 'effect/Schema'
 import { SqlClient, Statement } from 'effect/sql'
 import * as Machine from './machine.ts'
@@ -1862,12 +1863,20 @@ test('a suspended entity lists the stored waits whose run holds, and its resumpt
       expect(Number(left?.held)).toBe(0)
     }).pipe(Effect.orDie)))
 
-// A move of Effect's version that changes `Hash.string` changes these, and is seen: the partition is stored, so
-// the entities created before keep theirs (decision 0137).
-test('the partition of an id is Cluster’s formula on Hash.string, pinned for a few ids', () => {
+// The partition is the library's own formula, which no release of Effect changes: these values are never updated
+// to pass (decision 0273).
+test('the partition of an id is the library’s own formula, pinned for a few ids', () => {
   expect(['toy-1', 'a', 'b', 'r', 'o-1'].map((id) => partitionOf(id, 300))).toEqual([164, 5, 8, 24, 71])
   expect(['toy-1', 'a', 'b'].map((id) => partitionOf(id, 1))).toEqual([1, 1, 1])
 })
+
+// At the pinned version the formula is Cluster's on `Hash.string`, so that the entities stored before decision 0273
+// keep their partitions. A move of Effect at which this fails changes Cluster's hash or `Hash.string`, and waits
+// for a note that decides a migration.
+test('the partition of an id is Cluster’s formula on Hash.string at the pinned version, for ids of every script', () =>
+  fc.assert(fc.property(fc.string({ unit: 'binary' }), fc.integer({ min: 1, max: 4096 }), (id, partitions) => {
+    expect(partitionOf(id, partitions)).toBe(Math.abs(Hash.string(id) % partitions) + 1)
+  })))
 
 /** A row of the log as a step writes it, at the `position` given: the order the store gave the rows in. */
 const logged = (sql: SqlClient.SqlClient, id: string, seq: number, position: number) =>

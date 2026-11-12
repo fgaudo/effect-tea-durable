@@ -11,9 +11,10 @@ import * as Metric from 'effect/Metric'
 import * as Schema from 'effect/Schema'
 import { SqlClient } from 'effect/sql'
 import * as Tracer from 'effect/Tracer'
-import { operation, type Program, rejectWith, versionOf } from '../program.ts'
+import { InvariantDefect, operation, type Program, rejectWith, versionOf } from '../program.ts'
 import { type Delivered, launchWith, type OnCluster, Probe, type Said } from '../runtime.ts'
-import { createTables, storage } from '../storage.ts'
+import { createTables, partitionOf, storage } from '../storage.ts'
+import { singletonsOf } from './doors.ts'
 import { client } from '../storage.test_databases.ts'
 import { clusterTables, tracing } from '../runtime.test_shared.ts'
 
@@ -411,4 +412,21 @@ describe('the runtime on Cluster, with a Cluster the test plays', () => {
         .toEqual({ _tag: 'Message', answer: { _tag: 'NotFound' } })
       expect((yield* storage(gate, sql).load('h'))?.state).toEqual({ told: 0 })
     })).pipe(Effect.provide(client('sqlite')))), 10_000)
+})
+
+// A release of Effect whose hash of Cluster differs from the storage's partition makes every deploy on Cluster die
+// (decision 0273).
+describe('the singletons of a program on Cluster', () => {
+  const on = (shardOf: (id: string) => number) => ({ shards: 300, shardOf }) as unknown as OnCluster
+
+  test("a singleton is found for each shard where Cluster's shard is the storage's partition", () => {
+    const found = singletonsOf(on((id) => partitionOf(id, 300)), 'Toy')
+    expect([...found.keys()].sort((a, b) => a - b)).toEqual(Array.from({ length: 300 }, (_, i) => i + 1))
+  })
+
+  test("a hash of Cluster that differs from the storage's dies at the first name it moves", () => {
+    for (const shardOf of [(id: string) => partitionOf(`${id}!`, 300), (id: string) => partitionOf(id, 299)]) {
+      expect(() => singletonsOf(on(shardOf), 'Toy')).toThrow(InvariantDefect)
+    }
+  })
 })
