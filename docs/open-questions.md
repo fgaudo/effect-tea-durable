@@ -141,6 +141,25 @@ with a requirement that no example has yet.
 
 ## Running
 
+- **A boundary's clock against the runtime's, for a reply's `keep`.** A caller's reply is kept for the window its
+  boundary gives, counted on the runtime's clock alone
+  ([decision 0125](decisions/archive/0125-a-callers-reply-is-kept-as-long-as-its-boundary-says.md)). A boundary
+  counts its protocol's retries on its own clock, so a skew between the two clocks shortens or lengthens the window
+  by that skew. A window shortened past a retry applies its message twice. Decision 0125 leaves the skew out, and the
+  inventory of 2026-11-11 of [`reviews.md`](decisions/reviews.md) found it in no open question.
+  - A rule of the guide that a boundary adds the skew it allows to its `keep` would decide it.
+  - So would a measure of the skew between the hosts of a boundary and of a runner that the library supports.
+
+- **Two loaders of one entity on a pool of PostgreSQL.** On Cluster on SQLite, a runner's client runs one transaction
+  at a time, and every loader of an entity takes its lock inside a transaction, so two machines are never built for
+  one entity ([decision 0172](decisions/archive/0172-on-cluster-the-two-interleavings-of-decision-0104-are-read-again.md)).
+  With a pool of PostgreSQL, two loaders could wait for one lock at once. Decision 0172 leaves the case out, since
+  the runtime runs on Cluster only on SQLite
+  ([decision 0084](decisions/archive/0084-a-step-commits-only-where-the-commit-checks-the-shard.md)), and the
+  inventory of 2026-11-11 found it in no open question.
+  - The step The runtime on Cluster across machines, on PostgreSQL, of the [roadmap](roadmap.md), decides it.
+  - A test of two loaders of one entity on the CI's PostgreSQL, held at their statements, would check it.
+
 - **A runtime under a clock moved by less than a millisecond.** The runtime reads its time from `DateTime.now`, and
   the live clock gives `Date.now()`, which is whole. `TestClock.adjust` adds `Duration.toMillis` of its duration
   unrounded, and the JSDoc of `Clock` promises no integer. So a runtime under a `TestClock` moved by
@@ -681,6 +700,35 @@ with a requirement that no example has yet.
     link on each system.
 
 ## Programs
+
+- **A rehearsal in a browser.** The machine computes the digest of an idempotency key with `node:crypto`, so the
+  machine runs only where that module is
+  ([decision 0192](decisions/0192-the-digest-of-a-key-is-computed-by-the-machine.md)). `rehearse` and the runtime
+  both run on Bun, which implements it, and no rehearsal in a browser is planned. Decision 0192 leaves the browser
+  out, and the inventory of 2026-11-11 of [`reviews.md`](decisions/reviews.md) found it in no open question.
+  - A requirement to rehearse a program in a browser would decide it, with a digest that the Web Crypto API
+    computes, which is asynchronous.
+
+- **A service that caps an idempotency key below 43 characters.** An idempotent runner may be given the digest of its
+  key, 43 characters of unpadded base64url
+  ([decision 0123](decisions/archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md)). Stripe caps
+  a key at 255, and a service a program calls may cap it lower. Decision 0123 leaves such a service out, and the
+  inventory of 2026-11-11 found it in no open question.
+  - A service a user's program calls whose cap is lower than 43 would decide it, with a digest of fewer bits.
+
+- **Two idempotency keys with one digest.** The digest of a key is its SHA-256, so two keys that share a digest would
+  reach a service as one request ([decision 0123](decisions/archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md)).
+  Decision 0123 leaves the collision out, from the 256 bits of SHA-256, and the inventory of 2026-11-11 found it in
+  no open question.
+  - A collision of SHA-256 found in public would decide it, with a move to another function.
+
+- **An `Entities` a runner keeps from another run.** A droppable runner whose services hold `Entities` does not
+  compile, and the runtime gives `Entities` only to a run of an operation
+  ([decision 0129](decisions/archive/0129-a-droppable-runner-that-sends-does-not-compile.md)). A runner can still
+  keep an `Entities` of another run in a variable, which no type sees, and a droppable runner could then send.
+  Decision 0129 leaves that runner out, and the inventory of 2026-11-11 found it in no open question.
+  - A test of a droppable runner that sends through an `Entities` kept in a variable would show what the runtime
+    does: whether the send dies as a droppable operation that sends does.
 
 - **A deploy that adds a child named like an own tag still stored.** A child's name is never a parent's own tag
   ([decision 0270](decisions/0270-a-childs-name-is-never-an-own-tag.md)), but the compiler sees one version alone. A

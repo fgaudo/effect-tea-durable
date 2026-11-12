@@ -192,8 +192,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     12. Area 12, The project and what enters the library.
   - The second reading starts from the inventory of the premises only reasoned, the section of 2026-11-11 at the
     end of [`reviews.md`](decisions/reviews.md). It sorts 125 premises of 85 notes against the rule of `AGENTS.md`
-    that no premise of what code does is only reasoned. Before area 1, the six cases it finds left out and in no
-    open question go in [the open questions](open-questions.md). Each of the 36 premises of what code does that it
+    that no premise of what code does is only reasoned. The six cases it finds left out and in no open question
+    are in [the open questions](open-questions.md), written on 2026-11-12 before area 1. Each of the 36 premises of what code does that it
     finds checked by nothing gets the test its row names, the seven of risk high first. A test that fails is a bug
     of `docs/bugs.md`, and a test that passes makes the premise tested. A premise that no test reaches yet is an
     open question. Each area then reads, of its notes, the premises the inventory calls chosen, and the four it
