@@ -397,24 +397,17 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - Done, on 2026-11-12, bug 80, the trigger of the publications:
     [decision 0286](decisions/0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md). No pair of the pool
     reaches it, so a scenario of `src/postgres.test.ts` holds it, as the note says.
+  - Done, on 2026-11-12, bug 78, the reading of the log: [decision 0287](decisions/0287-a-reading-of-the-log-gives-each-partition-up-to-its-first-head.md).
   - Next, the other cases of the rule of decision 0284, one at a time, since each changes `src/storage/` and pins its
     case in `src/contract.test.ts`. Each is a note of its own that cites decision 0284 and adds itself to that note's
     status line. Its case is pinned in the test of the pool, and fails on the CI before the fix. The opinion of a
     Fable 5.2 agent of 2026-11-12, behind decision 0284, proposed each fix below, and each is reasoned until its test
     passes on the server.
-    1. Bug 78, `published` of `src/storage/log.ts`, the second half of the rule: a reading of several statements gives
-       of a partition only what its first statement saw committed. The fix proposed takes no lock. It keeps the map
-       that `heads` gives, and drops from each page a row whose partition is not behind or whose `seq` passes that
-       head. Two tests of `src/storage.test.ts` on `claude/premise-pairs-schemas-2-5e31db`, at `6730434` and
-       `9ace256`, write the rows by hand: `FAILING: a reading of the log gives no row of a partition past a row of it
-       that committed between its statements`, and the same between two pages. The test of a server `FAILING: a
-       reading of the log gives no row of a partition past one it skipped`, in `src/postgres.test.ts` at `6730434`,
-       holds the steps.
-    2. Bug 49, a deadlock of the sweep's batch and a step's deletion of its entity's replies. Under decision
+    1. Bug 49, a deadlock of the sweep's batch and a step's deletion of its entity's replies. Under decision
        0285 a batch never waits for a reply's row, and a step may still wait for a batch's. `forgetUnder` of [`src/storage/cluster.ts`](../src/storage/cluster.ts) deletes
        Cluster's rows in an order of its own, and is checked apart. Its test holds the two at their rows and expects
        no `DeadlockError`.
-    3. Bug 3, a reply to another entity's operation that stays for ever: the `NOT EXISTS` on the asker's row of
+    2. Bug 3, a reply to another entity's operation that stays for ever: the `NOT EXISTS` on the asker's row of
        `effecttea_entity_keys` is read unlocked. Locking that row `FOR SHARE` first fixes it. Two entities that end
        their work and answer each other in one step may then close a cycle, which decision 0222 turns into a crash,
        so it needs a note of its own that decides the order.

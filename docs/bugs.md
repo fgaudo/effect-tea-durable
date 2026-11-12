@@ -38,8 +38,8 @@ family gets a fix of its own.
   a test of rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their
   statements. Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does
   not read again on the row it then writes. Its rule is [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md): a statement that writes
-  or deletes a row on a condition reads the condition from a row it has locked. Bugs 25, 13 and 80 are its first
-  cases, fixed.
+  or deletes a row on a condition reads the condition from a row it has locked. Bugs 25, 13, 80 and 78 are its
+  first cases, fixed.
 - F, B, E and G are fixed. Family F is decided by
   [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), family E by
   [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md), family B by
@@ -422,26 +422,7 @@ family gets a fix of its own.
     program names. The fix begins at `reindex` of `src/storage/projections.ts`, which would refuse to run while its
     version is outranked, or write only where the stored row's version is not newer than its own. The
     [open question](open-questions.md#storage-and-reading) A reindex on Cluster.
-78. **Reproduced by rows written by hand: on a pool of PostgreSQL, a reading of the log may skip a row for ever.** A
-    cursor skips nothing, since the rows of one partition commit in the order of their `seq`
-    ([decisions 0038](decisions/archive/0038-what-happened-is-published-through-an-outbox.md),
-    [0137](decisions/archive/0137-the-log-is-ordered-within-a-partition.md)). That rule also needs the reading to see the log as it
-    stood at one moment, which holds on SQLite's one writer. On a pool of PostgreSQL
-    ([decisions 0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md),
-    [0222](decisions/0222-postgresql-with-many-connections.md)) each statement of `published` reads a snapshot of its
-    own. A step of one partition that commits between the reading's heads and its page, followed by the next step of
-    that partition, gives the second row and not the first, and an ack moves the cursor past the row never read. The
-    same holds between two pages. The tests `FAILING: a reading of the log gives no row of a partition past a row of
-    it that committed between its statements` and `FAILING: a reading of the log gives no row of a partition past a
-    row of it that committed between two pages`, in `src/storage.test.ts`, on
-    `claude/premise-pairs-schemas-2-5e31db` at `6730434` and `9ace256`, write the rows by hand between the reading's
-    statements, as a server would commit them. The test of a server, `FAILING: a reading of the log gives no row of a
-    partition past one it skipped` in `src/postgres.test.ts` at `6730434`, is written and has not run. A `fetch`
-    inside a caller's transaction at `READ COMMITTED`, under a fix by `snapshot` alone, is noticed and not checked.
-    The fix begins at `published` of `src/storage/log.ts`, which would read each partition only up to the head its
-    first statement read, or run in `snapshot` of `src/storage/held.ts`. The
-    [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
-    snapshot.
+78. **Fixed by [decision 0287](decisions/0287-a-reading-of-the-log-gives-each-partition-up-to-its-first-head.md)**, whose reading of the log gives of each partition only the rows up to the head its first statement read, so that on a pool a step that commits between its statements makes it skip no row. Reproduced first by rows written by hand between the reading's statements.
 79. **Fixed by `docs/design.md`**, under Databases, which says of the four readings of one snapshot what decisions
     0185 and 0222 decide: inside a caller's transaction each reads at the caller's level.
 80. **Fixed by [decision 0286](decisions/0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md)**, whose trigger of the outbox runs once for each statement and locks the publications of its rows in the order of their keys before it reads whether a row names one. Reproduced first by a test of `src/postgres.test.ts` on the CI's server, which drops the two rows of a publication in two transactions at once.

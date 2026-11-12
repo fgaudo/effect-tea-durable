@@ -721,7 +721,9 @@ with a requirement that no example has yet.
   [decision 0285](decisions/0285-a-batch-of-expire-skips-the-replies-a-step-holds.md), whose batch skips the
   replies a step holds, and bug 80 by
   [decision 0286](decisions/0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md), whose trigger locks
-  the publications in order. The other bugs are later cases of that rule, each with a note of its own. What is left would
+  the publications in order, and bug 78 by
+  [decision 0287](decisions/0287-a-reading-of-the-log-gives-each-partition-up-to-its-first-head.md), whose reading of the log gives each partition up to
+  its first head. The other bugs are later cases of that rule, each with a note of its own. What is left would
   be decided by:
   - the tests run against the CI's server, from the reviewers' branches;
   - a reading of every statement of `src/storage/` whose guard stands in a subquery or in an `INSERT … SELECT`, for
@@ -731,11 +733,7 @@ with a requirement that no example has yet.
     `forgetUnder` reads its subquery with a `LIMIT` once in each of three statements, each at a snapshot of its own on
     a pool. Whether the three read the same ids once Cluster runs on PostgreSQL, a test of Cluster on a pool;
   - for bug 49, not checked, a test that holds the sweep's batch and a step's deletion of its entity's replies at
-    their rows, and sees whether PostgreSQL ends one of them as a deadlock;
-  - for bug 78, a reading of the log that runs several statements, each with a snapshot of its own, and skips a row
-    of a partition that commits between them. Whether `published` reads each partition only up to the head it read
-    first, or runs in `snapshot`, and whether a `fetch` inside a caller's transaction at `READ COMMITTED` keeps the
-    finding under the second fix. Its test of a server is written and has not run.
+    their rows, and sees whether PostgreSQL ends one of them as a deadlock.
 - **The cases of a crash's retry not run yet.** The waker activates an entity a crash took out after `retry`, a
   door's step that loaded an entity and rolled back leaves it unsettled, and an entity is not unloaded while a
   door's step is uncommitted ([decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md)). Tests hold a failed write on one process, an expired lease
