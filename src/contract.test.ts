@@ -638,6 +638,24 @@ const bug111: Held = {
   pair: [{ _tag: 'Prune' }, { _tag: 'Prune' }],
   gate: 'effecttea_projections',
 }
+// The examples of bug 49 are an `expire` beside a step that deletes its entity's replies past their time, two of them.
+// The batch locks the replies in the order of their times, and the step in an order of its plan, which may be the
+// other. The row of one reply is locked, so that each of the two holds the other reply or waits for it when the lock
+// goes. A batch that waited for a reply's row, as before decision 0285, closes a cycle with the step where their
+// orders differ. The examples write the two replies in both orders, and lock each of them.
+const bug49: ReadonlyArray<Held> = ([['s1', 's2'], ['s2', 's1']] as const).flatMap((order) =>
+  (['s1', 's2'] as const).map((locked): Held => ({
+    before: order.map((requestId, at) => ({
+      _tag: 'Set' as const,
+      id: 'a',
+      label: at === 0 ? 'x' : 'y',
+      keep: brief,
+      requestId,
+    })),
+    pair: [{ _tag: 'Expire' }, { _tag: 'Set', id: 'a', label: 'z', keep: 'forever', requestId: 's3' }] as const,
+    gate: { reply: locked, of: 'a' },
+  }))
+)
 test.skipIf(server === undefined)(
   'two calls held at a statement on a pool answer as one order of them',
   () =>
@@ -645,6 +663,7 @@ test.skipIf(server === undefined)(
       ...Array.from({ length: 8 }, () => bug25),
       ...Array.from({ length: 8 }, () => bug13),
       ...Array.from({ length: 8 }, () => bug111),
+      ...Array.from({ length: 2 }, () => bug49).flat(),
     ]),
   1_200_000,
 )
