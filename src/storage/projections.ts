@@ -507,7 +507,7 @@ export const projectionsOf = <T extends Types>(held: Held<T>): Pick<
         // The row is written only if the state it was computed from is still the one stored, in one statement
         // (decision 0070). A step that committed since wrote its own row, which this would replace with a
         // projection the entity has moved past. The entity's row is locked, so that on a pool the guard is read
-        // again on the state a step committed while the statement waited (decision 9998).
+        // again on the state a step committed while the statement waited (decision 0284).
         const rewritten = yield* rows('effecttea_projections', Rows.id)(sql`
           INSERT INTO effecttea_projections (name, id, projection, indexes, version)
           SELECT name, id, CAST(${JSON.stringify(shown.projection)} AS TEXT), CAST(${

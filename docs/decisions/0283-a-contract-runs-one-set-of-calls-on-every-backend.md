@@ -1,9 +1,8 @@
-# 9999. A test of a contract runs one set of calls on every backend, Cluster's decided answers in one place
+# 0283. A test of a contract runs one set of calls on every backend, Cluster's decided answers in one place
 
 **Status:** proposed, 2026-11-12, for the step The tests of a contract on every backend of the
-[roadmap](../roadmap.md). Its number is given when it is merged into `main`, since the second reading of the premise
-review takes notes on `main` at the same time. It runs on Cluster too
-the calls of [decision 0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) that both dialects answer alike.
+[roadmap](../roadmap.md). It was written on the branch `claude/contract-tests-c7e2a1`, whose job `postgres` of the CI
+ran the tests of a server, and merged into `main` on 2026-11-12. It runs on Cluster too the calls of [decision 0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) that both dialects answer alike.
 
 ## Context
 
@@ -58,7 +57,7 @@ waited: a creation whose projection holds U+0000 in an index.
   is bug 25 of [`docs/bugs.md`](../bugs.md): a `reindex` beside a message wrote the projection of the state before the
   message over the row its step committed. Its case, as fast-check shrank it, is pinned on the table of projections,
   where it fails at its first run against the code before
-  [decision 9998](9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md), which fixes it. A pinned case names its table, since the place of a table among the
+  [decision 0284](0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md), which fixes it. A pinned case names its table, since the place of a table among the
   library's may change.
 
 ## What it rests on
@@ -83,7 +82,7 @@ waited: a creation whose projection holds U+0000 in an index.
   equal those of a new database.
 - That the runners start within a minute: **seen**, in the runs of the test on the maintainer's machine.
 - That two calls held at a statement on a pool answer as one order of them: **tested**, by a hundred runs in the job
-  `postgres` of the CI, on the push of `claude/contract-tests-c7e2a1` with decision 9998. Before that decision, with
+  `postgres` of the CI, on the push of `claude/contract-tests-c7e2a1` with decision 0284. Before that decision, with
   `reindex` among the pairs, it **failed**, which is bug 25.
 - That some pairs are held at once: **seen**, in 6 of the hundred runs of the CI, where both calls waited at the
   lock. The other runs still run their two calls at once on two connections, unaligned. The test fails a run of 50

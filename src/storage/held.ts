@@ -153,7 +153,7 @@ export const heldOf = <T extends Types>(
    * The clause that locks the rows a statement reads its condition from, on PostgreSQL. A statement that writes or
    * deletes a row on a condition reads the condition from a row it has locked: on a pool at `READ COMMITTED` the
    * statement then waits for a transaction that holds the row, and reads the condition again on the row committed
-   * (decision 9998). On SQLite one transaction writes at a time, and the clause is empty.
+   * (decision 0284). On SQLite one transaction writes at a time, and the clause is empty.
    */
   const lockingTheCondition = sql.literal(dialect === 'pg' ? 'FOR UPDATE' : '')
 

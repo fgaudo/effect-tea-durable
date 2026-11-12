@@ -366,31 +366,82 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   families C and D of [`docs/bugs.md`](bugs.md). One set of requests runs alike on each way the library runs, and the
   answers, the projections and what an operator reads must be the same on each. The ways are SQLite and PostgreSQL
   on one process, PostgreSQL with a pool on the CI's server, and Cluster with two runners on one file. Its note is
-  [decision 9999](decisions/9999-a-contract-runs-one-set-of-calls-on-every-backend.md), `proposed`, whose number is
-  given when the step's branch is merged into `main`. A test of the runtime that holds a rule of one process then
-  runs on Cluster too, where the rule is said to hold there, so that a rule of one process that holds otherwise on
-  Cluster fails a test. Bugs 2, 3, 10, 11 and 12 are cases of it. The step comes before the test of invariants,
-  which runs on Cluster and on a pool through it.
-  - Done, on 2026-11-12, on the branch `claude/contract-tests-c7e2a1`: [`src/contract.test.ts`](../src/contract.test.ts),
-    renamed from `src/dialects.test.ts`. Its property `every backend answers every call alike` runs the calls
-    fast-check generates on SQLite, on PostgreSQL and on Cluster with two runners that the runs share, and Cluster's
-    answer to a creation the program dies on is written there once. It passed 300 runs under `SCHEDULES=all`.
+  [decision 0283](decisions/0283-a-contract-runs-one-set-of-calls-on-every-backend.md), `proposed`, rewritten in place
+  while the step is under way and taken by the commit that takes the step out of this file. The rule of family D is
+  [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md), accepted. The maintainer
+  chose on 2026-11-12 to run this step beside the second reading of the premise review, though the steps above come
+  first in this file. Bugs 2, 3, 10, 11 and 12 are cases of it.
+  - Done, on 2026-11-12: [`src/contract.test.ts`](../src/contract.test.ts), renamed from `src/dialects.test.ts`. Its
+    property `every backend answers every call alike` runs the calls fast-check generates on SQLite, on PostgreSQL and
+    on Cluster with two runners, which start once in a `beforeAll` and which the runs share. Each run prefixes its ids
+    and request ids, and every reading names the run by the index `run`. Cluster's answer to a creation the program
+    dies on, which decision 0160 decides, is marked once there, by `diesOn` and `pastWaits`. It passed 300 runs under
+    `SCHEDULES=all`.
   - Done, on 2026-11-12, the pool, for family D: the test `two calls held at a statement on a pool answer as one
-    order of them` of `src/contract.test.ts` runs two calls at once while a connection of its own holds a lock of a
-    table of the library. It runs only on a server, so the branch was pushed for the job `postgres` of the CI, which
-    passed a hundred runs. It reproduced bug 25 of `docs/bugs.md`, which
-    [decision 9998](decisions/9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md) fixes by the rule of the
-    family: a statement that writes or deletes a row on a condition reads the condition from a row it has locked.
-  - Next, the other cases of that rule, each a note of its own with its case pinned in the test of the pool: `expire`
-    (bug 13), the trigger of the publications (bug 80), the reading of the log (bug 78), then bugs 49 and 3. The
-    reviewers' branches hold a test of a server for each of 13, 78 and 80, not run.
-  - Then the pool's gate: both calls waited at the lock in only 6 of a hundred runs, since the table locked is drawn
-    among every table of the library. A gate drawn among the tables both calls of a pair write would hold more pairs
-    at once.
-  - Then the calls of the contract grow: an operator's `resume`, `discard` and readings, an operation that sends to
-    another entity, a timer, and `expire`, each on every backend. Bugs 10 and 11 are their first cases on Cluster.
+    order of them`, in the same file. A history makes the entities `a` and `b`, sends a few messages one at a time,
+    then runs two calls at once through `onPool`: a message `Add`, a creation, `expire`, `reindex` or `prune`. A
+    connection of its own holds `LOCK TABLE ... IN ACCESS EXCLUSIVE MODE` on one table of the library, drawn by
+    `gate`, and lets it go once both calls wait or after a second. The answers and the readings after must equal one
+    of the two orders on SQLite, by `serially`. A case pinned is an example of `onPool`, whose `gate` names its table.
+    It runs a hundred runs, only where `POSTGRES_URL` names a server. It reproduced bug 25, which decision 0284 fixes.
+  - How a test of a server runs. The maintainer's machine has no server of PostgreSQL: no Docker, and WSL does not
+    start. So a session pushes its work and reads the job `postgres` of the CI, which runs `bun run test:postgres`
+    against PostgreSQL 17 on every push. `gh run list --branch <branch> --limit 1` gives the run, and
+    `gh run view --job <id> --log` its log, where the test prints `two calls held at once in N of M runs`. A test that
+    should fail before a fix is pushed first on a branch of its own, `claude/<name>`, without the fix, so that `main`
+    stays green. The fix is then committed on that branch and pushed, and the branch is fast-forwarded into `main` once
+    its CI passes. A note written on such a branch takes the next free number of `main` when it is merged.
+  - Next, the other cases of the rule of decision 0284, one at a time, since each changes `src/storage/` and pins its
+    case in `src/contract.test.ts`. Each is a note of its own that cites decision 0284 and adds itself to that note's
+    status line. Its case is pinned in the test of the pool, and fails on the CI before the fix. The opinion of a
+    Fable 5.2 agent of 2026-11-12, behind decision 0284, proposed each fix below, and each is reasoned until its test
+    passes on the server.
+    1. Bug 13, `expire` of [`src/storage/entities.ts`](../src/storage/entities.ts). Its batch selects the replies by a
+       subquery read from its snapshot, and deletes a reply a step wrote again with a new time. The fix proposed: the
+       subquery ends `ORDER BY until LIMIT <batch> FOR UPDATE SKIP LOCKED`, and so does the subquery of
+       `effecttea_given_requests`. A row a step committed is read again and fails `until <= at`, and a row a step
+       holds is skipped. A batch may then give fewer rows than `batch`, so the loop must not end a sweep on
+       `replies < batch` alone. `lockingTheCondition` of `src/storage/held.ts` grows a form with `SKIP LOCKED`, so
+       that the rule keeps one place. The test `FAILING: expire keeps a reply a step wrote again with a new time
+       while its batch waited`, in `src/postgres.test.ts` on `claude/premise-review-messages-975dd7` at `38db98d`,
+       shows the sequence. The pool's pairs need a message whose retry comes with another `keep`, so that a step
+       writes its reply again with a new time.
+    2. Bug 80, the trigger of the publications in [`src/storage/tables.ts`](../src/storage/tables.ts). Two prunes at
+       once each see the other's row of the outbox, and both keep a publication no row names. The fix proposed: the
+       trigger's function locks the publication's row `FOR UPDATE` before its `NOT EXISTS`, and `pruneBatch` of
+       [`src/storage/log.ts`](../src/storage/log.ts) locks its rows `ORDER BY position ... FOR UPDATE` first, so that
+       two batches take the publications in one order. The program of the pool's test has no topic, so its histories
+       publish nothing. The case needs a program with a topic, and a reading of `effecttea_publications` after the
+       pair. The test `FAILING: a publication goes with the last row that names it, though two transactions drop its
+       rows at once`, on `claude/premise-pairs-queries-tables-b4f457` at `bc445fb`, shows the sequence.
+    3. Bug 78, `published` of `src/storage/log.ts`, the second half of the rule: a reading of several statements gives
+       of a partition only what its first statement saw committed. The fix proposed takes no lock. It keeps the map
+       that `heads` gives, and drops from each page a row whose partition is not behind or whose `seq` passes that
+       head. Two tests of `src/storage.test.ts` on `claude/premise-pairs-schemas-2-5e31db`, at `6730434` and
+       `9ace256`, write the rows by hand: `FAILING: a reading of the log gives no row of a partition past a row of it
+       that committed between its statements`, and the same between two pages. The test of a server `FAILING: a
+       reading of the log gives no row of a partition past one it skipped`, in `src/postgres.test.ts` at `6730434`,
+       holds the steps.
+    4. Bug 49, a deadlock of the sweep's batch and a step's deletion of its entity's replies. It may follow from
+       `SKIP LOCKED` of bug 13. `forgetUnder` of [`src/storage/cluster.ts`](../src/storage/cluster.ts) deletes
+       Cluster's rows in an order of its own, and is checked apart. Its test holds the two at their rows and expects
+       no `DeadlockError`.
+    5. Bug 3, a reply to another entity's operation that stays for ever: the `NOT EXISTS` on the asker's row of
+       `effecttea_entity_keys` is read unlocked. Locking that row `FOR SHARE` first fixes it. Two entities that end
+       their work and answer each other in one step may then close a cycle, which decision 0222 turns into a crash,
+       so it needs a note of its own that decides the order.
+  - Then the pool's gate. Both calls waited at the lock in 6 and in 13 of a hundred runs, since `gate` draws the
+    table among every table of the library. A gate drawn among the tables both calls of the pair write holds more
+    pairs at once. The test fails a run of 50 or more in which no pair waited at once.
+  - Then the calls of the contract grow, on every backend: an operator's `resume`, `discard`, `inspect` and
+    `suspended`, an operation that sends to another entity, a timer, `expire` and `prune`. Bugs 10 and 11 are their
+    first cases on Cluster. A difference of Cluster that a note decides is marked beside `diesOn`, as decision 0283
+    says, and a difference no note decides is a bug.
   - Then the tests of the runtime that hold a rule of one process, which `src/runtime.test.ts` holds, run on Cluster
-    too where the rule is said to hold there.
+    too where the rule is said to hold there, so that a rule of one process that holds otherwise on Cluster fails a
+    test. The helpers `onFile`, `start` and `withholding` of [`src/cluster.test.ts`](../src/cluster.test.ts) start
+    the runners.
+  - The step leaves this file when the parts above are done, and decision 0283 is taken, `accepted`, by that commit.
 
 - **A test of invariants over generated histories.** It is the second kind of test of `AGENTS.md`, which the library
   does not have yet. fast-check generates histories of commands: a message under a new request id or a retried one,
@@ -411,6 +462,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   over generated messages, is where it begins. A failing history is shrunk by fast-check, and its shortest form is
   pinned as a case. On Cluster and on PostgreSQL with a pool, the invariants run through the step The tests of a
   contract on every backend, above.
+  - It starts once two steps above are done: The tests of a contract on every backend, whose backends the invariants
+    run on, and What a deploy may change of a program, whose table gives the variants of a deploy. Nothing of it is
+    written yet. Its first part needs neither: the layer on the rehearsal, with histories without deploys, in a file
+    of its own beside `src/rehearse.property.test.ts`, and the invariants that need no deploy.
+  - The pieces it reuses are written: the prefix of a run and the shared runners of `src/contract.test.ts`, `onPool`
+    for two commands at once on a pool, and the scheduler of `src/testing.ts` with its strategies. Its note is a
+    `proposed` note of its own, made with its first part.
 
 - **The tests pruned by the mutations.** Once the test of invariants exists, `scripts/mutate.ts` takes out each
   rule the notes decide, one at a time. A test of a scenario that fails only where a test of the four kinds of

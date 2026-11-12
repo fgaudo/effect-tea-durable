@@ -37,7 +37,7 @@ family gets a fix of its own.
 - D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78 and 80. Its test is the same step:
   a test of rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their
   statements. Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does
-  not read again on the row it then writes. Its rule is [decision 9998](decisions/9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md): a statement that writes
+  not read again on the row it then writes. Its rule is [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md): a statement that writes
   or deletes a row on a condition reads the condition from a row it has locked. Bug 25 is its first case, fixed.
 - F, B, E and G are fixed. Family F is decided by
   [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), family E by
@@ -190,7 +190,7 @@ family gets a fix of its own.
     `src/cluster.test.ts`, on `claude/premise-review-schemas-2-b06280` at `3e592de`. The fix begins at `forget`
     of `src/storage/log.ts`, or at `enlisted` of `src/runtime.ts`. The
     [open question](open-questions.md#storage-and-reading) The consumers of several runners on Cluster.
-25. **Fixed by [decision 9998](decisions/9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md)**, under which `reindex` locks the entity's row it reads the state from, so that on a pool it reads the state a step committed while it waited. Reproduced first by the test of a contract of the pool on the CI's server.
+25. **Fixed by [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md)**, under which `reindex` locks the entity's row it reads the state from, so that on a pool it reads the state a step committed while it waited. Reproduced first by the test of a contract of the pool on the CI's server.
 26. **Fixed by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md)**, which refuses a call that runs a step or waits for one within a transaction of the client.
 27. **Reasoned: on Cluster, the ids a process of the old code keeps under a renamed name stay for ever in
     Cluster's tables.** A process with no runner address deploys any program

@@ -716,7 +716,7 @@ with a requirement that no example has yet.
   writes the projection of a state over the row a step committed
   ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). They are bugs 13 and 25 of
   the [roadmap](roadmap.md), each with a test of `src/postgres.test.ts` that no run has reached. Bug 25 is fixed by
-  [decision 9998](decisions/9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md), whose rule is that a statement that writes or deletes a row on a condition
+  [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md), whose rule is that a statement that writes or deletes a row on a condition
   reads the condition from a row it has locked. The other bugs are later cases of that rule, each with a note of its
   own. What is left would be decided by:
   - the tests run against the CI's server, from the reviewers' branches;

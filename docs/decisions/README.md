@@ -65,7 +65,7 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0250](0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md) | `bun test` holds its budget by samples, and the spikes and the tests on a clock that is real run on their own |  |
 | [0254](0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) | A check of the project runs against the case it refuses: a check gets a sample of each case, a list of files is read from the disk, and a pinned seed of an explored test runs against its rule taken out |  |
 | [0255](0255-a-data-directory-of-pglite-is-held-while-its-client-is-open.md) | A data directory of PGlite is held in the process while the client a runtime launched on is open |  |
-| [9999](9999-a-contract-runs-one-set-of-calls-on-every-backend.md) | A test of a contract runs one set of calls on every backend, and Cluster's decided answers are written there once (proposed, numbered at its merge) |  |
+| [0283](0283-a-contract-runs-one-set-of-calls-on-every-backend.md) | A test of a contract runs one set of calls on every backend, and Cluster's decided answers are written there once (proposed, for the step The tests of a contract on every backend) |  |
 | [0267](0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md) | A file of SQLite is held by a file of its own beside it, by a transaction that writes no row, and the hold refuses no reader |  |
 
 ## The machine and the program
@@ -251,8 +251,8 @@ each read and found, are in [`reviews.md`](reviews.md).
 | [0214](0214-a-rejections-reason-is-given-as-a-caller-reads-it.md) | A rejection's reason is given as a caller reads it, decoded from its JSON |  |
 | [0215](0215-the-runtimes-tables-are-made-in-the-schema-of-the-search-path.md) | The runtime's tables are made in the schema the client's `search_path` names, one runtime per database | [0216](0216-the-tables-are-made-by-effects-migrator.md), [0217](0217-tea-migrations-is-named-in-the-schema-the-tables-are-made-in.md) |
 | [0062](archive/0062-a-row-is-read-through-a-schema.md) | A row is read through a schema, or not at all | [0077](archive/0077-the-waker-tries-an-entity-it-cannot-load-again.md), [0259](0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md) |
-| [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md) | `reindex` writes a row only over the state it was computed from | [9998](9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md) |
-| [9998](9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md) | A statement that writes on a condition reads it from a row it has locked, and `reindex` locks its entity (numbered at its merge) |  |
+| [0070](archive/0070-reindex-writes-a-row-only-over-its-state.md) | `reindex` writes a row only over the state it was computed from | [0284](0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md) |
+| [0284](0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md) | A statement that writes on a condition reads it from a row it has locked, and `reindex` locks its entity |  |
 | [0072](archive/0072-the-log-shows-what-a-step-changed.md) | The log shows what a step changed, as the program deployed computes it | [0138](archive/0138-the-log-publishes-topics.md) |
 | [0098](archive/0098-json-is-effect-s.md) | `Json` is Effect's |  |
 

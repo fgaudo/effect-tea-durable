@@ -588,9 +588,9 @@ const onPool = (histories: fc.Arbitrary<Held>, runs: number, examples: ReadonlyA
 // Only `bun run test:postgres` reaches this test, since `bun test` on one machine has no server, so it holds the
 // budget of the job `postgres` rather than of `bun test`: a hundred runs, a minute or two (decision 0250).
 // Its examples are the history of bug 25 of `docs/bugs.md`, as fast-check shrank it on the CI's server: a `reindex`
-// beside a message wrote the projection of the state before the message (decision 9998). They lock the table of
+// beside a message wrote the projection of the state before the message (decision 0284). They lock the table of
 // projections, where the message's step waits holding its entity's row, and the `reindex` waits after reading the
-// state. Whichever of the two then takes the table first, the code before decision 9998 fails when the step does.
+// state. Whichever of the two then takes the table first, the code before decision 0284 fails when the step does.
 const bug25: Held = {
   before: [],
   pair: [{ _tag: 'Reindex' }, { _tag: 'Set', id: 'a', label: 'x', keep: 'forever', requestId: 's1' }],

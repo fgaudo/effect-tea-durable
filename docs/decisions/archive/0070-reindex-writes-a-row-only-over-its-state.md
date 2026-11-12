@@ -2,7 +2,7 @@
 
 **Status:** accepted, 2026-10-31. Replaces the consequence of [decision 0032](0032-a-projection-is-a-row.md) that
 lets `reindex` write a row back over a step. Its guard did not hold on a pool of PostgreSQL, where the statement
-reads the state from its snapshot: [decision 9998](../9998-a-statement-reads-its-condition-from-a-row-it-has-locked.md) locks the entity's row it reads the state from.
+reads the state from its snapshot: [decision 0284](../0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md) locks the entity's row it reads the state from.
 
 ## Context
 

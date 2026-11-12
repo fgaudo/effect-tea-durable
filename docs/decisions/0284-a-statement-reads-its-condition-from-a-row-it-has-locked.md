@@ -1,8 +1,7 @@
-# 9998. A statement that writes on a condition reads it from a row it has locked, and `reindex` locks its entity
+# 0284. A statement that writes on a condition reads it from a row it has locked, and `reindex` locks its entity
 
 **Status:** accepted, 2026-11-12, as the fix of bug 25 of [`docs/bugs.md`](../bugs.md), and the rule of family D.
-Its number is given when it is merged into `main`, as
-[decision 9999](9999-a-contract-runs-one-set-of-calls-on-every-backend.md)'s is. It changes
+Its test is the test of the pool of [decision 0283](0283-a-contract-runs-one-set-of-calls-on-every-backend.md). It changes
 [decision 0070](archive/0070-reindex-writes-a-row-only-over-its-state.md), whose guard on the state did not hold on a
 pool of PostgreSQL. The maintainer chose the rule on 2026-11-12, after an opinion of a Fable 5.2 agent.
 
