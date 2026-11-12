@@ -38,8 +38,8 @@ family gets a fix of its own.
   a test of rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their
   statements. Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does
   not read again on the row it then writes. Its rule is [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md): a statement that writes
-  or deletes a row on a condition reads the condition from a row it has locked. Bugs 25 and 13 are its first cases,
-  fixed.
+  or deletes a row on a condition reads the condition from a row it has locked. Bugs 25, 13 and 80 are its first
+  cases, fixed.
 - F, B, E and G are fixed. Family F is decided by
   [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), family E by
   [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md), family B by
@@ -444,21 +444,7 @@ family gets a fix of its own.
     snapshot.
 79. **Fixed by `docs/design.md`**, under Databases, which says of the four readings of one snapshot what decisions
     0185 and 0222 decide: inside a caller's transaction each reads at the caller's level.
-80. **Reasoned, its test written: on a pool of PostgreSQL, two prunes at once may each keep a publication no row
-    names.** A publication goes with the last row of the outbox that names it, by a trigger of the statement that
-    drops the row ([decisions 0154](decisions/archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md),
-    [0157](decisions/archive/0157-the-storage-speaks-sqlite-and-postgresql.md)), which holds while no other transaction drops a row
-    of the same publication. On a pool at `READ COMMITTED`
-    ([decision 0222](decisions/0222-postgresql-with-many-connections.md)), the sweep and a caller's `prune` run
-    batches of 256 rows at once ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)).
-    Two batches that drop different rows of one publication each see the other's row still there, and both keep the
-    publication, which no later statement drops. It costs storage alone, since no reading joins a publication no row
-    names. The test `FAILING: a publication goes with the last row that names it, though two transactions drop its
-    rows at once`, in `src/postgres.test.ts`, on `claude/premise-pairs-queries-tables-b4f457` at `bc445fb`, is written
-    and has not run. The fix begins at the trigger of `src/storage/tables.ts`, which would lock the publication's row
-    first, or at `prune` of `src/storage/log.ts`, by an advisory lock of the program. The
-    [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its
-    snapshot.
+80. **Fixed by [decision 0286](decisions/0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md)**, whose trigger of the outbox runs once for each statement and locks the publications of its rows in the order of their keys before it reads whether a row names one. Reproduced first by a test of `src/postgres.test.ts` on the CI's server, which drops the two rows of a publication in two transactions at once.
 81. **Fixed by [decision 0256](decisions/0256-a-call-that-waits-for-a-step-is-refused-within-a-transaction.md)**, whose refusal holds on a pool too, as a test on the CI's server checks.
 82. **Fixed by [decision 0262](decisions/0262-a-sendfrom-stands-for-a-run-no-entity-draws.md)**, in either order of the two sends.
 83. **Verified false by a reading, as [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) says**: the runtime and the rehearsal draw their request ids from sets that share no id.

@@ -394,20 +394,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - Done, on 2026-11-12, bug 13, `expire`: [decision 0285](decisions/0285-a-batch-of-expire-skips-the-replies-a-step-holds.md).
     Its case in the test of the pool is `bug13`. Its `gate` locks the row of one reply, and not a table, since a
     message's step reads its reply before its transaction, and a table locked would stop the step there.
+  - Done, on 2026-11-12, bug 80, the trigger of the publications:
+    [decision 0286](decisions/0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md). No pair of the pool
+    reaches it, so a scenario of `src/postgres.test.ts` holds it, as the note says.
   - Next, the other cases of the rule of decision 0284, one at a time, since each changes `src/storage/` and pins its
     case in `src/contract.test.ts`. Each is a note of its own that cites decision 0284 and adds itself to that note's
     status line. Its case is pinned in the test of the pool, and fails on the CI before the fix. The opinion of a
     Fable 5.2 agent of 2026-11-12, behind decision 0284, proposed each fix below, and each is reasoned until its test
     passes on the server.
-    1. Bug 80, the trigger of the publications in [`src/storage/tables.ts`](../src/storage/tables.ts). Two prunes at
-       once each see the other's row of the outbox, and both keep a publication no row names. The fix proposed: the
-       trigger's function locks the publication's row `FOR UPDATE` before its `NOT EXISTS`, and `pruneBatch` of
-       [`src/storage/log.ts`](../src/storage/log.ts) locks its rows `ORDER BY position ... FOR UPDATE` first, so that
-       two batches take the publications in one order. The program of the pool's test has no topic, so its histories
-       publish nothing. The case needs a program with a topic, and a reading of `effecttea_publications` after the
-       pair. The test `FAILING: a publication goes with the last row that names it, though two transactions drop its
-       rows at once`, on `claude/premise-pairs-queries-tables-b4f457` at `bc445fb`, shows the sequence.
-    2. Bug 78, `published` of `src/storage/log.ts`, the second half of the rule: a reading of several statements gives
+    1. Bug 78, `published` of `src/storage/log.ts`, the second half of the rule: a reading of several statements gives
        of a partition only what its first statement saw committed. The fix proposed takes no lock. It keeps the map
        that `heads` gives, and drops from each page a row whose partition is not behind or whose `seq` passes that
        head. Two tests of `src/storage.test.ts` on `claude/premise-pairs-schemas-2-5e31db`, at `6730434` and
@@ -415,11 +410,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
        that committed between its statements`, and the same between two pages. The test of a server `FAILING: a
        reading of the log gives no row of a partition past one it skipped`, in `src/postgres.test.ts` at `6730434`,
        holds the steps.
-    3. Bug 49, a deadlock of the sweep's batch and a step's deletion of its entity's replies. Under decision
+    2. Bug 49, a deadlock of the sweep's batch and a step's deletion of its entity's replies. Under decision
        0285 a batch never waits for a reply's row, and a step may still wait for a batch's. `forgetUnder` of [`src/storage/cluster.ts`](../src/storage/cluster.ts) deletes
        Cluster's rows in an order of its own, and is checked apart. Its test holds the two at their rows and expects
        no `DeadlockError`.
-    4. Bug 3, a reply to another entity's operation that stays for ever: the `NOT EXISTS` on the asker's row of
+    3. Bug 3, a reply to another entity's operation that stays for ever: the `NOT EXISTS` on the asker's row of
        `effecttea_entity_keys` is read unlocked. Locking that row `FOR SHARE` first fixes it. Two entities that end
        their work and answer each other in one step may then close a cycle, which decision 0222 turns into a crash,
        so it needs a note of its own that decides the order.
@@ -428,7 +423,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     pairs at once. The test fails a run of 50 or more in which no pair waited at once.
   - Then the calls of the contract grow, on every backend: an operator's `resume`, `discard`, `inspect` and
     `suspended`, an operation that sends to another entity, a timer, `expire` and `prune`. Bugs 10 and 11 are their
-    first cases on Cluster. A difference of Cluster that a note decides is marked beside `diesOn`, as decision 0283
+    first cases on Cluster. The pool's histories grow too, with a deploy that declares a consumer and an ack between
+    the snapshot of a batch of `prune` and its commit, so that the pool reaches bug 80, which a scenario holds now.
+    A difference of Cluster that a note decides is marked beside `diesOn`, as decision 0283
     says, and a difference no note decides is a bug.
   - Then the tests of the runtime that hold a rule of one process, which `src/runtime.test.ts` holds, run on Cluster
     too where the rule is said to hold there, so that a rule of one process that holds otherwise on Cluster fails a
