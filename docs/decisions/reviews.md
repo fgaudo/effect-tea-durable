@@ -5539,3 +5539,255 @@ The notes changed or cited by the area that hold Cluster's rules other than 0171
 couples over a hundred more to them through a few long declarations of `src/machine.ts` and
 `src/storage/entities.ts`. The reading went where the area's rules are kept: the reply's time, its reading, its
 deletion, and Cluster's rows of a caller's request.
+
+## 2026-11-12: premise review, second reading, of Versions and deploys
+
+Read on `claude/premise-review-2-area-3-a78576`, cut from `main` at `b5dc7a1`, by a session that read none of the
+earlier reports of `reviews.md`. The failing tests are in commit `590bcbf`. It read the twelve notes of area 3, the
+notes the index lists as changing them, the notes that cite them, and the notes a comment of `src/` cites in one
+declaration with them, by `bun scripts/premise-pairs.ts --list`. It found three bugs, each reproduced by a test that
+fails, and left no lead unchecked.
+
+### The notes read
+
+The list has 107 notes. Most of the notes coupled by the code alone are cited by `started` of `src/runtime.ts`,
+`Storage` of `src/storage.ts` or `tables.text` of `src/storage/tables.ts`, which cite thirty to forty notes each. Those
+were not read.
+
+| Note | Title | Role | How read |
+|---|---|---|---|
+| 0015 | A request belongs to its sender, and work to its entity | cites a note of the area | not at all |
+| 0018 | Operations are data, and their runners never see the state | cites a note of the area | not at all |
+| 0020 | A new program is checked against the work it finds stored | of the area | whole with the code |
+| 0021 | A reply to an entity is kept while the work that asked is stored | cites a note of the area | not at all |
+| 0022 | A new program keeps how its work is delivered, and its name | of the area | whole with the code |
+| 0025 | A program gives the schemas of its operations and of its projection | cites a note of the area | not at all |
+| 0033 | A program declares its keys | cites a note of the area | not at all |
+| 0034 | An operation answers the messages of its runner | cites a note of the area | not at all |
+| 0036 | A program carries its migrations, and a migration is a function on the JSON | of the area | whole with the code |
+| 0037 | The machine checks the declared keys | cites a note of the area; cited by the code beside 0036 at `program.ts:635` | not at all |
+| 0038 | What happened is published through an outbox | cites a note of the area | not at all |
+| 0043 | A row no version reads fails what reads it, not the process | of the area; changes 0036 | whole with the code |
+| 0046 | A receiver that crashes is sent to again | cites a note of the area | not at all |
+| 0048 | A caller's request belongs to its sender | cites a note of the area | not at all |
+| 0051 | A deploy that fails leaves nothing running | of the area | whole with the code |
+| 0054 | A program is checked where it enters | cited by the code beside 0051,0075,0102,0156,0247 at `check.ts:67`, `rehearse.ts:179`, `runtime.ts:1041` | not at all: coupled only by a declaration that cites many notes |
+| 0056 | Nothing waits for an operation under the permit | cites a note of the area | not at all |
+| 0057 | The machine gives what is written | cited by the code beside 0043,0247 at `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0058 | Work is compared by what is stored | of the area; changes 0036 | whole with the code |
+| 0061 | Only what the program does is its defect | cites a note of the area | not at all |
+| 0062 | A row is read through a schema, or not at all | cites a note of the area; cited by the code beside 0043 at `storage/held.ts:75` | not at all |
+| 0064 | The program is not the machine's state, and a fix is a deploy | changes 0020 | whole with the code |
+| 0065 | The machine holds no replies, and a receive is given the one it asks for | cited by the code beside 0022,0043,0156,0247 at `machine.ts:438`, `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0070 | `reindex` writes a row only over the state it was computed from | cited by the code beside 0043,0247 at `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0071 | A process starts the entities whose mailbox holds a message | cited by the code beside 0043,0051,0075,0102,0156,0247 at `runtime.ts:1041`, `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0072 | The log shows what a step changed, as the program deployed computes it | cites a note of the area | not at all |
+| 0075 | A name is deployed once in a process | of the area | whole with the code |
+| 0076 | A process over its capacity unloads the least recently used | cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041`, `runtime.ts:168`, `runtime.ts:558` | not at all: coupled only by a declaration that cites many notes |
+| 0077 | The waker tries an entity it cannot load again, after the retry | changes 0043 | not at all |
+| 0078 | A timer due is no spare entity, and a registered deploy keeps its name | changes 0075; cited by the code beside 0051,0156 at `runtime.ts:1041`, `runtime.ts:168` | whole with the code |
+| 0080 | A database is held by one runtime | cites a note of the area; cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041` | not at all |
+| 0085 | On Cluster, a request is keyed and answered as on one process | cites a note of the area; cited by the code beside 0043,0247 at `storage.ts:81` | not at all |
+| 0092 | On Cluster, the runtime keeps its entities, and learns its shards from a singleton of each | cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041` | not at all: coupled only by a declaration that cites many notes |
+| 0100 | A rejection's reason is kept as long as a reply of its version is stored | of the area; changes 0036 | whole with the code |
+| 0101 | A moved clock gives a fiber it did not wake one turn | cites a note of the area | not at all |
+| 0102 | A deploy interrupted before it registers undoes itself whole | of the area; changes 0051 | whole with the code |
+| 0104 | The runtime's tests choose where fibers yield | cites a note of the area | not at all |
+| 0109 | `settled` waits for an entity unloading | cited by the code beside 0075 at `runtime.ts:558` | not at all: coupled only by a declaration that cites many notes |
+| 0110 | Detached work is counted until it ends, however it ends | cites a note of the area | not at all |
+| 0114 | An operator sees the suspended entities, and what a resume or a discard did | cited by the code beside 0043,0156,0247 at `storage.ts:81`, `storage/rows.ts:121`, `storage/tables.ts:271` | not at all: coupled only by a declaration that cites many notes |
+| 0119 | A planned stop drains the at-most-once operations | cites a note of the area; cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041`, `runtime.ts:168`, `runtime/process.ts:381` | not at all |
+| 0121 | A read answers from the row of the read model | cites a note of the area; cited by the code beside 0043,0247 at `storage.ts:81` | not at all |
+| 0122 | `reindex` leaves a row it cannot compute, and names its entity | changes 0043 | not at all |
+| 0123 | An idempotent runner may be given the digest of its key, as its delivery | cites a note of the area | not at all |
+| 0125 | A caller's reply is kept as long as its boundary says | cited by the code beside 0043,0156,0247 at `storage.ts:81`, `storage/tables.ts:271` | not at all: coupled only by a declaration that cites many notes |
+| 0126 | A program keeps every migration, and a test records what each did | of the area; changes 0036 | whole with the code |
+| 0128 | An operation that acts on nothing may be dropped or changed while it runs | cites a note of the area | not at all |
+| 0131 | A rehearsal runs the entities an operation sends to | cites a note of the area; cited by the code beside 0075 at `rehearse.ts:179` | not at all |
+| 0132 | A key may take a parameter | cites a note of the area; cited by the code beside 0020,0022,0036,0156 at `machine.ts:418`, `machine.ts:438`, `program.ts:635` | in part: the premises and the consequences, with the machine's comparison of keys |
+| 0133 | An entity composes children as effect-tea does | cites a note of the area | not at all |
+| 0135 | A large state is split by the program, and the runtime warns of it | cited by the code beside 0043,0156,0247 at `runtime.ts:168`, `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0136 | A key is a name and a parameter, as data | cited by the code beside 0022,0156 at `machine.ts:438` | not at all: coupled only by a declaration that cites many notes |
+| 0138 | The log publishes topics, and a consumer reads one | cites a note of the area; cited by the code beside 0036,0156 at `program.ts:1749`, `runtime.ts:168` | not at all |
+| 0139 | The projection is JSON, and `project` converts | cites a note of the area | not at all |
+| 0140 | A row of a topic gives the value the topic selects | cited by the code beside 0036 at `program.ts:1749` | not at all: coupled only by a declaration that cites many notes |
+| 0141 | A query and a reading of the log take a limit | cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041` | not at all: coupled only by a declaration that cites many notes |
+| 0148 | A count and a sum over the entities that match are read in one statement | cited by the code beside 0043,0247 at `storage.ts:81`, `storage/rows.ts:121` | not at all: coupled only by a declaration that cites many notes |
+| 0150 | A count per value of an index is read in one statement, and an ack joins the caller's transaction | cited by the code beside 0043,0247 at `storage.ts:81`, `storage/rows.ts:121` | not at all: coupled only by a declaration that cites many notes |
+| 0152 | The consumers of a topic are declared at deploy | cited by the code beside 0043,0051,0075,0102,0156,0247 at `runtime.ts:1041`, `runtime.ts:558`, `runtime/process.ts:381`, `storage.ts:81` | in part: a search for a deploy that fails, with `deploying` |
+| 0153 | A reader of a consumer names the partitions it reads | cited by the code beside 0043,0247 at `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0154 | A step's projection is stored once in the outbox | cited by the code beside 0043,0156,0247 at `storage.ts:81`, `storage/tables.ts:271` | not at all: coupled only by a declaration that cites many notes |
+| 0156 | A program is renamed by its launch, and its entities keep their keys | of the area; changes 0022 | whole with the code |
+| 0157 | The storage speaks SQLite and PostgreSQL, in the same tables, and a query reads alike on both | changes 0156 | not at all |
+| 0159 | On Cluster, an older version serves no shard once a newer one launches | cites a note of the area; cited by the code beside 0156 at `storage/tables.ts:271` | in part: the context, the decision and the premises, with `atNewest` and `recordVersions` unread |
+| 0161 | On Cluster, a step settles the machine by the count of the steps that wrote it | cited by the code beside 0043,0247 at `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0162 | On Cluster, an entity's shard is its partition, and each deployment serves its shards | cited by the code beside 0043,0051,0075,0102,0156,0247 at `runtime.ts:1041`, `runtime/process.ts:381`, `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0165 | On Cluster, a caller sends through the door's client, and is never answered `Full` | cited by the code beside 0156 at `runtime.ts:168` | not at all: coupled only by a declaration that cites many notes |
+| 0167 | On Cluster, an operation sends through the door's client, and is woken by `Resumed` | cites a note of the area; cited by the code beside 0043,0156,0247 at `storage.ts:81`, `storage/tables.ts:271` | not at all |
+| 0169 | On Cluster, an operation's request ids are kept under its work, and Cluster's rows deleted with it | cites a note of the area; cited by the code beside 0043,0051,0075,0102,0156,0247 at `runtime.ts:1041`, `storage.ts:296`, `storage.ts:81` | not at all |
+| 0170 | On Cluster, an operation's client keeps the request's id before it resets a failure Cluster saved | cited by the code beside 0043,0247 at `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0171 | On Cluster, a caller's rows go once its client has the answer and its time is past | cites a note of the area; cited by the code beside 0043,0156,0247 at `storage.ts:81`, `storage/tables.ts:271` | in part: the code of `keptGiven` only |
+| 0174 | On Cluster, a runner deploys only the programs its sharding names | cites a note of the area; cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041` | not at all |
+| 0176 | On Cluster, a rename marks the old name, and keeps a door under it | changes 0156; cited by the code beside 0051,0075,0102 at `runtime.ts:1041` | whole with the code |
+| 0180 | A program leaves out what it does not have, and each piece left out is empty | cited by the code beside 0036 at `program.ts:1749` | not at all: coupled only by a declaration that cites many notes |
+| 0182 | A program's `init` may reject the flags, and the rejection is not stored | cited by the code beside 0036,0075 at `program.ts:1749`, `rehearse.ts:179` | in part: the comment of the creation in `src/cluster.ts` only |
+| 0184 | `consume` runs a reader of a consumer, a page and its ack in one transaction | cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041` | not at all: coupled only by a declaration that cites many notes |
+| 0185 | `inspect` gives what is stored of one entity, read from one snapshot | cited by the code beside 0043,0247 at `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0187 | A rehearsal moves time by a duration, and fires the timers due within it | cited by the code beside 0075 at `rehearse.ts:179` | not at all: coupled only by a declaration that cites many notes |
+| 0191 | A launch creates the tables, in one transaction, unless it is told they exist | cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041`, `runtime.ts:168` | not at all: coupled only by a declaration that cites many notes |
+| 0197 | A program lists its keys, and `key` gives one a parameter | cited by the code beside 0036 at `program.ts:635` | not at all: coupled only by a declaration that cites many notes |
+| 0208 | A launch checks every option | cited by the code beside 0156 at `runtime.ts:275` | not at all: coupled only by a declaration that cites many notes |
+| 0209 | A sum is exact on PostgreSQL, and is refused alike on both dialects past the largest double | cited by the code beside 0043 at `storage/rows.ts:121` | not at all: coupled only by a declaration that cites many notes |
+| 0216 | The tables are made by Effect's `Migrator`, which records each migration in `tea_migrations` | cited by the code beside 0022,0156 at `runtime.ts:168`, `storage/tables.ts:185` | not at all: coupled only by a declaration that cites many notes |
+| 0218 | The prefix is `effecttea_`, and a launch dies on a name the runtime's objects would take | cited by the code beside 0022 at `storage/tables.ts:185` | in part: the comment of `indexed` only |
+| 0219 | A drain holds when an interrupted fiber closes its scope, and on Cluster before the runner lets its shards go | cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041` | not at all: coupled only by a declaration that cites many notes |
+| 0220 | The runtime records a span for each step and each operation, linked to what each follows, and three metrics of its entities | cited by the code beside 0051 at `runtime/process.ts:381` | not at all: coupled only by a declaration that cites many notes |
+| 0224 | A consumer shows the time of the step it reads next, and the runtime records no metric of its age | cited by the code beside 0156 at `storage/tables.ts:271` | not at all: coupled only by a declaration that cites many notes |
+| 0245 | A reply is kept as long as `send` says, and the runtime sweeps what no reader needs | cited by the code beside 0043,0051,0075,0102,0156,0247 at `rehearse.ts:179`, `runtime.ts:1041`, `runtime.ts:168`, `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0247 | `check` reads the stored entities as a deploy of a new program would activate them | of the area | whole with the code |
+| 0248 | On Cluster, a caller's rows are kept for every client's poll of replies | cited by the code beside 0156 at `storage/tables.ts:271` | not at all: coupled only by a declaration that cites many notes |
+| 0249 | On Cluster, a reset drops the id a caller's client kept | cited by the code beside 0043,0247 at `storage.ts:81` | not at all: coupled only by a declaration that cites many notes |
+| 0251 | A retry and a passivation are a millisecond at least | cited by the code beside 0156 at `runtime.ts:168` | not at all: coupled only by a declaration that cites many notes |
+| 0252 | The waker activates an entity a crash took out, after the retry | cites a note of the area | not at all |
+| 0253 | An answer no entity stores is kept for the operation that was given it | cites a note of the area; cited by the code beside 0043,0156,0247 at `storage.ts:81`, `storage/rows.ts:121`, `storage/tables.ts:271` | in part: the code of `answer` and `keepAnswer` only |
+| 0256 | A call that runs a step or waits for one is refused within a transaction of the client | cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041`, `runtime.ts:558` | not at all: coupled only by a declaration that cites many notes |
+| 0261 | The drain reaches a deployment still activating | cites a note of the area; cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041` | whole with the code |
+| 0263 | A launch dies where a schema further on the `search_path` holds the tables | cites a note of the area | not at all |
+| 0264 | A launch that dies gives back what it held | cites a note of the area | whole with the code |
+| 0265 | The operations that wait for a resumption are stored by the step that answers them | cited by the code beside 0043,0156,0247 at `storage.ts:81`, `storage/tables.ts:271` | in part: the decision and the consequences, with the writes and reads of `effecttea_waiting` |
+| 0266 | A timer that catches up fires with a due time that grows, and a timer is due at a whole millisecond | cited by the code beside 0075 at `rehearse.ts:179` | not at all: coupled only by a declaration that cites many notes |
+| 0267 | A file of SQLite is held by a file of its own beside it, and the hold refuses no reader | changes 0247; cited by the code beside 0156 at `check.ts:67` | not at all |
+| 0269 | A caller's request is its sender, its request id and what it carries | cites a note of the area; cited by the code beside 0022,0036,0043,0156,0247 at `machine.ts:438`, `program.ts:135`, `storage.ts:81` | in part: its passages on the flags and the migrations, with `replyOf`, `entity` and `move` |
+| 0271 | Every fork of the runtime says it is interruptible | cited by the code beside 0051,0075,0102,0156 at `0271`, `runtime.ts:1041` | not at all: coupled only by a declaration that cites many notes |
+| 0274 | An entity is not loaded while the stop of its former run is running | cited by the code beside 0051,0075,0102,0156 at `runtime.ts:1041`, `runtime/process.ts:381` | not at all: coupled only by a declaration that cites many notes |
+| 0277 | A sum is refused by a count of its magnitudes that both dialects make alike | cited by the code beside 0043 at `storage/rows.ts:121` | not at all: coupled only by a declaration that cites many notes |
+| 0279 | `createTables` dies within a transaction of its client | cited by the code beside 0022 at `storage/tables.ts:185` | not at all: coupled only by a declaration that cites many notes |
+| 0280 | The undo of a deploy drains its deployment | changes 0051 and 0102; cited by the code beside 0075,0156 at `runtime.ts:1041` | whole with the code |
+
+### Findings
+
+1. **Reproduced: `check` dies whole on a migration of the flags that throws, where it should name the entity as a
+   `Load`.**
+   - The notes: [decision 0247](0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md) and
+     [decision 0269](0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md).
+   - The premise that fell: decision 0247 tells a row the program's readings die on from what the runtime throws,
+     since the storage runs the migrations and the schema inside a guard. Decision 0269 added the kind `flags` to
+     `Migration`. `entity` of `src/storage/entities.ts:157` runs `up('flags', row.version)` outside the guard. The
+     state, the work, the mailbox and the creation are read inside it.
+   - The sequence: version 1 stores an entity. Version 2's migration of `flags` throws on the flags stored. `check` of
+     version 2 then fails the whole call with the program's defect, and lists no entity. A migration of the state that
+     throws gives a `Load` of that entity instead. A deploy dies on the entity, as decision 0043 says, so only the
+     check is wrong.
+   - The test: `FAILING: a migration of the flags that dies on a stored row is a Load of its entity, as one of the
+     state is`, in `src/check.test.ts:162`, at `590bcbf`.
+   - Where a fix could begin: `entity` of `src/storage/entities.ts`, which would read the flags inside `guard`, as it
+     reads the creation's request.
+2. **Reproduced: a deploy that changes how a key's parameter encodes suspends every entity with work under way under
+   that key, and no migration can carry it.** It has the form of family A of `docs/bugs.md`.
+   - The notes: [decision 0036](archive/0036-a-migration-is-a-function-on-the-json.md) and
+     [decision 0132](archive/0132-a-key-may-take-a-parameter.md), with
+     [decision 0136](archive/0136-a-key-is-a-name-and-a-parameter-as-data.md).
+   - The premise that fell: decision 0036 says that a deploy may change the shape of an operation under way, through
+     the migrations of the kinds a program's schemas write. Decision 0132 stores a key's parameter as its schema
+     encodes it. The parameter is in `effecttea_entity_keys.parameter`, in the mailbox's internal messages, and in the
+     `sender_parameter` of the replies and the answers. `Migration` of `src/program.ts:135` has no kind that reads it.
+     So `entity` of `src/storage/entities.ts:123` gives the activation the parameter as the older version wrote it.
+   - The sequence: version 1 starts an operation under `charge` with the parameter `'a'`. Version 2 declares the key's
+     parameter as `{ line: string }`, and its `work` gives `{ line: 'a' }`. The activation finds the stored key
+     dropped, and suspends the entity: the program dropped the operation under `["charge","a"]` before its
+     completion. A timer under such a key is armed again in a new incarnation. The idempotency key is drawn from the
+     parameter too ([decision 0123](archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md)). So a
+     migration of the parameter would also have to keep the key the operation started with.
+   - The test: `FAILING: a deploy whose key parameter encodes otherwise keeps the operation under way under its key`,
+     in `src/machine.test.ts:2592`, at `590bcbf`. It steps the machine's `Restart` with the stored parameter as the
+     runtime gives it. It was not run through the runtime.
+   - Where a fix could begin: the step What a deploy may change of a program, against what is stored, of the roadmap,
+     whose list of pieces names the keys and their parameters. The fix is a kind `parameter` of `Migration`, read by
+     `entity`, or a sentence of the design that a deploy keeps the encoding of a parameter while work is under way
+     under it, which `check` then reports.
+3. **Reproduced in the storage: on Cluster, a rename moves no id a caller kept under an old name that holds nothing
+   else, so Cluster's rows of the request stay for ever.**
+   - The notes: [decision 0156](archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md) and
+     [decision 0171](archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md),
+     with [decision 0176](archive/0176-on-cluster-a-rename-marks-the-old-name-and-keeps-its-door.md) and
+     [decision 0182](0182-init-may-reject-the-flags.md).
+   - The premise that fell: decision 0156 says that a rename whose old name holds nothing moves nothing, and that the
+     old name holds something when a row of any table is stored under it. `holds` of `src/storage/tables.ts:644` reads
+     the tables of `namedTables` and the senders of the replies and the answers. It reads neither
+     `effecttea_given_requests` nor `effecttea_sent_requests`, which decisions 0169 and 0171 added later. The rename
+     moves both at `src/storage/tables.ts:743`, but only once `holds` is true.
+   - The sequence: on Cluster, a caller creates `Old/x` with flags `init` rejects. No entity and no reply is stored
+     (decision 0182), and `keptGiven` of `src/cluster.ts:365` keeps the Cluster id under `Old/x`. A launch renames
+     `Old` to `New` before the sweep of `Old` takes the id. `holds` of `Old` is false, so the id stays under `Old`. The
+     sweep and `expire` of `New` delete by `New`, and no runner deploys `Old` again. So Cluster's rows of the request
+     stay for ever, and a retry under the old name is answered from Cluster's saved reply. It is the form of bug 27,
+     by another sequence.
+   - The test: `FAILING: on Cluster, a rename moves the ids a caller kept under an old name that holds nothing else`,
+     in `src/storage.test.ts:2225`, at `590bcbf`. It writes the row of `effecttea_given_requests` by hand. That a
+     rejected creation keeps its id with no other row is read in `keptGiven`, and not run on Cluster. A test of
+     `src/cluster.test.ts` that creates with flags `init` rejects, launches a runner that renames, and reads
+     `effecttea_given_requests` would run the whole sequence.
+   - Where a fix could begin: `holds` of `src/storage/tables.ts`, which would read the two tables of Cluster's ids too.
+
+### Suspects ruled out
+
+- A caller's retry of a creation, compared with flags stored at an older version, after a deploy that changes their
+  form: the flags are read through the migrations of `flags` (`src/storage/entities.ts:157`). The test `a retry after
+  a deploy is compared with what the caller's request carried, read through the migrations`, of `src/runtime.test.ts`,
+  holds it.
+- A caller's `carried` message read at another version: `replyOf` reads it through the migrations of `inbound`
+  (`src/storage/entities.ts:227`), by the same test.
+- A reason of `effecttea_answers` read without its version's migrations: `answer` reads it through `upReason` of the
+  row's version (`src/storage/entities.ts:271`). The migrations of `rejection` are kept for ever, by decision 0126.
+- `migrationViolations` against a kind added after decision 0126: it reads `program.schemas[of]` for every kind of
+  `Migration`, and `Schemas` of `src/program.ts:568` has each of them, `flags` included.
+- A rename against the tables added after decision 0156: `effecttea_answers` and `effecttea_waiting` are in
+  `namedTables`, and the rename writes their senders. The column `request` of `effecttea_waiting` is the request's
+  name, and names no program, so the rename rightly leaves it.
+- A rename that would move an entity to another partition: `partitionOf` of `src/storage/tables.ts:157` hashes the id
+  alone.
+- An entity deleted and created again, whose incarnations would start over and draw an idempotency key again: no
+  statement of `src/` deletes a row of `effecttea_entities`.
+- With a drain, an undo of a deploy that starts an operation that runs again or arms a timer: `start` and `arm` of
+  `src/runtime/loop.ts:253` and `:301` read `deployed.draining`, as decision 0280 says, and its tests hold it. A
+  droppable operation is not started either, since only an at-most-once one passes.
+
+### Suspects noticed and not checked
+
+- A check that runs while a launch of the new version renames, on one process. Decision 0267 refuses no reader, and
+  `check` reads the entities by pages, with no transaction across them. So a page read after the rename's commit finds
+  no entity under the old name. Only the counts would be wrong, as bug 29 says of Cluster.
+- A deploy that fails after `declare`, at `src/runtime.ts:1209`, leaves its consumers stored, and the undo of decision
+  0051 does not take them out. A consumer of a failed deploy then holds its topic's rows. The next deploy that does not
+  declare it warns of it, as decision 0152 says, so an operator is told.
+- A rename leaves the SQL indexes of the read model made under the old name, by `indexed` of
+  `src/storage/projections.ts:190`, and every deploy of the new name makes its own. Each step then writes both. An
+  index a deploy drops is left the same way. It costs writes and room, and changes no answer.
+- A deploy that changes the form of a child's wrapper, or the name of a key, beside the parameter of finding 2. The
+  step What a deploy may change of a program holds both, and neither was run.
+- The premises of decision 0126 that the inventory calls chosen or left out, read against the code as it is now:
+  - That a migration is a pure function stays chosen, and no later note made it false. Decision 0269 leans on it more.
+    A retry is compared with what the request carried, read through the migrations, so a migration that reads the
+    clock answers a genuine retry `Reused`.
+  - That carrying every migration costs too little stays chosen. The kinds grew by `flags`, by decision 0269. `up` of
+    `src/storage/held.ts:86` composes the reading of a kind once per version, so the cost is still one function per
+    kind and version.
+  - That a migration whose cases hold reads every row as when deployed is the open question Generated cases of a
+    migration. Decision 0269 adds a way a changed migration loses an answer in silence: a retry across the deploy
+    carries a message that the changed migration of `inbound` no longer gives, and is answered `Reused`.
+
+### Where the code does otherwise than the note it cites
+
+- `src/storage/entities.ts:155`: the comment says the flags are read through the migrations, and not decoded, which
+  holds. Decision 0247, cited by `examine`, says the storage runs the migrations inside the guard, and this reading is
+  outside it (finding 1).
+- `src/storage/tables.ts:617`: the comment of `renamed` cites decision 0156, which says a name holds something when a
+  row of any table is stored under it. `holds` reads no table of Cluster's ids (finding 3).
+
+### The notes not read whole
+
+The notes of the table read in part or not at all were not read whole. The area's rules are kept by `deploy`,
+`deploying`, `renamed`, `check`, `heldOf` and `entity`, and the reading went there. The notes cited beside the area
+by the long declarations of the runtime and the storage hold rules of messages, replies, the log and Cluster, which
+their own areas read. Decision 0159 was read in part. Its check by the commit was not read again, since the bugs of
+family A already name it.

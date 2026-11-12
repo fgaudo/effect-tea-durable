@@ -183,7 +183,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     above, each marked `Done, ` here once its session is recorded:
     1. Done, area 1, Messages, requests and replies.
     2. Done, by the sample above: area 2, Effect Cluster.
-    3. Area 3, Versions and deploys.
+    3. Done, area 3, Versions and deploys.
     4. Area 4, The runtime, a first part.
     5. Area 5, The runtime, a second part.
     6. Area 6, Schemas and projections, a first part.
@@ -245,8 +245,18 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     resume, and a duplicate on the runner that holds the shard. Not reached: the notes of Cluster other than 0171, 0248
     and 0249, the rehearsal's 0131 and 0200, and the notes the code alone couples to the area, as its table in
     [`reviews.md`](decisions/reviews.md) says.
+  - Done, in a session of 2026-11-12 that read none of the reports: area 3 of the second reading, Versions and
+    deploys, its twelve notes read whole with the code, against the later notes that change them, 0261, 0264, 0269 and 0280
+    among them. Its findings are bugs 95 to 97 of [`docs/bugs.md`](bugs.md), reproduced on
+    `claude/premise-review-2-area-3-a78576` at `590bcbf`, cut from `main` at `b5dc7a1`, and again on `main`: a `check`
+    that dies on a migration of the flags, of no family; a key's parameter no migration carries, of family A; and a
+    rename that leaves the ids of Cluster, of family C. Its four suspects not checked are
+    [open questions](open-questions.md): a `check` beside a rename, the consumers of a deploy that fails, the indexes
+    of the read model after a rename, and a deploy that changes a child's wrapper or a key's name. Not reached: the
+    notes of other areas that the long declarations of the runtime and the storage cite beside the area, as its table
+    in [`reviews.md`](decisions/reviews.md) says.
   - Every area of the first list but area 14, every last session and the sample are `Done`. So the step goes on with
-    area 3 of the second reading. A session that records a review writes `Done, ` before what it read, and adds a
+    area 4 of the second reading. A session that records a review writes `Done, ` before what it read, and adds a
     bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
     reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
     a last session and read whole by no other review.

@@ -141,6 +141,30 @@ with a requirement that no example has yet.
 
 ## Running
 
+- **A `check` that runs while a launch renames, on one process.** A launch of the new version renames the old name's
+  rows in one transaction, and a file of SQLite refuses no reader
+  ([decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)). `check`
+  reads the entities by pages, with no transaction across them, so a page read after the rename's commit finds no
+  entity under the old name. Only the counts of `check` would be wrong, as bug 29 of [`docs/bugs.md`](bugs.md) says
+  of Cluster. The second reading of the premise review noticed it on 2026-11-12, and did not run it.
+  - A test that holds a rename at its commit while `check` reads its pages, and compares the counts, would decide it.
+
+- **The consumers of a deploy that fails after it declares them.** A deploy that fails after `declare`, in
+  `deploy` of `src/runtime.ts`, leaves its consumers stored, and the undo of
+  [decision 0051](decisions/archive/0051-a-deploy-that-fails-leaves-nothing-running.md) does not take them out. A
+  consumer of a failed deploy then holds its topic's rows from the prune. The next deploy that does not declare it
+  warns of it, as [decision 0152](decisions/archive/0152-the-consumers-of-a-topic-are-declared-at-deploy.md) says, so an operator
+  is told. The second reading of the premise review noticed it on 2026-11-12, and did not run it.
+  - A test of a deploy that dies after `declare`, then reads `effecttea_consumers` and the prune of the topic, would
+    decide whether the undo should take its consumers out.
+
+- **The indexes of the read model after a rename.** A rename leaves the SQL indexes that `indexed` of
+  `src/storage/projections.ts` made under the old name, and every deploy of the new name makes its own. Each step then
+  writes both, and an index a deploy drops is left the same way. It costs writes and room, and changes no answer. The
+  second reading of the premise review noticed it on 2026-11-12, and did not run it.
+  - A test that renames a program with an indexed projection, then lists the indexes of `effecttea_projections`,
+    would decide it.
+
 - **A retry that waits in the runtime past its reply's `keep`.** Bug 94 of [`docs/bugs.md`](bugs.md) applies a
   message twice on one process under a `keep` of 0: a retry sent before the answer reads the reply at its own step,
   past the reply's time. The same race may hold under a `keep` above 0, where a retry's `Receive` waits behind a
@@ -726,6 +750,13 @@ with a requirement that no example has yet.
     link on each system.
 
 ## Programs
+
+- **A deploy that changes a child's wrapper or the name of a key.** Bug 96 of [`docs/bugs.md`](bugs.md) suspends an
+  entity whose key's parameter a deploy encodes otherwise. A deploy that changes the form of a child's wrapper, or the
+  name of a key with work under way, may fail the same way. The second reading of the premise review noticed both on
+  2026-11-12, and ran neither.
+  - The step What a deploy may change of a program, against what is stored, of the [roadmap](roadmap.md), decides
+    both, since its list of pieces names the children and the keys.
 
 - **A rehearsal in a browser.** The machine computes the digest of an idempotency key with `node:crypto`, so the
   machine runs only where that module is

@@ -27,12 +27,12 @@ The bugs are grouped by what they have in common. A family gets one rule, kept i
 a fix for each bug. Each bug's test passes under the rule, as the proof that the rule holds the case. A bug of no
 family gets a fix of its own.
 
-- A, a newer version against what an older one stored or runs: bugs 1, 5, 7, 15, 16, 28 to 30, 56, 62, 68, 76 and
-  77, and the door of the step A door that changes between two releases of the library, of the
+- A, a newer version against what an older one stored or runs: bugs 1, 5, 7, 15, 16, 28 to 30, 56, 62, 68, 76,
+  77 and 96, and the door of the step A door that changes between two releases of the library, of the
   [roadmap](roadmap.md). A rename is such a change. Its rule is the step What a deploy may change of a program,
   against what is stored, of the roadmap.
 - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39, 54,
-  55, 57 to 59, 70, 73, 74, 77, 84, 85 and 89 to 91, as decisions 0248 and 0249 were. Its rule is the step The tests
+  55, 57 to 59, 70, 73, 74, 77, 84, 85, 89 to 91 and 97, as decisions 0248 and 0249 were. Its rule is the step The tests
   of a contract on every backend, of the roadmap: the tests of the runtime run alike on one process and on Cluster.
 - D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78 and 80. Its rule is the same step:
   a test of rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their
@@ -50,7 +50,7 @@ family gets a fix of its own.
 - Of no family: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 75, 79, 81, 82, 86, 87 and
   92. Each is fixed by a note of its own or verified false, as its entry says. Bug 79, a gap of the guide, is fixed in
   `docs/design.md` with no note, since decisions 0185 and 0222 decide it. Bug 93 is of no family either, and has
-  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281. Bug 94 is of no family, and is fixed by decision 0282.
+  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281. Bug 94 is of no family, and is fixed by decision 0282. Bug 95 is of no family, and not fixed yet.
 
 ## The list
 
@@ -541,3 +541,49 @@ family gets a fix of its own.
 92. Fixed by [decision 0275](decisions/0275-on-cluster-a-doors-commit-tells-the-readings-itself.md).
 93. **Fixed by [decision 0281](decisions/0281-a-rehearsals-time-is-a-whole-millisecond.md)**, whose rehearsal refuses a duration and a start time between two milliseconds.
 94. **Fixed by [decision 0282](decisions/0282-a-callers-message-offered-before-its-answer-is-answered-by-it.md)**, whose caller's message offered before its request is answered is answered by that answer, and not applied.
+95. **Reproduced: `check` dies whole on a migration of the flags that throws, where it should name the entity as a
+    `Load`.** [Decision 0247](decisions/0247-check-reads-the-stored-entities-as-a-deploy-would-activate-them.md)
+    tells a row the program's readings die on from what the runtime throws, since the storage runs the migrations and
+    the schema inside a guard.
+    [Decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md) added the kind
+    `flags` to `Migration`, and `entity` of `src/storage/entities.ts` runs the migrations of the flags outside the
+    guard. So a migration of the flags of version 2 that throws on the flags version 1 stored fails the whole `check`,
+    which lists no entity, while a migration of the state that throws gives a `Load` of the entity. A deploy dies on
+    the entity, as decision 0043 says, so only `check` is wrong. The test `FAILING: a migration of the flags that dies
+    on a stored row is a Load of its entity, as one of the state is`, in `src/check.test.ts`, reproduces it on the
+    branch `claude/premise-review-2-area-3-a78576`, at `590bcbf`, cut from `main` at `b5dc7a1`, and again on `main` at
+    `b5dc7a1`. The fix begins at `entity` of `src/storage/entities.ts`, which would read the flags inside `guard`, as
+    it reads the creation's request.
+96. **Reproduced: a deploy that changes how a key's parameter encodes suspends every entity with work under way under
+    that key, and no migration can carry it.** A deploy may change the shape of an operation under way through the
+    migrations of the kinds a program's schemas write
+    ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)). A key's parameter is stored as
+    its schema encodes it ([decisions 0132](decisions/archive/0132-a-key-may-take-a-parameter.md),
+    [0136](decisions/archive/0136-a-key-is-a-name-and-a-parameter-as-data.md)), in `effecttea_entity_keys`, in the
+    mailbox's internal messages, and in the senders of the replies and the answers. `Migration` of `src/program.ts` has
+    no kind that reads it. So version 1 starts an operation under `charge` with the parameter `'a'`, version 2
+    declares the parameter as `{ line: string }`, and the activation finds the stored key dropped and suspends the
+    entity. A timer under such a key is armed again in a new incarnation, and an idempotency key drawn from the
+    parameter ([decision 0123](decisions/archive/0123-an-idempotent-runner-may-be-given-the-digest-of-its-key.md))
+    would have to be kept by a migration too. The test `FAILING: a deploy whose key parameter encodes otherwise keeps
+    the operation under way under its key`, in `src/machine.test.ts`, reproduces it in the machine on the branch
+    `claude/premise-review-2-area-3-a78576`, at `590bcbf`, and again on `main` at `b5dc7a1`. It was not run through the
+    runtime. The fix is the step What a deploy may change of a program, against what is stored, of the
+    [roadmap](roadmap.md): a kind `parameter` of `Migration`, or a rule that a deploy keeps a parameter's encoding
+    while work is under way under it, which `check` reports.
+97. **Reproduced in the storage: on Cluster, a rename moves no id a caller kept under an old name that holds nothing
+    else, so Cluster's rows of the request stay for ever.** A rename whose old name holds nothing moves nothing, and a
+    name holds something when a row of any table is stored under it
+    ([decision 0156](decisions/archive/0156-a-program-is-renamed-by-its-launch-and-keeps-its-keys.md)). `holds` of
+    `src/storage/tables.ts` reads neither `effecttea_given_requests` nor `effecttea_sent_requests`, which decisions
+    0169 and 0171 added later. A caller on Cluster that creates `Old/x` with flags `init` rejects leaves no entity and
+    no reply ([decision 0182](decisions/0182-init-may-reject-the-flags.md)), and `keptGiven` of `src/cluster.ts` keeps
+    the Cluster id under `Old/x`. A launch that renames `Old` before the sweep of `Old` takes the id leaves it under
+    `Old`, which no runner deploys again, so Cluster's rows of the request stay for ever
+    ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)).
+    It is the form of bug 27, by another sequence. The test `FAILING: on Cluster, a rename moves the ids a caller kept
+    under an old name that holds nothing else`, in `src/storage.test.ts`, reproduces it on the branch
+    `claude/premise-review-2-area-3-a78576`, at `590bcbf`, and again on `main` at `b5dc7a1`. It writes the row of
+    `effecttea_given_requests` by hand: a test of `src/cluster.test.ts` that creates with flags `init` rejects, then
+    launches a runner that renames, would run the whole sequence. The fix begins at `holds` of
+    `src/storage/tables.ts`, which would read the two tables of Cluster's ids too.
