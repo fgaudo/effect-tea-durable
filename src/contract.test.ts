@@ -416,15 +416,24 @@ test('a sum whose exact total of magnitudes reads back as the largest double is 
  * SQLite runs them. It runs only on a server, which the job `postgres` of the CI gives.
  */
 const keep = fc.constantFrom<Keep>('forever', { millis: 0 }, { millis: 60_000 })
+/**
+ * How long a reply of `before` drawn `brief` is kept, and how long a history whose `before` holds one waits before its
+ * pair, so that the reply is past its time when the pair runs and a retry of the pair applies its message again. The
+ * calls of `before` run within the time on the pool and on SQLite, so that no reply of theirs passes its time
+ * between two of them on one database alone: the margin is the time kept over the time `before` takes.
+ */
+const brief = { millis: 500 } as const
+const briefly = 600
 const label = fc.constantFrom('x', 'y', 'z')
 const own = fc.constantFrom('a', 'b', 'c')
-const set = fc.record({
+const setFields = {
   _tag: fc.constant('Set' as const),
   id: own,
   label,
   keep,
   requestId: fc.constantFrom('s1', 's2', 's3'),
-})
+}
+const set = fc.record(setFields)
 const create = fc.record({ _tag: fc.constant('Create' as const), id: own, requestId: fc.constantFrom('c1', 'c2') })
 const paired: fc.Arbitrary<Paired> = fc.oneof(
   set,
@@ -439,15 +448,16 @@ type Paired =
   | Readonly<{ _tag: 'Expire' }>
   | Readonly<{ _tag: 'Reindex' }>
   | Readonly<{ _tag: 'Prune' }>
-/** Histories of `pairs`, after up to four messages one at a time. */
+/** Histories of `pairs`, after up to four messages one at a time, whose replies may be kept `brief`ly. */
 const heldOf = (pairs: fc.Arbitrary<readonly [Paired, Paired]>) =>
   fc.record({
-    before: fc.array(set, { maxLength: 4 }),
+    before: fc.array(fc.record({ ...setFields, keep: fc.oneof(keep, fc.constant<Keep>(brief)) }), { maxLength: 4 }),
     pair: pairs,
     // Which of the library's tables is locked, by its place among them in the order of their names. A case pinned
-    // names the table.
-    gate: fc.nat() as fc.Arbitrary<number | string>,
+    // names the table, or the reply whose row alone is locked, by its entity and its request.
+    gate: fc.nat() as fc.Arbitrary<Gate>,
   })
+type Gate = number | string | Readonly<{ reply: string; of: string }>
 const held = heldOf(fc.tuple(paired, paired))
 type Held = typeof held extends fc.Arbitrary<infer H> ? H : never
 
@@ -498,6 +508,7 @@ const history = (
   Effect.gen(function*() {
     for (const name of ['a', 'b']) yield* pairedOn(items, run, { _tag: 'Create', id: name, requestId: `made-${name}` })
     for (const call of before) yield* pairedOn(items, run, call)
+    if (before.some(({ keep }) => keep !== 'forever' && keep.millis === brief.millis)) yield* Effect.sleep(briefly)
     const answers = yield* together([pairedOn(items, run, pair[0]), pairedOn(items, run, pair[1])])
     const again = yield* Effect.forEach(
       pair.filter((call) => call._tag === 'Set' || call._tag === 'Create'),
@@ -558,13 +569,18 @@ const onPool = (histories: fc.Arbitrary<Held>, runs: number, examples: ReadonlyA
       fc.assert(
         fc.asyncProperty(histories, async (held) => {
           const run = `p${ran++}`
-          const table = typeof held.gate === 'string' ? held.gate : tables[held.gate % tables.length]!
+          const { gate: drawn } = held
+          // A reply's row is locked by a reading of it `FOR UPDATE`, which a step that deletes the row waits for.
+          const lock = typeof drawn === 'object'
+            ? `SELECT 1 FROM effecttea_replies WHERE id = '${run}/${drawn.of}' AND request_id = '${run}/${drawn.reply}'
+                FOR UPDATE`
+            : `LOCK TABLE ${typeof drawn === 'string' ? drawn : tables[drawn % tables.length]!} IN ACCESS EXCLUSIVE MODE`
           const answered = await Effect.runPromise(history(items, run, held, (calls) =>
             Effect.scoped(Effect.gen(function*() {
               const locked = yield* Deferred.make<void>()
               const open = yield* Deferred.make<void>()
               const holder = yield* Effect.forkChild(gate.withTransaction(Effect.gen(function*() {
-                yield* gate.unsafe(`LOCK TABLE ${table} IN ACCESS EXCLUSIVE MODE`)
+                yield* gate.unsafe(lock)
                 yield* Deferred.succeed(locked, undefined)
                 yield* Deferred.await(open)
               })))
@@ -596,8 +612,27 @@ const bug25: Held = {
   pair: [{ _tag: 'Reindex' }, { _tag: 'Set', id: 'a', label: 'x', keep: 'forever', requestId: 's1' }],
   gate: 'effecttea_projections',
 }
+// The examples of bug 13 retry a message whose reply is past its time beside an `expire`, the retry keeping its reply
+// a minute. A table locked cannot hold the step at its reply, since a message's step reads its reply before its
+// transaction, and stops there. So they lock the row of a second reply of the entity past its time. The step writes
+// the retry's reply with its new time, then waits to delete the second reply, as a step deletes its entity's replies
+// past their time. The `expire` reads both replies as `before` left them, and waits for the retry's row. Once the lock
+// goes and the step commits, the code before the fix deletes the reply with its new time, so that the message is
+// applied again when it is sent again.
+const bug13: Held = {
+  before: [
+    { _tag: 'Set', id: 'a', label: 'x', keep: brief, requestId: 's1' },
+    { _tag: 'Set', id: 'a', label: 'y', keep: brief, requestId: 's2' },
+  ],
+  pair: [{ _tag: 'Expire' }, { _tag: 'Set', id: 'a', label: 'x', keep: { millis: 60_000 }, requestId: 's1' }],
+  gate: { reply: 's2', of: 'a' },
+}
 test.skipIf(server === undefined)(
   'two calls held at a statement on a pool answer as one order of them',
-  () => onPool(held, Bun.env['SCHEDULES'] === 'all' ? 500 : 100, Array.from({ length: 8 }, () => bug25)),
+  () =>
+    onPool(held, Bun.env['SCHEDULES'] === 'all' ? 500 : 100, [
+      ...Array.from({ length: 8 }, () => bug25),
+      ...Array.from({ length: 8 }, () => bug13),
+    ]),
   1_200_000,
 )
