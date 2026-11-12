@@ -415,9 +415,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - Done, on 2026-11-12, the pool's gate. The test runs each history on SQLite first, records the tables each call of
     the pair writes, and draws the gate among those both write, as decision 0283 says. Both calls waited at the lock
     in 40 of a hundred runs on the CI's server, where a gate drawn among every table held 6 and 13.
-  - Then the calls of the contract grow, on every backend: an operator's `resume`, `discard`, `inspect` and
-    `suspended`, an operation that sends to another entity, a timer, `expire` and `prune`. Bugs 10 and 11 are their
-    first cases on Cluster. The pool's histories grow too, with a deploy that declares a consumer and an ack between
+  - Done, on 2026-11-12, an operator's calls in the contract, on every backend: `inspect`, `resume`, `discard`,
+    `expire`, `prune` and `reindex` beside `suspended`, and a `Boom` followed by an operator's call on its entity. The
+    first run of 300 found a race of the test, which decision 0283 says, and none of the backends. Two runs of 300
+    passed after it.
+  - Next, the calls of the contract grow by an operation that sends to another entity and a timer, on every backend.
+    The program `item` of `src/contract.test.ts` declares neither yet. Bugs 10 and 11 are their first cases on
+    Cluster: a creation `init` dies on, sent by an operation, and the rows of Cluster an operator's resume or discard
+    leaves after `expire`, which the answers alone do not show. The pool's histories grow too, with a deploy that declares a consumer and an ack between
     the snapshot of a batch of `prune` and its commit, so that the pool reaches bug 80, which a scenario holds now.
     A difference of Cluster that a note decides is marked beside `diesOn`, as decision 0283
     says, and a difference no note decides is a bug.

@@ -135,10 +135,22 @@ const calls = (ids: ReadonlyArray<string>, requests: ReadonlyArray<string>) => {
     fc.record({ _tag: fc.constant('Sum' as const), index, where: criteria }),
     fc.record({ _tag: fc.constant('CountBy' as const), index, where: criteria, limit: fc.integer({ min: 0, max: 6 }) }),
     fc.record({ _tag: fc.constant('Suspended' as const) }),
+    fc.record({ _tag: fc.constantFrom('Inspect' as const, 'Resume' as const, 'Discard' as const), id }),
+    fc.record({ _tag: fc.constantFrom('Expire' as const, 'Prune' as const, 'Reindex' as const) }),
+  )
+  // A message that suspends its entity, then an operator's call on it, so that the operator meets suspensions often.
+  const suspending = fc.tuple(id, text, request, fc.constantFrom('Inspect' as const, 'Resume' as const, 'Discard' as const))
+    .map(([id, note, request, operator]) => [
+      { _tag: 'Boom' as const, id, note, request },
+      { _tag: operator, id },
+    ])
+  const some = fc.oneof(
+    { arbitrary: call.map((one) => [one]), weight: 4 },
+    { arbitrary: suspending, weight: 1 },
   )
   // The entities are made first, so that the readings after them have rows to compare.
-  return fc.tuple(fc.array(create, { minLength: 1, maxLength: 6 }), fc.array(call, { minLength: 1, maxLength: 16 }))
-    .map(([made, rest]) => [...made, ...rest])
+  return fc.tuple(fc.array(create, { minLength: 1, maxLength: 6 }), fc.array(some, { minLength: 1, maxLength: 12 }))
+    .map(([made, rest]) => [...made, ...rest.flat()])
 }
 
 const scenario = fc.tuple(names, names).chain(([ids, requests]) => calls(ids, requests))
@@ -241,6 +253,19 @@ const answer = (
         ? items.count({ where: within(call.where) })
         : call._tag === 'CountBy'
         ? items.countBy({ index: call.index, where: within(call.where), limit: call.limit })
+        : call._tag === 'Inspect'
+        ? Effect.map(items.inspect(own(call.id)), settledOf)
+        : call._tag === 'Resume'
+        ? Effect.tap(Effect.map(items.resume(own(call.id)), settledOf), () => quiet(items, own(call.id)))
+        : call._tag === 'Discard'
+        ? Effect.tap(Effect.map(items.discard(own(call.id)), settledOf), () => quiet(items, own(call.id)))
+        // What an operator's sweep counts covers every run that shares a backend, so only its success is compared.
+        : call._tag === 'Expire'
+        ? Effect.as(items.expire, 'done')
+        : call._tag === 'Prune'
+        ? Effect.as(items.prune, 'done')
+        : call._tag === 'Reindex'
+        ? Effect.as(items.reindex, 'done')
         : Effect.map(
           items.suspended,
           (suspended) => suspended.map(({ id }) => id).filter((id) => id.startsWith(`${run}/`)).sort(),
@@ -255,6 +280,39 @@ const answer = (
     }
     return answers
   })
+
+/**
+ * What an operator reads of an entity, as every backend must give it. `since` is a time of the runtime's clock, and
+ * `cause` a defect as it was rendered, whose words the contract does not compare: a cause is kept as whether it is
+ * the defect of a message `Boom`.
+ */
+const settledOf = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(settledOf)
+    : value !== null && typeof value === 'object' && !DateTime.isDateTime(value)
+    ? Object.fromEntries(
+      Object.entries(value).map(([key, field]) =>
+        key === 'since'
+          ? [key, 'a time']
+          : key === 'cause' && typeof field === 'string'
+          ? [key, field.includes('cannot handle') ? 'a Boom' : 'another cause']
+          : [key, settledOf(field)]
+      ),
+    )
+    : value
+
+/**
+ * Waits until the entity `id` is quiet: suspended, or with no message in its mailbox. An operator's `resume` or
+ * `discard` answers before the entity handles the message it died on or the next one, so a call after it would meet
+ * the entity at a point each backend reaches in its own time. On Cluster a message sent then was queued behind the
+ * step and answered `Suspended` when the entity suspended again, where SQLite had suspended it before the message
+ * came. A wait past its time is left to the next call, which then differs.
+ */
+const quiet = (items: Handle<Item>, id: string) =>
+  Effect.repeat(Effect.orDie(items.inspect(id)), {
+    schedule: Schedule.spaced('10 millis'),
+    until: (inspected) => inspected === null || inspected.suspension !== null || inspected.mailbox.length === 0,
+  }).pipe(Effect.timeoutOrElse({ duration: '5 seconds', orElse: () => Effect.void }), Effect.ignore)
 
 /** What a call is answered that has no answer within its time. */
 const unanswered = 'no answer within 5 s'
@@ -278,13 +336,16 @@ const diesOn = (calls: ReadonlyArray<Call>, answers: ReadonlyArray<unknown>, run
   }))
 
 /**
- * `calls` without the requests to an entity after a creation of it the program dies on. On Cluster that creation
+ * `calls` without the requests to an entity after a creation of it the program dies on, an operator's among them. On Cluster that creation
  * waits for a fix, and every later request to its entity waits behind it, while one process goes on (decision 0160).
  */
 const pastWaits = (calls: ReadonlyArray<Call>, waiting: ReadonlySet<number>): ReadonlyArray<Call> => {
   const held = new Set<string>()
   return calls.filter((call, at) => {
-    if (call._tag !== 'Create' && call._tag !== 'Set' && call._tag !== 'Boom') return true
+    // An operator's resume and discard go through the door on Cluster too, so they wait behind it as a message does
+    // (decision 0166).
+    if (!['Create', 'Set', 'Boom', 'Resume', 'Discard'].includes(call._tag)) return true
+    if (!('id' in call)) return true
     if (held.has(call.id)) return false
     if (waiting.has(at)) held.add(call.id)
     return true
@@ -382,8 +443,8 @@ test('every backend answers every call alike', () =>
       alike(await onDialect('pg', run, calls, waiting), sqlite)
       alike(await Effect.runPromise(answer(cluster.handles, run, calls, waiting, false)), sqlite)
     }),
-    // `bun test` runs six within its budget, and a release fifty times as many (decision 0250).
-    { numRuns: Bun.env['SCHEDULES'] === 'all' ? 300 : 6 },
+    // `bun test` runs four within its budget of two seconds, and a release 300 (decision 0250).
+    { numRuns: Bun.env['SCHEDULES'] === 'all' ? 300 : 4 },
   ), 1_200_000)
 
 // SQLite adds doubles, and its partial total may round up past the largest double where the exact total, which

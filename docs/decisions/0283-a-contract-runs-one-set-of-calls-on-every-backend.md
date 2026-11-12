@@ -34,10 +34,22 @@ waited: a creation whose projection holds U+0000 in an index.
   creation that one process refuses with a defect, whose id and request id are no defect of the caller's, and whose
   flags the machine's `start` dies on, is a creation the program dies on. It is not sent on Cluster, and each backend answers it with the same mark of
   decision 0160. The requests to its entity after it leave the run on every backend, since on Cluster they wait
-  behind it. A later decision that makes Cluster answer otherwise adds its case beside this one.
+  behind it. An operator's `resume` and `discard` of that entity leave too, since on Cluster they go through the door
+  ([decision 0166](archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)). A later
+  decision that makes Cluster answer otherwise adds its case beside this one.
+- **The calls of an operator are among the calls generated.** They are `inspect`, `resume`, `discard` and
+  `suspended`, and `expire`, `prune` and `reindex`. A message `Boom`, which the program dies on, is followed by an
+  operator's call on its entity in one call of five, so that an operator meets a suspension often. What `inspect`,
+  `resume` and `discard` give is compared without `since`, a time of the runtime's clock, and with a cause kept only
+  as whether it is the defect of a `Boom`. `expire`, `prune` and `reindex` count over every run that shares a backend,
+  so only their success is compared.
+- **After a `resume` or a `discard`, the test waits until the entity is suspended or its mailbox is empty.** The
+  operator is answered before the entity handles the message it died on. A message sent then on Cluster was queued
+  behind that step and answered `Suspended` when the entity suspended again, while on SQLite the entity had suspended
+  before the message came. Both are answers the design allows, so the test waits rather than compare a race.
 - **A call with no answer within 5 s is answered so**, which fails the test rather than holding it.
-- **`bun test` runs six runs of the property, and `SCHEDULES=all` runs 300**, so that the test stays within two
-  seconds ([decision 0250](0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md)).
+- **`bun test` runs four runs of the property, and `SCHEDULES=all` runs 300**, so that the test stays within two
+  seconds. Six runs took 1.9 to 2.0 s once the operator's calls were among them, and four take 1.3 to 1.5 s ([decision 0250](0250-bun-test-holds-its-budget-by-samples-and-runs-of-their-own.md)).
 - **On a pool of PostgreSQL, two calls run at once, held at a statement.** It is the second part of the step, for
   family D of [`docs/bugs.md`](../bugs.md). The test `two calls held at a statement on a pool answer as one order of
   them` makes two entities, runs a few messages one at a time, then runs two calls at once. Each call is a message,
@@ -68,8 +80,9 @@ waited: a creation whose projection holds U+0000 in an index.
 ## What it rests on
 
 - That one process and Cluster answer alike every call of the generated runs, the creations the program dies on
-  aside: **tested**, by `every backend answers every call alike`, in six runs under `bun test` and in 300 under
-  `SCHEDULES=all`, which passed on 2026-11-12 on SQLite, PGlite and Cluster. The job `postgres` of the CI runs it on
+  aside: **tested**, by `every backend answers every call alike`, in four runs under `bun test` and in 300 under
+  `SCHEDULES=all`, which passed on 2026-11-12 on SQLite, PGlite and Cluster, with the operator's calls among them
+  twice. The job `postgres` of the CI runs it on
   the server.
 - That on Cluster a creation the program dies on waits: **tested** by the test of decision 0160 in
   [`src/cluster.test.ts`](../../src/cluster.test.ts), and **seen** in the first run of this test.
@@ -85,6 +98,12 @@ waited: a creation whose projection holds U+0000 in an index.
   is so compared on Cluster too.
 - That runs that share two runners read only their own entities: **tested**, since each run's readings on Cluster
   equal those of a new database.
+- That an operator's `resume` and `discard` answer before the entity handles the message it died on, on Cluster:
+  **seen**, on 2026-11-12, in three of five runs of the history that sends a `Boom` again after a `resume`. The wait
+  after them made ten runs of ten alike.
+- That the generated runs meet suspensions: **seen**, in one run of 300 counted on 2026-11-12, where `inspect` read a
+  suspended entity 131 times, `discard` answered `Discarded` 47 times and `resume` answered `Resumed` 39 times. No
+  `resume` answered `StillSuspended`, since the program deployed is the one that died.
 - That the runners start within a minute: **seen**, in the runs of the test on the maintainer's machine.
 - That two calls held at a statement on a pool answer as one order of them: **tested**, by a hundred runs in the job
   `postgres` of the CI, on the push of `claude/contract-tests-c7e2a1` with decision 0284. Before that decision, with
