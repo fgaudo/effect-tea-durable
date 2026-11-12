@@ -64,6 +64,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
         was taken on 2026-11-12, and the area runs first of the second reading below, in a session that did not write
         them. The other notes of those fixes lie in sections already read, and the second
         reading reads them with their areas.
+    14. The notes taken after area 13: 0281. Each note taken while the second reading runs joins this area. It is
+        read by a session that did not write its notes, once they are fifteen, or after the last area of the second
+        reading.
   - Each area also reads, against the notes of the areas already read, every later note of its own that cites
     them. The sessions below read every such note in the area that holds it, and none is left.
   - The rule above holds of the section The machine and the program too: of the later notes that cite it, the second
