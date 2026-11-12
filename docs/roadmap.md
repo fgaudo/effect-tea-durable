@@ -61,16 +61,18 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     `crash`, `stopped`, `enter` and `entersHeld` of `src/runtime/loop.ts`, the creation of `src/runtime/callers.ts`,
     and `losing` of `src/runtime/doors.ts`. The tests of bugs 31 and 65, and of the case across runners in
     `src/cluster.test.ts`, are `test`s. Four pins lost their interleaving to the steps the code adds, and were pinned
-    again, and `bun run test:pins` holds the 16. The part next is the three premises the note still says are to be
+    again, and `bun run test:pins` holds the 16. `bun run test:release` at `f658bb3`, on 2026-11-12, fails at seed 106
+    of `settled never returns between a crash and the activation its due timer brings`, of `src/runtime/loop.test.ts`,
+    which passes on the code before decision 0274's: the waker hides an entity whose stop refused it until `retry`, and
+    `settled` returns with its timer due. `bun test` runs no seed that fails it. The note's premise of `settled` says
+    what was found and the two changes tried. The part next is a fix of it, proposed to the maintainer before any
+    code, with seed 106 pinned once it holds. Then come the three premises the note still says are to be
     tested. They are a door's step refused while a stop the test holds runs, in `src/cluster.test.ts`; the stop ending
     between the waker's reading and its activation, an explored test with a seed pinned; and `losing` with a
     finalizer that sends to an entity of the shard let go, with two runners. The note is taken once they pass.
-  - `bun run test:slow` fails on `main` since `bae8ae1`, the commit of decision 0273, at `a step of an older version
-    dies and saves no reply, and a runner of the newest version steps its requests`, of `src/cluster.test.ts`. The
-    waker logs the entities `one` and `two` of Toy as stored under a partition it reads that is not their shard, and
-    the test refuses every log it does not expect. The code before decision 0274's passes no better, so the failure is
-    decision 0273's. It is the next commit's work, before any other part of this step. After bugs 31 and 65 come 37, 38,
-    40, 50, 51, 67 and 79.
+  - `bun run test:slow` failed on `main` from `bae8ae1`, the commit of decision 0273, to `f658bb3`, which checks no
+    longer the shard of an entity a crash's mark brings. It passed at `f658bb3` on 2026-11-12, on the maintainer's
+    machine. After bugs 31 and 65 come 37, 38, 40, 50, 51, 67 and 79.
     Decisions 0269, 0271 and 0273 change the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
     taken, and the tests of decision 0269 of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of
     PostgreSQL of the push of `main` that takes it.
@@ -82,7 +84,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - Before the step is taken, `bun run test:release` passes on `main`, and so does the workflow run by hand, as
     `AGENTS.md` says. With families F, E and B, `bun run test:release` passed on `main` at `07cb3fb`, on 2026-11-11,
     on the maintainer's machine, and `ci.yml` passed on its push, the job of PostgreSQL included. The workflow run by
-    hand has not run yet. Family G was fixed after `07cb3fb`, so both run again.
+    hand has not run yet. Family G was fixed after `07cb3fb`, so both run again. At `f658bb3`, on 2026-11-12, on the
+    maintainer's machine, `bun run test:release` ran 792 tests in 798 s, and failed one, the seed 106 of decision
+    0274's part above.
   - A family's rule is proposed to the maintainer before any code, with the alternatives, and the code waits for the
     maintainer's choice. The maintainer may ask for the opinion of a subagent first, as a Fable 5.2 agent gave for F
     and E.

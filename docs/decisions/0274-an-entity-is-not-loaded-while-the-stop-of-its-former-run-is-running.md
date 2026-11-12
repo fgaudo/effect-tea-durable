@@ -92,6 +92,20 @@ The decision leaves out four cases, each held by the [open questions](../open-qu
 - That an entity whose stop ends is activated by the waker, with no caller coming: **tested** by the same test, whose
   finalizer is let end. That the rule holds where the stop ends between the waker's reading and its activation: to be
   **tested** by an explored test under the scheduler of `src/testing.ts`, with a seed pinned that ends the stop there.
+- That `settled` does not return while a stored timer of an entity the process does not hold is due, where the
+  waker's activation of that entity is refused because its stop runs (decisions 0029 and 0068): **fails**, at seed 106
+  of `settled never returns between a crash and the activation its due timer brings, under prioritized schedules`, in
+  [`src/runtime/loop.test.ts`](../../src/runtime/loop.test.ts), under `bun run test:release` on 2026-11-12, at
+  `f658bb3`. `SEED=106 bun test src/runtime/loop.test.ts -t "settled never returns between a crash"` reproduces it.
+  The test fails at `f90a3a3`, the code of this note, and passes from seed 106 at `dcf891c`, the commit before. The
+  test gets `{ early: true, restarted: false }`. The waker's activation dies on `stopped`, and the waker marks the
+  entity hidden until `retry`, so its reading leaves the due timer out. `settled` returns with the timer due, and
+  the test's clock never reaches `retry`, so the entity never restarts. Two changes were tried in a scratch worktree,
+  and neither is in the repository. The first made `quiet` false while `stopping` holds an entity and made the end of
+  a stop call `end`: seed 34 then fails too. The second also cleared the mark's `hides` at the end of the stop and
+  poked the waker: seeds 34 and 106 pass, and seed 1139 fails the same way. A lead for seed 1139 is that the stop ends
+  before the waker writes the mark of the activation it refused. The fix is a choice for the maintainer, as the step
+  says, and seed 106 is pinned in the test once the fix holds it.
 - That a door's step which finds a stop running dies, and that Cluster delivers the request again once the stop ends:
   seen in `a door step that loads an entity and whose commit fails leaves the entity to run its stored operation`, in
   [`src/cluster.test.ts`](../../src/cluster.test.ts). Its next door step came before the stop of the crash ended in
@@ -134,5 +148,7 @@ The decision leaves out four cases, each held by the [open questions](../open-qu
 
 - Decision 0056's consequence that an operation of a crashed entity may still be stopping when the entity is loaded
   again holds no more on one runner. `settled` still waits for no stop of a crashed entity: the stops are in the
-  deployment's scope, and closing it waits for them.
+  deployment's scope, and closing it waits for them. A stop that refuses the waker's activation of a due timer then
+  lets `settled` return before that activation, which decision 0068 forbids. It is the premise of `settled` above that
+  fails, and the note is not taken while it fails.
 - A crash's callers who retry at once may be given the defect of the stop again, until the stop ends.
