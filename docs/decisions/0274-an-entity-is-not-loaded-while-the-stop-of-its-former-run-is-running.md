@@ -90,9 +90,11 @@ The decision leaves out four cases, each held by the [open questions](../open-qu
 - That a door's step which finds a stop running dies, and that Cluster delivers the request again once the stop ends:
   to be **tested** by a test of `src/cluster.test.ts`.
 - That Cluster lets a shard go only after the finalizer of its singleton ends, so that the runner which gains the shard
-  loads none of its entities while their stops run: to be **tested** by a test of `src/cluster.test.ts` with two
-  runners, whose operation's finalizer is held while the shard moves. It runs first on the code before this note, as
-  the reproduction of the case across runners. The JSDoc of `registerSingleton` in Effect 4.1.3 promises no such wait.
+  loads none of its entities while their stops run: to be **tested** by `a shard that moves while an operation of the
+  first runner still stops starts it on the second only after`, a `test.failing` of
+  [`src/cluster.test.ts`](../../src/cluster.test.ts) with two runners, whose operations' finalizers are held while the
+  shards move. On the code before this note it fails: the second runner starts each moved entity's operation while
+  the first runner's finalizer still waits, so the case across runners is reproduced. The JSDoc of `registerSingleton` in Effect 4.1.3 promises no such wait.
   `runShardRelease` of `cluster/Sharding.ts` joins `awaitStoppingSingletons` before the storage's release, which is a
   behaviour not promised, so the test holds it at every move of Effect.
 - That `losing` joining the stops does not hold up a finalizer of an operation that sends through the door's client to

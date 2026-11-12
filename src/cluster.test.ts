@@ -1248,6 +1248,8 @@ describe('the shards of a runner on Cluster', () => {
   let seen: Array<string> = []
   /** Whether `Ask` answers: while it does not, it waits until it is interrupted. */
   let answers = false
+  /** While set, the finalizer of an interrupted `Ask` waits for it, and says `stopped` once it ends. */
+  let stopping: Promise<void> | null = null
   const bell: Program<Bell> = {
     name: 'Bell',
     keys: { ask: null, ring: null, relay: null, haunt: null },
@@ -1348,7 +1350,12 @@ describe('the shards of a runner on Cluster', () => {
           seen.push(`${who} started on ${port}`)
           if (!answers) {
             yield* Effect.never.pipe(
-              Effect.onInterrupt(() => Effect.sync(() => void seen.push(`${who} interrupted on ${port}`))),
+              Effect.onInterrupt(() =>
+                Effect.sync(() => void seen.push(`${who} interrupted on ${port}`)).pipe(
+                  Effect.andThen(Effect.suspend(() => stopping === null ? Effect.void : Effect.promise(() => stopping!))),
+                  Effect.andThen(Effect.sync(() => void seen.push(`${who} stopped on ${port}`))),
+                )
+              ),
             )
           }
           return { _tag: 'Answered' } as const
@@ -1468,6 +1475,7 @@ describe('the shards of a runner on Cluster', () => {
       })
     seen = []
     answers = false
+    stopping = null
     try {
       await Effect.runPromise(
         Effect.scoped(run(start)).pipe(Effect.provide([store, collected])) as Effect.Effect<void, unknown>,
@@ -1684,6 +1692,44 @@ describe('the shards of a runner on Cluster', () => {
         for (const id of kept) {
           expect(seen).not.toContain(`${id} interrupted on 1`)
           expect(seen).not.toContain(`${id} started on 2`)
+        }
+      })), 30_000)
+
+  // Decision 0274: a shard lost waits for the stops of the entities it crashed, and Cluster lets the shard go only
+  // after the finalizer of its singleton, so the runner that gains it never runs an operation beside the old fiber.
+  test.failing('a shard that moves while an operation of the first runner still stops starts it on the second only after', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        let release = () => {}
+        stopping = new Promise<void>((resolve) => {
+          release = resolve
+        })
+        yield* Effect.addFinalizer(() => Effect.sync(() => release()))
+        const first = yield* start(1)
+        yield* until(Effect.sync(first.count), (n) => n === shardsPerGroup)
+        const ids = Array.from({ length: 8 }, (_, i) => `e${i}`)
+        for (const id of ids) {
+          yield* create(first, id)
+          yield* send(first, id, { _tag: 'Ask' }, `m-${id}`)
+        }
+        yield* until(Effect.sync(() => seen.length), (n) => n === ids.length)
+        const second = yield* start(2)
+        yield* until(Effect.sync(() => seen), (lines) => lines.some((line) => line.endsWith('interrupted on 1')))
+        // Long enough for the second runner to take a shard Cluster let go, and to activate its entities.
+        yield* Effect.sleep('500 millis')
+        release()
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const moved = ids.filter((id) => second.holds(id))
+        expect(moved.length).toBeGreaterThan(0)
+        yield* until(
+          Effect.sync(() => seen),
+          (lines) => moved.every((id) => lines.includes(`${id} started on 2`) && lines.includes(`${id} stopped on 1`)),
+        )
+        for (const id of moved) {
+          expect(seen.indexOf(`${id} stopped on 1`)).toBeLessThan(seen.indexOf(`${id} started on 2`))
         }
       })), 30_000)
 

@@ -58,9 +58,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     proposed to the maintainer before any code. Bugs 31 and 65 have one cause, and their fix is
     [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md),
     `proposed`, which the maintainer chose on 2026-11-12 after an opinion of a Fable 5.2 agent. No code of it is
-    written yet. The part next is the test of `src/cluster.test.ts` with two runners that its note names, run first on
-    the code before the note, as the reproduction of the case across runners; then the code, in `crash`, `enter` and
-    `entersHeld` of `src/runtime/loop.ts` and in `losing` of `src/runtime/doors.ts`. After bugs 31 and 65 come 37, 38,
+    written yet. The case across runners is reproduced by a `test.failing` of `src/cluster.test.ts`, `a shard that
+    moves while an operation of the first runner still stops starts it on the second only after`. The part next is
+    the code, in `crash`, `enter` and `entersHeld` of `src/runtime/loop.ts` and in `losing` of
+    `src/runtime/doors.ts`, with the tests of the other premises its note names. After bugs 31 and 65 come 37, 38,
     40, 50, 51, 67 and 79.
     Decisions 0269, 0271 and 0273 change the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
     taken, and the tests of decision 0269 of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of
@@ -430,6 +431,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       at-most-once case. Two sessions noticed it. The [open question](open-questions.md#running) A send after the
       work it belongs to ended.
       Reproduced by `a send of an operation a crash could not interrupt, after its new run ended the work, is applied once`, a `test.failing` of `src/runtime.test.ts`: the receiver applies the message twice.
+      On Cluster, a shard that moves starts the operation on the runner that gains it while the first runner's
+      finalizer still runs, as a `test.failing` of `src/cluster.test.ts` reproduces.
       Its fix on one runner is proposed in [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
   66. **Fixed by [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)**, whose drain reaches a deployment still activating.
   67. **Noticed, not checked: a planned stop while the main fiber deploys undoes the deploy, and its at-most-once

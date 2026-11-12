@@ -502,7 +502,8 @@ with a requirement that no example has yet.
   decided by:
   - whether a receiver refuses a request whose asker's work no longer holds, by the asker's key row it already reads;
   - a test of bug 65 with an operation that sends from an uninterruptible finalizer;
-  - a helper of `src/cluster.test.ts` that keeps a runner's operation running after another runner took its shard;
+  - a helper of `src/cluster.test.ts` that keeps a runner's operation running after another runner took its shard,
+    which exists for a shard moved in order, by a finalizer the test holds, and not for a runner frozen past its lease;
   - for bug 90, reasoned, whether a door loads an entity of a shard whose singleton has not started, since no
     finalizer then crashes it, and its operations run beside the next holder's.
 - **A wait whose operation, run again, sends elsewhere.** A step that answers an operation `Suspended` stores its
