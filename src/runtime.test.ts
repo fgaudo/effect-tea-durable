@@ -1443,6 +1443,61 @@ describe('a planned stop', () => {
       ), { rerun: 0, unknown: [] }, { open: false, pinned: [79] })
   }, 60_000)
 
+  // The premise review's second reading of area 5. `start` reads `draining` and only then registers the operation's
+  // fiber in `operations`, with a fork between the two. A drain that begins there finds no fiber to stop, and the
+  // operation that runs again runs on in the drain, which waits for it: here `a` never ends, so the drain would wait
+  // its whole `millis`, which the clock never reaches, though `b`, the only at-most-once operation, has ended. Seed
+  // 659 finds it, and passes with a stop of the operation registered once `start` finds `draining` set.
+  test('FAILING: a step that starts an operation that runs again as the drain begins has it stopped at once', () => {
+    const raced: Program<T> = {
+      ...program,
+      name: 'Raced',
+      init: (_flags, at) => ({ want: ['b'], applied: [], since: at, rings: at }),
+    }
+    explored((window) =>
+      Effect.gen(function*() {
+        const acted: Array<string> = []
+        const gate = Deferred.makeUnsafe<void>()
+        const layer = Layer.succeed(
+          Hands,
+          Hands.of({
+            act: (key, idempotencyKey) =>
+              Effect.andThen(
+                Effect.sync(() => acted.push(idempotencyKey === null ? key : `${key}:${idempotencyKey}`)),
+                key === 'b' ? Deferred.await(gate) : Effect.never,
+              ),
+          }),
+        )
+        const at = yield* DateTime.now
+        const handle = Deferred.makeUnsafe<Library.Handle<T>>()
+        const release = Deferred.makeUnsafe<void>()
+        // The body ends as the caller's step has replied and is about to start `a`, so the drain begins there.
+        const at_ = (point: Point, _entity: Address, event: Machine.Event<never>) =>
+          point === 'AfterReply' && event._tag === 'Receive' ? Deferred.succeed(release, undefined) : Effect.void
+        const stopping = yield* Effect.forkChild(process({ drain: { millis: 100 }, at: at_ }, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(raced), layer)
+            yield* ran(toy.create(id, { flags: { at }, requestId: 'creation', sender: tester }))
+            yield* Deferred.succeed(handle, toy)
+            yield* Deferred.await(release)
+          })))
+        const toy = yield* Deferred.await(handle)
+        yield* opened(window, true)
+        // The caller's step starts `a` while the body ends and the launch's scope begins its drain.
+        yield* Effect.forkChild(
+          toy.send(id, { _tag: 'Want', key: 'a', on: true, nonce: 'n' }, {
+            requestId: 'want',
+            sender: tester,
+            keep: 'forever',
+          }),
+        )
+        yield* Deferred.await(release)
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(stopping)
+        return 'stopped'
+      }), 'stopped', { open: false, pinned: [659] })
+  }, 60_000)
+
   test('a completion in the drain starts no operation that runs again, and arms no timer', () =>
     database(Effect.gen(function*() {
       // `b`'s completion brings `a`, and `t`, due at once: both wait for the next activation.
