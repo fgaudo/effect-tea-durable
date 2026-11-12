@@ -405,10 +405,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     status line. Its case is pinned in the test of the pool, and fails on the CI before the fix. The opinion of a
     Fable 5.2 agent of 2026-11-12, behind decision 0284, proposed each fix below, and each is reasoned until its test
     passes on the server.
-    1. Bug 49, a deadlock of the sweep's batch and a step's deletion of its entity's replies. Under decision
-       0285 a batch never waits for a reply's row, and a step may still wait for a batch's. `forgetUnder` of [`src/storage/cluster.ts`](../src/storage/cluster.ts) deletes
-       Cluster's rows in an order of its own, and is checked apart. Its test holds the two at their rows and expects
-       no `DeadlockError`.
+    1. Done, on 2026-11-12, bug 49, a deadlock of the sweep's batch and a step's deletion of its entity's replies,
+       fixed by decision 0285 with no note of its own. Its case `bug49` passes on the pool, and deadlocked against a
+       batch that waits for a reply's row. `forgetUnder` of [`src/storage/cluster.ts`](../src/storage/cluster.ts),
+       which runs only on Cluster, stays an open question.
     2. Bug 3, a reply to another entity's operation that stays for ever: the `NOT EXISTS` on the asker's row of
        `effecttea_entity_keys` is read unlocked. Locking that row `FOR SHARE` first fixes it. Two entities that end
        their work and answer each other in one step may then close a cycle, which decision 0222 turns into a crash,

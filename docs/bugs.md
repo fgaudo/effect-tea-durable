@@ -39,7 +39,7 @@ family gets a fix of its own.
   statements. Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does
   not read again on the row it then writes. Its rule is [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md): a statement that writes
   or deletes a row on a condition reads the condition from a row it has locked. Bugs 25, 13, 80, 78 and 111 are
-  its first cases, fixed.
+  its first cases, fixed. Bug 49 is fixed by the note of bug 13.
 - F, B, E and G are fixed. Family F is decided by
   [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md), family E by
   [decision 0252](decisions/0252-the-waker-activates-an-entity-a-crash-took-out-after-the-retry.md), family B by
@@ -244,12 +244,7 @@ family gets a fix of its own.
 46. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose check refuses a file only tests import whose name `bun test` runs.
 47. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose check of the workflow reads every key of a job, and refuses one it does not read.
 48. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, whose check refuses a file of the tests that reaches the databases and that `test:postgres` does not run.
-49. **Noticed, not checked: on a pool of PostgreSQL, the sweep's batch and a step that deletes its entity's replies
-    may deadlock.** The two deletes take the same rows in two orders, which
-    [decision 0222](decisions/0222-postgresql-with-many-connections.md) did not count among its cycles
-    ([decision 0245](decisions/0245-a-reply-is-kept-as-long-as-send-says-and-the-runtime-sweeps.md)). Where
-    PostgreSQL ends the step's transaction, the entity crashes. The
-    [open question](open-questions.md#running) A statement whose condition PostgreSQL reads from its snapshot.
+49. **Fixed by [decision 0285](decisions/0285-a-batch-of-expire-skips-the-replies-a-step-holds.md)**, whose batch waits for no reply's row. Its case `bug49` of the test of the pool deadlocked on the CI against a batch that waits, at `10b3ac9` of `claude/bug49-mutated`.
 50. **Fixed by [decision 0278](decisions/0278-on-a-full-volume-the-callers-stop-before-room-is-freed.md)**, under which the callers stop before an operator frees room on a full volume.
 51. **Fixed by [decision 0279](decisions/0279-createtables-dies-within-a-transaction-of-its-client.md)**, under which `createTables` dies within a transaction of its client.
 52. **Fixed by [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md)**, which pins a seed in each explored test whose comment names an interleaving, and runs it against the rule taken out.
