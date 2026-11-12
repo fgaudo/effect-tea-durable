@@ -6,6 +6,90 @@ with a requirement that no example has yet.
 
 ## Storage and reading
 
+- **A state written back to the text `reindex` read, at the version it read.** `reindex` writes a row only where the
+  stored state and version are those it computed from
+  ([decision 0070](decisions/archive/0070-reindex-writes-a-row-only-over-its-state.md)). A step that changes a state
+  and a step that changes it back, or an end and a creation under the same id with the same first state, both land
+  between the reading and the writing. `reindex` then writes its row, which is the projection of that same text by the
+  program deployed. This holds while a projection is a function of the state alone, as
+  [decision 0032](decisions/archive/0032-a-projection-is-a-row.md) says, and no test runs the sequence. The second
+  reading of the premise review noticed it on 2026-11-12.
+  - An explored test that runs two such steps between `reindex`'s reading and its write, and reads the row after,
+    would decide it.
+- **The order of the fields of a work, a projection and a topic's value.** Decision 0058 compares two works with their
+  fields in any order, and `canonical` of `src/machine.ts` sorts the fields of every object before a comparison. The
+  columns are `TEXT` on both dialects, never `jsonb`, so PostgreSQL does not reorder what it holds. Only `what a
+  request carries encodes to one text (decision 0269)`, of `src/machine.test.ts`, tests `canonical`, through a
+  request's key. The second reading of the premise review noticed it on 2026-11-12.
+  - A test of `src/machine.test.ts` that compares two works, projections and topic values whose fields differ only in
+    order would decide it.
+- **A query that pages across `reindex`.** A row no step changes is given exactly once, on one page
+  ([decision 0143](decisions/archive/0143-a-query-pages-after-the-last-row-it-gave.md)). `reindex` writes the rows of a
+  program again with no step, after a deploy that changed an index, so a caller that pages across it may be given a
+  row twice or not at all. Decision 0072 sends a consumer that needs every entity to `query` once `reindex` has run,
+  so the case is a caller that pages across a deploy. The second reading of the premise review noticed it on
+  2026-11-12.
+  - Whether the guide says that a query paged across a deploy that changes an index may repeat or skip a row, or a
+    test that pages across `reindex` and counts the rows given, would decide it.
+- **Rows of the read model read without their schema.** Decision 0062 reads every row through its table's schema,
+  the aggregates included. `storedIndexes`, at `src/storage/projections.ts:459`, reads a row's `indexes` with
+  `JSON.parse` and a cast, and `countBy`, at line 452, casts the value it parses. The count of `effecttea_entity_keys`
+  at `src/storage/cluster.ts:201` is read with `Number` and no schema. A row whose `indexes` is JSON but no object
+  fails a query with a `TypeError`, a defect that names no table. The second reading of the premise review found it
+  by a reading on 2026-11-12.
+  - A test of `src/storage.test.ts` with a row of `indexes` written by hand as a JSON array would decide it, and a
+    reading through the schema of `Rows` would fix it.
+- **A query on Cluster that takes SQLite's write lock.** Every page runs in `snapshot`, and an explicit transaction of
+  `SqliteClient` takes the write lock for its length, though it only reads, as its JSDoc says. So a page of one runner
+  that waits past the busy timeout of 5 s for another runner's lock dies with `SQLITE_BUSY`. It is the form of bug 36,
+  under A reindex on Cluster above, for a reading. The second reading of the premise review noticed it on 2026-11-12.
+  - A test of `src/cluster.test.ts` with `withholding`, whose step holds the write lock while the other runner reads a
+    page, would decide it.
+- **A caller of `published` that passes the last row of a page.** `docs/design.md` and
+  [decision 0141](decisions/archive/0141-a-query-and-a-reading-of-the-log-take-a-limit.md) say that a caller of
+  `published` reads again past the last row it was given, from the cursors of that row. A row carries the cursor of
+  its own partition alone, and `cursorsOf`, at `src/storage/log.ts:83`, reads a partition with no cursor in `after`
+  from 0, as the comment of `Handle.published` says. So a caller that passes only the last row of a page reads again
+  the rows of the other partitions that the page gave. The second reading of the premise review found it by a reading
+  on 2026-11-12.
+  - Whether the guide says the caller passes the highest cursor of each partition among the rows given, or
+    `published` gives the cursors to pass with the page, would decide it.
+- **A launch given `tables: 'existing'` does not run the refusal of decision 0263.** A launch dies where a schema
+  further on the `search_path` holds the tables
+  ([decision 0263](decisions/0263-a-launch-dies-where-a-schema-further-on-the-search-path-holds-the-tables.md)). A
+  launch given `tables: 'existing'` runs no `firstSchema`, at `started` of `src/runtime.ts:1054`, so the refusal does
+  not run there. Every statement then resolves through the `search_path` to that schema, so the runtime reads one set
+  of tables, and only an operator's later `createTables` dies. The second reading of the premise review noticed it on
+  2026-11-12.
+  - A test of `src/storage.test.ts` on PGlite, a launch given `'existing'` under the `search_path` `runtime, public`
+    with the tables in `public`, and a reading of where a step writes, would decide it.
+- **A release older than the database's latest migration.** It launches on the database and runs nothing, as
+  [decision 0216](decisions/0216-the-tables-are-made-by-effects-migrator.md) says. Yet `tablesMade` makes `check`
+  die on that database (decision 0247). On Cluster, in a rolling deploy whose newer release adds a migration `0002`,
+  the older runners would step on the changed tables. No release has a second migration, so no test reaches the case
+  yet. The second reading of the premise review noticed it on 2026-11-12.
+  - The first release with a second migration, and a test of `src/cluster.test.ts` of an older runner beside it,
+    would decide it.
+- **A first launch on a full volume, where the hold file is missing.** A first launch on a database whose hold file is
+  missing writes the hold file's first page and its journal
+  ([decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)). A
+  database copied without its hold file is such a case. The write may fail with `database or disk is full` before the
+  operator's forget, and `spikes/full-volume.test.ts` launches where the hold file exists. The second reading of the
+  premise review noticed it on 2026-11-12.
+  - A case of `spikes/full-volume.test.ts` that removes the hold file before the launch would decide it.
+- **Two runners of one process on one file of SQLite, each running `createTables`.** The helper `onFile` of
+  `src/cluster.test.ts` makes two runners on one file, and each runs `createTables` in `sharding`. Under bun:sqlite,
+  the second runner's `BEGIN IMMEDIATE` blocks the event loop for the busy timeout while the first runner holds the
+  write lock. The spike of decision 0216 ran the first run in another process. The second reading of the premise
+  review noticed it on 2026-11-12.
+  - A test of `src/cluster.test.ts` that launches two runners at once on a file with no tables, and times the second,
+    would decide it.
+- **A `PgClient` given `transformQueryNames`.** The function would change the name `effecttea_migrations` in the
+  statements of `Migrator` that are not `withoutTransform`, and in `tablesMade`. It would not change the name in the
+  `to_regclass` of `firstSchema`, so the check of decision 0263 would look for a name other than the one made. The
+  second reading of the premise review noticed it on 2026-11-12.
+  - Whether a launch refuses a client given `transformQueryNames`, or a test of `src/storage.test.ts` on PGlite with
+    such a client, would decide it.
 - **Generated cases of a migration.** A case of a migration is recorded by hand, with the JSON a version wrote and
   the JSON the next one reads
   ([decision 0126](decisions/archive/0126-a-program-keeps-every-migration-and-a-test-records-what-each-did.md)). A changed
@@ -140,6 +224,26 @@ with a requirement that no example has yet.
   - what a reader of `consume` of the dropped topic does on an older runner, which acks on.
 
 ## Running
+
+- **One set of the waker for two warnings.** The set `refused` of `waking`, at `src/runtime/waker.ts:26`, keeps the
+  ids whose refused time is logged once
+  ([decision 0259](decisions/0259-a-reading-of-the-waker-that-fails-is-read-again-after-the-retry.md)).
+  [Decision 0273](decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md) logs a misplaced entity once
+  by the same set, at lines 71 and 91. So on Cluster an entity first refused for its time, then read under a partition
+  that is not its shard, is never logged as misplaced, and the other order hides the refusal of its time. Both cases
+  are rows written by hand. The second reading of the premise review noticed it on 2026-11-12.
+  - A test of `src/cluster.test.ts` that writes a time no integer is for an entity, moves the entity's partition by
+    `storedUnder`, and expects both lines, would decide it.
+
+- **A stored `due` before the time the entity's work holds.** The reading of the entities due, at
+  `src/storage/entities.ts:628`, compares `due` in SQL and decodes the id alone, so a time of `1000.5` at or before
+  now is not refused, though decision 0062 says the reading goes through `Rows.due`. The entity is activated, and the
+  activation reads its timer from the key's `work`, not from `due`. Where `work` holds a later time, the timer does not
+  fire, and the entity is activated again after each passivation until that time, with nothing logged. The same holds
+  of any `due` written by hand before the time in `work`, an integer included. So the case is a row written by hand
+  that no note decides. The second reading of the premise review noticed it on 2026-11-12.
+  - A test of `src/runtime/waker.test.ts` that writes such a `due` and counts the activations over a few passivations
+    would decide it.
 
 - **On Cluster, an entity crashed by a shard lost, crashed again by its own loop.** An entity is not loaded while the
   stop of its former run is running, and a crash runs only on an entity loaded, so the map `stopping` holds one stop of

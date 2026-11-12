@@ -186,10 +186,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     3. Done, area 3, Versions and deploys.
     4. Done, area 4, The runtime, a first part.
     5. Area 5, The runtime, a second part.
-    6. Area 6, Schemas and projections, a first part.
+    6. Done, area 6, Schemas and projections, a first part.
     7. Area 7, Schemas and projections, a second part.
-    8. Area 8, The queries and their pages.
-    9. Area 9, The tables and migrations.
+    8. Done, area 8, The queries and their pages.
+    9. Done, area 9, The tables and migrations.
     10. Area 10, The rehearsal and testing.
     11. Done, by the sample above: area 11, The scheduler of the tests.
     12. Area 12, The project and what enters the library.
@@ -262,8 +262,27 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     again by its own loop on Cluster. Not reached: the notes the long declarations of the runtime and the storage
     couple to the area, and 0081, 0092, 0162 and 0163 beyond `src/runtime/doors.ts`, as its table in
     [`reviews.md`](decisions/reviews.md) says.
+  - Done, in three sessions of 2026-11-12 run at once, that read none of the reports, each cut from `main` at
+    `ca62547`: areas 6, 8 and 9 of the second reading. Area 6, Schemas and projections, a first part, read its
+    thirteen notes whole with the code, against 0259 read whole, and reproduced nothing, on
+    `claude/premise-review-2-area-6-0d081e`. Area 8, The queries and their pages, read its eleven notes whole with the
+    code but for the alternatives of 0149, against 0184, 0256, 0275 and 0277 read whole. Its finding is bug 98 of
+    [`docs/bugs.md`](bugs.md), a sum over -2^63 on SQLite, reproduced on `claude/premise-review-2-area-8-0b997d` at
+    `8ca9992`. Area 9, The tables and migrations, read its nine notes whole with the code, against 0263, 0264, 0267,
+    0278 and 0279 read whole and 0254 in part. Its findings are bugs 99 and 100, reproduced on
+    `claude/premise-review-2-area-9-f72a79` at `375a5f3`: a comparison of a move of Effect that leaves out `Migrator`,
+    of family G, and a hold of SQLite that names another runtime for an application's writer. Each test was run again
+    on the branch, whose `src/` is `main`'s, and fails at its assertion. Their suspects not checked and the places where
+    the code does otherwise than its note are [open questions](open-questions.md), under Storage and reading and
+    Running. Not reached: the notes the long declarations of the storage and the runtime couple to each area, and the
+    notes that change or cite them read in part, as their tables in [`reviews.md`](decisions/reviews.md) say.
+  - Areas 5 and 7 of the second reading were read on 2026-11-12 in the same batch, and sent back to their branches,
+    `claude/premise-review-2-area-5-51cf0e` and `claude/premise-review-2-area-7-746042`, to read whole the notes of the
+    brief they read in part. Area 5 reports a drain that misses an operation that runs again which a step forks as the
+    drain begins, at a pinned seed. Area 7 reports three bugs of PostgreSQL. Neither is checked or recorded yet: each
+    is, once its session ends.
   - Every area of the first list but area 14, every last session and the sample are `Done`. So the step goes on with
-    area 5 of the second reading. A session that records a review writes `Done, ` before what it read, and adds a
+    areas 5 and 7 of the second reading, then 10 and 12. A session that records a review writes `Done, ` before what it read, and adds a
     bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
     reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
     a last session and read whole by no other review.

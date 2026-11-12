@@ -46,11 +46,12 @@ family gets a fix of its own.
   [decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md). What each left
   unverified is an [open question](open-questions.md#running): A sender and Cluster's round at the least retry, The
   cases of a crash's retry not run yet, An operation's kept answer on Cluster across a crash, and under two runs at
-  once, and A timer due, which no test of the capacity reaches.
+  once, and A timer due, which no test of the capacity reaches. Bug 99 has the form of family G, found after its
+  fix, and is not fixed yet.
 - Of no family: bugs 4, 6, 8, 19, 22, 26, 31, 37, 38, 40 to 42, 44, 50, 51, 60, 64 to 67, 75, 79, 81, 82, 86, 87 and
   92. Each is fixed by a note of its own or verified false, as its entry says. Bug 79, a gap of the guide, is fixed in
   `docs/design.md` with no note, since decisions 0185 and 0222 decide it. Bug 93 is of no family either, and has
-  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281. Bug 94 is of no family, and is fixed by decision 0282. Bug 95 is of no family, and not fixed yet.
+  the form of bug 42: a rehearsal that refuses a program the runtime runs. It is fixed by decision 0281. Bug 94 is of no family, and is fixed by decision 0282. Bug 95 is of no family, and not fixed yet. Bugs 98 and 100 are of no family, and not fixed yet.
 
 ## The list
 
@@ -587,3 +588,50 @@ family gets a fix of its own.
     `effecttea_given_requests` by hand: a test of `src/cluster.test.ts` that creates with flags `init` rejects, then
     launches a runner that renames, would run the whole sequence. The fix begins at `holds` of
     `src/storage/tables.ts`, which would read the two tables of Cluster's ids too.
+98. **Reproduced: on SQLite, a sum over an index that holds -2^63 dies with an `SqlError`, where PostgreSQL answers
+    it.** [Decision 0146](decisions/archive/0146-an-integer-beyond-2-53-is-written-with-its-exact-digits.md) writes an
+    integer beyond 2^53 with the exact digits of its double, so -2^63 is stored as `-9223372036854775808`. SQLite's
+    `json_extract` reads those digits as its least integer, where it read the digits `JSON.stringify` writes as a real.
+    [Decision 0209](decisions/0209-a-sum-is-refused-past-the-largest-double-alike-on-both-dialects.md) adds the
+    magnitudes of a sum with `ABS`, and
+    [decision 0277](decisions/0277-a-sum-is-refused-by-a-count-of-its-magnitudes-both-dialects-make-alike.md) keeps
+    `ABS` in its count of units, at `src/storage/projections.ts:404`. SQLite's `abs()` throws `integer overflow` on its
+    least integer, so the statement fails. On PostgreSQL the same value is a `NUMERIC`, and the sum is answered. The
+    premise that fell is decision 0209's, kept by decision 0277: both dialects refuse the same sums. A count, a
+    `countBy` and a query over the same row answer, since none applies `ABS`. The test `FAILING: a sum over an index
+    that holds -2^63 is answered alike on both dialects`, in `src/storage.test.ts`, reproduces it on SQLite on the
+    branch `claude/premise-review-2-area-8-0b997d`, at `8ca9992`, cut from `main` at `ca62547`, and passes on PGlite.
+    The fix begins at `sum` of `src/storage/projections.ts`, which would take the magnitude of a real, as
+    `ABS(CAST(x AS REAL))` does, or at `indexesText`, which would write -2^63 as digits SQLite reads as a real.
+99. **Reproduced: the comparison of a move of Effect does not compare the source of `Migrator`, which decisions 0216,
+    0218 and 0225 rest on.** [Decision 0225](decisions/0225-the-migrations-run-at-the-roles-level-and-lock-before-they-read.md)
+    lets the migrations run at the level the role sets, since `run` of `sql/Migrator.ts` takes `LOCK TABLE` before it
+    reads the history, and says that a move of Effect's version reads that source again.
+    [Decision 0216](decisions/0216-the-tables-are-made-by-effects-migrator.md) and decision 0218 rest on the same
+    source: `ensureMigrationsTable` runs before the transaction, and a unique violation on the history is read as
+    `Locked`. [Decision 0254](decisions/0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) made
+    `scripts/compare-docs.ts` compare whole the sources of the drivers that premises of 0157 and 0222 were read in. It
+    left out `sql/Migrator.ts`, a module `@stability unstable`, and `defaultEscape` of `sql/Statement.ts`, which
+    decision 0217 read. So a release that reads the history before the lock passes every check, and a second launch on
+    a database whose default level is `SERIALIZABLE` would die on the first `CREATE TABLE`. The premises hold at
+    Effect 4.1.3. It has the form of family G. The test `FAILING: the comparison of a move of Effect compares whole the
+    source of Migrator, which decision 0225 reads`, in `src/form.test.ts`, reproduces it on the branch
+    `claude/premise-review-2-area-9-f72a79`, at `375a5f3`, cut from `main` at `ca62547`. The fix begins at `drivers`
+    of `scripts/compare-docs.ts`, which would name `sql/Migrator.ts` and `sql/Statement.ts` of `effect`, or at a check
+    of the form that finds every source a note reads in the source and checks that the comparison names it.
+100. **Reproduced: on SQLite, a launch beside a writer that is no runtime dies with the reason `the database is held by
+    another runtime`.** [Decision 0267](decisions/0267-a-file-of-sqlite-is-held-by-a-file-of-its-own-and-refuses-no-reader.md)
+    holds a database by a file of its own, which refuses a second runtime and no other writer, and
+    [decision 0198](decisions/0198-every-object-the-runtime-makes-is-named-with-tea.md) lets an application keep its
+    own tables in the runtime's database. The hold runs `BEGIN EXCLUSIVE` on the runtime's connection with the hold
+    file attached, and SQLite begins that transaction on every database attached, the main one included. So the hold
+    also takes the write lock of the main file. `take` of `hold`, in `src/storage/tables.ts`, reads every
+    `LockTimeoutError` as a lock of the hold file, and dies with `the database is held by another runtime`. An
+    application whose transaction on its own table holds the write lock past the busy timeout makes the launch die so,
+    and an operator looks for a runtime that is not there. Nothing is lost: without the hold, the launch would wait
+    for the same lock in `createTables`. The premise that fell is unwritten in
+    [decision 0080](decisions/archive/0080-a-database-is-held-by-one-runtime.md): at the hold, only the hold's own lock
+    can time out. The test `FAILING: a launch beside a writer that is no runtime is not refused as held by another
+    runtime`, in `src/runtime.test.ts`, reproduces it under a busy timeout of 0 on the branch
+    `claude/premise-review-2-area-9-f72a79`, at `375a5f3`. The fix begins at `take`, whose transaction would lock the
+    hold file alone, or which would tell a lock of the hold file from a lock of the main file before it says `held`.
