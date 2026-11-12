@@ -4981,6 +4981,33 @@ describe('a database held by one runtime', () => {
     })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
   })
 
+  // The premise review's second reading of The tables and migrations, 2026-11-12. The hold refuses a second runtime
+  // and no writer that is no runtime (decision 0267), and an application's tables may live in the runtime's database
+  // (decision 0198). The hold's `BEGIN EXCLUSIVE` takes the write lock of every database attached, the main one
+  // included, so a writer of the application's table that holds that lock past the busy timeout makes the launch die
+  // as held by another runtime, where no runtime holds it.
+  test('FAILING: a launch beside a writer that is no runtime is not refused as held by another runtime', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'effect-tea-persistent-'))
+    const filename = join(directory, 'store.db')
+    const client = (scope: Scope.Scope) =>
+      Effect.map(
+        Scope.provide(Layer.build(SqliteClient.layer({ filename, busyTimeout: 0 })), scope),
+        (context) => Context.get(context, SqlClient.SqlClient),
+      )
+    return Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const runtime = yield* client(yield* Effect.scope)
+      const application = yield* client(yield* Effect.scope)
+      yield* application`CREATE TABLE customers (id TEXT PRIMARY KEY)`
+      // The application writes its own table, in a transaction that holds the file's write lock while the launch
+      // runs. No runtime holds the database.
+      const exit = yield* application.withTransaction(Effect.gen(function*() {
+        yield* application`INSERT INTO customers (id) VALUES ('c-1')`
+        return yield* Effect.exit(Effect.provideService(process({}, () => Effect.void), SqlClient.SqlClient, runtime))
+      }))
+      expect(reasonOf(exit)).not.toBe(held)
+    })).pipe(Effect.provide(TestClock.layer()))).finally(() => rmSync(directory, { recursive: true, force: true }))
+  })
+
   // A database in memory names no file, so its client alone holds it, and two databases in memory are two databases
   // (decision 0267). A hold file named by an empty path would hold them as one.
   test('two runtimes launch at once on two databases in memory', () =>

@@ -714,6 +714,15 @@ describe('the form of the workflow', () => {
     expect(scripts['test:slow']).toBe('SCHEDULES=all bun test src/cluster.test.ts examples/server/server.test.ts')
     expect(readFileSync(join(root, 'bunfig.toml'), 'utf8')).toContain('pathIgnorePatterns = ["spikes/**"]')
   })
+
+  // The premise review's second reading of The tables and migrations, 2026-11-12. Decisions 0216, 0218 and 0225 rest
+  // on the order of `Migrator`'s statements, read in its source, and 0225 says a move of Effect reads it again. The
+  // comparison of a move, `scripts/compare-docs.ts`, compares whole the sources of the drivers a premise of 0222 was
+  // read in (decision 0254), and neither the source nor the JSDoc of `sql/Migrator.ts`, a module `@stability unstable`.
+  test('FAILING: the comparison of a move of Effect compares whole the source of Migrator, which decision 0225 reads', () => {
+    const script = readFileSync(join(import.meta.dir, '..', 'scripts', 'compare-docs.ts'), 'utf8')
+    expect(script.includes("'sql/Migrator.ts'")).toBe(true)
+  })
 })
 
 describe('the check of the form', () => {

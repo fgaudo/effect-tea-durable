@@ -6048,3 +6048,176 @@ and hold rules of messages, replies, the log, deploys and Cluster that their own
 Decisions 0081, 0092, 0162 and 0163, which change decisions 0063, 0074 and 0079 on Cluster, were read only in the
 code of `src/runtime/doors.ts`, and lead 1 is where they meet the area. The list holds 136 notes, past the thirty a
 session reads whole, so the reading went to the pairs the brief named first.
+
+## 2026-11-12: premise review, second reading, of The tables and migrations
+
+This review was read on the branch `claude/premise-review-2-area-9-f72a79`, cut from `main` at `ca62547`. The session
+that read it read none of the earlier reports of this area. The notes of the area are 0191, 0198, 0216 to 0218 and
+0222 to 0225. The later notes of the brief are 0254, 0263, 0264, 0267, 0278 and 0279. The review has two findings,
+each with a test that fails at its assertion. It found no bug of `docs/bugs.md` again.
+
+### The notes read
+
+The list holds four kinds of note:
+
+- the notes of the area;
+- the notes the index lists as changing one of them;
+- the notes that cite one of them, by `grep -rlwE`;
+- the notes that `bun scripts/premise-pairs.ts --list` couples with one of them in a declaration of five notes at most.
+
+The declarations of many notes are left to the readings of one shared state, as the roadmap says. They are `Options`
+(34 pairs), `Handle` (27), `tables.text` (24) and `started` (20).
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0191 | of the area | whole, with `createTables`, `migrate`, `started` of `src/runtime.ts` and `sharding` of `src/cluster.ts` |
+| 0198 | of the area | whole, with the migration `0001_tables` and `indexed` of `src/storage/projections.ts` |
+| 0216 | of the area | whole, with `migrate` and `Migrator.ts` of Effect 4.1.3 |
+| 0217 | of the area | whole, with `migrationsTable`, `firstSchema` and `defaultEscape` of `sql/Statement.ts` at 4.1.3 |
+| 0218 | of the area | whole, with the migration and `indexed` |
+| 0222 | of the area | whole, with `transaction` of `src/storage/tables.ts`, `snapshot` of `src/storage/held.ts` and every call of `transaction` in `src/` |
+| 0223 | of the area | whole, with `prune`, `pruneBatch`, `forget` and `sweepOf` |
+| 0224 | of the area | whole, with `consumers` of `src/storage/log.ts`, the table `effecttea_publications` and the trigger |
+| 0225 | of the area | whole, with `run` of `Migrator.ts` at 4.1.3 |
+| 0263 | later, changes 0217 | whole, with `firstSchema` and `tablesMade` |
+| 0264 | later, cites 0191 | whole, with `launchWith` and `started` |
+| 0267 | later, cites 0223; coupled to 0223 at `hold.take` | whole, with `hold`, a script of bun:sqlite, then a test |
+| 0278 | later, changes 0223 | whole |
+| 0279 | later, changes 0225; coupled to 0216 and 0218 at `createTables` | whole, with `createTables` and `migrate` |
+| 0254 | later, cites 0222 | in part: the paragraph of bug 88, with `scripts/compare-docs.ts` whole |
+| 0215 | changed by 0216 and 0217 | whole, with the trigger and every statement that deletes from `effecttea_outbox` |
+| 0245 | changes 0223, cites 0224 | in part: the passages that cite 0223 and 0224, with `sweepOf` |
+| 0055 | changed by 0191 | in part: its status line and the passage 0191 changes |
+| 0158 | changed by 0191 and 0198 | in part: the passages 0191, 0198 and 0222 change |
+| 0145 | changed by 0198; coupled to 0218 at `projectionsOf.indexed` | in part: its status line, with `indexed` |
+| 0157 | changed by 0222; coupled to 0218 at `projectionsOf.indexed` | in part: the passages on integers and on the names of indexes, with `indexed` |
+| 0161 | changed by 0198 | in part: the index or column 0198 renames |
+| 0176 | changed by 0198 | in part: the index or column 0198 renames |
+| 0152 | changed by 0223; coupled to 0224 at `Consumer` | in part: the forget and the prune on a full database, with `prune` and `forget` |
+| 0154 | changed by 0224 | in part: the publication and its trigger, with the code |
+| 0220 | changed by 0224 | in part: the open question 0224 decides |
+| 0247 | cites 0217 | in part: `tablesMade`, with 0263 |
+| 0022 | coupled to 0216 and 0218 at `createTables` | in part: the comment of `createTables` that cites it |
+| 0039, 0137, 0138 | coupled to 0224 at `Consumer` | in part: the cursors and the partitions `consumers` reads |
+
+### Findings
+
+1. **The check of a move of Effect does not compare the source of `Migrator`, and decisions 0216, 0218 and 0225 rest
+   on the order of its statements.**
+   - Decision 0225 changes 0222. It lets the migrations run at the level the role sets. It holds because `run` of
+     `sql/Migrator.ts` takes `LOCK TABLE` before it reads the history. The note says that a move of Effect's version
+     reads that source again.
+   - Decisions 0216 and 0218 rest on the same source. `ensureMigrationsTable` runs before
+     `sql.withTransaction(run)`. A unique violation on the history is read as `Locked`, and `Migrator` then runs no
+     migration.
+   - [Decision 0254](0254-a-check-of-the-project-runs-against-the-case-it-refuses.md) made `scripts/compare-docs.ts`
+     compare whole the sources of the drivers that premises of 0157 and 0222 were read in. It left out
+     `sql/Migrator.ts`, a module `@stability unstable`. The script lists neither its JSDoc nor its source, and
+     `AGENTS.md` names no reading of it at a move.
+   - So a release that reads the history before the lock passes every check. PGlite runs one session. No test of
+     `src/postgres.test.ts` runs two migrations under a database whose default level is `SERIALIZABLE` or
+     `REPEATABLE READ`, as decision 0225 says. Under such a release, a second launch would read an empty history. It
+     would then die on the first `CREATE TABLE`, which has no `IF NOT EXISTS` (decision 0218).
+   - The premises hold at the version pinned. At Effect 4.1.3, `LOCK TABLE` stands at line 267 of `Migrator.ts`,
+     before `latestMigration` at line 271. `ensureMigrationsTable` stands at line 349, before the transaction.
+   - `defaultEscape` of `sql/Statement.ts`, which decision 0217 read, is left out of the comparison in the same way.
+   - The finding has the form of family G: a check of the project that holds less than its note says.
+   - The test is `FAILING: the comparison of a move of Effect compares whole the source of Migrator, which decision
+     0225 reads`, in `src/form.test.ts`. It fails at its assertion.
+   - A fix could begin at `drivers` of `scripts/compare-docs.ts`. That list would name `sql/Migrator.ts` and
+     `sql/Statement.ts` of `effect`, each with the reason it is listed. Another fix is a check of the form. It would
+     find every source that a note reads `in source`, and check that the comparison names it.
+2. **On SQLite, a launch beside a writer that is no runtime dies with the reason `the database is held by another
+   runtime`.**
+   - Decision 0267 changes 0080. The hold refuses a second runtime and refuses no reader. A writer that is no
+     runtime, such as an operator's shell, is not refused, as on PostgreSQL. Decision 0198 lets an application keep
+     its own tables in the runtime's database.
+   - The hold runs `BEGIN EXCLUSIVE` on the runtime's connection, with the hold file attached. SQLite begins that
+     transaction on every database attached, the main one included. So the hold also takes the write lock of the
+     main file.
+   - A script of bun:sqlite saw it. Under a busy timeout of 0, `BEGIN EXCLUSIVE` failed with `database is locked`
+     while another connection held a write transaction on the main file. It succeeded once that transaction
+     committed.
+   - `take` of `hold`, in `src/storage/tables.ts`, reads every `LockTimeoutError` as a lock of the hold file. It then
+     dies with `the database is held by another runtime`.
+   - So an application whose transaction on its own table holds the write lock past the client's busy timeout makes
+     the launch die with that reason. No runtime holds the database, and an operator looks for a runtime that is not
+     there.
+   - In one process the busy wait of bun:sqlite blocks the event loop, so the writer cannot commit while the launch
+     waits. There the launch always dies so.
+   - Nothing is lost. Without the hold, the launch would wait for the same lock in `createTables`.
+   - The premise that fell is unwritten in 0080: at the hold, only the hold's own lock can time out. It held while
+     the exclusive locking mode kept every other connection off the file.
+   - The test is `FAILING: a launch beside a writer that is no runtime is not refused as held by another runtime`, in
+     `src/runtime.test.ts`. It fails at its assertion, under a busy timeout of 0.
+   - A fix could begin at `take`. The hold's transaction would lock the hold file alone. Another fix would tell a
+     lock of the hold file from a lock of the main file before it says `held`.
+
+Both tests are in the commit that adds this section.
+
+### Leads
+
+None.
+
+### Suspects ruled out
+
+- That a later release of `Migrator` changed what decisions 0216, 0218 and 0225 read: ruled out at the version
+  pinned. `node_modules/effect/src/sql/Migrator.ts` of 4.1.3 was read. The notes read it at 4.1.2.
+- That a transaction of the runtime on PostgreSQL begins at the role's level, against decision 0222: ruled out by
+  reading every call of `transaction` and `withTransaction` in `src/`. Each write begins through `transaction`, at
+  `READ COMMITTED`. Each reading of one snapshot begins through `snapshot`, at `REPEATABLE READ`, and writes nothing.
+  The migrations are the exception that decision 0225 makes.
+- That `createTables` runs a query inside `Migrator`'s transaction before the lock: ruled out by reading.
+  `firstSchema` runs before `Migrator.make`, outside that transaction. Decision 0279 refuses a transaction of the
+  client.
+- That a publication goes while a row of the outbox still names it, so that `consumers` leaves a partition out of
+  `behind` and `since`: ruled out by reading the two triggers. Each drops a publication only where no row of its key
+  is left. Two prunes at once keep one publication too many, which is bug 80. They never drop one too early.
+- That the sweep of decision 0245 takes the room the operator frees on a full volume before the prune: ruled out by
+  reading `sweepOf`. It sleeps its interval before its first run.
+- That a launch refused by the hold keeps the database held, or one that dies in `createTables` on a name taken:
+  ruled out by the tests that decision 0264 names, and by reading `launchWith`. Its `onExit` closes the scope.
+- That a rename, or a deploy that drops an index, leaves the indexes of a read model, made with `IF NOT EXISTS`: this
+  is already the open question The indexes of the read model after a rename.
+
+No test of concurrency was run to rule out a suspect, so no seed and no `SCHEDULES` is named.
+
+### Suspects noticed and not checked
+
+- A launch given `tables: 'existing'` runs no `firstSchema`. So the refusal of decision 0263, of tables in a schema
+  further on the `search_path`, does not run there. Every statement then resolves through the `search_path` to that
+  schema, so the runtime reads one set of tables. Only an operator's later `createTables` dies. A test of
+  `src/storage.test.ts` on PGlite would check it: a launch given `'existing'` under the `search_path` `runtime,
+  public`, with the tables in `public`, and a reading of where a step writes.
+- A release older than the database's latest migration launches on it and runs nothing, as decision 0216 says. Yet
+  `tablesMade` makes `check` die on that database (decision 0247). On Cluster, in a rolling deploy whose newer release
+  adds a migration `0002`, the older runners would step on the changed tables. No release has a second migration, so
+  no test reaches the case yet.
+- On a full volume, a first launch on a database whose hold file is missing writes the hold file's first page and its
+  journal (decision 0267). A database copied without its hold file is such a case. The write may fail with `database
+  or disk is full` before the operator's forget. `spikes/full-volume.test.ts` launches where the hold file exists.
+- Two runners of one process on one file, as the helper `onFile` of `src/cluster.test.ts` makes, each run
+  `createTables` in `sharding`. Under bun:sqlite, the second runner's `BEGIN IMMEDIATE` blocks the event loop for the
+  busy timeout while the first runner holds the write lock. The spike of decision 0216 ran the first run in another
+  process.
+- A launcher's `PgClient` may be given `transformQueryNames`. The function would change the name `effecttea_migrations`
+  in the statements of `Migrator` that are not `withoutTransform`, and in `tablesMade`. It would not change the name
+  in the `to_regclass` of `firstSchema`. So the check of decision 0263 would look for a name other than the one made.
+
+### Where the code does otherwise than its note
+
+- `hold` of `src/storage/tables.ts:131`: decision 0267 says the transaction takes the exclusive lock of the hold file.
+  The transaction also takes the write lock of the main file, for its length. That lock is finding 2.
+- `started` of `src/runtime.ts:1054`: decision 0263 says that `createTables`, and with it a launch, dies where a
+  schema further on the `search_path` holds the tables. A launch given `tables: 'existing'` does not die there, as the
+  first suspect above says.
+- Decision 0215 says the lock of `createTables` is the database's. Since decision 0216, the lock is the lock of the
+  table `effecttea_migrations`, which lies in one schema. The status line of 0215 says so, and its decision is not
+  rewritten, as a note taken never is.
+
+### The notes not read whole
+
+0254 and 0245 were read at the passages that cite a note of the area. The rest of 0254 decides checks of the project,
+and the rest of 0245 decides the sweep, which other areas read. 0055, 0158, 0145, 0157, 0161, 0176, 0152, 0154, 0220,
+0247, 0022, 0039, 0137 and 0138 were read at the passage where a note of the area meets them, with the code of that
+passage. Each is a note of an area already read, and the brief gave this area only the later notes of those areas.
