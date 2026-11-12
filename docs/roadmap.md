@@ -53,9 +53,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     [decision 0272](decisions/0272-a-boundary-acknowledges-an-item-once-its-answer-is-stored.md), which the maintainer
     chose on 2026-11-12 after an opinion of a Fable 5.2 agent, and bug 64 by
     [decision 0273](decisions/0273-the-partition-of-an-entity-is-the-librarys-own-hash.md), which the maintainer
-    chose on 2026-11-12 after an opinion of a Fable 5.2 agent. The bugs reasoned are done. The part next is the bugs
-    noticed, from bug 31: each is verified first, by a test that fails or by a reading that rules it out, and its fix
-    is proposed to the maintainer before any code.
+    chose on 2026-11-12 after an opinion of a Fable 5.2 agent. The bugs reasoned are done. The part under way is the
+    bugs noticed, from bug 31, each verified first, by a test that fails or by a reading that rules it out, and its fix
+    proposed to the maintainer before any code. Bugs 31 and 65 have one cause, and their fix is
+    [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md),
+    `proposed`, which the maintainer chose on 2026-11-12 after an opinion of a Fable 5.2 agent. No code of it is
+    written yet. The part next is the test of `src/cluster.test.ts` with two runners that its note names, run first on
+    the code before the note, as the reproduction of the case across runners; then the code, in `crash`, `enter` and
+    `entersHeld` of `src/runtime/loop.ts` and in `losing` of `src/runtime/doors.ts`. After bugs 31 and 65 come 37, 38,
+    40, 50, 51, 67 and 79.
     Decisions 0269, 0271 and 0273 change the runtime, so `bun run test:pins` and `bun run test:release` run again before the step is
     taken, and the tests of decision 0269 of `src/runtime.test.ts` and `src/cluster.test.ts` run on PostgreSQL in the job of
     PostgreSQL of the push of `main` that takes it.
@@ -268,6 +274,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       activates the entity again `retry` after the crash, with no caller coming, so the window is reached more
       often. The [open question](open-questions.md#running) An operation still stopping beside its `unknown`.
       Reproduced by `an at-most-once operation a crash stops delivers its unknown once its finalizer has run`, a `test.failing` of `src/runtime.test.ts`: the `unknown` is handled while the old finalizer still waits.
+      Its fix is proposed in [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
   32. **Fixed by [decision 0251](decisions/0251-a-retry-and-a-passivation-are-a-millisecond-at-least.md)**, which refuses a `retry` and a `passivate` of 0.
   33. **Noticed, not checked: on Cluster, the waker's map of entities it failed to activate may outlive a move of
       the shard to another runner.**
@@ -423,6 +430,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       at-most-once case. Two sessions noticed it. The [open question](open-questions.md#running) A send after the
       work it belongs to ended.
       Reproduced by `a send of an operation a crash could not interrupt, after its new run ended the work, is applied once`, a `test.failing` of `src/runtime.test.ts`: the receiver applies the message twice.
+      Its fix on one runner is proposed in [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md).
   66. **Fixed by [decision 0261](decisions/0261-the-drain-reaches-a-deployment-still-activating.md)**, whose drain reaches a deployment still activating.
   67. **Noticed, not checked: a planned stop while the main fiber deploys undoes the deploy, and its at-most-once
       operations deliver `unknown`.** The interruption reaches the deploy before the scope's finalizers run, so the
