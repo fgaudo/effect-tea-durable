@@ -266,6 +266,14 @@ with a requirement that no example has yet.
   - whether `forget` takes any topic a stored consumer names, or a deploy drops, with a warning, the consumers of a
     topic it does not publish;
   - what a reader of `consume` of the dropped topic does on an older runner, which acks on.
+- **The spike of the hold file of SQLite failed once on the CI, by a margin of time.** In
+  `spikes/sqlite-hold-file.test.ts`, a reader expects a holder that commits a pair of rows every 5 milliseconds to
+  have committed more within 50 milliseconds. On 2026-11-12, in the job `spikes` of the run of `4c32cbf` of
+  `claude/log-reads-up-to-its-heads`, the count stayed at 2, and the job passed when run again. The commit changed
+  only PostgreSQL's statements of the storage. It would be decided by:
+  - whether the failure comes again on the CI, and under what load;
+  - whether the holder was slow, or the reader read an old snapshot after its transaction ended;
+  - a spike that waits for the count to rise up to a bound, rather than for a time.
 
 ## Running
 
