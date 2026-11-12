@@ -425,11 +425,13 @@ const set = fc.record({
   keep,
   requestId: fc.constantFrom('s1', 's2', 's3'),
 })
+const create = fc.record({ _tag: fc.constant('Create' as const), id: own, requestId: fc.constantFrom('c1', 'c2') })
+// `reindex` is left out until bug 25 of `docs/bugs.md` is fixed: on a pool it writes the projection of a state over
+// the row a step committed while its statement waited. The todo below holds it.
 const paired: fc.Arbitrary<Paired> = fc.oneof(
   set,
-  fc.record({ _tag: fc.constant('Create' as const), id: own, requestId: fc.constantFrom('c1', 'c2') }),
+  create,
   fc.constant({ _tag: 'Expire' as const }),
-  fc.constant({ _tag: 'Reindex' as const }),
   fc.constant({ _tag: 'Prune' as const }),
 )
 type Paired =
@@ -438,12 +440,15 @@ type Paired =
   | Readonly<{ _tag: 'Expire' }>
   | Readonly<{ _tag: 'Reindex' }>
   | Readonly<{ _tag: 'Prune' }>
-const held = fc.record({
-  before: fc.array(set, { maxLength: 4 }),
-  pair: fc.tuple(paired, paired),
-  // Which of the library's tables is locked, by its place among them in the order of their names.
-  gate: fc.nat(),
-})
+/** Histories of `pairs`, after up to four messages one at a time. */
+const heldOf = (pairs: fc.Arbitrary<readonly [Paired, Paired]>) =>
+  fc.record({
+    before: fc.array(set, { maxLength: 4 }),
+    pair: pairs,
+    // Which of the library's tables is locked, by its place among them in the order of their names.
+    gate: fc.nat(),
+  })
+const held = heldOf(fc.tuple(paired, paired))
 type Held = typeof held extends fc.Arbitrary<infer H> ? H : never
 
 /**
@@ -515,9 +520,11 @@ const serially = (run: string, held: Held, first: 0 | 1) =>
     })).pipe(Effect.provide(client('sqlite')), Effect.orDie),
   )
 
-const RUNS = 200 // WIP: Bun.env['SCHEDULES'] === 'all' ? 200 : 2
-
-test.skipIf(server === undefined)('two calls held at a statement on a pool answer as one order of them', () =>
+/**
+ * Runs the histories `histories` on a pool of the server, `runs` of them, with `examples` first, and checks that each
+ * answers as one order of its pair. Every run shares one database and one runtime.
+ */
+const onPool = (histories: fc.Arbitrary<Held>, runs: number, examples: ReadonlyArray<Held> = []) =>
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const url = yield* database(server ?? '')
     const connected = (options: Parameters<typeof pool>[1] = {}) =>
@@ -544,15 +551,15 @@ test.skipIf(server === undefined)('two calls held at a statement on a pool answe
           yield* Effect.sleep('10 millis')
         }
       }).pipe(Effect.timeoutOrElse({ duration: '1 second', orElse: () => Effect.succeed(false) }), Effect.orDie)
-    let runs = 0
+    let ran = 0
     // The runs whose two calls both waited at the lock, so that a pass is known to have held some pair at once.
     let both = 0
     yield* Effect.promise(() =>
       fc.assert(
-        fc.asyncProperty(held, async (held) => {
-          const run = `p${runs++}`
+        fc.asyncProperty(histories, async (held) => {
+          const run = `p${ran++}`
           const table = tables[held.gate % tables.length]!
-          const onPool = await Effect.runPromise(history(items, run, held, (calls) =>
+          const answered = await Effect.runPromise(history(items, run, held, (calls) =>
             Effect.scoped(Effect.gen(function*() {
               const locked = yield* Deferred.make<void>()
               const open = yield* Deferred.make<void>()
@@ -569,12 +576,34 @@ test.skipIf(server === undefined)('two calls held at a statement on a pool answe
               return yield* Effect.forEach(fibers, Fiber.join)
             })).pipe(Effect.orDie)))
           const orders = [await serially(run, held, 0), await serially(run, held, 1)]
-          expect(orders).toContainEqual(onPool)
+          expect(orders).toContainEqual(answered)
         }),
-        // `bun test` on a server runs two, and a release a hundred times as many (decision 0250).
-        { numRuns: RUNS },
+        { numRuns: runs, examples: examples.map((example) => [example]) },
       )
     )
-    console.log(`two calls held at once in ${both} of ${runs} runs`)
-    if (runs >= 50) expect(both).toBeGreaterThan(0)
-  })).pipe(Effect.orDie)), 1_200_000)
+    console.log(`two calls held at once in ${both} of ${ran} runs`)
+    if (ran >= 50) expect(both).toBeGreaterThan(0)
+  })).pipe(Effect.orDie))
+
+// Only `bun run test:postgres` reaches this test, since `bun test` on one machine has no server, so it holds the
+// budget of the job `postgres` rather than of `bun test`: a hundred runs, a minute or two (decision 0250).
+test.skipIf(server === undefined)(
+  'two calls held at a statement on a pool answer as one order of them',
+  () => onPool(held, Bun.env['SCHEDULES'] === 'all' ? 500 : 100),
+  1_200_000,
+)
+
+// A todo: `bun test --todo` runs it on a server, and it fails until bug 25 of `docs/bugs.md` is fixed. Its example is
+// the history fast-check shrank the first failure to, on the CI's server, which failed once in 139 runs.
+test.todo('a reindex held beside a step on a pool leaves the row the step wrote', async () => {
+  if (server === undefined) return
+  await onPool(
+    heldOf(fc.tuple(fc.constant({ _tag: 'Reindex' } as const), set)),
+    200,
+    [{
+      before: [],
+      pair: [{ _tag: 'Reindex' }, { _tag: 'Set', id: 'a', label: 'x', keep: 'forever', requestId: 's1' }],
+      gate: 1879048180,
+    }],
+  )
+}, 1_200_000)
