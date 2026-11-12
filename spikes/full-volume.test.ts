@@ -11,6 +11,9 @@
  *
  * The prune deletes in batches, each a transaction of its own (decision 0245). Its first batch fails on the full
  * volume as one prune did, and once room is freed the batches together take about as much of it as one prune took.
+ *
+ * A second test, for bug 50 of the roadmap, fills the volume again, and frees the room while callers retry their
+ * steps. The operator forgets and prunes a second after the room is freed, and the callers go on beside the prune.
  */
 import { SqliteClient } from '@effect/sql-sqlite-bun'
 import { expect, test } from 'bun:test'
@@ -18,6 +21,8 @@ import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Logger from 'effect/Logger'
 import * as Schema from 'effect/Schema'
+import * as Fiber from 'effect/Fiber'
+import * as Ref from 'effect/Ref'
 import { SqlClient } from 'effect/sql'
 import { existsSync, mkdtempSync, rmSync, statfsSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -140,6 +145,36 @@ const freed = (filename: string, ballast: string) =>
     return { forgotten, pruned, again }
   }))
 
+/**
+ * The second process once room is freed while callers retry: one caller for each entity sends for ever, the room is
+ * freed, and a second later the operator forgets and prunes. The callers stop once the prune ends.
+ */
+const freedBesideSteps = (filename: string, ballast: string) =>
+  Effect.scoped(Effect.gen(function*() {
+    const handle = yield* deployed(['current'])
+    const sendOnce = sending(handle)
+    const committed = yield* Ref.make(0)
+    const refused = yield* Ref.make(0)
+    const caller = (id: string) =>
+      Effect.forever(Effect.flatMap(Effect.suspend(() => sendOnce(id, Math.random())), (exit) =>
+        Ref.update(Exit.isSuccess(exit) ? committed : refused, (count) => count + 1)))
+    const callers = yield* Effect.forkChild(Effect.all(['n1', 'n2', 'n3'].map(caller), { concurrency: 'unbounded' }))
+    yield* Effect.sleep('1 second')
+    const beforeFree = { committed: yield* Ref.get(committed), refused: yield* Ref.get(refused) }
+    rmSync(ballast)
+    console.log('beside the callers, room freed:', sizes(filename), beforeFree)
+    yield* Effect.sleep('1 second')
+    const beforeProcedure = { committed: yield* Ref.get(committed), refused: yield* Ref.get(refused) }
+    console.log('a second later, before the forget:', sizes(filename), beforeProcedure)
+    const forgotten = yield* Effect.exit(handle.forget('projection', 'stalled'))
+    const pruned = yield* Effect.exit(handle.prune)
+    yield* Fiber.interrupt(callers)
+    const afterProcedure = { committed: yield* Ref.get(committed), refused: yield* Ref.get(refused) }
+    console.log('forget beside the callers:', shown(forgotten))
+    console.log('a prune beside the callers:', shown(pruned), sizes(filename), afterProcedure)
+    return { beforeFree, beforeProcedure, afterProcedure, forgotten, pruned }
+  }))
+
 test.skipIf(volume === undefined)('a volume that is really full stops the steps, and what frees room for them', async () => {
   const directory = mkdtempSync(join(volume ?? '', 'full-volume-'))
   const filename = join(directory, 'full.db')
@@ -170,6 +205,27 @@ test.skipIf(volume === undefined)('a volume that is really full stops the steps,
     }
     expect(Exit.isSuccess(after.pruned) && after.pruned.value).toBeGreaterThan(0)
     expect(after.again).toBe(50)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}, 300_000)
+
+test.skipIf(volume === undefined)('the room freed on a full volume, beside the steps callers retry', async () => {
+  const directory = mkdtempSync(join(volume ?? '', 'full-volume-steps-'))
+  const filename = join(directory, 'full.db')
+  const ballast = join(directory, 'ballast')
+  writeFileSync(ballast, Buffer.alloc(1024 * 1024, 1))
+  const client = SqliteClient.layer({ filename })
+  const quiet = Logger.layer([])
+  try {
+    const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      Effect.runPromise(effect.pipe(Effect.provide([client, quiet]), Effect.orDie))
+    await run(createTables)
+    const full = await run(filling(filename))
+    const beside = await run(freedBesideSteps(filename, ballast))
+    // Bug 50 is not decided yet: this run only shows what the callers take of the room freed.
+    expect(full.sent).toBeGreaterThan(0)
+    expect(beside.beforeFree.committed).toBe(0)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
