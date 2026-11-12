@@ -5164,3 +5164,125 @@ question for `left-out`.
 | 0173 | The time between Cluster's read and its save is short | behaviour | live | no | low | a measure in src/cluster.test.ts of the time between `getUnprocessedMessages` and `saveReply` |
 | 0174 | A program deployed without its record escapes both checks of 0159 | behaviour | live | no | low | a test in src/cluster.test.ts that deploys with no record and steps past `outranked` and `atNewest` |
 | 0177 | I/O in a `Tx` transaction would run again after a commit | behaviour | live | no | low | the same spike as 0246's, in spikes/effect-tx-under-the-scheduler.test.ts |
+
+## 2026-11-12: premise review of area 13, the notes taken after the first reading
+
+The reviewer's report, on the branch `claude/premise-review-area-13-fe5765`, cut from `main` at `f7c6076`. One
+finding is reproduced, by a test named `FAILING:` on the branch, at commit `2d0fe63`. The reviewer wrote none of
+the notes it read. The notes of the area are read whole with the code that keeps them. The earlier notes they change
+or cite are read in part: their `What it rests on` as the later note reads it again, and the code both notes cite.
+
+### The notes read
+
+| Note | Role | How it was read |
+| --- | --- | --- |
+| 0250 | of the area | whole, with `package.json`, `bunfig.toml` and the declarations of `slow` |
+| 0251 | of the area | whole, with the sleeps on `retry` of `src/runtime/waker.ts`, `src/runtime/callers.ts` and `src/runtime/loop.ts` |
+| 0252 | of the area | whole, with `waking` of `src/runtime/waker.ts`, and `crash`, `nothingToDo` and `spare` of `src/runtime/loop.ts` |
+| 0254 | of the area | whole, with the scripts of `package.json` |
+| 0255 | of the area | whole, with `hold` of `src/storage/tables.ts` |
+| 0256 | of the area | whole, with `outside` of `src/runtime.ts` |
+| 0258 | of the area | whole, with the step of the rest in `waking` |
+| 0259 | of the area | whole, with `waking` and `due` of `src/storage/entities.ts` |
+| 0261 | of the area | whole, with `draining` as `activating` of `src/runtime/doors.ts` reads it |
+| 0262 | of the area | whole |
+| 0263 | of the area | whole, with `createTables` and `migrate` of `src/storage/tables.ts` |
+| 0264 | of the area | whole |
+| 0266 | of the area | whole, with `advance` of `src/rehearse.ts` and `checkWork` of `src/machine.ts` |
+| 0267 | of the area | whole |
+| 0269 | of the area | whole, with `receive`, `discard`, the rows of replies and `carriedText` of `src/machine.ts`, the reading of `carried` in `src/storage/entities.ts`, and `primaryKey` of `src/cluster.ts` |
+| 0271 | of the area | whole, with the forks of `crash` |
+| 0273 | of the area | whole, with `partitionOf` and `partitioned` of `src/storage/tables.ts`, `singletonsOf` and `activating` of `src/runtime/doors.ts`, and the check of a misplaced entity in `waking` |
+| 0274 | of the area | whole, with `crash`, `leave` and `unload` of `src/runtime/loop.ts`, `entities` and `unlessCrashed` of `src/runtime/callers.ts`, and `waking` |
+| 0275 | of the area | whole |
+| 0276 | of the area | whole |
+| 0277 | of the area | whole |
+| 0278 | of the area | whole |
+| 0279 | of the area | whole, with `createTables` and `sharding` of `src/cluster.ts` |
+| 0280 | of the area | whole, with `activating` of `src/runtime/doors.ts` |
+| 0187 | changed by 0266 | in part: its rule as 0266 restates it, and `advance` of `src/rehearse.ts` |
+| 0056, 0068, 0077, 0162, 0046, 0023, 0045, 0147 | changed by 0274 | in part: their premises as 0274 reads them again, and the code 0274 changes |
+| 0029, 0161 | changed by 0252 | in part: their premises as 0252 reads them, and `nothingToDo` |
+| 0062 | changed by 0259 | in part: its rule for the waker's reading |
+| 0119, 0051, 0102 | changed by 0261 and 0280 | in part: their premises as 0261 and 0280 read them again |
+| 0048, 0124, 0180, 0200, 0245 | changed by 0269 | in part: their rules as 0269 restates them |
+| 0221 | changed by 0258 | in part: its bound of an hour, in `waking` |
+| 0137 | changed by 0273 | in part: its partition, in `partitionOf` |
+| 0080, 0157 | changed by 0267 and 0255 | in part: their hold, as 0267 and 0255 read it |
+| 0208 | changed by 0251 and 0264 | in part: its checks of the options |
+| 0211, 0213, 0214 | changed or cited by 0276 | in part: their rule of a value read as a caller reads it |
+| 0209 | changed by 0277 | in part: its refusal, as 0277 restates it |
+| 0223 | changed by 0278 | in part: its procedure, as 0278 restates it |
+| 0215, 0217, 0225 | changed by 0263 and 0279 | in part: their premises as 0263 and 0279 read them again |
+| 0184 | changed by 0256 | in part: its refusal of a reader within a transaction |
+| 0112, 0164 | changed by 0271 | in part: their rule of a fork |
+| 0131 | changed by 0262 | in part: its `sendFrom` |
+| 0104, 0212, 0241, 0242 | changed by 0250 and 0254 | in part: their checks as 0250 and 0254 restate them |
+
+The pairs that `bun scripts/premise-pairs.ts --list --note=<the notes of the area>` gives were read by the
+declarations they name, with the note of the area whole and the earlier note in part.
+
+### Findings
+
+#### 1. A rehearsal advanced by less than a millisecond makes a program's timer a defect
+
+- **The notes.** [Decision 0187](0187-a-rehearsal-moves-time-by-a-duration.md) moves a rehearsal's time by any
+  finite duration. [Decision 0266](0266-a-timer-that-catches-up-fires-with-a-due-time-that-grows.md) makes a timer
+  due between two milliseconds a defect of the program, since the storage holds whole milliseconds.
+- **The premise that fell.** Decision 0266 rests on a premise it does not write: a message is handled at a whole
+  millisecond, so a timer armed from the message's time is due at one. The runtime's clock gives whole
+  milliseconds. A rehearsal's `advance(Duration.micros(1500n))` leaves the rehearsal's time between two
+  milliseconds, and so does a rehearsal started at such a time.
+- **The sequence.** A test advances a rehearsal by 1.5 ms, then sends a message that arms a repeating timer due in
+  the past. The timer fires at the rehearsal's time, and the program arms the next period one second after the time
+  the firing was handled at. The machine refuses that timer with `the timer under 'a' is due at 1793354401001.5,
+  which is no whole millisecond`, and the rehearsal dies. The runtime runs the same program. So a rehearsal refuses a
+  program the runtime runs, which is the form of bug 42.
+- **Reproduced** by `FAILING: a timer armed from a time an advance of microseconds reached fires, as the runtime
+  would run it`, in `src/rehearse.test.ts`, at `2d0fe63`. It fails in the program's step, at `checkWork` of
+  `src/machine.ts`, and not in its setup.
+- **Where a fix begins.** At `advance` of `src/rehearse.ts`, which would refuse a duration that is no whole number
+  of milliseconds, or round it. The start of `rehearse` would do the same to the time it is given.
+
+### Leads
+
+None beyond the suspects noticed and not checked, below.
+
+### Suspects ruled out
+
+- That the waker's round, under decisions 0258, 0259, 0273 and 0274 together, rests with a timer it knows of due,
+  or spins: ruled out by every test of `src/runtime/waker.test.ts` under `SCHEDULES=all`, which runs every seed and
+  every deviation of its explored tests. The eight tests passed.
+- That an operator's change of the number of shards makes the stored partitions differ from Cluster's shards in
+  silence: ruled out by `partitioned` of `src/storage/tables.ts`, which stores the number of partitions at the first
+  launch and makes a launch given another number die (decision 0137).
+- That a retry after a deploy is answered `Reused` where the migration writes the message's fields in another order:
+  ruled out by `a retry after a deploy is compared with what the caller's request carried, read through the
+  migrations`, in `src/runtime.test.ts`, and by `carriedText` of `src/machine.ts`, which compares canonical text.
+
+### Suspects noticed and not checked
+
+- On Cluster, the caller's client resets a `Reused` that Cluster saved (decision 0269). Two clients of one request
+  id under another message may meet as bug 91 says: one client's reset drops the keep of the other's answer. It is
+  the form of bug 91 under `Reused`, only reasoned. A test of `src/cluster.test.ts` with two clients of one request id
+  and two messages would check it.
+- On Cluster, a door's step during the undo's wait of decision 0280 may take a caller's message and start an
+  at-most-once operation, as bug 21 says of a drain. The undo counts the operations of its own deployment, so it may
+  wait for that one too. A test of `src/cluster.test.ts` that fails a deploy after its door is registered, and sends a
+  message in the undo's wait, would check it.
+- Under decision 0274, an operation's send to an entity whose stop runs is sent again after `retry`, since
+  `unlessCrashed` of `src/runtime/callers.ts` reads the defect `Stopping` as a crash of the receiver (decision 0046).
+  It is a reading only. A test of `src/runtime.test.ts` that crashes a receiver with a finalizer held, while an
+  operation of another entity sends to it, would check it.
+
+### Where the code does otherwise than its note
+
+- `waking` of `src/runtime/waker.ts` logs a refused stored time (decision 0259) and an entity under a partition not
+  its shard (decision 0273) through one set, `refused`. An entity logged for one case is never logged for the other,
+  though each note says that the first case of each entity in the process is logged.
+- `test:slow` of `package.json` names its files, as the reading of decision 0254 found. No check reads the files that
+  declare `slow` against that list. The list agrees with decision 0250 today.
+
+### Notes not read whole
+
+The earlier notes of the table, read in part as it says. Each lies in an area another review read whole.

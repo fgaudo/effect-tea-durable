@@ -58,7 +58,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     11. Done, The scheduler of the tests, of the section The runtime: 0104, 0115, 0117 and 0244.
     12. Done, The project and what enters the library: 0007, 0019, 0052 to 0055, 0080, 0099, 0179, 0193, 0195, 0196,
         0203, 0204, 0208, 0212, 0241 and 0242.
-    13. The notes taken after the first reading, of several sections: 0250, 0251, 0252, 0254, 0255, 0256, 0258,
+    13. Done, the notes taken after the first reading, of several sections: 0250, 0251, 0252, 0254, 0255, 0256, 0258,
         0259, 0261, 0262, 0263, 0264, 0266, 0267, 0269, 0271 and 0273 to 0280. They are more than fifteen, so
         `AGENTS.md` asks a review of them before the next step. They are notes of the fixes of the bugs, whose step
         was taken on 2026-11-12, and the area runs first of the second reading below, in a session that did not write
@@ -225,8 +225,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - The first session's report is not kept, so what it ruled out is not written here. The reports of the second,
     third and fourth sessions are recorded whole in this step, in [`docs/bugs.md`](bugs.md) and in
     [the open questions](open-questions.md).
-  - Every area of the list but area 13, every last session and the sample are `Done`. So the step goes on with area
-    13, then area 1 of the second reading. A session that records a review writes `Done, ` before what it read, and adds a
+  - Done, in a session of 2026-11-12 that wrote none of its notes: area 13, each of its notes read whole with the
+    code that keeps it, and the notes they change or cite read in part, each of them read whole by the review of its
+    own area. Its finding is bug 93 of `docs/bugs.md`, reproduced on `claude/premise-review-area-13-fe5765`, cut from
+    `main` at `f7c6076`. Its three suspects not checked are [open questions](open-questions.md#running): an
+    operation's send to an entity whose stop runs, a `Reused` reset by two clients on Cluster, and a door's step in
+    the undo's wait, under A drain on Cluster with a deploy under way. Not reached: nothing of the area. Its report is
+    recorded whole in [`reviews.md`](decisions/reviews.md).
+  - Every area of the list, every last session and the sample are `Done`. So the step goes on with area 1 of the
+    second reading. A session that records a review writes `Done, ` before what it read, and adds a
     bullet here of what it read, what it found and what it did not reach. `bun scripts/premise-coverage.ts` also
     reads every table of [`reviews.md`](decisions/reviews.md), and fails where a note read in part is in no list of
     a last session and read whole by no other review.

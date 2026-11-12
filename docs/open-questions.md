@@ -486,6 +486,21 @@ with a requirement that no example has yet.
   - an explored test whose activation by the waker meets a crash a caller makes after the waker's reading, with a stop
     that ends within a few steps;
   - a deviation under `bound` 1 that holds the waker between the refusal and the catch.
+- **An operation's send to an entity whose stop runs.** Since
+  [decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md), an entity
+  whose stop runs is refused with the defect `Stopping`. An operation of another entity that sends to it reads that
+  defect as a crash of the receiver, in `unlessCrashed` of `src/runtime/callers.ts`, and sends again after `retry`
+  ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). The premise review of area 13
+  read it so, and no test runs it. It would be decided by:
+  - a test of `src/runtime.test.ts` that crashes a receiver with its operation's finalizer held, while an operation of
+    another entity sends to it, and that sees the message applied once the finalizer ends.
+- **A `Reused` reset by two clients on Cluster.** A caller's client resets a `Reused` that Cluster saved, and sends
+  the request once more ([decision 0269](decisions/0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md)).
+  Two clients of one request id and one other message may meet as bug 91 of [`docs/bugs.md`](bugs.md) says, where
+  one client's reset drops the keep of the answer the other's send kept. The premise review of area 13 noticed it
+  and did not check it. It would be decided by:
+  - a test of `src/cluster.test.ts` with two clients of one request id, each sending a message other than the first
+    request's, that reads Cluster's rows once both are answered.
 - **An act on the outside world beside the next holder's run.** On Cluster, a runner that lost its lease without
   giving the shard up may still run an operation that calls a service, while the next holder runs the entity. The
   library cannot refuse such an act, and an at-most-once operation's `unknown` may be delivered beside it. Fencing the
@@ -576,7 +591,10 @@ with a requirement that no example has yet.
   - whether the round stops at the next entity once the drain began, as the activations of one process do;
   - a test that fails a deploy between its singletons and its registration while a round activates an entity, which
     checks that the round starts no activation once the undo began
-    ([decision 0280](decisions/0280-the-undo-of-a-deploy-drains-its-deployment.md)).
+    ([decision 0280](decisions/0280-the-undo-of-a-deploy-drains-its-deployment.md));
+  - a test that fails a deploy after its door is registered, and sends a caller's message through the door in the
+    undo's wait, which checks whether a door's step there starts an at-most-once operation, as bug 21 of
+    [`docs/bugs.md`](bugs.md) says of a drain. The premise review of area 13 noticed it and did not check it.
 - **Two programs of one version on Cluster.** A version is the count of a program's migrations plus one
   ([decision 0036](decisions/archive/0036-a-migration-is-a-function-on-the-json.md)), and an older runner is kept from
   every shard by the version recorded
