@@ -487,7 +487,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   [decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md), `proposed`. Nothing of it
   is written yet. Two of its premises failed before it began. The maintainer chose that the runtime keep one
   entity's order by the stored work, where its loop takes a `Fire`, as the note says, and that whatever keeps a
-  value is made in the scenario, with a third run that tells a failed second run apart. It begins in
+  value is made in the scenario, with a third run that tells a failed second run apart. Then the
+  premise that the second run checks something a test reads failed, and the maintainer chooses what its bullets
+  become before the step begins. It begins in
   `together` and `dueBy` of [`src/rehearse.ts`](../src/rehearse.ts), and in the take of a `Fire` by an entity's loop,
   in [`src/runtime/loop.ts`](../src/runtime/loop.ts) or in `src/machine.ts`, with the tests its note names in
   `src/rehearse.test.ts`, `src/machine.test.ts` and `src/runtime/loop.test.ts`. Since it changes the runtime, it

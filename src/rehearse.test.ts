@@ -10,6 +10,7 @@ import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
+import fc from 'fast-check'
 import { booking } from './fixtures/booking.ts'
 import { inventory } from './fixtures/inventory.ts'
 import { order, type Sender } from './fixtures/order.ts'
@@ -1542,5 +1543,98 @@ describe('a repeating timer that catches up', () => {
       "the timer under 'k' of Planned 'rehearsal' fires again at 2026-10-30T20:00:00.000Z, due at " +
         "2026-10-30T15:00:00.000Z, no later than its last firing's 2026-10-30T17:00:00.000Z, and time would never pass",
     )
+  })
+})
+
+// In a world, an entity reaches another only through an operation, which runs when the test runs it, and the firing
+// of a timer reaches only its own entity, whose `update` is pure. So the order in which two entities' timers due at
+// one time fire changes nothing a test reads of either: its state, its projection and its work under way
+// (decision 0293). `advance` fires first the timer of the entity created first, so two worlds that create the same
+// entities in two orders, and do the same to each, fire such timers in two orders.
+describe("the order of two entities' timers due at one time", () => {
+  const keys = ['payment-deadline', 'charge', 'tell-warehouse', 'email-shipment', 'refund'] as const
+  type Act =
+    | Readonly<{ _tag: 'Pay' | 'Cancel' | 'Decline'; entity: number }>
+    | Readonly<{ _tag: 'Advance'; minutes: number }>
+  const act: (count: number) => fc.Arbitrary<Act> = (count) =>
+    fc.oneof(
+      fc.record({
+        _tag: fc.constantFrom('Pay' as const, 'Cancel' as const, 'Decline' as const),
+        entity: fc.integer({ min: 0, max: count - 1 }),
+      }),
+      fc.record({ _tag: fc.constant('Advance' as const), minutes: fc.integer({ min: 0, max: 40 }) }),
+    )
+  const history = fc.integer({ min: 2, max: 4 }).chain((count) =>
+    fc.record({
+      count: fc.constant(count),
+      creation: fc.shuffledSubarray(Array.from({ length: count }, (_, index) => index), { minLength: count }),
+      acts: fc.array(act(count), { maxLength: 12 }),
+    })
+  )
+
+  /** What a test reads of each entity once the history has run, by its id, and how the rehearsal ended. */
+  type Order = typeof order extends Program<infer T> ? T : never
+  const read = (program: Program<Order>, count: number, creation: ReadonlyArray<number>, acts: ReadonlyArray<Act>) =>
+    Effect.gen(function*() {
+      const seen: Record<string, unknown> = {}
+      const exit = yield* Effect.exit(rehearse.together(placedAt, Effect.fnUntraced(function*(world: World) {
+        const members: Array<Member<Order>> = []
+        for (const index of creation) members[index] = yield* world.create(program, `order-${index}`, start.flags)
+        const ids = Array.from({ length: count }, (_, index) => index)
+        const snapshot = Effect.gen(function*() {
+          for (const index of ids) {
+            const member = members[index]!
+            const underWay: Record<string, unknown> = {}
+            for (const key of keys) underWay[key] = yield* member.underWay(key)
+            seen[`order-${index}`] = { state: yield* member.state, projection: yield* member.projection, underWay }
+          }
+        })
+        for (const next of acts) {
+          if (next._tag === 'Advance') {
+            yield* world.advance({ minutes: next.minutes })
+            continue
+          }
+          const member = members[next.entity]!
+          if (next._tag === 'Pay') yield* member.send({ _tag: 'PayRequested', payment: 'card' }, { sender: ada })
+          if (next._tag === 'Cancel') yield* member.send({ _tag: 'CancelRequested' }, { sender: ada })
+          if (next._tag === 'Decline' && (yield* member.underWay('charge')) !== null) {
+            yield* member.answer('charge', { _tag: 'ChargeDeclined' })
+          }
+        }
+        yield* world.advance({ minutes: 40 })
+        yield* snapshot
+      })))
+      return { exit: exit._tag, seen }
+    })
+
+  const alike = (program: () => Program<Order>) =>
+    fc.asyncProperty(history, async ({ count, creation, acts }) => {
+      const inOrder = await Effect.runPromise(
+        read(program(), count, Array.from({ length: count }, (_, index) => index), acts),
+      )
+      const shuffled = await Effect.runPromise(read(program(), count, creation, acts))
+      expect(shuffled).toEqual(inOrder)
+      expect(inOrder.exit).toBe('Success')
+    })
+
+  test('changes nothing a test reads of the entities', async () => {
+    await fc.assert(alike(() => order), { numRuns: 200 })
+  })
+
+  // The histories reach timers of two entities due at one time, fired in two orders: a program whose `update` reads
+  // how many deadlines passed before its own, from outside its state, ends otherwise in the two worlds.
+  test('changes what a program reads of the order, which the histories reach', async () => {
+    const counting = () => {
+      let passed = 0
+      return {
+        ...order,
+        update: (message, meta) => (state) =>
+          message._tag === 'PaymentDeadlinePassed' && state._tag === 'AwaitingPayment'
+            ? { _tag: 'Cancelled', order: state.order, reason: passed++ === 0 ? 'Unpaid' : 'ByCustomer' }
+            : order.update(message, meta)(state),
+      } satisfies Program<Order>
+    }
+    const found = await fc.check(alike(counting), { numRuns: 200 })
+    expect(found.failed).toBe(true)
   })
 })

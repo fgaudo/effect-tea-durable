@@ -1043,16 +1043,17 @@ with a requirement that no example has yet.
   - whether the pure core of [decision 0292](decisions/0292-the-processs-state-is-a-pure-core-and-a-test-holds-an-order-by-its-events.md)
     holds the look and the registration in one transition, which would make the primitive needless.
 - **The order of two timers due at one time.** A rehearsal fires first, of two timers due at one time, the one of the
-  entity created first, and within an entity the one its machine holds first (`dueBy` of `src/rehearse.ts`). The
-  runtime does the same for entities loaded under the default scheduler, and a schedule of `src/testing.ts` fires
-  either first, even for two timers of one entity. So does a clock that is real, for two timers of one entity armed
-  in two steps. For entities unloaded, it fires first the timer of the smaller id,
-  since the waker reads the entities with a timer due in the order of their ids (`due` of `src/storage/entities.ts`).
-  The tests `two timers due at one time`, in `src/runtime/loop.test.ts`, show both orders. So a test that passes on the
-  rehearsal by the order of two timers may fail on the runtime. `docs/design.md` promises no order of two entities'
-  timers due at one time. [Decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md),
-  `proposed`, promises none, and has a rehearsal run its scenario under both orders. The question leaves this file
-  when that note is taken. It would be decided by:
+  entity created first, and within an entity the one its machine holds first (`dueBy` of `src/rehearse.ts`). The runtime
+  does the same for entities loaded under the default scheduler, and a schedule of `src/testing.ts` fires either first,
+  even for two timers of one entity. So does a clock that is real, for two timers of one entity armed in two steps. For
+  entities unloaded, it fires first the timer of the smaller id, since the waker reads the entities with a timer due in
+  the order of their ids (`due` of `src/storage/entities.ts`). The tests `two timers due at one time`, in
+  `src/runtime/loop.test.ts`, show both orders. The order changes nothing a test reads of a rehearsal whose programs are
+  pure, as the test `changes nothing a test reads of the entities` of `src/rehearse.test.ts` shows, so only a program
+  that reads outside its state passes on the rehearsal by it. `docs/design.md` promises no order of two entities' timers
+  due at one time. [Decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md), `proposed`,
+  promises none, and has a rehearsal run its scenario under both orders. The question leaves this file when that note is
+  taken. It would be decided by:
   - the step Two entities' timers due at one time, in no order, of the [roadmap](roadmap.md), and the tests its note
     names.
 

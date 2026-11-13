@@ -8,7 +8,9 @@ that the runtime keep one entity's order where its loop takes a `Fire`, and that
 the scenario. The four risks it raised were tested the same day, under What it rests on. The maintainer chose, in the
 same session, that the runtime keep one entity's order, by the stored work. After a second opinion of Fable 5.2, the
 maintainer chose too that whatever keeps a value is made in the scenario, and that a failed second run is told apart
-by a third.
+by a third. Later the same day, the premise that the second run checks something a test reads failed: in a world,
+the order of two entities' timers due at one time changes nothing a test reads of a program whose `update` is pure.
+The bullets of the second run rest on it, and the maintainer chooses what they become.
 
 ## Context
 
@@ -77,6 +79,20 @@ nothing tells the test's writer.
 
 ## What it rests on
 
+- That the order in which a rehearsal fires two entities' timers due at one time changes what a test reads of the
+  entities: **failed**, **tested** by `changes nothing a test reads of the entities`, in `src/rehearse.test.ts`. It
+  runs histories that fast-check generates, of two to four orders created in two orders, of payments, cancellations,
+  declined charges and times passing, and compares each entity's state, projection and work under way. An entity
+  reaches another only through an operation, which runs when the test runs it, and a firing reaches only its own
+  entity. So only a program whose `update` reads something outside its state sees the order. The bullets of the second
+  run, of the third, of the option of every order and of the warning rest on this premise.
+- That the histories of that test reach timers of two entities due at one time fired in two orders: **tested** by
+  `changes what a program reads of the order, which the histories reach`, in `src/rehearse.test.ts`, whose program
+  counts the deadlines passed outside its state, and ends otherwise in the two worlds.
+- That a rehearsal ends alike whichever of two entities' timers due at one time fires first, when both are defects:
+  **open**. The test fails either way, and its failure names the entity that fired first. A test of
+  `src/rehearse.test.ts` with two entities whose timers due at one time are both defects checks that the failure is
+  the only difference.
 - That `docs/design.md` promises no order of two entities' timers due at one time: **read** in its section on
   Rehearsing, where `advance` fires the timers due "in the order of the times", and nowhere else.
 - That the runtime fires two entities' timers due at one time in an order of its own: **tested** by `the runtime fires
