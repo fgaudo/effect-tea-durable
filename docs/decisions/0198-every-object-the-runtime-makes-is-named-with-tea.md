@@ -53,7 +53,7 @@ database of a user holds the tables under their old names.
 ## What it rests on
 
 - That every object the runtime makes is named with `tea_`: **tested** by
-  `every table, index, trigger and function the runtime makes is named with tea_` in
+  `every table, index, trigger and function the runtime makes is named with effecttea_` in
   [`src/storage.test.ts`](../../src/storage.test.ts), on SQLite and on PostgreSQL, which reads `sqlite_master`, and
   `pg_class`, `pg_proc` and `pg_trigger`.
 - That a launch and a rename leave alone a table of the application under a name the runtime once used: **tested** by

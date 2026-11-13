@@ -49,7 +49,7 @@ examples wrote at least one such line.
   **tested** by `a droppable runner whose services hold Entities does not compile (decision 0129)` in
   [`src/program.test.ts`](../../src/program.test.ts), which asserts that the services are `Rates`.
 - That `durable` and `operations` are required where the program has keys or operations: **tested** by
-  `durable is left out only with no key, and operations only with no kind of operation (decision 0180)` in the same
+  `work is left out only with no key, and operations only with no kind of operation (decision 0180)` in the same
   file.
 - That `Schema.Never` decodes no value: **documented** in its JSDoc at 4.1.2, a stable API. So a program that leaves
   out a schema stores nothing of its kind, and reads nothing of it back.

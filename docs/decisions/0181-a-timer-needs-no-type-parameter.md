@@ -25,7 +25,7 @@ The roadmap's point also named `Match.withReturnType<State | Rejected>()` in `up
 ## What it rests on
 
 - That a `const` type parameter keeps a literal's tag where nothing gives the call a type: **tested** by
-  `a timer needs no type parameter: its message keeps its tag, and durable checks it (decision 0181)` in
+  `a timer needs no type parameter: its message keeps its tag, and work checks it (decision 0181)` in
   [`src/program.test.ts`](../../src/program.test.ts). The test fails against `timer` without `const`, and so do
   the examples.
 - That a message made `const` is assignable to the schema's type: **reasoned**. A `const` type parameter makes an

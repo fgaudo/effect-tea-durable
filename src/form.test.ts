@@ -655,6 +655,73 @@ export const premisesWithoutState = (notes: ReadonlyMap<string, string>, from: n
       })
   })
 
+/** `text` as a name of a test is compared: spaces collapsed, curly quotes straight, and backticks taken out. */
+const asName = (text: string) => text.replace(/[’‘]/g, "'").replaceAll('`', '').replace(/\s+/g, ' ').trim()
+
+/**
+ * The names a file of the tests gives its tests and their groups, each as a pattern a name a note writes matches. A
+ * name is a literal that opens the arguments of a call which begins a line after its indentation, so that `test`,
+ * `describe`, `test.skipIf(…)` and helpers such as `slow` and `onServer` are all read, and the samples of a test of
+ * this check, written in strings, are not. A part `${…}` of a template, or `%s` of `test.each`, matches any text, and
+ * a name with fewer than three words of its own is none, since it would match every name. A name also matches with
+ * the suffix `(decision 0155)` left out, and cut before any `, ` or `: `, since a note names a test run once for each
+ * value of a part by the text the runs share, as `…, by ${by}`.
+ */
+export const testNamesOf = (text: string): ReadonlyArray<RegExp> =>
+  [...text.matchAll(
+    /^[ \t]*[\w.]+(?:\([^()\n]*\))?\(\s*(?:'((?:\\.|[^'\\\n])*)'|"((?:\\.|[^"\\\n])*)"|`((?:\\.|[^`\\])*)`)/gm,
+  )].flatMap((match) => {
+    const literal = match[1] ?? match[2] ?? match[3]!
+    const name = asName(literal.replace(/\\(.)/g, '$1')).replace(/%[sdifjo]/g, '${}')
+    const bare = name.replace(/ \(decision \d{4}\)$/, '')
+    const heads = [...bare.matchAll(/[,:] /g)].map(({ index }) => bare.slice(0, index))
+    return [name, bare, ...heads]
+      .filter((form) => form.replace(/\$\{[^}]*\}/g, ' ').trim().split(/\s+/).length >= 3)
+      .map((form) =>
+        new RegExp(`^${form.split(/\$\{[^}]*\}/).map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.+')}$`)
+      )
+  })
+
+/**
+ * The premises of the notes said **tested** whose test cannot be found, as `file: what is wrong: the premise's start`
+ * (AGENTS.md, under Notes). In every note, a text in backticks right after `**tested** by`, or after `by the tests
+ * of` or `by every test of`, that holds a space and is no command of `bun` must be the name of a test or of a group
+ * of the tests in `names`, or one of `retired`, a test a later note took out with the rule it held. A rename of a
+ * test thus shows the notes that cite its old name. From decision `from` on, a premise said **tested** must also
+ * name, in backticks, at least one test or group of `names`, a script of `scripts` run as `bun run <script>`, or a
+ * file of `files`, so that a reader of the premise alone finds its test. A backtick escaped by a backslash, as a note
+ * writes one inside a name, is read as part of the name.
+ */
+export const testedUnnamed = (
+  notes: ReadonlyMap<string, string>,
+  names: ReadonlyArray<RegExp>,
+  scripts: ReadonlySet<string>,
+  files: ReadonlySet<string>,
+  from: number,
+  retired: ReadonlySet<string> = new Set(),
+): ReadonlyArray<string> => {
+  const isTest = (span: string) => retired.has(span) || names.some((name) => name.test(span))
+  const resolves = (span: string) =>
+    isTest(span) || files.has(span) || scripts.has(/^bun run ([\w:-]+)$/.exec(span)?.[1] ?? '')
+  return [...notes].flatMap(([file, text]) => {
+    const number = Number(/(\d{4})-[^/]*\.md$/.exec(file)?.[1] ?? 0)
+    const section = /^## What it rests on\s*$([\s\S]*?)(?=^#{1,2} |(?![\s\S]))/m.exec(text)?.[1] ?? ''
+    return section.split(/\n(?=- )/).map((bullet) => bullet.trim())
+      .filter((bullet) => bullet.startsWith('- ') && /\*\*tested\*\*/i.test(bullet))
+      .flatMap((bullet) => {
+        const start = bullet.slice(2, 50).replace(/\s+/g, ' ')
+        const flat = bullet.replace(/\s+/g, ' ').replaceAll('\\`', '')
+        const cited = [...flat.matchAll(/\*\*tested\*\*,? (?:[a-z ]+ )?by (?:the tests of |every test of )?`([^`]+)`/gi)]
+          .map(([, span]) => asName(span!))
+          .filter((span) => span.includes(' ') && !span.startsWith('bun ') && !isTest(span))
+          .map((span) => `${file}: no test is named \`${span}\`: ${start}`)
+        const spans = [...flat.matchAll(/(`+)(.+?)\1(?!`)/g)].map(([, , span]) => asName(span!))
+        const unnamed = number >= from && !spans.some(resolves) ? [`${file}: names no test: ${start}`] : []
+        return [...cited, ...unnamed]
+      })
+  })
+}
+
 const notesOfTheRepository = () => {
   const folder = join(import.meta.dir, '..', 'docs', 'decisions')
   return new Map(readdirSync(folder, { recursive: true, encoding: 'utf8' })
@@ -676,6 +743,33 @@ describe('the form of the notes', () => {
   // state; the notes before 0259 keep what they wrote (AGENTS.md, under Notes).
   test('every premise of a note numbered 0259 or above states its state, in bold, as a word of the set', () => {
     expect(premisesWithoutState(notesOfTheRepository(), 259)).toEqual([])
+  })
+
+  // A premise said tested names a test that the repository keeps, so that a reader finds it and a rename shows the
+  // notes that cite the old name; the notes before 0292 may name their test by its place in the note (AGENTS.md,
+  // under Notes).
+  test('every test a premise said tested names exists, and a note numbered 0292 or above names one', () => {
+    const root = join(import.meta.dir, '..')
+    const files = ['src', 'spikes', 'examples', 'scripts'].flatMap((folder) =>
+      readdirSync(join(root, folder), { recursive: true, encoding: 'utf8' })
+        .map((file) => `${folder}/${file.replaceAll(sep, '/')}`)
+        .filter((file) => !file.includes('node_modules/'))
+    )
+    const names = files.filter((file) => /\.test(_\w+)?\.ts$/.test(file))
+      .flatMap((file) => testNamesOf(readFileSync(join(root, file), 'utf8')))
+    const scripts = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> })
+      .scripts
+    // Tests a later note took out with the rule they held, so that the notes before it keep their names.
+    const retired = new Set([
+      // Decision 0198 makes the tables under new names, so a launch adds no column to a database made before.
+      'two launches on a database made before add a missing column once',
+      'a launch that fails while it fills a column it added leaves the column out',
+      // Decision 0263 has a launch die where a schema further on the search_path holds the tables.
+      'on PostgreSQL the tables are made in the schema the search_path names first, though one further on has them',
+    ])
+    expect(names.length).toBeGreaterThan(500)
+    expect(testedUnnamed(notesOfTheRepository(), names, new Set(Object.keys(scripts)), new Set(files), 292, retired))
+      .toEqual([])
   })
 })
 
@@ -896,6 +990,49 @@ describe('the check of the form', () => {
       '0260-none.md: no state: That it holds, since it does.',
       'archive/0261-other.md: **reasoned** is no state: That it holds: **reasoned**.',
       '0262-later.md: to be **tested**: That it holds: to be **tested** by a test.',
+    ])
+  })
+
+  test('a test a premise said tested names and no file holds is found, and from the note given on a premise that names none', () => {
+    const names = testNamesOf([
+      "test('a step replies once (decision 0012)', () => {})",
+      'onServer("a launch refused by another runtime’s lock gives the database back", (url) => {})',
+      '  slow(`a request is kept, by ${by}`, () => {})',
+      "describe('the rows of `Resumed`', () => {})",
+      'test.skipIf(server === undefined)(',
+      "  'two calls held at a statement answer as one order',",
+      "const sample = \"test('a step replies twice', () => {})\"",
+      'test(`${prefix} ${name}`, () => {})',
+      "test.each(['a.ts', 'b.ts'])('src/%s reaches no module of Node', (file) => {})",
+    ].join('\n'))
+    const note = (...premises: ReadonlyArray<string>) =>
+      ['# A note', '', 'Out of it: **tested** by `a test gone`.', '', '## What it rests on', '',
+        ...premises.map((premise) => `- ${premise}`), '', '## Later', ''].join('\n')
+    const notes = new Map([
+      ['0290-old.md', note(
+        'That it replies: **tested** by `a step\n  replies once`, in `src/a.test.ts`.',
+        "That it gives back: **tested** by `a launch refused by another runtime's lock gives the database back`.",
+        'That it is kept: **tested** by `a request is kept`, once `by create`, and by `a request is kept, by send`.',
+        'That it holds: **tested** by the tests of `the rows of Resumed`.',
+        'That it is one order: **tested**, by `two calls held at a statement answer as one order`.',
+        'That it reaches none: **tested** by `src/a.ts reaches no module of Node`.',
+        'That rows go: **tested** by `the rows of \\`Resumed\\``, and by `a rule a later note took out`.',
+        'That it renames: **tested** by `a step replies twice`, which a rename left behind.',
+        'That it holds: **tested** by the same test.',
+      )],
+      ['0292-new.md', note(
+        'That it holds: **tested** by the test above, whose `Effect.timeout` ends.',
+        'That it is pinned: **tested** by `bun run test:pins`.',
+        'That it ran: **tested** by `bun run test:gone`.',
+        'That it is shaped: **tested** by the tests of `src/a.test.ts`.',
+        'That it holds: **documented** by `Effect.timeout`.',
+      )],
+    ])
+    const retired = new Set(['a rule a later note took out'])
+    expect(testedUnnamed(notes, names, new Set(['test:pins']), new Set(['src/a.test.ts']), 292, retired)).toEqual([
+      '0290-old.md: no test is named `a step replies twice`: That it renames: **tested** by `a step replies t',
+      '0292-new.md: names no test: That it holds: **tested** by the test above, who',
+      '0292-new.md: names no test: That it ran: **tested** by `bun run test:gone`.',
     ])
   })
 

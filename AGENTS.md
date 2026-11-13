@@ -46,7 +46,7 @@ This repository is a design and its pure core, not a library yet: read [`README.
   `decision 0082 (deleted; git keeps it)`; `bun run links` checks every citation, in prose as in a comment. A note
   made for a step of the roadmap is `proposed`, and is rewritten in place while the step is under way; it is
   taken, `accepted`, by the commit that takes the step out of the roadmap. Any other note is taken by the commit
-  that adds it, with the code it decides, if any. Once a note is taken, only a link a later rename breaks is fixed
+  that adds it, with the code it decides, if any. Once a note is taken, only a link or a name of a test that a later rename breaks is fixed
   in it, and its status line grows: a consequence found later, a correction or a rule it missed is a new note that
   says which one it changes, and adds to that one's status line what changed and a link to itself. A note that
   only says how another holds elsewhere links it from its own status line alone. Each note is listed in
@@ -101,6 +101,13 @@ This repository is a design and its pure core, not a library yet: read [`README.
   `open`, and says what would check it. It is never written `to be **tested**`, which a reader who scans the bold
   words reads as tested. A test of `src/form.test.ts` checks it for every note numbered 0259 or above, and the notes
   taken before keep their premises as written.
+- A premise said `tested` names, in backticks, a test the repository keeps: the name of the test or of its group, a
+  script of `package.json` run as `bun run <script>`, or the file of the tests. A test thrown away once it passed
+  makes no premise tested. A premise names its test in its own bullet, and never only as `the same test`, so that a
+  reader of the premise alone finds it. A test of `src/form.test.ts` checks that every note numbered 0292 or above
+  names one, and that every test a note names after `**tested** by` exists, in every note. A rename of a test
+  fixes the name in the notes that cite it, as a rename fixes a link. A test that a later note takes out with the
+  rule it held is listed by that check as retired, with the note that took it out.
 - A premise about a dependency is looked up first in the documentation of the version pinned, for Effect its JSDoc
   in `node_modules/effect/src`: found, it is documented; not found, the note says so. A rule that loses data in
   silence if a behaviour not promised changes does not rest on it alone, where a guard of the library's is cheap;

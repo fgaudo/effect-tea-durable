@@ -44,7 +44,7 @@ pool. The maintainer chose on 2026-11-11, after the opinion of a Fable 5.2 agent
   database back` and `a launch that dies for a rename onto a name that holds an entity gives the database back`, in
   `src/runtime.test.ts`. Both fail against the code with the checks moved and the scope left open.
 - That a launch refused by a file of SQLite another client has open gives the file back: **tested** by `a launch
-  refused by a file another client has open gives the file back`, in `src/runtime.test.ts`. It fails against the
+  refused by a file another runtime holds gives the file back`, in `src/runtime.test.ts`. It fails against the
   code before the change.
 - That a launch refused by the lock of another runtime on PostgreSQL gives the database back: **tested** by `a launch
   refused by another runtime’s lock gives the database back, in the scope its launcher gave`, in

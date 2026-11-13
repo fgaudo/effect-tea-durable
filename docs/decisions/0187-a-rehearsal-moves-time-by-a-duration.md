@@ -49,9 +49,9 @@ called `update` with a `meta` it built, and so tested `update` alone, without th
   world's included, and by `the renewal comes due when its period has passed` in
   [`examples/subscription/scenarios.test.ts`](../../examples/subscription/scenarios.test.ts).
 - That a timer armed again at a time reached, and a duration below zero, fail the test: **tested** by `fails on a
-  duration below zero, and on a timer armed again at a time already reached`, and by `fails on two timers that
-  arm each other again at a time already reached`. A key that fires again at a later time passes, as `fires two
-  timers that arm each other later, each at its time` tests.
+  duration below zero or infinite, and on a timer armed again at a time already reached`, and by `fails on two
+  timers that arm each other again at a time already reached`. A key that fires again at a later time passes, as
+  `fires two timers that arm each other later, each at its time` tests.
 - That two timers due at one time fire in the order their entities were created: **tested** by `fires the timers
   of two entities due at one time in the order the entities were created`.
 - That `Duration.fromInputUnsafe`, `Duration.isNegative`, `Duration.isFinite` and `DateTime.addDuration` do what their
