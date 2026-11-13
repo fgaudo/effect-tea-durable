@@ -84,6 +84,7 @@ import {
   unloads,
   type Window,
 } from './runtime.test_shared.ts'
+import { everywhere } from './runtime.test_backends.ts'
 
 describe('the runtime on SQLite', () => {
   test('creates an entity, runs its work and stores what the machine stores', () =>
@@ -147,55 +148,6 @@ describe('the runtime on SQLite', () => {
       yield* activation({}, 'x'.repeat(262_144))
       expect(warnings).toHaveLength(3)
       expect(warnings[2]).toMatchObject({ threshold: 262_144 })
-    })))
-
-  test('answers a retry from the stored reply, and NotFound for no entity', () =>
-    onBoth(Effect.gen(function*() {
-      const { layer } = yield* hands()
-      const at = yield* DateTime.now
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          expect(yield* toy.send('nobody', { _tag: 'Refuse', nonce: 'n' }, {
-            requestId: 'r1',
-            sender: { _tag: 'Tester' },
-            keep: 'forever',
-          })).toEqual({ _tag: 'NotFound' })
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
-          const request = { requestId: 'r1', sender: { _tag: 'Tester' as const }, keep: 'forever' as const }
-          const refused: Answer<'Refused'> = { _tag: 'Rejected', reason: 'Refused' }
-          expect(yield* toy.send(id, { _tag: 'Refuse', nonce: 'n' }, request)).toEqual(refused)
-          // The retry is answered from storage, and `update` never sees the message again.
-          expect(yield* toy.send(id, { _tag: 'Refuse', nonce: 'n' }, request)).toEqual(refused)
-          // A creation again is answered `Created` for the request that created it (decision 0017).
-          expect(yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } }))
-            .toEqual({ _tag: 'Created' })
-          expect(yield* toy.create(id, { flags: { at }, requestId: 'another', sender: { _tag: 'Tester' } }))
-            .toEqual({ _tag: 'AlreadyExists' })
-        }))
-    })))
-
-  test('a reason holding -0 is given 0 by the first reply and by a retry alike (decision 0214)', () =>
-    onBoth(Effect.gen(function*() {
-      const { layer } = yield* hands()
-      const at = yield* DateTime.now
-      const numbered: Program<T> = {
-        ...program,
-        name: 'Numbered',
-        schemas: { ...program.schemas, rejection: Schema.Number as never },
-        update: (message, meta) =>
-          message._tag === 'Refuse' ? () => rejectWith(-0 as never) : program.update(message, meta),
-      }
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const toy = yield* Effect.provide(runtime.deploy(numbered), layer)
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
-          const request = { requestId: 'r', sender: { _tag: 'Tester' as const }, keep: 'forever' as const }
-          for (const _ of [1, 2]) {
-            const reply = yield* toy.send(id, { _tag: 'Refuse', nonce: 'n' }, request)
-            expect(reply._tag === 'Rejected' && Object.is(reply.reason, 0)).toBe(true)
-          }
-        }))
     })))
 
   test('a retry within the keep its boundary gives is answered from storage, and one after it is applied again', () =>
@@ -693,32 +645,6 @@ describe('the runtime on SQLite', () => {
           expect(fired).toEqual([])
           yield* TestClock.adjust('1 millis')
           expect(fired).toEqual([DateTime.toEpochMillis(at) + 40])
-        }))
-    })))
-
-  test('suspends on a defect, answers Suspended, and resumes', () =>
-    database(Effect.gen(function*() {
-      const { layer } = yield* hands()
-      const at = yield* DateTime.now
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: { _tag: 'Tester' } })
-          yield* runtime.settled
-          const breaking = { requestId: 'break', sender: { _tag: 'Tester' as const }, keep: 'forever' as const }
-          expect(yield* toy.send(id, { _tag: 'Break', nonce: 'b' }, breaking)).toEqual({ _tag: 'Suspended' })
-          // Nothing is delivered to a suspended entity: a message that arrives has no reply yet either.
-          expect(yield* toy.send(id, { _tag: 'Want', key: 'a', on: false, nonce: 'w' }, {
-            requestId: 'want',
-            sender: { _tag: 'Tester' },
-            keep: 'forever',
-          })).toEqual({ _tag: 'Suspended' })
-          // The message it died on is discarded, and the entity runs again.
-          yield* toy.discard(id)
-          yield* runtime.settled
-          const stored = yield* storage(program, yield* SqlClient.SqlClient).load(id)
-          expect(stored?.suspension).toBe(null)
-          expect(stored?.mailbox.length).toBe(0)
         }))
     })))
 
@@ -3465,29 +3391,6 @@ describe('a schema that changes', () => {
         }))
     })))
 
-  // A caller waits for the answer of its request with the message it carried, so that two callers under one request
-  // id with two messages are each answered their own: one is applied, and the other is told `Reused`, whichever the
-  // entity steps first (decision 0269).
-  test('two callers under one request id with two messages at once are answered Accepted and Reused', () =>
-    database(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      const want = (nonce: string) => ({ _tag: 'Want', key: 'a', on: true, nonce }) as const
-      const sent = { requestId: 'r-7', sender: tester, keep: 'forever' } as const
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands()
-          const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create('m-7', { flags: { at }, requestId: 'c-7', sender: tester })
-          const replies = yield* Effect.all([toy.send('m-7', want('w'), sent), toy.send('m-7', want('x'), sent)], {
-            concurrency: 'unbounded',
-          })
-          expect(replies.map((reply) => reply._tag).sort()).toEqual(['Accepted', 'Reused'])
-          yield* runtime.settled
-          const stored = yield* storage(program, yield* SqlClient.SqlClient).load('m-7')
-          expect(stored?.state.applied).toHaveLength(1)
-        }))
-    })))
-
   // Bug 94: two callers of one request, both sent before it is answered, are one request. The step that answers the
   // first answers the second's caller too, and the second's `Receive` is not applied, though a `keep` of 0 deleted
   // the reply at that step (decision 0282).
@@ -5390,4 +5293,110 @@ describe('a launch that dies holds nothing in the scope its launcher gave (decis
         "the launch renames 'Toy' to 'Plaything', which holds an entity, a head of the log or a consumer already",
       )
     })))
+})
+
+/**
+ * The rules of one process that the design says hold on Cluster too, each run on one process and on Cluster with two
+ * runners on one file, the calls of a test made through the two runners in turn (decision 0283).
+ */
+describe('a rule of one process that holds on Cluster too', () => {
+  const numbered: Program<T> = {
+    ...program,
+    name: 'Numbered',
+    schemas: { ...program.schemas, rejection: Schema.Number as never },
+    update: (message, meta) => message._tag === 'Refuse' ? () => rejectWith(-0 as never) : program.update(message, meta),
+  }
+  const rule = everywhere([program, numbered])
+  const sender = { _tag: 'Tester' } as const
+
+  rule('answers a retry from the stored reply, and NotFound for no entity', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(program)
+      const at = yield* DateTime.now
+      const request = { requestId: own('r1'), sender, keep: 'forever' as const }
+      expect(yield* first!.send(own('nobody'), { _tag: 'Refuse', nonce: 'n' }, request)).toEqual({ _tag: 'NotFound' })
+      const creation = { flags: { at }, requestId: own('creation'), sender }
+      yield* first!.create(own(id), creation)
+      const refused: Answer<'Refused'> = { _tag: 'Rejected', reason: 'Refused' }
+      expect(yield* first!.send(own(id), { _tag: 'Refuse', nonce: 'n' }, request)).toEqual(refused)
+      // The retry is answered from storage, and `update` never sees the message again.
+      expect(yield* (second ?? first)!.send(own(id), { _tag: 'Refuse', nonce: 'n' }, request)).toEqual(refused)
+      // A creation again is answered `Created` for the request that created it (decision 0017).
+      expect(yield* (second ?? first)!.create(own(id), creation)).toEqual({ _tag: 'Created' })
+      expect(yield* first!.create(own(id), { ...creation, requestId: own('another') })).toEqual({ _tag: 'AlreadyExists' })
+    }), ['sqlite', 'pg'])
+
+  rule('a reason holding -0 is given 0 by the first reply and by a retry alike (decision 0214)', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const handles = yield* deploy(numbered)
+      const at = yield* DateTime.now
+      yield* handles[0]!.create(own(id), { flags: { at }, requestId: own('creation'), sender })
+      const request = { requestId: own('r'), sender, keep: 'forever' as const }
+      for (const handle of [...handles, ...handles]) {
+        const reply = yield* handle.send(own(id), { _tag: 'Refuse', nonce: 'n' }, request)
+        expect(reply._tag === 'Rejected' && Object.is(reply.reason, 0)).toBe(true)
+      }
+    }), ['sqlite', 'pg'])
+
+  rule('suspends on a defect, answers Suspended, and resumes', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(program)
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      yield* first!.create(own(id), { flags: { at }, requestId: own('creation'), sender })
+      const breaking = { requestId: own('break'), sender, keep: 'forever' as const }
+      expect(yield* first!.send(own(id), { _tag: 'Break', nonce: 'b' }, breaking)).toEqual({ _tag: 'Suspended' })
+      // Nothing is delivered to a suspended entity: a message that arrives has no reply yet either.
+      expect(yield* other.send(own(id), { _tag: 'Want', key: 'a', on: false, nonce: 'w' }, {
+        requestId: own('want'),
+        sender,
+        keep: 'forever',
+      })).toEqual({ _tag: 'Suspended' })
+      // The message it died on is discarded, and the entity runs again.
+      yield* other.discard(own(id))
+      const stored = yield* Effect.repeat(first!.inspect(own(id)), {
+        schedule: Schedule.spaced('10 millis'),
+        until: (stored) => stored?.suspension === null && stored.mailbox.length === 0,
+      }).pipe(Effect.timeout('5 seconds'))
+      expect(stored?.suspension).toBe(null)
+      expect(stored?.mailbox.length).toBe(0)
+    }))
+
+  // A caller waits for the answer of its request with the message it carried, so that two callers under one request
+  // id with two messages are each answered their own: one is applied, and the other is told `Reused`, whichever the
+  // entity steps first (decision 0269).
+  rule('two callers under one request id with two messages at once are answered Accepted and Reused', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(program)
+      const at = yield* DateTime.now
+      const want = (nonce: string) => ({ _tag: 'Want', key: 'a', on: true, nonce }) as const
+      const sent = { requestId: own('r-7'), sender: tester, keep: 'forever' } as const
+      yield* first!.create(own('m-7'), { flags: { at }, requestId: own('c-7'), sender: tester })
+      const replies = yield* Effect.all(
+        [first!.send(own('m-7'), want('w'), sent), (second ?? first)!.send(own('m-7'), want('x'), sent)],
+        { concurrency: 'unbounded' },
+      )
+      expect(replies.map((reply) => reply._tag).sort()).toEqual(['Accepted', 'Reused'])
+      const stored = yield* first!.inspect(own('m-7'))
+      expect(stored?.state.applied).toHaveLength(1)
+    }))
+
+  // Two callers of one request, both sent before it is answered, are one request, whose message is applied once
+  // though a `keep` of 0 deletes its reply at the step that answers (decision 0282). The test of one process above,
+  // `two callers of one request at once under a keep of 0 have its message applied once`, holds the step at its commit
+  // too, which only one process can.
+  rule('two callers of one request at once under a keep of 0 are both answered, and its message applied once', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(program)
+      const at = yield* DateTime.now
+      const want = { _tag: 'Want', key: 'a', on: true, nonce: 'w' } as const
+      const sent = { requestId: own('r-9'), sender: tester, keep: { millis: 0 } } as const
+      yield* first!.create(own('m-9'), { flags: { at }, requestId: own('c-9'), sender: tester })
+      const replies = yield* Effect.all(
+        [first!.send(own('m-9'), want, sent), (second ?? first)!.send(own('m-9'), want, sent)],
+        { concurrency: 'unbounded' },
+      )
+      expect(replies.map((reply) => reply._tag)).toEqual(['Accepted', 'Accepted'])
+      expect((yield* first!.inspect(own('m-9')))?.state.applied).toEqual(['w'])
+    }))
 })

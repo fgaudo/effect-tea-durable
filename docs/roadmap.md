@@ -414,10 +414,20 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     decision 0286.
     A difference of Cluster that a note decides is marked in the test of a contract, as decision 0283 says, and a
     difference no note decides is a bug.
-  - Then the tests of the runtime that hold a rule of one process, which `src/runtime.test.ts` holds, run on Cluster
-    too where the rule is said to hold there, so that a rule of one process that holds otherwise on Cluster fails a
-    test. The helpers `onFile`, `start` and `withholding` of [`src/cluster.test.ts`](../src/cluster.test.ts) start
-    the runners.
+  - Under way, the tests of the runtime that hold a rule of one process, which `src/runtime.test.ts` holds, run on
+    Cluster too where the rule is said to hold there, so that a rule of one process that holds otherwise on Cluster
+    fails a test. Decision 0283 says how: `everywhere` of
+    [`src/runtime.test_backends.ts`](../src/runtime.test_backends.ts), and the group `a rule of one process that holds
+    on Cluster too` at the end of `src/runtime.test.ts`.
+    - Done, on 2026-11-13, five rules, none of which needs a test clock or a probe: a retry and `NotFound`, a reason
+      of `-0`, a suspension and its discard, two callers under one request id with two messages, and two callers of
+      one request under a keep of 0. They passed on every backend, and found no difference.
+    - Next, the other tests of `src/runtime.test.ts` that the design says hold on Cluster, read one `describe` at a
+      time from `the runtime on SQLite`, then `the read model` and `publishing what happened`. Most hold an
+      interleaving by a probe or the test clock. A rule moves whole where its test needs neither, and else its part
+      that needs neither runs on both as a rule of its own. A rule that needs a deploy of a second program needs a
+      runner that `everywhere` does not start yet. A difference found is a bug of `docs/bugs.md`, or a case decision
+      0283 marks where a note decides it.
   - The step leaves this file when the parts above are done, and decision 0283 is taken, `accepted`, by that commit.
 
 - **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds

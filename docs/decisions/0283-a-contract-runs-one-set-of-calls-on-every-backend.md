@@ -97,6 +97,18 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
 - **The test of the pool runs a hundred runs, and 500 under `SCHEDULES=all`.** Only `bun run test:postgres`
   reaches it, since `bun test` on one machine has no server. So it holds the budget of the job `postgres`, a minute or
   two, rather than the two seconds of a test of `bun test`.
+- **A rule of one process that the design says holds on Cluster too is run on both**, by `everywhere` of
+  [`src/runtime.test_backends.ts`](../../src/runtime.test_backends.ts), in the group `a rule of one process that holds
+  on Cluster too` of [`src/runtime.test.ts`](../../src/runtime.test.ts). The rule is a group of its name, with a test
+  on one process, on each dialect the test ran on, and a test on Cluster with two runners on one SQLite file. A test
+  of a rule moves there whole, under its name, so that a note that names it names the group. Its calls go through
+  the two runners in turn.
+- **Cluster's runners start once for the group, in a hook**, as the runners of the property do, and the rules share
+  them. So every id and request id a rule names is prefixed with the rule's own name, by `own`.
+- **The clock is real on both backends**, since Cluster's runners poll it. So a rule moves there only where its test
+  needs no test clock and no probe of the runtime: a test that holds a step at a point by a probe, or moves the
+  clock, holds an interleaving that Cluster does not give. Such a rule stays a test of one process. Where a part of
+  it needs neither, that part may run on both as a rule of its own, as the keep of 0 of decision 0282 does.
 - **A failure is pinned as examples of the test.** The first run of 200 on the CI's server failed at the 139th, which
   is bug 25 of [`docs/bugs.md`](../bugs.md): a `reindex` beside a message wrote the projection of the state before the
   message over the row its step committed. Its case, as fast-check shrank it, is pinned on the table of projections,
@@ -139,6 +151,8 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
 - That the generated runs meet suspensions: **seen**, in one run of 300 counted on 2026-11-12, where `inspect` read a
   suspended entity 131 times, `discard` answered `Discarded` 47 times and `resume` answered `Resumed` 39 times. No
   `resume` answered `StillSuspended`, since the program deployed is the one that died.
+- That the rules moved hold on Cluster as on one process: **tested**, by `a rule of one process that holds on Cluster
+  too`, which passed five runs in a row on 2026-11-13 on SQLite, PGlite and Cluster. Its tests took 0.3 s at most.
 - That the runners start within a minute: **seen**, in the runs of the test on the maintainer's machine.
 - That the pool reaches bug 80: **tested**, by `two calls held at a statement on a pool answer as one order of
   them`, whose examples `bug80` lock the publications. On 2026-11-13, in the job `postgres` of the CI, the test

@@ -79,7 +79,8 @@ and writes nothing.
 [`src/runtime/loop.test.ts`](src/runtime/loop.test.ts) tests it by dying at each point of the design's crash table,
 and comparing where it ends with the machine. The tests of a module of `src/runtime/` lie beside it, and
 [`src/runtime.test.ts`](src/runtime.test.ts) tests `src/runtime.ts` and what several modules keep together. What
-they share is in [`src/runtime.test_shared.ts`](src/runtime.test_shared.ts). A file that only tests import is
+they share is in [`src/runtime.test_shared.ts`](src/runtime.test_shared.ts). A rule of one process that holds on Cluster too runs on both by
+`everywhere` of [`src/runtime.test_backends.ts`](src/runtime.test_backends.ts). A file that only tests import is
 named `<module>.test_<role>.ts`, beside the module whose tests it serves, and no module of the library imports one. A folder of `src/` beside a module of its name is a group, which a module
 outside the group imports through that module alone. Each module is built on the one above it:
 
