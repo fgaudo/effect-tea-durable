@@ -16,6 +16,7 @@ import { inventory } from './fixtures/inventory.ts'
 import { order, type Sender } from './fixtures/order.ts'
 import {
   create,
+  defect,
   type Entities,
   InvariantDefect,
   isTimer,
@@ -1619,6 +1620,36 @@ describe("the order of two entities' timers due at one time", () => {
 
   test('changes nothing a test reads of the entities', async () => {
     await fc.assert(alike(() => order), { numRuns: 200 })
+  })
+
+  // The premise of decision 0293 fails here. A defect ends `advance` where it falls, and the timers due at the same
+  // time that have not fired yet do not fire. A scenario that catches the defect, and reads the other entity, reads
+  // whether that entity fired first. The runtime suspends the broken entity alone, and the other fires either way.
+  test('with a defect among them, shows a scenario that catches it which fired first', async () => {
+    const breaking: Program<Order> = {
+      ...order,
+      update: (message, meta) => (state) =>
+        message._tag === 'PaymentDeadlinePassed' && state.order.totalInCents === 13
+          ? defect('the deadline of the broken order')
+          : order.update(message, meta)(state),
+    }
+    const broken = { order: { customer: 'ada', totalInCents: 13 } }
+    const run = async (brokenFirst: boolean) => {
+      const read: Array<unknown> = []
+      const exit = await Effect.runPromiseExit(rehearse.together(placedAt, Effect.fnUntraced(function*(world: World) {
+        const created: Record<string, Member<Order>> = {}
+        for (const id of brokenFirst ? ['broken', 'sound'] : ['sound', 'broken']) {
+          created[id] = yield* world.create(breaking, id, id === 'broken' ? broken : start.flags)
+        }
+        const advanced = yield* Effect.exit(world.advance({ minutes: 40 }))
+        read.push(advanced._tag, (yield* created['sound']!.state)._tag)
+      })))
+      return { read, exit: exit._tag }
+    }
+    expect({ brokenFirst: await run(true), soundFirst: await run(false) }).toEqual({
+      brokenFirst: { read: ['Failure', 'AwaitingPayment'], exit: 'Success' },
+      soundFirst: { read: ['Failure', 'Cancelled'], exit: 'Success' },
+    })
   })
 
   // The histories reach timers of two entities due at one time, fired in two orders: a program whose `update` reads

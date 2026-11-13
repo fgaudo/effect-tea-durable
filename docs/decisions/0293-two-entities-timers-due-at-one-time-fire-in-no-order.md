@@ -10,7 +10,9 @@ same session, that the runtime keep one entity's order, by the stored work. Afte
 maintainer chose too that whatever keeps a value is made in the scenario, and that a failed second run is told apart
 by a third. Later the same day, the premise that the second run checks something a test reads failed: in a world,
 the order of two entities' timers due at one time changes nothing a test reads of a program whose `update` is pure.
-The bullets of the second run rest on it, and the maintainer chooses what they become.
+The bullets of the second run rest on it, and the maintainer chooses what they become. One case of it failed too: a
+defect ends `advance` before the other timers due at that time fire, so a scenario that catches the defect reads
+which entity fired first.
 
 ## Context
 
@@ -89,10 +91,14 @@ nothing tells the test's writer.
 - That the histories of that test reach timers of two entities due at one time fired in two orders: **tested** by
   `changes what a program reads of the order, which the histories reach`, in `src/rehearse.test.ts`, whose program
   counts the deadlines passed outside its state, and ends otherwise in the two worlds.
-- That a rehearsal ends alike whichever of two entities' timers due at one time fires first, when both are defects:
-  **open**. The test fails either way, and its failure names the entity that fired first. A test of
-  `src/rehearse.test.ts` with two entities whose timers due at one time are both defects checks that the failure is
-  the only difference.
+- That a defect among timers of two entities due at one time leaves nothing that depends on their order: **failed**,
+  **tested** by `with a defect among them, shows a scenario that catches it which fired first`, in
+  `src/rehearse.test.ts`. A defect ends `advance` where it falls, and the timers due at that time that have not fired
+  yet do not fire. A scenario that catches the defect with `Effect.exit` reads the other entity fired when it came
+  first, and not fired when it came second, and the rehearsal ends in success. The runtime suspends the broken entity
+  alone, as `docs/design.md` says of a defect, so the other fires in both orders. The rehearsal
+  would end alike if `advance` fired every timer due at the time of a defect before it ended, or if `docs/design.md`
+  said that a scenario reads nothing of the world after a defect it catches. The maintainer chooses.
 - That `docs/design.md` promises no order of two entities' timers due at one time: **read** in its section on
   Rehearsing, where `advance` fires the timers due "in the order of the times", and nowhere else.
 - That the runtime fires two entities' timers due at one time in an order of its own: **tested** by `the runtime fires
