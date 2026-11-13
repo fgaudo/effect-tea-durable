@@ -438,8 +438,25 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       second process, on a program `Counting` whose projection counts the messages applied, so that no operation's
       end changes it. It passed five runs in a row on every backend, and found no difference. Every other test of the
       `describe` deploys a second version of the program, reads SQLite's plan, or runs under the scheduler.
+    - Under way, the `describe` `publishing what happened`. `everywhere` registers a program with the consumers its
+      deploy declares, as `[program, queue]`, and a rule deploys it with the same, which `everywhere` checks. Each
+      rule of the log has a program of its own, made by `holding` in the group, whose operations never come back and
+      whose timer rings in an hour, since the rules on Cluster share a program's log and its prune.
+      - Done, on 2026-11-13, seven tests moved whole, each needing neither a second process nor the clock: a row
+        published by each step that changes what callers read, a seq never given again, a topic no consumer holds
+        pruned whole, an ack past the last seq, a cursor or a limit out of range, a consumer of every partition, and
+        a cursor of one program. Each lists a consumer behind `since` a time the real clock gives, which the rule
+        does not pin. They passed five runs in a row on every backend, and found no difference.
+      - Next, the tests of the `describe` that move the test clock only so that the toy's work ends: `a cursor
+        reads what was published after it, and prune drops what every consumer has read`, `a consumer declared at
+        deploy holds the rows published before its first reading`, `entities stepping at once each publish in their
+        partition, and nothing of theirs is lost` and `the entities of one partition share its sequence, in the
+        order their steps committed`. A rule waits on the real clock for the rows in their place. Then `two readers
+        of one consumer read their own partitions, and a slow one holds no other`. The tests of `consume` and of a
+        transaction run within a transaction of the test's own client, which a runner of Cluster does not share,
+        and the tests of a wait that ends hold the clock still, so they stay tests of one process.
     - Next, the other tests of `src/runtime.test.ts` that the design says hold on Cluster, read one `describe` at a
-      time, `publishing what happened` first. Most hold an
+      time, after `publishing what happened`. Most hold an
       interleaving by a probe or the test clock. A rule moves whole where its test needs neither, and else its part
       that needs neither runs on both as a rule of its own. A rule that needs a deploy of a second program needs a
       runner that `everywhere` does not start yet. A difference found is a bug of `docs/bugs.md`, or a case decision

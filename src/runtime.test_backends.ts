@@ -29,31 +29,45 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launch as launchOnCluster, sharding } from './cluster.ts'
 import type { Program, Types } from './program.ts'
-import { type Handle, launch } from './runtime.ts'
+import { type Consumers, type Handle, launch } from './runtime.ts'
 import type { Dialect } from './storage.ts'
 import { client } from './storage.test_databases.ts'
 import { hands } from './runtime.test_shared.ts'
 
 /**
  * What a rule's test is given of its backend. `deploy` gives the handles of a program, one for each runner, each
- * call of the test made through one of them. `own` gives a name of the test's own: the runs on Cluster share its
- * runners and their file, so every id and request id a test names goes through it. The clock is real on both
- * backends, since Cluster's runners poll it.
+ * call of the test made through one of them, deployed with the consumers the program was registered with. `own`
+ * gives a name of the test's own: the runs on Cluster share its runners and their file, so every id and request id a
+ * test names goes through it. The clock is real on both backends, since Cluster's runners poll it.
  */
 export type Backend = Readonly<{
   name: string
-  deploy: <T extends Types>(program: Program<T>) => Effect.Effect<ReadonlyArray<Handle<T>>>
+  deploy: <T extends Types, const C extends Consumers<T> = {}>(
+    program: Program<T>,
+    options?: Readonly<{ consumers: C }>,
+  ) => Effect.Effect<ReadonlyArray<Handle<T, C>>>
   own: (name: string) => string
 }>
+
+/**
+ * A program as `everywhere` registers it: alone, or with the consumers its deploy declares. A runner of Cluster
+ * deploys each program once, at its start, so a rule deploys it with the same consumers on both backends.
+ */
+export type Registered = Program<any> | readonly [Program<any>, Readonly<{ consumers: Consumers<any> }>]
+
+const unpacked = (registered: Registered) =>
+  Array.isArray(registered)
+    ? { program: registered[0] as Program<any>, options: registered[1] as Readonly<{ consumers: Consumers<any> }> }
+    : { program: registered as Program<any>, options: undefined }
 
 const shardsPerGroup = 12
 const shards = Array.from({ length: shardsPerGroup }, (_, i) => ShardId.make('default', i + 1))
 
 /** A runner of the runtime on `file`, at `port`, which runs and deploys `programs` with the toy's hands. */
-const runner = (file: string, port: number, programs: ReadonlyArray<Program<any>>) =>
+const runner = (file: string, port: number, programs: ReadonlyArray<Registered>) =>
   Effect.gen(function*() {
     const context = yield* Layer.build(
-      sharding(programs).pipe(
+      sharding(programs.map((registered) => unpacked(registered).program)).pipe(
         Layer.provideMerge(Runners.layerNoop),
         Layer.provideMerge(SqlMessageStorage.layer),
         Layer.provide([Layer.orDie(SqlRunnerStorage.layer), RunnerHealth.layerNoop]),
@@ -76,9 +90,10 @@ const runner = (file: string, port: number, programs: ReadonlyArray<Program<any>
     const runtime = yield* Effect.provide(launchOnCluster({ sweep: 'none' }), context)
     const { layer } = yield* hands()
     const handles = new Map<string, Handle<any>>()
-    for (const program of programs) {
+    for (const registered of programs) {
+      const { program, options } = unpacked(registered)
       // The toy's programs need its hands alone, which `layer` gives.
-      const deployed = Effect.provide(Effect.provide(runtime.deploy(program), layer), context)
+      const deployed = Effect.provide(Effect.provide(runtime.deploy(program, options), layer), context)
       handles.set(program.name, yield* (deployed as Effect.Effect<Handle<any>>))
     }
     const held = context.mapUnsafe.get(Sharding.Sharding.key) as Sharding.Sharding['Service']
@@ -90,7 +105,18 @@ const runner = (file: string, port: number, programs: ReadonlyArray<Program<any>
  * Cluster. Cluster's two runners start once for the rules registered, in a hook, since a start waits for the shards,
  * and the rules share them.
  */
-export const everywhere = (programs: ReadonlyArray<Program<any>>) => {
+export const everywhere = (programs: ReadonlyArray<Registered>) => {
+  const registered = new Map(programs.map((one) => {
+    const { program, options } = unpacked(one)
+    return [program.name, JSON.stringify(options ?? null)] as const
+  }))
+  // A rule that deploys otherwise than the program was registered would run on Cluster what it did not run on one
+  // process.
+  const checked = (program: Program<any>, options: unknown) => {
+    if (registered.get(program.name) !== JSON.stringify(options ?? null)) {
+      throw new Error(`${program.name} is deployed otherwise than \`everywhere\` registered it`)
+    }
+  }
   const cluster = {
     directory: '',
     scope: undefined as Scope.Closeable | undefined,
@@ -133,11 +159,17 @@ export const everywhere = (programs: ReadonlyArray<Program<any>>) => {
               const { layer } = yield* hands()
               return yield* body({
                 name: 'one process',
-                deploy: <T extends Types>(program: Program<T>) =>
-                  Effect.map(
-                    Effect.provide(runtime.deploy(program), layer) as Effect.Effect<Handle<T>>,
-                    (handle) => [handle],
-                  ),
+                deploy: <T extends Types, const C extends Consumers<T> = {}>(
+                  program: Program<T>,
+                  options?: Readonly<{ consumers: C }>,
+                ) =>
+                  Effect.suspend(() => {
+                    checked(program, options)
+                    return Effect.map(
+                      Effect.provide(runtime.deploy(program, options), layer) as Effect.Effect<Handle<T, C>>,
+                      (handle) => [handle],
+                    )
+                  }),
                 own: (name) => name,
               })
             })).pipe(Effect.provide(client(dialect)), Effect.orDie),
@@ -147,8 +179,14 @@ export const everywhere = (programs: ReadonlyArray<Program<any>>) => {
         const prefix = `t${tests++}`
         return Effect.runPromise(body({
           name: 'Cluster',
-          deploy: <T extends Types>(program: Program<T>) =>
-            Effect.sync(() => cluster.runners.map((handles) => handles.get(program.name) as Handle<T>)),
+          deploy: <T extends Types, const C extends Consumers<T> = {}>(
+            program: Program<T>,
+            options?: Readonly<{ consumers: C }>,
+          ) =>
+            Effect.sync(() => {
+              checked(program, options)
+              return cluster.runners.map((handles) => handles.get(program.name) as unknown as Handle<T, C>)
+            }),
           own: (name) => `${prefix}/${name}`,
         }).pipe(Effect.orDie))
       })

@@ -1969,35 +1969,6 @@ describe('the read model', () => {
 describe('publishing what happened', () => {
   const tester = { _tag: 'Tester' } as const
 
-  test('a creation, and every step that changes what callers read, publishes a row', () =>
-    onBoth(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          // The operations hold, so nothing but the messages sent here changes the state.
-          const { layer } = yield* hands({ holds: true })
-          const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
-          // The key is wanted already: the state changes, since the nonce is applied, and the projection does not.
-          yield* toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'on' }, { requestId: 'on', sender: tester, keep: 'forever' })
-          // A timer may be dropped in any state: what callers read falls, and the step publishes what it handled.
-          yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester, keep: 'forever' })
-          expect(yield* toy.send(id, { _tag: 'Refuse', nonce: 'no' }, { requestId: 'no', sender: tester, keep: 'forever' }))
-            .toEqual({ _tag: 'Rejected', reason: 'Refused' })
-          const rows = yield* toy.published('projection', [], all)
-          expect(rows.map(({ partition: _partition, seq: _seq, ...row }) => row)).toEqual([
-            { id, topic: 'projection', kind: 'Creation', message: null, value: 4 },
-            {
-              id,
-              topic: 'projection',
-              kind: 'Inbound',
-              message: { _tag: 'Want', key: 't', on: false, nonce: 'off' },
-              value: 3,
-            },
-          ])
-        }))
-    })))
-
   test('a cursor reads what was published after it, and prune drops what every consumer has read', () =>
     onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
@@ -2028,34 +1999,6 @@ describe('publishing what happened', () => {
           expect(yield* toy.fetch('projection', 'queue', all)).toEqual(rows.slice(2))
           expect(yield* toy.prune).toBe(2)
           expect(yield* toy.published('projection', [], all)).toEqual(rows.slice(2))
-        }))
-    })))
-
-  test('a seq is never given again, so a cursor holds across a prune', () =>
-    database(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands({ holds: true })
-          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
-          // The timer is the key a step may drop and bring back: each way changes what callers read.
-          yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester, keep: 'forever' })
-          const read = yield* toy.published('projection', [], all)
-          expect(read.map(({ value }) => value)).toEqual([4, 3])
-          // The consumer acted on both rows and acked them: the prune takes what it has read, and its cursor
-          // stands.
-          yield* toy.ack('projection', 'queue', read)
-          expect(yield* toy.prune).toBe(2)
-          expect(yield* toy.published('projection', [], all)).toEqual([])
-          yield* toy.send(id, { _tag: 'Want', key: 't', on: true, nonce: 'on' }, { requestId: 'on', sender: tester, keep: 'forever' })
-          // What is published next is past the cursor: a seq the prune freed is never given again, or the
-          // consumer would read from beyond a row it never saw.
-          const next = yield* toy.published('projection', read, all)
-          expect(next.map(({ value }) => value)).toEqual([4])
-          expect(next[0]?.seq ?? 0).toBeGreaterThan(read[1]?.seq ?? 0)
-          expect(yield* toy.published('projection', [], all)).toEqual(next)
-          expect(yield* toy.fetch('projection', 'queue', all)).toEqual(next)
         }))
     })))
 
@@ -2183,30 +2126,6 @@ describe('publishing what happened', () => {
         }))
     })))
 
-  test('a topic no consumer holds is pruned whole, and a reading by hand has no say in it', () =>
-    onBoth(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      const topical: Program<T & Readonly<{ topics: { count: number; high: boolean } }>> = {
-        ...program,
-        name: 'Topical',
-        topics: { count: (projection) => projection, high: (projection) => projection > 100 },
-      }
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands({ holds: true })
-          const toy = yield* Effect.provide(runtime.deploy(topical, { consumers: { count: ['queue'] } }), layer)
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
-          yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester, keep: 'forever' })
-          expect((yield* toy.published('count', [], all)).length).toBe(2)
-          expect((yield* toy.published('high', [], all)).length).toBe(1)
-          // `high` has no consumer, so its row goes; `count` is held by a consumer that has read nothing yet
-          // (decision 0152).
-          expect(yield* toy.prune).toBe(1)
-          expect(yield* toy.published('high', [], all)).toEqual([])
-          expect((yield* toy.published('count', [], all)).length).toBe(2)
-        }))
-    })))
-
   test('a consumer that waits is given the row a step commits while it reads, under prioritized schedules', () => {
     // Decision 0142: the reading takes its topic's signal before it reads, so that a commit between its reading and
     // its wait ends the wait at once. The clock never moves here, so a wait that missed the commit never ends. With
@@ -2282,128 +2201,6 @@ describe('publishing what happened', () => {
       yield* Scope.close(outside, Exit.void)
     })))
 
-  test('an ack past the last seq of its partition moves the cursor to it, and the rows written after are kept', () =>
-    database(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands({ holds: true })
-          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
-          const partition = partitionOf(id, 300)
-          // Nothing was written yet: no cursor is stored, and the consumer is, by the deploy (decision 0152).
-          yield* toy.ack('projection', 'queue', [{ partition, seq: 1_000 }])
-          expect(yield* toy.consumers).toEqual([
-            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
-          ])
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
-          // A cursor past the head of its partition never stood: the creation is past it.
-          expect(yield* toy.fetch('projection', 'queue', all)).toHaveLength(1)
-          // A consumer that acks beyond what it read stops at the last row: the next one is past its cursor.
-          yield* toy.ack('projection', 'queue', [{ partition, seq: 1_000 }])
-          expect(yield* toy.consumers).toEqual([
-            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
-          ])
-          yield* toy.send(id, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester, keep: 'forever' })
-          expect(yield* toy.prune).toBe(1)
-          expect((yield* toy.fetch('projection', 'queue', all)).map(({ value }) => value)).toEqual([3])
-        }))
-    })))
-
-  test('a cursor, a partition or a limit out of its range is its caller’s defect, and stores nothing', () =>
-    database(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      const reasonOf = (exit: Exit.Exit<unknown>) => {
-        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
-        return cause instanceof InvariantDefect ? cause.reason : null
-      }
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands({ holds: true })
-          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
-          const partition = partitionOf(id, 300)
-          // Each of them is refused before anything is read or stored (decisions 0053, 0137).
-          const refused = [
-            toy.ack('projection', 'queue', [{ partition, seq: 2.5 }]),
-            toy.ack('projection', 'queue', [{ partition, seq: -5 }]),
-            toy.ack('projection', 'queue', [{ partition, seq: Number.NaN }]),
-            // An integer past what a double holds exactly is no cursor either.
-            toy.ack('projection', 'queue', [{ partition, seq: 2 ** 53 }]),
-            toy.ack('projection', 'queue', [{ partition: 0, seq: 1 }]),
-            toy.ack('projection', 'queue', [{ partition: 301, seq: 1 }]),
-            toy.ack('projection', 'queue', [{ partition: 1.5, seq: 1 }]),
-            toy.published('projection', [{ partition, seq: -1 }], 1),
-            toy.published('projection', [{ partition: -1, seq: 0 }], 1),
-            toy.published('projection', [], -1),
-            toy.published('projection', [], 1.5),
-            toy.fetch('projection', 'queue', -1),
-            toy.fetch('projection', 'queue', Number.POSITIVE_INFINITY),
-            // A wait is counted as a limit is (decision 0142).
-            toy.fetch('projection', 'queue', all, { wait: { millis: -1 } }),
-            toy.fetch('projection', 'queue', all, { wait: { millis: 0.5 } }),
-            toy.fetch('projection', 'queue', all, { wait: {} } as never),
-            // A partition a reader names is checked as a cursor's is (decision 0153).
-            toy.fetch('projection', 'queue', all, { partitions: [0] }),
-            toy.fetch('projection', 'queue', all, { partitions: [partition, 301] }),
-            toy.fetch('projection', 'queue', all, { partitions: [1.5] }),
-            toy.query({ limit: -1 }),
-            toy.query({ limit: 0.5 }),
-            // A limit left out is refused too, since the types do not hold a cast (decision 0141).
-            toy.published('projection', [], undefined as never),
-            toy.fetch('projection', 'queue', undefined as never),
-            toy.query({} as never),
-          ]
-          for (const call of refused) {
-            expect(reasonOf(yield* Effect.exit(call)))
-              .toMatch(/^the (cursor|limit|wait) is .+, which is no non-negative|^the partition is .+, which is no integer/)
-          }
-          // A reader of no partition reads nothing, and is refused too (decision 0153).
-          for (const partitions of [[], 3 as never]) {
-            expect(reasonOf(yield* Effect.exit(toy.fetch('projection', 'queue', all, { partitions }))))
-              .toBe('the partitions a reader names are no list of at least one')
-          }
-          // A topic the program does not publish is refused too, before anything is read or stored (decision 0138):
-          // a cast lets it through the types.
-          const elsewhere = 'billing' as 'projection'
-          for (
-            const call of [
-              toy.published(elsewhere, [], all),
-              toy.fetch(elsewhere, 'queue', all),
-              toy.ack(elsewhere, 'queue', [{ partition, seq: 1 }]),
-              toy.forget(elsewhere, 'queue'),
-            ]
-          ) {
-            expect(reasonOf(yield* Effect.exit(call))).toBe("'billing' is no topic of the program 'Toy'")
-          }
-          // A name the deploy does not declare is refused too, before anything is read or stored (decision 0152):
-          // a cast lets it through the types.
-          const stranger = 'qeueu' as 'queue'
-          for (
-            const call of [
-              toy.fetch('projection', stranger, all),
-              toy.fetch('projection', stranger, all, { wait: { millis: 10 } }),
-              toy.ack('projection', stranger, [{ partition, seq: 1 }]),
-            ]
-          ) {
-            expect(reasonOf(yield* Effect.exit(call))).toBe("'qeueu' is no consumer the deploy of 'Toy' declares for 'projection'")
-          }
-          // No consumer and no cursor was stored by a call refused, and a limit of 0 is a limit.
-          expect(yield* toy.consumers).toEqual([
-            {
-              topic: 'projection',
-              consumer: 'queue',
-              declared: true,
-              behind: 1,
-              since: DateTime.makeUnsafe(0),
-              cursors: [{ partition, seq: 0 }],
-            },
-          ])
-          expect(yield* toy.published('projection', [], 0)).toEqual([])
-          expect((yield* toy.published('projection', [], all)).length).toBe(1)
-          expect((yield* toy.query({ limit: 0 })).length).toBe(0)
-        }))
-    })))
-
   test('entities stepping at once each publish in their partition, and nothing of theirs is lost', () =>
     onBoth(Effect.gen(function*() {
       const at = yield* DateTime.now
@@ -2460,45 +2257,6 @@ describe('publishing what happened', () => {
           for (const id of ids) {
             expect(rows.filter((row) => row.id === id).map(({ value }) => value)).toEqual([4, 3, 2, 1, 0])
           }
-        }))
-    })))
-
-  test('a consumer reads every partition, and an ack and a prune move only the partitions acked', () =>
-    onBoth(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      // Two entities of two partitions.
-      const [one, other] = ['a', 'b']
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands({ holds: true })
-          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
-          expect(partitionOf(one, 300)).not.toBe(partitionOf(other, 300))
-          yield* toy.create(one, { flags: { at }, requestId: 'c-one', sender: tester })
-          yield* toy.create(other, { flags: { at }, requestId: 'c-other', sender: tester })
-          yield* toy.send(one, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester, keep: 'forever' })
-          // The rows come in the order they were written, each with its partition and its `seq` there.
-          const rows = yield* toy.fetch('projection', 'queue', all)
-          expect(rows.map(({ id, partition, seq }) => ({ id, partition, seq }))).toEqual([
-            { id: one, partition: partitionOf(one, 300), seq: 1 },
-            { id: other, partition: partitionOf(other, 300), seq: 1 },
-            { id: one, partition: partitionOf(one, 300), seq: 2 },
-          ])
-          // The consumer acts on the rows of one entity only: the other's partition stays where it was.
-          yield* toy.ack('projection', 'queue', rows.filter((row) => row.id === one))
-          expect((yield* toy.fetch('projection', 'queue', all)).map(({ id }) => id)).toEqual([other])
-          expect(yield* toy.consumers).toEqual([
-            {
-              topic: 'projection',
-              consumer: 'queue',
-              declared: true,
-              behind: 1,
-              since: DateTime.makeUnsafe(0),
-              cursors: [{ partition: partitionOf(other, 300), seq: 0 }],
-            },
-          ])
-          // The prune drops what the consumer read in each partition, and keeps the partition it acked nothing of.
-          expect(yield* toy.prune).toBe(2)
-          expect((yield* toy.published('projection', [], all)).map(({ id }) => id)).toEqual([other])
         }))
     })))
 
@@ -2644,48 +2402,6 @@ describe('publishing what happened', () => {
       expect(yield* Deferred.isDone(crashed)).toBe(true)
       expect((yield* store.published('projection', [], all)).map(({ kind, value }) => ({ kind, value })))
         .toEqual([{ kind: 'Creation', value: 4 }])
-    })))
-
-  test('a cursor is a consumer of one program, and holds no other program log', () =>
-    onBoth(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      // The same program under another name: two programs' entities publish into one log, read apart by name.
-      const twin: Program<T> = { ...program, name: 'Twin' }
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands({ holds: true })
-          const toys = yield* Effect.provide(runtime.deploy(program, queue), layer)
-          const twins = yield* Effect.provide(runtime.deploy(twin, queue), layer)
-          yield* toys.create(id, { flags: { at }, requestId: 'creation', sender: tester })
-          yield* twins.create(id, { flags: { at }, requestId: 'creation', sender: tester })
-          // Each reads the rows of its own program, under a name a consumer of each may hold.
-          const mine = yield* toys.fetch('projection', 'queue', all)
-          const theirs = yield* twins.fetch('projection', 'queue', all)
-          expect(mine.length).toBe(1)
-          expect(theirs.length).toBe(1)
-          // Each program's partitions have heads of their own, so the same entity id starts at the same place in
-          // both logs (decision 0137).
-          expect(theirs.map(({ partition, seq }) => ({ partition, seq })))
-            .toEqual(mine.map(({ partition, seq }) => ({ partition, seq })))
-          // Each acks its own, and the rows of the one go while the other's consumer holds its log.
-          yield* twins.ack('projection', 'queue', theirs)
-          expect(yield* twins.prune).toBe(1)
-          expect(yield* toys.prune).toBe(0)
-          expect(yield* toys.published('projection', [], all)).toEqual(mine)
-          expect(yield* toys.consumers).toEqual([
-            {
-              topic: 'projection',
-              consumer: 'queue',
-              declared: true,
-              behind: 1,
-              since: DateTime.makeUnsafe(0),
-              cursors: [{ partition: partitionOf(id, 300), seq: 0 }],
-            },
-          ])
-          expect(yield* twins.consumers).toEqual([
-            { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
-          ])
-        }))
     })))
 
   // The premise a transaction of the runtime rests on: the client leases its one connection under a semaphore of
@@ -5142,7 +4858,47 @@ describe('a rule of one process that holds on Cluster too', () => {
   // The projection counts the messages applied, which no operation's end changes, so that it stays what the step that
   // answered wrote while the work of the toy ends on its own clock.
   const counting: Program<T> = { ...program, name: 'Counting', project: (state) => state.applied.length }
-  const rule = everywhere([program, numbered, citing, lookingUp, counting])
+  // The operations never come back and the timer rings in an hour, as under `hands({ holds: true })` and a test clock
+  // that does not move, so that only a rule's calls change the state. Each rule of the log has a program of its own,
+  // since the rules on Cluster share a program's log and its prune. The clock is real, so a consumer behind is listed
+  // `since` the time its oldest row unread was published, which a rule does not pin.
+  const holding = (name: string): Program<T> => ({
+    ...program,
+    name,
+    init: (_flags, at) => ({ want: keys, applied: [], since: at, rings: DateTime.addDuration(at, '1 hour') }),
+    operations: {
+      A: operation(() => Effect.never),
+      B: operation.atMostOnce(() => Effect.never, ({ key }): Internal => ({ _tag: 'Unknown', key })),
+      C: operation.atLeastOnce(() => Effect.never),
+    },
+  })
+  const publishing = holding('Publishing')
+  const pruned = holding('Pruned')
+  const topical: Program<T & Readonly<{ topics: { count: number; high: boolean } }>> = {
+    ...holding('Topical'),
+    topics: { count: (projection) => projection, high: (projection) => projection > 100 },
+  }
+  const counted = { consumers: { count: ['queue'] } } as const
+  const acked = holding('Acked')
+  const ranged = holding('Ranged')
+  const partitioned = holding('Partitioned')
+  const mine = holding('Mine')
+  const twin = holding('Twin')
+  const rule = everywhere([
+    program,
+    numbered,
+    citing,
+    lookingUp,
+    counting,
+    publishing,
+    [pruned, queue],
+    [topical, counted],
+    [acked, queue],
+    [ranged, queue],
+    [partitioned, queue],
+    [mine, queue],
+    [twin, queue],
+  ])
   const sender = { _tag: 'Tester' } as const
   const reasonOf = (exit: Exit.Exit<unknown>) => {
     const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
@@ -5426,5 +5182,267 @@ describe('a rule of one process that holds on Cluster too', () => {
           .toEqual([three, one])
         expect(yield* toy.query({ limit: all, where: [{ index: 'wanted', is: '>', value: 9 }] })).toEqual([])
       }
+    }), ['sqlite', 'pg'])
+
+  rule('a creation, and every step that changes what callers read, publishes a row', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(publishing)
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      const toy = own(id)
+      yield* first!.create(toy, { flags: { at }, requestId: own('creation'), sender: tester })
+      // The key is wanted already: the state changes, since the nonce is applied, and the projection does not.
+      yield* other.send(toy, { _tag: 'Want', key: 't', on: true, nonce: 'on' }, { requestId: own('on'), sender: tester, keep: 'forever' })
+      // A timer may be dropped in any state: what callers read falls, and the step publishes what it handled.
+      yield* first!.send(toy, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: own('off'), sender: tester, keep: 'forever' })
+      expect(yield* other.send(toy, { _tag: 'Refuse', nonce: 'no' }, { requestId: own('no'), sender: tester, keep: 'forever' }))
+        .toEqual({ _tag: 'Rejected', reason: 'Refused' })
+      for (const handle of [first!, other]) {
+        const rows = yield* handle.published('projection', [], all)
+        expect(rows.map(({ partition: _partition, seq: _seq, ...row }) => row)).toEqual([
+          { id: toy, topic: 'projection', kind: 'Creation', message: null, value: 4 },
+          {
+            id: toy,
+            topic: 'projection',
+            kind: 'Inbound',
+            message: { _tag: 'Want', key: 't', on: false, nonce: 'off' },
+            value: 3,
+          },
+        ])
+      }
+    }), ['sqlite', 'pg'])
+
+  rule('a seq is never given again, so a cursor holds across a prune', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(pruned, queue)
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      const toy = own(id)
+      yield* first!.create(toy, { flags: { at }, requestId: own('creation'), sender: tester })
+      // The timer is the key a step may drop and bring back: each way changes what callers read.
+      yield* other.send(toy, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: own('off'), sender: tester, keep: 'forever' })
+      const read = yield* first!.published('projection', [], all)
+      expect(read.map(({ value }) => value)).toEqual([4, 3])
+      // The consumer acted on both rows and acked them: the prune takes what it has read, and its cursor stands.
+      yield* other.ack('projection', 'queue', read)
+      expect(yield* first!.prune).toBe(2)
+      expect(yield* other.published('projection', [], all)).toEqual([])
+      yield* first!.send(toy, { _tag: 'Want', key: 't', on: true, nonce: 'on' }, { requestId: own('on'), sender: tester, keep: 'forever' })
+      // What is published next is past the cursor: a seq the prune freed is never given again, or the consumer would
+      // read from beyond a row it never saw.
+      const next = yield* other.published('projection', read, all)
+      expect(next.map(({ value }) => value)).toEqual([4])
+      expect(next[0]?.seq ?? 0).toBeGreaterThan(read[1]?.seq ?? 0)
+      expect(yield* first!.published('projection', [], all)).toEqual(next)
+      expect(yield* other.fetch('projection', 'queue', all)).toEqual(next)
+    }))
+
+  rule('a topic no consumer holds is pruned whole, and a reading by hand has no say in it', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(topical, counted)
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      const toy = own(id)
+      yield* first!.create(toy, { flags: { at }, requestId: own('creation'), sender: tester })
+      yield* other.send(toy, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: own('off'), sender: tester, keep: 'forever' })
+      expect((yield* first!.published('count', [], all)).length).toBe(2)
+      expect((yield* other.published('high', [], all)).length).toBe(1)
+      // `high` has no consumer, so its row goes; `count` is held by a consumer that has read nothing yet
+      // (decision 0152).
+      expect(yield* first!.prune).toBe(1)
+      expect(yield* other.published('high', [], all)).toEqual([])
+      expect((yield* first!.published('count', [], all)).length).toBe(2)
+    }), ['sqlite', 'pg'])
+
+  rule('an ack past the last seq of its partition moves the cursor to it, and the rows written after are kept', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(acked, queue)
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      const toy = own(id)
+      const partition = partitionOf(toy, first!.partitions)
+      // Nothing was written yet: no cursor is stored, and the consumer is, by the deploy (decision 0152).
+      yield* first!.ack('projection', 'queue', [{ partition, seq: 1_000 }])
+      expect(yield* other.consumers).toEqual([
+        { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
+      ])
+      yield* first!.create(toy, { flags: { at }, requestId: own('creation'), sender: tester })
+      // A cursor past the head of its partition never stood: the creation is past it.
+      expect(yield* other.fetch('projection', 'queue', all)).toHaveLength(1)
+      // A consumer that acks beyond what it read stops at the last row: the next one is past its cursor.
+      yield* other.ack('projection', 'queue', [{ partition, seq: 1_000 }])
+      expect(yield* first!.consumers).toEqual([
+        { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
+      ])
+      yield* first!.send(toy, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: own('off'), sender: tester, keep: 'forever' })
+      expect(yield* other.prune).toBe(1)
+      expect((yield* first!.fetch('projection', 'queue', all)).map(({ value }) => value)).toEqual([3])
+    }))
+
+  rule('a cursor, a partition or a limit out of its range is its caller’s defect, and stores nothing', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const handles = yield* deploy(ranged, queue)
+      const at = yield* DateTime.now
+      const toy = own(id)
+      yield* handles[0]!.create(toy, { flags: { at }, requestId: own('creation'), sender: tester })
+      for (const handle of handles) {
+        const partition = partitionOf(toy, handle.partitions)
+        const past = handle.partitions + 1
+        // Each of them is refused before anything is read or stored (decisions 0053, 0137).
+        const refused = [
+          handle.ack('projection', 'queue', [{ partition, seq: 2.5 }]),
+          handle.ack('projection', 'queue', [{ partition, seq: -5 }]),
+          handle.ack('projection', 'queue', [{ partition, seq: Number.NaN }]),
+          // An integer past what a double holds exactly is no cursor either.
+          handle.ack('projection', 'queue', [{ partition, seq: 2 ** 53 }]),
+          handle.ack('projection', 'queue', [{ partition: 0, seq: 1 }]),
+          handle.ack('projection', 'queue', [{ partition: past, seq: 1 }]),
+          handle.ack('projection', 'queue', [{ partition: 1.5, seq: 1 }]),
+          handle.published('projection', [{ partition, seq: -1 }], 1),
+          handle.published('projection', [{ partition: -1, seq: 0 }], 1),
+          handle.published('projection', [], -1),
+          handle.published('projection', [], 1.5),
+          handle.fetch('projection', 'queue', -1),
+          handle.fetch('projection', 'queue', Number.POSITIVE_INFINITY),
+          // A wait is counted as a limit is (decision 0142).
+          handle.fetch('projection', 'queue', all, { wait: { millis: -1 } }),
+          handle.fetch('projection', 'queue', all, { wait: { millis: 0.5 } }),
+          handle.fetch('projection', 'queue', all, { wait: {} } as never),
+          // A partition a reader names is checked as a cursor's is (decision 0153).
+          handle.fetch('projection', 'queue', all, { partitions: [0] }),
+          handle.fetch('projection', 'queue', all, { partitions: [partition, past] }),
+          handle.fetch('projection', 'queue', all, { partitions: [1.5] }),
+          handle.query({ limit: -1 }),
+          handle.query({ limit: 0.5 }),
+          // A limit left out is refused too, since the types do not hold a cast (decision 0141).
+          handle.published('projection', [], undefined as never),
+          handle.fetch('projection', 'queue', undefined as never),
+          handle.query({} as never),
+        ]
+        for (const call of refused) {
+          expect(reasonOf(yield* Effect.exit(call)))
+            .toMatch(/^the (cursor|limit|wait) is .+, which is no non-negative|^the partition is .+, which is no integer/)
+        }
+        // A reader of no partition reads nothing, and is refused too (decision 0153).
+        for (const partitions of [[], 3 as never]) {
+          expect(reasonOf(yield* Effect.exit(handle.fetch('projection', 'queue', all, { partitions }))))
+            .toBe('the partitions a reader names are no list of at least one')
+        }
+        // A topic the program does not publish is refused too, before anything is read or stored (decision 0138): a
+        // cast lets it through the types.
+        const elsewhere = 'billing' as 'projection'
+        for (
+          const call of [
+            handle.published(elsewhere, [], all),
+            handle.fetch(elsewhere, 'queue', all),
+            handle.ack(elsewhere, 'queue', [{ partition, seq: 1 }]),
+            handle.forget(elsewhere, 'queue'),
+          ]
+        ) {
+          expect(reasonOf(yield* Effect.exit(call))).toBe(`'billing' is no topic of the program '${ranged.name}'`)
+        }
+        // A name the deploy does not declare is refused too, before anything is read or stored (decision 0152): a
+        // cast lets it through the types.
+        const stranger = 'qeueu' as 'queue'
+        for (
+          const call of [
+            handle.fetch('projection', stranger, all),
+            handle.fetch('projection', stranger, all, { wait: { millis: 10 } }),
+            handle.ack('projection', stranger, [{ partition, seq: 1 }]),
+          ]
+        ) {
+          expect(reasonOf(yield* Effect.exit(call)))
+            .toBe(`'qeueu' is no consumer the deploy of '${ranged.name}' declares for 'projection'`)
+        }
+        // No consumer and no cursor was stored by a call refused, and a limit of 0 is a limit.
+        expect(yield* handle.consumers).toEqual([
+          {
+            topic: 'projection',
+            consumer: 'queue',
+            declared: true,
+            behind: 1,
+            since: expect.anything(),
+            cursors: [{ partition, seq: 0 }],
+          },
+        ])
+        expect(yield* handle.published('projection', [], 0)).toEqual([])
+        expect((yield* handle.published('projection', [], all)).length).toBe(1)
+        expect((yield* handle.query({ limit: 0 })).length).toBe(0)
+      }
+    }))
+
+  rule('a consumer reads every partition, and an ack and a prune move only the partitions acked', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(partitioned, queue)
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      const partitions = first!.partitions
+      // Two entities of two partitions.
+      const one = own('a')
+      const another = ['b', 'c', 'd', 'e'].map(own).find((id) => partitionOf(id, partitions) !== partitionOf(one, partitions))!
+      yield* first!.create(one, { flags: { at }, requestId: own('c-one'), sender: tester })
+      yield* other.create(another, { flags: { at }, requestId: own('c-other'), sender: tester })
+      yield* first!.send(one, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: own('off'), sender: tester, keep: 'forever' })
+      // The rows come in the order they were written, each with its partition and its `seq` there.
+      const rows = yield* other.fetch('projection', 'queue', all)
+      expect(rows.map(({ id, partition, seq }) => ({ id, partition, seq }))).toEqual([
+        { id: one, partition: partitionOf(one, partitions), seq: 1 },
+        { id: another, partition: partitionOf(another, partitions), seq: 1 },
+        { id: one, partition: partitionOf(one, partitions), seq: 2 },
+      ])
+      // The consumer acts on the rows of one entity only: the other's partition stays where it was.
+      yield* first!.ack('projection', 'queue', rows.filter((row) => row.id === one))
+      expect((yield* other.fetch('projection', 'queue', all)).map(({ id }) => id)).toEqual([another])
+      expect(yield* first!.consumers).toEqual([
+        {
+          topic: 'projection',
+          consumer: 'queue',
+          declared: true,
+          behind: 1,
+          since: expect.anything(),
+          cursors: [{ partition: partitionOf(another, partitions), seq: 0 }],
+        },
+      ])
+      // The prune drops what the consumer read in each partition, and keeps the partition it acked nothing of.
+      expect(yield* other.prune).toBe(2)
+      expect((yield* first!.published('projection', [], all)).map(({ id }) => id)).toEqual([another])
+    }), ['sqlite', 'pg'])
+
+  // Two programs' entities publish into one log, read apart by name.
+  rule('a cursor is a consumer of one program, and holds no other program log', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [toys, others] = yield* deploy(mine, queue)
+      const twins = (yield* deploy(twin, queue)).at(-1)!
+      const at = yield* DateTime.now
+      const toy = own(id)
+      yield* toys!.create(toy, { flags: { at }, requestId: own('creation'), sender: tester })
+      yield* twins.create(toy, { flags: { at }, requestId: own('creation'), sender: tester })
+      // Each reads the rows of its own program, under a name a consumer of each may hold.
+      const read = yield* (others ?? toys)!.fetch('projection', 'queue', all)
+      const theirs = yield* twins.fetch('projection', 'queue', all)
+      expect(read.length).toBe(1)
+      expect(theirs.length).toBe(1)
+      // Each program's partitions have heads of their own, so the same entity id starts at the same place in both
+      // logs (decision 0137).
+      expect(theirs.map(({ partition, seq }) => ({ partition, seq })))
+        .toEqual(read.map(({ partition, seq }) => ({ partition, seq })))
+      // Each acks its own, and the rows of the one go while the other's consumer holds its log.
+      yield* twins.ack('projection', 'queue', theirs)
+      expect(yield* twins.prune).toBe(1)
+      expect(yield* toys!.prune).toBe(0)
+      expect(yield* toys!.published('projection', [], all)).toEqual(read)
+      expect(yield* toys!.consumers).toEqual([
+        {
+          topic: 'projection',
+          consumer: 'queue',
+          declared: true,
+          behind: 1,
+          since: expect.anything(),
+          cursors: [{ partition: partitionOf(toy, toys!.partitions), seq: 0 }],
+        },
+      ])
+      expect(yield* twins.consumers).toEqual([
+        { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
+      ])
     }), ['sqlite', 'pg'])
 })
