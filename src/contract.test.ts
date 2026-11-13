@@ -155,6 +155,12 @@ const item = program({
   }),
   operations: { Forward: operation.atLeastOnce(forward), Spawn: operation.atLeastOnce(spawn) },
   project: ({ forward: _, spawn: __, ticking: ___, ...projected }) => projected,
+  // Two topics, so that a step that changes both writes two rows of one publication, which two prunes may drop at
+  // once on a pool (decision 0286).
+  topics: {
+    label: (p) => p.label,
+    amount: (p) => p.amount,
+  },
   indexes: {
     label: (p) => p.label,
     amount: (p) => p.amount,
@@ -611,12 +617,25 @@ const setFields = {
 }
 const set = fc.record(setFields)
 const create = fc.record({ _tag: fc.constant('Create' as const), id: own, requestId: fc.constantFrom('c1', 'c2') })
+/**
+ * The consumers of the pool's deploys: one of each topic of `item`, stored from the first deploy. An ack moves the
+ * cursors of one consumer through the rows of the run's entities, so that two prunes see the log otherwise.
+ */
+const declared = { consumers: { label: ['reader'], amount: ['reader'] } } as const
+type Declared = typeof declared.consumers
+const ackFields = {
+  _tag: fc.constant('Ack' as const),
+  topic: fc.constantFrom('label' as const, 'amount' as const),
+  of: fc.constantFrom('a', 'b', 'all'),
+}
+const ack = fc.record({ ...ackFields, prune: fc.boolean() })
 const paired: fc.Arbitrary<Paired> = fc.oneof(
   set,
   create,
   fc.constant({ _tag: 'Expire' as const }),
   fc.constant({ _tag: 'Reindex' as const }),
   fc.constant({ _tag: 'Prune' as const }),
+  ack,
 )
 type Paired =
   | Readonly<{ _tag: 'Set'; id: string; label: string; keep: Keep; requestId: string }>
@@ -624,10 +643,26 @@ type Paired =
   | Readonly<{ _tag: 'Expire' }>
   | Readonly<{ _tag: 'Reindex' }>
   | Readonly<{ _tag: 'Prune' }>
-/** Histories of `pairs`, after up to four messages one at a time, whose replies may be kept `brief`ly. */
+  | Ack
+/**
+ * An ack of the consumer of `topic` through the rows of the run's entity `of`, or of both entities, and then a prune
+ * where `prune` holds, so that a prune of the pair may see the log after an ack the other did not see.
+ */
+type Ack = Readonly<{ _tag: 'Ack'; topic: 'label' | 'amount'; of: string; prune: boolean }>
+/** A call of `before`: a message whose reply may be kept `brief`ly, an ack, or a prune. */
+type Before =
+  | Readonly<{ _tag: 'Set'; id: string; label: string; keep: Keep; requestId: string }>
+  | Ack
+  | Readonly<{ _tag: 'Prune' }>
+const before: fc.Arbitrary<Before> = fc.oneof(
+  { arbitrary: fc.record({ ...setFields, keep: fc.oneof(keep, fc.constant<Keep>(brief)) }), weight: 4 },
+  { arbitrary: fc.record({ ...ackFields, prune: fc.constant(false) }), weight: 1 },
+  { arbitrary: fc.constant({ _tag: 'Prune' as const }), weight: 1 },
+)
+/** Histories of `pairs`, after up to four calls one at a time: messages, acks and prunes. */
 const heldOf = (pairs: fc.Arbitrary<readonly [Paired, Paired]>) =>
   fc.record({
-    before: fc.array(fc.record({ ...setFields, keep: fc.oneof(keep, fc.constant<Keep>(brief)) }), { maxLength: 4 }),
+    before: fc.array(before, { maxLength: 4 }),
     pair: pairs,
     // Which of the library's tables is locked, by its place among them in the order of their names. A case pinned
     // names the table, or the reply whose row alone is locked, by its entity and its request.
@@ -641,7 +676,7 @@ type Held = typeof held extends fc.Arbitrary<infer H> ? H : never
  * Runs `call` of the run `run` on `items`, and gives its answer: `done` for an operator's call that succeeds. A `Set`
  * of the pair sends `Add`, which adds to `amount`, so that a message applied twice shows in the readings.
  */
-const pairedOn = (items: Handle<Item>, run: string, call: Paired): Effect.Effect<unknown> => {
+const pairedOn = (items: Handle<Item, Declared>, run: string, call: Paired | Before): Effect.Effect<unknown> => {
   const id = (name: string) => `${run}/${name}`
   const answered = (effect: Effect.Effect<unknown, unknown>, done = false) =>
     Effect.map(
@@ -667,6 +702,15 @@ const pairedOn = (items: Handle<Item>, run: string, call: Paired): Effect.Effect
       return answered(items.reindex, true)
     case 'Prune':
       return answered(items.prune, true)
+    case 'Ack': {
+      const of = call.of === 'all' ? [id('a'), id('b')] : [id(call.of)]
+      const acking = Effect.gen(function*() {
+        const rows = yield* items.published(call.topic, [], 100_000)
+        yield* items.ack(call.topic, 'reader', rows.filter((row) => of.includes(row.id)))
+        if (call.prune) yield* items.prune
+      })
+      return answered(acking, true)
+    }
   }
 }
 
@@ -676,7 +720,8 @@ const pairedOn = (items: Handle<Item>, run: string, call: Paired): Effect.Effect
  * Gives the answers of the pair, of the requests sent again, and of the readings.
  */
 const history = (
-  items: Handle<Item>,
+  items: Handle<Item, Declared>,
+  sql: SqlClient.SqlClient,
   run: string,
   { before, pair }: Held,
   together: (calls: readonly [Effect.Effect<unknown>, Effect.Effect<unknown>]) => Effect.Effect<ReadonlyArray<unknown>>,
@@ -684,7 +729,9 @@ const history = (
   Effect.gen(function*() {
     for (const name of ['a', 'b']) yield* pairedOn(items, run, { _tag: 'Create', id: name, requestId: `made-${name}` })
     for (const call of before) yield* pairedOn(items, run, call)
-    if (before.some(({ keep }) => keep !== 'forever' && keep.millis === brief.millis)) yield* Effect.sleep(briefly)
+    if (before.some((call) => call._tag === 'Set' && call.keep !== 'forever' && call.keep.millis === brief.millis)) {
+      yield* Effect.sleep(briefly)
+    }
     const answers = yield* together([pairedOn(items, run, pair[0]), pairedOn(items, run, pair[1])])
     const again = yield* Effect.forEach(
       pair.filter((call) => call._tag === 'Set' || call._tag === 'Create'),
@@ -692,7 +739,12 @@ const history = (
     )
     const read = yield* Effect.forEach(['a', 'b', 'c'], (name) => Effect.exit(items.read(`${run}/${name}`)))
     const counted = yield* items.count({ where: [{ index: 'run', is: '=', value: run }] })
-    return { answers, again, read: read.map(outcome), counted }
+    // No call reads a publication no row of the outbox names, so the table is read: such a publication stays for ever
+    // (decision 0286).
+    const [published] = yield* sql<{ count: number }>`
+      SELECT CAST(count(*) AS INTEGER) AS count FROM effecttea_publications WHERE id LIKE ${`${run}/%`}
+    `.pipe(Effect.orDie)
+    return { answers, again, read: read.map(outcome), counted, published: published?.count }
   })
 
 /** What the statements of one call of a pair name of the library's tables, and which of them they write. */
@@ -716,6 +768,9 @@ const serially = (run: string, held: Held, first: 0 | 1) => {
         for (const [, table] of text.matchAll(/(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+"?(effecttea_\w+)/gi)) {
           of.written.add(table!)
         }
+        // A statement that drops rows of the outbox drops their publications by a trigger, which no statement names
+        // (decision 0286).
+        if (/DELETE\s+FROM\s+"?effecttea_outbox\b/i.test(text)) of.written.add('effecttea_publications')
       }
       return statement
     })
@@ -726,8 +781,8 @@ const serially = (run: string, held: Held, first: 0 | 1) => {
     )
   return Effect.runPromise(
     Effect.scoped(Effect.gen(function*() {
-      const items = yield* (yield* launch({ sweep: 'none' })).deploy(item)
-      const answered = yield* history(items, run, held, ([zero, one]) =>
+      const items = yield* (yield* launch({ sweep: 'none' })).deploy(item, declared)
+      const answered = yield* history(items, yield* SqlClient.SqlClient, run, held, ([zero, one]) =>
         first === 0
           ? Effect.all([during(0, zero), during(1, one)])
           : Effect.map(Effect.all([during(1, one), during(0, zero)]), ([b, a]) => [a, b]))
@@ -766,7 +821,7 @@ const onPool = (histories: fc.Arbitrary<Held>, runs: number, examples: ReadonlyA
     const sql = yield* connected()
     const gate = yield* connected({ maxConnections: 1 })
     const runtime = yield* Effect.provideService(launch({ sweep: 'none' }), SqlClient.SqlClient, sql)
-    const items = yield* runtime.deploy(item)
+    const items = yield* runtime.deploy(item, declared)
     const tables = (yield* sql<{ tablename: string }>`
       SELECT tablename FROM pg_tables
       WHERE schemaname = current_schema() AND tablename LIKE 'effecttea%'
@@ -801,7 +856,7 @@ const onPool = (histories: fc.Arbitrary<Held>, runs: number, examples: ReadonlyA
             ? `SELECT 1 FROM effecttea_replies WHERE id = '${run}/${drawn.of}' AND request_id = '${run}/${drawn.reply}'
                 FOR UPDATE`
             : `LOCK TABLE ${typeof drawn === 'string' ? drawn : among[drawn % among.length]!} IN ACCESS EXCLUSIVE MODE`
-          const answered = await Effect.runPromise(history(items, run, held, (calls) =>
+          const answered = await Effect.runPromise(history(items, sql, run, held, (calls) =>
             Effect.scoped(Effect.gen(function*() {
               const locked = yield* Deferred.make<void>()
               const open = yield* Deferred.make<void>()
@@ -881,6 +936,23 @@ const bug49: ReadonlyArray<Held> = ([['s1', 's2'], ['s2', 's1']] as const).flatM
     gate: { reply: locked, of: 'a' },
   }))
 )
+// The examples of bug 80 are two prunes at once whose views of the log differ by an ack, which the second prune runs
+// after it (decision 0286). The consumer of `amount` acks the creation of `b` and a prune drops its row of `amount`.
+// Then the consumer of `label` acks both creations. The first prune of the pair drops both rows of `label`. The
+// creation of `a` keeps its row of `amount`, and the creation of `b` has none left, so its publication goes, and the
+// trigger waits there at the lock of the publications. The second call acks the creation of `a` in `amount` and
+// prunes its row, which the first prune has not committed the drop of the row of `label` of. A trigger once for each
+// row, as before decision 0286, then saw in each transaction the other's row, and kept the publication of `a` for
+// ever. The table locked is the publications.
+const bug80: Held = {
+  before: [
+    { _tag: 'Ack', topic: 'amount', of: 'b', prune: false },
+    { _tag: 'Prune' },
+    { _tag: 'Ack', topic: 'label', of: 'all', prune: false },
+  ],
+  pair: [{ _tag: 'Prune' }, { _tag: 'Ack', topic: 'amount', of: 'a', prune: true }],
+  gate: 'effecttea_publications',
+}
 test.skipIf(server === undefined)(
   'two calls held at a statement on a pool answer as one order of them',
   () =>
@@ -889,6 +961,7 @@ test.skipIf(server === undefined)(
       ...Array.from({ length: 8 }, () => bug13),
       ...Array.from({ length: 8 }, () => bug111),
       ...Array.from({ length: 2 }, () => bug49).flat(),
+      ...Array.from({ length: 8 }, () => bug80),
     ]),
   1_200_000,
 )
