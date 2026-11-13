@@ -38,7 +38,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launch as launchOnCluster, sharding } from './cluster.ts'
 import { launch } from './index.ts'
-import { defect, type Entities, noWork, operation, program, type Receiver, send, timer } from './index.program.ts'
+import {
+  create as createFrom,
+  defect,
+  type Entities,
+  noWork,
+  operation,
+  program,
+  type Receiver,
+  send,
+  timer,
+} from './index.program.ts'
 import { idFault, type TypesOf } from './program.ts'
 import type { Handle, Inspected, Keep } from './runtime.ts'
 import type { Comparison, Dialect } from './storage.ts'
@@ -51,12 +61,16 @@ const fields = {
   note: Schema.NullOr(Schema.String),
 }
 
-/** The work of an item: an `Add` to another item under way, and a timer due. */
+const flagged = Schema.Struct({ ...fields, run: Schema.String })
+
+/** The work of an item: an `Add` to another item under way, a creation of another item under way, and a timer due. */
 const pending = {
   forward: Schema.NullOr(Schema.Struct({ to: Schema.String, n: Schema.Number })),
+  spawn: Schema.NullOr(Schema.Struct({ to: Schema.String, flags: flagged })),
   ticking: Schema.Boolean,
 }
 const Forward = Schema.TaggedStruct('Forward', { to: Schema.String, n: Schema.Number })
+const Spawn = Schema.TaggedStruct('Spawn', { to: Schema.String, flags: flagged })
 
 /**
  * An item's operation: an `Add` of `n` sent to the item `to`, whose reply's tag the item keeps in its note. It sends
@@ -70,31 +84,45 @@ const forward = ({ to, n }: typeof Forward.Type): Effect.Effect<Forwarded, never
 type Forwarded = Readonly<{ _tag: 'Forwarded'; reply: string }>
 
 /**
+ * An item's operation: a creation of the item `to` with `flags`, whose answer's tag the item keeps in its note. Flags
+ * whose projection holds text no database holds make the program die on the creation, which is the operation's
+ * defect, and suspends the item that spawns (decision 0291).
+ */
+const spawn = ({ to, flags }: typeof Spawn.Type): Effect.Effect<Spawned, never, Entities> =>
+  Effect.map(
+    createFrom(item as Receiver<Item>, to, 'spawn', flags),
+    (created) => ({ _tag: 'Spawned', reply: created._tag }),
+  )
+type Spawned = Readonly<{ _tag: 'Spawned'; reply: string }>
+
+/**
  * The program every backend runs. Its index `run` holds the run of the property that made the entity, and every
  * reading names it, so that the runs that share one Cluster read only their own entities. `Forward` starts an
  * operation that sends to another item, and `Tick` a timer due at once, which adds 1 when it fires.
  */
 const item = program({
   state: Schema.Struct({ ...fields, run: Schema.String, ...pending }),
-  flags: Schema.Struct({ ...fields, run: Schema.String }),
+  flags: flagged,
   sender: Schema.String,
   inbound: Schema.Union([
     Schema.TaggedStruct('Set', fields),
     Schema.TaggedStruct('Boom', { note: Schema.String }),
     Schema.TaggedStruct('Add', { label: Schema.String, n: Schema.Number }),
     Forward,
+    Spawn,
     Schema.TaggedStruct('Tick', {}),
   ]),
   internal: Schema.Union([
     Schema.TaggedStruct('Forwarded', { reply: Schema.String }),
+    Schema.TaggedStruct('Spawned', { reply: Schema.String }),
     Schema.TaggedStruct('Ticked', {}),
   ]),
-  operation: Forward,
+  operation: Schema.Union([Forward, Spawn]),
   projection: Schema.Struct({ ...fields, run: Schema.String }),
 })({
   name: 'Item',
-  keys: ['forward', 'tick'],
-  init: (flags) => ({ ...flags, forward: null, ticking: false }),
+  keys: ['forward', 'spawn', 'tick'],
+  init: (flags) => ({ ...flags, forward: null, spawn: null, ticking: false }),
   update: (message) => (state) => {
     switch (message._tag) {
       case 'Boom':
@@ -106,6 +134,10 @@ const item = program({
         return { ...state, forward: { to: message.to, n: message.n } }
       case 'Forwarded':
         return { ...state, forward: null, note: message.reply }
+      case 'Spawn':
+        return { ...state, spawn: { to: message.to, flags: message.flags } }
+      case 'Spawned':
+        return { ...state, spawn: null, note: message.reply }
       case 'Tick':
         return { ...state, ticking: true }
       case 'Ticked':
@@ -118,10 +150,11 @@ const item = program({
   },
   work: (state) => ({
     ...(state.forward === null ? noWork : { forward: Forward.make(state.forward) }),
+    ...(state.spawn === null ? noWork : { spawn: Spawn.make(state.spawn) }),
     ...(state.ticking ? { tick: timer(DateTime.makeUnsafe(0), { _tag: 'Ticked' as const }) } : noWork),
   }),
-  operations: { Forward: operation.atLeastOnce(forward) },
-  project: ({ forward: _, ticking: __, ...projected }) => projected,
+  operations: { Forward: operation.atLeastOnce(forward), Spawn: operation.atLeastOnce(spawn) },
+  project: ({ forward: _, spawn: __, ticking: ___, ...projected }) => projected,
   indexes: {
     label: (p) => p.label,
     amount: (p) => p.amount,
@@ -171,6 +204,7 @@ const calls = (ids: ReadonlyArray<string>, requests: ReadonlyArray<string>) => {
     fc.record({ _tag: fc.constant('Set' as const), id, set: values, request }),
     fc.record({ _tag: fc.constant('Boom' as const), id, note: text, request }),
     fc.record({ _tag: fc.constant('Forward' as const), id, to: id, n: fc.integer({ min: 1, max: 3 }), request }),
+    fc.record({ _tag: fc.constant('Spawn' as const), id, to: id, flags: values, request }),
     fc.record({ _tag: fc.constant('Tick' as const), id, request }),
     fc.record({ _tag: fc.constant('Read' as const), id }),
     fc.record({
@@ -202,10 +236,18 @@ const calls = (ids: ReadonlyArray<string>, requests: ReadonlyArray<string>) => {
       { _tag: 'Inspect' as const, id: to },
       { _tag: operator, id: to },
     ])
+  // A spawn whose creation the program dies on, its label being text no database holds, then an operator's call on
+  // the item that spawns, which the creation's defect suspends (decision 0291).
+  const spawning = fc.tuple(id, id, values, fc.constantFrom('\u0000', 'a\u0000b', '\ud800'), request, operator)
+    .map(([id, to, flags, label, request, operator]) => [
+      { _tag: 'Spawn' as const, id, to, flags: { ...flags, label }, request },
+      { _tag: operator, id },
+    ])
   const some = fc.oneof(
     { arbitrary: call.map((one) => [one]), weight: 4 },
     { arbitrary: suspending, weight: 1 },
     { arbitrary: waitingFor, weight: 1 },
+    { arbitrary: spawning, weight: 1 },
   )
   // The entities are made first, so that the readings after them have rows to compare.
   return fc.tuple(fc.array(create, { minLength: 1, maxLength: 6 }), fc.array(some, { minLength: 1, maxLength: 12 }))
@@ -292,6 +334,12 @@ const answer = (
         ? items.send(own(call.id), { _tag: 'Boom', note: call.note }, { ...request!, keep: 'forever' })
         : call._tag === 'Forward'
         ? items.send(own(call.id), { _tag: 'Forward', to: own(call.to), n: call.n }, { ...request!, keep: 'forever' })
+        : call._tag === 'Spawn'
+        ? items.send(
+          own(call.id),
+          { _tag: 'Spawn', to: own(call.to), flags: { ...call.flags, run } },
+          { ...request!, keep: 'forever' },
+        )
         : call._tag === 'Tick'
         ? items.send(own(call.id), { _tag: 'Tick' }, { ...request!, keep: 'forever' })
         : call._tag === 'Read'
@@ -355,7 +403,7 @@ const settledOf = (value: unknown): unknown =>
  * The calls after which an entity may go on stepping: those that send it a message, create it or take it out of a
  * suspension.
  */
-const writes = new Set<string>(['Create', 'Set', 'Boom', 'Forward', 'Tick', 'Resume', 'Discard'])
+const writes = new Set<string>(['Create', 'Set', 'Boom', 'Forward', 'Spawn', 'Tick', 'Resume', 'Discard'])
 
 /**
  * Waits until every entity of `ids` is quiet. A missing entity is quiet. An entity that is not suspended is quiet

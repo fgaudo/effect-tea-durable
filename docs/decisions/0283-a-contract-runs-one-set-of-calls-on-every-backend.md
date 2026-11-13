@@ -44,6 +44,11 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
   operation that sends `Add` to another item and keeps the reply's tag in its note. A message `Tick` arms a timer due
   at once, which adds 1 when it fires. The generated calls send both, and a `Forward` to an entity a `Boom` suspends,
   followed by an operator's call on that entity, so that an operation waits for a resumption.
+- **The program `item` creates another entity from an operation.** A message `Spawn` starts an at-least-once
+  operation that creates another item with the flags the message carries, and keeps the creation's tag in the note.
+  The generated calls send it with any flags. One draw of seven of them is a `Spawn` whose label is text no database
+  holds, followed by an operator's call on the item that spawns. The program dies on that creation, which is the
+  operation's defect, so the item that spawns is suspended on every backend (decision 0291).
 - **After each call that writes, the test waits until every entity of the run is quiet**, for five seconds at most.
   A call answers before its entity handles what follows from it: the message a `resume` or a `discard` takes the
   entity past, an operation's completion, a timer's firing. So a call after it would meet the entities where each
@@ -115,6 +120,12 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
   its five seconds.
 - That the test meets an operation and a timer: **seen**, in a run of 300 counted on 2026-11-12, where 30 forwards
   and 27 ticks were answered `Accepted` and five readings held the forward's reply in the note.
+- That an operation's creation answers alike on every backend, whether it creates, finds the entity, or dies:
+  **tested**, by `every backend answers every call alike`, in a run of 300 under `SCHEDULES=all` that passed on
+  2026-11-13 on SQLite, PGlite and Cluster.
+- That the test meets an operation's creation of each kind: **seen**, in a run of 300 counted on 2026-11-13, of
+  723 spawns. The readings held the note `Created` 37 times and `AlreadyExists` 192 times. A suspension whose cause
+  is not a `Boom`'s was read 28 times, in 15 runs, which counts a forward to an id the library refuses too.
 - That the generated runs meet suspensions: **seen**, in one run of 300 counted on 2026-11-12, where `inspect` read a
   suspended entity 131 times, `discard` answered `Discarded` 47 times and `resume` answered `Resumed` 39 times. No
   `resume` answered `StillSuspended`, since the program deployed is the one that died.

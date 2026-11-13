@@ -404,9 +404,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     reproduced by tests of `src/cluster.test.ts`, and fixed by
     [decision 0291](decisions/0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md), which the maintainer chose after an opinion of a Fable 5.2 agent,
     each of its premises tested. The test of a contract no longer marks such a creation by `diesOn`.
-  - Next, an operation's creation that `init` dies on in the contract, which needs an operation of `item` that
-    creates. The pool's histories grow too, with a deploy that declares a consumer and an ack between
-    the snapshot of a batch of `prune` and its commit, so that the pool reaches bug 80, which a scenario holds now.
+  - Done, on 2026-11-13, an operation's creation in the contract, on every backend: a message `Spawn` of the program
+    `item`, whose operation creates another item, and a `Spawn` whose label is text no database holds, which the
+    program dies on, followed by an operator's call on the item that spawns. A run of 300 passed, and found none of
+    the backends otherwise.
+  - Next, the pool's histories grow, with a deploy that declares a consumer and an ack between the snapshot of a
+    batch of `prune` and its commit, so that the pool reaches bug 80, which a scenario of `src/postgres.test.ts`
+    holds now. It begins in `paired` and `pairedOn` of `src/contract.test.ts`, and runs only on the CI's server.
     A difference of Cluster that a note decides is marked in the test of a contract, as decision 0283 says, and a
     difference no note decides is a bug.
   - Then the tests of the runtime that hold a rule of one process, which `src/runtime.test.ts` holds, run on Cluster
