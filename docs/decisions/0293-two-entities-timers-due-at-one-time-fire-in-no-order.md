@@ -3,10 +3,11 @@
 **Status:** proposed, 2026-11-13, for the step Two entities' timers due at one time, in no order, of the
 [roadmap](../roadmap.md). The maintainer chose it in a session of 2026-11-13, after an opinion of a second model, Fable
 5.2. Nothing of it is written yet. Two of its premises failed on 2026-11-13, before the step began: the order of one
-loaded entity's timers, and hands as new in a second call of the scenario. The maintainer chooses what the two
-bullets of the decision that rest on them become. A second model, Fable 5.2, recommended that the runtime keep one
-entity's order where its loop takes a `Fire`, and that a hand that keeps a value be made in the scenario. The four
-risks it raised were tested the same day, under What it rests on.
+loaded entity's timers, and hands as new in a second call of the scenario. A second model, Fable 5.2, recommended
+that the runtime keep one entity's order where its loop takes a `Fire`, and that a hand that keeps a value be made in
+the scenario. The four risks it raised were tested the same day, under What it rests on. The maintainer chose, in the
+same session, that the runtime keep one entity's order, by the stored work. What the bullet on the scenario called
+twice becomes is still the maintainer's to choose.
 
 ## Context
 
@@ -33,14 +34,18 @@ nothing tells the test's writer.
 
 - **Of two entities' timers due at one time, no order holds.** `docs/design.md` says so where it says what `advance`
   does, and the glossary's entry of a timer says it too.
-- **Within one entity, the timers due at one time fire in the order its machine holds them.** That order is the
-  machine's, in [`src/machine.ts`](../../src/machine.ts). The premise that the runtime keeps it failed for a loaded
-  entity, under What it rests on. So this bullet holds only once the runtime offers one entity's firings due at one
-  time in the machine's order, or it becomes the rule that no order holds within one entity either, and a rehearsal
-  reverses those too. The order the machine holds is not one order across a restart either: a timer armed again
-  goes last while the entity is loaded, and takes its place in the stored work after a restart. So an order the
-  runtime keeps is defined by the stored work, as `work` gives it, and not by the timers running. The maintainer
-  chooses.
+- **Within one entity, the timers due at one time fire in the order of the stored work.** That order is the order of
+  the record `work` gives, as the machine stores it in [`src/machine.ts`](../../src/machine.ts). It is not the order
+  of the timers running, which a timer armed again changes while the entity is loaded, and a restart changes back.
+  A record keyed by names like `2` and `1` lists them in the order of their numbers, and `docs/design.md` says so.
+- **The runtime keeps that order where an entity's loop takes a `Fire`.** The `Fire` of any timer of the entity
+  fires, of its timers due by then, the one due earliest, and of those due at one time the first in the stored work.
+  The fiber of each timer stays as it is, and only says that a timer of the entity is due. The `Fire` of a timer
+  that already fired arrives later with an incarnation the machine no longer holds, and is dropped. So the order
+  holds whichever fiber wakes first, under a schedule of `src/testing.ts` and on a clock that is real. The step
+  decides whether the rule lies in the machine, with its test in `src/machine.test.ts`, or in the loop.
+- **The rehearsal orders one entity's timers by the stored work too,** in `dueBy` of
+  [`src/rehearse.ts`](../../src/rehearse.ts), and no longer by the timers running.
 - **A rehearsal of several entities runs its scenario twice where two entities' timers are due at one time.** The
   first run fires the timers of the entities due at one time in the order of creation, as today. The second run
   fires every such group in the reverse order. A test whose assertion depends on the order of two entities' timers
@@ -113,6 +118,17 @@ nothing tells the test's writer.
   run.
 - That a second run of a scenario costs less than a test that passes on the rehearsal and fails on the runtime:
   **chosen** by the maintainer.
+- That the runtime keeps one entity's order, rather than promising none within one entity: **chosen** by the
+  maintainer, after Fable 5.2's opinion. One entity has one loop and one runner on Cluster, so one place orders its
+  timers, and a rehearsal needs no reversal within an entity.
+- That the `Fire` of a timer already fired by another timer's `Fire` is dropped, and writes nothing: **open**. A test
+  of the runtime with one entity's two timers due at one time checks it, by the events committed.
+- That no timer fires twice when another timer's `Fire` fires it first: **open**. The same kind of test checks it,
+  under prioritized schedules.
+- That one loaded entity's timers due at one time fire in the order of the stored work under every seed and on a
+  clock that is real: **open**. The tests `the runtime may fire them out of the order the machine holds them, loaded,
+  under prioritized schedules`, `fire out of the order the machine holds them, in some entities` and `the runtime
+  fires the timer armed again last, and first after a restart` then assert that order, and are renamed with it.
 
 ## Alternatives
 
