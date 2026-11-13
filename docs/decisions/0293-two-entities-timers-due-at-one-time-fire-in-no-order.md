@@ -46,20 +46,28 @@ scenario catches.
   fires, of its timers due by then, the one due earliest, and of those due at one time the first in the stored work.
   The fiber of each timer stays as it is, and only says that a timer of the entity is due. The `Fire` of a timer
   that already fired arrives later with an incarnation the machine no longer holds, and is dropped. So the order
-  holds whichever fiber wakes first, under a schedule of `src/testing.ts` and on a clock that is real. The step
-  decides whether the rule lies in the machine, with its test in `src/machine.test.ts`, or in the loop.
+  holds whichever fiber wakes first, under a schedule of `src/testing.ts` and on a clock that is real. The loop finds
+  the timer to fire by the function of the machine below.
 - **The rehearsal orders one entity's timers by the stored work too,** in `dueBy` of
   [`src/rehearse.ts`](../../src/rehearse.ts), and no longer by the timers running.
+- **The choice of an entity's next timer is one function of the machine.** A function of `src/machine.ts` gives, of
+  an entity's timers due by a time, the one due earliest, and of those due at one time the first in the stored work.
+  The runtime calls it where an entity's loop takes a `Fire`, and the rehearsal calls it in `dueBy` for each entity.
+  So the rule is written once, as decision 0292 wants of a rule both run, and its test lies in
+  `src/machine.test.ts`. The rehearsal alone then chooses among the entities, by the order of creation.
 - **A suspension closes the world.** When an act of the scenario suspends an entity, the world keeps the cause of
   that first suspension. Every act and every read of the world after it dies with that cause: `create`, `send`,
   `answer`, `fire`, `run`, `advance`, `restart`, `deploy`, `state`, `projection`, `pending` and `underWay`. The
   rehearsal, of one entity or of several, fails with that cause when the scenario returns, even where the scenario
   caught the defect. So a scenario reads nothing that an order decided after a defect, and the sentence that a defect
   fails the test holds whatever the scenario does.
-- **A defect of an operation closes the world too.** On the runtime it suspends the operation's entity
-  (`docs/design.md`, under Defects), and in a rehearsal today it fails the run alone. A runner that dies, a run that
-  sends twice under one name, a droppable operation that sends, and an id the runtime refuses in a runner's `send` or
-  `create` are each a defect of the operation.
+- **A rehearsal applies a defect of an operation as the runtime does, by the machine's `Die`.** On the runtime a
+  runner that dies is offered to its entity as `Die`, with its key, its incarnation and its cause, and the machine
+  suspends the entity (`docs/design.md`, under Defects). In a rehearsal today the run fails alone. So a run whose
+  runner dies applies `Die` to the entity, and the suspension closes the world. A runner that dies, a run that sends
+  twice under one name, a droppable operation that sends, and an id the runtime refuses in a runner's `send` or
+  `create` are each a defect of the operation. The closed world then needs no rule of its own for an operation: it
+  closes at a suspension, whatever event made it.
 - **A mistake of the test leaves the world open.** A message its schema refuses, an answer to a timer or a run of
   work that is no operation, a creation of an entity that exists, and an id the runtime refuses in the test's own
   `create` fail the act alone. A scenario that catches such a failure goes on, and reads the world as before.
@@ -151,6 +159,17 @@ scenario catches.
   order of the numbers, not the order the program writes`, in `src/machine.test.ts`. A record keyed by names like `2`
   and `1` lists them in the order of the numbers, so an order of one entity's timers by `work` holds such keys in
   that order.
+- That the runtime offers a runner's death to its entity as `Die`, which suspends the entity: **tested** by `a
+  droppable operation that sends to an entity dies, and suspends its entity`, in `src/runtime.test.ts`, and by `an
+  operation that dies answers Suspended every caller waiting`, in `src/machine.test.ts`.
+- That a rehearsal's run whose runner dies applies `Die`, and fails the rehearsal with the runner's cause: **open**.
+  The test `of an operation's defect suspends no entity in a rehearsal, unlike the runtime` then asserts that the
+  entity is suspended and the world closed, and is renamed with it.
+- That the machine's choice of an entity's next timer gives, within one entity, what `dueBy` gives today, but for a
+  timer armed again: **open**. The tests of `src/rehearse.test.ts` pass as they are, and a test of
+  `src/machine.test.ts` checks the choice for times, for the stored work's order and for a timer armed again.
+- That one function of the machine chooses an entity's next timer, rather than a rule written in the runtime and in
+  the rehearsal: **chosen** by the maintainer, as decision 0292 chose for the rules both run.
 - That the runtime keeps one entity's order, rather than promising none within one entity: **chosen** by the
   maintainer, after Fable 5.2's opinion. One entity has one loop and one runner on Cluster, so one place orders its
   timers.

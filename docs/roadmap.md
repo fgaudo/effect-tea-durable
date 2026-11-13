@@ -486,9 +486,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   loop takes a `Fire`. A suspension closes a rehearsal's world, so that a scenario that catches a defect reads
   nothing an order decided. Its note is
   [decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md), `proposed`, whose rules the
-  maintainer chose. Nothing of it is written yet. It begins in `dueBy`, `apply` and `restart` of
-  [`src/rehearse.ts`](../src/rehearse.ts), and in the take of a `Fire` by an entity's loop,
-  in [`src/runtime/loop.ts`](../src/runtime/loop.ts) or in `src/machine.ts`, with the tests its note names in
+  maintainer chose. Nothing of it is written yet. It begins in a function of `src/machine.ts` that chooses an
+  entity's next timer, which the take of a `Fire` by an entity's loop, in
+  [`src/runtime/loop.ts`](../src/runtime/loop.ts), and `dueBy` of [`src/rehearse.ts`](../src/rehearse.ts) call. It
+  goes on in `apply`, `run` and `restart` of `src/rehearse.ts`, where a runner's death applies `Die` and a suspension
+  closes the world, with the tests its note names in
   `src/rehearse.test.ts`, `src/machine.test.ts` and `src/runtime/loop.test.ts`. Since it changes the runtime, it
   passes `bun run test:pins` and `bun run test:release` before it is taken. It touches no file of the step The tests
   of a contract on every backend, so it may run beside it. The step leaves this file when its tests pass,
