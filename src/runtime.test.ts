@@ -1969,39 +1969,6 @@ describe('the read model', () => {
 describe('publishing what happened', () => {
   const tester = { _tag: 'Tester' } as const
 
-  test('a cursor reads what was published after it, and prune drops what every consumer has read', () =>
-    onBoth(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands()
-          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
-          yield* runtime.settled
-          yield* TestClock.adjust('60 millis')
-          yield* runtime.settled
-          const rows = yield* toy.published('projection', [], all)
-          // The creation, then the completion of each operation and the firing of the timer: what callers read
-          // falls by one at each, whatever order the work came back in.
-          expect(rows.map(({ kind }) => kind)).toEqual(['Creation', 'Internal', 'Internal', 'Internal', 'Internal'])
-          expect(rows.map(({ value }) => value)).toEqual([4, 3, 2, 1, 0])
-          // One entity's rows are in its partition, numbered from 1 in the order its steps committed (decision 0137).
-          expect(rows.map(({ partition, seq }) => ({ partition, seq }))).toEqual(
-            [1, 2, 3, 4, 5].map((seq) => ({ partition: partitionOf(id, 300), seq })),
-          )
-          const read = rows.slice(0, 2)
-          expect(yield* toy.published('projection', read, all)).toEqual(rows.slice(2))
-          expect(yield* toy.published('projection', [], 2)).toEqual(read)
-          // A consumer reads from cursors of its own, which the readings above neither moved nor stored: it
-          // starts at the beginning, and goes on from where it acked (decision 0039).
-          expect(yield* toy.fetch('projection', 'queue', 2)).toEqual(read)
-          yield* toy.ack('projection', 'queue', read)
-          expect(yield* toy.fetch('projection', 'queue', all)).toEqual(rows.slice(2))
-          expect(yield* toy.prune).toBe(2)
-          expect(yield* toy.published('projection', [], all)).toEqual(rows.slice(2))
-        }))
-    })))
-
   test('the prune waits for the consumer behind it, which a deploy without it warns of and lets be forgotten', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
@@ -2108,24 +2075,6 @@ describe('publishing what happened', () => {
         }))
     })))
 
-  test('a consumer declared at deploy holds the rows published before its first reading', () =>
-    onBoth(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands()
-          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender: tester })
-          yield* runtime.settled
-          yield* TestClock.adjust('60 millis')
-          yield* runtime.settled
-          const rows = yield* toy.published('projection', [], all)
-          // The consumer has not read yet, and a prune drops nothing of what it will read (decision 0152).
-          expect(yield* toy.prune).toBe(0)
-          expect(yield* toy.fetch('projection', 'queue', all)).toEqual(rows)
-        }))
-    })))
-
   test('a consumer that waits is given the row a step commits while it reads, under prioritized schedules', () => {
     // Decision 0142: the reading takes its topic's signal before it reads, so that a commit between its reading and
     // its wait ends the wait at once. The clock never moves here, so a wait that missed the commit never ends. With
@@ -2201,39 +2150,6 @@ describe('publishing what happened', () => {
       yield* Scope.close(outside, Exit.void)
     })))
 
-  test('entities stepping at once each publish in their partition, and nothing of theirs is lost', () =>
-    onBoth(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      const ids = ['p-1', 'p-2', 'p-3']
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands()
-          const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* Effect.forEach(
-            ids,
-            (id) => toy.create(id, { flags: { at }, requestId: `c-${id}`, sender: tester }),
-            { concurrency: 'unbounded' },
-          )
-          yield* runtime.settled
-          yield* TestClock.adjust('60 millis')
-          yield* runtime.settled
-          const rows = yield* toy.published('projection', [], all)
-          // The creation of each, and the four pieces of work each was created with: the three entities step at
-          // once, and a row of one is never written in the middle of another's step.
-          expect(rows.length).toBe(ids.length * 5)
-          // Each entity's rows are in its own partition, numbered from 1 in the order of its steps.
-          for (const id of ids) {
-            const own = rows.filter((row) => row.id === id)
-            expect(own.map(({ value }) => value)).toEqual([4, 3, 2, 1, 0])
-            expect(own.map(({ partition, seq }) => ({ partition, seq }))).toEqual(
-              [1, 2, 3, 4, 5].map((seq) => ({ partition: partitionOf(id, 300), seq })),
-            )
-          }
-          // A reader that read to the end is given nothing again.
-          expect(yield* toy.published('projection', rows, all)).toEqual([])
-        }))
-    })))
-
   test('the entities of one partition share its sequence, in the order their steps committed', () =>
     database(Effect.gen(function*() {
       const at = yield* DateTime.now
@@ -2257,52 +2173,6 @@ describe('publishing what happened', () => {
           for (const id of ids) {
             expect(rows.filter((row) => row.id === id).map(({ value }) => value)).toEqual([4, 3, 2, 1, 0])
           }
-        }))
-    })))
-
-  test('two readers of one consumer read their own partitions, and a slow one holds no other', () =>
-    database(Effect.gen(function*() {
-      const at = yield* DateTime.now
-      const [one, other] = ['a', 'b']
-      const [mine, theirs] = [partitionOf(one, 300), partitionOf(other, 300)]
-      // The two ids fall in two partitions, and a third partition holds no entity of the test.
-      expect(mine).not.toBe(theirs)
-      const empty = [1, 2, 3].find((partition) => partition !== mine && partition !== theirs) as number
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const { layer } = yield* hands({ holds: true })
-          const toy = yield* Effect.provide(runtime.deploy(program, queue), layer)
-          expect(toy.partitions).toBe(300)
-          yield* toy.create(one, { flags: { at }, requestId: 'c-one', sender: tester })
-          yield* toy.create(other, { flags: { at }, requestId: 'c-other', sender: tester })
-          yield* toy.send(one, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: 'off', sender: tester, keep: 'forever' })
-          // Each reader is given the rows of its partitions only, the oldest first. A partition named twice is
-          // read once, and a partition with no row past its cursor gives nothing.
-          const slow = yield* toy.fetch('projection', 'queue', all, { partitions: [mine, mine] })
-          expect(slow.map(({ id, seq }) => ({ id, seq }))).toEqual([{ id: one, seq: 1 }, { id: one, seq: 2 }])
-          const fast = yield* toy.fetch('projection', 'queue', all, { partitions: [theirs] })
-          expect(fast.map(({ id, seq }) => ({ id, seq }))).toEqual([{ id: other, seq: 1 }])
-          expect(yield* toy.fetch('projection', 'queue', all, { partitions: [empty] })).toEqual([])
-          // The fast reader acks and goes on while the slow one has acked nothing: what it is given next is its
-          // own partition's alone, and the slow reader is given its rows again.
-          yield* toy.ack('projection', 'queue', fast)
-          yield* toy.send(other, { _tag: 'Want', key: 't', on: false, nonce: 'o' }, { requestId: 'o', sender: tester, keep: 'forever' })
-          expect((yield* toy.fetch('projection', 'queue', all, { partitions: [theirs] })).map(({ id, seq }) => ({ id, seq })))
-            .toEqual([{ id: other, seq: 2 }])
-          expect(yield* toy.fetch('projection', 'queue', all, { partitions: [mine] })).toEqual(slow)
-          // A reading of every partition is given what both readers have not acked.
-          expect((yield* toy.fetch('projection', 'queue', all)).map(({ id, seq }) => ({ id, seq }))).toEqual([
-            { id: one, seq: 1 },
-            { id: one, seq: 2 },
-            { id: other, seq: 2 },
-          ])
-          // The cursors the two readers moved are one consumer's: the prune drops what the fast reader acked, and
-          // keeps the partition of the slow one until it acks too.
-          expect(yield* toy.prune).toBe(1)
-          yield* toy.ack('projection', 'queue', slow)
-          expect(yield* toy.prune).toBe(2)
-          expect((yield* toy.published('projection', [], all)).map(({ id, seq }) => ({ id, seq })))
-            .toEqual([{ id: other, seq: 2 }])
         }))
     })))
 
@@ -4884,6 +4754,18 @@ describe('a rule of one process that holds on Cluster too', () => {
   const partitioned = holding('Partitioned')
   const mine = holding('Mine')
   const twin = holding('Twin')
+  const readers = holding('Readers')
+  // The toy itself under a name of each rule's: its work ends on the real clock.
+  const cursors: Program<T> = { ...program, name: 'Cursors' }
+  const declared: Program<T> = { ...program, name: 'Declared' }
+  const stepping: Program<T> = { ...program, name: 'Stepping' }
+  // The rows a handle reads once `count` are published. An entity of the toy publishes five, its creation and the
+  // end of each piece of its work, and then no more, so a rule waits for them on the real clock.
+  const publishedOnce = <C>(handle: Handle<T, C>, count: number) =>
+    Effect.repeat(handle.published('projection', [], all), {
+      schedule: Schedule.spaced('10 millis'),
+      until: (rows) => rows.length >= count,
+    }).pipe(Effect.timeout('5 seconds'))
   const rule = everywhere([
     program,
     numbered,
@@ -4898,6 +4780,10 @@ describe('a rule of one process that holds on Cluster too', () => {
     [partitioned, queue],
     [mine, queue],
     [twin, queue],
+    [readers, queue],
+    [cursors, queue],
+    [declared, queue],
+    stepping,
   ])
   const sender = { _tag: 'Tester' } as const
   const reasonOf = (exit: Exit.Exit<unknown>) => {
@@ -5445,4 +5331,117 @@ describe('a rule of one process that holds on Cluster too', () => {
         { topic: 'projection', consumer: 'queue', declared: true, behind: 0, since: null, cursors: [] },
       ])
     }), ['sqlite', 'pg'])
+
+  rule('a cursor reads what was published after it, and prune drops what every consumer has read', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(cursors, queue)
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      const toy = own(id)
+      yield* first!.create(toy, { flags: { at }, requestId: own('creation'), sender: tester })
+      const rows = yield* publishedOnce(other, 5)
+      // The creation, then the completion of each operation and the firing of the timer: what callers read falls by
+      // one at each, whatever order the work came back in.
+      expect(rows.map(({ kind }) => kind)).toEqual(['Creation', 'Internal', 'Internal', 'Internal', 'Internal'])
+      expect(rows.map(({ value }) => value)).toEqual([4, 3, 2, 1, 0])
+      // One entity's rows are in its partition, numbered from 1 in the order its steps committed (decision 0137).
+      expect(rows.map(({ partition, seq }) => ({ partition, seq }))).toEqual(
+        [1, 2, 3, 4, 5].map((seq) => ({ partition: partitionOf(toy, first!.partitions), seq })),
+      )
+      const read = rows.slice(0, 2)
+      expect(yield* first!.published('projection', read, all)).toEqual(rows.slice(2))
+      expect(yield* other.published('projection', [], 2)).toEqual(read)
+      // A consumer reads from cursors of its own, which the readings above neither moved nor stored: it starts at the
+      // beginning, and goes on from where it acked (decision 0039).
+      expect(yield* first!.fetch('projection', 'queue', 2)).toEqual(read)
+      yield* other.ack('projection', 'queue', read)
+      expect(yield* first!.fetch('projection', 'queue', all)).toEqual(rows.slice(2))
+      expect(yield* other.prune).toBe(2)
+      expect(yield* first!.published('projection', [], all)).toEqual(rows.slice(2))
+    }), ['sqlite', 'pg'])
+
+  rule('a consumer declared at deploy holds the rows published before its first reading', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(declared, queue)
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      yield* first!.create(own(id), { flags: { at }, requestId: own('creation'), sender: tester })
+      const rows = yield* publishedOnce(other, 5)
+      // The consumer has not read yet, and a prune drops nothing of what it will read (decision 0152).
+      expect(yield* first!.prune).toBe(0)
+      expect(yield* other.fetch('projection', 'queue', all)).toEqual(rows)
+    }), ['sqlite', 'pg'])
+
+  rule('entities stepping at once each publish in their partition, and nothing of theirs is lost', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const handles = yield* deploy(stepping)
+      const at = yield* DateTime.now
+      const ids = ['p-1', 'p-2', 'p-3'].map(own)
+      yield* Effect.forEach(
+        ids,
+        (id, n) => handles[n % handles.length]!.create(id, { flags: { at }, requestId: own(`c-${id}`), sender: tester }),
+        { concurrency: 'unbounded' },
+      )
+      const rows = yield* publishedOnce(handles.at(-1)!, ids.length * 5)
+      // The creation of each, and the four pieces of work each was created with: the three entities step at once,
+      // and a row of one is never written in the middle of another's step.
+      expect(rows.length).toBe(ids.length * 5)
+      // Each entity's rows are in its own partition, numbered from 1 in the order of its steps.
+      for (const id of ids) {
+        const theirs = rows.filter((row) => row.id === id)
+        expect(theirs.map(({ value }) => value)).toEqual([4, 3, 2, 1, 0])
+        expect(theirs.map(({ partition, seq }) => ({ partition, seq }))).toEqual(
+          [1, 2, 3, 4, 5].map((seq) => ({ partition: partitionOf(id, handles[0]!.partitions), seq })),
+        )
+      }
+      // A reader that read to the end is given nothing again.
+      for (const handle of handles) expect(yield* handle.published('projection', rows, all)).toEqual([])
+    }), ['sqlite', 'pg'])
+
+  rule('two readers of one consumer read their own partitions, and a slow one holds no other', ({ deploy, name, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(readers, queue)
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      // On Cluster a partition is a shard, and the log has as many as a group of the runners has shards (decision
+      // 0162): twelve here.
+      const partitions = first!.partitions
+      expect(partitions).toBe(name === 'Cluster' ? 12 : 300)
+      const one = own('a')
+      const another = ['b', 'c', 'd', 'e'].map(own)
+        .find((id) => partitionOf(id, partitions) !== partitionOf(one, partitions))!
+      const [mine, theirs] = [partitionOf(one, partitions), partitionOf(another, partitions)]
+      // The two ids fall in two partitions, and a third partition holds no entity of the rule.
+      const empty = [1, 2, 3].find((partition) => partition !== mine && partition !== theirs) as number
+      yield* first!.create(one, { flags: { at }, requestId: own('c-one'), sender: tester })
+      yield* other.create(another, { flags: { at }, requestId: own('c-other'), sender: tester })
+      yield* first!.send(one, { _tag: 'Want', key: 't', on: false, nonce: 'off' }, { requestId: own('off'), sender: tester, keep: 'forever' })
+      // Each reader is given the rows of its partitions only, the oldest first. A partition named twice is read once,
+      // and a partition with no row past its cursor gives nothing.
+      const slow = yield* first!.fetch('projection', 'queue', all, { partitions: [mine, mine] })
+      expect(slow.map(({ id, seq }) => ({ id, seq }))).toEqual([{ id: one, seq: 1 }, { id: one, seq: 2 }])
+      const fast = yield* other.fetch('projection', 'queue', all, { partitions: [theirs] })
+      expect(fast.map(({ id, seq }) => ({ id, seq }))).toEqual([{ id: another, seq: 1 }])
+      expect(yield* first!.fetch('projection', 'queue', all, { partitions: [empty] })).toEqual([])
+      // The fast reader acks and goes on while the slow one has acked nothing: what it is given next is its own
+      // partition's alone, and the slow reader is given its rows again.
+      yield* other.ack('projection', 'queue', fast)
+      yield* other.send(another, { _tag: 'Want', key: 't', on: false, nonce: 'o' }, { requestId: own('o'), sender: tester, keep: 'forever' })
+      expect((yield* other.fetch('projection', 'queue', all, { partitions: [theirs] })).map(({ id, seq }) => ({ id, seq })))
+        .toEqual([{ id: another, seq: 2 }])
+      expect(yield* first!.fetch('projection', 'queue', all, { partitions: [mine] })).toEqual(slow)
+      // A reading of every partition is given what both readers have not acked.
+      expect((yield* other.fetch('projection', 'queue', all)).map(({ id, seq }) => ({ id, seq }))).toEqual([
+        { id: one, seq: 1 },
+        { id: one, seq: 2 },
+        { id: another, seq: 2 },
+      ])
+      // The cursors the two readers moved are one consumer's: the prune drops what the fast reader acked, and keeps
+      // the partition of the slow one until it acks too.
+      expect(yield* first!.prune).toBe(1)
+      yield* first!.ack('projection', 'queue', slow)
+      expect(yield* other.prune).toBe(2)
+      expect((yield* first!.published('projection', [], all)).map(({ id, seq }) => ({ id, seq })))
+        .toEqual([{ id: another, seq: 2 }])
+    }))
 })

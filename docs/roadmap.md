@@ -447,14 +447,18 @@ it leaves this file, and what it decided goes into the design, a decision or an 
         pruned whole, an ack past the last seq, a cursor or a limit out of range, a consumer of every partition, and
         a cursor of one program. Each lists a consumer behind `since` a time the real clock gives, which the rule
         does not pin. They passed five runs in a row on every backend, and found no difference.
-      - Next, the tests of the `describe` that move the test clock only so that the toy's work ends: `a cursor
-        reads what was published after it, and prune drops what every consumer has read`, `a consumer declared at
-        deploy holds the rows published before its first reading`, `entities stepping at once each publish in their
-        partition, and nothing of theirs is lost` and `the entities of one partition share its sequence, in the
-        order their steps committed`. A rule waits on the real clock for the rows in their place. Then `two readers
-        of one consumer read their own partitions, and a slow one holds no other`. The tests of `consume` and of a
-        transaction run within a transaction of the test's own client, which a runner of Cluster does not share,
-        and the tests of a wait that ends hold the clock still, so they stay tests of one process.
+      - Done, on 2026-11-13, four tests moved whole. Three moved the test clock only so that the toy's work ends,
+        and a rule waits on the real clock for the rows in its place, by `publishedOnce`: a cursor read after its
+        rows and a prune, a consumer declared at deploy, and entities stepping at once. The fourth is two readers of
+        one consumer. They passed five runs in a row on every backend. One difference was found, and decision 0162
+        decides it: on Cluster the log has as many partitions as a group has shards, twelve under `everywhere`, and
+        the rule marks it. `the entities of one partition share its sequence, in the order their steps committed`
+        stays a test of one process, since it launches with `log: { partitions: 1 }` and `everywhere` launches its
+        runners with the default.
+      - Next, the rest of the `describe`, read whole: the tests of `consume`, of a transaction and of a wait. A
+        reading of their names gives a lead only. The tests of `consume` and of a transaction run within a
+        transaction of the test's own client, which a runner of Cluster may not share, and the tests of a wait hold
+        the clock still.
     - Next, the other tests of `src/runtime.test.ts` that the design says hold on Cluster, read one `describe` at a
       time, after `publishing what happened`. Most hold an
       interleaving by a probe or the test clock. A rule moves whole where its test needs neither, and else its part
