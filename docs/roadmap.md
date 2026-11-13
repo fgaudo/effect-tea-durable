@@ -476,8 +476,20 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     and the runtime then run one copy of it, as both run `src/machine.ts`, and `src/rehearse.test.ts` and
     `src/rehearse.property.test.ts` pass as they are. Its cases are the bugs of a rehearsal that answers otherwise
     than the runtime still open then, as bugs 5, 107 and 108 of [`docs/bugs.md`](bugs.md) are today. The code of
-    the table of the step What a deploy may change of a program, above, moves into it.
-  - The fourth part is the scheduler. A resumption becomes a choice of the strategy, and `Resumptions` goes from
+    the table of the step What a deploy may change of a program, above, moves into it. The part also moves into it
+    what a transition keeps and deletes, now `keep` of `src/rehearse.ts` and the statements of
+    `src/storage/entities.ts`, and how the outputs of a step are read, now in `src/rehearse.ts`,
+    `src/runtime/loop.ts` and `src/runtime/doors.ts`.
+  - The fourth part is how a request is answered, alike on one process and on Cluster. One function of what is
+    stored and of a request gives the answer and the rows, and the callers of one process and the door of Cluster
+    run it. Its cases are the bugs of family C of `docs/bugs.md` that the step The tests of a contract on every
+    backend, above, leaves as differences of the answer. A difference of Cluster's tables, its poll or its lease stays
+    outside the core.
+  - The fifth part is the policies of the process: the entity unloaded past the capacity, `admit` of
+    `src/runtime/loop.ts`, the rest of the waker, and which of the timers due fires first. Each is tested by
+    fast-check with no scheduler. The part decides the [open question](open-questions.md#running) The order of two
+    timers due at one time.
+  - The sixth part is the scheduler. A resumption becomes a choice of the strategy, and `Resumptions` goes from
     `src/testing.ts`. `bun run test:explore` runs in a job of the CI on a schedule. A pin of
     `src/runtime.test_pins.ts` goes once a case of the core, a gate or a primitive's test kills its mutation.
   - The step leaves this file when the parts above are done, and decision 0292 is taken, `accepted`, by that commit.

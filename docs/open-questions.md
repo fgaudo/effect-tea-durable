@@ -1051,6 +1051,17 @@ with a requirement that no example has yet.
   code, and no test reaches it. It would be decided by:
   - a test of `src/runtime/waker.test.ts`, under the scheduler, in which a poke lands as the sleep ends, and whether
     the round that follows reads the timer the poke was for.
+- **The order of two timers due at one time.** A rehearsal fires first, of two timers due at one time, the one of the
+  entity created first, and within an entity the one its machine holds first (`dueBy` of `src/rehearse.ts`). The
+  runtime reads the entities with a timer due in the order of their ids (`due` of `src/storage/entities.ts`), and
+  activates each at once, so two entities fire in no order it chooses. A test that passes on the rehearsal by the
+  order of two timers may then fail on the runtime. Whether the design promises an order of the timers of two
+  entities is not decided. The session of 2026-11-13 noted it by a reading of the code, for
+  [decision 0292](decisions/0292-the-processs-state-is-a-pure-core-and-a-test-holds-an-order-by-its-events.md), and
+  no test reaches it. It would be decided by:
+  - whether `docs/design.md` says what order two entities' timers due at one time fire in;
+  - a test of the rehearsal and of the runtime with two entities whose timers are due at one time, each of which
+    sends to a third, and whether the third sees the same order on both.
 
 ## Programs
 

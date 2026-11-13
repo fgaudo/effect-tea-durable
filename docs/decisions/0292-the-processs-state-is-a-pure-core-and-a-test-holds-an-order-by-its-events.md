@@ -54,6 +54,20 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
   runtime both run it, as both run [`src/machine.ts`](../../src/machine.ts) for an entity. The second layer is what
   only concurrency needs: the locks, the senders waiting, the counts `settled` reads and `draining`. The rehearsal
   runs one step at a time and needs none of it.
+- **The first layer holds four more pieces that are written twice today.**
+  - What a transition keeps and deletes. A function of a transition gives the replies to keep and the rows to delete
+    once the work that asked ends ([decision 0021](archive/0021-a-reply-is-kept-while-the-work-that-asked-holds.md),
+    decision 0200). The storage performs the plan in SQL, and the rehearsal on its maps. Today the rehearsal decides
+    it in `keep` of `src/rehearse.ts`, and the storage in the statements of `src/storage/entities.ts`.
+  - How the outputs of a step are read. The step that handles the mailbox to its end or to a suspension, the reply a
+    request is answered with, `Reused` among them (decision 0269), and whether a completion was delivered or dropped.
+    The rehearsal's rule that an operation must not come back the same on its completion (decision 0130) stays the
+    rehearsal's own.
+  - How a request is answered, alike on one process and on Cluster. A function of what is stored and of a request
+    gives the answer and the rows, and both the callers of one process and the door of Cluster run it. What Cluster's
+    tables, its poll of replies and its lease do stays outside the core.
+  - The policies of the process: which entity is unloaded past the capacity (decisions 0076 and 0078), how long the
+    waker rests (decisions 0221 and 0258), and which of the timers due fires first.
 - **The shell performs a transition in one synchronous step, and its commands after it.** No `yield*` falls within a
   transition, so no fiber reads the state halfway. A test of [`src/form.test.ts`](../../src/form.test.ts) refuses a
   write of the core's fields outside the core.
@@ -91,6 +105,15 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
   bugs 5, 107 and 108 of [`docs/bugs.md`](../bugs.md), open, and in bugs 42 and 93, fixed. Each is a rehearsal that
   answers otherwise than the runtime. [`src/rehearse.property.test.ts`](../../src/rehearse.property.test.ts) compares
   the two over generated messages for the same reason.
+- That the rehearsal and the storage each decide which replies to keep and delete: **seen** in `keep` of
+  `src/rehearse.ts` and in the statements of `src/storage/entities.ts`. Bugs 3 and 13 of `docs/bugs.md` were rules of
+  that choice, fixed in the storage alone by decisions 0289 and 0285.
+- That one function answers a request alike on one process and on Cluster: **open**. The step The tests of a
+  contract on every backend, which comes first, shows which differences of Cluster are of the answer, and which are
+  of Cluster's tables, its poll or its lease, which stay outside the core.
+- That the rehearsal and the runtime fire first the same timer of two due at one time: **open**. The rehearsal fires
+  the one of the entity created first, and the runtime reads them by a statement of its own. The
+  [open question](../open-questions.md#running) The order of two timers due at one time holds it.
 - That the first layer runs the rehearsal with no change of what a test of the rehearsal sees: **open**. The part of
   the step that moves it checks it, by `src/rehearse.test.ts` and `src/rehearse.property.test.ts` passing as they are.
 - That Effect promises no inline resumption: **read** in the JSDoc of `Deferred`, `Fiber.join`, `Effect.callback` and
