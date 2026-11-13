@@ -51,7 +51,7 @@ import {
 } from './index.program.ts'
 import { idFault, type TypesOf } from './program.ts'
 import type { Handle, Inspected, Keep } from './runtime.ts'
-import type { Comparison, Dialect } from './storage.ts'
+import { type Comparison, type Dialect, partitionOf } from './storage.ts'
 import { client, database, pool, server } from './storage.test_databases.ts'
 
 const fields = {
@@ -703,12 +703,14 @@ const pairedOn = (items: Handle<Item, Declared>, run: string, call: Paired | Bef
     case 'Prune':
       return answered(items.prune, true)
     case 'Ack': {
-      const of = call.of === 'all' ? [id('a'), id('b')] : [id(call.of)]
-      const acking = Effect.gen(function*() {
-        const rows = yield* items.published(call.topic, [], 100_000)
-        yield* items.ack(call.topic, 'reader', rows.filter((row) => of.includes(row.id)))
-        if (call.prune) yield* items.prune
-      })
+      // The cursors are those of the entities' partitions, through the head of each, which `ack` caps a cursor at. A
+      // reading of the rows would read the publications, and wait at a lock of their table before the ack.
+      const through = (call.of === 'all' ? ['a', 'b'] : [call.of])
+        .map((name) => ({ partition: partitionOf(id(name), items.partitions), seq: Number.MAX_SAFE_INTEGER }))
+      const acking = Effect.andThen(
+        items.ack(call.topic, 'reader', through),
+        call.prune ? Effect.asVoid(items.prune) : Effect.void,
+      )
       return answered(acking, true)
     }
   }
