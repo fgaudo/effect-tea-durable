@@ -48,6 +48,12 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
   function from a state and an event to a state and the commands to perform. The events name what happened, as
   `Forked`, `Registered`, `Answered` or `DrainBegan`. A fork, a scope, a finalizer, a fiber and a queue stay outside the
   core.
+- **The core has two layers, and the rehearsal shares the first.** The first layer is the semantics of the process:
+  which program steps an entity, a deploy and a restart that activate an entity from what is stored, the replies
+  kept across a restart, and the ids refused. The rehearsal of [`src/rehearse.ts`](../../src/rehearse.ts) and the
+  runtime both run it, as both run [`src/machine.ts`](../../src/machine.ts) for an entity. The second layer is what
+  only concurrency needs: the locks, the senders waiting, the counts `settled` reads and `draining`. The rehearsal
+  runs one step at a time and needs none of it.
 - **The shell performs a transition in one synchronous step, and its commands after it.** No `yield*` falls within a
   transition, so no fiber reads the state halfway. A test of [`src/form.test.ts`](../../src/form.test.ts) refuses a
   write of the core's fields outside the core.
@@ -81,6 +87,12 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
 
 - That each bug of the cases above is an order of events of the process's state: **open**. The first part of the step
   checks it, by a case of each bug that fails on the core with the bug's rule taken out.
+- That the rehearsal and the runtime keep two copies of the semantics of the process, which drift apart: **seen** in
+  bugs 5, 107 and 108 of [`docs/bugs.md`](../bugs.md), open, and in bugs 42 and 93, fixed. Each is a rehearsal that
+  answers otherwise than the runtime. [`src/rehearse.property.test.ts`](../../src/rehearse.property.test.ts) compares
+  the two over generated messages for the same reason.
+- That the first layer runs the rehearsal with no change of what a test of the rehearsal sees: **open**. The part of
+  the step that moves it checks it, by `src/rehearse.test.ts` and `src/rehearse.property.test.ts` passing as they are.
 - That Effect promises no inline resumption: **read** in the JSDoc of `Deferred`, `Fiber.join`, `Effect.callback` and
   `Scheduler` at 4.1.3, none of which says on which stack a waiter resumes. The example of `Effect.callback` resumes
   from a microtask.
@@ -107,6 +119,8 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
   holds no I/O, no lock across a step and no `Fiber.join`, and an operation still reads before it sends. The spike
   `spikes/effect-tx-under-the-scheduler.test.ts` shows both. Fable 5.2 estimated that it would take out a fifth of
   the pins.
+- **A core for the runtime alone, with the rehearsal kept apart.** The test of `src/rehearse.property.test.ts` would
+  go on looking for the differences between two copies of one semantics, and finding them late.
 - **Gates alone, with no core.** Three of the scheduler's bugs fall between two statements of one fiber of the
   runtime, where no service lies: 0104's first, 0109 and bug 101. A gate there is a hook inside the runtime.
 - **A scheduler of the test stepped by hand, as Effect's own tests use one.** It forces an order between two
@@ -129,5 +143,8 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
   `bun run test:pins` change in the same commit.
 - The open questions The state of a process written only by synchronous functions and One primitive for a look that
   waits leave [`docs/open-questions.md`](../open-questions.md) when it is taken.
+- The step What a deploy may change of a program, of the roadmap, comes first. The code of its table, the one place
+  where an activation compares each piece stored with the program, moves into the first layer, and the rehearsal
+  runs it from then on.
 - The new module of `src/runtime/` is named by the first part of the step, which adds it to the modules of the runtime
   in `AGENTS.md` and to the diagram of `CONTRIBUTING.md`.

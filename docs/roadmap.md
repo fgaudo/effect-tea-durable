@@ -449,6 +449,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
 
 - **The process's state as a pure core, and the tests of an order.** The fields of `Process`, `Deployment` and
   `Loaded` that another fiber reads move into a module that imports no `Effect`, as `src/machine.ts` is for an entity.
+  The semantics of the process moves there too, and the rehearsal runs it as the runtime does.
   A transition takes a state and an event and gives a state and the commands to perform, and the shell performs it in
   one synchronous step. A rule of order of the process is then tested by fast-check over the orders of the core's
   events, with no model of Effect's scheduler. An order at a boundary is tested by a gate on the probe or on a service,
@@ -470,7 +471,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     stopping, the shards held and the order of use. Its cases are decision 0109, the form of decision 0274 that
     `settled` reads, and bug 101 of [`docs/bugs.md`](bugs.md), which the part fixes. It decides the
     [open question](open-questions.md#running) A count of the process kept by an observer of a fiber's exit.
-  - The third part is the scheduler. A resumption becomes a choice of the strategy, and `Resumptions` goes from
+  - The third part is the semantics of the process that the rehearsal shares: which program steps an entity, a
+    deploy and a restart, the replies kept across a restart and the ids refused. [`src/rehearse.ts`](../src/rehearse.ts)
+    and the runtime then run one copy of it, as both run `src/machine.ts`, and `src/rehearse.test.ts` and
+    `src/rehearse.property.test.ts` pass as they are. Its cases are the bugs of a rehearsal that answers otherwise
+    than the runtime still open then, as bugs 5, 107 and 108 of [`docs/bugs.md`](bugs.md) are today. The code of
+    the table of the step What a deploy may change of a program, above, moves into it.
+  - The fourth part is the scheduler. A resumption becomes a choice of the strategy, and `Resumptions` goes from
     `src/testing.ts`. `bun run test:explore` runs in a job of the CI on a schedule. A pin of
     `src/runtime.test_pins.ts` goes once a case of the core, a gate or a primitive's test kills its mutation.
   - The step leaves this file when the parts above are done, and decision 0292 is taken, `accepted`, by that commit.
