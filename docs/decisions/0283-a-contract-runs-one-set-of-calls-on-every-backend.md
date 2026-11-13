@@ -110,6 +110,18 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
   needs no test clock and no probe of the runtime: a test that holds a step at a point by a probe, or moves the
   clock, holds an interleaving that Cluster does not give. Such a rule stays a test of one process. Where a part of
   it needs neither, that part may run on both as a rule of its own, as the keep of 0 of decision 0282 does.
+- **A test that moves the clock only so that the toy's work ends moves whole**, and waits on the real clock in its
+  place, for five seconds at most. `publishedOnce` of the group waits so for the rows an entity publishes, five for
+  each toy. A value the real clock gives, such as the `since` of a consumer behind, is not pinned by the rule.
+- **A program is registered with the consumers its deploy declares**, as `[program, queue]`, since a runner of Cluster
+  deploys each program once, at its start. A rule deploys it with the same consumers on both backends, and
+  `everywhere` fails a rule that deploys it otherwise.
+- **Each rule of the log has a program of its own**, since the rules on Cluster share a program's log and its prune.
+  `holding` of the group makes one whose operations never come back and whose timer rings in an hour, as under
+  `hands({ holds: true })` and a test clock that does not move.
+- **A rule that launches with options of its own stays a test of one process**, since `everywhere` launches each
+  backend once with the default options. `the entities of one partition share its sequence, in the order their
+  steps committed` launches with `log: { partitions: 1 }`, and stays.
 - **A step held by a probe stays a test of one process, though a runner of Cluster reads the probe.** A runner
   reads the `Probe` around `launch` of `src/cluster.ts`, as the tests of `src/cluster.test.ts` that hold a door's
   step do. A caller's message and an operator's call reach the entity through its door on Cluster, and a door's
@@ -163,6 +175,15 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
 - That the rules moved hold on Cluster as on one process: **tested**, by `a rule of one process that holds on Cluster
   too`, which passed five runs in a row on 2026-11-13 on SQLite, PGlite and Cluster, and five runs again once six
   rules more had moved there. Each of its tests took less than a second.
+- That the toy's work ends within the five seconds a rule waits on the real clock, on Cluster as on one process:
+  **tested**, by `a cursor reads what was published after it, and prune drops what every consumer has read` of the
+  group, which passed five runs in a row on 2026-11-13 on SQLite, PGlite and Cluster, each test in less than a second.
+- That an entity of the toy publishes no row after its five, so that a rule that waits for five reads them all:
+  **tested**, by `entities stepping at once each publish in their partition, and nothing of theirs is lost` of the
+  group, whose reading past the rows read gives nothing.
+- That on Cluster the log has as many partitions as a group has shards: **tested**, by `two readers of one consumer
+  read their own partitions, and a slow one holds no other` of the group, which reads twelve on Cluster and 300 on
+  one process, as decision 0162 decides.
 - That the runners start within a minute: **seen**, in the runs of the test on the maintainer's machine.
 - That on Cluster a retry under a `keep` of 0 is answered from Cluster's rows, and not applied again: **tested**, by
   `a keep that is neither a whole number of millis nor forever is the caller’s defect, and reaches no entity` of the

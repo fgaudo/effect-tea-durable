@@ -460,8 +460,11 @@ it leaves this file, and what it decided goes into the design, a decision or an 
         transaction of the test's own client, which a runner of Cluster may not share, and the tests of a wait hold
         the clock still.
     - Next, the other tests of `src/runtime.test.ts` that the design says hold on Cluster, read one `describe` at a
-      time, after `publishing what happened`. Most hold an
-      interleaving by a probe or the test clock. A rule moves whole where its test needs neither, and else its part
+      time, after `publishing what happened`: `a planned stop`, `a schema that changes`, `what the runtime cannot
+      finish`, `a database held by one runtime`, `renaming a program (decision 0156)` and `a launch that dies holds
+      nothing in the scope its launcher gave (decision 0264)`. Most hold an
+      interleaving by a probe or the test clock. A rule moves whole where its test needs neither, or moves the clock
+      only so that the toy's work ends, as decision 0283 says, and else its part
       that needs neither runs on both as a rule of its own. A rule that needs a deploy of a second program needs a
       runner that `everywhere` does not start yet. A difference found is a bug of `docs/bugs.md`, or a case decision
       0283 marks where a note decides it.
