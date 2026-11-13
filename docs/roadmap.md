@@ -493,8 +493,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   `src/rehearse.test.ts`, `src/machine.test.ts` and `src/runtime/loop.test.ts`. Since it changes the runtime, it
   passes `bun run test:pins` and `bun run test:release` before it is taken. It touches no file of the step The tests
   of a contract on every backend, so it may run beside it. The step leaves this file when its tests pass,
-  `docs/design.md`
-  and `docs/glossary.md` say it, and decision 0293 is taken, `accepted`, by that commit.
+  `docs/design.md` and `docs/glossary.md` say it, and decision 0293 is taken, `accepted`, by that commit.
 
 - **The process's state as a pure core, and the tests of an order.** The fields of `Process`, `Deployment` and
   `Loaded` that another fiber reads move into a module that imports no `Effect`, as `src/machine.ts` is for an entity.
