@@ -428,6 +428,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       that needs neither runs on both as a rule of its own. A rule that needs a deploy of a second program needs a
       runner that `everywhere` does not start yet. A difference found is a bug of `docs/bugs.md`, or a case decision
       0283 marks where a note decides it.
+    - Read on 2026-11-13 and left as tests of one process: `two operators who discard at once are each told what
+      their own discard did`, which holds the first discard at its commit by a probe; `an operator inspects an
+      entity: its state, its mailbox, its work and its suspension, as stored`, which needs hands that never come
+      back, `hands({ holds: true })`, while `everywhere` deploys the toy with hands that do; and `a query finds the
+      entities by an index, in order, and gives what callers read`, which runs two processes one after the other.
+    - Not checked yet: whether a runner of Cluster reads the `Probe` that `process` of
+      `src/runtime.test_shared.ts` provides, since `launch` of `src/cluster.ts` wraps the runtime's launch. If it does,
+      `everywhere` could take the hooks, and the rules that hold a step by a probe could move whole. A test of a
+      runner with a hook `at` that records the points it reaches decides it.
   - The step leaves this file when the parts above are done, and decision 0283 is taken, `accepted`, by that commit.
 
 - **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds
