@@ -334,34 +334,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     them. A session elsewhere writes that test again from the bug's sequence and the report in
     [`reviews.md`](decisions/reviews.md).
 
-- **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds
-  an RPC to the door of a program on Cluster, or changes a payload, is not caught by the guard of the version
-  ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
-  A runner of the older release that still holds a shard is given the newer request, and Cluster answers a payload
-  it cannot decode with a defect and stores it, so the request is lost in silence. The spike
-  [`spikes/cluster-older-runner-answers-a-newer-request.test.ts`](../spikes/cluster-older-runner-answers-a-newer-request.test.ts)
-  sees Cluster's answer. No test runs a rolling deploy of two releases of the library. It begins with a test of `src/cluster.test.ts` with two runners whose doors differ, and its fix
-  is a choice of the design, which the [open question](open-questions.md#running) A door that changes between two
-  releases of the library lists.
-
-- **What a deploy may change of a program, against what is stored.** This step is the rule of family A of
-  [`docs/bugs.md`](bugs.md). Four of the bugs the premise review found have
-  one form: a deploy of a newer version changes a piece of the program, while what is stored was written by the
-  older version. They are the delivery of an operation (bug 1), the way the sender is written (bug 5), a droppable
-  operation a resume drops (bug 7), and the door (the step above). The review reads one pair of notes at a time, so
-  it finds such a case only where one pair holds it. This step lists every piece a program declares: the sender,
-  the flags, the keys and their parameters, each operation and its delivery, the timers, the internal messages, the
-  rejections, the projection, the children and the door. For each piece and each way a deploy changes it, it asks
-  what happens to an entity stored, loaded, suspended or draining, on one process and on Cluster, with a deploy of
-  a newer version and of an older one. Each case gets a test that shows it holds, or a sentence that says why it
-  holds and cites the note that decides it. A case that fails is a bug of this step, fixed by a note with its test,
-  as the bugs of `docs/bugs.md` are. The cases the steps above already hold cite them. A `reindex` an operator runs on the older runner of a rolling deploy writes the older
-  projection over the row the newer runner wrote, since the entity's state and version did not change, which is bug
-  77 of `docs/bugs.md`, reproduced. The table is written in `docs/`, so that a
-  piece a later note adds to a program adds its row. The code that keeps the table is one place, where an
-  activation by a program compares each piece stored with the program: the same, changed in a way the table
-  allows, which it converts, or changed otherwise, which suspends the entity with a defect that names the piece.
-
 - **The tests of a contract on every backend.** It is the fourth kind of test of `AGENTS.md`, and the rule of
   families C and D of [`docs/bugs.md`](bugs.md). One set of requests runs alike on each way the library runs, and the
   answers, the projections and what an operator reads must be the same on each. The ways are SQLite and PostgreSQL
@@ -369,8 +341,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   [decision 0283](decisions/0283-a-contract-runs-one-set-of-calls-on-every-backend.md), `proposed`, rewritten in place
   while the step is under way and taken by the commit that takes the step out of this file. The rule of family D is
   [decision 0284](decisions/0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md), accepted. The maintainer
-  chose on 2026-11-12 to run this step beside the second reading of the premise review, though the steps above come
-  first in this file. Bugs 2, 3, 10, 11 and 12 are cases of it.
+  chose on 2026-11-12 to run this step beside the second reading of the premise review, and on 2026-11-13 to take it
+  before the two steps on deploys below and the step of the process's pure core. Bugs 2, 3, 10, 11 and 12 are cases
+  of it.
   - Done, on 2026-11-12: [`src/contract.test.ts`](../src/contract.test.ts), renamed from `src/dialects.test.ts`. Its
     property `every backend answers every call alike` runs the calls fast-check generates on SQLite, on PostgreSQL and
     on Cluster with two runners, which start once in a `beforeAll` and which the runs share. Each run prefixes its ids
@@ -442,6 +415,34 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     the runners.
   - The step leaves this file when the parts above are done, and decision 0283 is taken, `accepted`, by that commit.
 
+- **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds
+  an RPC to the door of a program on Cluster, or changes a payload, is not caught by the guard of the version
+  ([decision 0159](decisions/archive/0159-on-cluster-an-older-version-serves-no-shard-once-a-newer-one-launches.md)).
+  A runner of the older release that still holds a shard is given the newer request, and Cluster answers a payload
+  it cannot decode with a defect and stores it, so the request is lost in silence. The spike
+  [`spikes/cluster-older-runner-answers-a-newer-request.test.ts`](../spikes/cluster-older-runner-answers-a-newer-request.test.ts)
+  sees Cluster's answer. No test runs a rolling deploy of two releases of the library. It begins with a test of `src/cluster.test.ts` with two runners whose doors differ, and its fix
+  is a choice of the design, which the [open question](open-questions.md#running) A door that changes between two
+  releases of the library lists.
+
+- **What a deploy may change of a program, against what is stored.** This step is the rule of family A of
+  [`docs/bugs.md`](bugs.md). Four of the bugs the premise review found have
+  one form: a deploy of a newer version changes a piece of the program, while what is stored was written by the
+  older version. They are the delivery of an operation (bug 1), the way the sender is written (bug 5), a droppable
+  operation a resume drops (bug 7), and the door (the step above). The review reads one pair of notes at a time, so
+  it finds such a case only where one pair holds it. This step lists every piece a program declares: the sender,
+  the flags, the keys and their parameters, each operation and its delivery, the timers, the internal messages, the
+  rejections, the projection, the children and the door. For each piece and each way a deploy changes it, it asks
+  what happens to an entity stored, loaded, suspended or draining, on one process and on Cluster, with a deploy of
+  a newer version and of an older one. Each case gets a test that shows it holds, or a sentence that says why it
+  holds and cites the note that decides it. A case that fails is a bug of this step, fixed by a note with its test,
+  as the bugs of `docs/bugs.md` are. The cases the steps above already hold cite them. A `reindex` an operator runs on the older runner of a rolling deploy writes the older
+  projection over the row the newer runner wrote, since the entity's state and version did not change, which is bug
+  77 of `docs/bugs.md`, reproduced. The table is written in `docs/`, so that a
+  piece a later note adds to a program adds its row. The code that keeps the table is one place, where an
+  activation by a program compares each piece stored with the program: the same, changed in a way the table
+  allows, which it converts, or changed otherwise, which suspends the entity with a defect that names the piece.
+
 - **The process's state as a pure core, and the tests of an order.** The fields of `Process`, `Deployment` and
   `Loaded` that another fiber reads move into a module that imports no `Effect`, as `src/machine.ts` is for an entity.
   A transition takes a state and an event and gives a state and the commands to perform, and the shell performs it in
@@ -476,7 +477,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   does not have yet. fast-check generates histories of commands: a message under a new request id or a retried one,
   an operation that completes or fails, time that passes, a crash and a restart, a deploy of a variant of the
   program, a resume and a discard. The variants of a deploy change one piece of a program at a time, as the table
-  of the step above lists them. A program of the test holds an operation of each delivery, a timer and a child, and
+  of the step What a deploy may change of a program lists them. A program of the test holds an operation of each delivery, a timer and a child, and
   records outside the machine each operation that starts. After each history the test checks the promises of the
   design as invariants. A message under a request id is applied at most once, and a retry is given the same reply.
   An at-least-once operation that talks only to entities acts once. An at-most-once operation is given `unknown`
