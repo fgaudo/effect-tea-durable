@@ -1687,6 +1687,36 @@ describe('the keys a program declares', () => {
   })
 })
 
+// The order the machine holds one entity's timers in is the order of the record `work` gives (decision 0293). A key's
+// text is the JSON of an array, never a text like `1`, so the machine keeps that order as it is given. A record keyed
+// by names like `2` and `1` lists them in the order of their numbers, whatever order the program writes them in.
+describe('the order of the timers due at one time', () => {
+  const armed = (keys: ReadonlyArray<string>, work: () => TinyWork) => {
+    const program = { ...tiny((message) => message, work), keys: Object.fromEntries(keys.map((key) => [key, null])) }
+    const created = Machine.start(program, 'tiny', null, epoch, by('creation'))
+    if (created._tag !== 'Created') throw created._tag === 'Defect' ? created.cause : created.reply
+    return {
+      texts: Object.keys(created.machine.stored.keys),
+      armed: created.outputs.flatMap((output) => output._tag === 'Armed' ? [output.key.name] : []),
+    }
+  }
+
+  test("a key's text is never a text JavaScript orders as a number", () => {
+    expect(Machine.keyText({ name: '1' })).toBe('["1"]')
+    expect(armed(['zeta', 'alpha'], () => ({ zeta: 'timer', alpha: 'timer' }))).toEqual({
+      texts: ['["zeta"]', '["alpha"]'],
+      armed: ['zeta', 'alpha'],
+    })
+  })
+
+  test('keys named by numbers are held in the order of the numbers, not the order the program writes', () => {
+    expect(armed(['2', '1'], () => ({ '2': 'timer', '1': 'timer' }))).toEqual({
+      texts: ['["1"]', '["2"]'],
+      armed: ['1', '2'],
+    })
+  })
+})
+
 describe('the runners a program gives', () => {
   const inbound = { _tag: 'Receive', request: by('r'), message: 'go' } as const
   // A cast lets a program through with no runner for an operation it holds: the machine admits none (decision

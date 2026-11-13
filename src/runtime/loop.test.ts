@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from 'bun:test'
 import * as Cause from 'effect/Cause'
+import * as Clock from 'effect/Clock'
 import * as DateTime from 'effect/DateTime'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
@@ -1808,4 +1809,120 @@ describe('one entity\'s two timers due at one time', () => {
         expect(yield* runtimeOrder(mode)).toEqual(['t', 'a'])
       })))
   }
+})
+
+// A timer armed again moves in the order the machine holds its timers (decision 0293). `t` is due at 30 and `a` at 40,
+// and a message moves `t` to 40. The stored work lists `t` first, as `work` gives it, and the timers running list it
+// last, since a timer armed again leaves `running` and enters it at its end. A restart rebuilds `running` in the order
+// of the stored work, so the same two timers fire in the other order.
+describe('a timer armed again at the time of another', () => {
+  const fired: Array<string> = []
+  const rearmed: Program<T> = {
+    ...program,
+    name: 'Rearmed',
+    init: (_flags, at) => ({ want: ['t', 'a'], applied: [], since: at, rings: DateTime.addDuration(at, '30 millis') }),
+    update: (message, meta) => (state) => {
+      if (message._tag === 'Rang') fired.push(message.key)
+      if (message._tag === 'Want' && message.key === 't') {
+        return { ...state, rings: DateTime.addDuration(state.since, '40 millis'), applied: [message.nonce] }
+      }
+      return program.update(message, meta)(state)
+    },
+    work: (state) =>
+      state.want.length === 0 ? noWork : Object.fromEntries(state.want.map((key) => [
+        key,
+        timer<Internal>(key === 't' ? state.rings : DateTime.addDuration(state.since, '40 millis'), { _tag: 'Rang', key }),
+      ])),
+  }
+  const flags = { at: DateTime.makeUnsafe(0) }
+  const move = { _tag: 'Want', key: 't', on: true, nonce: 'move' } as const
+
+  test('a rehearsal fires the timer armed again last, and first after a restart', async () => {
+    const orders: Array<Array<string>> = []
+    for (const restarts of [false, true]) {
+      fired.length = 0
+      await Effect.runPromise(rehearse(rearmed, { flags, at: DateTime.makeUnsafe(0) }, Effect.fnUntraced(function*(entity) {
+        yield* entity.send(move, { sender: tester })
+        if (restarts) yield* entity.restart
+        yield* entity.advance('40 millis')
+      })).pipe(Effect.provide(Layer.mock(Hands, {}))))
+      orders.push([...fired])
+    }
+    expect(orders).toEqual([['a', 't'], ['t', 'a']])
+  })
+
+  test('the runtime fires the timer armed again last, and first after a restart', () =>
+    database(Effect.gen(function*() {
+      const orders: Array<Array<string>> = []
+      for (const restarts of [false, true]) {
+        fired.length = 0
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(rearmed), (yield* hands()).layer)
+            yield* toy.create(`e-${restarts}`, { flags: { at: yield* DateTime.now }, requestId: `c-${restarts}`, sender: tester })
+            yield* toy.send(`e-${restarts}`, move, { requestId: `m-${restarts}`, sender: tester, keep: 'forever' })
+            yield* runtime.settled
+            if (!restarts) {
+              yield* TestClock.adjust('40 millis')
+              yield* runtime.settled
+            }
+          }))
+        if (restarts) {
+          yield* process({}, (runtime) =>
+            Effect.gen(function*() {
+              yield* Effect.provide(runtime.deploy(rearmed), (yield* hands()).layer)
+              yield* TestClock.adjust('40 millis')
+              yield* runtime.settled
+            }))
+        }
+        orders.push([...fired])
+      }
+      expect(orders).toEqual([['a', 't'], ['t', 'a']])
+    })))
+})
+
+// On a clock that is real, each timer sleeps the time left from the wall clock's millisecond when it is armed, and
+// the platform's timers wake by a clock of their own: two timers armed in two steps for one time are woken in an order
+// that the part of a millisecond each step began at decides (decision 0293).
+describe('two timers of one entity armed in two steps for one time, on a clock that is real', () => {
+  const steady: Program<T> = {
+    ...program,
+    name: 'Steady',
+    init: (flags) => ({ want: ['a'], applied: [], since: flags.at, rings: flags.at }),
+    work: (state) =>
+      state.want.length === 0
+        ? noWork
+        : Object.fromEntries(state.want.map((key) => [key, timer<Internal>(state.rings, { _tag: 'Rang', key })])),
+  }
+
+  // From one entity in twenty-five to one in eight fired `t` first in the runs seen, so two hundred entities with none
+  // happen less than once in three thousand runs.
+  slow('fire out of the order the machine holds them, in some entities', () =>
+    database(Effect.gen(function*() {
+      const orders = new Map<string, Array<string>>()
+      yield* process({
+        observe: (entity, event) =>
+          Effect.sync(() => {
+            if (event._tag === 'Fire') orders.set(entity.id, [...orders.get(entity.id) ?? [], event.key.name])
+          }),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(steady), (yield* hands()).layer)
+          const due = DateTime.addDuration(yield* DateTime.now, '1000 millis')
+          const entities = Array.from({ length: 200 }, (_, index) => `e-${index}`)
+          for (const entity of entities) {
+            yield* toy.create(entity, { flags: { at: due }, requestId: `c-${entity}`, sender: tester })
+            // A wait of a part of a millisecond moves where the second step begins.
+            yield* Effect.promise(() => Bun.sleep(Math.random() * 3))
+            const want = { _tag: 'Want', key: 't', on: true, nonce: entity } as const
+            yield* toy.send(entity, want, { requestId: `w-${entity}`, sender: tester, keep: 'forever' })
+          }
+          yield* Effect.promise(() => Bun.sleep(1300))
+          yield* runtime.settled
+        }))
+      const counted = new Map<string, number>()
+      for (const order of orders.values()) counted.set(order.join(), (counted.get(order.join()) ?? 0) + 1)
+      expect([...counted.keys()].sort()).toEqual(['a,t', 't,a'])
+      expect([...counted.values()].reduce((sum, count) => sum + count, 0)).toBe(200)
+    }).pipe(Effect.provideService(Clock.Clock, Clock.Clock.defaultValue()))))
 })
