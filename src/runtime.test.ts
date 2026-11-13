@@ -287,69 +287,6 @@ describe('the runtime on SQLite', () => {
         .toBe('the option renames is null, which is no object')
     })))
 
-  // A call from JavaScript may leave out a request or what a reading asks. The call returns its effect, and the effect
-  // dies with the caller's defect, as for a limit left out (decisions 0053, 0141).
-  test('a request or a reading left out is the caller’s defect, in the effect and not at the call', () =>
-    database(Effect.gen(function*() {
-      const reasonOf = (exit: Exit.Exit<unknown>) => {
-        const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
-        return cause instanceof InvariantDefect ? cause.reason : null
-      }
-      const { layer } = yield* hands()
-      const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          for (const left of [undefined, null]) {
-            const calls = [
-              ['request of create', () => toy.create(id, left as never)],
-              ['request of send', () => toy.send(id, want, left as never)],
-              ['query', () => toy.query(left as never)],
-              ['count', () => toy.count(left as never)],
-              ['sum', () => toy.sum(left as never)],
-              ['count by', () => toy.countBy(left as never)],
-            ] as const
-            for (const [what, call] of calls) {
-              const effect: Effect.Effect<unknown> = call()
-              expect(reasonOf(yield* Effect.exit(effect))).toBe(`the ${what} is ${left}, which is no object`)
-            }
-            // The cursors of `published` are a list, and one left out is refused the same way.
-            expect(reasonOf(yield* Effect.exit(toy.published('projection', left as never, 1))))
-              .toBe(`the cursors are ${left}, which are no list`)
-          }
-          expect(yield* toy.read(id)).toBeNull()
-        }))
-    })))
-
-  test('a keep that is neither a whole number of millis nor forever is the caller’s defect, and reaches no entity', () =>
-    database(Effect.gen(function*() {
-      const { layer } = yield* hands()
-      const at = yield* DateTime.now
-      const sender = { _tag: 'Tester' } as const
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender })
-          const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
-          for (const millis of [-1, 1.5]) {
-            const exit = yield* Effect.exit(toy.send(id, want, { requestId: 'r', sender, keep: { millis } }))
-            expect(Exit.hasDies(exit)).toBe(true)
-          }
-          // A call from JavaScript may leave `keep` out, or give what is no keep (decision 0245).
-          for (const keep of [undefined, null, 'always', {}]) {
-            const exit = yield* Effect.exit(toy.send(id, want, { requestId: 'r', sender, keep: keep as never }))
-            expect(Exit.hasDies(exit)).toBe(true)
-          }
-          const stored = yield* Effect.flatMap(SqlClient.SqlClient, (sql) => storage(program, sql).load(id))
-          expect(stored?.state.applied).toEqual([])
-          // A keep of 0 millis keeps no reply: a retry is applied again.
-          yield* toy.send(id, want, { requestId: 'r', sender, keep: { millis: 0 } })
-          expect(yield* toy.send(id, want, { requestId: 'r', sender, keep: { millis: 0 } })).toEqual({ _tag: 'Accepted' })
-          const after = yield* Effect.flatMap(SqlClient.SqlClient, (sql) => storage(program, sql).load(id))
-          expect(after?.state.applied).toEqual(['w', 'w'])
-        }))
-    })))
-
   // Only the boundary knows how long its protocol retries for, so no `send` goes without a `keep`, and only a program
   // whose sender or flags are `null` may leave them out (decision 0245). The compiler holds it, so the test runs
   // nothing.
@@ -366,77 +303,6 @@ describe('the runtime on SQLite', () => {
     ]
     expect(typed).toBeFunction()
   })
-
-  // No database gives a lone surrogate back as written, so that two ids would be one entity, and PostgreSQL holds U+0000
-  // in no text (decision 0157). The waker pages from the empty id up, so it would never wake that one (decision 0179).
-  test('an id that is no text a database holds, or is empty, is the caller’s defect, and reaches no entity', () =>
-    database(Effect.gen(function*() {
-      const { layer } = yield* hands()
-      const at = yield* DateTime.now
-      const sender = { _tag: 'Tester' } as const
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
-          const unheld = (id: string) => `the id is ${JSON.stringify(id)}, which is no text a database holds`
-          const cases = [
-            ...['toy\ud800', 'toy\udc00', 'toy\u0000'].map((id) => [id, unheld(id)] as const),
-            ['', 'the id is empty, and an id is not'] as const,
-          ]
-          for (const [broken, reason] of cases) {
-            const calls: ReadonlyArray<Effect.Effect<unknown>> = [
-              toy.create(broken, { flags: { at }, requestId: 'creation', sender }),
-              toy.send(broken, want, { requestId: 'r', sender, keep: 'forever' }),
-              toy.read(broken),
-              toy.inspect(broken),
-              toy.resume(broken),
-              toy.discard(broken),
-            ]
-            for (const call of calls) {
-              const exit = yield* Effect.exit(call)
-              const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
-              expect(cause instanceof InvariantDefect ? cause.reason : null).toBe(reason)
-            }
-          }
-          const sql = yield* SqlClient.SqlClient
-          expect(yield* sql`SELECT id FROM effecttea_entities`).toEqual([])
-          // A pair of surrogates is one character, and an id.
-          yield* toy.create('toy😀', { flags: { at }, requestId: 'creation', sender })
-          expect(yield* sql`SELECT id FROM effecttea_entities`).toEqual([{ id: 'toy😀' }])
-        }))
-    })))
-
-  // The storage writes a request id as it is, and PostgreSQL holds U+0000 in no text: the write of the reply would
-  // fail, and the entity would leave the process with its operations (decision 0204).
-  test('a request id that is no text a database holds is the caller’s defect, and reaches no entity', () =>
-    onBoth(Effect.gen(function*() {
-      const { layer } = yield* hands()
-      const at = yield* DateTime.now
-      const sender = { _tag: 'Tester' } as const
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const toy = yield* Effect.provide(runtime.deploy(program), layer)
-          const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
-          yield* toy.create('toy', { flags: { at }, requestId: 'creation', sender })
-          for (const broken of ['r\u0000', 'r\ud800']) {
-            const calls: ReadonlyArray<Effect.Effect<unknown>> = [
-              toy.create('other', { flags: { at }, requestId: broken, sender }),
-              toy.send('toy', want, { requestId: broken, sender, keep: 'forever' }),
-            ]
-            for (const call of calls) {
-              const exit = yield* Effect.exit(call)
-              const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
-              expect(cause instanceof InvariantDefect ? cause.reason : null).toBe(
-                `the request id is ${JSON.stringify(broken)}, which is no text a database holds`,
-              )
-            }
-          }
-          const sql = yield* SqlClient.SqlClient
-          expect(yield* sql`SELECT id FROM effecttea_entities`).toEqual([{ id: 'toy' }])
-          // The entity is still in the process, and answers the next caller.
-          expect(yield* toy.send('toy', want, { requestId: 'r', sender, keep: 'forever' })).toEqual({ _tag: 'Accepted' })
-        }))
-    })))
 
   // A message waits in the mailbox behind another while a creation under its request id is answered: the
   // creation's reply must not reach the message's caller (decision 0050).
@@ -645,51 +511,6 @@ describe('the runtime on SQLite', () => {
           expect(fired).toEqual([])
           yield* TestClock.adjust('1 millis')
           expect(fired).toEqual([DateTime.toEpochMillis(at) + 40])
-        }))
-    })))
-
-  // A cause holds the program's data, and PostgreSQL holds U+0000 in no text: the write of the suspension would
-  // fail, and the entity would never be suspended (decision 0205).
-  test('a defect whose cause holds U+0000 suspends the entity, and lists it', () =>
-    onBoth(Effect.gen(function*() {
-      const { layer } = yield* hands()
-      const at = yield* DateTime.now
-      const citing: Program<T> = {
-        ...program,
-        update: (message, meta) =>
-          message._tag === 'Break' ? () => defect(`broken ${message.nonce}`) : program.update(message, meta),
-      }
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const toy = yield* Effect.provide(runtime.deploy(citing), layer)
-          const sender = { _tag: 'Tester' } as const
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender })
-          yield* runtime.settled
-          expect(yield* toy.send(id, { _tag: 'Break', nonce: 'a\u0000b' }, { requestId: 'break', sender, keep: 'forever' }))
-            .toEqual({ _tag: 'Suspended' })
-          expect((yield* toy.suspended).map(({ cause }) => cause)).toEqual(['InvariantDefect: broken a\\u0000b'])
-        }))
-    })))
-
-  // An index that reads past what it looks up is `undefined`, though typed a scalar: the storage would write no JSON,
-  // and the entity would crash at every step (decision 0206).
-  test('an index that is no scalar suspends the entity, and lists it', () =>
-    onBoth(Effect.gen(function*() {
-      const { layer } = yield* hands()
-      const at = yield* DateTime.now
-      const named: Readonly<Record<number, number>> = { [keys.length]: 1 }
-      const lookingUp: Program<T> = { ...program, indexes: { wanted: (projection) => named[projection] as number } }
-      yield* process({}, (runtime) =>
-        Effect.gen(function*() {
-          const toy = yield* Effect.provide(runtime.deploy(lookingUp), layer)
-          const sender = { _tag: 'Tester' } as const
-          yield* toy.create(id, { flags: { at }, requestId: 'creation', sender })
-          yield* runtime.settled
-          const want: Inbound = { _tag: 'Want', key: 'a', on: false, nonce: 'w' }
-          expect(yield* toy.send(id, want, { requestId: 'r', sender, keep: 'forever' })).toEqual({ _tag: 'Suspended' })
-          expect((yield* toy.suspended).map(({ cause }) => cause)).toEqual([
-            "InvariantDefect: the index 'wanted' is no scalar: null, a string, a boolean or a number",
-          ])
         }))
     })))
 
@@ -5306,8 +5127,27 @@ describe('a rule of one process that holds on Cluster too', () => {
     schemas: { ...program.schemas, rejection: Schema.Number as never },
     update: (message, meta) => message._tag === 'Refuse' ? () => rejectWith(-0 as never) : program.update(message, meta),
   }
-  const rule = everywhere([program, numbered])
+  const citing: Program<T> = {
+    ...program,
+    name: 'Citing',
+    update: (message, meta) =>
+      message._tag === 'Break' ? () => defect(`broken ${message.nonce}`) : program.update(message, meta),
+  }
+  const named: Readonly<Record<number, number>> = { [keys.length]: 1 }
+  const lookingUp: Program<T> = {
+    ...program,
+    name: 'LookingUp',
+    indexes: { wanted: (projection) => named[projection] as number },
+  }
+  const rule = everywhere([program, numbered, citing, lookingUp])
   const sender = { _tag: 'Tester' } as const
+  const reasonOf = (exit: Exit.Exit<unknown>) => {
+    const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+    return cause instanceof InvariantDefect ? cause.reason : null
+  }
+  // The causes `suspended` lists of the entity `id`: the rules on Cluster share their runners, and so what is stored.
+  const listed = (toy: Handle<T>, id: string) =>
+    Effect.map(toy.suspended, (entities) => entities.filter((entity) => entity.id === id).map(({ cause }) => cause))
 
   rule('answers a retry from the stored reply, and NotFound for no entity', ({ deploy, own }) =>
     Effect.gen(function*() {
@@ -5399,4 +5239,151 @@ describe('a rule of one process that holds on Cluster too', () => {
       expect(replies.map((reply) => reply._tag)).toEqual(['Accepted', 'Accepted'])
       expect((yield* first!.inspect(own('m-9')))?.state.applied).toEqual(['w'])
     }))
+  // A call from JavaScript may leave out a request or what a reading asks. The call returns its effect, and the effect
+  // dies with the caller's defect, as for a limit left out (decisions 0053, 0141).
+  rule('a request or a reading left out is the caller’s defect, in the effect and not at the call', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+      for (const toy of yield* deploy(program)) {
+        for (const left of [undefined, null]) {
+          const calls = [
+            ['request of create', () => toy.create(own(id), left as never)],
+            ['request of send', () => toy.send(own(id), want, left as never)],
+            ['query', () => toy.query(left as never)],
+            ['count', () => toy.count(left as never)],
+            ['sum', () => toy.sum(left as never)],
+            ['count by', () => toy.countBy(left as never)],
+          ] as const
+          for (const [what, call] of calls) {
+            const effect: Effect.Effect<unknown> = call()
+            expect(reasonOf(yield* Effect.exit(effect))).toBe(`the ${what} is ${left}, which is no object`)
+          }
+          // The cursors of `published` are a list, and one left out is refused the same way.
+          expect(reasonOf(yield* Effect.exit(toy.published('projection', left as never, 1))))
+            .toBe(`the cursors are ${left}, which are no list`)
+        }
+        expect(yield* toy.read(own(id))).toBeNull()
+      }
+    }))
+
+  // A keep of 0 deletes the runtime's reply at the step that answers. On Cluster a retry is answered from the rows
+  // Cluster saved under its request id, which a step or `expire` deletes only past the least time of decision 0248,
+  // so the retry is not applied again there.
+  rule('a keep that is neither a whole number of millis nor forever is the caller’s defect, and reaches no entity', ({ deploy, name, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(program)
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      yield* first!.create(own(id), { flags: { at }, requestId: own('creation'), sender: tester })
+      const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+      const r = own('r')
+      for (const millis of [-1, 1.5]) {
+        const exit = yield* Effect.exit(other.send(own(id), want, { requestId: r, sender: tester, keep: { millis } }))
+        expect(Exit.hasDies(exit)).toBe(true)
+      }
+      // A call from JavaScript may leave `keep` out, or give what is no keep (decision 0245).
+      for (const keep of [undefined, null, 'always', {}]) {
+        const exit = yield* Effect.exit(other.send(own(id), want, { requestId: r, sender: tester, keep: keep as never }))
+        expect(Exit.hasDies(exit)).toBe(true)
+      }
+      expect((yield* first!.inspect(own(id)))?.state.applied).toEqual([])
+      // A keep of 0 millis keeps no reply of the runtime: on one process a retry is applied again.
+      yield* first!.send(own(id), want, { requestId: r, sender: tester, keep: { millis: 0 } })
+      expect(yield* other.send(own(id), want, { requestId: r, sender: tester, keep: { millis: 0 } }))
+        .toEqual({ _tag: 'Accepted' })
+      expect((yield* first!.inspect(own(id)))?.state.applied).toEqual(name === 'Cluster' ? ['w'] : ['w', 'w'])
+    }))
+
+  // No database gives a lone surrogate back as written, so that two ids would be one entity, and PostgreSQL holds U+0000
+  // in no text (decision 0157). The waker pages from the empty id up, so it would never wake that one (decision 0179).
+  // The empty id is not prefixed, so that it stays empty.
+  rule('an id that is no text a database holds, or is empty, is the caller’s defect, and reaches no entity', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const handles = yield* deploy(program)
+      const at = yield* DateTime.now
+      const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+      const unheld = (id: string) => `the id is ${JSON.stringify(id)}, which is no text a database holds`
+      const cases = [
+        ...['toy\ud800', 'toy\udc00', 'toy\u0000'].map((id) => [own(id), unheld(own(id))] as const),
+        ['', 'the id is empty, and an id is not'] as const,
+      ]
+      for (const toy of handles) {
+        for (const [broken, reason] of cases) {
+          const calls: ReadonlyArray<Effect.Effect<unknown>> = [
+            toy.create(broken, { flags: { at }, requestId: own('creation'), sender: tester }),
+            toy.send(broken, want, { requestId: own('r'), sender: tester, keep: 'forever' }),
+            toy.read(broken),
+            toy.inspect(broken),
+            toy.resume(broken),
+            toy.discard(broken),
+          ]
+          for (const call of calls) expect(reasonOf(yield* Effect.exit(call))).toBe(reason)
+        }
+      }
+      // The ids a database could hold in place of the broken ones name no entity either.
+      for (const near of ['toy�', 'toy']) expect(yield* handles[0]!.inspect(own(near))).toBeNull()
+      // A pair of surrogates is one character, and an id.
+      yield* handles[0]!.create(own('toy😀'), { flags: { at }, requestId: own('creation'), sender: tester })
+      expect((yield* handles.at(-1)!.inspect(own('toy😀')))?.id).toBe(own('toy😀'))
+    }))
+
+  // The storage writes a request id as it is, and PostgreSQL holds U+0000 in no text: the write of the reply would
+  // fail, and the entity would leave the process with its operations (decision 0204).
+  rule('a request id that is no text a database holds is the caller’s defect, and reaches no entity', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const handles = yield* deploy(program)
+      const at = yield* DateTime.now
+      const want: Inbound = { _tag: 'Want', key: 't', on: false, nonce: 'w' }
+      yield* handles[0]!.create(own('toy'), { flags: { at }, requestId: own('creation'), sender: tester })
+      for (const toy of handles) {
+        for (const broken of [own('r\u0000'), own('r\ud800')]) {
+          const calls: ReadonlyArray<Effect.Effect<unknown>> = [
+            toy.create(own('other'), { flags: { at }, requestId: broken, sender: tester }),
+            toy.send(own('toy'), want, { requestId: broken, sender: tester, keep: 'forever' }),
+          ]
+          for (const call of calls) {
+            expect(reasonOf(yield* Effect.exit(call))).toBe(
+              `the request id is ${JSON.stringify(broken)}, which is no text a database holds`,
+            )
+          }
+        }
+      }
+      expect(yield* handles[0]!.inspect(own('other'))).toBeNull()
+      expect((yield* handles[0]!.inspect(own('toy')))?.state.applied).toEqual([])
+      // The entity still runs where it is held, and answers the next caller through each handle.
+      for (const [n, toy] of handles.entries()) {
+        expect(yield* toy.send(own('toy'), want, { requestId: own(`r-${n}`), sender: tester, keep: 'forever' }))
+          .toEqual({ _tag: 'Accepted' })
+      }
+    }), ['sqlite', 'pg'])
+
+  // A cause holds the program's data, and PostgreSQL holds U+0000 in no text: the write of the suspension would
+  // fail, and the entity would never be suspended (decision 0205).
+  rule('a defect whose cause holds U+0000 suspends the entity, and lists it', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(citing)
+      const at = yield* DateTime.now
+      yield* first!.create(own(id), { flags: { at }, requestId: own('creation'), sender: tester })
+      expect(yield* (second ?? first)!.send(own(id), { _tag: 'Break', nonce: 'a\u0000b' }, {
+        requestId: own('break'),
+        sender: tester,
+        keep: 'forever',
+      })).toEqual({ _tag: 'Suspended' })
+      expect(yield* listed(first!, own(id))).toEqual(['InvariantDefect: broken a\\u0000b'])
+    }), ['sqlite', 'pg'])
+
+  // An index that reads past what it looks up is `undefined`, though typed a scalar: the storage would write no JSON,
+  // and the entity would crash at every step (decision 0206).
+  rule('an index that is no scalar suspends the entity, and lists it', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const [first, second] = yield* deploy(lookingUp)
+      const at = yield* DateTime.now
+      yield* first!.create(own(id), { flags: { at }, requestId: own('creation'), sender: tester })
+      const want: Inbound = { _tag: 'Want', key: 'a', on: false, nonce: 'w' }
+      expect(yield* (second ?? first)!.send(own(id), want, { requestId: own('r'), sender: tester, keep: 'forever' }))
+        .toEqual({ _tag: 'Suspended' })
+      expect(yield* listed(first!, own(id))).toEqual([
+        "InvariantDefect: the index 'wanted' is no scalar: null, a string, a boolean or a number",
+      ])
+    }), ['sqlite', 'pg'])
 })

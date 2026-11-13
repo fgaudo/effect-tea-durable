@@ -422,8 +422,19 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     - Done, on 2026-11-13, five rules, none of which needs a test clock or a probe: a retry and `NotFound`, a reason
       of `-0`, a suspension and its discard, two callers under one request id with two messages, and two callers of
       one request under a keep of 0. They passed on every backend, and found no difference.
+    - Done, on 2026-11-13, the `describe` `the runtime on SQLite`, read whole. Six rules moved, each needing neither a
+      test clock nor a probe: a request or a reading left out, a keep that is no keep, an id and a request id that no
+      database holds, a cause that holds U+0000, and an index that is no scalar. They passed five runs in a row on
+      every backend. One difference was found, and decision 0248 decides it: on Cluster a retry under a `keep` of 0 is
+      answered from Cluster's rows and not applied again, which the rule marks. Every other test of the `describe`
+      moves the test clock, by `ran`, `running` or `TestClock`, or holds a step at `BeforeCommit` by a probe, but
+      four. `warns of a step past its threshold once per activation` counts the warnings of one logger, while each
+      runner logs on its own. `an option or a field of it given null is the launcher’s defect` launches a process,
+      and `everywhere` launches its runners once. `a request leaves out its sender and flags only where the program
+      has none` runs nothing, as the compiler holds it. `an entity whose messages keep coming lets another step
+      between two of its steps` is a rule of one loop, and a caller's message on Cluster is stepped by its door.
     - Next, the other tests of `src/runtime.test.ts` that the design says hold on Cluster, read one `describe` at a
-      time from `the runtime on SQLite`, then `the read model` and `publishing what happened`. Most hold an
+      time, `the read model` first, then `publishing what happened`. Most hold an
       interleaving by a probe or the test clock. A rule moves whole where its test needs neither, and else its part
       that needs neither runs on both as a rule of its own. A rule that needs a deploy of a second program needs a
       runner that `everywhere` does not start yet. A difference found is a bug of `docs/bugs.md`, or a case decision

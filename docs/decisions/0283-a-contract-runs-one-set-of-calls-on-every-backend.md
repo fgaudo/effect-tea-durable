@@ -102,7 +102,8 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
   on Cluster too` of [`src/runtime.test.ts`](../../src/runtime.test.ts). The rule is a group of its name, with a test
   on one process, on each dialect the test ran on, and a test on Cluster with two runners on one SQLite file. A test
   of a rule moves there whole, under its name, so that a note that names it names the group. Its calls go through
-  the two runners in turn.
+  the two runners in turn. A rule whose answer on Cluster a note decides otherwise marks the difference by the
+  backend's `name`, with the note, as the test of a contract does.
 - **Cluster's runners start once for the group, in a hook**, as the runners of the property do, and the rules share
   them. So every id and request id a rule names is prefixed with the rule's own name, by `own`.
 - **The clock is real on both backends**, since Cluster's runners poll it. So a rule moves there only where its test
@@ -160,8 +161,13 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
   suspended entity 131 times, `discard` answered `Discarded` 47 times and `resume` answered `Resumed` 39 times. No
   `resume` answered `StillSuspended`, since the program deployed is the one that died.
 - That the rules moved hold on Cluster as on one process: **tested**, by `a rule of one process that holds on Cluster
-  too`, which passed five runs in a row on 2026-11-13 on SQLite, PGlite and Cluster. Its tests took 0.3 s at most.
+  too`, which passed five runs in a row on 2026-11-13 on SQLite, PGlite and Cluster, and five runs again once six
+  rules more had moved there. Each of its tests took less than a second.
 - That the runners start within a minute: **seen**, in the runs of the test on the maintainer's machine.
+- That on Cluster a retry under a `keep` of 0 is answered from Cluster's rows, and not applied again: **tested**, by
+  `a keep that is neither a whole number of millis nor forever is the caller’s defect, and reaches no entity` of the
+  group, which marks it on Cluster, as decision 0248 decides. On 2026-11-13 Cluster applied the message once, with the
+  retry sent through either runner, and once still with a retry a second later, while one process applied it twice.
 - That a runner of Cluster tells its probe what the runtime does: **tested**, by `a door step whose commit fails is
   dropped, starts nothing, and is stepped again` of `src/cluster.test.ts`, whose probe breaks the step's commit at
   `BeforeCommit`.
