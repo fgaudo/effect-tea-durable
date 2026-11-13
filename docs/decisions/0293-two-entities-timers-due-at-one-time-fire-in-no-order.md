@@ -12,7 +12,9 @@ by a third. Later the same day, the premise that the second run checks something
 the order of two entities' timers due at one time changes nothing a test reads of a program whose `update` is pure.
 The bullets of the second run rest on it, and the maintainer chooses what they become. One case of it failed too: a
 defect ends `advance` before the other timers due at that time fire, so a scenario that catches the defect reads
-which entity fired first.
+which entity fired first. Fable 5.2 then recommended that a suspension close the world: every act and read after it
+dies with its cause, and the rehearsal fails even where the scenario caught it. Of the two other holes it raised, the
+one of `restart` was found and the one of `run` was ruled out, the same day. The maintainer chooses.
 
 ## Context
 
@@ -99,6 +101,18 @@ nothing tells the test's writer.
   alone, as `docs/design.md` says of a defect, so the other fires in both orders. The rehearsal
   would end alike if `advance` fired every timer due at the time of a defect before it ended, or if `docs/design.md`
   said that a scenario reads nothing of the world after a defect it catches. The maintainer chooses.
+- That a restart after a defect leaves nothing that depends on the order of the entities' creation: **failed**,
+  **tested** by `a restart after a caught defect shows a scenario which entity was created first`, in
+  `src/rehearse.test.ts`. `restart` activates the entities one after another, and a suspended entity's activation
+  dies again, so the entities created after it are not activated. An email under way of the other entity is told
+  unsure only where that entity was created first, and the rehearsal ends in success.
+- That a run whose receiver's defect the scenario catches leaves nothing that depends on an order: **tested** by `a
+  run whose receiver defects, caught, leaves its operation under way`, in `src/rehearse.test.ts`. The sender's
+  operation stays under way, as the runtime keeps an operation answered `Suspended` waiting for the receiver's
+  resumption (`docs/design.md`, under Defects).
+- That a defect fails the rehearsal whether or not the scenario catches it: **failed**, **tested** by the three tests
+  above, each of which ends in success after the scenario caught the defect. `src/rehearse.ts` says that a defect that
+  suspends an entity fails the test, which holds only where the scenario lets the defect through.
 - That `docs/design.md` promises no order of two entities' timers due at one time: **read** in its section on
   Rehearsing, where `advance` fires the timers due "in the order of the times", and nowhere else.
 - That the runtime fires two entities' timers due at one time in an order of its own: **tested** by `the runtime fires

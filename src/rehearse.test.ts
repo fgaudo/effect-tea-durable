@@ -1652,6 +1652,68 @@ describe("the order of two entities' timers due at one time", () => {
     })
   })
 
+  // The premise of decision 0293 fails here too. A restart activates the entities in the order of their creation,
+  // and a suspended entity's activation dies again, so the entities after it are not activated. A scenario that
+  // caught a defect, and restarts, reads whether the other entity came before: an email under way is told unsure only
+  // if it did.
+  test('a restart after a caught defect shows a scenario which entity was created first', async () => {
+    const breaking: Program<Order> = {
+      ...order,
+      update: (message, meta) => (state) =>
+        message._tag === 'CancelRequested' && state.order.totalInCents === 13
+          ? defect('the cancellation of the broken order')
+          : order.update(message, meta)(state),
+    }
+    const broken = { order: { customer: 'ada', totalInCents: 13 } }
+    const run = async (brokenFirst: boolean) => {
+      const read: Array<unknown> = []
+      const exit = await Effect.runPromiseExit(rehearse.together(placedAt, Effect.fnUntraced(function*(world: World) {
+        const created: Record<string, Member<Order>> = {}
+        for (const id of brokenFirst ? ['broken', 'sound'] : ['sound', 'broken']) {
+          created[id] = yield* world.create(breaking, id, id === 'broken' ? broken : start.flags)
+        }
+        const sound = created['sound']!
+        yield* sound.send({ _tag: 'PayRequested', payment: 'card' }, { sender: ada })
+        yield* sound.answer('charge', { _tag: 'ChargeSucceeded', charge: 'ch-1' })
+        yield* sound.answer('tell-warehouse', { _tag: 'WarehouseTold' })
+        yield* sound.send({ _tag: 'ShipmentReported', tracking: 't-1' }, { sender: { _tag: 'Warehouse' } })
+        const before = yield* sound.state
+        read.push(before._tag === 'Shipped' ? before.email : before._tag)
+        read.push((yield* Effect.exit(created['broken']!.send({ _tag: 'CancelRequested' }, { sender: ada })))._tag)
+        read.push((yield* Effect.exit(world.restart))._tag)
+        const after = yield* sound.state
+        read.push(after._tag === 'Shipped' ? after.email : after._tag)
+      })))
+      return { read, exit: exit._tag }
+    }
+    expect({ brokenFirst: await run(true), soundFirst: await run(false) }).toEqual({
+      brokenFirst: { read: ['Sending', 'Failure', 'Failure', 'Sending'], exit: 'Success' },
+      soundFirst: { read: ['Sending', 'Failure', 'Failure', 'Unsure'], exit: 'Success' },
+    })
+  })
+
+  // A run whose receiver's defect is caught leaves the sender's operation under way, as the runtime leaves an
+  // operation answered `Suspended` waiting for the receiver's resumption. The order of entities shows nowhere.
+  test('a run whose receiver defects, caught, leaves its operation under way', async () => {
+    type Inventory = typeof inventory extends Program<infer T> ? T : never
+    const breaking: Program<Inventory> = {
+      ...inventory,
+      update: (message, meta) => (state) =>
+        message._tag === 'HoldRequested'
+          ? defect('the hold of the broken inventory')
+          : inventory.update(message, meta)(state),
+    }
+    const read: Array<unknown> = []
+    const exit = await Effect.runPromiseExit(rehearse.together(placedAt, Effect.fnUntraced(function*(world: World) {
+      const seats = yield* world.create(breaking, 'concert-1', { capacity: 4 })
+      const held = yield* world.create(booking, 'booking-1', { customer: 'ada', event: 'concert-1', seats: 2 })
+      read.push((yield* Effect.exit(held.run('hold')))._tag)
+      read.push((yield* held.state)._tag, (yield* held.underWay('hold')) !== null)
+      read.push((yield* Effect.exit(seats.state))._tag)
+    })))
+    expect({ read, exit: exit._tag }).toEqual({ read: ['Failure', 'Holding', true, 'Success'], exit: 'Success' })
+  })
+
   // The histories reach timers of two entities due at one time, fired in two orders: a program whose `update` reads
   // how many deadlines passed before its own, from outside its state, ends otherwise in the two worlds.
   test('changes what a program reads of the order, which the histories reach', async () => {
