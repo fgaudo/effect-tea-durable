@@ -15,7 +15,9 @@ defect ends `advance` before the other timers due at that time fire, so a scenar
 which entity fired first. Fable 5.2 then recommended that a suspension close the world: every act and read after it
 dies with its cause, and the rehearsal fails even where the scenario caught it. Of the two other holes it raised, the
 one of `restart` was found and the one of `run` was ruled out, the same day. The maintainer chose that a suspension
-closes the world. Whether the second run stays is still the maintainer's to choose.
+closes the world. A test then found that a defect of an operation suspends no entity in a rehearsal, where the
+runtime suspends the operation's entity, so a defect of an operation closes the world too. Whether the second run stays is still the
+maintainer's to choose.
 
 ## Context
 
@@ -60,11 +62,14 @@ nothing tells the test's writer.
   rehearsal, of one entity or of several, fails with that cause when the scenario returns, even where the scenario
   caught the defect. So a scenario reads nothing that an order decided after a defect, and the sentence that a defect
   fails the test holds whatever the scenario does.
-- **A failure of the rehearsal that suspends no entity leaves the world open.** A message its schema refuses, a run
-  that sends twice under one name, work of the wrong kind, a creation of an entity that exists, or an id the runtime
-  refuses fails the act alone. A
-  scenario that catches such a failure goes on, and reads the world as before. `docs/design.md` says both rules under
-  Rehearsing a world.
+- **A defect of an operation closes the world too.** On the runtime it suspends the operation's entity
+  (`docs/design.md`, under Defects), and in a rehearsal today it fails the run alone. A runner that dies, a run that
+  sends twice under one name, a droppable operation that sends, and an id the runtime refuses in a runner's `send` or
+  `create` are each a defect of the operation.
+- **A mistake of the test leaves the world open.** A message its schema refuses, an answer to a timer or a run of
+  work that is no operation, a creation of an entity that exists, and an id the runtime refuses in the test's own
+  `create` fail the act alone. A scenario that catches such a failure goes on, and reads the world as before.
+  `docs/design.md` says the three rules under Rehearsing a world.
 - **A rehearsal of several entities runs its scenario twice where two entities' timers are due at one time.** The
   first run fires the timers of the entities due at one time in the order of creation, as today. The second run
   fires every such group in the reverse order. A test whose assertion depends on the order of two entities' timers
@@ -134,10 +139,16 @@ nothing tells the test's writer.
   each of `state`, `send`, `advance` and `restart` after a caught suspension checks it.
 - That a run whose receiver's defect is caught fails the rehearsal: **open**. The test `a run whose receiver defects,
   caught, leaves its operation under way` then asserts it, and is renamed with it.
-- That a failure that suspends no entity leaves the world open, alone and in a world: **open**. The tests of
-  `src/rehearse.test.ts` that catch such a failure, and the scenarios of `examples/cart`, which read the state after
-  one, pass as they are. A test of `rehearse.together` that catches a run sent twice, and reads the world after it,
-  checks the world.
+- That a mistake of the test suspends no entity in a rehearsal, and a defect of `update` suspends its entity:
+  **tested** by `of a mistake of the test suspends no entity, and one of update suspends its entity`, in
+  `src/rehearse.test.ts`. After each mistake the entity handles the next message, and after the defect it does not.
+- That a defect of an operation suspends its entity in a rehearsal, as on the runtime: **failed**, **tested** by `of
+  an operation's defect suspends no entity in a rehearsal, unlike the runtime`, in `src/rehearse.test.ts`. A run
+  that sends twice under one name and a runner that dies each fail the run alone, and the entity handles the next
+  message. So the step makes the defect of an operation close the world, and that test then asserts it.
+- That a mistake of the test leaves a closed world open, alone and in a world: **open**. The tests of
+  `src/rehearse.test.ts` that catch such a mistake, and the scenarios of `examples/cart`, which read the state after
+  one, pass as they are once the world closes at a suspension.
 - That `docs/design.md` promises no order of two entities' timers due at one time: **read** in its section on
   Rehearsing, where `advance` fires the timers due "in the order of the times", and nowhere else.
 - That the runtime fires two entities' timers due at one time in an order of its own: **tested** by `the runtime fires

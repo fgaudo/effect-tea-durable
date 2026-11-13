@@ -1731,3 +1731,91 @@ describe("the order of two entities' timers due at one time", () => {
     expect(found.failed).toBe(true)
   })
 })
+
+// A suspension closes the world, and a failure that suspends no entity leaves it open (decision 0293). Which failures
+// suspend an entity today, in a rehearsal: a later message to the entity is handled only where none did.
+describe('a failure a scenario catches', () => {
+  const flags = { customer: 'ada', event: 'concert-1', seats: 2 }
+  const customer = { _tag: 'Customer', id: 'ada' } as const
+  const ended = <A, E>(effect: Effect.Effect<A, E>) => Effect.map(Effect.exit(effect), (exit) => exit._tag)
+
+  test('of a mistake of the test suspends no entity, and one of update suspends its entity', async () => {
+    const seen: Record<string, unknown> = {}
+    await Effect.runPromise(rehearse.together(placedAt, Effect.fnUntraced(function*(world: World) {
+      const placed = yield* world.create(order, 'order-1', start.flags)
+      const cancel = placed.send({ _tag: 'CancelRequested' }, { sender: ada })
+      seen['a message its schema refuses'] = [
+        yield* ended(placed.send({ _tag: 'PayRequested', payment: 5 as never }, { sender: ada })),
+        yield* ended(placed.send({ _tag: 'PayRequested', payment: 'card' }, { sender: ada })),
+      ]
+      seen['an answer to a timer'] = [
+        yield* ended(placed.answer('payment-deadline' as never, { _tag: 'PaymentDeadlinePassed' } as never)),
+        yield* ended(cancel),
+      ]
+      seen['a creation of an entity that exists'] = [
+        yield* ended(world.create(order, 'order-1', start.flags)),
+        yield* ended(cancel),
+      ]
+      seen['an id the runtime refuses'] = [yield* ended(world.create(order, '', start.flags)), yield* ended(cancel)]
+      // The check, on an entity a defect of `update` suspends: the next message to it is not handled.
+      const breaking: Program<TypesOf<typeof order>> = {
+        ...order,
+        name: 'Breaking',
+        update: (message, meta) => (state) =>
+          message._tag === 'CancelRequested' ? defect('the cancellation breaks') : order.update(message, meta)(state),
+      }
+      const broken = yield* world.create(breaking, 'order-2', start.flags)
+      seen['a defect of update'] = [
+        yield* ended(broken.send({ _tag: 'CancelRequested' }, { sender: ada })),
+        yield* ended(broken.send({ _tag: 'PayRequested', payment: 'card' }, { sender: ada })),
+      ]
+    })))
+    expect(seen).toEqual({
+      'a message its schema refuses': ['Failure', 'Success'],
+      'an answer to a timer': ['Failure', 'Success'],
+      'a creation of an entity that exists': ['Failure', 'Success'],
+      'an id the runtime refuses': ['Failure', 'Success'],
+      'a defect of update': ['Failure', 'Failure'],
+    })
+  })
+
+  // On the runtime, a defect of an operation suspends its entity (`docs/design.md`, under Defects). In a rehearsal it
+  // fails the run alone, and the entity handles the next message.
+  test("of an operation's defect suspends no entity in a rehearsal, unlike the runtime", async () => {
+    const twice = {
+      ...booking,
+      name: 'Twice',
+      operations: {
+        ...booking.operations,
+        Hold: operation(({ event, seats }: { _tag: 'Hold'; event: string; seats: number }) =>
+          Effect.gen(function*() {
+            yield* send(inventory, event, { _tag: 'HoldRequested', seats }, 'hold')
+            yield* send(inventory, event, { _tag: 'HoldRequested', seats }, 'hold')
+            return { _tag: 'SeatsHeld' } as const
+          })
+        ),
+      },
+    } as unknown as typeof booking
+    const dying = {
+      ...booking,
+      name: 'Dying',
+      operations: { ...booking.operations, Hold: operation(() => Effect.die('the hold dies')) },
+    } as unknown as typeof booking
+    const seen: Record<string, unknown> = {}
+    await Effect.runPromise(rehearse.together(placedAt, Effect.fnUntraced(function*(world: World) {
+      yield* world.create(inventory, 'concert-1', { capacity: 4 })
+      const programs = [['a run that sends twice under one name', twice], ['a runner that dies', dying]] as const
+      for (const [name, program] of programs) {
+        const held = yield* world.create(program, 'booking-1', flags)
+        seen[name] = [
+          yield* ended(held.run('hold')),
+          yield* ended(held.send({ _tag: 'CancelRequested' }, { sender: customer })),
+        ]
+      }
+    })))
+    expect(seen).toEqual({
+      'a run that sends twice under one name': ['Failure', 'Success'],
+      'a runner that dies': ['Failure', 'Success'],
+    })
+  })
+})
