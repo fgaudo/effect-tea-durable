@@ -486,11 +486,14 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   every order of a group of up to four. Its note is
   [decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md), `proposed`. Nothing of it
   is written yet. Two of its premises failed before it began. The maintainer chose that the runtime keep one
-  entity's order by the stored work, where its loop takes a `Fire`, as the note says. What the bullet on the scenario
-  called twice becomes is still the maintainer's to choose, and the note says the choices. It begins in
-  `together` and `dueBy` of [`src/rehearse.ts`](../src/rehearse.ts), with the tests its
-  note names in `src/rehearse.test.ts` and `src/runtime/loop.test.ts`. It touches no file of the step The tests of a
-  contract on every backend, so it may run beside it. The step leaves this file when its tests pass, `docs/design.md`
+  entity's order by the stored work, where its loop takes a `Fire`, as the note says, and that whatever keeps a
+  value is made in the scenario, with a third run that tells a failed second run apart. It begins in
+  `together` and `dueBy` of [`src/rehearse.ts`](../src/rehearse.ts), and in the take of a `Fire` by an entity's loop,
+  in [`src/runtime/loop.ts`](../src/runtime/loop.ts) or in `src/machine.ts`, with the tests its note names in
+  `src/rehearse.test.ts`, `src/machine.test.ts` and `src/runtime/loop.test.ts`. Since it changes the runtime, it
+  passes `bun run test:pins` and `bun run test:release` before it is taken. It touches no file of the step The tests
+  of a contract on every backend, so it may run beside it. The step leaves this file when its tests pass,
+  `docs/design.md`
   and `docs/glossary.md` say it, and decision 0293 is taken, `accepted`, by that commit.
 
 - **The process's state as a pure core, and the tests of an order.** The fields of `Process`, `Deployment` and

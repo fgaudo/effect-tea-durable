@@ -6,8 +6,9 @@
 loaded entity's timers, and hands as new in a second call of the scenario. A second model, Fable 5.2, recommended
 that the runtime keep one entity's order where its loop takes a `Fire`, and that a hand that keeps a value be made in
 the scenario. The four risks it raised were tested the same day, under What it rests on. The maintainer chose, in the
-same session, that the runtime keep one entity's order, by the stored work. What the bullet on the scenario called
-twice becomes is still the maintainer's to choose.
+same session, that the runtime keep one entity's order, by the stored work. After a second opinion of Fable 5.2, the
+maintainer chose too that whatever keeps a value is made in the scenario, and that a failed second run is told apart
+by a third.
 
 ## Context
 
@@ -58,12 +59,21 @@ nothing tells the test's writer.
   draws, and a failure names the seed. The step names the option.
 - **A rehearsal warns of a group of three entities or more due at one time, under two runs.** The warning says that
   an order of three entities is not checked, and names the option.
-- **The scenario is a function the rehearsal may call more than once.** A scenario that keeps a value outside the
-  world, as a list of what fired, makes it again in each call. `docs/design.md` says it under Rehearsing a world.
-  The services the scenario runs with are provided outside the rehearsal, and are built once for both calls, as a
-  premise below found. So a hand that keeps a value keeps it across the two runs, unless the rehearsal builds the
-  services itself, from a layer it is given, or a hand that keeps a value is made in the scenario. The maintainer
-  chooses.
+- **The scenario is a function the rehearsal may call more than once.** Whatever keeps a value is made in the
+  scenario: a hand that keeps a value is provided by the scenario itself, and a list the test asserts on is made and
+  asserted in the scenario. A hand that keeps nothing, as one of `Layer.mock`, may stay provided outside the
+  rehearsal. A layer provided outside is built once for every call, and a layer the scenario provides is built again
+  in each. `docs/design.md` says it under Rehearsing a world.
+- **The scenario runs a second time only where the first run met a group of two entities or more due at one time.**
+  A scenario with no such group is called once, as today.
+- **A second run that fails is told apart by a third, in the first run's order.** A third run that fails too finds a
+  scenario that is not the same in each call: the failure says that a value was likely carried from one call to the
+  next, and names the rule above. A third run that passes finds a test that depends on the order: the failure names
+  the second run, the reversed order, the time and the entities. "Likely" is said since a value that alternates from
+  call to call fools the third run.
+- **Each second run writes a line to Effect's log,** with the time and the entities. An assertion the test makes on
+  a list of its own after the rehearsal returns fails where the rehearsal cannot reach it, and the line is what the
+  rehearsal puts beside that failure.
 
 ## What it rests on
 
@@ -118,6 +128,18 @@ nothing tells the test's writer.
   run.
 - That a second run of a scenario costs less than a test that passes on the rehearsal and fails on the runtime:
   **chosen** by the maintainer.
+- That whatever keeps a value is made in the scenario, rather than given to `rehearse.together` as a layer:
+  **chosen** by the maintainer, after Fable 5.2's opinion. A layer given to the rehearsal would build the services
+  again, and would leave a list the test keeps outside as it is, which is the same defect.
+- That a scenario with no group of two entities due at one time is called once: **open**. A test of
+  `src/rehearse.test.ts` that counts the calls checks it.
+- That a hand provided outside that keeps a value fails the second run, and the failure says a value was likely
+  carried: **open**. A test of `src/rehearse.test.ts` with such a hand, and a scenario that asserts what it kept,
+  checks it.
+- That a scenario that depends on the order fails with the message of the reversed order, its third run passing:
+  **open**. A test of `src/rehearse.test.ts` whose hands the scenario makes checks it.
+- That a second run writes its line to the log: **open**. A test of `src/rehearse.test.ts` under a logger that keeps
+  what it is given checks it.
 - That the runtime keeps one entity's order, rather than promising none within one entity: **chosen** by the
   maintainer, after Fable 5.2's opinion. One entity has one loop and one runner on Cluster, so one place orders its
   timers, and a rehearsal needs no reversal within an entity.
@@ -142,6 +164,14 @@ nothing tells the test's writer.
   that depends on the order passes half the time.
 - **Every order, always.** A group of n entities runs n! times, which a scenario that creates many entities at once
   cannot pay.
+- **No order within one entity either, and a rehearsal that reverses those too.** One entity has one loop and one
+  runner, so one place can order its timers. The reversal would reach `rehearse` of one entity too, and the orders
+  of a second run would multiply.
+- **A layer given to `rehearse.together`, which it builds again for each run.** It changes the signature of every
+  rehearsal, and leaves a list the test keeps outside the scenario as it was.
+- **A warning wherever a hand is provided outside the rehearsal.** The rehearsal sees only what the scenario
+  requires, and a hand that keeps nothing is rightly provided outside, so the warning would fire on most tests that
+  are right.
 
 ## Consequences
 
