@@ -480,6 +480,16 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   activation by a program compares each piece stored with the program: the same, changed in a way the table
   allows, which it converts, or changed otherwise, which suspends the entity with a defect that names the piece.
 
+- **Two entities' timers due at one time, in no order.** The design promises no order of two entities' timers due at
+  one time, and a rehearsal of several entities runs its scenario a second time with every such group reversed, so
+  that a test that depends on the order of a pair fails in one of the two runs. An option of `rehearse.together` runs
+  every order of a group of up to four. Its note is
+  [decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md), `proposed`. Nothing of it
+  is written yet. It begins in `together` and `dueBy` of [`src/rehearse.ts`](../src/rehearse.ts), with the tests its
+  note names in `src/rehearse.test.ts` and `src/runtime/loop.test.ts`. It touches no file of the step The tests of a
+  contract on every backend, so it may run beside it. The step leaves this file when its tests pass, `docs/design.md`
+  and `docs/glossary.md` say it, and decision 0293 is taken, `accepted`, by that commit.
+
 - **The process's state as a pure core, and the tests of an order.** The fields of `Process`, `Deployment` and
   `Loaded` that another fiber reads move into a module that imports no `Effect`, as `src/machine.ts` is for an entity.
   The semantics of the process moves there too, and the rehearsal runs it as the runtime does.
@@ -518,10 +528,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     run it. Its cases are the bugs of family C of `docs/bugs.md` that the step The tests of a contract on every
     backend, above, leaves as differences of the answer. A difference of Cluster's tables, its poll or its lease stays
     outside the core.
-  - The fifth part is the policies of the process: the entity unloaded past the capacity, `admit` of
-    `src/runtime/loop.ts`, the rest of the waker, and which of the timers due fires first. Each is tested by
-    fast-check with no scheduler. The part decides the [open question](open-questions.md#running) The order of two
-    timers due at one time.
+  - The fifth part is the policies of the runtime: the entity unloaded past the capacity, `admit` of
+    `src/runtime/loop.ts`, and the round of the waker, `waking` of `src/runtime/waker.ts`. Each is tested by
+    fast-check with no scheduler.
   - The sixth part is the scheduler. A resumption becomes a choice of the strategy, and `Resumptions` goes from
     `src/testing.ts`. `bun run test:explore` runs in a job of the CI on a schedule. A pin of
     `src/runtime.test_pins.ts` goes once a case of the core, a gate or a primitive's test kills its mutation.

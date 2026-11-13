@@ -1047,13 +1047,12 @@ with a requirement that no example has yet.
   runtime does the same for entities loaded. For entities unloaded, it fires first the timer of the smaller id, since
   the waker reads the entities with a timer due in the order of their ids (`due` of `src/storage/entities.ts`). The
   tests `two timers due at one time`, in `src/runtime/loop.test.ts`, show both orders. So a test that passes on the
-  rehearsal by the order of two timers may fail on the runtime. Whether the design promises an order of the timers of
-  two entities is not decided, and
-  [decision 0292](decisions/0292-the-processs-state-is-a-pure-core-and-a-test-holds-an-order-by-its-events.md) waits
-  for it to share the policy between the two. It would be decided by:
-  - whether `docs/design.md` promises an order of two entities' timers due at one time, or says that none holds;
-  - if an order holds, which of the two the waker and the rehearsal both keep: the order of creation or the order of
-    the ids.
+  rehearsal by the order of two timers may fail on the runtime. `docs/design.md` promises no order of two entities'
+  timers due at one time. [Decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md),
+  `proposed`, promises none, and has a rehearsal run its scenario under both orders. The question leaves this file
+  when that note is taken. It would be decided by:
+  - the step Two entities' timers due at one time, in no order, of the [roadmap](roadmap.md), and the tests its note
+    names.
 
 ## Programs
 

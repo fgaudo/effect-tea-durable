@@ -66,10 +66,12 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
   - How a request is answered, alike on one process and on Cluster. A function of what is stored and of a request
     gives the answer and the rows, and both the callers of one process and the door of Cluster run it. What Cluster's
     tables, its poll of replies and its lease do stays outside the core.
-  - The policies of the process: which entity is unloaded past the capacity (decisions 0076 and 0078), how long the
-    waker rests (decisions 0221 and 0258), and which of the timers due fires first. The rehearsal and the runtime
-    fire two timers due at one time in different orders today, so the last of these policies waits for the design to
-    decide the order.
+  - The policies of the process, which only the runtime runs: which entity is unloaded past the capacity (decisions
+    0076 and 0078), and the waker's round, which gives from what it reads and the time the entities to activate, the
+    marks of a crash and of a refusal, and how long it rests (decisions 0221, 0252, 0258, 0259 and 0274). They are in
+    the core to be tested by fast-check with no scheduler, and not to be shared. The order of two entities' timers due
+    at one time is no policy of the core:
+    [decision 0293](0293-two-entities-timers-due-at-one-time-fire-in-no-order.md) promises none.
 - **The shell performs a transition in one synchronous step, and its commands after it.** No `yield*` falls within a
   transition, so no fiber reads the state halfway. A test of [`src/form.test.ts`](../../src/form.test.ts) refuses a
   write of the core's fields outside the core.
@@ -116,9 +118,8 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
 - That the rehearsal and the runtime fire first the same timer of two due at one time: **failed**, **tested** by `two
   timers due at one time`, in `src/runtime/loop.test.ts`. The rehearsal fires first the timer of the entity created
   first. The runtime does the same for entities loaded, and fires first the timer of the smaller id for entities
-  unloaded, since the waker reads them in the order of their ids. So which timer due fires first moves into the first
-  layer only once the [open question](../open-questions.md#running) The order of two timers due at one time decides
-  the order the design promises.
+  unloaded, since the waker reads them in the order of their ids. So the first layer holds no order of the timers of
+  two entities, and [decision 0293](0293-two-entities-timers-due-at-one-time-fire-in-no-order.md) promises none.
 - That the first layer runs the rehearsal with no change of what a test of the rehearsal sees: **open**. The part of
   the step that moves it checks it, by `src/rehearse.test.ts` and `src/rehearse.property.test.ts` passing as they are.
 - That Effect promises no inline resumption: **read** in the JSDoc of `Deferred`, `Fiber.join`, `Effect.callback` and
