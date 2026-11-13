@@ -1017,10 +1017,12 @@ with a requirement that no example has yet.
   loaded nor stopping, would be tested with no scheduler. A fork, a scope and a finalizer stay outside it, and so
   does the order of two transitions with a statement between them. Until it is decided, a rule of
   [`AGENTS.md`](../AGENTS.md) holds the changes to come: two fields another fiber reads together are written in one
-  synchronous step. It waits for the spike the step A test of invariants over generated histories of the
-  [roadmap](roadmap.md) names. It would be decided by:
-  - a spike that moves the writes of `src/runtime/callers.ts` into such functions, and how many seeds
-    `bun run test:pins` loses to it;
+  synchronous step. The step The process's state as a pure core, and the tests of an order, of the
+  [roadmap](roadmap.md) proposes it, in
+  [decision 0292](decisions/0292-the-processs-state-is-a-pure-core-and-a-test-holds-an-order-by-its-events.md), and
+  the question leaves this file when that note is taken. It would be decided by:
+  - the first part of that step, which moves the writes of `src/runtime/callers.ts` into such functions, and how many
+    seeds `bun run test:pins` loses to it;
   - whether a test of `src/form.test.ts` can refuse a write of those fields anywhere else;
   - whether `Semaphore` gives a permit without a step of Effect, or the bound of callers is counted by hand.
 - **A count of the process kept by an observer of a fiber's exit.** `pending`, `detachments`, `leaving`, `operating`
@@ -1037,7 +1039,18 @@ with a requirement that no example has yet.
   `src/runtime/callers.ts`, and `commitOf` in `src/runtime/readings.ts`. Each is written by hand, with a test of its
   own. Whether one function holds the rule for all five is not decided. It would be decided by:
   - whether a module of Effect at the version pinned does the same, among the unstable ones too;
-  - whether the five take their signal alike, or the waker's flag and the readings' count need more than one form.
+  - whether the five take their signal alike, or the waker's flag and the readings' count need more than one form;
+  - whether the pure core of [decision 0292](decisions/0292-the-processs-state-is-a-pure-core-and-a-test-holds-an-order-by-its-events.md)
+    holds the look and the registration in one transition, which would make the primitive needless.
+- **The waker's rest races a take of its poke against a sleep.** `rest` in `src/runtime/waker.ts` waits on
+  `Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(…))`. Decisions 0111 and 0116 took such a race out of an
+  entity's wait, since a take that loses its race could lose its item. A poke lost so would delay a round to the end
+  of its sleep, an hour at most ([decision 0221](decisions/0221-a-timer-sleeps-an-hour-at-most-and-reads-the-wall-clock-again.md)).
+  The spike `spikes/effect-queue-take-timeout-scheduled.test.ts` sees no item lost at Effect 4.1.3, since a race
+  interrupts its losers as it settles. A second model, Fable 5.2, noted the race on 2026-11-13 by a reading of the
+  code, and no test reaches it. It would be decided by:
+  - a test of `src/runtime/waker.test.ts`, under the scheduler, in which a poke lands as the sleep ends, and whether
+    the round that follows reads the timer the poke was for.
 
 ## Programs
 

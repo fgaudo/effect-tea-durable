@@ -442,6 +442,36 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     the runners.
   - The step leaves this file when the parts above are done, and decision 0283 is taken, `accepted`, by that commit.
 
+- **The process's state as a pure core, and the tests of an order.** The fields of `Process`, `Deployment` and
+  `Loaded` that another fiber reads move into a module that imports no `Effect`, as `src/machine.ts` is for an entity.
+  A transition takes a state and an event and gives a state and the commands to perform, and the shell performs it in
+  one synchronous step. A rule of order of the process is then tested by fast-check over the orders of the core's
+  events, with no model of Effect's scheduler. An order at a boundary is tested by a gate on the probe or on a service,
+  and a rule that is a primitive's contract is kept by that primitive. The scheduler of `src/testing.ts` becomes a tool
+  of search, and its pins go one at a time. Its note is
+  [decision 0292](decisions/0292-the-processs-state-is-a-pure-core-and-a-test-holds-an-order-by-its-events.md),
+  `proposed`. Nothing of it is written yet. It comes before the layer on the runtime of the step A test of invariants
+  over generated histories, below, since the core changes how that layer is written.
+  - The first part is the core of the state of [`src/runtime/callers.ts`](../src/runtime/callers.ts) and of the locks
+    of [`src/runtime/process.ts`](../src/runtime/process.ts): the senders waiting for a resumption, the callers by
+    entity and request, and the locks with their users. Its test generates the orders of the events and checks the
+    rules as invariants. Its cases are the two interleavings of
+    [decision 0104](decisions/archive/0104-the-runtimes-tests-choose-where-fibers-yield.md), each of which fails with
+    its rule taken out of the core. The part names the module, adds it to the modules of the runtime in
+    [`AGENTS.md`](../AGENTS.md) and to the diagram of [`CONTRIBUTING.md`](../CONTRIBUTING.md), and counts the seeds
+    `bun run test:pins` loses to it. The part also decides the move of `holding` to `RcMap`, of the later step Code
+    written by hand where a module of Effect does the same, since the core then counts the users of a lock.
+  - The second part is the rest of the state: the counts `settled` and `drained` read, `draining`, the entities
+    stopping, the shards held and the order of use. Its cases are decision 0109, the form of decision 0274 that
+    `settled` reads, and bug 101 of [`docs/bugs.md`](bugs.md), which the part fixes. It decides the
+    [open question](open-questions.md#running) A count of the process kept by an observer of a fiber's exit.
+  - The third part is the scheduler. A resumption becomes a choice of the strategy, and `Resumptions` goes from
+    `src/testing.ts`. `bun run test:explore` runs in a job of the CI on a schedule. A pin of
+    `src/runtime.test_pins.ts` goes once a case of the core, a gate or a primitive's test kills its mutation.
+  - The step leaves this file when the parts above are done, and decision 0292 is taken, `accepted`, by that commit.
+    The same commit changes the rules of `AGENTS.md` on two fields written in one step, on pinned seeds and on
+    `bun run test:pins`.
+
 - **A test of invariants over generated histories.** It is the second kind of test of `AGENTS.md`, which the library
   does not have yet. fast-check generates histories of commands: a message under a new request id or a retried one,
   an operation that completes or fails, time that passes, a crash and a restart, a deploy of a variant of the
@@ -468,12 +498,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - The pieces it reuses are written: the prefix of a run and the shared runners of `src/contract.test.ts`, `onPool`
     for two commands at once on a pool, and the scheduler of `src/testing.ts` with its strategies. Its note is a
     `proposed` note of its own, made with its first part.
-  - Between its first part and its layer on the runtime, a spike moves the writes of `src/runtime/callers.ts` into
-    synchronous functions of a module that imports no `Effect`, and counts the seeds `bun run test:pins` loses. The
-    [open question](open-questions.md#running) The state of a process written only by synchronous functions lists
-    what the spike decides. Such a module would let an invariant of a process's state be tested with no scheduler,
-    which changes how the layer on the runtime is written. The spike comes sooner if the review of the first step
-    finds two bugs of a state read halfway.
+  - Its layer on the runtime waits for the step The process's state as a pure core, and the tests of an order, above.
+    An invariant of a process's state is then tested on the core, with no scheduler, and the layer on the runtime
+    checks what the core does not hold: the database, the forks and the time.
 
 - **The tests pruned by the mutations.** Once the test of invariants exists, `scripts/mutate.ts` takes out each
   rule the notes decide, one at a time. A test of a scenario that fails only where a test of the four kinds of
@@ -500,15 +527,6 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The step also decides whether the runtime
   checks its advisory lock, which a server that ends its session gives back
   ([open question](open-questions.md#running)).
-
-- **The state of a process written only by synchronous functions**, if the spike of the step A test of invariants
-  over generated histories decides for it. The fields of `Process`, `Deployment` and `Loaded` are then written by
-  plain functions of one module, a test of `src/form.test.ts` refuses a write of them elsewhere, and the rule of
-  [`AGENTS.md`](../AGENTS.md) on two fields written in one step gives way to the note that decides it. The
-  [open questions](open-questions.md#running) on a count kept by an observer of a fiber's exit, and on one primitive
-  for a look that waits, are decided with it. It changes no surface, so it does not hold the release up. It moves
-  yields, so it is taken with the move of `holding` to `RcMap` of the step below, and the two find their pinned
-  seeds again and pass `bun run test:release` once.
 
 - **Code written by hand where a module of Effect does the same**, of low priority. A review of `src/` against
   the rule of [`AGENTS.md`](../AGENTS.md) on Effect's modules found four places, on 2026-11-11:
