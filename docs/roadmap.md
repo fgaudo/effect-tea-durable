@@ -429,14 +429,16 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       runner that `everywhere` does not start yet. A difference found is a bug of `docs/bugs.md`, or a case decision
       0283 marks where a note decides it.
     - Read on 2026-11-13 and left as tests of one process: `two operators who discard at once are each told what
-      their own discard did`, which holds the first discard at its commit by a probe; `an operator inspects an
+      their own discard did`, which holds the first discard before its commit by a probe; `an operator inspects an
       entity: its state, its mailbox, its work and its suspension, as stored`, which needs hands that never come
       back, `hands({ holds: true })`, while `everywhere` deploys the toy with hands that do; and `a query finds the
       entities by an index, in order, and gives what callers read`, which runs two processes one after the other.
-    - Not checked yet: whether a runner of Cluster reads the `Probe` that `process` of
-      `src/runtime.test_shared.ts` provides, since `launch` of `src/cluster.ts` wraps the runtime's launch. If it does,
-      `everywhere` could take the hooks, and the rules that hold a step by a probe could move whole. A test of a
-      runner with a hook `at` that records the points it reaches decides it.
+    - Done, on 2026-11-13, whether a runner of Cluster reads the `Probe`: it does, as decision 0283 says, but a rule
+      that holds a step by a probe still stays a test of one process. A door's step says only `BeforeCommit`, inside
+      Cluster's transaction, and a hold there stops both runners on their one file of SQLite. So `everywhere` takes
+      no hooks, and every test of `the runtime on SQLite` that holds a step at `BeforeCommit` stays where it is, the
+      two discards at once among them. Such a rule runs on Cluster once the runners are on a server, in the step The
+      runtime on Cluster across machines, on PostgreSQL, below.
   - The step leaves this file when the parts above are done, and decision 0283 is taken, `accepted`, by that commit.
 
 - **A door that changes between two releases of the library, to verify and fix.** A release of the library that adds
@@ -570,7 +572,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   own is tested on the server of PostgreSQL with a pool that the CI runs
   ([decision 0222](decisions/0222-postgresql-with-many-connections.md)). The step also decides whether the runtime
   checks its advisory lock, which a server that ends its session gives back
-  ([open question](open-questions.md#running)).
+  ([open question](open-questions.md#running)). Its runners on a server run on Cluster too the rules of one process that
+  hold a step by a probe, which a file of SQLite shared by two runners cannot hold
+  ([decision 0283](decisions/0283-a-contract-runs-one-set-of-calls-on-every-backend.md)).
 
 - **Code written by hand where a module of Effect does the same**, of low priority. A review of `src/` against
   the rule of [`AGENTS.md`](../AGENTS.md) on Effect's modules found four places, on 2026-11-11:

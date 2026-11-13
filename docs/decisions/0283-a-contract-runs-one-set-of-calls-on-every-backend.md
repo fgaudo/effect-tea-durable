@@ -109,6 +109,14 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
   needs no test clock and no probe of the runtime: a test that holds a step at a point by a probe, or moves the
   clock, holds an interleaving that Cluster does not give. Such a rule stays a test of one process. Where a part of
   it needs neither, that part may run on both as a rule of its own, as the keep of 0 of decision 0282 does.
+- **A step held by a probe stays a test of one process, though a runner of Cluster reads the probe.** A runner
+  reads the `Probe` around `launch` of `src/cluster.ts`, as the tests of `src/cluster.test.ts` that hold a door's
+  step do. A caller's message and an operator's call reach the entity through its door on Cluster, and a door's
+  step says only `BeforeCommit`, inside Cluster's transaction. A hold there keeps the transaction of SQLite open on
+  the file the two runners share. The driver of `bun:sqlite` is synchronous, so the other runner's statement waits
+  for the lock on the one thread of the test, and every fiber of the test waits with it. So `everywhere` gives no
+  probe. A rule that holds a step by a probe runs on Cluster only once its runners are on a server, in the step
+  The runtime on Cluster across machines, on PostgreSQL.
 - **A failure is pinned as examples of the test.** The first run of 200 on the CI's server failed at the 139th, which
   is bug 25 of [`docs/bugs.md`](../bugs.md): a `reindex` beside a message wrote the projection of the state before the
   message over the row its step committed. Its case, as fast-check shrank it, is pinned on the table of projections,
@@ -154,6 +162,16 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
 - That the rules moved hold on Cluster as on one process: **tested**, by `a rule of one process that holds on Cluster
   too`, which passed five runs in a row on 2026-11-13 on SQLite, PGlite and Cluster. Its tests took 0.3 s at most.
 - That the runners start within a minute: **seen**, in the runs of the test on the maintainer's machine.
+- That a runner of Cluster tells its probe what the runtime does: **tested**, by `a door step whose commit fails is
+  dropped, starts nothing, and is stepped again` of `src/cluster.test.ts`, whose probe breaks the step's commit at
+  `BeforeCommit`.
+- That a step held at `BeforeCommit` on one runner stops both runners on one file of SQLite: **seen**, on
+  2026-11-13, in a rule of two discards at once given a probe by `everywhere`. The first discard reached the hold in
+  13 ms on Cluster, and a sleep of 200 ms of the test ended 22 s later, as the other runner's statements failed with
+  `database is locked`. The rule passed on one process.
+- That an operator's discard on Cluster says no `AfterCommit`: **seen**, in the same rule held at `AfterCommit`
+  instead, whose hold was never reached on Cluster within 5 s, and was reached on one process. The code of
+  `src/runtime/doors.ts` says `AfterCommit` only for a step of the loop of a door, after its own transaction.
 - That the pool reaches bug 80: **tested**, by `two calls held at a statement on a pool answer as one order of
   them`, whose examples `bug80` lock the publications. On 2026-11-13, in the job `postgres` of the CI, the test
   **failed** at its first example of bug 80 against the trigger once for each row before decision 0286, on the push of
