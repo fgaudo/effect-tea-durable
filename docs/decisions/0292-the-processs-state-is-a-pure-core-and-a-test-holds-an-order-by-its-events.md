@@ -67,7 +67,9 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
     gives the answer and the rows, and both the callers of one process and the door of Cluster run it. What Cluster's
     tables, its poll of replies and its lease do stays outside the core.
   - The policies of the process: which entity is unloaded past the capacity (decisions 0076 and 0078), how long the
-    waker rests (decisions 0221 and 0258), and which of the timers due fires first.
+    waker rests (decisions 0221 and 0258), and which of the timers due fires first. The rehearsal and the runtime
+    fire two timers due at one time in different orders today, so the last of these policies waits for the design to
+    decide the order.
 - **The shell performs a transition in one synchronous step, and its commands after it.** No `yield*` falls within a
   transition, so no fiber reads the state halfway. A test of [`src/form.test.ts`](../../src/form.test.ts) refuses a
   write of the core's fields outside the core.
@@ -111,9 +113,12 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
 - That one function answers a request alike on one process and on Cluster: **open**. The step The tests of a
   contract on every backend, which comes first, shows which differences of Cluster are of the answer, and which are
   of Cluster's tables, its poll or its lease, which stay outside the core.
-- That the rehearsal and the runtime fire first the same timer of two due at one time: **open**. The rehearsal fires
-  the one of the entity created first, and the runtime reads them by a statement of its own. The
-  [open question](../open-questions.md#running) The order of two timers due at one time holds it.
+- That the rehearsal and the runtime fire first the same timer of two due at one time: **failed**, **tested** by `two
+  timers due at one time`, in `src/runtime/loop.test.ts`. The rehearsal fires first the timer of the entity created
+  first. The runtime does the same for entities loaded, and fires first the timer of the smaller id for entities
+  unloaded, since the waker reads them in the order of their ids. So which timer due fires first moves into the first
+  layer only once the [open question](../open-questions.md#running) The order of two timers due at one time decides
+  the order the design promises.
 - That the first layer runs the rehearsal with no change of what a test of the rehearsal sees: **open**. The part of
   the step that moves it checks it, by `src/rehearse.test.ts` and `src/rehearse.property.test.ts` passing as they are.
 - That Effect promises no inline resumption: **read** in the JSDoc of `Deferred`, `Fiber.join`, `Effect.callback` and
@@ -124,8 +129,10 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
   other code.
 - That a test can replace the runtime's probe and hold a step at a point: **tested** by `an event it cannot finish
   crashes its entity alone, and the next caller finds it again`, in `src/runtime.test.ts`.
-- That `Latch`, `Queue` and `Semaphore` wake a waiter by a task, and not inline: **open**. Fable 5.2 read it in the
-  source of 4.1.3, and no JSDoc says it. No rule of this note rests on it.
+- That `Latch`, `Queue` and `Semaphore` wake a waiter by a task, and not inline: **seen** in the spike
+  `spikes/effect-primitives-wake-by-a-task.test.ts` at 4.1.3, under a scheduler that holds every task. No JSDoc says
+  it, and no rule of this note rests on it. The same spike sees a `Deferred` and a `Fiber.join` resume their waiter
+  inline.
 - That a gate holds only an order someone foresaw, while the scheduler found orders no one had written: **seen** in
   decisions 0109, 0110 and 0274 and in bug 101, each of which names the seed that found its bug.
 - That the scheduler, asked at each resumption, reaches both orders of a waiter and its resumer: **open**. A test of

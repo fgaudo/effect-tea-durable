@@ -22,6 +22,7 @@ import * as Machine from '../machine.ts'
 import { InvariantDefect, type Program, timer } from '../program.ts'
 import * as Library from '../index.ts'
 import { type Answer, type Options, type Point } from '../runtime.ts'
+import { rehearse } from '../rehearse.ts'
 import { storage } from '../storage.ts'
 import {
   adjusted,
@@ -1595,5 +1596,77 @@ describe('a repeating timer that catches up', () => {
           }
           expect(periods).toEqual([1, 2, 3, 3])
         }))
+    })))
+})
+
+// Of two timers due at one time, a rehearsal fires first the one of the entity created first (`dueBy` of
+// `src/rehearse.ts`). Decision 0292 rests on the runtime firing the same one first, so that the core holds one policy.
+describe('two timers due at one time', () => {
+  // `b` is created before `a`, so that the order of creation and the order of the ids differ. Each entity's flags
+  // name it in its state, so that a rehearsal, which has no probe, tells which fired from the message it handles.
+  const ids = ['b', 'a']
+  const flagsOf = (entity: string) => ({ at: DateTime.makeUnsafe(ids.indexOf(entity) + 1) })
+  const nameOf = (state: T['state']) => ids[Number(state.applied[0]) - 1]!
+  const fired: Array<string> = []
+  const ordered: Program<T> = {
+    ...timed,
+    name: 'Ordered',
+    // `timed` creates every entity with the same state, and never rejects a creation.
+    init: (flags, at) => ({ ...timed.init(flags, at) as T['state'], applied: [String(DateTime.toEpochMillis(flags.at))] }),
+    update: (message, meta) => (state) => {
+      if (message._tag === 'Rang') fired.push(nameOf(state))
+      return timed.update(message, meta)(state)
+    },
+  }
+
+  test('a rehearsal fires first the timer of the entity created first', async () => {
+    fired.length = 0
+    await Effect.runPromise(rehearse.together(DateTime.makeUnsafe(0), Effect.fnUntraced(function*(world) {
+      for (const entity of ids) yield* world.create(ordered, entity, flagsOf(entity))
+      yield* world.advance('40 millis')
+    })).pipe(Effect.provide(Layer.mock(Hands, {}))))
+    expect(fired).toEqual(['b', 'a'])
+  })
+
+  const runtimeOrder = (passivate: boolean) =>
+    Effect.gen(function*() {
+      const order: Array<string> = []
+      const { entities, unloaded } = unloads()
+      yield* process({
+        unloaded,
+        ...(passivate ? { passivate: { millis: 5 } } : {}),
+        observe: (entity, event) =>
+          Effect.sync(() => {
+            if (event._tag === 'Fire') order.push(entity.id)
+          }),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(ordered), (yield* hands()).layer)
+          for (const entity of ids) {
+            yield* toy.create(entity, { flags: flagsOf(entity), requestId: entity, sender: tester })
+            yield* runtime.settled
+          }
+          // Unloaded, the entities are activated by the waker, which reads them in the order of their ids.
+          if (passivate) {
+            yield* TestClock.adjust('5 millis')
+            yield* runtime.settled
+            expect([...entities].sort()).toEqual(['a', 'b'])
+          }
+          yield* TestClock.adjust('40 millis')
+          yield* runtime.settled
+        }))
+      return order
+    })
+
+  test('the runtime fires first the same timer as a rehearsal, for entities loaded', () =>
+    database(Effect.gen(function*() {
+      expect(yield* runtimeOrder(false)).toEqual(['b', 'a'])
+    })))
+
+  // The premise of decision 0292 fails here: the waker reads the entities due in the order of their ids (`due` of
+  // `src/storage/entities.ts`), so `a` fires first, and a rehearsal fires `b` first.
+  test('the runtime fires first the timer of the smaller id, for entities unloaded, unlike a rehearsal', () =>
+    database(Effect.gen(function*() {
+      expect(yield* runtimeOrder(true)).toEqual(['a', 'b'])
     })))
 })
