@@ -256,8 +256,8 @@ export const operatedCodec = Schema.fromJsonString(Schema.Union([
 ]))
 
 /**
- * The text of what a step answers a creation: `Created`, `AlreadyExists`, or `Rejected` where the program's `init`
- * rejects the flags (decision 0182).
+ * The text of what a step answers a creation: `Created`, `AlreadyExists`, `Rejected` where the program's `init`
+ * rejects the flags (decision 0182), or `Died` where the program dies on the creation (decision 0291).
  */
 export const creationCodec = <T extends Types>(program: Program<T>) =>
   Schema.fromJsonString(Schema.Union([
@@ -265,15 +265,18 @@ export const creationCodec = <T extends Types>(program: Program<T>) =>
     Schema.TaggedStruct('AlreadyExists', {}),
     Schema.TaggedStruct('Rejected', { reason: Schema.NullOr(program.schemas.rejection) }),
     Schema.TaggedStruct('Reused', {}),
+    Schema.TaggedStruct('Died', { cause: Schema.String }),
   ]))
 
 /**
  * The text of a step's answer to a creation that is not stored: Cluster saves it, and a creator's client resets it, as
- * a message's `NotFound`. A `Rejected` is not stored (decision 0182), nor is a `Reused` (decision 0269).
+ * a message's `NotFound`. A `Rejected` is not stored (decision 0182), nor is a `Reused` (decision 0269), nor is a
+ * `Died` (decision 0291).
  */
-const creationRejected = Schema.fromJsonString(Schema.Union([
+const creationNotStored = Schema.fromJsonString(Schema.Union([
   Schema.TaggedStruct('Rejected', { reason: Schema.Unknown }),
   Schema.TaggedStruct('Reused', {}),
+  Schema.TaggedStruct('Died', { cause: Schema.Unknown }),
 ]))
 
 /**
@@ -347,10 +350,10 @@ export const onCluster: Effect.Effect<
     const noReplySaved = (latest: Reply.Encoded) =>
       latest._tag === 'WithExit' && latest.exit._tag === 'Success' &&
       Option.isSome(Schema.decodeUnknownOption(noReply)(latest.exit.value))
-    /** A creation's answer that is not stored, `Rejected`, as Cluster saved it (decision 0182). */
-    const rejectedSaved = (latest: Reply.Encoded) =>
+    /** A creation's answer that is not stored, `Rejected` or `Died`, as Cluster saved it (decisions 0182, 0291). */
+    const notStoredSaved = (latest: Reply.Encoded) =>
       latest._tag === 'WithExit' && latest.exit._tag === 'Success' &&
-      Option.isSome(Schema.decodeUnknownOption(creationRejected)(latest.exit.value))
+      Option.isSome(Schema.decodeUnknownOption(creationNotStored)(latest.exit.value))
     /**
      * A failure Cluster saved of its own: a door's handler fails with nothing, and a defect of it is not saved. The
      * one the runtime meets is an entity type no runner registered in time (decisions 0092, 0168).
@@ -480,15 +483,16 @@ export const onCluster: Effect.Effect<
             )),
           kept,
         )
-        // A rejection is not stored, and Cluster's client gives a saved answer as it gives a new one. So a `Rejected`
-        // Cluster saved under the request is reset before the creation is sent, and a retry under the same request id
-        // runs `init` again, as on one process. Before the send, and not after the answer: a process that dies
-        // between the answer and a reset would leave a saved `Rejected` for the retry (decision 0182).
+        // A rejection is not stored, nor a defect, and Cluster's client gives a saved answer as it gives a new one. So a
+        // `Rejected` or a `Died` Cluster saved under the request is reset before the creation is sent, and a retry
+        // under the same request id runs `init` again, as on one process. Before the send, and not after the answer: a
+        // process that dies between the answer and a reset would leave a saved answer for the retry (decisions 0182,
+        // 0291).
         return keptGiven(
           program.name,
           'Create',
           sent,
-          Effect.andThen(reset(program.name, 'Create', sent, rejectedSaved), once),
+          Effect.andThen(reset(program.name, 'Create', sent, notStoredSaved), once),
           given,
         )
       },

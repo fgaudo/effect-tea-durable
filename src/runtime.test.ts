@@ -3765,6 +3765,33 @@ describe('what the runtime cannot finish', () => {
         }))
     })))
 
+  // An operation's creation that `init` dies on is the operation's defect, and suspends its entity, the sender
+  // (decision 0046). The cause is the text Cluster's door answers in `Died`, so that both backends suspend the sender
+  // with the same text (decision 0291).
+  test('an operation’s creation init dies on suspends the sender with the defect’s text', () =>
+    database(Effect.gen(function*() {
+      const at = yield* DateTime.now
+      const { layer } = yield* hands()
+      const dying: Program<T> = { ...program, name: 'Dying', init: () => defect('init died') }
+      const sender: Program<Omit<T, 'services'> & { services: Entities }> = {
+        ...sending,
+        operations: {
+          ...sending.operations,
+          C: operation.atLeastOnce(({ key }) => Effect.as(createFrom(dying, 'd', 'make', { at }), done(key))),
+        },
+      }
+      yield* process({}, (runtime) =>
+        Effect.gen(function*() {
+          yield* Effect.provide(runtime.deploy(dying), layer)
+          const from = yield* runtime.deploy(sender)
+          yield* ran(from.create('sender', { flags: { at }, requestId: 'creation', sender: tester }))
+          yield* runtime.settled
+          expect((yield* from.suspended).map(({ id, cause }) => ({ id, cause }))).toEqual([
+            { id: 'sender', cause: Machine.render(new InvariantDefect({ reason: 'init died' })) },
+          ])
+        }))
+    })))
+
   // A rejection at creation is not stored, as a defect is not: a retry under the same request id runs `init` again
   // (decision 0182).
   test('a creation init rejects stores nothing, and a retry under its request id runs init again', () =>

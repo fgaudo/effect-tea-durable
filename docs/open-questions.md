@@ -647,21 +647,6 @@ with a requirement that no example has yet.
     or the answer is read and kept under the receiver's lock.
   [Decision 0274](decisions/0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md) keeps two runs of one incarnation apart on one runner and across an orderly move of a
   shard, so the second bullet is left to a runner that lost its lease.
-- **A creation that `init` dies on, on Cluster.** On one process, an operation's creation that `init` dies on
-  suspends the sender ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). On
-  Cluster the door dies, and Cluster delivers the creation again without end
-  ([decision 0160](decisions/archive/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)),
-  so the operation's `create` waits until a fix is deployed. The sender is not suspended and the receiver does not
-  exist, so `suspended` lists nothing, and only Cluster's log of restarts shows it. The sender's entity stays busy,
-  and is never unloaded. An operator cannot see what waits. Neither 0160 nor
-  [decision 0167](decisions/archive/0167-on-cluster-an-operation-sends-through-the-doors-client-and-is-woken-by-resumed.md)
-  says what holds of 0046's rule on Cluster. A test of `src/cluster.test.ts` finds `suspended` empty while Cluster
-  restarts the door, which is bug 10 of [`docs/bugs.md`](bugs.md), reproduced. Cluster replays the creation first at each restart of the door, so another creator of the
-  id, whose flags `init` accepts, waits for ever behind it, where one process answers it `Created`, which is bug 58,
-  reproduced. A message to the id waits the same way. It would be decided by:
-  - whether an operator is meant to see such a creation, and through which call;
-  - whether the door answers such a creation with an answer the creator's client resets, as for `Rejected`, or the
-    runtime stores the defect in its own tables and frees the id.
 - **The rows of operators' events on Cluster.** An operator resumes and discards through the door's client on
   Cluster ([decision 0166](decisions/archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)).
   The client keeps the Cluster id its door's answer carries once it has the answer, and a step or `expire` deletes
@@ -686,8 +671,10 @@ with a requirement that no example has yet.
     keep of the first client's reply and, interrupted then, leave the rows for ever.
 - **A cause holding U+0000 in Cluster's tables.** A defect's cause is written as text every database holds, with U+0000
   escaped ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)), in the
-  runtime's tables. A door that dies on such a cause may hand it to Cluster, which stores it in its own tables
-  unescaped, and so may a failure Cluster saves
+  runtime's tables. A door's `Died` carries its cause escaped, and Cluster writes its reply as JSON, which escapes a
+  U+0000 too: a test of [decision 0291](decisions/0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md) finds none in `cluster_replies` on SQLite, with the
+  cause written escaped or not. A door that dies on such a cause may still hand it to Cluster, which may store it in
+  its own tables unescaped, and so may a failure Cluster saves
   ([decision 0168](decisions/archive/0168-on-cluster-a-failure-cluster-saved-is-reset-before-it-is-given.md)). It matters once Cluster runs on PostgreSQL, the step Later of the roadmap. The premise review of
   2026-11-11 noticed it and did not check it. It would be decided by reading what Cluster stores of a defect in
   `node_modules/effect/src`, and a test on the CI's PostgreSQL once that step starts.

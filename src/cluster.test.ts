@@ -39,6 +39,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addressText, byVersion, doorOf, launch, sharding } from './cluster.ts'
+import { render } from './machine.ts'
 import {
   create as createFrom,
   defect,
@@ -604,6 +605,8 @@ describe('the runtime on Cluster', () => {
   let afterCommit: 'at once' | 'deferred' | 'died' | null = null
   /** Whether `init` rejects every creation in the test under way. */
   let refusing = false
+  /** The reason `init` dies with at every creation in the test under way, if any. */
+  let dying: string | null = null
   const tally: Program<Tally> = {
     name: 'Tally',
     keys: { ask: null },
@@ -625,6 +628,8 @@ describe('the runtime on Cluster', () => {
     init: ({ start }) =>
       refusing
         ? rejectWith({ why: 'closed' })
+        : dying !== null
+        ? defect(dying)
         : start < 0
         ? defect('a tally starts at zero or more')
         : { n: start, asking: false },
@@ -714,6 +719,7 @@ describe('the runtime on Cluster', () => {
     asked = 0
     afterCommit = null
     refusing = false
+    dying = null
     try {
       await Effect.runPromise(
         Effect.scoped(launched).pipe(Effect.provide([Layer.orDie(runner), collected])) as Effect.Effect<void>,
@@ -1096,19 +1102,99 @@ describe('the runtime on Cluster', () => {
       expect(yield* stateOf).toEqual({ n: 1, asking: false })
     })), 30_000)
 
-  test('a creation the program dies on stores nothing, saves no reply, and is delivered again', () =>
+  // A creation the program dies on is answered `Died` with its cause, which Cluster saves as the request's reply. The
+  // saved reply ends Cluster's restarts of the door: its backoff resets once a request completes.
+  test('a creation the program dies on stores nothing, is answered Died, and is not delivered again', () =>
     onRunner(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
+      const clientOf = yield* doorOf('Tally').client
+      const answered = yield* clientOf('one').Create({
+        version: 1,
+        request: caller('c1'),
+        message: JSON.stringify({ start: -1 }),
+      }).pipe(Effect.timeout('1500 millis'))
+      expect(JSON.parse(answered)).toEqual({ _tag: 'Died', cause: render(new InvariantDefect({ reason: 'a tally starts at zero or more' })) })
+      yield* Effect.sleep('1500 millis')
+      expect(yield* sql`SELECT 1 FROM effecttea_entities`).toEqual([])
+      const replies = yield* sql<{ n: number }>`SELECT COUNT(*) AS n FROM cluster_replies`
+      expect(Number(replies[0]?.n)).toBe(1)
+      const messages = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Create'`
+      expect(messages.map(({ processed }) => Number(processed))).toEqual([1])
+    })), 30_000)
+
+  // Bug 58 of docs/bugs.md: a creation the program died on no longer replays ahead of another creator of its id, which
+  // is answered `Created`, as on one process (decision 0124).
+  test('a creation the program dies on leaves another creator of its id to create the entity', () =>
+    onRunner(Effect.gen(function*() {
       const clientOf = yield* doorOf('Tally').client
       yield* clientOf('one').Create({ version: 1, request: caller('c1'), message: JSON.stringify({ start: -1 }) }, {
         discard: true,
       })
-      yield* Effect.sleep('1500 millis')
-      expect(yield* sql`SELECT 1 FROM effecttea_entities`).toEqual([])
-      expect(yield* sql`SELECT 1 FROM cluster_replies`).toEqual([])
-      const messages = yield* sql<{ processed: number }>`SELECT processed FROM cluster_messages WHERE tag = 'Create'`
-      expect(messages.map(({ processed }) => Number(processed))).toEqual([0])
-    })).then(() => expect(warningsAndErrors()).toEqual([restarted('a tally starts at zero or more')])), 30_000)
+      yield* Effect.sleep('500 millis')
+      const sender = { user: 'u' }
+      const second = yield* Effect.timeoutOption(
+        handle!.create('one', { flags: { start: 1 }, requestId: 'c2', sender }),
+        '1500 millis',
+      )
+      expect(second).toEqual(Option.some({ _tag: 'Created' }))
+    })), 30_000)
+
+  // A caller is given the defect of a creation the program dies on, as on one process (decision 0124), and its retry
+  // after a fix of the same version runs `init` again: the client resets the `Died` Cluster saved before it sends.
+  test('a caller’s creation init dies on is given the defect, and a retry after a fix creates the entity', () =>
+    onRunner(Effect.gen(function*() {
+      const sender = { user: 'u' }
+      const creating = { flags: { start: 1 }, requestId: 'c1', sender }
+      dying = 'a tally dies at its creation'
+      const died = yield* Effect.exit(Effect.timeout(handle!.create('one', creating), '1500 millis'))
+      expect(defectOf(died)).toBe(render(new InvariantDefect({ reason: 'a tally dies at its creation' })))
+      dying = null
+      expect(yield* handle!.create('one', creating)).toEqual({ _tag: 'Created' })
+      expect(yield* stateOf).toEqual({ n: 1, asking: false })
+    })), 30_000)
+
+  // A `Died` that Cluster saved and no client reset, as after a process died before the reset, is reset before the
+  // creation is sent, so that a retry runs `init` again, as for a `Rejected` (decision 0182).
+  test('a creation init died on, whose saved answer was never reset, runs init again at the retry', () =>
+    onRunner(Effect.gen(function*() {
+      dying = 'a tally dies at its creation'
+      // The request's canonical text, as the runtime keys a caller's request, so that both share a primary key.
+      const request = JSON.stringify({ _tag: 'Caller', id: 'c1', sender: { user: 'u' } })
+      const answered = yield* Effect.flatMap(doorOf('Tally').client, (clientOf) =>
+        clientOf('one').Create({ version: 1, request, message: JSON.stringify({ start: 1 }) })).pipe(
+          Effect.timeout('1500 millis'),
+        )
+      expect(JSON.parse(answered)._tag).toBe('Died')
+      dying = null
+      const sender = { user: 'u' }
+      expect(yield* handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender })).toEqual({ _tag: 'Created' })
+      expect(yield* stateOf).toEqual({ n: 1, asking: false })
+    })), 30_000)
+
+  // The cause a door answers holds the program's text, which is written as every database holds it: a U+0000 is
+  // escaped, as in a suspension's cause (decision 0205). Cluster writes its reply as JSON, which escapes it too, so the
+  // reading of its row holds without the escape; the caller's defect is the text the escape gives.
+  test('the cause of a creation the program dies on reaches Cluster with its U+0000 escaped', () =>
+    onRunner(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const sender = { user: 'u' }
+      const reason = 'a tally\u0000dies'
+      dying = reason
+      const died = yield* Effect.exit(Effect.timeout(
+        handle!.create('one', { flags: { start: 1 }, requestId: 'c1', sender }),
+        '1500 millis',
+      ))
+      const cause = render(new InvariantDefect({ reason }))
+      expect(cause).toContain('\\u0000')
+      // Every column of Cluster's reply, as the text it holds.
+      const rows = yield* sql<Record<string, unknown>>`SELECT * FROM cluster_replies`
+      const texts = rows.flatMap((row) => Object.values(row)).map((value) =>
+        value instanceof Uint8Array ? new TextDecoder().decode(value) : String(value)
+      )
+      expect(texts.some((text) => text.includes('Died'))).toBe(true)
+      expect(texts.some((text) => text.includes('\u0000'))).toBe(false)
+      expect(defectOf(died)).toBe(cause)
+    })), 30_000)
 
   test('what a door step sets going starts once it commits, and its completion is stepped by the loop', () =>
     onRunner(Effect.gen(function*() {
@@ -1296,6 +1382,8 @@ describe('the shards of a runner on Cluster', () => {
   let regionGate: Promise<void> | null = null
   /** Whether the region of an `Ask` sends its poke to an entity of `ghost` instead of `bell`. */
   let haunting = false
+  /** Whether the `init` of `bell` takes an id that starts with `dying`, as a fix of the program would. */
+  let mended = false
   /** What an `Ask` of `who` on `port` saw of its poke of `to`, as a line of `seen`. */
   const poked = (what: string, who: string, to: string, port: number) =>
     Effect.matchCause({
@@ -1348,7 +1436,7 @@ describe('the shards of a runner on Cluster', () => {
     init: ({ who }) =>
       who.startsWith('closed')
         ? reject
-        : who.startsWith('dying')
+        : who.startsWith('dying') && !mended
         ? defect('a bell named dying cannot ring')
         : { who, asking: false, ring: null, rung: false, n: 0, relay: null, relayed: null, haunt: null },
     update: (message) => (state) => {
@@ -1561,6 +1649,7 @@ describe('the shards of a runner on Cluster', () => {
     inRegion = () => null
     regionGate = null
     haunting = false
+    mended = false
     // Cluster may log that no runner is healthy as its runners shut down, between a runner's unregistration and the
     // interruption of its loop of assignments. What the teardown logs of it is Cluster's, and is dropped.
     let ended = -1
@@ -2429,10 +2518,10 @@ describe('the shards of a runner on Cluster', () => {
         expect(yield* count(sql<{ held: number }>`SELECT COUNT(*) AS held FROM effecttea_sent_requests`)).toBe(0)
       })), 30_000)
 
-  // Bug 10 of docs/bugs.md: on one process an operation's creation that `init` dies on suspends the sender (decision
-  // 0046). On Cluster the door dies and Cluster delivers the creation again without end (decision 0160), so the
-  // operation's `create` waits, Cluster logs a restart at each delivery, and `suspended` lists nothing.
-  test.failing('FAILING: an operation’s creation init dies on suspends the sender, as on one process', () =>
+  // An operation's creation that `init` dies on is answered `Died`, which the operation's client gives as the
+  // operation's defect, so that the sender is suspended, as on one process (decision 0046). A resume after a fix runs
+  // the operation again, whose client resets the saved `Died` before it sends: `init` runs again.
+  test('an operation’s creation init dies on suspends the sender, and a resume after a fix creates the entity', () =>
     onFile((start) =>
       Effect.gen(function*() {
         const runner = yield* start(1)
@@ -2445,8 +2534,44 @@ describe('the shards of a runner on Cluster', () => {
           until: (listed) => listed.length > 0,
         }).pipe(Effect.timeoutOption('1500 millis'))
         expect(Option.match(listed, { onNone: () => [], onSome: (listed) => listed.map(({ id }) => id) })).toEqual(['one'])
+        expect(Option.getOrThrow(listed)[0]?.cause).toBe(
+          render(new InvariantDefect({ reason: 'a bell named dying cannot ring' })),
+        )
         expect(yield* stateOf('dying')).toBeUndefined()
-      })).finally(() => void warningsAndErrors()), 30_000)
+        mended = true
+        expect(yield* runner.bell.resume('one')).toEqual({ _tag: 'Resumed' })
+        expect(yield* until(stateOf('one'), (state) => state?.relayed !== null)).toMatchObject({
+          relay: null,
+          relayed: 'Created/Accepted',
+        })
+        expect(yield* stateOf('dying')).toMatchObject({ who: 'dying', n: 1 })
+      })), 30_000)
+
+  // Two clients of one creation `init` died on, on two runners, each reset the saved `Died` before they send. A reset
+  // that finds a newer reply leaves it, so the entity is created once, and each is answered `Created` (decision 0165).
+  slow('two callers of one creation init died on, on two runners, are both answered Created once it is fixed', () =>
+    onFile((start) =>
+      Effect.gen(function*() {
+        const first = yield* start(1)
+        const second = yield* start(2)
+        yield* until(
+          Effect.sync(() => [first.count(), second.count()] as const),
+          ([one, two]) => one > 0 && two > 0 && one + two === shardsPerGroup,
+        )
+        const sender = { user: 'u' }
+        for (const id of ['dying-1', 'dying-2', 'dying-3']) {
+          mended = false
+          const creating = { flags: { who: id }, requestId: `c-${id}`, sender }
+          const died = yield* Effect.exit(Effect.timeout(first.bell.create(id, creating), '1500 millis'))
+          expect(defectOf(died)).toBe(render(new InvariantDefect({ reason: 'a bell named dying cannot ring' })))
+          mended = true
+          const both = yield* Effect.all([first.bell.create(id, creating), second.bell.create(id, creating)], {
+            concurrency: 'unbounded',
+          }).pipe(Effect.timeout('5 seconds'))
+          expect(both).toEqual([{ _tag: 'Created' }, { _tag: 'Created' }])
+          expect(yield* stateOf(id)).toMatchObject({ who: id, n: 0 })
+        }
+      })), 30_000)
 
   slow('a request Cluster failed, its type registered by no runner in time, is reset, and handled once it is', () =>
     onFile((start) =>

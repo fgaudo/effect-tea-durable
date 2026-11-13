@@ -598,10 +598,16 @@ export type Delivered = Readonly<{
 /** An operator's `Resume` or `Discard` that reaches a program's door on Cluster, for the entity `id` (decision 0166). */
 export type Operating = Readonly<{ _tag: 'Resume' | 'Discard'; id: string }>
 
+/**
+ * What a door's step answers a creation the program dies on: the defect's cause as an operator reads it. The creator's
+ * client gives it as the creator's defect, as one process does (decision 0291).
+ */
+export type Died = Readonly<{ _tag: 'Died'; cause: string }>
+
 /** What a door's step answers: a message's answer, a creation's, or what an operator's event did. */
 export type DoorAnswer<Reason> =
   | Readonly<{ _tag: 'Message'; answer: Reply<Reason> | Readonly<{ _tag: 'Suspended' }> | Reused }>
-  | Readonly<{ _tag: 'Create'; answer: Creation<Reason> | Reused }>
+  | Readonly<{ _tag: 'Create'; answer: Creation<Reason> | Reused | Died }>
   | Readonly<{ _tag: 'Operated'; answer: Operated }>
 
 /**
@@ -658,8 +664,9 @@ export interface OnCluster {
   readonly others: Readonly<{ version: Effect.Effect<number, unknown>; millis: number }>
   /**
    * A creation, sent through the program's door by Cluster's client, from whatever runner the sender is on: what the
-   * door's step answered it (decision 0165). An answer `Rejected` is not stored: one Cluster saved under the request is
-   * reset before the creation is sent, so that a caller's retry runs `init` again (decision 0182). An operation's
+   * door's step answered it (decision 0165). An answer `Rejected` is not stored, nor is a `Died`: one Cluster saved
+   * under the request is reset before the creation is sent, so that a caller's retry runs `init` again (decisions
+   * 0182, 0291). An operation's
    * rejection is kept by the door's step, which answers the creation sent again with it (decision 0253). A failure
    * Cluster saved as its reply is reset
    * before it is given (decision 0168). `kept` is an operation's: the client calls it with the request's Cluster id
@@ -674,7 +681,7 @@ export interface OnCluster {
     sent: Omit<Delivered, '_tag' | 'keep'>,
     kept?: (requestId: string) => Effect.Effect<boolean>,
     given?: (requestId: string, least: number) => Effect.Effect<void>,
-  ) => Effect.Effect<Creation<T['rejection']> | Reused>
+  ) => Effect.Effect<Creation<T['rejection']> | Reused | Died>
   /**
    * A message, sent through the program's door by Cluster's client. An answer `Suspended` or `NotFound` is no reply:
    * Cluster's row of it is reset, and the message sent again, whose answer is given (decisions 0085, 0165). A failure

@@ -240,7 +240,11 @@ export const create = <T extends Types>(
             (now) => deployed.storage.keepGiven(requestId, id, DateTime.toEpochMillis(now) + least),
           )
         : undefined
-      return yield* p.cluster.create(deployed.program, sent, keptFor(p, deployed, request), given)
+      const answered = yield* p.cluster.create(deployed.program, sent, keptFor(p, deployed, request), given)
+      // The door's `Died` is the creator's defect, as `init`'s defect is on one process: its cause's text is what a
+      // suspension of an operation's sender stores, as one process stores it (decision 0291).
+      if (answered._tag === 'Died') return yield* Effect.fail(new Faulted({ defect: answered.cause }))
+      return answered
     }
     // Detached from the caller: a creation committed is always started, and its entity loaded (decision 0079).
     const asked = yield* detached(p, deployed, holding(p, entity)(Effect.gen(function*() {

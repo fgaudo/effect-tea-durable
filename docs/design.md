@@ -1589,9 +1589,12 @@ operations. A loop with nothing to do starts its wait at once
 - A request is keyed by the version that keyed it and its `requestKey`. Cluster answers a retry within a version, and
   the runtime's replies answer one across versions
   ([decision 0085](decisions/archive/0085-on-cluster-a-request-is-keyed-and-answered-as-on-one-process.md)).
-- Everything a step answers is a success of the RPC, as text. A creation the program dies on stores nothing, and
-  Cluster delivers it again until a deploy fixes the program
+- Everything a step answers is a success of the RPC, as text
   ([decision 0160](decisions/archive/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)).
+  A creation the program dies on stores nothing, and is answered `Died` with its cause. The creator's client resets
+  a `Died` Cluster saved before it sends, and gives it as the creator's defect, as one process does: a caller is
+  given the defect, an operation's sender is suspended, and a retry runs `init` again
+  ([decision 0291](decisions/0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md)).
 - What a door's step sets going starts once the step has committed. The entity's row counts the steps that wrote it,
   and the next step of the entity settles the uncommitted machine by that count. On Cluster an entity's lock is
   taken only inside a transaction, or by code that touches no database while it holds it, so nothing holds the lock

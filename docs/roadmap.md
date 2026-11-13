@@ -64,7 +64,7 @@ it leaves this file, and what it decided goes into the design, a decision or an 
         was taken on 2026-11-12, and the area runs first of the second reading below, in a session that did not write
         them. The other notes of those fixes lie in sections already read, and the second
         reading reads them with their areas.
-    14. The notes taken after area 13: 0281 and 0282. Each note taken while the second reading runs joins this area. It is
+    14. The notes taken after area 13: 0281, 0282 and 0284 to 0291, ten notes. Each note taken while the second reading runs joins this area. It is
         read by a session that did not write its notes, once they are fifteen, or after the last area of the second
         reading.
   - Each area also reads, against the notes of the areas already read, every later note of its own that cites
@@ -375,7 +375,8 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     property `every backend answers every call alike` runs the calls fast-check generates on SQLite, on PostgreSQL and
     on Cluster with two runners, which start once in a `beforeAll` and which the runs share. Each run prefixes its ids
     and request ids, and every reading names the run by the index `run`. Cluster's answer to a creation the program
-    dies on, which decision 0160 decides, is marked once there, by `diesOn` and `pastWaits`. It passed 300 runs under
+    dies on, which decision 0160 decided, was marked once there, by `diesOn` and `pastWaits`, until decision 0291
+    made every backend answer it alike. It passed 300 runs under
     `SCHEDULES=all`.
   - Done, on 2026-11-12, the pool, for family D: the test `two calls held at a statement on a pool answer as one
     order of them`, in the same file. A history makes the entities `a` and `b`, sends a few messages one at a time,
@@ -426,15 +427,15 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   - Done, on 2026-11-13, bug 11, the rows of an operator's resume or discard that Cluster kept for ever: reproduced
     by a test of `src/cluster.test.ts`, and fixed by
     [decision 0290](decisions/0290-on-cluster-an-operators-client-keeps-the-id-the-doors-answer-carries.md).
-  - Done, on 2026-11-13, bug 10 reproduced: the test `FAILING: an operation’s creation init dies on suspends the
-    sender, as on one process` of `src/cluster.test.ts`, a `test.failing`, whose operation `Relay` of `bell` creates
-    an entity whose `init` dies. Its fix is a choice of the maintainer's, not made yet, as `docs/bugs.md` says of
-    every fix.
-  - Next, the fix of bug 10 once the maintainer chooses it, and the case in the contract, which needs an operation
-    of `item` that creates. The pool's histories grow too, with a deploy that declares a consumer and an ack between
+  - Done, on 2026-11-13, bugs 10 and 58, a creation the program dies on that Cluster delivered again without end:
+    reproduced by tests of `src/cluster.test.ts`, and fixed by
+    [decision 0291](decisions/0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md), which the maintainer chose after an opinion of a Fable 5.2 agent,
+    each of its premises tested. The test of a contract no longer marks such a creation by `diesOn`.
+  - Next, an operation's creation that `init` dies on in the contract, which needs an operation of `item` that
+    creates. The pool's histories grow too, with a deploy that declares a consumer and an ack between
     the snapshot of a batch of `prune` and its commit, so that the pool reaches bug 80, which a scenario holds now.
-    A difference of Cluster that a note decides is marked beside `diesOn`, as decision 0283
-    says, and a difference no note decides is a bug.
+    A difference of Cluster that a note decides is marked in the test of a contract, as decision 0283 says, and a
+    difference no note decides is a bug.
   - Then the tests of the runtime that hold a rule of one process, which `src/runtime.test.ts` holds, run on Cluster
     too where the rule is said to hold there, so that a rule of one process that holds otherwise on Cluster fails a
     test. The helpers `onFile`, `start` and `withholding` of [`src/cluster.test.ts`](../src/cluster.test.ts) start

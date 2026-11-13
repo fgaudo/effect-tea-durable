@@ -37,10 +37,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launch as launchOnCluster, sharding } from './cluster.ts'
-import { start } from './machine.ts'
 import { launch } from './index.ts'
 import { defect, type Entities, noWork, operation, program, type Receiver, send, timer } from './index.program.ts'
-import { idFault, requestIdFault, type TypesOf } from './program.ts'
+import { idFault, type TypesOf } from './program.ts'
 import type { Handle, Inspected, Keep } from './runtime.ts'
 import type { Comparison, Dialect } from './storage.ts'
 import { client, database, pool, server } from './storage.test_databases.ts'
@@ -246,25 +245,15 @@ const alike = (left: ReadonlyArray<unknown>, right: ReadonlyArray<unknown>) => {
 }
 
 /**
- * The answer of a creation the program dies on. One process gives its creator the defect, and stores nothing. On
- * Cluster the creator waits until a deploy fixes the program, since Cluster would save the defect as the reply that
- * a retry after the fix is given (decision 0160). Neither is a reply the contract compares, so each backend answers
- * this in its place.
- */
-const waitsForAFix = 'a creation the program dies on (decision 0160)'
-
-/**
  * Runs `calls` under the run `run`, each call of a caller through `handles` in turn, and gives each answer. Every id
  * but the empty one and every request id is prefixed with the run, and every reading names it, so that each run
- * reads only its own entities. The calls at `waiting` are creations the program dies on: they are answered
- * `waitsForAFix`, and run only where `send` holds, since on Cluster such a creation is delivered again without end.
+ * reads only its own entities. A creation the program dies on is the caller's defect on every backend, as one process
+ * gives it and Cluster's door answers it (decision 0291).
  */
 const answer = (
   handles: ReadonlyArray<Handle<Item>>,
   run: string,
   calls: ReadonlyArray<Call>,
-  waiting: ReadonlySet<number>,
-  send: boolean,
 ) =>
   Effect.gen(function*() {
     const own = (id: string) => id === '' ? id : `${run}/${id}`
@@ -290,10 +279,6 @@ const answer = (
           return typeof value === 'number' ? total + Math.abs(value) : total
         }, 0)
         answers.push(new Total(exit.value, magnitudes))
-        continue
-      }
-      if (waiting.has(at) && !send) {
-        answers.push(waitsForAFix)
         continue
       }
       const request = 'request' in call
@@ -340,9 +325,7 @@ const answer = (
       const exit = yield* Effect.exit((reply as Effect.Effect<unknown, unknown>).pipe(
         Effect.timeoutOrElse({ duration: '5 seconds', orElse: () => Effect.succeed(unanswered) }),
       ))
-      answers.push(
-        waiting.has(at) && Exit.isFailure(exit) && Cause.hasDies(exit.cause) ? waitsForAFix : outcome(exit),
-      )
+      answers.push(outcome(exit))
       if (writes.has(call._tag)) yield* quiet(items, ids)
     }
     return answers
@@ -446,52 +429,12 @@ const racing = "an operator's call that races the senders waiting for its entity
 /** What a call is answered that has no answer within its time. */
 const unanswered = 'no answer within 5 s'
 
-/**
- * The creations of `calls` the program dies on, by their place: a creation that one process refused with a defect,
- * whose id and request id are no defect of the caller's (decisions 0053, 0204), and whose flags the machine's `start`
- * dies on. `start` is what a door runs on Cluster, and its defect is what Cluster delivers again (decision 0160).
- */
-const diesOn = (calls: ReadonlyArray<Call>, answers: ReadonlyArray<unknown>, run: string): ReadonlySet<number> =>
-  new Set(calls.flatMap((call, at) => {
-    if (call._tag !== 'Create') return []
-    const answered = answers[at] as { refused?: string }
-    const id = call.id === '' ? '' : `${run}/${call.id}`
-    const requestId = `${run}/${call.request.requestId}`
-    const request = { _tag: 'Caller', sender: call.request.sender, id: requestId } as const
-    return answered.refused === 'defect' && idFault(id) === undefined && requestIdFault(requestId) === undefined &&
-        start(item, id, { ...call.flags, run }, DateTime.nowUnsafe(), request)._tag === 'Defect'
-      ? [at]
-      : []
-  }))
-
-/**
- * `calls` without the requests to an entity after a creation of it the program dies on, an operator's among them. On Cluster that creation
- * waits for a fix, and every later request to its entity waits behind it, while one process goes on (decision 0160).
- */
-const pastWaits = (calls: ReadonlyArray<Call>, waiting: ReadonlySet<number>): ReadonlyArray<Call> => {
-  const held = new Set<string>()
-  return calls.filter((call, at) => {
-    // An operator's resume and discard go through the door on Cluster too, so they wait behind it as a message does
-    // (decision 0166).
-    if (!['Create', 'Set', 'Boom', 'Resume', 'Discard'].includes(call._tag)) return true
-    if (!('id' in call)) return true
-    if (held.has(call.id)) return false
-    if (waiting.has(at)) held.add(call.id)
-    return true
-  })
-}
-
 /** Runs `calls` on a new database of `dialect`, on one process. */
-const onDialect = (
-  dialect: Dialect,
-  run: string,
-  calls: ReadonlyArray<Call>,
-  waiting: ReadonlySet<number> = new Set(),
-) =>
+const onDialect = (dialect: Dialect, run: string, calls: ReadonlyArray<Call>) =>
   Effect.runPromise(
     Effect.scoped(Effect.gen(function*() {
       const items = yield* (yield* launch()).deploy(item)
-      return yield* answer([items], run, calls, waiting, true)
+      return yield* answer([items], run, calls)
     })).pipe(Effect.provide(client(dialect)), Effect.orDie),
   )
 
@@ -563,14 +506,9 @@ test('every backend answers every call alike', () =>
   fc.assert(
     fc.asyncProperty(scenario, async (generated) => {
       const run = `r${runs++}`
-      // One process answers first, to find the creations the program dies on, which Cluster answers otherwise.
-      const first = await onDialect('sqlite', run, generated)
-      const calls = pastWaits(generated, diesOn(generated, first, run))
-      const answered = calls.length === generated.length ? first : await onDialect('sqlite', run, calls)
-      const waiting = diesOn(calls, answered, run)
-      const sqlite = answered.map((answer, at) => waiting.has(at) ? waitsForAFix : answer)
-      alike(await onDialect('pg', run, calls, waiting), sqlite)
-      alike(await Effect.runPromise(answer(cluster.handles, run, calls, waiting, false)), sqlite)
+      const sqlite = await onDialect('sqlite', run, generated)
+      alike(await onDialect('pg', run, generated), sqlite)
+      alike(await Effect.runPromise(answer(cluster.handles, run, generated)), sqlite)
     }),
     // `bun test` runs three within its budget of two seconds, and a release 300 (decision 0250).
     { numRuns: Bun.env['SCHEDULES'] === 'all' ? 300 : 3 },

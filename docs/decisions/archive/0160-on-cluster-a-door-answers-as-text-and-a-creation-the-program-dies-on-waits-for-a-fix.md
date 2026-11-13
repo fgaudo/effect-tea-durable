@@ -2,7 +2,7 @@
 
 **Status:** accepted, 2026-11-07, with the step Effect Cluster of the roadmap. Changes how
 [decision 0124](0124-the-boundary-authenticates-and-update-authorizes.md) holds on Cluster: a creator is not given
-the defect of a creation the program dies on.
+the defect of a creation the program dies on. Its second bullet is replaced by [decision 0291](../0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md), whose door answers a creation the program dies on with `Died`, which the creator's client resets: the creator is given the defect, and waits for no fix.
 
 ## Context
 

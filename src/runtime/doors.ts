@@ -334,8 +334,12 @@ export const doorStep = <T extends Types>(p: Process, deployed: Deployment<T>) =
         answer = { _tag: 'Create', answer: kept }
       } else if (stepped.loaded === null) {
         const started = Machine.start(program, id, flags, now, request)
-        // A creation the program dies on stores nothing, and dies: Cluster delivers it again (decision 0160).
-        if (started._tag === 'Defect') return yield* Effect.die(started.cause)
+        // A creation the program dies on stores nothing, and is answered `Died`, which Cluster saves and the creator's
+        // client resets before a retry. A defect of the step would have Cluster deliver it again without end, ahead of
+        // every later request to the id (decision 0291).
+        if (started._tag === 'Defect') {
+          return { _tag: 'Create', answer: { _tag: 'Died', cause: Machine.render(started.cause) } }
+        }
         // A creation `init` rejects stores no entity. Cluster saves the answer, and the creator's client resets it,
         // as it resets `NotFound`, so that a caller's retry runs `init` again (decision 0182). An operation's is kept
         // for its work, in this transaction (decision 0253).

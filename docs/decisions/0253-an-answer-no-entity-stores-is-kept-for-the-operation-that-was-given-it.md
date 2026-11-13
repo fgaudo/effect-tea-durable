@@ -8,7 +8,7 @@ kept too. It extends [decision 0021](archive/0021-a-reply-is-kept-while-the-work
 holds of these answers as well. It restores the premise of
 [decision 0009](archive/0009-entities-talk-through-operations.md), that a run after a crash is given every answer the
 run before it acted on. Completed by [decision 0289](0289-expire-deletes-what-work-that-ended-was-given.md) on a pool of PostgreSQL, where two steps at once leave an
-answer of work that ended: `expire` deletes it.
+answer of work that ended: `expire` deletes it. A `Died` on Cluster is not kept for the operation, by [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md).
 
 ## Context
 

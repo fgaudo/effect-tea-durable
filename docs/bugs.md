@@ -34,7 +34,7 @@ family gets a fix of its own.
 - C, a rule of one process that holds otherwise on Cluster: bugs 2, 10 to 12, 20, 21, 23, 24, 27, 33 to 36, 39, 54,
   55, 57 to 59, 70, 73, 74, 77, 84, 85, 89 to 91 and 97, as decisions 0248 and 0249 were. Its rule is the step The tests
   of a contract on every backend, of the roadmap: the tests of the runtime run alike on one process and on Cluster.
-  Bug 11 is fixed by decision 0290.
+  Bug 11 is fixed by decision 0290, and bugs 10 and 58 by decision 0291.
 - D, a rule that holds only of one transaction at a time: bugs 3, 13, 25, 49, 78, 80 and 111. Its test is the same step:
   a test of rows of two entities runs on the CI's PostgreSQL with a pool too, with the two steps held at their
   statements. Bugs 13 and 25 are one form, a statement whose condition PostgreSQL reads from its snapshot and does
@@ -100,16 +100,7 @@ family gets a fix of its own.
    suspended.
 8. **Fixed by [decision 0270](decisions/0270-a-childs-name-is-never-an-own-tag.md)**, which refuses an own tag that may be a child's, and tries a child's wrapper first.
 9. **Fixed by [decision 0253](decisions/0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md)**, which keeps an operation's `Rejected` of `init` and its `NotFound` for its work.
-10. **Reproduced: on Cluster, a creation that `init` dies on, sent by an operation, waits for ever and no operator
-    sees it.** On one process the sender is suspended
-    ([decision 0046](decisions/archive/0046-a-receiver-that-crashes-is-sent-again.md)). On Cluster the door dies
-    and Cluster delivers the creation again without end
-    ([decision 0160](decisions/archive/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)).
-    The sender is not suspended and the receiver does not exist, so `suspended` lists nothing. The test
-    `FAILING: an operation’s creation init dies on suspends the sender, as on one process` of `src/cluster.test.ts`,
-    a `test.failing` on `main`, finds `suspended` empty after 1.5 s, while Cluster logs a restart of the door at each
-    delivery. Its fix is a choice of the design: the [open question](open-questions.md#running) A creation that
-    `init` dies on, on Cluster.
+10. **Fixed by [decision 0291](decisions/0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md)**, whose door answers a creation the program dies on `Died`, which the creator's client resets and gives as the creator's defect, so that an operation's sender is suspended.
 11. **Fixed by [decision 0290](decisions/0290-on-cluster-an-operators-client-keeps-the-id-the-doors-answer-carries.md)**, whose operator's client keeps the Cluster id its door's answer carries, so that a step or `expire` deletes Cluster's rows of the event.
 12. **Noticed, not checked: a defect's cause holding U+0000 may reach Cluster's tables unescaped.**
     ([decision 0205](decisions/0205-a-defects-cause-is-written-as-text-every-database-holds.md)). It matters once
@@ -283,16 +274,7 @@ family gets a fix of its own.
     [decision 0060](decisions/archive/0060-send-and-create-take-no-key.md). No helper can freeze a runner past its
     lease, so no test was written. The fix begins at the receiver, which would not apply a request whose asker's
     work no longer holds. The [open question](open-questions.md#running) A send after the work it belongs to ended.
-58. **Reproduced: on Cluster, a creation the program dies on blocks every later request to its id.** The door dies
-    on it ([decision 0160](decisions/archive/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)),
-    and Cluster replays it first at each restart, so another creator of the id, whose flags `init` accepts, waits
-    for ever, where on one process it is answered `Created`
-    ([decision 0124](decisions/archive/0124-the-boundary-authenticates-and-update-authorizes.md)). A message to the id
-    waits the same way, which is only reasoned. The test `FAILING: on Cluster a creation the program dies on leaves
-    another creator of its id to create the entity`, in `src/cluster.test.ts`, on
-    `claude/premise-pairs-messages-2-a90d4b` at `d602b35`. The fix begins at the creation of `doorStep` of
-    `src/runtime/doors.ts`, and is a choice of the design: the [open question](open-questions.md#running) A
-    creation that `init` dies on, on Cluster.
+58. **Fixed by [decision 0291](decisions/0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md)**, under which Cluster saves the `Died` of a creation the program dies on, and delivers it no more ahead of another creator of the id.
 59. **Reproduced: on Cluster, a caller that stops waiting keeps its rows in Cluster's tables for ever.** A client
     keeps its id only once it is given the answer
     ([decision 0171](decisions/archive/0171-on-cluster-a-callers-rows-go-once-its-client-has-the-answer-and-its-time-is-past.md)),

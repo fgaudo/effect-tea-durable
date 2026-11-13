@@ -12,11 +12,12 @@ are rules of one process that hold otherwise on Cluster, and rules that hold onl
 test compared one process and Cluster on the same calls. The test `both dialects answer every call alike` of
 `src/dialects.test.ts` ran the calls fast-check generates on SQLite and on PostgreSQL alone.
 
-On Cluster some answers differ by a decision. A creation the program dies on gives its creator the defect on one
-process, and nothing is stored. On Cluster the creation waits until a deploy fixes the program, and Cluster
-delivers it again without end ([decision 0160](archive/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)).
-Every later request to the same entity waits behind it. The first run of the test on Cluster met this case and
-waited: a creation whose projection holds U+0000 in an index.
+On Cluster an answer may differ by a decision. The first run of the test on Cluster met one and waited: a creation
+whose projection holds U+0000 in an index, which the program dies on. One process gives its creator the defect, and
+stores nothing. On Cluster the creation waited until a deploy fixed the program, delivered again without end, and
+every later request to the same entity waited behind it
+([decision 0160](archive/0160-on-cluster-a-door-answers-as-text-and-a-creation-the-program-dies-on-waits-for-a-fix.md)).
+Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md) Cluster gives the creator the defect too.
 
 ## Decision
 
@@ -30,13 +31,9 @@ waited: a creation whose projection holds U+0000 in an index.
   which takes longer than a run of the property. The runs share the runners, so each run prefixes every id but the
   empty one and every request id with its own name. Every reading names the run by an index `run`, and the readings
   of `suspended` keep the ids of the run. The empty id keeps its own refusal (decision 0179).
-- **One process answers first, and the answers Cluster gives otherwise by a decision are written once, here.** A
-  creation that one process refuses with a defect, whose id and request id are no defect of the caller's, and whose
-  flags the machine's `start` dies on, is a creation the program dies on. It is not sent on Cluster, and each backend answers it with the same mark of
-  decision 0160. The requests to its entity after it leave the run on every backend, since on Cluster they wait
-  behind it. An operator's `resume` and `discard` of that entity leave too, since on Cluster they go through the door
-  ([decision 0166](archive/0166-on-cluster-an-operator-resumes-and-discards-through-the-doors-client.md)). A later
-  decision that makes Cluster answer otherwise adds its case beside this one.
+- **The answers Cluster gives otherwise by a decision are written once, here.** None is left: a creation the program
+  dies on, which decision 0160 made Cluster answer otherwise, is answered alike on every backend since decision 0291.
+  A later decision that makes Cluster answer otherwise adds its case here, beside the call it changes.
 - **The calls of an operator are among the calls generated.** They are `inspect`, `resume`, `discard` and
   `suspended`, and `expire`, `prune` and `reindex`. A message `Boom`, which the program dies on, is followed by an
   operator's call on its entity in one call of five, so that an operator meets a suspension often. What `inspect`,
@@ -99,18 +96,8 @@ waited: a creation whose projection holds U+0000 in an index.
   `SCHEDULES=all`, which passed on 2026-11-12 on SQLite, PGlite and Cluster, with the operator's calls among them
   twice. The job `postgres` of the CI runs it on
   the server.
-- That on Cluster a creation the program dies on waits: **tested** by the test of decision 0160 in
-  [`src/cluster.test.ts`](../../src/cluster.test.ts), and **seen** in the first run of this test.
 - That the history of the pool runs on SQLite in both orders: **tested**, by a run of 30 histories on SQLite made
   while the test was written, and by each run of the test on a server.
-- That a later request to its entity is not answered on Cluster as one process answers it: **seen**, in the first
-  run of this test. A message after such a creation was given no `NotFound` within 5 s, while the runner logged the
-  creation's restarts. Were it answered, the decision would only compare fewer calls than it could.
-- That a creation the program dies on is one whose flags `start` of [`src/machine.ts`](../../src/machine.ts) dies
-  on: **read in the source**, of `src/runtime/doors.ts`, whose door runs `start` and dies on its defect. The test
-  marks a creation only where one process refused it with a defect, its id and request id pass `idFault` and
-  `requestIdFault` of [`src/program.ts`](../../src/program.ts), and `start` dies. A creation of the caller's defect
-  is so compared on Cluster too.
 - That runs that share two runners read only their own entities: **tested**, since each run's readings on Cluster
   equal those of a new database.
 - That an operator's `resume` and `discard` answer before the entity handles the message it died on, on Cluster:

@@ -6,7 +6,7 @@
 check of the flags in their schema alone.
 Changed by [decision 0253](0253-an-answer-no-entity-stores-is-kept-for-the-operation-that-was-given-it.md), which keeps
 an operation's creation that `init` rejects for the operation's work, so that a run after a crash is given the rejection
-again.
+again. Its reset of a saved `Rejected` holds of a saved `Died` too, by [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md).
 
 ## Context
 

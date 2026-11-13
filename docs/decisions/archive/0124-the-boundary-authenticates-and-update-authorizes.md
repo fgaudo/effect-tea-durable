@@ -7,7 +7,7 @@ creation. Says who a sender is, which [decision 0048](0048-a-callers-request-bel
 the boundary. A program's `init` may reject the flags, answered `Rejected` and not stored, by
 [decision 0182](../0182-init-may-reject-the-flags.md): a creation then has three replies. A caller that reuses a
 request id of its identity for another message or other flags is answered `Reused`, by
-[decision 0269](../0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md).
+[decision 0269](../0269-a-callers-request-is-its-sender-its-id-and-what-it-carries.md). It holds on Cluster again by [decision 0291](../0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md): a creator on Cluster is given the defect of a creation the program dies on.
 
 ## Context
 

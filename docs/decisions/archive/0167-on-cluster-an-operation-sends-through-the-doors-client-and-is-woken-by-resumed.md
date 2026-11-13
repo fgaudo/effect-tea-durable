@@ -5,7 +5,7 @@
 request. Changes how [decision 0092](0092-on-cluster-the-runtime-keeps-its-entities-and-learns-its-shards.md) tells a
 resumption: once for each sender's entity, not once for each request, and with the receiver's address alone.
 Changed by [decision 0265](../0265-the-operations-that-wait-for-a-resumption-are-stored-by-the-step-that-answers.md), whose table `waiting` holds a row for
-each run and name on every storage, written as the machine says, and read by the door before the step deletes it.
+each run and name on every storage, written as the machine says, and read by the door before the step deletes it. An operation's creation the program dies on is answered `Died`, and suspends the sender, by [decision 0291](../0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md).
 
 ## Context
 

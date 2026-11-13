@@ -3,7 +3,7 @@
 **Status:** accepted, 2026-10-31. That a sender takes a crash as it takes `Suspended` is changed by
 [decision 0063](0063-the-runtime-waits-for-what-it-waits-for.md): a sender to a suspended receiver waits for its
 resumption, and `retry` is the wait after a crash alone. A sender to a full receiver sends again after `retry` too,
-since [decision 0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md), and is never given `Full`. An operation sends again only while its entity has not crashed, by [decision 0274](../0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md): a run whose entity crashed sends nothing.
+since [decision 0147](0147-an-entity-holds-a-bounded-number-of-callers-messages.md), and is never given `Full`. An operation sends again only while its entity has not crashed, by [decision 0274](../0274-an-entity-is-not-loaded-while-the-stop-of-its-former-run-is-running.md): a run whose entity crashed sends nothing. On Cluster an operation's creation the program dies on suspends the sender too, by [decision 0291](../0291-on-cluster-a-creation-the-program-dies-on-is-answered-died-and-reset.md).
 
 ## Context
 
