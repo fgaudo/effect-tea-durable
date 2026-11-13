@@ -433,8 +433,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
       and `everywhere` launches its runners once. `a request leaves out its sender and flags only where the program
       has none` runs nothing, as the compiler holds it. `an entity whose messages keep coming lets another step
       between two of its steps` is a rule of one loop, and a caller's message on Cluster is stepped by its door.
+    - Done, on 2026-11-13, the `describe` `the read model`, read whole. One rule runs on both as a rule of its own:
+      the part of `a query finds the entities by an index, in order, and gives what callers read` that needs no
+      second process, on a program `Counting` whose projection counts the messages applied, so that no operation's
+      end changes it. It passed five runs in a row on every backend, and found no difference. Every other test of the
+      `describe` deploys a second version of the program, reads SQLite's plan, or runs under the scheduler.
     - Next, the other tests of `src/runtime.test.ts` that the design says hold on Cluster, read one `describe` at a
-      time, `the read model` first, then `publishing what happened`. Most hold an
+      time, `publishing what happened` first. Most hold an
       interleaving by a probe or the test clock. A rule moves whole where its test needs neither, and else its part
       that needs neither runs on both as a rule of its own. A rule that needs a deploy of a second program needs a
       runner that `everywhere` does not start yet. A difference found is a bug of `docs/bugs.md`, or a case decision

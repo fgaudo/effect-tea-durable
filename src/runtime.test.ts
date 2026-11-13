@@ -5139,7 +5139,10 @@ describe('a rule of one process that holds on Cluster too', () => {
     name: 'LookingUp',
     indexes: { wanted: (projection) => named[projection] as number },
   }
-  const rule = everywhere([program, numbered, citing, lookingUp])
+  // The projection counts the messages applied, which no operation's end changes, so that it stays what the step that
+  // answered wrote while the work of the toy ends on its own clock.
+  const counting: Program<T> = { ...program, name: 'Counting', project: (state) => state.applied.length }
+  const rule = everywhere([program, numbered, citing, lookingUp, counting])
   const sender = { _tag: 'Tester' } as const
   const reasonOf = (exit: Exit.Exit<unknown>) => {
     const cause = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
@@ -5385,5 +5388,43 @@ describe('a rule of one process that holds on Cluster too', () => {
       expect(yield* listed(first!, own(id))).toEqual([
         "InvariantDefect: the index 'wanted' is no scalar: null, a string, a boolean or a number",
       ])
+    }), ['sqlite', 'pg'])
+
+  // The part of `a query finds the entities by an index, in order, and gives what callers read` that needs no second
+  // process: the rows each step writes, read by a query through either runner.
+  rule('a query finds the entities by an index, in order, and gives what callers read, as each step wrote it', ({ deploy, own }) =>
+    Effect.gen(function*() {
+      const handles = yield* deploy(counting)
+      const [first, second] = handles
+      const other = second ?? first!
+      const at = yield* DateTime.now
+      const [one, two, three] = ['t-1', 't-2', 't-3'].map(own) as [string, string, string]
+      for (const entity of [one, two, three]) {
+        yield* first!.create(entity, { flags: { at }, requestId: own(`c-${entity}`), sender: tester })
+      }
+      // `a` is wanted from the creation on, so a message that wants it again drops no operation under way.
+      for (const entity of [one, three]) {
+        expect(yield* other.send(entity, { _tag: 'Want', key: 'a', on: true, nonce: 'on' }, {
+          requestId: own(`on-${entity}`),
+          sender: tester,
+          keep: 'forever',
+        })).toEqual({ _tag: 'Accepted' })
+      }
+      for (const toy of handles) {
+        expect(yield* Effect.forEach([one, two, three], toy.read)).toEqual([1, 0, 1])
+        expect(yield* toy.query({ limit: all })).toEqual([
+          { id: one, projection: 1, indexes: { wanted: 1 } },
+          { id: two, projection: 0, indexes: { wanted: 0 } },
+          { id: three, projection: 1, indexes: { wanted: 1 } },
+        ])
+        expect(yield* toy.query({ limit: all, where: [{ index: 'wanted', is: '=', value: 0 }] }))
+          .toEqual([{ id: two, projection: 0, indexes: { wanted: 0 } }])
+        expect((yield* toy.query({ limit: all, order: { index: 'wanted', descending: true } })).map(({ id }) => id))
+          .toEqual([three, one, two])
+        // A descending order reverses the ids of the rows that tie too (decision 0145).
+        expect((yield* toy.query({ order: { index: 'wanted', descending: true }, limit: 2 })).map(({ id }) => id))
+          .toEqual([three, one])
+        expect(yield* toy.query({ limit: all, where: [{ index: 'wanted', is: '>', value: 9 }] })).toEqual([])
+      }
     }), ['sqlite', 'pg'])
 })
