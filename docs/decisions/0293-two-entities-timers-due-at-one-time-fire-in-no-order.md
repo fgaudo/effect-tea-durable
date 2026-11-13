@@ -14,7 +14,8 @@ The bullets of the second run rest on it, and the maintainer chooses what they b
 defect ends `advance` before the other timers due at that time fire, so a scenario that catches the defect reads
 which entity fired first. Fable 5.2 then recommended that a suspension close the world: every act and read after it
 dies with its cause, and the rehearsal fails even where the scenario caught it. Of the two other holes it raised, the
-one of `restart` was found and the one of `run` was ruled out, the same day. The maintainer chooses.
+one of `restart` was found and the one of `run` was ruled out, the same day. The maintainer chose that a suspension
+closes the world. Whether the second run stays is still the maintainer's to choose.
 
 ## Context
 
@@ -53,6 +54,17 @@ nothing tells the test's writer.
   decides whether the rule lies in the machine, with its test in `src/machine.test.ts`, or in the loop.
 - **The rehearsal orders one entity's timers by the stored work too,** in `dueBy` of
   [`src/rehearse.ts`](../../src/rehearse.ts), and no longer by the timers running.
+- **A suspension closes the world.** When an act of the scenario suspends an entity, the world keeps the cause of
+  that first suspension. Every act and every read of the world after it dies with that cause: `create`, `send`,
+  `answer`, `fire`, `run`, `advance`, `restart`, `deploy`, `state`, `projection`, `pending` and `underWay`. The
+  rehearsal, of one entity or of several, fails with that cause when the scenario returns, even where the scenario
+  caught the defect. So a scenario reads nothing that an order decided after a defect, and the sentence that a defect
+  fails the test holds whatever the scenario does.
+- **A failure of the rehearsal that suspends no entity leaves the world open.** A message its schema refuses, a run
+  that sends twice under one name, work of the wrong kind, a creation of an entity that exists, or an id the runtime
+  refuses fails the act alone. A
+  scenario that catches such a failure goes on, and reads the world as before. `docs/design.md` says both rules under
+  Rehearsing a world.
 - **A rehearsal of several entities runs its scenario twice where two entities' timers are due at one time.** The
   first run fires the timers of the entities due at one time in the order of creation, as today. The second run
   fires every such group in the reverse order. A test whose assertion depends on the order of two entities' timers
@@ -113,6 +125,19 @@ nothing tells the test's writer.
 - That a defect fails the rehearsal whether or not the scenario catches it: **failed**, **tested** by the three tests
   above, each of which ends in success after the scenario caught the defect. `src/rehearse.ts` says that a defect that
   suspends an entity fails the test, which holds only where the scenario lets the defect through.
+- That a suspension closes the world, rather than a rule that only `docs/design.md` states: **chosen** by the
+  maintainer, after Fable 5.2's opinion. A rule only stated leaves the three tests above ending in success.
+- That a closed world fails a rehearsal with the cause of its first suspension, in both orders of creation: **open**.
+  The tests `with a defect among them, shows a scenario that catches it which fired first` and `a restart after a
+  caught defect shows a scenario which entity was created first` then assert it, and are renamed with it.
+- That each act and read of a closed world dies with the first cause: **open**. A test of `src/rehearse.test.ts` for
+  each of `state`, `send`, `advance` and `restart` after a caught suspension checks it.
+- That a run whose receiver's defect is caught fails the rehearsal: **open**. The test `a run whose receiver defects,
+  caught, leaves its operation under way` then asserts it, and is renamed with it.
+- That a failure that suspends no entity leaves the world open, alone and in a world: **open**. The tests of
+  `src/rehearse.test.ts` that catch such a failure, and the scenarios of `examples/cart`, which read the state after
+  one, pass as they are. A test of `rehearse.together` that catches a run sent twice, and reads the world after it,
+  checks the world.
 - That `docs/design.md` promises no order of two entities' timers due at one time: **read** in its section on
   Rehearsing, where `advance` fires the timers due "in the order of the times", and nowhere else.
 - That the runtime fires two entities' timers due at one time in an order of its own: **tested** by `the runtime fires
