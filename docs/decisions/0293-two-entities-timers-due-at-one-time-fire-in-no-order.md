@@ -2,7 +2,9 @@
 
 **Status:** proposed, 2026-11-13, for the step Two entities' timers due at one time, in no order, of the
 [roadmap](../roadmap.md). The maintainer chose it in a session of 2026-11-13, after an opinion of a second model, Fable
-5.2. Nothing of it is written yet.
+5.2. Nothing of it is written yet. Two of its premises failed on 2026-11-13, before the step began: the order of one
+loaded entity's timers, and hands as new in a second call of the scenario. The maintainer chooses what the two
+bullets of the decision that rest on them become.
 
 ## Context
 
@@ -12,10 +14,12 @@ timers due at one time` of [`src/runtime/loop.test.ts`](../../src/runtime/loop.t
 
 - **The rehearsal fires first the timer of the entity created first.** Within one entity it fires first the timer its
   machine holds first (`dueBy` of [`src/rehearse.ts`](../../src/rehearse.ts)).
-- **The runtime has no one place that orders the timers of two entities.** A loaded entity fires its timer from a
-  fiber of its own. The waker activates the entities it does not hold in the order of their ids (`due` of
-  [`src/storage/entities.ts`](../../src/storage/entities.ts)). After a crash every entity is unloaded, so the order
-  of the same two timers changes with what the process held.
+- **The runtime has no one place that orders the timers of two entities.** A loaded entity fires each of its timers
+  from a fiber of its own, and two fibers woken at one time run in the order the scheduler gives them. Under the
+  default scheduler they run in the order they were armed, and a schedule of `src/testing.ts` runs either first.
+  The waker activates the entities it does not hold in the order of their ids (`due` of
+  [`src/storage/entities.ts`](../../src/storage/entities.ts)). After a crash every entity is unloaded, so the order of
+  the same two timers changes with what the process held.
 - **On Cluster each runner has a waker of its own,** which reads only the shards the runner holds. The log promises an
   order only within a partition (`docs/design.md`, under The order of the log).
 
@@ -28,7 +32,10 @@ nothing tells the test's writer.
 - **Of two entities' timers due at one time, no order holds.** `docs/design.md` says so where it says what `advance`
   does, and the glossary's entry of a timer says it too.
 - **Within one entity, the timers due at one time fire in the order its machine holds them.** That order is the
-  machine's, in [`src/machine.ts`](../../src/machine.ts), so the rehearsal and the runtime share it already.
+  machine's, in [`src/machine.ts`](../../src/machine.ts). The premise that the runtime keeps it failed for a loaded
+  entity, under What it rests on. So this bullet holds only once the runtime offers one entity's firings due at one
+  time in the machine's order, or it becomes the rule that no order holds within one entity either, and a rehearsal
+  reverses those too. The maintainer chooses.
 - **A rehearsal of several entities runs its scenario twice where two entities' timers are due at one time.** The
   first run fires the timers of the entities due at one time in the order of creation, as today. The second run
   fires every such group in the reverse order. A test whose assertion depends on the order of two entities' timers
@@ -43,6 +50,10 @@ nothing tells the test's writer.
   an order of three entities is not checked, and names the option.
 - **The scenario is a function the rehearsal may call more than once.** A scenario that keeps a value outside the
   world, as a list of what fired, makes it again in each call. `docs/design.md` says it under Rehearsing a world.
+  The services the scenario runs with are provided outside the rehearsal, and are built once for both calls, as a
+  premise below found. So a hand that keeps a value keeps it across the two runs, unless the rehearsal builds the
+  services itself, from a layer it is given, or a hand that keeps a value is made in the scenario. The maintainer
+  chooses.
 
 ## What it rests on
 
@@ -50,15 +61,31 @@ nothing tells the test's writer.
   Rehearsing, where `advance` fires the timers due "in the order of the times", and nowhere else.
 - That the runtime fires two entities' timers due at one time in an order of its own: **tested** by `the runtime fires
   first the timer of the smaller id, for entities unloaded, unlike a rehearsal`, in `src/runtime/loop.test.ts`.
-- That one entity's timers due at one time fire in the machine's order on the rehearsal and on the runtime, after a
-  restart too: **open**. A test of `src/runtime/loop.test.ts` of one entity with two timers due at one time, loaded,
-  unloaded and after a crash, checks it.
+- That the runtime keeps no order of two loaded entities' timers due at one time: **tested** by `the runtime may fire
+  first either timer, for entities loaded, under prioritized schedules`, in `src/runtime/loop.test.ts`. Seed 47 fires
+  first the timer of the entity created second.
+- That one entity's timers due at one time fire in the machine's order on the rehearsal, after a restart too:
+  **tested** by `a rehearsal fires them in the order the machine holds them, after a restart too`, in
+  `src/runtime/loop.test.ts`.
+- That one entity's timers due at one time fire in the machine's order on the runtime, for an entity unloaded and
+  after a restart: **tested** by `the runtime fires them in the order the machine holds them, unloaded, under
+  prioritized schedules` and `the runtime fires them in the order the machine holds them, restarted, under prioritized
+  schedules`, in `src/runtime/loop.test.ts`, under every seed of `SCHEDULES=all`.
+- That one entity's timers due at one time fire in the machine's order on the runtime, for an entity loaded:
+  **failed**, **tested** by `the runtime may fire them out of the order the machine holds them, loaded, under
+  prioritized schedules`, in `src/runtime/loop.test.ts`. Each timer sleeps in a fiber of its own, and both wake at one
+  move of the clock. Seed 11 fires the second timer first, and so do 65 seeds of 2,000. The test `the runtime fires
+  them in the order the machine holds them, loaded` passes, since the default scheduler runs the two fibers in the
+  order they were armed.
 - That two runs fail a test that depends on the order of a pair, among three entities due at one time: **open**. A
   test of [`src/rehearse.test.ts`](../../src/rehearse.test.ts) checks it.
 - That the option of every order fails a test that depends on the order of three entities, which two runs pass:
   **open**. A test of `src/rehearse.test.ts` checks it.
-- That a second call of the scenario finds a world as new, with the hands of `Layer.mock` as new too: **open**. A test
-  of `src/rehearse.test.ts` whose scenario counts its calls of a hand checks it.
+- That a second call of the scenario finds a world as new: **tested** by `called twice under one provide, finds a world
+  as new and the hands built once`, in `src/rehearse.test.ts`. Each call of `together` makes a world of its own.
+- That a second call of the scenario finds the hands as new: **failed**, **tested** by `called twice under one
+  provide, finds a world as new and the hands built once`, in `src/rehearse.test.ts`. A layer provided outside the
+  rehearsal is built once for the two calls, so what a hand keeps carries into the second.
 - That a second run of a scenario costs less than a test that passes on the rehearsal and fails on the runtime:
   **chosen** by the maintainer.
 

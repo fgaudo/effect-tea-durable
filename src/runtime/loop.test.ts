@@ -19,7 +19,7 @@ import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import * as Tracer from 'effect/Tracer'
 import * as Machine from '../machine.ts'
-import { InvariantDefect, type Program, timer } from '../program.ts'
+import { InvariantDefect, noWork, type Program, timer } from '../program.ts'
 import * as Library from '../index.ts'
 import { type Answer, type Options, type Point } from '../runtime.ts'
 import { rehearse } from '../rehearse.ts'
@@ -36,6 +36,7 @@ import {
   type Hooks,
   id,
   Inbound,
+  type Internal,
   Key,
   keys,
   log,
@@ -1663,10 +1664,148 @@ describe('two timers due at one time', () => {
       expect(yield* runtimeOrder(false)).toEqual(['b', 'a'])
     })))
 
+  // Loaded, each entity's timer sleeps in a fiber of its own, and both wake at one move of the clock: a schedule may
+  // run the fiber of `a` first, as seed 47 does, so even entities loaded keep no order of their own (decision 0293).
+  test('the runtime may fire first either timer, for entities loaded, under prioritized schedules', () => {
+    expect(() =>
+      explored((window) =>
+        Effect.gen(function*() {
+          fired.length = 0
+          const { layer } = yield* hands()
+          return yield* process({}, (runtime) =>
+            Effect.gen(function*() {
+              const toy = yield* Effect.provide(runtime.deploy(ordered), layer)
+              for (const entity of ids) {
+                yield* toy.create(entity, { flags: flagsOf(entity), requestId: entity, sender: tester })
+                yield* runtime.settled
+              }
+              yield* adjusted(window, '40 millis')
+              yield* runtime.settled
+              return [...fired]
+            }))
+        }), ['b', 'a'])
+    ).toThrow(/seed \d+/)
+  }, 60_000)
+
   // The premise of decision 0292 fails here: the waker reads the entities due in the order of their ids (`due` of
   // `src/storage/entities.ts`), so `a` fires first, and a rehearsal fires `b` first.
   test('the runtime fires first the timer of the smaller id, for entities unloaded, unlike a rehearsal', () =>
     database(Effect.gen(function*() {
       expect(yield* runtimeOrder(true)).toEqual(['a', 'b'])
     })))
+})
+
+// Within one entity, the timers due at one time fire in the order its machine holds them, on a rehearsal and on the
+// runtime, loaded, unloaded and after a restart (decision 0293). The machine holds them in the order `work` returns
+// its keys, here `t` before `a`, which the order of the keys' names does not give.
+describe('one entity\'s two timers due at one time', () => {
+  const fired: Array<string> = []
+  const twice: Program<T> = {
+    ...program,
+    name: 'Twice',
+    init: (_flags, at) => ({ want: ['t', 'a'], applied: [], since: at, rings: DateTime.addDuration(at, '40 millis') }),
+    update: (message, meta) => (state) => {
+      if (message._tag === 'Rang') fired.push(message.key)
+      return program.update(message, meta)(state)
+    },
+    work: (state) =>
+      state.want.length === 0
+        ? noWork
+        : Object.fromEntries(state.want.map((key) => [key, timer<Internal>(state.rings, { _tag: 'Rang', key })])),
+  }
+  const flags = { at: DateTime.makeUnsafe(0) }
+
+  test('a rehearsal fires them in the order the machine holds them, after a restart too', async () => {
+    for (const restarts of [false, true]) {
+      fired.length = 0
+      await Effect.runPromise(rehearse(twice, { flags, at: DateTime.makeUnsafe(0) }, Effect.fnUntraced(function*(entity) {
+        if (restarts) yield* entity.restart
+        yield* entity.advance('40 millis')
+      })).pipe(Effect.provide(Layer.mock(Hands, {}))))
+      expect(fired).toEqual(['t', 'a'])
+    }
+  })
+
+  const runtimeOrder = (mode: 'loaded' | 'unloaded' | 'restarted') =>
+    Effect.gen(function*() {
+      fired.length = 0
+      const { entities, unloaded } = unloads()
+      yield* process({ unloaded, ...(mode === 'unloaded' ? { passivate: { millis: 5 } } : {}) }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(twice), (yield* hands()).layer)
+          yield* toy.create('one', { flags, requestId: 'one', sender: tester })
+          yield* runtime.settled
+          if (mode === 'unloaded') {
+            yield* TestClock.adjust('5 millis')
+            yield* runtime.settled
+            expect(entities).toEqual(['one'])
+          }
+          if (mode !== 'restarted') {
+            yield* TestClock.adjust('40 millis')
+            yield* runtime.settled
+          }
+        }))
+      // The process that follows activates the entity from what was stored, and arms its timers again.
+      if (mode === 'restarted') {
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            yield* Effect.provide(runtime.deploy(twice), (yield* hands()).layer)
+            yield* TestClock.adjust('40 millis')
+            yield* runtime.settled
+          }))
+      }
+      return [...fired]
+    })
+
+  // Each timer sleeps in a fiber of its own. Activated, the entity arms both timers due already, and the schedules
+  // move the points where one fiber runs between two steps of the other: the machine's order holds under every seed.
+  const explore = (mode: 'loaded' | 'unloaded' | 'restarted') =>
+    explored((window) =>
+        Effect.gen(function*() {
+          fired.length = 0
+          const { layer } = yield* hands()
+          yield* process(mode === 'unloaded' ? { passivate: { millis: 5 } } : {}, (runtime) =>
+            Effect.gen(function*() {
+              const toy = yield* Effect.provide(runtime.deploy(twice), layer)
+              yield* toy.create('one', { flags, requestId: 'one', sender: tester })
+              yield* runtime.settled
+              if (mode === 'unloaded') {
+                yield* adjusted(window, '5 millis')
+                yield* runtime.settled
+              }
+              if (mode !== 'restarted') {
+                yield* adjusted(window, '40 millis')
+                yield* runtime.settled
+              }
+            }))
+          if (mode === 'restarted') {
+            yield* process({}, (runtime) =>
+              Effect.gen(function*() {
+                yield* Effect.provide(runtime.deploy(twice), layer)
+                yield* adjusted(window, '40 millis')
+                yield* runtime.settled
+              }))
+          }
+          return [...fired]
+        }), ['t', 'a'])
+
+  for (const mode of ['unloaded', 'restarted'] as const) {
+    test(`the runtime fires them in the order the machine holds them, ${mode}, under prioritized schedules`, () => {
+      explore(mode)
+    }, 60_000)
+  }
+
+  // The premise of decision 0293 fails here. Loaded, the entity's two timers sleep from its creation and wake at one
+  // move of the clock, and a schedule may run the fiber of `a` first: seed 11 fires `a` before `t`, and about one
+  // seed in thirty does.
+  test('the runtime may fire them out of the order the machine holds them, loaded, under prioritized schedules', () => {
+    expect(() => explore('loaded')).toThrow(/seed \d+/)
+  }, 60_000)
+
+  for (const mode of ['loaded', 'unloaded', 'restarted'] as const) {
+    test(`the runtime fires them in the order the machine holds them, ${mode}`, () =>
+      database(Effect.gen(function*() {
+        expect(yield* runtimeOrder(mode)).toEqual(['t', 'a'])
+      })))
+  }
 })

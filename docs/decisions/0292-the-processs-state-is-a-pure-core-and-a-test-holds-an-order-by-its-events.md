@@ -117,9 +117,9 @@ which no transaction holds. So `Tx` modules would take out few pins, and leave t
   of Cluster's tables, its poll or its lease, which stay outside the core.
 - That the rehearsal and the runtime fire first the same timer of two due at one time: **failed**, **tested** by `two
   timers due at one time`, in `src/runtime/loop.test.ts`. The rehearsal fires first the timer of the entity created
-  first. The runtime does the same for entities loaded, and fires first the timer of the smaller id for entities
-  unloaded, since the waker reads them in the order of their ids. So the first layer holds no order of the timers of
-  two entities, and [decision 0293](0293-two-entities-timers-due-at-one-time-fire-in-no-order.md) promises none.
+  first. The runtime does the same for entities loaded under the default scheduler, and fires first the timer of the
+  smaller id for entities unloaded, since the waker reads them in the order of their ids. So the first layer holds no
+  order of the timers of two entities, and [decision 0293](0293-two-entities-timers-due-at-one-time-fire-in-no-order.md) promises none.
 - That the first layer runs the rehearsal with no change of what a test of the rehearsal sees: **open**. The part of
   the step that moves it checks it, by `src/rehearse.test.ts` and `src/rehearse.property.test.ts` passing as they are.
 - That Effect promises no inline resumption: **read** in the JSDoc of `Deferred`, `Fiber.join`, `Effect.callback` and

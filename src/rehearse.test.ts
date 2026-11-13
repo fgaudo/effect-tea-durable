@@ -542,6 +542,34 @@ describe('a world', () => {
     await Effect.runPromise(rehearse.together(at, scenario).pipe(Effect.provide(Layer.mock(Receipts, {}))))
   })
 
+  // A rehearsal that runs its scenario a second time calls it under the services provided once, outside it
+  // (decision 0293). Each call of `together` makes a world as new, and a layer provided outside is built once for
+  // both: what a hand keeps is not new in the second call.
+  test('called twice under one provide, finds a world as new and the hands built once', async () => {
+    let builds = 0
+    const mails: Array<Array<string>> = []
+    const hands = Layer.effect(Receipts, Effect.sync(() => {
+      builds++
+      const mailed: Array<string> = []
+      mails.push(mailed)
+      return Receipts.of({ mail: (event) => Effect.sync(() => void mailed.push(event)) })
+    }))
+    const states: Array<string> = []
+    const scenario = Effect.fnUntraced(function*(world: World) {
+      yield* world.create(inventory, 'concert-1', { capacity: 4 })
+      const held = yield* world.create(mailing, 'booking-1', flags)
+      states.push((yield* held.state)._tag)
+      expect(yield* held.run('hold')).toBe('Delivered')
+      yield* held.send({ _tag: 'ConfirmRequested' }, { sender: { _tag: 'Customer', id: 'ada' } })
+      expect(yield* held.run('confirm')).toBe('Delivered')
+    })
+    await Effect.runPromise(
+      Effect.andThen(rehearse.together(at, scenario), rehearse.together(at, scenario)).pipe(Effect.provide(hands)),
+    )
+    expect(states).toEqual(['Holding', 'Holding'])
+    expect({ builds, mails }).toEqual({ builds: 1, mails: [['concert-1', 'concert-1']] })
+  })
+
   // A mock's member that is called dies, so a runner the test meant to answer, and ran, fails the test.
   test('fails a run that calls a member a mock does not give', async () => {
     const exit = await Effect.runPromiseExit(rehearse.together(

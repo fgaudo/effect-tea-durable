@@ -485,7 +485,9 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   that a test that depends on the order of a pair fails in one of the two runs. An option of `rehearse.together` runs
   every order of a group of up to four. Its note is
   [decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md), `proposed`. Nothing of it
-  is written yet. It begins in `together` and `dueBy` of [`src/rehearse.ts`](../src/rehearse.ts), with the tests its
+  is written yet. Two of its premises failed before it began, and the maintainer chooses first what the decision's
+  bullets on one entity's order and on the scenario called twice become: the note says the choices. It begins in
+  `together` and `dueBy` of [`src/rehearse.ts`](../src/rehearse.ts), with the tests its
   note names in `src/rehearse.test.ts` and `src/runtime/loop.test.ts`. It touches no file of the step The tests of a
   contract on every backend, so it may run beside it. The step leaves this file when its tests pass, `docs/design.md`
   and `docs/glossary.md` say it, and decision 0293 is taken, `accepted`, by that commit.
