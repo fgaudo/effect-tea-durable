@@ -57,6 +57,7 @@ import {
   together,
   tracing,
   unloads,
+  type Window,
 } from '../runtime.test_shared.ts'
 
 describe('passivation', () => {
@@ -1758,10 +1759,11 @@ describe('one entity\'s two timers due at one time', () => {
       return [...fired]
     })
 
-  // Each timer sleeps in a fiber of its own. Activated, the entity arms both timers due already, and the schedules
-  // move the points where one fiber runs between two steps of the other: the machine's order holds under every seed.
-  const explore = (mode: 'loaded' | 'unloaded' | 'restarted') =>
-    explored((window) =>
+  // Each timer sleeps in a fiber of its own, and both wake at one move of the clock, or are armed due already by an
+  // activation. A schedule may run the fiber of `a` first, as seed 11 does for the entity loaded, and the entity's
+  // loop fires `t` all the same, since a `Fire` fires the timer the machine chooses. A loop that steps the `Fire` it
+  // takes, seed 11, pinned, fails. `bun run test:pins` runs it against that form.
+  const ordering = (mode: 'loaded' | 'unloaded' | 'restarted', window: Window) =>
         Effect.gen(function*() {
           fired.length = 0
           const { layer } = yield* hands()
@@ -1788,19 +1790,44 @@ describe('one entity\'s two timers due at one time', () => {
               }))
           }
           return [...fired]
-        }), ['t', 'a'])
+        })
+
+  test('the runtime fires them in the order the machine holds them, loaded, under prioritized schedules', () => {
+    explored((window) => ordering('loaded', window), ['t', 'a'], { pinned: [11] })
+  }, 60_000)
 
   for (const mode of ['unloaded', 'restarted'] as const) {
     test(`the runtime fires them in the order the machine holds them, ${mode}, under prioritized schedules`, () => {
-      explore(mode)
+      explored((window) => ordering(mode, window), ['t', 'a'])
     }, 60_000)
   }
 
-  // The premise of decision 0293 fails here. Loaded, the entity's two timers sleep from its creation and wake at one
-  // move of the clock, and a schedule may run the fiber of `a` first: seed 11 fires `a` before `t`, and about one
-  // seed in thirty does.
-  test('the runtime may fire them out of the order the machine holds them, loaded, under prioritized schedules', () => {
-    expect(() => explore('loaded')).toThrow(/seed \d+/)
+  // The message of `t` drops `a`. The `Fire` that `a`'s fiber offered, if it offered one before the drop, finds no
+  // timer due, and the machine drops it: `a` never fires, and `t` fires once.
+  test('a Fire that finds no timer due fires nothing, under prioritized schedules', () => {
+    const dropping: Program<T> = {
+      ...twice,
+      name: 'Dropping',
+      update: (message, meta) => (state) => {
+        if (message._tag !== 'Rang') return twice.update(message, meta)(state)
+        fired.push(message.key)
+        return { ...state, want: [] }
+      },
+    }
+    explored((window) =>
+      Effect.gen(function*() {
+        fired.length = 0
+        const { layer } = yield* hands()
+        yield* process({}, (runtime) =>
+          Effect.gen(function*() {
+            const toy = yield* Effect.provide(runtime.deploy(dropping), layer)
+            yield* toy.create('one', { flags, requestId: 'one', sender: tester })
+            yield* runtime.settled
+            yield* adjusted(window, '40 millis')
+            yield* runtime.settled
+          }))
+        return [...fired]
+      }), ['t'])
   }, 60_000)
 
   for (const mode of ['loaded', 'unloaded', 'restarted'] as const) {
@@ -1811,10 +1838,10 @@ describe('one entity\'s two timers due at one time', () => {
   }
 })
 
-// A timer armed again moves in the order the machine holds its timers (decision 0293). `t` is due at 30 and `a` at 40,
-// and a message moves `t` to 40. The stored work lists `t` first, as `work` gives it, and the timers running list it
-// last, since a timer armed again leaves `running` and enters it at its end. A restart rebuilds `running` in the order
-// of the stored work, so the same two timers fire in the other order.
+// A timer armed again keeps its place in the order the machine holds its timers (decision 0293). `t` is due at 30 and
+// `a` at 40, and a message moves `t` to 40. The stored work lists `t` first, as `work` gives it, and the timers running
+// list it last, since a timer armed again leaves `running` and enters it at its end. The machine chooses by the stored
+// work, so a restart, which rebuilds `running` in the order of the stored work, changes nothing.
 describe('a timer armed again at the time of another', () => {
   const fired: Array<string> = []
   const rearmed: Program<T> = {
@@ -1837,7 +1864,7 @@ describe('a timer armed again at the time of another', () => {
   const flags = { at: DateTime.makeUnsafe(0) }
   const move = { _tag: 'Want', key: 't', on: true, nonce: 'move' } as const
 
-  test('a rehearsal fires the timer armed again last, and first after a restart', async () => {
+  test('a rehearsal fires the timer armed again in its place, after a restart too', async () => {
     const orders: Array<Array<string>> = []
     for (const restarts of [false, true]) {
       fired.length = 0
@@ -1848,10 +1875,10 @@ describe('a timer armed again at the time of another', () => {
       })).pipe(Effect.provide(Layer.mock(Hands, {}))))
       orders.push([...fired])
     }
-    expect(orders).toEqual([['a', 't'], ['t', 'a']])
+    expect(orders).toEqual([['t', 'a'], ['t', 'a']])
   })
 
-  test('the runtime fires the timer armed again last, and first after a restart', () =>
+  test('the runtime fires the timer armed again in its place, after a restart too', () =>
     database(Effect.gen(function*() {
       const orders: Array<Array<string>> = []
       for (const restarts of [false, true]) {
@@ -1877,13 +1904,14 @@ describe('a timer armed again at the time of another', () => {
         }
         orders.push([...fired])
       }
-      expect(orders).toEqual([['a', 't'], ['t', 'a']])
+      expect(orders).toEqual([['t', 'a'], ['t', 'a']])
     })))
 })
 
 // On a clock that is real, each timer sleeps the time left from the wall clock's millisecond when it is armed, and
 // the platform's timers wake by a clock of their own: two timers armed in two steps for one time are woken in an order
-// that the part of a millisecond each step began at decides (decision 0293).
+// that the part of a millisecond each step began at decides. The entity's loop fires them in the order of its stored
+// work all the same (decision 0293).
 describe('two timers of one entity armed in two steps for one time, on a clock that is real', () => {
   const steady: Program<T> = {
     ...program,
@@ -1895,9 +1923,9 @@ describe('two timers of one entity armed in two steps for one time, on a clock t
         : Object.fromEntries(state.want.map((key) => [key, timer<Internal>(state.rings, { _tag: 'Rang', key })])),
   }
 
-  // From one entity in twenty-five to one in eight fired `t` first in the runs seen, so two hundred entities with none
-  // happen less than once in three thousand runs.
-  slow('fire out of the order the machine holds them, in some entities', () =>
+  // A loop that stepped the `Fire` it took fired `t` first in one entity in twenty-five to one in eight, in the runs
+  // seen, so two hundred entities with none would happen less than once in three thousand runs.
+  slow('fire in the order the machine holds them, in every entity', () =>
     database(Effect.gen(function*() {
       const orders = new Map<string, Array<string>>()
       yield* process({
@@ -1922,7 +1950,6 @@ describe('two timers of one entity armed in two steps for one time, on a clock t
         }))
       const counted = new Map<string, number>()
       for (const order of orders.values()) counted.set(order.join(), (counted.get(order.join()) ?? 0) + 1)
-      expect([...counted.keys()].sort()).toEqual(['a,t', 't,a'])
-      expect([...counted.values()].reduce((sum, count) => sum + count, 0)).toBe(200)
+      expect(Object.fromEntries(counted)).toEqual({ 'a,t': 200 })
     }).pipe(Effect.provideService(Clock.Clock, Clock.Clock.defaultValue()))))
 })

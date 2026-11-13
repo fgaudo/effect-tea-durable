@@ -721,6 +721,27 @@ export const workOf = <T extends Types>(stored: Stored<T>): Held<T> => {
   return work
 }
 
+/** A timer armed, under its key and incarnation, with the time it is due at. */
+export type Due = Readonly<{ key: Key; incarnation: number; at: DateTime.Utc }>
+
+/**
+ * The entity's next timer to fire, of its timers armed and due no later than `until`: the one due earliest, and of
+ * those due at one time the first in the stored work, or undefined for none. The stored work lists its keys in the
+ * order of the record `work` gave, which a timer armed again does not change, so a restart keeps the order. The
+ * runtime and the rehearsal both fire by it (decision 0293).
+ */
+export const nextTimer = <T extends Types>(machine: Machine<T>, until: DateTime.Utc): Due | undefined => {
+  let next: Due | undefined
+  for (const [text, held] of Object.entries(machine.stored.keys)) {
+    const running = machine.running[text]
+    if (running?.kind !== 'Timer' || running.incarnation !== held.incarnation || !isTimer(held.work)) continue
+    const { at } = held.work
+    if (DateTime.isGreaterThan(at, until) || (next !== undefined && !DateTime.isLessThan(at, next.at))) continue
+    next = { key: held.key, incarnation: held.incarnation, at }
+  }
+  return next
+}
+
 export type Delivery = Runner<unknown, unknown, unknown>['delivery']
 
 /** How `program` delivers an operation, or `undefined` for a timer. The work was admitted, so it has a runner. */

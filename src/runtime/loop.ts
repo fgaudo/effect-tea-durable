@@ -284,6 +284,23 @@ export const start = <T extends Types>(
   })
 
 /**
+ * The event an entity's step makes of an event its loop took. A `Fire` fires, of the entity's timers due by `now`,
+ * the one the machine chooses, whichever timer's fiber woke first, so that one entity's timers due at one time fire
+ * in the order of its stored work. Each timer still offers a `Fire` of its own, so each timer due is fired by one
+ * `Fire`, its own or another's. A `Fire` that finds no timer due is stepped as it came, and the machine drops it,
+ * since its timer fired already or stopped (decision 0293).
+ */
+export const firing = <T extends Types>(
+  machine: Machine.Machine<T>,
+  event: Machine.Event<T>,
+  now: DateTime.Utc,
+): Machine.Event<T> => {
+  if (event._tag !== 'Fire') return event
+  const due = Machine.nextTimer(machine, now)
+  return due === undefined ? event : { _tag: 'Fire', key: due.key, incarnation: due.incarnation }
+}
+
+/**
  * Arms a timer: its time comes on the wall clock, and `Fire` is offered. A passivated entity would be woken by `due`
  * instead. The timer sleeps `reread` at most at a time, and reads the wall clock after each sleep: a host suspended
  * fires it late by `reread` at most, and a clock set back fires it at its time, never before (decision 0221).
@@ -431,10 +448,10 @@ export const applyInProcess = <T extends Types>(
     const found = offered._tag === 'Receive'
       ? yield* deployed.storage.reply(entity.id, offered.request, DateTime.toEpochMillis(now))
       : null
+    const before = loaded.machine
     const event: Machine.Event<T> = offered._tag === 'Receive'
       ? { ...offered, reply: found?.reply ?? null, carried: found?.carried ?? null, at: now }
-      : offered
-    const before = loaded.machine
+      : firing(before, offered, now)
     const transition = Machine.step(deployed.program, before, event)
     const { written } = transition
     if (written !== null) {

@@ -12,7 +12,7 @@ import * as Exit from 'effect/Exit'
 import * as Queue from 'effect/Queue'
 import * as Schedule from 'effect/Schedule'
 import { wake } from './callers.ts'
-import { crash, entersHeld, fresh, loadable, loop, offer, perform, warnOfSize } from './loop.ts'
+import { crash, entersHeld, firing, fresh, loadable, loop, offer, perform, warnOfSize } from './loop.ts'
 import * as Machine from '../machine.ts'
 import {
   at,
@@ -124,8 +124,8 @@ export const applyOnCluster = <T extends Types>(
       if (offered._tag === 'Settle' || offered._tag === 'Receive') return null
       const { stored } = loaded.machine
       if (offered._tag === 'Handle' && (stored.mailbox.length === 0 || stored.suspension !== null)) return null
-      const event: Machine.Event<T> = offered
       const before = loaded.machine
+      const event = firing(before, offered, now)
       const transition = Machine.step(deployed.program, before, event)
       let characters = 0
       if (transition.written !== null) {

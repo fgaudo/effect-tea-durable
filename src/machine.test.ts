@@ -1717,6 +1717,58 @@ describe('the order of the timers due at one time', () => {
   })
 })
 
+// The runtime and the rehearsal fire an entity's timers by one function of the machine (decision 0293).
+describe("the choice of an entity's next timer", () => {
+  const next = (entity: Entity, until: DateTime.Utc) => Machine.nextTimer(entity, until)?.key.name
+
+  test('is the timer due earliest, and none due later than the time', () => {
+    const entity = checked((message) => message, () => ({ deadline: 'later timer', charge: 'operation', reminder: 'timer' }))
+    expect(next(entity, at)).toBe('reminder')
+    expect(next(entity, epoch)).toBe('reminder')
+    expect(next(entity, DateTime.subtractDuration(epoch, '1 millis'))).toBeUndefined()
+    const { incarnation } = Machine.nextTimer(entity, epoch)!
+    const fired = stepped(entity, { _tag: 'Fire', key: { name: 'reminder' }, incarnation }).machine
+    expect(fired.running['["reminder"]']).toBeUndefined()
+    expect(next(fired, epoch)).toBeUndefined()
+    expect(next(fired, at)).toBe('deadline')
+  })
+
+  test('is none for a Fire of a timer fired already, which writes nothing', () => {
+    const entity = checked((message) => message, () => ({ reminder: 'timer' }))
+    const fire = { _tag: 'Fire', key: { name: 'reminder' }, incarnation: Machine.nextTimer(entity, epoch)!.incarnation } as const
+    const fired = stepped(entity, fire).machine
+    expect(Machine.nextTimer(fired, at)).toBeUndefined()
+    const again = stepped(fired, fire)
+    expect(again.written).toBeNull()
+    expect(again.outputs).toEqual([{ _tag: 'Dropped', key: fire.key, incarnation: fire.incarnation }])
+  })
+
+  test('is, of the timers due at one time, the first in the stored work', () => {
+    expect(next(checked((message) => message, () => ({ reminder: 'timer', deadline: 'timer' })), epoch)).toBe('reminder')
+    expect(next(checked((message) => message, () => ({ deadline: 'timer', reminder: 'timer' })), epoch)).toBe('deadline')
+  })
+
+  // A timer armed again leaves `running` and enters it at its end, and keeps its place in the stored work.
+  test('keeps the place in the stored work of a timer armed again', () => {
+    const entity = checked(
+      (message) => message,
+      (state) => state === 'start' ? { reminder: 'timer', deadline: 'timer' } : { reminder: 'other timer', deadline: 'timer' },
+    )
+    const moved = handled(entity, { _tag: 'Receive', request: by('move'), message: 'moved' }).machine
+    expect(Object.keys(moved.running)).toEqual(['["deadline"]', '["reminder"]'])
+    expect(moved.running['["reminder"]']?.incarnation).not.toBe(entity.running['["reminder"]']?.incarnation)
+    expect(next(moved, at)).toBe('reminder')
+  })
+
+  test('is no timer of a suspended entity', () => {
+    const entity = checked((message) => (message === 'break' ? defect('broken') : message), () => ({ reminder: 'timer' }))
+    expect(next(entity, epoch)).toBe('reminder')
+    const suspended = handled(entity, { _tag: 'Receive', request: by('break'), message: 'break' }).machine
+    expect(suspended.stored.suspension).not.toBeNull()
+    expect(next(suspended, at)).toBeUndefined()
+  })
+})
+
 describe('the runners a program gives', () => {
   const inbound = { _tag: 'Receive', request: by('r'), message: 'go' } as const
   // A cast lets a program through with no runner for an operation it holds: the machine admits none (decision

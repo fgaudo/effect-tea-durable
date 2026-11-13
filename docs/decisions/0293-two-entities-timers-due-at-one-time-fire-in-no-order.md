@@ -1,7 +1,9 @@
 # 0293. Two entities' timers due at one time fire in no order, and a suspension closes a rehearsal's world
 
 **Status:** proposed, 2026-11-13, for the step Two entities' timers due at one time, in no order, of the
-[roadmap](../roadmap.md). Nothing of it is written yet. The maintainer chose its rules in a session of 2026-11-13,
+[roadmap](../roadmap.md). Its first part is written: `nextTimer` of `src/machine.ts`, which `firing` of
+`src/runtime/loop.ts` and `dueBy` of `src/rehearse.ts` call. The closed world and the `Die` of a rehearsal are not
+written yet. The maintainer chose its rules in a session of 2026-11-13,
 after three opinions of a second model, Fable 5.2, and the tests that checked them. A first form had a rehearsal run
 its scenario a second time with every group of entities due at one time reversed. It was dropped once a test showed
 that the order changes nothing a test reads of a pure program, and its rules are under Alternatives. What it left is
@@ -44,13 +46,15 @@ scenario catches.
   A record keyed by names like `2` and `1` lists them in the order of their numbers, and `docs/design.md` says so.
 - **The runtime keeps that order where an entity's loop takes a `Fire`.** The `Fire` of any timer of the entity
   fires, of its timers due by then, the one due earliest, and of those due at one time the first in the stored work.
-  The fiber of each timer stays as it is, and only says that a timer of the entity is due. The `Fire` of a timer
-  that already fired arrives later with an incarnation the machine no longer holds, and is dropped. So the order
-  holds whichever fiber wakes first, under a schedule of `src/testing.ts` and on a clock that is real. The loop finds
-  the timer to fire by the function of the machine below.
+  The fiber of each timer stays as it is, and only says that a timer of the entity is due. Each timer's fiber
+  still offers a `Fire` of its own, so each timer due is fired by one `Fire`, its own or another's. A `Fire` that
+  finds no timer due, since its timer fired already or a step dropped it, is stepped as it came, and the machine
+  drops it. So the order holds whichever fiber wakes first, under a schedule of `src/testing.ts` and on a clock that
+  is real. The loop finds the timer to fire by the function of the machine below, in `firing` of
+  [`src/runtime/loop.ts`](../../src/runtime/loop.ts), on one process and on Cluster.
 - **The rehearsal orders one entity's timers by the stored work too,** in `dueBy` of
   [`src/rehearse.ts`](../../src/rehearse.ts), and no longer by the timers running.
-- **The choice of an entity's next timer is one function of the machine.** A function of `src/machine.ts` gives, of
+- **The choice of an entity's next timer is one function of the machine.** `nextTimer` of `src/machine.ts` gives, of
   an entity's timers due by a time, the one due earliest, and of those due at one time the first in the stored work.
   The runtime calls it where an entity's loop takes a `Fire`, and the rehearsal calls it in `dueBy` for each entity.
   So the rule is written once, as decision 0292 wants of a rule both run, and its test lies in
@@ -137,22 +141,26 @@ scenario catches.
   after a restart: **tested** by `the runtime fires them in the order the machine holds them, unloaded, under
   prioritized schedules` and `the runtime fires them in the order the machine holds them, restarted, under prioritized
   schedules`, in `src/runtime/loop.test.ts`, under every seed of `SCHEDULES=all`.
-- That one entity's timers due at one time fire in the machine's order on the runtime, for an entity loaded:
-  **failed**, **tested** by `the runtime may fire them out of the order the machine holds them, loaded, under
-  prioritized schedules`, in `src/runtime/loop.test.ts`. Each timer sleeps in a fiber of its own, and both wake at one
-  move of the clock. Seed 11 fires the second timer first, and so do 65 seeds of 2,000. The test `the runtime fires
-  them in the order the machine holds them, loaded` passes, since the default scheduler runs the two fibers in the
-  order they were armed.
-- That one entity's timers armed in two steps for one time fire in the machine's order on a clock that is real:
-  **failed**, **tested** by `fire out of the order the machine holds them, in some entities`, in
-  `src/runtime/loop.test.ts`, which `bun run test:release` runs. Each timer sleeps the time left from the wall
-  clock's millisecond, and the platform wakes it by a clock of its own. From one entity in twenty-five to one in
-  eight fired the second timer first. So the order fails in production too, and not only under a schedule of
+- That one entity's timers due at one time fire in the machine's order on the runtime, for an entity loaded, when
+  the loop steps the `Fire` it takes: **failed**, **tested** by `the runtime fires them in the order the machine holds
+  them, loaded, under prioritized schedules`, in `src/runtime/loop.test.ts`, which `bun run test:pins` runs against
+  that loop by the pin `0293 a Fire fires the timer the machine chooses`. Each timer sleeps in a fiber of its own,
+  and both wake at one move of the clock. Seed 11 fires the second timer first, and so did 65 seeds of 2,000. The
+  test `the runtime fires them in the order the machine holds them, loaded` passes on either loop, since the default
+  scheduler runs the two fibers in the order they were armed.
+- That one entity's timers armed in two steps for one time fire in the machine's order on a clock that is real, when
+  the loop steps the `Fire` it takes: **failed**, **seen** in runs of the test `fire in the order the machine holds
+  them, in every entity`, in `src/runtime/loop.test.ts`, against that loop. Each timer sleeps the time left from the
+  wall clock's millisecond, and the platform wakes it by a clock of its own. From one entity in twenty-five to one in
+  eight fired the second timer first. So the order failed in production too, and not only under a schedule of
   `src/testing.ts`.
-- That the order the machine holds one entity's timers in stays the same across a restart: **failed**, **tested** by
-  `a rehearsal fires the timer armed again last, and first after a restart` and `the runtime fires the timer armed
-  again last, and first after a restart`, in `src/runtime/loop.test.ts`. A timer armed again leaves `running` and
-  enters it at its end, and an activation rebuilds `running` in the order of the stored work.
+- That the order of the timers running stays the same across a restart: **failed**, **seen** in runs of the tests `a
+  rehearsal fires the timer armed again in its place, after a restart too` and `the runtime fires the timer armed
+  again in its place, after a restart too`, in `src/runtime/loop.test.ts`, against a rehearsal and a loop that fired
+  by the order of `running`. A timer armed again leaves `running` and enters it at its end, and an activation rebuilds
+  `running` in the order of the stored work. So the machine chooses by the stored work, which a timer armed again
+  does not reorder: **tested** by the same two tests, each named here for its own premise, and by `keeps the place in
+  the stored work of a timer armed again`, in `src/machine.test.ts`.
 - That the machine keeps the order of the record `work` gives: **tested** by `a key's text is never a text JavaScript
   orders as a number`, in `src/machine.test.ts`. A key's text is the JSON of an array.
 - That a program may write its keys in any order: **failed**, **tested** by `keys named by numbers are held in the
@@ -165,9 +173,10 @@ scenario catches.
 - That a rehearsal's run whose runner dies applies `Die`, and fails the rehearsal with the runner's cause: **open**.
   The test `of an operation's defect suspends no entity in a rehearsal, unlike the runtime` then asserts that the
   entity is suspended and the world closed, and is renamed with it.
-- That the machine's choice of an entity's next timer gives, within one entity, what `dueBy` gives today, but for a
-  timer armed again: **open**. The tests of `src/rehearse.test.ts` pass as they are, and a test of
-  `src/machine.test.ts` checks the choice for times, for the stored work's order and for a timer armed again.
+- That the machine's choice of an entity's next timer gives, within one entity, what `dueBy` gave, but for a timer
+  armed again: **tested** by `src/rehearse.test.ts`, whose tests pass as they were, and by the group `the choice of
+  an entity's next timer`, in `src/machine.test.ts`, for times, for the stored work's order, for a timer armed again
+  and for a suspended entity.
 - That one function of the machine chooses an entity's next timer, rather than a rule written in the runtime and in
   the rehearsal: **chosen** by the maintainer, as decision 0292 chose for the rules both run.
 - That the runtime keeps one entity's order, rather than promising none within one entity: **chosen** by the
@@ -175,14 +184,18 @@ scenario catches.
   timers.
 - That a rehearsal checks no order of two entities but the order of creation, rather than running its scenario under
   others: **chosen** by the maintainer, on the test `changes nothing a test reads of the entities`.
-- That the `Fire` of a timer already fired by another timer's `Fire` is dropped, and writes nothing: **open**. A test
-  of the runtime with one entity's two timers due at one time checks it, by the events committed.
-- That no timer fires twice when another timer's `Fire` fires it first: **open**. The same kind of test checks it,
-  under prioritized schedules.
-- That one loaded entity's timers due at one time fire in the order of the stored work under every seed and on a
-  clock that is real: **open**. The tests `the runtime may fire them out of the order the machine holds them, loaded,
-  under prioritized schedules`, `fire out of the order the machine holds them, in some entities` and `the runtime
-  fires the timer armed again last, and first after a restart` then assert that order, and are renamed with it.
+- That a `Fire` that finds no timer due is dropped by the machine, and writes nothing: **tested** by `is none for a
+  Fire of a timer fired already, which writes nothing`, in `src/machine.test.ts`, and by `a Fire that finds no timer
+  due fires nothing, under prioritized schedules`, in `src/runtime/loop.test.ts`, under every seed of
+  `SCHEDULES=all`, where the message of the first timer drops the second.
+- That no timer fires twice when another timer's `Fire` fires it first: **tested** by `the runtime fires them in the
+  order the machine holds them, loaded, under prioritized schedules`, in `src/runtime/loop.test.ts`, whose program
+  records each firing, under every seed of `SCHEDULES=all`.
+- That one loaded entity's timers due at one time fire in the order of the stored work under every seed: **tested** by
+  `the runtime fires them in the order the machine holds them, loaded, under prioritized schedules`, in
+  `src/runtime/loop.test.ts`, under every seed of `SCHEDULES=all`.
+- That they fire in that order on a clock that is real: **tested** by `fire in the order the machine holds them, in
+  every entity`, in `src/runtime/loop.test.ts`, which `bun run test:slow` runs, with two hundred entities.
 
 ## Alternatives
 
@@ -211,5 +224,7 @@ scenario catches.
   of the timers due in its shared layer. The waker's policy stays among the policies of the runtime alone.
 - The tests `two timers due at one time` of `src/runtime/loop.test.ts` assert that neither order is promised, once the
   step is done.
+- The span of a step that fires a timer names the key of the `Fire` the loop took, which may be another timer of the
+  entity than the one fired. The event observed and the event committed name the timer fired.
 - The [open question](../open-questions.md#running) The order of two timers due at one time leaves when this note is
   taken.

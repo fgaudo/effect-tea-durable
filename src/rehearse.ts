@@ -433,25 +433,23 @@ const makeWorld = (at: DateTime.Utc) => {
     })
 
   /**
-   * The timer under way in the world due earliest, and no later than `until`, or undefined. Of two due at one time,
-   * the one of the entity created first fires first, and within an entity the one its machine holds first.
+   * The timer under way in the world due earliest, and no later than `until`, or undefined. Within an entity the
+   * machine chooses it, as the runtime's loop does. Of two entities' timers due at one time, the one of the entity
+   * created first fires first, an order the runtime does not keep (decision 0293).
    */
   const dueBy = (until: DateTime.Utc) => {
     let next: Readonly<{ entity: Entity<Types>; pending: Pending; at: DateTime.Utc }> | undefined
     for (const entity of entities.values()) {
-      for (const [text, running] of Object.entries(entity.machine.running)) {
-        const held = entity.machine.stored.keys[text]
-        if (running.kind !== 'Timer' || held === undefined || !isTimer(held.work)) continue
-        const { at } = held.work
-        if (DateTime.isGreaterThan(at, until) || (next !== undefined && !DateTime.isLessThan(at, next.at))) continue
-        const pending: Pending = {
-          key: held.key,
-          incarnation: running.incarnation,
-          idempotencyKey: Machine.idempotencyKeyOf(entity.machine, held.key, running.incarnation),
-          work: held.work,
-        }
-        next = { entity, pending, at }
+      const due = Machine.nextTimer(entity.machine, until)
+      if (due === undefined || (next !== undefined && !DateTime.isLessThan(due.at, next.at))) continue
+      const { key, incarnation, at } = due
+      const pending: Pending = {
+        key,
+        incarnation,
+        idempotencyKey: Machine.idempotencyKeyOf(entity.machine, key, incarnation),
+        work: entity.machine.stored.keys[Machine.keyText(key)]!.work,
       }
+      next = { entity, pending, at }
     }
     return next
   }

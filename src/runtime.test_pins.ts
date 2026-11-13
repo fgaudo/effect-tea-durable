@@ -211,4 +211,11 @@ export const pins: ReadonlyArray<Pin> = [
     test: 'src/runtime/waker.test.ts',
     name: 'a poke that lands as the waker’s sleep ends is read, under prioritized schedules from the sleep’s end',
   },
+  {
+    id: '0293 a Fire fires the timer the machine chooses',
+    file: 'src/runtime/loop.ts',
+    edits: [['      : firing(before, offered, now)', '      : offered']],
+    test: 'src/runtime/loop.test.ts',
+    name: 'the runtime fires them in the order the machine holds them, loaded, under prioritized schedules',
+  },
 ]
