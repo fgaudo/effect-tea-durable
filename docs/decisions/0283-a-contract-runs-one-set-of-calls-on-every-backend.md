@@ -78,6 +78,16 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
   each call names and writes. fast-check draws the gate among the tables both calls write, else among those both
   name, else among every table of the library. A gate drawn among every table held both calls at once in 6 and in
   13 of a hundred runs. Then each request of the pair is sent again, and every entity is read.
+- **A statement that drops rows of the outbox is recorded as writing the publications too**, since the trigger of
+  the outbox drops them, and no statement the recording sees names them
+  ([decision 0286](0286-the-trigger-of-the-outbox-locks-the-publications-in-order.md)).
+- **On the pool, `item` publishes two topics, `label` and `amount`, and is deployed with a consumer of each.** The
+  calls of a history are also an ack of a consumer, through the partitions of the run's entities, and a prune. A
+  call of the pair may be an ack followed by a prune, so that two prunes at once see the log otherwise by an ack. An
+  ack's cursor is the head of each partition, which `ack` caps a cursor at. A cursor read from the rows would read
+  the publications, and the ack would wait at a lock of their table before the other prune had dropped its rows.
+- **The readings after the pair count the publications of the run's entities**, read from their table. No call reads
+  a publication that no row of the outbox names, which bug 80 of [`docs/bugs.md`](../bugs.md) left for ever.
 - **The answers on the pool must be those of one of the two orders the calls run in one at a time**, as SQLite runs
   them on a new database. An operator's call is compared by whether it succeeds, since what it counts depends on the
   rows of the other runs. A message of the pair adds to an index, so that a message applied twice shows in the
@@ -130,6 +140,14 @@ Since [decision 0291](0291-on-cluster-a-creation-the-program-dies-on-is-answered
   suspended entity 131 times, `discard` answered `Discarded` 47 times and `resume` answered `Resumed` 39 times. No
   `resume` answered `StillSuspended`, since the program deployed is the one that died.
 - That the runners start within a minute: **seen**, in the runs of the test on the maintainer's machine.
+- That the pool reaches bug 80: **tested**, by `two calls held at a statement on a pool answer as one order of
+  them`, whose examples `bug80` lock the publications. On 2026-11-13, in the job `postgres` of the CI, the test
+  **failed** at its first example of bug 80 against the trigger once for each row before decision 0286, on the push of
+  the branch `claude/pool-bug80-before`, where one publication stayed. It passed with the trigger of decision 0286, on
+  the push of `claude/pool-bug80`, which held both calls at once in 38 of a hundred runs. An earlier form of the
+  ack read the rows with `published`, and passed against the old trigger, since it waited at the lock.
+- That the history of bug 80 leaves no publication on SQLite in either order, and two without its acks: **seen**, on
+  2026-11-13, in a run of the history on SQLite in each order while the test was written.
 - That two calls held at a statement on a pool answer as one order of them: **tested**, by a hundred runs in the job
   `postgres` of the CI, on the push of `claude/contract-tests-c7e2a1` with decision 0284. Before that decision, with
   `reindex` among the pairs, it **failed**, which is bug 25.

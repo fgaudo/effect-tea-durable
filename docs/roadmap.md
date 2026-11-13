@@ -408,9 +408,10 @@ it leaves this file, and what it decided goes into the design, a decision or an 
     `item`, whose operation creates another item, and a `Spawn` whose label is text no database holds, which the
     program dies on, followed by an operator's call on the item that spawns. A run of 300 passed, and found none of
     the backends otherwise.
-  - Next, the pool's histories grow, with a deploy that declares a consumer and an ack between the snapshot of a
-    batch of `prune` and its commit, so that the pool reaches bug 80, which a scenario of `src/postgres.test.ts`
-    holds now. It begins in `paired` and `pairedOn` of `src/contract.test.ts`, and runs only on the CI's server.
+  - Done, on 2026-11-13, the pool reaches bug 80: its histories hold an ack of a consumer and a prune, and a call
+    of the pair may ack and then prune, so that two prunes see the log otherwise. No deploy was needed, since the
+    consumers are declared at the first deploy. Its examples `bug80` fail on the CI against the trigger before
+    decision 0286.
     A difference of Cluster that a note decides is marked in the test of a contract, as decision 0283 says, and a
     difference no note decides is a bug.
   - Then the tests of the runtime that hold a rule of one process, which `src/runtime.test.ts` holds, run on Cluster

@@ -4,7 +4,9 @@
 [decision 0284](0284-a-statement-reads-its-condition-from-a-row-it-has-locked.md). It changes the trigger of
 PostgreSQL of [decision 0154](archive/0154-a-steps-projection-is-stored-once-in-the-outbox.md), as
 [decision 0157](archive/0157-the-storage-speaks-sqlite-and-postgresql.md) wrote it: the trigger runs once for each
-statement, and not once for each row.
+statement, and not once for each row. Its premise that no pair of the test of a contract reaches the case fell on
+2026-11-13: the pool of [decision 0283](0283-a-contract-runs-one-set-of-calls-on-every-backend.md) reaches it, with an
+ack between two prunes, and its examples `bug80` fail against the trigger before this note.
 
 ## Context
 
