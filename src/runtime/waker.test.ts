@@ -116,6 +116,43 @@ test('settled never returns while the waker rests from a reading an unloaded ent
     }), { early: false, restarted: true }, { open: false, bound: 1, pinned: [{ decision: 317, choice: 1 }] })
 }, 60_000)
 
+test('a poke that lands as the waker’s sleep ends is read, under prioritized schedules from the sleep’s end', () => {
+  // The waker rests on a race of a take of its poke against a sleep toward its next timer. Here the poke lands in the
+  // moment the sleep ends: `p` is unloaded at 40, as the sleep toward `w`'s timer at 40 runs out. A poke the race
+  // drops is harmless: `leave` offers it in the step `p` leaves `loaded` (decision 0068), and the round after the
+  // race reads the storage, so it finds `p`'s timer at 45. A waker that clears its poke after the race passes every
+  // seed. Without the poke of `leave`, the waker reads before `p` leaves, waits for a poke, and the run fails at seed 0.
+  explored((window) =>
+    Effect.gen(function*() {
+      const { layer } = yield* hands()
+      const fired: Array<readonly [string, number]> = []
+      const at = DateTime.toEpochMillis(yield* DateTime.now)
+      return yield* process({
+        passivate: { millis: 35 },
+        observe: (entity, event) =>
+          Effect.map(DateTime.now, (now) => {
+            if (event._tag === 'Fire') fired.push([entity.id, DateTime.toEpochMillis(now) - at])
+          }),
+      }, (runtime) =>
+        Effect.gen(function*() {
+          const toy = yield* Effect.provide(runtime.deploy(timed), layer)
+          // `w` rings at 40 and is unloaded at 35. `p` rings at 45 and is unloaded at 40.
+          yield* toy.create('w', { flags: { at: DateTime.makeUnsafe(at) }, requestId: 'c-w', sender: tester })
+          yield* adjusted(window, '5 millis')
+          yield* toy.create('p', { flags: { at: DateTime.makeUnsafe(at) }, requestId: 'c-p', sender: tester })
+          yield* adjusted(window, '30 millis')
+          yield* runtime.settled
+          yield* opened(window, true)
+          yield* TestClock.adjust('5 millis')
+          yield* runtime.settled
+          yield* opened(window, false)
+          yield* adjusted(window, '5 millis')
+          yield* runtime.settled
+          return fired
+        }))
+    }), [['w', 40], ['p', 45]], { open: false, runs: 1_000, pinned: [0] })
+}, 60_000)
+
 test('a clock moved past a timer while the waker reads fires the timer, and settled returns', () =>
   // Decision 0258: the waker reads the clock again in the step that lets it rest, and sleeps toward its next timer
   // from there. On a server the clock moves while the waker reads the storage. A waker that slept from the time it

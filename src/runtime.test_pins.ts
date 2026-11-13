@@ -201,4 +201,14 @@ export const pins: ReadonlyArray<Pin> = [
     test: 'src/runtime.test.ts',
     name: 'a drain that looks while a deploy activates closes on no at-most-once operation the deploy stores, under every deviation',
   },
+  {
+    id: '0068 an entity that leaves pokes the waker in the step it leaves loaded',
+    file: 'src/runtime/loop.ts',
+    edits: [[
+      '    forgetUse(p, loaded)\n    deployed.waker.busy = true\n    Queue.offerUnsafe(deployed.waker.poke, undefined)\n',
+      '    forgetUse(p, loaded)\n    deployed.waker.busy = true\n',
+    ]],
+    test: 'src/runtime/waker.test.ts',
+    name: 'a poke that lands as the waker’s sleep ends is read, under prioritized schedules from the sleep’s end',
+  },
 ]

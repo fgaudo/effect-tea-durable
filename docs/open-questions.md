@@ -1042,15 +1042,6 @@ with a requirement that no example has yet.
   - whether the five take their signal alike, or the waker's flag and the readings' count need more than one form;
   - whether the pure core of [decision 0292](decisions/0292-the-processs-state-is-a-pure-core-and-a-test-holds-an-order-by-its-events.md)
     holds the look and the registration in one transition, which would make the primitive needless.
-- **The waker's rest races a take of its poke against a sleep.** `rest` in `src/runtime/waker.ts` waits on
-  `Effect.raceFirst(Queue.take(waker.poke), Effect.sleep(…))`. Decisions 0111 and 0116 took such a race out of an
-  entity's wait, since a take that loses its race could lose its item. A poke lost so would delay a round to the end
-  of its sleep, an hour at most ([decision 0221](decisions/0221-a-timer-sleeps-an-hour-at-most-and-reads-the-wall-clock-again.md)).
-  The spike `spikes/effect-queue-take-timeout-scheduled.test.ts` sees no item lost at Effect 4.1.3, since a race
-  interrupts its losers as it settles. A second model, Fable 5.2, noted the race on 2026-11-13 by a reading of the
-  code, and no test reaches it. It would be decided by:
-  - a test of `src/runtime/waker.test.ts`, under the scheduler, in which a poke lands as the sleep ends, and whether
-    the round that follows reads the timer the poke was for.
 - **The order of two timers due at one time.** A rehearsal fires first, of two timers due at one time, the one of the
   entity created first, and within an entity the one its machine holds first (`dueBy` of `src/rehearse.ts`). The
   runtime does the same for entities loaded. For entities unloaded, it fires first the timer of the smaller id, since
