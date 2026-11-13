@@ -1,23 +1,12 @@
-# 0293. Two entities' timers due at one time fire in no order, and a rehearsal runs its scenario under both
+# 0293. Two entities' timers due at one time fire in no order, and a suspension closes a rehearsal's world
 
 **Status:** proposed, 2026-11-13, for the step Two entities' timers due at one time, in no order, of the
-[roadmap](../roadmap.md). The maintainer chose it in a session of 2026-11-13, after an opinion of a second model, Fable
-5.2. Nothing of it is written yet. Two of its premises failed on 2026-11-13, before the step began: the order of one
-loaded entity's timers, and hands as new in a second call of the scenario. A second model, Fable 5.2, recommended
-that the runtime keep one entity's order where its loop takes a `Fire`, and that a hand that keeps a value be made in
-the scenario. The four risks it raised were tested the same day, under What it rests on. The maintainer chose, in the
-same session, that the runtime keep one entity's order, by the stored work. After a second opinion of Fable 5.2, the
-maintainer chose too that whatever keeps a value is made in the scenario, and that a failed second run is told apart
-by a third. Later the same day, the premise that the second run checks something a test reads failed: in a world,
-the order of two entities' timers due at one time changes nothing a test reads of a program whose `update` is pure.
-The bullets of the second run rest on it, and the maintainer chooses what they become. One case of it failed too: a
-defect ends `advance` before the other timers due at that time fire, so a scenario that catches the defect reads
-which entity fired first. Fable 5.2 then recommended that a suspension close the world: every act and read after it
-dies with its cause, and the rehearsal fails even where the scenario caught it. Of the two other holes it raised, the
-one of `restart` was found and the one of `run` was ruled out, the same day. The maintainer chose that a suspension
-closes the world. A test then found that a defect of an operation suspends no entity in a rehearsal, where the
-runtime suspends the operation's entity, so a defect of an operation closes the world too. Whether the second run stays is still the
-maintainer's to choose.
+[roadmap](../roadmap.md). Nothing of it is written yet. The maintainer chose its rules in a session of 2026-11-13,
+after three opinions of a second model, Fable 5.2, and the tests that checked them. A first form had a rehearsal run
+its scenario a second time with every group of entities due at one time reversed. It was dropped once a test showed
+that the order changes nothing a test reads of a pure program, and its rules are under Alternatives. What it left is
+a rule found on the way: after a defect the scenario catches, a rehearsal read what the order decided, so a
+suspension now closes the world.
 
 ## Context
 
@@ -37,13 +26,18 @@ timers due at one time` of [`src/runtime/loop.test.ts`](../../src/runtime/loop.t
   order only within a partition (`docs/design.md`, under The order of the log).
 
 `docs/design.md` says that `advance` fires each timer due "in the order of the times", and nothing of two timers due
-at one time. So a test that passes on the rehearsal by the order of two entities' timers may fail on the runtime, and
-nothing tells the test's writer.
+at one time. So a test might pass on the rehearsal by the order of two entities' timers, and fail on the runtime.
+Under What it rests on, a test shows that it cannot for a program whose `update` is pure, except after a defect the
+scenario catches.
 
 ## Decision
 
 - **Of two entities' timers due at one time, no order holds.** `docs/design.md` says so where it says what `advance`
   does, and the glossary's entry of a timer says it too.
+- **A rehearsal fires them in the order of creation, and checks no other.** An entity reaches another only through
+  an operation, which runs when the test runs it, and a firing reaches only its own entity. So the order changes
+  nothing a test reads of a program whose `update` is pure. `docs/design.md` says it under Rehearsing a world, and
+  says that a program whose `update` reads outside its state may see the order, which the runtime does not keep.
 - **Within one entity, the timers due at one time fire in the order of the stored work.** That order is the order of
   the record `work` gives, as the machine stores it in [`src/machine.ts`](../../src/machine.ts). It is not the order
   of the timers running, which a timer armed again changes while the entity is loaded, and a restart changes back.
@@ -70,33 +64,6 @@ nothing tells the test's writer.
   work that is no operation, a creation of an entity that exists, and an id the runtime refuses in the test's own
   `create` fail the act alone. A scenario that catches such a failure goes on, and reads the world as before.
   `docs/design.md` says the three rules under Rehearsing a world.
-- **A rehearsal of several entities runs its scenario twice where two entities' timers are due at one time.** The
-  first run fires the timers of the entities due at one time in the order of creation, as today. The second run
-  fires every such group in the reverse order. A test whose assertion depends on the order of two entities' timers
-  fails in one of the two runs, every time, and its failure names the time and the entities.
-- **Two runs hold every pair of entities in both orders, and no more.** Of any two entities due at one time, one
-  fires first in the first run and the other in the second. A test that depends on the order of three entities at
-  once, as one that passes only when `a` fires between `b` and `c`, may pass both runs.
-- **An option of `rehearse.together` runs every order, up to a bound.** Under it a group of up to four entities runs
-  in each of its orders, 24 at most. A larger group runs in the order of creation, its reverse and a sample a seed
-  draws, and a failure names the seed. The step names the option.
-- **A rehearsal warns of a group of three entities or more due at one time, under two runs.** The warning says that
-  an order of three entities is not checked, and names the option.
-- **The scenario is a function the rehearsal may call more than once.** Whatever keeps a value is made in the
-  scenario: a hand that keeps a value is provided by the scenario itself, and a list the test asserts on is made and
-  asserted in the scenario. A hand that keeps nothing, as one of `Layer.mock`, may stay provided outside the
-  rehearsal. A layer provided outside is built once for every call, and a layer the scenario provides is built again
-  in each. `docs/design.md` says it under Rehearsing a world.
-- **The scenario runs a second time only where the first run met a group of two entities or more due at one time.**
-  A scenario with no such group is called once, as today.
-- **A second run that fails is told apart by a third, in the first run's order.** A third run that fails too finds a
-  scenario that is not the same in each call: the failure says that a value was likely carried from one call to the
-  next, and names the rule above. A third run that passes finds a test that depends on the order: the failure names
-  the second run, the reversed order, the time and the entities. "Likely" is said since a value that alternates from
-  call to call fools the third run.
-- **Each second run writes a line to Effect's log,** with the time and the entities. An assertion the test makes on
-  a list of its own after the rehearsal returns fails where the rehearsal cannot reach it, and the line is what the
-  rehearsal puts beside that failure.
 
 ## What it rests on
 
@@ -105,8 +72,8 @@ nothing tells the test's writer.
   runs histories that fast-check generates, of two to four orders created in two orders, of payments, cancellations,
   declined charges and times passing, and compares each entity's state, projection and work under way. An entity
   reaches another only through an operation, which runs when the test runs it, and a firing reaches only its own
-  entity. So only a program whose `update` reads something outside its state sees the order. The bullets of the second
-  run, of the third, of the option of every order and of the warning rest on this premise.
+  entity. So only a program whose `update` reads something outside its state sees the order. The rule that a
+  rehearsal checks no other order rests on this premise.
 - That the histories of that test reach timers of two entities due at one time fired in two orders: **tested** by
   `changes what a program reads of the order, which the histories reach`, in `src/rehearse.test.ts`, whose program
   counts the deadlines passed outside its state, and ends otherwise in the two worlds.
@@ -115,9 +82,8 @@ nothing tells the test's writer.
   `src/rehearse.test.ts`. A defect ends `advance` where it falls, and the timers due at that time that have not fired
   yet do not fire. A scenario that catches the defect with `Effect.exit` reads the other entity fired when it came
   first, and not fired when it came second, and the rehearsal ends in success. The runtime suspends the broken entity
-  alone, as `docs/design.md` says of a defect, so the other fires in both orders. The rehearsal
-  would end alike if `advance` fired every timer due at the time of a defect before it ended, or if `docs/design.md`
-  said that a scenario reads nothing of the world after a defect it catches. The maintainer chooses.
+  alone, as `docs/design.md` says of a defect, so the other fires in both orders. A closed world takes this case
+  out.
 - That a restart after a defect leaves nothing that depends on the order of the entities' creation: **failed**,
   **tested** by `a restart after a caught defect shows a scenario which entity was created first`, in
   `src/rehearse.test.ts`. `restart` activates the entities one after another, and a suspended entity's activation
@@ -185,36 +151,11 @@ nothing tells the test's writer.
   order of the numbers, not the order the program writes`, in `src/machine.test.ts`. A record keyed by names like `2`
   and `1` lists them in the order of the numbers, so an order of one entity's timers by `work` holds such keys in
   that order.
-- That two runs fail a test that depends on the order of a pair, among three entities due at one time: **open**. A
-  test of [`src/rehearse.test.ts`](../../src/rehearse.test.ts) checks it.
-- That the option of every order fails a test that depends on the order of three entities, which two runs pass:
-  **open**. A test of `src/rehearse.test.ts` checks it.
-- That a second call of the scenario finds a world as new: **tested** by `called twice under one provide, finds a world
-  as new and the hands built once`, in `src/rehearse.test.ts`. Each call of `together` makes a world of its own.
-- That a second call of the scenario finds the hands as new: **failed**, **tested** by `called twice under one
-  provide, finds a world as new and the hands built once`, in `src/rehearse.test.ts`. A layer provided outside the
-  rehearsal is built once for the two calls, so what a hand keeps carries into the second.
-- That a layer the scenario provides itself is built again in each call, with another layer provided outside the
-  rehearsal: **tested** by `called twice, builds a layer the scenario provides once in each call, with another
-  provided outside`, in `src/rehearse.test.ts`. So a hand that keeps a value, made in the scenario, is new in each
-  run.
-- That a second run of a scenario costs less than a test that passes on the rehearsal and fails on the runtime:
-  **chosen** by the maintainer.
-- That whatever keeps a value is made in the scenario, rather than given to `rehearse.together` as a layer:
-  **chosen** by the maintainer, after Fable 5.2's opinion. A layer given to the rehearsal would build the services
-  again, and would leave a list the test keeps outside as it is, which is the same defect.
-- That a scenario with no group of two entities due at one time is called once: **open**. A test of
-  `src/rehearse.test.ts` that counts the calls checks it.
-- That a hand provided outside that keeps a value fails the second run, and the failure says a value was likely
-  carried: **open**. A test of `src/rehearse.test.ts` with such a hand, and a scenario that asserts what it kept,
-  checks it.
-- That a scenario that depends on the order fails with the message of the reversed order, its third run passing:
-  **open**. A test of `src/rehearse.test.ts` whose hands the scenario makes checks it.
-- That a second run writes its line to the log: **open**. A test of `src/rehearse.test.ts` under a logger that keeps
-  what it is given checks it.
 - That the runtime keeps one entity's order, rather than promising none within one entity: **chosen** by the
   maintainer, after Fable 5.2's opinion. One entity has one loop and one runner on Cluster, so one place orders its
-  timers, and a rehearsal needs no reversal within an entity.
+  timers.
+- That a rehearsal checks no order of two entities but the order of creation, rather than running its scenario under
+  others: **chosen** by the maintainer, on the test `changes nothing a test reads of the entities`.
 - That the `Fire` of a timer already fired by another timer's `Fire` is dropped, and writes nothing: **open**. A test
   of the runtime with one entity's two timers due at one time checks it, by the events committed.
 - That no timer fires twice when another timer's `Fire` fires it first: **open**. The same kind of test checks it,
@@ -230,20 +171,20 @@ nothing tells the test's writer.
   the waker would need a sequence of creation stored with an index, and Cluster has no sequence across its shards.
 - **The order of the ids, promised.** Two runners of Cluster each run a waker of their own, and no one orders the
   timers of two shards.
-- **One fixed order in the rehearsal, the reverse of today's.** It is a second order a test may depend on, and finds
-  nothing the first does not.
-- **An order a seed draws, in one run.** It runs the scenario once, and one run holds one order of each pair, so a test
-  that depends on the order passes half the time.
-- **Every order, always.** A group of n entities runs n! times, which a scenario that creates many entities at once
-  cannot pay.
-- **No order within one entity either, and a rehearsal that reverses those too.** One entity has one loop and one
-  runner, so one place can order its timers. The reversal would reach `rehearse` of one entity too, and the orders
-  of a second run would multiply.
-- **A layer given to `rehearse.together`, which it builds again for each run.** It changes the signature of every
-  rehearsal, and leaves a list the test keeps outside the scenario as it was.
-- **A warning wherever a hand is provided outside the rehearsal.** The rehearsal sees only what the scenario
-  requires, and a hand that keeps nothing is rightly provided outside, so the warning would fire on most tests that
-  are right.
+- **A second run of the scenario, with every group of entities due at one time reversed,** where the first run met
+  one, and an option that runs every order of a group of up to four. Two runs hold every pair in both orders, and the
+  option every order of three or four. The order changes nothing a pure program shows, so the runs would check what
+  no test reads. They would cost a scenario that may be called more than once. A layer provided outside a rehearsal
+  is built once for two calls, as a test showed that git keeps, so whatever keeps a value would have to be made in the
+  scenario, and a third run would have to tell a value carried from an order a test depends on.
+- **An order a seed draws, in one run, or every order, always.** The first holds one order of each pair in a run, and
+  the second runs a group of n entities n! times. Both check what no test reads.
+- **No order within one entity either.** One entity has one loop and one runner, so one place can order its timers.
+- **A defect that ends `advance` only once every timer due at its time has fired.** It closes the hole of `advance`
+  alone, and leaves the one of `restart`. Two defects at one time would make the cause the rehearsal reports depend
+  on the order again.
+- **A closed world stated in `docs/design.md` alone.** The tests that catch a defect and read the world would go on
+  ending in success.
 
 ## Consequences
 

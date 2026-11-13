@@ -1052,8 +1052,8 @@ with a requirement that no example has yet.
   pure, as the test `changes nothing a test reads of the entities` of `src/rehearse.test.ts` shows, so only a program
   that reads outside its state passes on the rehearsal by it. `docs/design.md` promises no order of two entities' timers
   due at one time. [Decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md), `proposed`,
-  promises none, and has a rehearsal run its scenario under both orders. The question leaves this file when that note is
-  taken. It would be decided by:
+  promises none, and has a rehearsal fire them in the order of creation alone. The question leaves this file when that
+  note is taken. It would be decided by:
   - the step Two entities' timers due at one time, in no order, of the [roadmap](roadmap.md), and the tests its note
     names.
 

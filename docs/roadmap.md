@@ -481,17 +481,13 @@ it leaves this file, and what it decided goes into the design, a decision or an 
   allows, which it converts, or changed otherwise, which suspends the entity with a defect that names the piece.
 
 - **Two entities' timers due at one time, in no order.** The design promises no order of two entities' timers due at
-  one time, and a rehearsal of several entities runs its scenario a second time with every such group reversed, so
-  that a test that depends on the order of a pair fails in one of the two runs. An option of `rehearse.together` runs
-  every order of a group of up to four. Its note is
-  [decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md), `proposed`. Nothing of it
-  is written yet. Two of its premises failed before it began. The maintainer chose that the runtime keep one
-  entity's order by the stored work, where its loop takes a `Fire`, as the note says, and that whatever keeps a
-  value is made in the scenario, with a third run that tells a failed second run apart. Then the
-  premise that the second run checks something a test reads failed, and the maintainer chooses what its bullets
-  become before the step begins. The maintainer chose too that a suspension closes the world, as the note says. It
-  begins in
-  `together` and `dueBy` of [`src/rehearse.ts`](../src/rehearse.ts), and in the take of a `Fire` by an entity's loop,
+  one time, and a rehearsal fires them in the order of creation, which changes nothing a pure program shows. One
+  entity's timers due at one time fire in the order of its stored work, which the runtime keeps where an entity's
+  loop takes a `Fire`. A suspension closes a rehearsal's world, so that a scenario that catches a defect reads
+  nothing an order decided. Its note is
+  [decision 0293](decisions/0293-two-entities-timers-due-at-one-time-fire-in-no-order.md), `proposed`, whose rules the
+  maintainer chose. Nothing of it is written yet. It begins in `dueBy`, `apply` and `restart` of
+  [`src/rehearse.ts`](../src/rehearse.ts), and in the take of a `Fire` by an entity's loop,
   in [`src/runtime/loop.ts`](../src/runtime/loop.ts) or in `src/machine.ts`, with the tests its note names in
   `src/rehearse.test.ts`, `src/machine.test.ts` and `src/runtime/loop.test.ts`. Since it changes the runtime, it
   passes `bun run test:pins` and `bun run test:release` before it is taken. It touches no file of the step The tests
